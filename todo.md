@@ -217,8 +217,12 @@
 - [x] Fix Import CSV agent upload — show clear error for non-CSV files (.numbers, .xlsx) with export instructions; submit button visible once CSV is parsed
 
 ## Performance Fix: Large User List (Apr 9)
-- [ ] Add pagination/search to users.list procedure (currently returns all 416 users)
-- [ ] Add users.listAgents procedure that returns only agents (for Import matching dropdown)
-- [ ] Update AdminImport to use users.listAgents instead of users.list
-- [ ] Update AdminUsers page to use paginated/searchable users.list
-- [ ] Update Send Credentials tab to use paginated list
+- [x] Add pagination/search to users.list procedure (currently returns all 416 users)
+- [x] Add users.listAgents procedure that returns only agents (for Import matching dropdown)
+- [x] Update AdminImport to use users.listAgents instead of users.list
+- [x] Update AdminUsers page to use paginated/searchable users.list
+- [x] Update Send Credentials tab to use paginated list
+
+## Deduplication & Users Page Fix (Apr 9)
+- [x] Fix Users page error (users.filter crash was from stale log before pagination fix; confirmed resolved)
+- [x] Identify and remove duplicate agent accounts from the database (deleted 16 duplicates, 400 users remain)
