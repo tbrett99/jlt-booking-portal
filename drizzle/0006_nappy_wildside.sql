@@ -1,0 +1,1 @@
+ALTER TABLE `bookings` ADD `grossCost` decimal(10,2);

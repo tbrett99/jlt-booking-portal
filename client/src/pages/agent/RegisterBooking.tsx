@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import { ArrowLeft, Upload, X, Loader2 } from "lucide-react";
+import { ArrowLeft, Upload, X, Loader2, PoundSterling, Info } from "lucide-react";
 import { Link } from "wouter";
 
 export default function RegisterBooking() {
@@ -16,6 +16,8 @@ export default function RegisterBooking() {
   const [topdogRef, setTopdogRef] = useState("");
   const [reimbursementsRequired, setReimbursementsRequired] = useState(false);
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [expectedCommission, setExpectedCommission] = useState("");
+  const [grossCost, setGrossCost] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -34,14 +36,16 @@ export default function RegisterBooking() {
     }
   };
 
+  // Derived margin for live preview
+  const grossNum = parseFloat(grossCost);
+  const commNum = parseFloat(expectedCommission);
+  const marginPct = grossNum > 0 && commNum > 0 ? (commNum / grossNum) * 100 : null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientName || !departureDate) {
       toast.error("Please fill in all required fields");
       return;
-    }
-    if (reimbursementsRequired && !docFile) {
-      // Allow submission without doc — it can be uploaded later
     }
     setIsSubmitting(true);
     try {
@@ -50,6 +54,8 @@ export default function RegisterBooking() {
         departureDate: new Date(departureDate),
         topdogRef: topdogRef || undefined,
         reimbursementsRequired,
+        expectedCommission: commNum > 0 ? commNum : undefined,
+        grossCost: grossNum > 0 ? grossNum : undefined,
       });
 
       if (booking && docFile) {
@@ -95,6 +101,7 @@ export default function RegisterBooking() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Client Name */}
             <div className="space-y-2">
               <Label htmlFor="clientName">
                 Client Name <span className="text-destructive">*</span>
@@ -108,6 +115,7 @@ export default function RegisterBooking() {
               />
             </div>
 
+            {/* Departure Date */}
             <div className="space-y-2">
               <Label htmlFor="departureDate">
                 Departure Date <span className="text-destructive">*</span>
@@ -121,8 +129,9 @@ export default function RegisterBooking() {
               />
             </div>
 
+            {/* Topdog Ref */}
             <div className="space-y-2">
-              <Label htmlFor="topdogRef">Topdog Booking Reference (optional)</Label>
+              <Label htmlFor="topdogRef">Topdog Booking Reference <span className="text-muted-foreground text-xs">(optional)</span></Label>
               <Input
                 id="topdogRef"
                 placeholder="e.g. TD123456"
@@ -131,6 +140,69 @@ export default function RegisterBooking() {
               />
             </div>
 
+            {/* Commission & Gross Cost */}
+            <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
+              <div className="flex items-center gap-2">
+                <PoundSterling size={16} className="text-primary" />
+                <h3 className="text-sm font-semibold">Commission & Booking Value</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="grossCost">Gross Cost (£) <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                    <Input
+                      id="grossCost"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={grossCost}
+                      onChange={(e) => setGrossCost(e.target.value)}
+                      className="pl-7"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="expectedCommission">Expected Commission (£) <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                    <Input
+                      id="expectedCommission"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={expectedCommission}
+                      onChange={(e) => setExpectedCommission(e.target.value)}
+                      className="pl-7"
+                    />
+                  </div>
+                </div>
+              </div>
+              {/* Live margin preview */}
+              {marginPct !== null && (
+                <div className={`flex items-center gap-2 text-sm rounded-md px-3 py-2 ${
+                  marginPct < 5
+                    ? "bg-red-50 text-red-700 border border-red-200"
+                    : marginPct < 10
+                    ? "bg-amber-50 text-amber-700 border border-amber-200"
+                    : "bg-green-50 text-green-700 border border-green-200"
+                }`}>
+                  <Info size={14} />
+                  <span>
+                    Margin: <strong>{marginPct.toFixed(1)}%</strong>
+                    {marginPct < 5 && " — this is below the 5% minimum threshold"}
+                  </span>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground flex items-start gap-1">
+                <Info size={12} className="mt-0.5 shrink-0" />
+                You can update these amounts at any time from your booking page.
+              </p>
+            </div>
+
+            {/* Reimbursements */}
             <div className="space-y-3">
               <Label>Reimbursements Required?</Label>
               <div className="flex gap-4">

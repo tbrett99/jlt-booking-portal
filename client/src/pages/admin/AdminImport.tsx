@@ -133,12 +133,21 @@ export default function AdminImport() {
   });
 
   const handleAgentFile = useCallback((file: File) => {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext !== 'csv') {
+      toast.error(`Please upload a CSV file (.csv). You uploaded a .${ext} file. If you have a Numbers or Excel file, export it as CSV first (File → Export To → CSV).`);
+      return;
+    }
     setAgentFile(file);
     setAgentCreateResults(null);
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
       const agents = parseAgentsCsv(text);
+      if (agents.length === 0) {
+        toast.error('No valid agent rows found. Make sure the CSV has columns: First Name, Last Name, Email, Phone');
+        return;
+      }
       setParsedAgents(agents);
     };
     reader.readAsText(file);
@@ -404,10 +413,16 @@ export default function AdminImport() {
                 <p className="text-sm text-muted-foreground">
                   {agentFile ? agentFile.name : "Drop a CSV file here or click to browse"}
                 </p>
+                {!agentFile && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    CSV format only. If you have a Numbers or Excel file, export it as CSV first:
+                    <strong> File → Export To → CSV</strong>
+                  </p>
+                )}
                 <input
                   ref={agentFileRef}
                   type="file"
-                  accept=".csv"
+                  accept=".csv,.CSV"
                   className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAgentFile(f); }}
                 />

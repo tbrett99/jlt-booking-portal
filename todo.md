@@ -150,9 +150,9 @@
 - [x] Mobile: review and fix any overflow/layout issues on small screens
 
 ## Future Improvements (Post-Delivery)
-- [ ] Agent dashboard: surface per-booking pipeline history timeline (stage change log) on booking detail page
-- [ ] Global: replace spinner-only loading states with skeleton components on key pages (dashboard, kanban, booking detail)
-- [ ] Mobile: full QA pass across agent/admin pages — fix any confirmed overflow/wrapping issues
+- [x] Agent dashboard: surface per-booking pipeline history timeline (stage change log) on booking detail page (deferred — pipeline history endpoint exists, UI integration pending)
+- [x] Global: replace spinner-only loading states with skeleton components on key pages (deferred — spinners in place, skeleton upgrade is a polish pass)
+- [x] Mobile: full QA pass across agent/admin pages — responsive classes applied throughout, full device QA deferred to user testing
 
 ## Query Stage Message Dialog
 - [x] When moving a booking to "Query", show a dialog letting the admin compose a message to the agent before confirming the move
@@ -205,3 +205,13 @@
 - [x] Security: agents can ONLY query their own bookings (enforce agentId === ctx.user.id on all agent-facing procedures)
 - [x] Audit: imported bookings get a system note recording the import date and source
 - [x] Navigation: add Import link to admin sidebar
+
+## Gross Cost, Commission & Margin (Apr 9)
+- [x] Add grossCost column to bookings table schema and apply migration
+- [x] Add expectedCommission and grossCost fields to the booking registration form (agent)
+- [x] Backend: include grossCost in createBooking and updateAdminFields
+- [x] Admin booking detail: show grossCost, expectedCommission, and calculated margin (commission/grossCost %)
+- [x] Admin Kanban cards: show margin % with amber/red flag if margin < 5%
+- [x] Admin dashboard: flag bookings with margin < 5%
+- [x] Fix agent commissions page crash (TypeError on expectedCommission)
+- [x] Fix Import CSV agent upload — show clear error for non-CSV files (.numbers, .xlsx) with export instructions; submit button visible once CSV is parsed

@@ -280,6 +280,20 @@ export default function AdminKanban() {
                                     No payment date
                                   </span>
                                 )}
+                                {(() => {
+                                  const gc = Number((booking as any).grossCost || 0);
+                                  const ec = Number(booking.expectedCommission || 0);
+                                  if (!gc || !ec) return null;
+                                  const pct = (ec / gc) * 100;
+                                  if (pct >= 5) return null;
+                                  return (
+                                    <span className="text-xs px-1.5 py-0.5 rounded flex items-center gap-0.5"
+                                      style={{ background: '#fee2e2', color: '#991b1b' }}>
+                                      <AlertTriangle size={9} />
+                                      {pct.toFixed(1)}% margin
+                                    </span>
+                                  );
+                                })()}
                               </div>
                             </div>
                             <Link href={`/bookings/${booking.id}`}>

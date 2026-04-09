@@ -61,6 +61,7 @@ export default function AdminBookingDetail() {
   const [editTopdog, setEditTopdog] = useState("");
   const [editPaymentDate, setEditPaymentDate] = useState("");
   const [editCommission, setEditCommission] = useState("");
+  const [editGrossCost, setEditGrossCost] = useState("");
   const [isSavingDetails, setIsSavingDetails] = useState(false);
   const [detailsInitialised, setDetailsInitialised] = useState(false);
   const [pendingStage, setPendingStage] = useState<string | null>(null);
@@ -82,6 +83,7 @@ export default function AdminBookingDetail() {
     setEditTopdog(booking.topdogRef ?? "");
     setEditPaymentDate(booking.finalSupplierPaymentDate ? format(new Date(booking.finalSupplierPaymentDate), "yyyy-MM-dd") : "");
     setEditCommission(booking.expectedCommission ? String(booking.expectedCommission) : "");
+    setEditGrossCost((booking as any).grossCost ? String((booking as any).grossCost) : "");
     setDetailsInitialised(true);
   }
 
@@ -212,6 +214,7 @@ export default function AdminBookingDetail() {
         topdogRef: editTopdog || undefined,
         finalSupplierPaymentDate: editPaymentDate ? new Date(editPaymentDate) : null,
         expectedCommission: editCommission ? Number(editCommission) : undefined,
+        grossCost: editGrossCost ? Number(editGrossCost) : undefined,
       });
       await utils.bookings.byId.invalidate({ id: bookingId });
       toast.success("Details saved");
@@ -329,6 +332,28 @@ export default function AdminBookingDetail() {
                 <div className="space-y-1">
                   <Label className="text-xs">Expected Commission (£)</Label>
                   <Input type="number" value={editCommission} onChange={(e) => setEditCommission(e.target.value)} placeholder="0.00" className="h-8 text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Gross Cost (£)</Label>
+                  <Input type="number" value={editGrossCost} onChange={(e) => setEditGrossCost(e.target.value)} placeholder="0.00" className="h-8 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Margin</Label>
+                  {(() => {
+                    const gc = Number(editGrossCost || (booking as any).grossCost || 0);
+                    const ec = Number(editCommission || booking.expectedCommission || 0);
+                    if (!gc || !ec) return <p className="text-xs text-muted-foreground h-8 flex items-center">—</p>;
+                    const pct = (ec / gc) * 100;
+                    return (
+                      <div className={`h-8 flex items-center px-2 rounded text-sm font-semibold ${
+                        pct < 5 ? 'bg-red-100 text-red-700' : pct < 10 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                      }`}>
+                        {pct.toFixed(1)}%{pct < 5 && ' ⚠ Low'}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
               <Button onClick={handleSaveDetails} disabled={isSavingDetails} size="sm"

@@ -45,6 +45,7 @@ export const bookings = mysqlTable("bookings", {
   reimbursementDocUploadedAt: timestamp("reimbursementDocUploadedAt"),
   reimbursementDocLateUpload: boolean("reimbursementDocLateUpload").default(false).notNull(),
   expectedCommission: decimal("expectedCommission", { precision: 10, scale: 2 }),
+  grossCost: decimal("grossCost", { precision: 10, scale: 2 }),
   // Admin-managed fields
   ptsRef: varchar("ptsRef", { length: 100 }),
   finalSupplierPaymentDate: timestamp("finalSupplierPaymentDate"),

@@ -200,14 +200,23 @@ export async function createBooking(data: {
   topdogRef?: string;
   reimbursementsRequired: boolean;
   reimbursementDocUrl?: string;
+  expectedCommission?: number;
+  grossCost?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const result = await db.insert(bookings).values({
-    ...data,
+    agentId: data.agentId,
+    clientName: data.clientName,
+    departureDate: data.departureDate,
+    topdogRef: data.topdogRef,
+    reimbursementsRequired: data.reimbursementsRequired,
+    reimbursementDocUrl: data.reimbursementDocUrl,
     reimbursementDocUploadedAt: data.reimbursementDocUrl ? new Date() : undefined,
+    expectedCommission: data.expectedCommission != null ? String(data.expectedCommission) : undefined,
+    grossCost: data.grossCost != null ? String(data.grossCost) : undefined,
     currentStage: "New Booking",
-  });
+  } as any);
   const id = (result as any)[0]?.insertId ?? (result as any).insertId;
   return getBookingById(id);
 }
@@ -279,6 +288,7 @@ export async function updateBookingAdminFields(
     topdogRef?: string;
     finalSupplierPaymentDate?: Date | null;
     expectedCommission?: number;
+    grossCost?: number;
   }
 ) {
   const db = await getDb();

@@ -74,6 +74,14 @@ export default function AdminDashboard() {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 6);
 
+  // Low margin bookings (<5%)
+  const lowMarginBookings = activeBookings.filter((b) => {
+    const gc = Number((b as any).grossCost || 0);
+    const ec = Number(b.expectedCommission || 0);
+    if (!gc || !ec) return false;
+    return (ec / gc) * 100 < 5;
+  });
+
   // This month bookings
   const thisMonth = bookings.filter((b) => {
     const d = new Date(b.createdAt);
@@ -103,7 +111,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Alert banners — compact */}
-      {(urgentBookings.length > 0 || missingPaymentDate.length > 0 || pendingClaims.length > 0) && (
+      {(urgentBookings.length > 0 || missingPaymentDate.length > 0 || pendingClaims.length > 0 || lowMarginBookings.length > 0) && (
         <div className="space-y-2">
           {urgentBookings.length > 0 && (
             <div className="rounded-lg border-l-4 px-4 py-2.5 flex items-center gap-3"
@@ -143,6 +151,22 @@ export default function AdminDashboard() {
                 </span>
               </div>
               <Link href="/commissions-admin"><Button size="sm" variant="ghost" className="text-xs text-emerald-700 h-7 px-2">Process</Button></Link>
+            </div>
+          )}
+          {lowMarginBookings.length > 0 && (
+            <div className="rounded-lg border-l-4 px-4 py-2.5 flex items-center gap-3"
+              style={{ borderLeftColor: '#7c3aed', background: '#f5f3ff' }}>
+              <TrendingUp size={15} style={{ color: '#7c3aed' }} className="flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-xs" style={{ color: '#4c1d95' }}>
+                  {lowMarginBookings.length} booking{lowMarginBookings.length > 1 ? 's' : ''} with margin below 5%
+                </span>
+                <span className="text-xs ml-2 opacity-70" style={{ color: '#4c1d95' }}>
+                  {lowMarginBookings.slice(0, 3).map((b) => b.clientName).join(', ')}
+                  {lowMarginBookings.length > 3 && ` +${lowMarginBookings.length - 3} more`}
+                </span>
+              </div>
+              <Link href="/pipeline"><Button size="sm" variant="ghost" className="text-xs h-7 px-2" style={{ color: '#7c3aed' }}>Review</Button></Link>
             </div>
           )}
         </div>

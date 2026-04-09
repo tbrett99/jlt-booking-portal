@@ -42,7 +42,7 @@ function fmt(d: Date | string | null | undefined) {
 }
 
 function sumCommission(list: BookingWithClaim[]) {
-  return list.reduce((acc, b) => acc + (b.expectedCommission ?? 0), 0);
+  return list.reduce((acc, b) => acc + Number(b.expectedCommission ?? 0), 0);
 }
 
 export default function AgentCommissions() {
@@ -128,7 +128,7 @@ export default function AgentCommissions() {
         <p className="text-sm text-muted-foreground">Departure: {fmt(booking.departureDate)}</p>
         {booking.expectedCommission != null ? (
           <p className="text-sm font-semibold mt-0.5" style={{ color: '#065f46' }}>
-            £{booking.expectedCommission.toFixed(2)}
+            £{Number(booking.expectedCommission).toFixed(2)}
           </p>
         ) : (
           <Link href={`/bookings/${booking.id}`}>
@@ -426,7 +426,7 @@ export default function AgentCommissions() {
               Please select the booking type for <strong>{claimTarget?.clientName}</strong> before submitting your claim.
               {claimTarget?.expectedCommission && (
                 <span className="block mt-1 font-semibold" style={{ color: '#065f46' }}>
-                  Expected commission: £{claimTarget.expectedCommission.toFixed(2)}
+                  Expected commission: £{Number(claimTarget.expectedCommission).toFixed(2)}
                 </span>
               )}
             </DialogDescription>

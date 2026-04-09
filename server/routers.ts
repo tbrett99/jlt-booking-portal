@@ -363,6 +363,8 @@ export const appRouter = router({
           topdogRef: z.string().optional(),
           reimbursementsRequired: z.boolean(),
           reimbursementDocUrl: z.string().optional(),
+          expectedCommission: z.number().min(0).optional(),
+          grossCost: z.number().min(0).optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -531,6 +533,7 @@ export const appRouter = router({
           topdogRef: z.string().optional(),
           finalSupplierPaymentDate: z.date().nullable().optional(),
           expectedCommission: z.number().optional(),
+          grossCost: z.number().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -555,6 +558,7 @@ export const appRouter = router({
             }
           }
           if (input.expectedCommission !== undefined) changes.push(`Expected Commission set to £${input.expectedCommission}`);
+          if (input.grossCost !== undefined) changes.push(`Gross Cost set to £${input.grossCost}`);
           if (changes.length > 0) {
             await createNote({
               bookingId,
