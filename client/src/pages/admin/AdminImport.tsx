@@ -1,4 +1,5 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import CsvParserWorker from "@/workers/csvParser.worker?worker";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -232,8 +233,17 @@ export default function AdminImport() {
   const [mappedBookings, setMappedBookings] = useState<MappedBooking[]>([]);
   const [importResults, setImportResults] = useState<{ total: number; succeeded: number; results: Array<{ clientName: string; success: boolean; error?: string }> } | null>(null);
   const [importing, setImporting] = useState(false);
+  const [parsingCsv, setParsingCsv] = useState(false);
   const [searchFilter, setSearchFilter] = useState("");
   const bookingFileRef = useRef<HTMLInputElement>(null);
+  const csvWorkerRef = useRef<Worker | null>(null);
+
+  // Cleanup worker on unmount
+  useEffect(() => {
+    return () => {
+      csvWorkerRef.current?.terminate();
+    };
+  }, []);
 
   const bulkImport = trpc.bookings.bulkImport.useMutation({
     onSuccess: (data) => {
@@ -245,76 +255,100 @@ export default function AdminImport() {
     onSettled: () => setImporting(false),
   });
 
+  const processRawRows = useCallback(
+    (rows: Record<string, string>[]) => {
+      const bookings: CsvBookingRow[] = rows
+        .filter((r) => r["Opportunity Name"] || r["Name"])
+        .map((r) => {
+          const oppName = r["Opportunity Name"] || r["Name"] || "";
+          const contactName = (r["Contact Name"] || "").trim();
+          const agentToken = contactName || extractAgentToken(oppName);
+          const clientName = (r["Lead Pax Name"] || extractClientName(oppName)).trim();
+          const stageRaw = (r["stage"] || r["Stage"] || "").trim();
+          const reimb = (r["Do you require any reimbursements?"] || "").toLowerCase();
+          return {
+            opportunityName: oppName,
+            clientName,
+            agentToken,
+            closeDate: parseDate(r["Departure Date"] || r["Close Date"] || ""),
+            amount: r["Lead Value"] || r["Amount"] || "",
+            stage: stageRaw,
+            ptsRef: (r["PTS Booking Reference"] || "").trim(),
+            topdogRef: (r["Topdog Booking Reference"] || r["2T Number"] || "").trim(),
+            twoTNumber: (r["2T Number"] || "").trim(),
+            finalSupplierPaymentDate: parseDate(r["Final Supplier Payment Date"] || ""),
+            reimbursementsRequired: reimb === "yes" || reimb === "true",
+            rawRow: r,
+          };
+        });
+      // Auto-match agents by full name (case-insensitive), with fallback to first+last token matching
+      const mapped: MappedBooking[] = bookings.map((b) => {
+        const tokenLower = b.agentToken.toLowerCase().trim();
+        const tokenParts = tokenLower.split(/\s+/);
+        let match = existingAgents.find((a) => (a.name ?? "").toLowerCase() === tokenLower);
+        if (!match) {
+          match = existingAgents.find((a) => {
+            const agentLower = (a.name ?? "").toLowerCase();
+            const agentParts = agentLower.split(/\s+/);
+            return tokenParts.every((tp) =>
+              agentParts.some((ap) => ap === tp || ap.startsWith(tp) || tp.startsWith(ap))
+            );
+          });
+        }
+        if (!match && tokenParts.length >= 2) {
+          const lastToken = tokenParts[tokenParts.length - 1];
+          match = existingAgents.find((a) => {
+            const agentParts = (a.name ?? "").toLowerCase().split(/\s+/);
+            return agentParts[agentParts.length - 1] === lastToken && agentParts[0].startsWith(tokenParts[0]);
+          });
+        }
+        return { ...b, agentId: match?.id ?? null, agentName: match?.name ?? "" };
+      });
+      setMappedBookings(mapped);
+      setParsingCsv(false);
+    },
+    [existingAgents]
+  );
+
   const handleBookingFile = useCallback(
     (file: File) => {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (ext !== 'csv') {
+        toast.error(`Please upload a CSV file (.csv). You uploaded a .${ext} file.`);
+        return;
+      }
       setBookingFile(file);
       setImportResults(null);
+      setMappedBookings([]);
+      setParsingCsv(true);
+      // Terminate any existing worker
+      csvWorkerRef.current?.terminate();
+      const worker = new CsvParserWorker();
+      csvWorkerRef.current = worker;
+      worker.onmessage = (e: MessageEvent) => {
+        worker.terminate();
+        csvWorkerRef.current = null;
+        if (e.data.type === "done") {
+          processRawRows(e.data.rows);
+        } else {
+          setParsingCsv(false);
+          toast.error(`CSV parse error: ${e.data.message}`);
+        }
+      };
+      worker.onerror = (err) => {
+        worker.terminate();
+        csvWorkerRef.current = null;
+        setParsingCsv(false);
+        toast.error(`Failed to parse CSV: ${err.message}`);
+      };
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target?.result as string;
-        const rows = parseCsv(text);
-        const bookings: CsvBookingRow[] = rows
-          .filter((r) => r["Opportunity Name"] || r["Name"])
-          .map((r) => {
-            const oppName = r["Opportunity Name"] || r["Name"] || "";
-            // Prefer Contact Name (agent full name) over extracting from Opportunity Name
-            const contactName = (r["Contact Name"] || "").trim();
-            const agentToken = contactName || extractAgentToken(oppName);
-            // Prefer Lead Pax Name as the client name
-            const clientName = (r["Lead Pax Name"] || extractClientName(oppName)).trim();
-            const stageRaw = (r["stage"] || r["Stage"] || "").trim();
-            const reimb = (r["Do you require any reimbursements?"] || "").toLowerCase();
-            return {
-              opportunityName: oppName,
-              clientName,
-              agentToken,
-              closeDate: parseDate(r["Departure Date"] || r["Close Date"] || ""),
-              amount: r["Lead Value"] || r["Amount"] || "",
-              stage: stageRaw,
-              ptsRef: (r["PTS Booking Reference"] || "").trim(),
-              topdogRef: (r["Topdog Booking Reference"] || r["2T Number"] || "").trim(),
-              twoTNumber: (r["2T Number"] || "").trim(),
-              finalSupplierPaymentDate: parseDate(r["Final Supplier Payment Date"] || ""),
-              reimbursementsRequired: reimb === "yes" || reimb === "true",
-              rawRow: r,
-            };
-          });
-        // Auto-match agents by full name (case-insensitive), with fallback to first+last token matching
-        const mapped: MappedBooking[] = bookings.map((b) => {
-          const tokenLower = b.agentToken.toLowerCase().trim();
-          const tokenParts = tokenLower.split(/\s+/);
-          // 1. Exact full name match (case-insensitive)
-          let match = existingAgents.find((a) => (a.name ?? "").toLowerCase() === tokenLower);
-          if (!match) {
-            // 2. Match where all token parts appear in the agent name (handles "ANT DAIR" → "Anthony Dair" via last name)
-            match = existingAgents.find((a) => {
-              const agentLower = (a.name ?? "").toLowerCase();
-              const agentParts = agentLower.split(/\s+/);
-              // All parts of the token must match some part of the agent name (prefix match allowed for nicknames)
-              return tokenParts.every((tp) =>
-                agentParts.some((ap) => ap === tp || ap.startsWith(tp) || tp.startsWith(ap))
-              );
-            });
-          }
-          if (!match && tokenParts.length >= 2) {
-            // 3. Last name exact match + first name prefix (handles "Rachael Swinley" where last name differs)
-            const lastToken = tokenParts[tokenParts.length - 1];
-            match = existingAgents.find((a) => {
-              const agentParts = (a.name ?? "").toLowerCase().split(/\s+/);
-              return agentParts[agentParts.length - 1] === lastToken && agentParts[0].startsWith(tokenParts[0]);
-            });
-          }
-          return {
-            ...b,
-            agentId: match?.id ?? null,
-            agentName: match?.name ?? "",
-          };
-        });
-        setMappedBookings(mapped);
+        worker.postMessage({ type: "parse", text });
       };
       reader.readAsText(file);
     },
-    [existingAgents]
+    [processRawRows]
   );
 
   const updateMapping = (index: number, agentId: number | null) => {
@@ -599,19 +633,32 @@ export default function AdminImport() {
               )}
 
               <div
-                className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
-                onClick={() => bookingFileRef.current?.click()}
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                  parsingCsv ? "border-primary/40 bg-muted/30 cursor-wait" : "border-border cursor-pointer hover:border-primary/50"
+                }`}
+                onClick={() => !parsingCsv && bookingFileRef.current?.click()}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
+                  if (parsingCsv) return;
                   const file = e.dataTransfer.files[0];
                   if (file) handleBookingFile(file);
                 }}
               >
-                <Upload size={24} className="mx-auto mb-2 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  {bookingFile ? bookingFile.name : "Drop your Salesforce CSV here or click to browse"}
-                </p>
+                {parsingCsv ? (
+                  <>
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 mx-auto mb-2" style={{ borderColor: "#70FFE8" }} />
+                    <p className="text-sm text-muted-foreground">Parsing CSV in background… this may take a few seconds for large files.</p>
+                    {bookingFile && <p className="text-xs text-muted-foreground mt-1">{bookingFile.name}</p>}
+                  </>
+                ) : (
+                  <>
+                    <Upload size={24} className="mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      {bookingFile && mappedBookings.length > 0 ? bookingFile.name : "Drop your GHL CSV here or click to browse"}
+                    </p>
+                  </>
+                )}
                 <input
                   ref={bookingFileRef}
                   type="file"

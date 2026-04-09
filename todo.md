@@ -240,3 +240,6 @@
 ## Bug Fixes (Apr 9 v3)
 - [x] Fix Users page crash: Select.Item with empty string value prop (replaced "" with "all" sentinel)
 - [x] Fix CSV import: file drop/select silently does nothing — replaced broken line-split parser with RFC 4180-compliant char-by-char parser that handles multi-line quoted fields (Notes column had embedded newlines causing 452k fake lines from 2,435 real rows)
+
+## CSV Import Crash Fix (Apr 9 v4)
+- [x] Fix CSV import page crash on large files — moved CSV parsing to Web Worker (csvParser.worker.ts) so the 8.3 MB file is parsed off the main thread; added spinner loading state during parsing
