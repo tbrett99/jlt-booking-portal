@@ -42,11 +42,26 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
-      fetch(input, init) {
-        return globalThis.fetch(input, {
+      async fetch(input, init) {
+        const response = await globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
         });
+        // If the gateway returns plain text (e.g. "Rate exceeded.") instead of JSON,
+        // wrap it in a valid tRPC error response so superjson doesn't throw a SyntaxError.
+        const contentType = response.headers.get("content-type") ?? "";
+        if (!contentType.includes("application/json") && !contentType.includes("text/event-stream")) {
+          const text = await response.text();
+          const isRateLimit = response.status === 429 || text.toLowerCase().includes("rate");
+          const message = isRateLimit
+            ? "The server is temporarily busy — please wait a moment and try again."
+            : `Server error (${response.status}): ${text.slice(0, 120)}`;
+          return new Response(
+            JSON.stringify([{ error: { message, code: -32603, data: { code: "INTERNAL_SERVER_ERROR", httpStatus: response.status } } }]),
+            { status: 200, headers: { "content-type": "application/json" } }
+          );
+        }
+        return response;
       },
     }),
   ],
