@@ -20,6 +20,7 @@ import AdminRefunds from "./pages/admin/AdminRefunds";
 import AdminReports from "./pages/admin/AdminReports";
 import NotificationTemplates from "./pages/admin/NotificationTemplates";
 import PortalLayout from "./components/PortalLayout";
+import ChangePasswordPage from "./pages/ChangePasswordPage";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 
@@ -47,6 +48,11 @@ function AuthRouter() {
         <Route component={LoginPage} />
       </Switch>
     );
+  }
+
+  // Force password change before accessing any other page
+  if (user.mustChangePassword) {
+    return <ChangePasswordPage />;
   }
 
   // Agent routes

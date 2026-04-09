@@ -16,12 +16,13 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  const utils = trpc.useUtils();
+
   const loginMutation = trpc.auth.loginWithPassword.useMutation({
-    onSuccess: (data) => {
-      if (data.mustChangePassword) {
-        toast.info("Please change your password before continuing.");
-      }
-      window.location.reload();
+    onSuccess: async () => {
+      // Invalidate auth.me so the app re-reads the user (including mustChangePassword)
+      // App.tsx will then route to ChangePasswordPage or the correct dashboard automatically
+      await utils.auth.me.invalidate();
     },
     onError: (err) => {
       toast.error(err.message || "Invalid email or password");

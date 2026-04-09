@@ -82,3 +82,6 @@
 - [x] Vitest unit tests for key procedures (booking creation, role guards, note immutability, encryption)
 - [x] Save checkpoint
 - [x] Deliver to user
+
+## Bugs
+- [x] Password change on first login refreshes the page instead of completing login and redirecting to dashboard

@@ -5,8 +5,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
-const { sign } = jwt;
+import { sdk } from "./_core/sdk";
 import {
   getAllUsers,
   getUserByEmail,
@@ -165,12 +164,8 @@ export const appRouter = router({
         if (!valid) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid credentials" });
         }
-        // Issue JWT session cookie
-        const token = sign(
-          { userId: user.id, openId: user.openId, role: user.role },
-          process.env.JWT_SECRET ?? "secret",
-          { expiresIn: "7d" }
-        );
+        // Issue JWT session cookie using the SDK so the token format matches verifySession
+        const token = await sdk.createSessionToken(user.openId, { name: user.name ?? user.email ?? "" });
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
         return { success: true, mustChangePassword: user.mustChangePassword, user };
