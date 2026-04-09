@@ -89,3 +89,6 @@
 
 ## New Features
 - [x] Admin/Super Admin view switcher — toggle between admin panel and agent-facing view (own bookings, register booking, notes etc.)
+- [x] Fix SMTP port to 465 (SSL, verified working)
+- [x] Add delete user feature for admin/super admin (Super Admin only, with confirmation dialog)
+- [x] Create test agent account (testagent@thejltgroup.co.uk)

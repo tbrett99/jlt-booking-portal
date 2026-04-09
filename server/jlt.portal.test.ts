@@ -11,6 +11,7 @@ vi.mock("./db", () => ({
   createAgentUser: vi.fn().mockResolvedValue({ id: 99 }),
   updateUserRole: vi.fn().mockResolvedValue(undefined),
   toggleUserActive: vi.fn().mockResolvedValue(undefined),
+  deleteUser: vi.fn().mockResolvedValue(undefined),
   updateUserPassword: vi.fn().mockResolvedValue(undefined),
   createBooking: vi.fn().mockResolvedValue({ id: 1 }),
   getBookingById: vi.fn().mockResolvedValue(null),
@@ -272,5 +273,36 @@ describe("reports", () => {
     const result = await caller.reports.bookings();
     expect(result.length).toBe(1);
     expect((result[0] as any).agentName).toBe("Agent Jane");
+  });
+});
+
+// ─── Delete user tests ────────────────────────────────────────────────────────
+
+describe("users.delete", () => {
+  it("super_admin can delete another user", async () => {
+    const ctx = makeCtx("super_admin");
+    // ctx.user.id is 1 (from makeCtx), deleting user 99
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.users.delete({ userId: 99 });
+    expect(result.success).toBe(true);
+  });
+
+  it("super_admin cannot delete their own account", async () => {
+    const ctx = makeCtx("super_admin");
+    const caller = appRouter.createCaller(ctx);
+    // ctx.user.id is 1 — attempting to delete self
+    await expect(caller.users.delete({ userId: 1 })).rejects.toThrow(/cannot delete your own/i);
+  });
+
+  it("admin is forbidden from deleting users", async () => {
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.users.delete({ userId: 99 })).rejects.toThrow(/FORBIDDEN|Super admin/i);
+  });
+
+  it("agent is forbidden from deleting users", async () => {
+    const ctx = makeCtx("agent");
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.users.delete({ userId: 99 })).rejects.toThrow(/FORBIDDEN|Super admin/i);
   });
 });

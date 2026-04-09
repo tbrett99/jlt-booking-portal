@@ -121,6 +121,12 @@ export async function toggleUserActive(userId: number, isActive: boolean) {
   await db.update(users).set({ isActive }).where(eq(users.id, userId));
 }
 
+export async function deleteUser(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(users).where(eq(users.id, userId));
+}
+
 export async function getUserByEmail(email: string) {
   const db = await getDb();
   if (!db) return undefined;

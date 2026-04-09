@@ -1,21 +1,19 @@
 import nodemailer from "nodemailer";
 import { getNotificationTemplate } from "./db";
 
-let transporter: nodemailer.Transporter | null = null;
-
+// Always create a fresh transporter so env changes take effect without restart
 function getTransporter() {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST ?? "smtp.gmail.com",
-      port: Number(process.env.SMTP_PORT ?? 587),
-      secure: process.env.SMTP_SECURE === "true",
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
-  return transporter;
+  const port = Number(process.env.SMTP_PORT ?? 465);
+  const secure = port === 465 || process.env.SMTP_SECURE === "true";
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? "mail.thejltgroup.co.uk",
+    port,
+    secure,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
 }
 
 export async function sendNotificationEmail(params: {

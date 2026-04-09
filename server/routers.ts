@@ -13,6 +13,7 @@ import {
   createAgentUser,
   updateUserRole,
   toggleUserActive,
+  deleteUser,
   updateUserPassword,
   createBooking,
   getBookingById,
@@ -230,6 +231,16 @@ export const appRouter = router({
       .input(z.object({ userId: z.number(), isActive: z.boolean() }))
       .mutation(async ({ input }) => {
         await toggleUserActive(input.userId, input.isActive);
+        return { success: true };
+      }),
+    delete: superAdminProcedure
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        // Prevent deleting yourself
+        if (input.userId === ctx.user.id) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot delete your own account" });
+        }
+        await deleteUser(input.userId);
         return { success: true };
       }),
   }),
