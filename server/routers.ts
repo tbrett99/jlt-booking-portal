@@ -622,14 +622,28 @@ export const appRouter = router({
             currentStage: z.string().optional(),
             reimbursementsRequired: z.boolean().default(false),
             expectedCommission: z.number().optional(),
+            grossCost: z.number().optional(),
             finalSupplierPaymentDate: z.date().optional(),
           })
         )
       )
       .mutation(async ({ input, ctx }) => {
-        const results: Array<{ clientName: string; success: boolean; bookingId?: number; error?: string }> = [];
+        const results: Array<{ clientName: string; success: boolean; bookingId?: number; error?: string; skipped?: boolean }> = [];
+        // Load all existing bookings once for deduplication
+        const existingBookings = await getAllBookings({});
+        const existingTopdogRefs = new Set(existingBookings.map((b) => b.topdogRef).filter(Boolean));
+        const existingPtsRefs = new Set(existingBookings.map((b) => b.ptsRef).filter(Boolean));
         for (const row of input) {
           try {
+            // Deduplication: skip if topdogRef or ptsRef already exists
+            if (row.topdogRef && existingTopdogRefs.has(row.topdogRef)) {
+              results.push({ clientName: row.clientName, success: true, skipped: true, error: `duplicate_topdog_ref:${row.topdogRef}` });
+              continue;
+            }
+            if (row.ptsRef && existingPtsRefs.has(row.ptsRef)) {
+              results.push({ clientName: row.clientName, success: true, skipped: true, error: `duplicate_pts_ref:${row.ptsRef}` });
+              continue;
+            }
             // Security: validate agentId is a real agent account
             const agentUser = await getUserById(row.agentId);
             if (!agentUser || agentUser.role !== "agent") {
@@ -644,10 +658,14 @@ export const appRouter = router({
               reimbursementsRequired: row.reimbursementsRequired,
             });
             if (!booking?.id) throw new Error("Insert failed");
-            // Apply extra fields (stage, ptsRef, commission, payment date)
+            // Track new refs for within-batch deduplication
+            if (row.topdogRef) existingTopdogRefs.add(row.topdogRef);
+            if (row.ptsRef) existingPtsRefs.add(row.ptsRef);
+            // Apply extra fields (stage, ptsRef, commission, gross cost, payment date)
             const adminUpdates: Record<string, unknown> = {};
             if (row.ptsRef) adminUpdates.ptsRef = row.ptsRef;
             if (row.expectedCommission !== undefined) adminUpdates.expectedCommission = row.expectedCommission;
+            if (row.grossCost !== undefined) adminUpdates.grossCost = row.grossCost;
             if (row.finalSupplierPaymentDate) adminUpdates.finalSupplierPaymentDate = row.finalSupplierPaymentDate;
             if (Object.keys(adminUpdates).length > 0) {
               await updateBookingAdminFields(booking.id, adminUpdates as any);

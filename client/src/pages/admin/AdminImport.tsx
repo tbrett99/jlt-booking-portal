@@ -255,19 +255,31 @@ export default function AdminImport() {
               rawRow: r,
             };
           });
-        setParsedBookings(bookings);
-
-        // Auto-match agents by first name (case-insensitive)
+        // Auto-match agents by full name (case-insensitive), with fallback to first+last token matching
         const mapped: MappedBooking[] = bookings.map((b) => {
-          const token = b.agentToken.toLowerCase();
-          // Match by full name first, then by first name
-          const match = existingAgents.find((a) => {
-            const agentName = (a.name ?? "").toLowerCase();
-            const tokenLower = token.toLowerCase();
-            if (agentName === tokenLower) return true;
-            const nameParts = agentName.split(" ");
-            return nameParts.some((part) => part === tokenLower || (tokenLower.length > 2 && part.startsWith(tokenLower)));
-          });
+          const tokenLower = b.agentToken.toLowerCase().trim();
+          const tokenParts = tokenLower.split(/\s+/);
+          // 1. Exact full name match (case-insensitive)
+          let match = existingAgents.find((a) => (a.name ?? "").toLowerCase() === tokenLower);
+          if (!match) {
+            // 2. Match where all token parts appear in the agent name (handles "ANT DAIR" → "Anthony Dair" via last name)
+            match = existingAgents.find((a) => {
+              const agentLower = (a.name ?? "").toLowerCase();
+              const agentParts = agentLower.split(/\s+/);
+              // All parts of the token must match some part of the agent name (prefix match allowed for nicknames)
+              return tokenParts.every((tp) =>
+                agentParts.some((ap) => ap === tp || ap.startsWith(tp) || tp.startsWith(ap))
+              );
+            });
+          }
+          if (!match && tokenParts.length >= 2) {
+            // 3. Last name exact match + first name prefix (handles "Rachael Swinley" where last name differs)
+            const lastToken = tokenParts[tokenParts.length - 1];
+            match = existingAgents.find((a) => {
+              const agentParts = (a.name ?? "").toLowerCase().split(/\s+/);
+              return agentParts[agentParts.length - 1] === lastToken && agentParts[0].startsWith(tokenParts[0]);
+            });
+          }
           return {
             ...b,
             agentId: match?.id ?? null,

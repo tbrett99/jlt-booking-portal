@@ -40,6 +40,16 @@ vi.mock("./db", () => ({
   markNotificationsRead: vi.fn().mockResolvedValue(undefined),
   getUnreadNotificationCount: vi.fn().mockResolvedValue(0),
   upsertUser: vi.fn().mockResolvedValue(undefined),
+  bulkCreateAgentUsers: vi.fn().mockResolvedValue([]),
+  markCredentialsSent: vi.fn().mockResolvedValue(undefined),
+  updateAmendmentPipeline: vi.fn().mockResolvedValue(undefined),
+  updateRefundPipeline: vi.fn().mockResolvedValue(undefined),
+  getCommissionDueBookings: vi.fn().mockResolvedValue([]),
+  createCommissionClaim: vi.fn().mockResolvedValue({ id: 1 }),
+  getCommissionClaimsByAgent: vi.fn().mockResolvedValue([]),
+  getAllCommissionClaims: vi.fn().mockResolvedValue([]),
+  markCommissionPaid: vi.fn().mockResolvedValue(undefined),
+  getCommissionClaimByBooking: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("./email", () => ({
@@ -446,5 +456,82 @@ describe("notes @mention notifications", () => {
     expect(vi.mocked(createInAppNotification)).not.toHaveBeenCalledWith(
       expect.objectContaining({ userId: 2 })
     );
+  });
+});
+
+// ─── bulkImport tests ─────────────────────────────────────────────────────────
+describe("bookings.bulkImport", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("imports a new booking and persists grossCost", async () => {
+    const { getAllBookings, getUserById, createBooking, updateBookingAdminFields, updateBookingStage, createNote } = await import("./db");
+    vi.mocked(getAllBookings).mockResolvedValueOnce([]);
+    vi.mocked(getUserById).mockResolvedValueOnce({ id: 3, name: "Agent", email: "agent@jlt.test", role: "agent" } as any);
+    vi.mocked(createBooking).mockResolvedValueOnce({ id: 100 } as any);
+    vi.mocked(updateBookingAdminFields).mockResolvedValueOnce({ id: 100 } as any);
+    vi.mocked(updateBookingStage).mockResolvedValueOnce({ id: 100, currentStage: "Added to PTS" } as any);
+    vi.mocked(createNote).mockResolvedValueOnce({ id: 1 } as any);
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.bookings.bulkImport([
+      {
+        agentId: 3,
+        clientName: "Test Client",
+        departureDate: new Date("2026-06-01"),
+        topdogRef: "TD999",
+        ptsRef: "PTS999",
+        currentStage: "Added to PTS",
+        reimbursementsRequired: false,
+        grossCost: 1500,
+        expectedCommission: 150,
+      },
+    ]);
+    expect(result.succeeded).toBe(1);
+    expect(vi.mocked(updateBookingAdminFields)).toHaveBeenCalledWith(
+      100,
+      expect.objectContaining({ grossCost: 1500 })
+    );
+  });
+
+  it("skips duplicate booking with existing topdogRef", async () => {
+    const { getAllBookings, createBooking } = await import("./db");
+    vi.mocked(getAllBookings).mockResolvedValueOnce([
+      { id: 1, topdogRef: "TD123", ptsRef: "PTS456" } as any,
+    ]);
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.bookings.bulkImport([
+      {
+        agentId: 3,
+        clientName: "Duplicate Client",
+        departureDate: new Date("2026-06-01"),
+        topdogRef: "TD123",
+        reimbursementsRequired: false,
+      },
+    ]);
+    expect(result.total).toBe(1);
+    expect(result.results[0].skipped).toBe(true);
+    expect(vi.mocked(createBooking)).not.toHaveBeenCalled();
+  });
+
+  it("rejects booking with invalid agentId", async () => {
+    const { getAllBookings, getUserById, createBooking } = await import("./db");
+    vi.mocked(getAllBookings).mockResolvedValueOnce([]);
+    vi.mocked(getUserById).mockResolvedValueOnce(null);
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.bookings.bulkImport([
+      {
+        agentId: 9999,
+        clientName: "Ghost Client",
+        departureDate: new Date("2026-06-01"),
+        reimbursementsRequired: false,
+      },
+    ]);
+    expect(result.results[0].success).toBe(false);
+    expect(result.results[0].error).toBe("invalid_agent_id");
+    expect(vi.mocked(createBooking)).not.toHaveBeenCalled();
   });
 });

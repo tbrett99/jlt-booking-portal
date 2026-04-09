@@ -228,8 +228,11 @@
 - [x] Identify and remove duplicate agent accounts from the database (deleted 16 duplicates, 400 users remain)
 
 ## Users Page & CSV Import Fixes (Apr 9 v2)
-- [ ] Fix Users page error (investigate live error)
-- [ ] Fix CSV booking import — parsing not triggering any action
-- [ ] Verify and fix stage mapping from CSV stage names to portal stage names
-- [ ] Verify field mapping: client name, agent, departure date, PTS ref, Topdog ref, gross cost, commission
-- [ ] Add duplicate prevention (skip bookings with existing topdogRef/ptsRef)
+- [x] Fix Users page error — switched AdminDashboard from users.list to listAgents+listAdmins (no pagination shape mismatch)
+- [x] Fix CSV booking import — fixed column names (Contact Name, Lead Pax Name, lowercase 'stage'), added parseDate helper
+- [x] Verify and fix stage mapping — complete GHL→portal map (Comms Claimable, DPs, Not on TD, Urgent/Reimb., Reimb. Docs Missing, Holding Account, etc.)
+- [x] Verify field mapping: all fields mapped (Lead Pax Name, Contact Name, Departure Date, PTS Booking Reference, Topdog Booking Reference, Lead Value, Final Supplier Payment Date, reimbursements)
+- [x] Add duplicate prevention (skip bookings with existing topdogRef/ptsRef) — dedup guard in bulkImport backend
+- [x] Add grossCost to bulkImport schema and persist via updateBookingAdminFields
+- [x] Improve agent matching logic (case-insensitive, prefix/nickname matching for ANT DAIR → Anthony Dair etc.)
+- [x] Add 3 new vitest tests for bulkImport (grossCost, dedup, invalid agentId) — 27 tests total
