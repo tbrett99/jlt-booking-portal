@@ -24,10 +24,15 @@ interface AgentRow {
 interface CsvBookingRow {
   opportunityName: string;
   clientName: string;
-  agentToken: string; // extracted first name token from opportunity name
+  agentToken: string; // Contact Name from CSV (agent full name)
   closeDate: string;
   amount: string;
   stage: string;
+  ptsRef: string;
+  topdogRef: string;
+  twoTNumber: string;
+  finalSupplierPaymentDate: string;
+  reimbursementsRequired: boolean;
   rawRow: Record<string, string>;
 }
 
@@ -36,9 +41,32 @@ interface MappedBooking extends CsvBookingRow {
   agentName: string;
 }
 
-// ── Stage mapping from Salesforce → portal stages ────────────────────────────
+// ── Stage mapping from GHL pipeline stages → portal stages ──────────────────
 
 const STAGE_MAP: Record<string, string> = {
+  // Direct matches
+  "Added to PTS": "Added to PTS",
+  "New Booking": "New Booking",
+  "Query": "Query",
+  "Cancelled": "Cancelled",
+  "Holding Account": "Holding Accounts",
+  "Holding Accounts": "Holding Accounts",
+  // GHL-specific names → portal names
+  "Comms Claimable": "Commission Claimable",
+  "Comms Claimed": "Commission Claimed",
+  "Commission Claimable": "Commission Claimable",
+  "Commission Claimed": "Commission Claimed",
+  "DPs": "DP",
+  "DP": "DP",
+  "Not on TD": "Not on Topdog",
+  "Not on Topdog": "Not on Topdog",
+  "T/O Package": "New Booking",
+  "Creating own PTS file": "New Booking",
+  "Urgent/Reimb.": "Urgent/Reimb",
+  "Urgent/Reimb": "Urgent/Reimb",
+  "Reimb. Docs Missing": "Reimb Docs Missing",
+  "Reimb Docs Missing": "Reimb Docs Missing",
+  // Salesforce legacy names
   "Closed Won": "Added to PTS",
   "Proposal/Price Quote": "New Booking",
   "Needs Analysis": "New Booking",
@@ -50,7 +78,7 @@ const STAGE_MAP: Record<string, string> = {
 };
 
 function mapStage(raw: string): string {
-  return STAGE_MAP[raw] ?? "New Booking";
+  return STAGE_MAP[raw.trim()] ?? "New Booking";
 }
 
 // ── CSV parser ────────────────────────────────────────────────────────────────
@@ -86,6 +114,16 @@ function extractAgentToken(opportunityName: string): string {
 function extractClientName(opportunityName: string): string {
   const parts = opportunityName.split(" - ");
   return parts[0].trim();
+}
+
+function parseDate(raw: string): string {
+  // Accepts ISO (2026-04-03T00:00:00.000Z), MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD
+  if (!raw) return "";
+  try {
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+  } catch { /* ignore */ }
+  return raw;
 }
 
 // ── AGENTS FILE PARSER ────────────────────────────────────────────────────────
@@ -195,15 +233,25 @@ export default function AdminImport() {
           .filter((r) => r["Opportunity Name"] || r["Name"])
           .map((r) => {
             const oppName = r["Opportunity Name"] || r["Name"] || "";
-            const agentToken = extractAgentToken(oppName);
-            const clientName = extractClientName(oppName);
+            // Prefer Contact Name (agent full name) over extracting from Opportunity Name
+            const contactName = (r["Contact Name"] || "").trim();
+            const agentToken = contactName || extractAgentToken(oppName);
+            // Prefer Lead Pax Name as the client name
+            const clientName = (r["Lead Pax Name"] || extractClientName(oppName)).trim();
+            const stageRaw = (r["stage"] || r["Stage"] || "").trim();
+            const reimb = (r["Do you require any reimbursements?"] || "").toLowerCase();
             return {
               opportunityName: oppName,
               clientName,
               agentToken,
-              closeDate: r["Close Date"] || r["Departure Date"] || "",
-              amount: r["Amount"] || "",
-              stage: r["Stage"] || "",
+              closeDate: parseDate(r["Departure Date"] || r["Close Date"] || ""),
+              amount: r["Lead Value"] || r["Amount"] || "",
+              stage: stageRaw,
+              ptsRef: (r["PTS Booking Reference"] || "").trim(),
+              topdogRef: (r["Topdog Booking Reference"] || r["2T Number"] || "").trim(),
+              twoTNumber: (r["2T Number"] || "").trim(),
+              finalSupplierPaymentDate: parseDate(r["Final Supplier Payment Date"] || ""),
+              reimbursementsRequired: reimb === "yes" || reimb === "true",
               rawRow: r,
             };
           });
@@ -212,9 +260,13 @@ export default function AdminImport() {
         // Auto-match agents by first name (case-insensitive)
         const mapped: MappedBooking[] = bookings.map((b) => {
           const token = b.agentToken.toLowerCase();
+          // Match by full name first, then by first name
           const match = existingAgents.find((a) => {
-            const nameParts = (a.name ?? "").toLowerCase().split(" ");
-            return nameParts.some((part) => part === token || part.startsWith(token));
+            const agentName = (a.name ?? "").toLowerCase();
+            const tokenLower = token.toLowerCase();
+            if (agentName === tokenLower) return true;
+            const nameParts = agentName.split(" ");
+            return nameParts.some((part) => part === tokenLower || (tokenLower.length > 2 && part.startsWith(tokenLower)));
           });
           return {
             ...b,
@@ -263,13 +315,21 @@ export default function AdminImport() {
           departureDate = new Date();
         }
         const commission = b.amount ? parseFloat(b.amount.replace(/[^0-9.]/g, "")) : undefined;
+        let finalPaymentDate: Date | undefined;
+        if (b.finalSupplierPaymentDate) {
+          const d = new Date(b.finalSupplierPaymentDate);
+          if (!isNaN(d.getTime())) finalPaymentDate = d;
+        }
         return {
           agentId: b.agentId!,
           clientName: b.clientName || b.opportunityName,
           departureDate,
           currentStage: mapStage(b.stage),
-          reimbursementsRequired: false,
+          reimbursementsRequired: b.reimbursementsRequired,
           expectedCommission: commission && !isNaN(commission) ? commission : undefined,
+          ptsRef: b.ptsRef || undefined,
+          topdogRef: b.topdogRef || undefined,
+          finalSupplierPaymentDate: finalPaymentDate,
         };
       })
     );
@@ -489,9 +549,9 @@ export default function AdminImport() {
             <CardHeader>
               <CardTitle className="text-base">Import Bookings from CSV</CardTitle>
               <CardDescription>
-                Upload your Salesforce opportunities CSV. The agent name is extracted from the Opportunity Name field
-                (<code className="text-xs bg-muted px-1 rounded">Client - AgentName - ...</code>).
-                Review and correct agent assignments before importing.
+                Upload your GHL pipeline CSV export. Agent names are matched from the <strong>Contact Name</strong> column,
+                client names from <strong>Lead Pax Name</strong>. Stage, PTS ref, Topdog ref, departure date, and payment date
+                are all mapped automatically. Review and correct agent assignments before importing.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -571,7 +631,7 @@ export default function AdminImport() {
                       <thead className="bg-muted/50 sticky top-0">
                         <tr>
                           <th className="text-left px-3 py-2 font-medium">Client Name</th>
-                          <th className="text-left px-3 py-2 font-medium">Agent in CSV</th>
+                              <th className="text-left px-3 py-2 font-medium">Agent (Contact Name)</th>
                           <th className="text-left px-3 py-2 font-medium">Assigned Agent</th>
                           <th className="text-left px-3 py-2 font-medium">Stage</th>
                           <th className="text-left px-3 py-2 font-medium">Close Date</th>
@@ -605,7 +665,7 @@ export default function AdminImport() {
                               <td className="px-3 py-2">
                                 <Badge variant="outline" className="text-xs">{mapStage(b.stage)}</Badge>
                               </td>
-                              <td className="px-3 py-2 text-muted-foreground">{b.closeDate}</td>
+                              <td className="px-3 py-2 text-muted-foreground">{b.closeDate || "—"}</td>
                             </tr>
                           );
                         })}

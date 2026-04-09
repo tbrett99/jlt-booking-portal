@@ -226,3 +226,10 @@
 ## Deduplication & Users Page Fix (Apr 9)
 - [x] Fix Users page error (users.filter crash was from stale log before pagination fix; confirmed resolved)
 - [x] Identify and remove duplicate agent accounts from the database (deleted 16 duplicates, 400 users remain)
+
+## Users Page & CSV Import Fixes (Apr 9 v2)
+- [ ] Fix Users page error (investigate live error)
+- [ ] Fix CSV booking import — parsing not triggering any action
+- [ ] Verify and fix stage mapping from CSV stage names to portal stage names
+- [ ] Verify field mapping: client name, agent, departure date, PTS ref, Topdog ref, gross cost, commission
+- [ ] Add duplicate prevention (skip bookings with existing topdogRef/ptsRef)

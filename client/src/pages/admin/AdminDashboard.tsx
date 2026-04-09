@@ -37,14 +37,15 @@ const URGENT_STAGES = new Set(["Reimb Docs Missing", "Urgent/Reimb", "Query"]);
 
 export default function AdminDashboard() {
   const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery({});
-  const { data: usersData } = trpc.users.list.useQuery({ pageSize: 200 });
-  const users = usersData?.items ?? [];
+  const { data: agentList = [] } = trpc.users.listAgents.useQuery();
+  const { data: adminList = [] } = trpc.users.listAdmins.useQuery();
+  const users = [...agentList, ...adminList];
   const { data: amendments = [] } = trpc.amendments.all.useQuery();
   const { data: refunds = [] } = trpc.refunds.all.useQuery();
   const { data: notifications = [] } = trpc.notifications.myNotifications.useQuery();
   const { data: claims = [] } = trpc.commissionClaims.all.useQuery();
 
-  const agents = users.filter((u) => u.role === "agent");
+  const agents = agentList;
   const activeBookings = bookings.filter((b) => b.currentStage !== "Cancelled");
   const pendingAmendments = amendments.filter((a: any) => a.status === "pending");
   const pendingRefunds = refunds.filter((r: any) => r.pipelineStage === "New Refund Request");
