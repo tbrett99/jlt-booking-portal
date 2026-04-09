@@ -1,11 +1,22 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
-import { ENV } from './_core/env';
+import {
+  InsertUser,
+  amendments,
+  bookings,
+  cancellations,
+  inAppNotifications,
+  notificationTemplates,
+  notes,
+  pipelineHistory,
+  refundSuppliers,
+  refunds,
+  users,
+} from "../drizzle/schema";
+import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -18,75 +29,445 @@ export async function getDb() {
   return _db;
 }
 
+// ─── Users ────────────────────────────────────────────────────────────────────
+
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
+  if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
+  if (!db) return;
+
+  const values: InsertUser = { openId: user.openId };
+  const updateSet: Record<string, unknown> = {};
+
+  const textFields = ["name", "email", "loginMethod"] as const;
+  for (const field of textFields) {
+    const value = user[field];
+    if (value === undefined) continue;
+    const normalized = value ?? null;
+    values[field] = normalized;
+    updateSet[field] = normalized;
   }
 
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
+  if (user.lastSignedIn !== undefined) {
+    values.lastSignedIn = user.lastSignedIn;
+    updateSet.lastSignedIn = user.lastSignedIn;
   }
+  if (user.role !== undefined) {
+    values.role = user.role;
+    updateSet.role = user.role;
+  } else if (user.openId === ENV.ownerOpenId) {
+    values.role = "super_admin";
+    updateSet.role = "super_admin";
+  }
+
+  if (!values.lastSignedIn) values.lastSignedIn = new Date();
+  if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
+
+  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
 }
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
+  if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  return result[0];
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getAllUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(users).orderBy(desc(users.createdAt));
+}
+
+export async function createAgentUser(data: {
+  name: string;
+  email: string;
+  hashedPassword: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const openId = `agent_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  await db.insert(users).values({
+    openId,
+    name: data.name,
+    email: data.email,
+    loginMethod: "password",
+    role: "agent",
+    tempPassword: data.hashedPassword,
+    mustChangePassword: true,
+    isActive: true,
+    lastSignedIn: new Date(),
+  });
+  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  return result[0];
+}
+
+export async function updateUserRole(userId: number, role: "super_admin" | "admin" | "agent") {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(users).set({ role }).where(eq(users.id, userId));
+}
+
+export async function toggleUserActive(userId: number, isActive: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(users).set({ isActive }).where(eq(users.id, userId));
+}
+
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return result[0];
+}
+
+export async function updateUserPassword(userId: number, hashedPassword: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .update(users)
+    .set({ tempPassword: hashedPassword, mustChangePassword: false })
+    .where(eq(users.id, userId));
+}
+
+// ─── Bookings ─────────────────────────────────────────────────────────────────
+
+export async function createBooking(data: {
+  agentId: number;
+  clientName: string;
+  departureDate: Date;
+  topdogRef?: string;
+  reimbursementsRequired: boolean;
+  reimbursementDocUrl?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.insert(bookings).values({
+    ...data,
+    reimbursementDocUploadedAt: data.reimbursementDocUrl ? new Date() : undefined,
+    currentStage: "New Booking",
+  });
+  const id = (result as any)[0]?.insertId ?? (result as any).insertId;
+  return getBookingById(id);
+}
+
+export async function getBookingById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(bookings).where(eq(bookings.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getBookingsByAgent(agentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(bookings)
+    .where(eq(bookings.agentId, agentId))
+    .orderBy(desc(bookings.createdAt));
+}
+
+export async function getAllBookings(filters?: {
+  agentId?: number;
+  fromDate?: Date;
+  toDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (filters?.agentId) conditions.push(eq(bookings.agentId, filters.agentId));
+  if (filters?.fromDate) conditions.push(gte(bookings.departureDate, filters.fromDate));
+  if (filters?.toDate) conditions.push(lte(bookings.departureDate, filters.toDate));
+  const query =
+    conditions.length > 0
+      ? db
+          .select()
+          .from(bookings)
+          .where(and(...conditions))
+          .orderBy(desc(bookings.createdAt))
+      : db.select().from(bookings).orderBy(desc(bookings.createdAt));
+  return query;
+}
+
+export async function updateBookingStage(
+  bookingId: number,
+  toStage: string,
+  movedById: number
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const booking = await getBookingById(bookingId);
+  if (!booking) throw new Error("Booking not found");
+
+  await db.insert(pipelineHistory).values({
+    bookingId,
+    fromStage: booking.currentStage,
+    toStage,
+    movedById,
+  });
+
+  await db.update(bookings).set({ currentStage: toStage }).where(eq(bookings.id, bookingId));
+  return getBookingById(bookingId);
+}
+
+export async function updateBookingAdminFields(
+  bookingId: number,
+  data: {
+    ptsRef?: string;
+    topdogRef?: string;
+    finalSupplierPaymentDate?: Date | null;
+    expectedCommission?: number;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(bookings).set(data as any).where(eq(bookings.id, bookingId));
+  return getBookingById(bookingId);
+}
+
+export async function uploadReimbursementDoc(
+  bookingId: number,
+  docUrl: string,
+  isLate: boolean
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .update(bookings)
+    .set({
+      reimbursementDocUrl: docUrl,
+      reimbursementDocUploadedAt: new Date(),
+      reimbursementDocLateUpload: isLate,
+    })
+    .where(eq(bookings.id, bookingId));
+  return getBookingById(bookingId);
+}
+
+export async function getPipelineHistory(bookingId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(pipelineHistory)
+    .where(eq(pipelineHistory.bookingId, bookingId))
+    .orderBy(desc(pipelineHistory.movedAt));
+}
+
+// ─── Notes ────────────────────────────────────────────────────────────────────
+
+export async function createNote(data: {
+  bookingId: number;
+  authorId: number;
+  content: string;
+  isInternal: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(notes).values(data);
+}
+
+export async function getNotesByBooking(bookingId: number, includeInternal: boolean) {
+  const db = await getDb();
+  if (!db) return [];
+  const condition = includeInternal
+    ? eq(notes.bookingId, bookingId)
+    : and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false));
+  return db.select().from(notes).where(condition).orderBy(notes.createdAt);
+}
+
+// ─── Amendments ───────────────────────────────────────────────────────────────
+
+export async function createAmendment(data: {
+  bookingId: number;
+  agentId: number;
+  details: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(amendments).values(data);
+}
+
+export async function getAmendmentsByBooking(bookingId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(amendments)
+    .where(eq(amendments.bookingId, bookingId))
+    .orderBy(desc(amendments.createdAt));
+}
+
+export async function getAllAmendments() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(amendments).orderBy(desc(amendments.createdAt));
+}
+
+export async function actionAmendment(amendmentId: number, adminId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .update(amendments)
+    .set({ status: "actioned", actionedAt: new Date(), actionedById: adminId })
+    .where(eq(amendments.id, amendmentId));
+}
+
+// ─── Cancellations ────────────────────────────────────────────────────────────
+
+export async function createCancellation(data: { bookingId: number; agentId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(cancellations).values(data);
+}
+
+export async function getAllCancellations() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(cancellations).orderBy(desc(cancellations.confirmedAt));
+}
+
+// ─── Refunds ──────────────────────────────────────────────────────────────────
+
+export async function createRefund(data: {
+  bookingId: number;
+  agentId: number;
+  refundType: "supplier" | "customer" | "both";
+  supplierCount: number;
+  amountToClient?: number;
+  refundReason: string;
+  clientBankName?: string; // already encrypted
+  clientSortCode?: string; // already encrypted
+  clientAccountNumber?: string; // already encrypted
+  stepsTaken: string;
+  suppliers: { supplierName: string; amountDue: number }[];
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { suppliers, ...refundData } = data;
+  const result = await db.insert(refunds).values(refundData as any);
+  const refundId = (result as any)[0]?.insertId ?? (result as any).insertId;
+  if (suppliers.length > 0) {
+    await db.insert(refundSuppliers).values(
+      suppliers.map((s) => ({ refundId, supplierName: s.supplierName, amountDue: String(s.amountDue) }))
+    );
+  }
+  return refundId;
+}
+
+export async function getRefundsByBooking(bookingId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const refundRows = await db
+    .select()
+    .from(refunds)
+    .where(eq(refunds.bookingId, bookingId))
+    .orderBy(desc(refunds.createdAt));
+  const result = [];
+  for (const r of refundRows) {
+    const suppliers = await db
+      .select()
+      .from(refundSuppliers)
+      .where(eq(refundSuppliers.refundId, r.id));
+    result.push({ ...r, suppliers });
+  }
+  return result;
+}
+
+export async function getAllRefunds() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(refunds).orderBy(desc(refunds.createdAt));
+}
+
+// ─── Notification Templates ───────────────────────────────────────────────────
+
+export async function getNotificationTemplates() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(notificationTemplates).orderBy(notificationTemplates.triggerKey);
+}
+
+export async function getNotificationTemplate(triggerKey: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(notificationTemplates)
+    .where(eq(notificationTemplates.triggerKey, triggerKey))
+    .limit(1);
+  return result[0];
+}
+
+export async function upsertNotificationTemplate(data: {
+  triggerKey: string;
+  label: string;
+  subject: string;
+  bodyHtml: string;
+  recipientType: "agent" | "admin" | "both";
+  updatedById: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .insert(notificationTemplates)
+    .values(data)
+    .onDuplicateKeyUpdate({
+      set: {
+        label: data.label,
+        subject: data.subject,
+        bodyHtml: data.bodyHtml,
+        recipientType: data.recipientType,
+        updatedById: data.updatedById,
+      },
+    });
+}
+
+// ─── In-App Notifications ─────────────────────────────────────────────────────
+
+export async function createInAppNotification(data: {
+  userId: number;
+  bookingId?: number;
+  message: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(inAppNotifications).values(data);
+}
+
+export async function getInAppNotifications(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(inAppNotifications)
+    .where(eq(inAppNotifications.userId, userId))
+    .orderBy(desc(inAppNotifications.createdAt))
+    .limit(50);
+}
+
+export async function markNotificationsRead(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(inAppNotifications)
+    .set({ isRead: true })
+    .where(and(eq(inAppNotifications.userId, userId), eq(inAppNotifications.isRead, false)));
+}
+
+export async function getUnreadNotificationCount(userId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(inAppNotifications)
+    .where(and(eq(inAppNotifications.userId, userId), eq(inAppNotifications.isRead, false)));
+  return Number(result[0]?.count ?? 0);
+}

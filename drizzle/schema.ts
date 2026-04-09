@@ -1,22 +1,27 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import {
+  boolean,
+  int,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  varchar,
+  decimal,
+  json,
+} from "drizzle-orm/mysql-core";
 
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
+// ─── Users ───────────────────────────────────────────────────────────────────
+
 export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: mysqlEnum("role", ["super_admin", "admin", "agent"]).default("agent").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  tempPassword: varchar("tempPassword", { length: 255 }), // hashed temp password for new agents
+  mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -25,4 +30,158 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+// ─── Bookings ─────────────────────────────────────────────────────────────────
+
+export const bookings = mysqlTable("bookings", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: int("agentId").notNull(), // FK → users.id
+  clientName: varchar("clientName", { length: 255 }).notNull(),
+  departureDate: timestamp("departureDate").notNull(),
+  topdogRef: varchar("topdogRef", { length: 100 }),
+  reimbursementsRequired: boolean("reimbursementsRequired").default(false).notNull(),
+  reimbursementDocUrl: text("reimbursementDocUrl"), // S3 URL
+  reimbursementDocUploadedAt: timestamp("reimbursementDocUploadedAt"),
+  reimbursementDocLateUpload: boolean("reimbursementDocLateUpload").default(false).notNull(),
+  expectedCommission: decimal("expectedCommission", { precision: 10, scale: 2 }),
+  // Admin-managed fields
+  ptsRef: varchar("ptsRef", { length: 100 }),
+  finalSupplierPaymentDate: timestamp("finalSupplierPaymentDate"),
+  finalSupplierPaymentNotified: boolean("finalSupplierPaymentNotified").default(false).notNull(),
+  // Current pipeline stage
+  currentStage: varchar("currentStage", { length: 100 }).default("New Booking").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Booking = typeof bookings.$inferSelect;
+export type InsertBooking = typeof bookings.$inferInsert;
+
+// ─── Pipeline Stage History ───────────────────────────────────────────────────
+
+export const pipelineHistory = mysqlTable("pipeline_history", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId").notNull(), // FK → bookings.id
+  fromStage: varchar("fromStage", { length: 100 }),
+  toStage: varchar("toStage", { length: 100 }).notNull(),
+  movedById: int("movedById").notNull(), // FK → users.id
+  movedAt: timestamp("movedAt").defaultNow().notNull(),
+});
+
+export type PipelineHistory = typeof pipelineHistory.$inferSelect;
+
+// ─── Amendments ───────────────────────────────────────────────────────────────
+
+export const amendments = mysqlTable("amendments", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId").notNull(), // FK → bookings.id
+  agentId: int("agentId").notNull(), // FK → users.id
+  details: text("details").notNull(),
+  status: mysqlEnum("status", ["pending", "actioned"]).default("pending").notNull(),
+  actionedAt: timestamp("actionedAt"),
+  actionedById: int("actionedById"), // FK → users.id
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Amendment = typeof amendments.$inferSelect;
+
+// ─── Cancellations ────────────────────────────────────────────────────────────
+
+export const cancellations = mysqlTable("cancellations", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId").notNull(), // FK → bookings.id
+  agentId: int("agentId").notNull(), // FK → users.id
+  confirmedAt: timestamp("confirmedAt").defaultNow().notNull(),
+  processedById: int("processedById"), // FK → users.id
+  processedAt: timestamp("processedAt"),
+});
+
+export type Cancellation = typeof cancellations.$inferSelect;
+
+// ─── Refunds ──────────────────────────────────────────────────────────────────
+
+export const refunds = mysqlTable("refunds", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId").notNull(), // FK → bookings.id
+  agentId: int("agentId").notNull(), // FK → users.id
+  refundType: mysqlEnum("refundType", ["supplier", "customer", "both"]).notNull(),
+  supplierCount: int("supplierCount").notNull(),
+  amountToClient: decimal("amountToClient", { precision: 10, scale: 2 }),
+  refundReason: text("refundReason").notNull(),
+  // AES-256 encrypted fields stored as base64 strings
+  clientBankName: text("clientBankName"), // encrypted
+  clientSortCode: text("clientSortCode"), // encrypted
+  clientAccountNumber: text("clientAccountNumber"), // encrypted
+  stepsTaken: text("stepsTaken").notNull(),
+  status: mysqlEnum("status", ["pending", "processing", "completed"]).default("pending").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Refund = typeof refunds.$inferSelect;
+
+// ─── Refund Suppliers ─────────────────────────────────────────────────────────
+
+export const refundSuppliers = mysqlTable("refund_suppliers", {
+  id: int("id").autoincrement().primaryKey(),
+  refundId: int("refundId").notNull(), // FK → refunds.id
+  supplierName: varchar("supplierName", { length: 255 }).notNull(),
+  amountDue: decimal("amountDue", { precision: 10, scale: 2 }).notNull(),
+});
+
+export type RefundSupplier = typeof refundSuppliers.$inferSelect;
+
+// ─── Notes ────────────────────────────────────────────────────────────────────
+
+export const notes = mysqlTable("notes", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId").notNull(), // FK → bookings.id
+  authorId: int("authorId").notNull(), // FK → users.id
+  content: text("content").notNull(),
+  isInternal: boolean("isInternal").default(false).notNull(), // true = admin-only
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Note = typeof notes.$inferSelect;
+
+// ─── Notification Templates ───────────────────────────────────────────────────
+
+export const notificationTemplates = mysqlTable("notification_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  triggerKey: varchar("triggerKey", { length: 100 }).notNull().unique(),
+  label: varchar("label", { length: 255 }).notNull(),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  bodyHtml: text("bodyHtml").notNull(),
+  recipientType: mysqlEnum("recipientType", ["agent", "admin", "both"]).default("agent").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  updatedById: int("updatedById"), // FK → users.id
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type NotificationTemplate = typeof notificationTemplates.$inferSelect;
+
+// ─── Notification Log ─────────────────────────────────────────────────────────
+
+export const notificationLog = mysqlTable("notification_log", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId"), // FK → bookings.id (nullable for system notifications)
+  triggerKey: varchar("triggerKey", { length: 100 }).notNull(),
+  sentTo: varchar("sentTo", { length: 320 }).notNull(),
+  sentAt: timestamp("sentAt").defaultNow().notNull(),
+  success: boolean("success").default(true).notNull(),
+  errorMessage: text("errorMessage"),
+});
+
+export type NotificationLog = typeof notificationLog.$inferSelect;
+
+// ─── In-App Notifications ─────────────────────────────────────────────────────
+
+export const inAppNotifications = mysqlTable("in_app_notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK → users.id
+  bookingId: int("bookingId"), // FK → bookings.id (optional)
+  message: text("message").notNull(),
+  isRead: boolean("isRead").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type InAppNotification = typeof inAppNotifications.$inferSelect;
