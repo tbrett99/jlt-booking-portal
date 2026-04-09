@@ -4,6 +4,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { ViewModeProvider, useViewMode } from "./contexts/ViewModeContext";
 import LoginPage from "./pages/LoginPage";
 import AgentDashboard from "./pages/agent/AgentDashboard";
 import RegisterBooking from "./pages/agent/RegisterBooking";
@@ -26,12 +27,13 @@ import { Loader2 } from "lucide-react";
 
 function AuthRouter() {
   const { user, loading } = useAuth();
+  const { isAgentView } = useViewMode();
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: '#70FFE8' }}>
+          <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "#70FFE8" }}>
             <Loader2 className="animate-spin text-[#414141]" size={24} />
           </div>
           <p className="text-muted-foreground text-sm">Loading JLT Portal...</p>
@@ -55,7 +57,9 @@ function AuthRouter() {
     return <ChangePasswordPage />;
   }
 
-  // Agent routes
+  const isAdminUser = user.role === "admin" || user.role === "super_admin";
+
+  // Pure agent — always agent routes
   if (user.role === "agent") {
     return (
       <PortalLayout>
@@ -73,7 +77,26 @@ function AuthRouter() {
     );
   }
 
-  // Admin / Super Admin routes
+  // Admin / Super Admin — switch between admin view and agent view
+  if (isAdminUser && isAgentView) {
+    return (
+      <PortalLayout>
+        <Switch>
+          <Route path="/" component={AgentDashboard} />
+          <Route path="/dashboard" component={AgentDashboard} />
+          <Route path="/bookings/new" component={RegisterBooking} />
+          {/* Agent booking detail — but admin still sees admin detail for pipeline management */}
+          <Route path="/bookings/:id" component={AgentBookingDetail} />
+          <Route path="/bookings/:id/amend" component={AmendmentForm} />
+          <Route path="/bookings/:id/cancel" component={CancellationForm} />
+          <Route path="/bookings/:id/refund" component={RefundForm} />
+          <Route component={NotFound} />
+        </Switch>
+      </PortalLayout>
+    );
+  }
+
+  // Admin / Super Admin — default admin view
   return (
     <PortalLayout>
       <Switch>
@@ -96,10 +119,12 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
-        <TooltipProvider>
-          <Toaster />
-          <AuthRouter />
-        </TooltipProvider>
+        <ViewModeProvider>
+          <TooltipProvider>
+            <Toaster />
+            <AuthRouter />
+          </TooltipProvider>
+        </ViewModeProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

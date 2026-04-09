@@ -86,3 +86,6 @@
 ## Bugs
 - [x] Password change on first login refreshes the page instead of completing login and redirecting to dashboard
 - [x] "Rate exceeded" JSON parse error on login — auth.me hits Manus OAuth server for password-based sessions, triggering rate limit
+
+## New Features
+- [x] Admin/Super Admin view switcher — toggle between admin panel and agent-facing view (own bookings, register booking, notes etc.)
