@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Search, ChevronRight } from "lucide-react";
+import { Search, ChevronRight, AlertTriangle, Calendar, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
 const STAGES = [
@@ -21,6 +22,13 @@ const STAGES = [
   "Commission Claimable",
   "Commission Claimed",
   "Cancelled",
+  "Holding Accounts",
+];
+
+const STAGES_REQUIRING_PAYMENT_DATE = [
+  "Added to PTS",
+  "Commission Claimable",
+  "Commission Claimed",
   "Holding Accounts",
 ];
 
@@ -43,6 +51,9 @@ const STAGE_COLORS: Record<string, { bg: string; border: string; dot: string }> 
 export default function AdminKanban() {
   const [search, setSearch] = useState("");
   const [movingId, setMovingId] = useState<number | null>(null);
+  const [pendingMove, setPendingMove] = useState<{ bookingId: number; toStage: string } | null>(null);
+  const [guardPaymentDate, setGuardPaymentDate] = useState("");
+  const [isSavingGuard, setIsSavingGuard] = useState(false);
   const utils = trpc.useUtils();
 
   const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery({});
@@ -56,10 +67,44 @@ export default function AdminKanban() {
       setMovingId(null);
     },
   });
+  const updateDetails = trpc.bookings.updateAdminFields.useMutation();
 
-  const handleMove = async (bookingId: number, newStage: string) => {
+  const handleMove = (bookingId: number, newStage: string) => {
+    const booking = bookings.find((b) => b.id === bookingId);
+    if (
+      STAGES_REQUIRING_PAYMENT_DATE.includes(newStage) &&
+      booking &&
+      !booking.finalSupplierPaymentDate
+    ) {
+      setPendingMove({ bookingId, toStage: newStage });
+      setGuardPaymentDate("");
+      return;
+    }
     setMovingId(bookingId);
     moveStage.mutate({ bookingId, toStage: newStage });
+  };
+
+  const handleGuardSaveAndMove = async () => {
+    if (!pendingMove || !guardPaymentDate) {
+      toast.error("Please enter a Final Supplier Payment Date.");
+      return;
+    }
+    setIsSavingGuard(true);
+    try {
+      await updateDetails.mutateAsync({
+        bookingId: pendingMove.bookingId,
+        finalSupplierPaymentDate: new Date(guardPaymentDate),
+      });
+      setMovingId(pendingMove.bookingId);
+      moveStage.mutate({ bookingId: pendingMove.bookingId, toStage: pendingMove.toStage });
+      setPendingMove(null);
+      setGuardPaymentDate("");
+      toast.success("Payment date saved and booking moved.");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save payment date");
+    } finally {
+      setIsSavingGuard(false);
+    }
   };
 
   const filtered = bookings.filter((b) =>
@@ -73,6 +118,8 @@ export default function AdminKanban() {
     acc[stage] = filtered.filter((b) => b.currentStage === stage);
     return acc;
   }, {});
+
+  const pendingBooking = pendingMove ? bookings.find((b) => b.id === pendingMove.bookingId) : null;
 
   return (
     <div className="space-y-4">
@@ -122,53 +169,71 @@ export default function AdminKanban() {
 
                   {/* Cards */}
                   <div className="p-2 space-y-2 min-h-[200px] max-h-[calc(100vh-280px)] overflow-y-auto">
-                    {cols.map((booking) => (
-                      <div
-                        key={booking.id}
-                        className="bg-white rounded-lg border p-3 shadow-sm hover:shadow-md transition-shadow"
-                        style={{ borderColor: colors.border }}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-sm truncate">{booking.clientName}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {format(new Date(booking.departureDate), "dd MMM yyyy")}
-                            </p>
-                            {booking.topdogRef && (
-                              <p className="text-xs text-muted-foreground">TD: {booking.topdogRef}</p>
-                            )}
-                            {booking.ptsRef && (
-                              <p className="text-xs text-muted-foreground">PTS: {booking.ptsRef}</p>
-                            )}
-                            {booking.reimbursementsRequired && !booking.reimbursementDocUrl && (
-                              <span className="inline-block mt-1 text-xs px-1.5 py-0.5 rounded"
-                                style={{ background: '#fee2e2', color: '#991b1b' }}>
-                                Docs missing
-                              </span>
+                    {cols.map((booking) => {
+                      const missingDate = !booking.finalSupplierPaymentDate;
+                      return (
+                        <div
+                          key={booking.id}
+                          className="bg-white rounded-lg border p-3 shadow-sm hover:shadow-md transition-shadow"
+                          style={{ borderColor: colors.border }}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm truncate">{booking.clientName}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                <Calendar size={10} className="inline mr-1 opacity-60" />
+                                {format(new Date(booking.departureDate), "dd MMM yyyy")}
+                              </p>
+                              {booking.topdogRef && (
+                                <p className="text-xs text-muted-foreground">TD: {booking.topdogRef}</p>
+                              )}
+                              {booking.ptsRef && (
+                                <p className="text-xs text-muted-foreground">PTS: {booking.ptsRef}</p>
+                              )}
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {booking.reimbursementsRequired && !booking.reimbursementDocUrl && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded"
+                                    style={{ background: '#fee2e2', color: '#991b1b' }}>
+                                    Docs missing
+                                  </span>
+                                )}
+                                {missingDate && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded flex items-center gap-0.5"
+                                    style={{ background: '#fef3c7', color: '#92400e' }}>
+                                    <AlertTriangle size={9} />
+                                    No payment date
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <Link href={`/bookings/${booking.id}`}>
+                              <button className="p-1 rounded hover:bg-muted flex-shrink-0">
+                                <ChevronRight size={14} className="text-muted-foreground" />
+                              </button>
+                            </Link>
+                          </div>
+
+                          {/* Move to stage */}
+                          <div className="mt-2 pt-2 border-t" style={{ borderColor: colors.border }}>
+                            {movingId === booking.id ? (
+                              <div className="flex items-center justify-center py-1">
+                                <Loader2 size={14} className="animate-spin text-muted-foreground" />
+                              </div>
+                            ) : (
+                              <select
+                                className="w-full text-xs border rounded px-2 py-1 bg-white cursor-pointer"
+                                value={booking.currentStage}
+                                onChange={(e) => handleMove(booking.id, e.target.value)}
+                              >
+                                {STAGES.map((s) => (
+                                  <option key={s} value={s}>{s}</option>
+                                ))}
+                              </select>
                             )}
                           </div>
-                          <Link href={`/bookings/${booking.id}`}>
-                            <button className="p-1 rounded hover:bg-muted flex-shrink-0">
-                              <ChevronRight size={14} className="text-muted-foreground" />
-                            </button>
-                          </Link>
                         </div>
-
-                        {/* Move to stage */}
-                        <div className="mt-2 pt-2 border-t" style={{ borderColor: colors.border }}>
-                          <select
-                            className="w-full text-xs border rounded px-2 py-1 bg-white cursor-pointer"
-                            value={booking.currentStage}
-                            disabled={movingId === booking.id}
-                            onChange={(e) => handleMove(booking.id, e.target.value)}
-                          >
-                            {STAGES.map((s) => (
-                              <option key={s} value={s}>{s}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {cols.length === 0 && (
                       <div className="flex items-center justify-center h-20">
                         <p className="text-xs text-muted-foreground">No bookings</p>
@@ -181,6 +246,50 @@ export default function AdminKanban() {
           </div>
         </div>
       )}
+
+      {/* Payment Date Guard Dialog */}
+      <Dialog open={!!pendingMove} onOpenChange={(open) => { if (!open) { setPendingMove(null); setGuardPaymentDate(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle size={18} className="text-amber-500" />
+              Final Supplier Payment Date Required
+            </DialogTitle>
+            <DialogDescription>
+              {pendingBooking && (
+                <>
+                  <strong>{pendingBooking.clientName}</strong> cannot be moved to{" "}
+                  <strong>"{pendingMove?.toStage}"</strong> without a Final Supplier Payment Date.
+                  Enter it below to continue.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label className="text-sm">Final Supplier Payment Date</Label>
+            <Input
+              type="date"
+              value={guardPaymentDate}
+              onChange={(e) => setGuardPaymentDate(e.target.value)}
+              className="h-9"
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setPendingMove(null); setGuardPaymentDate(""); }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleGuardSaveAndMove}
+              disabled={isSavingGuard || !guardPaymentDate}
+              style={{ background: '#70FFE8', color: '#414141' }}
+            >
+              {isSavingGuard ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
+              Save &amp; Move
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

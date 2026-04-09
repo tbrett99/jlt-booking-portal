@@ -200,6 +200,12 @@ export const appRouter = router({
       const all = await getAllUsers();
       return all.map((u) => ({ ...u, tempPassword: undefined }));
     }),
+    listAdmins: protectedProcedure.query(async () => {
+      const all = await getAllUsers();
+      return all
+        .filter((u) => u.role === "admin" || u.role === "super_admin")
+        .map((u) => ({ id: u.id, name: u.name ?? "", email: u.email }));
+    }),
     create: adminProcedure
       .input(
         z.object({
@@ -368,6 +374,21 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+
+        // Guardrail: final supplier payment date required for "Added to PTS" and all later stages
+        const STAGES_REQUIRING_PAYMENT_DATE = [
+          "Added to PTS",
+          "Commission Claimable",
+          "Commission Claimed",
+          "Holding Accounts",
+        ];
+        if (STAGES_REQUIRING_PAYMENT_DATE.includes(input.toStage) && !booking.finalSupplierPaymentDate) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "A Final Supplier Payment Date must be set on this booking before it can be moved to \"" + input.toStage + "\". Please open the booking, add the date, then try again.",
+          });
+        }
+
         const updated = await updateBookingStage(input.bookingId, input.toStage, ctx.user.id);
 
         // Trigger notifications based on stage
@@ -501,6 +522,29 @@ export const appRouter = router({
           content: input.content,
           isInternal: input.isInternal,
         });
+
+        // Parse @mentions in internal notes and notify mentioned admins
+        if (input.isInternal) {
+          const mentionRegex = /@([A-Za-z][A-Za-z0-9 ]*?)(?=\s+[a-z]|\s*$|[^A-Za-z0-9 ])/g;
+          const mentions = Array.from(input.content.matchAll(mentionRegex)).map((m) => m[1].trim());
+          if (mentions.length > 0) {
+            const allUsers = await getAllUsers();
+            const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
+            for (const mentionedName of mentions) {
+              const mentioned = admins.find(
+                (u) => (u.name ?? "").toLowerCase() === mentionedName.toLowerCase()
+              );
+              if (mentioned && mentioned.id !== ctx.user.id) {
+                await createInAppNotification({
+                  userId: mentioned.id,
+                  bookingId: input.bookingId,
+                  message: `${ctx.user.name ?? "Admin"} mentioned you in a note on booking "${booking.clientName}"`,
+                  linkUrl: `/bookings/${input.bookingId}`,
+                });
+              }
+            }
+          }
+        }
 
         // Notify the other party for shared notes
         if (!input.isInternal) {

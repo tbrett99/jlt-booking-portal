@@ -1,37 +1,73 @@
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { BookOpen, Clock, CheckCircle, XCircle, AlertCircle, Bell, Plus, TrendingUp } from "lucide-react";
-import { format } from "date-fns";
+import { Input } from "@/components/ui/input";
+import {
+  BookOpen, XCircle, Bell, Plus, TrendingUp, Search,
+  Calendar, ChevronRight, AlertCircle, CheckCircle2, Clock, Sparkles
+} from "lucide-react";
+import { format, differenceInDays, isPast } from "date-fns";
 
-const STAGE_BADGE: Record<string, { label: string; color: string; bg: string }> = {
-  "New Booking": { label: "New", color: "#414141", bg: "#FFF6ED" },
-  "Creating own PTS file": { label: "Creating PTS", color: "#414141", bg: "#e0e7ff" },
-  "Not on Topdog": { label: "Not on Topdog", color: "#92400e", bg: "#fef3c7" },
-  "Query": { label: "Query", color: "#92400e", bg: "#fef9c3" },
-  "Reimb Docs Missing": { label: "Docs Missing", color: "#991b1b", bg: "#fee2e2" },
-  "Urgent/Reimb": { label: "Urgent", color: "#991b1b", bg: "#fecaca" },
-  "T/O Package": { label: "T/O Package", color: "#5b21b6", bg: "#ede9fe" },
-  "DP": { label: "DP", color: "#9d174d", bg: "#fce7f3" },
-  "Added to PTS": { label: "Added to PTS", color: "#065f46", bg: "#d1fae5" },
+const STAGE_BADGE: Record<string, { label: string; color: string; bg: string; icon?: React.ReactNode }> = {
+  "New Booking":          { label: "New",              color: "#414141", bg: "#FFF6ED" },
+  "Creating own PTS file":{ label: "Creating PTS",     color: "#414141", bg: "#e0e7ff" },
+  "Not on Topdog":        { label: "Not on Topdog",    color: "#92400e", bg: "#fef3c7" },
+  "Query":                { label: "Query — Action Needed", color: "#92400e", bg: "#fef9c3" },
+  "Reimb Docs Missing":   { label: "Docs Missing",     color: "#991b1b", bg: "#fee2e2" },
+  "Urgent/Reimb":         { label: "Urgent",           color: "#991b1b", bg: "#fecaca" },
+  "T/O Package":          { label: "T/O Package",      color: "#5b21b6", bg: "#ede9fe" },
+  "DP":                   { label: "DP",               color: "#9d174d", bg: "#fce7f3" },
+  "Added to PTS":         { label: "Added to PTS",     color: "#065f46", bg: "#d1fae5" },
   "Commission Claimable": { label: "Commission Ready", color: "#065f46", bg: "#70FFE8" },
-  "Commission Claimed": { label: "Claimed", color: "#064e3b", bg: "#a7f3d0" },
-  "Cancelled": { label: "Cancelled", color: "#6b7280", bg: "#f3f4f6" },
-  "Holding Accounts": { label: "Holding", color: "#92400e", bg: "#fef3c7" },
+  "Commission Claimed":   { label: "Commission Claimed", color: "#064e3b", bg: "#a7f3d0" },
+  "Cancelled":            { label: "Cancelled",        color: "#6b7280", bg: "#f3f4f6" },
+  "Holding Accounts":     { label: "Holding",          color: "#92400e", bg: "#fef3c7" },
 };
+
+const ATTENTION_STAGES = new Set(["Query", "Reimb Docs Missing", "Urgent/Reimb", "Not on Topdog"]);
+
+const STATUS_FILTERS = [
+  { label: "All", value: "all" },
+  { label: "Active", value: "active" },
+  { label: "Needs Action", value: "attention" },
+  { label: "Commission Ready", value: "commission" },
+  { label: "Cancelled", value: "cancelled" },
+];
 
 export default function AgentDashboard() {
   const { user } = useAuth();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
   const { data: bookings = [], isLoading } = trpc.bookings.myBookings.useQuery();
   const { data: notifications = [] } = trpc.notifications.myNotifications.useQuery();
 
   const activeBookings = bookings.filter((b) => b.currentStage !== "Cancelled");
   const cancelledBookings = bookings.filter((b) => b.currentStage === "Cancelled");
   const commissionClaimable = bookings.filter((b) => b.currentStage === "Commission Claimable");
+  const needsAttention = bookings.filter((b) => ATTENTION_STAGES.has(b.currentStage));
   const unreadNotifs = notifications.filter((n) => !n.isRead);
+
+  const filteredBookings = useMemo(() => {
+    let list = bookings;
+    if (statusFilter === "active") list = list.filter((b) => b.currentStage !== "Cancelled");
+    else if (statusFilter === "attention") list = list.filter((b) => ATTENTION_STAGES.has(b.currentStage));
+    else if (statusFilter === "commission") list = list.filter((b) => b.currentStage === "Commission Claimable");
+    else if (statusFilter === "cancelled") list = list.filter((b) => b.currentStage === "Cancelled");
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (b) =>
+          b.clientName.toLowerCase().includes(q) ||
+          (b.topdogRef ?? "").toLowerCase().includes(q) ||
+          (b.ptsRef ?? "").toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [bookings, statusFilter, search]);
 
   return (
     <div className="space-y-6">
@@ -39,87 +75,128 @@ export default function AgentDashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
-            Welcome back, {user?.name?.split(" ")[0]}
+            Welcome back, {user?.name?.split(" ")[0]} 👋
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">Here's an overview of your bookings</p>
+          <p className="text-muted-foreground text-sm mt-1">Here's everything happening with your bookings</p>
         </div>
         <Link href="/bookings/new">
-          <Button style={{ background: '#70FFE8', color: '#414141' }} className="font-semibold gap-2">
+          <Button style={{ background: '#70FFE8', color: '#414141' }} className="font-semibold gap-2 shadow-sm">
             <Plus size={16} />
             Register Booking
           </Button>
         </Link>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: '#FFF6ED' }}>
-                <BookOpen size={20} style={{ color: '#02E6D2' }} />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{activeBookings.length}</p>
-                <p className="text-xs text-muted-foreground">Active Bookings</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: '#d1fae5' }}>
-                <TrendingUp size={20} style={{ color: '#065f46' }} />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{commissionClaimable.length}</p>
-                <p className="text-xs text-muted-foreground">Commission Ready</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: '#f3f4f6' }}>
-                <XCircle size={20} style={{ color: '#6b7280' }} />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{cancelledBookings.length}</p>
-                <p className="text-xs text-muted-foreground">Cancelled</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: '#FFC3BC', opacity: 0.5 }}>
-                <Bell size={20} style={{ color: '#414141' }} />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{unreadNotifs.length}</p>
-                <p className="text-xs text-muted-foreground">Notifications</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Stats bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <button
+          onClick={() => setStatusFilter("active")}
+          className={`text-left rounded-xl p-4 border-2 transition-all ${statusFilter === "active" ? "border-[#70FFE8] shadow-sm" : "border-transparent"}`}
+          style={{ background: '#FFF6ED' }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <BookOpen size={16} style={{ color: '#02E6D2' }} />
+            <span className="text-xs text-muted-foreground font-medium">Active</span>
+          </div>
+          <p className="text-2xl font-bold" style={{ color: '#414141' }}>{activeBookings.length}</p>
+        </button>
+
+        <button
+          onClick={() => setStatusFilter("attention")}
+          className={`text-left rounded-xl p-4 border-2 transition-all ${statusFilter === "attention" ? "border-[#f97316] shadow-sm" : "border-transparent"}`}
+          style={{ background: needsAttention.length > 0 ? '#fff7ed' : '#f9fafb' }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <AlertCircle size={16} style={{ color: needsAttention.length > 0 ? '#f97316' : '#9ca3af' }} />
+            <span className="text-xs text-muted-foreground font-medium">Needs Action</span>
+          </div>
+          <p className="text-2xl font-bold" style={{ color: needsAttention.length > 0 ? '#f97316' : '#414141' }}>
+            {needsAttention.length}
+          </p>
+        </button>
+
+        <button
+          onClick={() => setStatusFilter("commission")}
+          className={`text-left rounded-xl p-4 border-2 transition-all ${statusFilter === "commission" ? "border-[#02E6D2] shadow-sm" : "border-transparent"}`}
+          style={{ background: '#ecfdf5' }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles size={16} style={{ color: '#02E6D2' }} />
+            <span className="text-xs text-muted-foreground font-medium">Commission Ready</span>
+          </div>
+          <p className="text-2xl font-bold" style={{ color: '#065f46' }}>{commissionClaimable.length}</p>
+        </button>
+
+        <button
+          onClick={() => setStatusFilter("all")}
+          className={`text-left rounded-xl p-4 border-2 transition-all ${statusFilter === "all" ? "border-[#70FFE8] shadow-sm" : "border-transparent"}`}
+          style={{ background: '#f9fafb' }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Bell size={16} style={{ color: unreadNotifs.length > 0 ? '#f97316' : '#9ca3af' }} />
+            <span className="text-xs text-muted-foreground font-medium">Notifications</span>
+          </div>
+          <p className="text-2xl font-bold" style={{ color: '#414141' }}>{unreadNotifs.length}</p>
+        </button>
       </div>
 
-      {/* Recent notifications */}
+      {/* Attention banner */}
+      {needsAttention.length > 0 && (
+        <div className="rounded-xl border-l-4 p-4 flex items-start gap-3"
+          style={{ borderLeftColor: '#f97316', background: '#fff7ed' }}>
+          <AlertCircle size={18} style={{ color: '#f97316' }} className="flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm" style={{ color: '#92400e' }}>
+              {needsAttention.length} booking{needsAttention.length > 1 ? "s" : ""} need{needsAttention.length === 1 ? "s" : ""} your attention
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: '#92400e', opacity: 0.8 }}>
+              {needsAttention.map((b) => b.clientName).join(", ")}
+            </p>
+          </div>
+          <button
+            onClick={() => setStatusFilter("attention")}
+            className="text-xs font-semibold underline flex-shrink-0"
+            style={{ color: '#92400e' }}
+          >
+            View
+          </button>
+        </div>
+      )}
+
+      {/* Commission claimable banner */}
+      {commissionClaimable.length > 0 && (
+        <div className="rounded-xl border-l-4 p-4 flex items-start gap-3"
+          style={{ borderLeftColor: '#02E6D2', background: '#ecfdf5' }}>
+          <Sparkles size={18} style={{ color: '#02E6D2' }} className="flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm" style={{ color: '#065f46' }}>
+              You have {commissionClaimable.length} commission{commissionClaimable.length > 1 ? "s" : ""} ready to claim!
+            </p>
+            <p className="text-xs mt-0.5 opacity-70" style={{ color: '#065f46' }}>
+              Go to My Commissions to submit your claim.
+            </p>
+          </div>
+          <Link href="/commissions">
+            <button className="text-xs font-semibold underline flex-shrink-0" style={{ color: '#065f46' }}>
+              Claim Now
+            </button>
+          </Link>
+        </div>
+      )}
+
+      {/* Recent unread notifications */}
       {unreadNotifs.length > 0 && (
-        <Card className="border-l-4" style={{ borderLeftColor: '#02E6D2' }}>
+        <Card className="border-l-4" style={{ borderLeftColor: '#FFC3BC' }}>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Bell size={16} style={{ color: '#02E6D2' }} />
-              Recent Notifications
+              <Bell size={16} style={{ color: '#FFC3BC' }} />
+              Unread Notifications
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {unreadNotifs.slice(0, 5).map((n) => (
+            {unreadNotifs.slice(0, 3).map((n) => (
               <div key={n.id} className="flex items-start gap-3 text-sm">
-                <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: '#70FFE8' }} />
+                <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: '#FFC3BC' }} />
                 <div className="flex-1 min-w-0">
                   <p className="text-foreground">{n.message}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -128,7 +205,7 @@ export default function AgentDashboard() {
                 </div>
                 {n.bookingId && (
                   <Link href={`/bookings/${n.bookingId}`}>
-                    <Button variant="ghost" size="sm" className="text-xs h-6 px-2">View</Button>
+                    <Button variant="ghost" size="sm" className="text-xs h-6 px-2 flex-shrink-0">View</Button>
                   </Link>
                 )}
               </div>
@@ -137,86 +214,125 @@ export default function AgentDashboard() {
         </Card>
       )}
 
-      {/* Commission Claim placeholder */}
-      <Card className="border-dashed border-2" style={{ borderColor: '#70FFE8' }}>
-        <CardContent className="py-6 text-center">
-          <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: '#70FFE8' }}>
-            <TrendingUp size={20} style={{ color: '#414141' }} />
-          </div>
-          <h3 className="font-semibold text-foreground">Commission Claims</h3>
-          <p className="text-sm text-muted-foreground mt-1">Coming soon — you'll be able to submit commission claims directly from here.</p>
-          <Badge className="mt-3" style={{ background: '#FFF6ED', color: '#414141' }}>Coming Soon</Badge>
-        </CardContent>
-      </Card>
-
-      {/* Bookings table */}
+      {/* Bookings list */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Your Bookings</CardTitle>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <CardTitle className="text-base">Your Bookings</CardTitle>
+            <div className="sm:ml-auto flex flex-col sm:flex-row gap-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search bookings..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8 h-8 text-sm w-full sm:w-52"
+                />
+              </div>
+              <div className="flex gap-1 flex-wrap">
+                {STATUS_FILTERS.map((f) => (
+                  <button
+                    key={f.value}
+                    onClick={() => setStatusFilter(f.value)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                      statusFilter === f.value
+                        ? "text-[#414141]"
+                        : "text-muted-foreground hover:bg-muted"
+                    }`}
+                    style={statusFilter === f.value ? { background: '#70FFE8' } : {}}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: '#70FFE8' }} />
             </div>
-          ) : bookings.length === 0 ? (
+          ) : filteredBookings.length === 0 ? (
             <div className="text-center py-12">
-              <BookOpen size={40} className="mx-auto text-muted-foreground mb-3" />
-              <p className="text-muted-foreground">No bookings yet.</p>
-              <Link href="/bookings/new">
-                <Button className="mt-4" style={{ background: '#70FFE8', color: '#414141' }}>Register your first booking</Button>
-              </Link>
+              <BookOpen size={40} className="mx-auto text-muted-foreground mb-3 opacity-40" />
+              {bookings.length === 0 ? (
+                <>
+                  <p className="font-medium text-foreground">No bookings yet</p>
+                  <p className="text-sm text-muted-foreground mt-1">Register your first booking to get started.</p>
+                  <Link href="/bookings/new">
+                    <Button className="mt-4" style={{ background: '#70FFE8', color: '#414141' }}>
+                      Register a Booking
+                    </Button>
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium text-foreground">No bookings match your filter</p>
+                  <button onClick={() => { setStatusFilter("all"); setSearch(""); }}
+                    className="text-sm underline mt-2" style={{ color: '#02E6D2' }}>
+                    Clear filters
+                  </button>
+                </>
+              )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="pb-3 font-semibold text-muted-foreground">Client</th>
-                    <th className="pb-3 font-semibold text-muted-foreground hidden sm:table-cell">Departure</th>
-                    <th className="pb-3 font-semibold text-muted-foreground hidden md:table-cell">Topdog Ref</th>
-                    <th className="pb-3 font-semibold text-muted-foreground">Status</th>
-                    <th className="pb-3 font-semibold text-muted-foreground hidden lg:table-cell">Commission</th>
-                    <th className="pb-3 font-semibold text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {bookings.map((booking) => {
-                    const badge = STAGE_BADGE[booking.currentStage] ?? { label: booking.currentStage, color: "#414141", bg: "#f3f4f6" };
-                    return (
-                      <tr key={booking.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="py-3 font-medium">{booking.clientName}</td>
-                        <td className="py-3 text-muted-foreground hidden sm:table-cell">
-                          {format(new Date(booking.departureDate), "dd MMM yyyy")}
-                        </td>
-                        <td className="py-3 text-muted-foreground hidden md:table-cell">
-                          {booking.topdogRef ?? <span className="text-muted-foreground/50 italic">Not set</span>}
-                        </td>
-                        <td className="py-3">
-                          <span
-                            className="inline-block px-2 py-1 rounded-full text-xs font-medium"
-                            style={{ background: badge.bg, color: badge.color }}
-                          >
-                            {badge.label}
-                          </span>
-                        </td>
-                        <td className="py-3 hidden lg:table-cell">
-                          {booking.expectedCommission ? (
-                            <span className="font-medium">£{Number(booking.expectedCommission).toFixed(2)}</span>
-                          ) : (
-                            <span className="text-muted-foreground/50 italic text-xs">Not set</span>
+            <div className="space-y-2">
+              {filteredBookings.map((booking) => {
+                const badge = STAGE_BADGE[booking.currentStage] ?? { label: booking.currentStage, color: "#414141", bg: "#f3f4f6" };
+                const daysUntilDeparture = differenceInDays(new Date(booking.departureDate), new Date());
+                const departed = isPast(new Date(booking.departureDate));
+                const needsAction = ATTENTION_STAGES.has(booking.currentStage);
+
+                return (
+                  <Link key={booking.id} href={`/bookings/${booking.id}`}>
+                    <div className={`flex items-center gap-3 p-3 rounded-xl border transition-all hover:shadow-sm cursor-pointer ${
+                      needsAction ? "border-orange-200" : "border-border hover:border-[#70FFE8]/50"
+                    }`}
+                      style={{ background: needsAction ? '#fff7ed' : 'white' }}>
+                      {/* Status dot */}
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ background: badge.bg === "#f3f4f6" ? "#9ca3af" : badge.color }} />
+
+                      {/* Main info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-sm truncate">{booking.clientName}</p>
+                          {needsAction && (
+                            <AlertCircle size={13} style={{ color: '#f97316' }} className="flex-shrink-0" />
                           )}
-                        </td>
-                        <td className="py-3">
-                          <Link href={`/bookings/${booking.id}`}>
-                            <Button variant="ghost" size="sm" className="text-xs h-7">View</Button>
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Calendar size={10} />
+                            {departed ? "Departed" : `${daysUntilDeparture}d`} — {format(new Date(booking.departureDate), "dd MMM yyyy")}
+                          </span>
+                          {booking.topdogRef && (
+                            <span className="text-xs text-muted-foreground">TD: {booking.topdogRef}</span>
+                          )}
+                          {booking.ptsRef && (
+                            <span className="text-xs text-muted-foreground">PTS: {booking.ptsRef}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right: badge + commission + arrow */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {booking.expectedCommission && (
+                          <span className="text-xs font-semibold hidden sm:block" style={{ color: '#02E6D2' }}>
+                            £{Number(booking.expectedCommission).toFixed(0)}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium hidden sm:inline-block"
+                          style={{ background: badge.bg, color: badge.color }}>
+                          {badge.label}
+                        </span>
+                        <ChevronRight size={16} className="text-muted-foreground" />
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </CardContent>

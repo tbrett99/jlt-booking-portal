@@ -306,3 +306,144 @@ describe("users.delete", () => {
     await expect(caller.users.delete({ userId: 99 })).rejects.toThrow(/FORBIDDEN|Super admin/i);
   });
 });
+
+// ─── Payment date guardrail tests ─────────────────────────────────────────────
+
+const BOOKING_WITHOUT_PAYMENT_DATE = {
+  id: 1,
+  agentId: 3,
+  clientName: "Test Client",
+  departureDate: new Date(),
+  topdogRef: null,
+  reimbursementsRequired: false,
+  reimbursementDocUrl: null,
+  reimbursementDocUploadedAt: null,
+  reimbursementDocLateUpload: false,
+  ptsRef: null,
+  finalSupplierPaymentDate: null,
+  expectedCommission: null,
+  currentStage: "New Booking",
+  isHoldingAccount: false,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const BOOKING_WITH_PAYMENT_DATE = {
+  ...BOOKING_WITHOUT_PAYMENT_DATE,
+  finalSupplierPaymentDate: new Date("2026-06-01"),
+};
+
+describe("bookings.moveStage payment date guardrail", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("rejects move to 'Added to PTS' when finalSupplierPaymentDate is null", async () => {
+    const { getBookingById } = await import("./db");
+    vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITHOUT_PAYMENT_DATE as any);
+
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.bookings.moveStage({ bookingId: 1, toStage: "Added to PTS" })
+    ).rejects.toThrow(/Final Supplier Payment Date/i);
+  });
+
+  it("rejects move to 'Commission Claimable' when finalSupplierPaymentDate is null", async () => {
+    const { getBookingById } = await import("./db");
+    vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITHOUT_PAYMENT_DATE as any);
+
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.bookings.moveStage({ bookingId: 1, toStage: "Commission Claimable" })
+    ).rejects.toThrow(/Final Supplier Payment Date/i);
+  });
+
+  it("allows move to 'Added to PTS' when finalSupplierPaymentDate is set", async () => {
+    const { getBookingById, updateBookingStage, getUserById, getNotificationTemplate, createInAppNotification, createNote } = await import("./db");
+    // Use mockResolvedValueOnce multiple times to cover all getBookingById calls in the procedure
+    vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITH_PAYMENT_DATE as any);
+    vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITH_PAYMENT_DATE as any);
+    vi.mocked(updateBookingStage).mockResolvedValueOnce({ id: 1, currentStage: "Added to PTS" } as any);
+    vi.mocked(getUserById).mockResolvedValueOnce({ id: 3, name: "Agent", email: "agent@jlt.test", role: "agent" } as any);
+    vi.mocked(getNotificationTemplate).mockResolvedValueOnce(null);
+    vi.mocked(createInAppNotification).mockResolvedValueOnce(undefined);
+    vi.mocked(createNote).mockResolvedValueOnce({ id: 99 } as any);
+
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.bookings.moveStage({ bookingId: 1, toStage: "Added to PTS" });
+    // moveStage returns the updated booking row, not {success:true}
+    expect(result).toBeTruthy();
+    expect((result as any).id).toBe(1);
+  });
+
+  it("allows move to earlier stages without finalSupplierPaymentDate", async () => {
+    const { getBookingById, updateBookingStage, getUserById, getNotificationTemplate, createInAppNotification, createNote } = await import("./db");
+    vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITHOUT_PAYMENT_DATE as any);
+    vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITHOUT_PAYMENT_DATE as any);
+    vi.mocked(updateBookingStage).mockResolvedValueOnce({ id: 1, currentStage: "Query" } as any);
+    vi.mocked(getUserById).mockResolvedValueOnce({ id: 3, name: "Agent", email: "agent@jlt.test", role: "agent" } as any);
+    vi.mocked(getNotificationTemplate).mockResolvedValueOnce(null);
+    vi.mocked(createInAppNotification).mockResolvedValueOnce(undefined);
+    vi.mocked(createNote).mockResolvedValueOnce({ id: 99 } as any);
+
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.bookings.moveStage({ bookingId: 1, toStage: "Query" });
+    // moveStage returns the updated booking row, not {success:true}
+    expect(result).toBeTruthy();
+    expect((result as any).id).toBe(1);
+  });
+});
+
+// ─── @mention notification tests ─────────────────────────────────────────────
+
+describe("notes @mention notifications", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("sends in-app notification to mentioned admin when posting internal note", async () => {
+    const { getBookingById, createNote, getAllUsers, createInAppNotification } = await import("./db");
+    vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITHOUT_PAYMENT_DATE as any);
+    vi.mocked(createNote).mockResolvedValueOnce({ id: 10 } as any);
+    vi.mocked(getAllUsers).mockResolvedValueOnce([
+      { id: 2, name: "Admin Alice", email: "alice@jlt.test", role: "admin" } as any,
+    ]);
+    vi.mocked(createInAppNotification).mockResolvedValueOnce(undefined);
+
+    const superCtx = makeCtx("super_admin"); // id=1, mentioning Admin Alice (id=2)
+    const caller = appRouter.createCaller(superCtx);
+    await caller.notes.add({ bookingId: 1, content: "Hey @Admin Alice please check this", isInternal: true });
+
+    expect(vi.mocked(createInAppNotification)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 2,
+        bookingId: 1,
+        message: expect.stringContaining("mentioned you"),
+      })
+    );
+  });
+
+  it("does not notify the author if they mention themselves", async () => {
+    const { getBookingById, createNote, getAllUsers, createInAppNotification } = await import("./db");
+    vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITHOUT_PAYMENT_DATE as any);
+    vi.mocked(createNote).mockResolvedValueOnce({ id: 11 } as any);
+    vi.mocked(createInAppNotification).mockResolvedValueOnce(undefined);
+    // Admin (id=2) mentions themselves
+    vi.mocked(getAllUsers).mockResolvedValueOnce([
+      { id: 2, name: "Test admin", email: "admin@jlt.test", role: "admin" } as any,
+    ]);
+
+    const ctx = makeCtx("admin"); // id=2, name="Test admin"
+    const caller = appRouter.createCaller(ctx);
+    await caller.notes.add({ bookingId: 1, content: "Note to self @Test admin", isInternal: true });
+
+    // createInAppNotification should NOT be called for the author mentioning themselves
+    expect(vi.mocked(createInAppNotification)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 2 })
+    );
+  });
+});

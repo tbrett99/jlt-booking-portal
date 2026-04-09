@@ -122,3 +122,34 @@
 - [x] Show client name + PTS ref + TD ref on amendment pipeline cards
 - [x] Show client name + PTS ref + TD ref on refund pipeline cards
 - [x] Bug: commission claim not appearing on admin commissions page after agent claims it (status filter was "claimed" instead of "claimed_not_paid")
+
+## Pipeline Guardrail
+- [x] Backend: reject moveStage to "Added to PTS" or any later stage if finalSupplierPaymentDate is not set
+- [x] Frontend: intercept stage change in AdminKanban, show modal prompting admin to add payment date if missing, then retry move
+- [x] Frontend: also guard the BookingDetail page stage-move control with the same check
+
+## @Mention in Internal Notes
+- [x] Backend: parse @mentions from note content after save, create in-app notification for each mentioned admin user
+- [x] Frontend: typing @ in internal note textarea shows autocomplete dropdown of admin/super_admin users
+- [x] Frontend: selecting a user inserts @Name into the note text
+- [x] Frontend: render @mentions as highlighted spans in note display
+
+## UX Polish & Agent Experience
+- [x] Agent dashboard: show full booking timeline/status history per booking, not just current stage
+- [x] Agent dashboard: add summary stats bar (total bookings, active, commission ready, paid)
+- [x] Agent booking detail: show clear visual pipeline progress indicator (which stage the booking is at)
+- [x] Agent booking detail: show expected commission prominently
+- [x] Agent booking detail: show departure date countdown
+- [x] Agent booking list: add search and filter by status
+- [x] Admin Kanban: add payment date warning badge on cards missing the date
+- [x] Admin BookingDetail: add guard dialog (modal) for missing payment date when moving stage
+- [x] Global: improve empty states with helpful CTAs
+- [x] Global: improve loading skeletons
+- [x] Global: ensure all error messages are user-friendly
+- [x] Navigation: add active state indicators to sidebar items
+- [x] Mobile: review and fix any overflow/layout issues on small screens
+
+## Future Improvements (Post-Delivery)
+- [ ] Agent dashboard: surface per-booking pipeline history timeline (stage change log) on booking detail page
+- [ ] Global: replace spinner-only loading states with skeleton components on key pages (dashboard, kanban, booking detail)
+- [ ] Mobile: full QA pass across agent/admin pages — fix any confirmed overflow/wrapping issues
