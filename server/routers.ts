@@ -29,11 +29,19 @@ import {
   getAmendmentsByBooking,
   getAllAmendments,
   actionAmendment,
+  updateAmendmentPipeline,
   createCancellation,
   getAllCancellations,
   createRefund,
   getRefundsByBooking,
   getAllRefunds,
+  updateRefundPipeline,
+  getCommissionDueBookings,
+  createCommissionClaim,
+  getCommissionClaimsByAgent,
+  getAllCommissionClaims,
+  markCommissionPaid,
+  getCommissionClaimByBooking,
   getNotificationTemplates,
   getNotificationTemplate,
   upsertNotificationTemplate,
@@ -292,6 +300,16 @@ export const appRouter = router({
             userId: admin.id,
             bookingId: booking?.id,
             message: `New booking registered by ${ctx.user.name}: ${input.clientName}`,
+            linkUrl: `/admin/bookings/${booking?.id}`,
+          });
+        }
+        // System audit note
+        if (booking?.id) {
+          await createNote({
+            bookingId: booking.id,
+            authorId: ctx.user.id,
+            content: `[System] Booking created by ${ctx.user.name ?? "Agent"}.`,
+            isInternal: false,
           });
         }
         return booking;
@@ -326,8 +344,22 @@ export const appRouter = router({
               userId: admin.id,
               bookingId: input.bookingId,
               message: `Late reimbursement document uploaded for booking #${input.bookingId} (${booking.clientName}) by ${ctx.user.name}`,
+              linkUrl: `/admin/bookings/${input.bookingId}`,
             });
           }
+          await createNote({
+            bookingId: input.bookingId,
+            authorId: ctx.user.id,
+            content: `[System] Reimbursement document uploaded late by ${ctx.user.name ?? "Agent"}.`,
+            isInternal: true,
+          });
+        } else {
+          await createNote({
+            bookingId: input.bookingId,
+            authorId: ctx.user.id,
+            content: `[System] Reimbursement document uploaded by ${ctx.user.name ?? "Agent"}.`,
+            isInternal: false,
+          });
         }
         return { success: true, isLate };
       }),
@@ -362,8 +394,16 @@ export const appRouter = router({
             userId: booking.agentId,
             bookingId: booking.id,
             message: `Your booking "${booking.clientName}" has moved to: ${input.toStage}`,
+            linkUrl: `/bookings/${booking.id}`,
           });
         }
+        // System audit note for stage change
+        await createNote({
+          bookingId: booking.id,
+          authorId: ctx.user.id,
+          content: `[System] Booking stage moved from "${booking.currentStage}" to "${input.toStage}" by ${ctx.user.name ?? "Admin"}.`,
+          isInternal: true,
+        });
         return updated;
       }),
     updateAdminFields: adminProcedure
@@ -379,16 +419,31 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const { bookingId, ...data } = input;
         const result = await updateBookingAdminFields(bookingId, data as any);
-        // Notify all admins when final supplier payment date is set
-        if (input.finalSupplierPaymentDate) {
-          const booking = await getBookingById(bookingId);
-          if (booking) {
-            const dateStr = input.finalSupplierPaymentDate.toLocaleDateString('en-GB');
-            // Notify the acting admin as an internal reminder
-            await createInAppNotification({
-              userId: ctx.user.id,
+        const booking = await getBookingById(bookingId);
+        if (booking) {
+          const changes: string[] = [];
+          if (input.ptsRef !== undefined) changes.push(`PTS Ref set to "${input.ptsRef}"`);
+          if (input.topdogRef !== undefined) changes.push(`Topdog Ref set to "${input.topdogRef}"`);
+          if (input.finalSupplierPaymentDate !== undefined) {
+            const dateStr = input.finalSupplierPaymentDate
+              ? input.finalSupplierPaymentDate.toLocaleDateString('en-GB')
+              : 'cleared';
+            changes.push(`Final Supplier Payment Date set to ${dateStr}`);
+            if (input.finalSupplierPaymentDate) {
+              await createInAppNotification({
+                userId: ctx.user.id,
+                bookingId,
+                message: `Reminder: Final supplier payment date set to ${dateStr} for booking "${booking.clientName}"`,
+              });
+            }
+          }
+          if (input.expectedCommission !== undefined) changes.push(`Expected Commission set to £${input.expectedCommission}`);
+          if (changes.length > 0) {
+            await createNote({
               bookingId,
-              message: `Reminder: Final supplier payment date set to ${dateStr} for booking "${booking.clientName}"`,
+              authorId: ctx.user.id,
+              content: `[System] Admin updated booking details: ${changes.join('; ')}.`,
+              isInternal: true,
             });
           }
         }
@@ -484,6 +539,13 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         }
         await createAmendment({ ...input, agentId: ctx.user.id });
+        // System audit note
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Amendment submitted by ${ctx.user.name ?? "Agent"}: ${input.details.slice(0, 120)}.`,
+          isInternal: false,
+        });
         // Notify admins
         const allUsers = await getAllUsers();
         const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
@@ -492,6 +554,7 @@ export const appRouter = router({
             userId: admin.id,
             bookingId: input.bookingId,
             message: `Amendment submitted for booking "${booking.clientName}" by ${ctx.user.name}`,
+            linkUrl: `/admin/bookings/${input.bookingId}`,
           });
         }
         return { success: true };
@@ -524,16 +587,34 @@ export const appRouter = router({
             userId: booking.agentId,
             bookingId: booking.id,
             message: `Your amendment for booking "${booking.clientName}" has been actioned`,
+            linkUrl: `/bookings/${booking.id}`,
+          });
+          // System audit note
+          await createNote({
+            bookingId: booking.id,
+            authorId: ctx.user.id,
+            content: `[System] Amendment actioned by ${ctx.user.name ?? "Admin"}.`,
+            isInternal: true,
           });
         }
         return { success: true };
+      }),
+    updatePipeline: adminProcedure
+      .input(z.object({
+        amendmentId: z.number(),
+        pipelineStage: z.enum(["To Do", "In Progress", "Actioned"]).optional(),
+        assignedToId: z.number().nullable().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { amendmentId, ...data } = input;
+        return updateAmendmentPipeline(amendmentId, data as any);
       }),
   }),
 
   // ── Cancellations ─────────────────────────────────────────────────────────
   cancellations: router({
     submit: protectedProcedure
-      .input(z.object({ bookingId: z.number() }))
+      .input(z.object({ bookingId: z.number(), reason: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
@@ -542,6 +623,14 @@ export const appRouter = router({
         }
         await createCancellation({ bookingId: input.bookingId, agentId: ctx.user.id });
         await updateBookingStage(input.bookingId, "Cancelled", ctx.user.id);
+        // System audit note
+        const reasonText = input.reason ? ` Reason: ${input.reason}` : "";
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Cancellation submitted by ${ctx.user.name ?? "Agent"}.${reasonText}`,
+          isInternal: false,
+        });
         // Notify admins
         const allUsers = await getAllUsers();
         const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
@@ -550,6 +639,7 @@ export const appRouter = router({
             userId: admin.id,
             bookingId: input.bookingId,
             message: `Cancellation requested for booking "${booking.clientName}" by ${ctx.user.name}`,
+            linkUrl: `/admin/bookings/${input.bookingId}`,
           });
         }
         return { success: true };
@@ -599,6 +689,13 @@ export const appRouter = router({
             message: `Refund request submitted for booking "${booking.clientName}" by ${ctx.user.name}`,
           });
         }
+        // System audit note
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Refund request submitted by ${ctx.user.name ?? "Agent"} (type: ${input.refundType}, reason: ${input.refundReason.slice(0, 80)}).`,
+          isInternal: false,
+        });
         return { success: true, refundId };
       }),
     byBooking: adminProcedure
@@ -614,6 +711,40 @@ export const appRouter = router({
         }));
       }),
     all: adminProcedure.query(async () => getAllRefunds()),
+    updatePipeline: adminProcedure
+      .input(z.object({
+        refundId: z.number(),
+        pipelineStage: z.enum(["New Refund Request", "Acknowledged by Supplier", "Refund Sent to PTS", "Refund Received in JLT", "Refund Processed"]).optional(),
+        assignedToId: z.number().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { refundId, ...data } = input;
+        const updated = await updateRefundPipeline(refundId, data as any);
+        // System audit note if stage changed
+        if (data.pipelineStage && updated?.bookingId) {
+          await createNote({
+            bookingId: updated.bookingId,
+            authorId: ctx.user.id,
+            content: `[System] Refund stage moved to "${data.pipelineStage}" by ${ctx.user.name ?? "Admin"}.`,
+            isInternal: true,
+          });
+        }
+        return updated;
+      }),
+  }),
+
+  // ── Commission Due ────────────────────────────────────────────────────────
+  commissionDue: router({
+    list: adminProcedure.query(async () => {
+      const dueBookings = await getCommissionDueBookings();
+      const allUsers = await getAllUsers();
+      const userMap = new Map(allUsers.map((u) => [u.id, u]));
+      return dueBookings.map((b) => ({
+        ...b,
+        agentName: userMap.get(b.agentId)?.name ?? "Unknown",
+        agentEmail: userMap.get(b.agentId)?.email ?? "",
+      }));
+    }),
   }),
 
   // ── Notifications ─────────────────────────────────────────────────────────
@@ -645,6 +776,113 @@ export const appRouter = router({
           return { success: true };
         }),
     }),
+  }),
+
+  // ── Commission Claims ──────────────────────────────────────────────────────
+  commissionClaims: router({
+    // Agent: claim commission on a claimable booking
+    claim: protectedProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        if (booking.currentStage !== "Commission Claimable") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Booking is not in Commission Claimable stage" });
+        }
+        const claim = await createCommissionClaim(input.bookingId, ctx.user.id);
+        // Move booking to Commission Claimed
+        await updateBookingStage(input.bookingId, "Commission Claimed", ctx.user.id);
+        // System audit note
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Commission claimed by ${ctx.user.name ?? "Agent"}.`,
+          isInternal: false,
+        });
+        // Notify admins
+        const allUsers = await getAllUsers();
+        const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
+        for (const admin of admins) {
+          await createInAppNotification({
+            userId: admin.id,
+            bookingId: input.bookingId,
+            message: `Commission claimed by ${ctx.user.name} for booking "${booking.clientName}"`,
+            linkUrl: `/admin/bookings/${input.bookingId}`,
+          });
+        }
+        return claim;
+      }),
+
+    // Agent: get own commission claims with booking info
+    myCommissions: protectedProcedure.query(async ({ ctx }) => {
+      const agentBookings = await getBookingsByAgent(ctx.user.id);
+      const claims = await getCommissionClaimsByAgent(ctx.user.id);
+      const claimMap = new Map(claims.map((c) => [c.bookingId, c]));
+      return agentBookings.map((b) => ({
+        ...b,
+        claim: claimMap.get(b.id) ?? null,
+      }));
+    }),
+
+    // Admin: get all commission claims with booking and agent info
+    all: adminProcedure.query(async () => {
+      const claims = await getAllCommissionClaims();
+      const allUsers = await getAllUsers();
+      const allBookingsRaw = await getAllBookings();
+      const userMap = new Map(allUsers.map((u) => [u.id, u]));
+      const bookingMap = new Map(allBookingsRaw.map((b) => [b.id, b]));
+      return claims.map((c) => ({
+        ...c,
+        agentName: userMap.get(c.agentId)?.name ?? "Unknown",
+        agentEmail: userMap.get(c.agentId)?.email ?? "",
+        booking: bookingMap.get(c.bookingId) ?? null,
+        paidByName: c.paidById ? (userMap.get(c.paidById)?.name ?? "Admin") : null,
+      }));
+    }),
+
+    // Admin: mark one or more claims as paid
+    markPaid: adminProcedure
+      .input(z.object({ claimIds: z.array(z.number()).min(1) }))
+      .mutation(async ({ input, ctx }) => {
+        await markCommissionPaid(input.claimIds, ctx.user.id);
+        // Notify each affected agent
+        const allClaims = await getAllCommissionClaims();
+        for (const claimId of input.claimIds) {
+          const claim = allClaims.find((c) => c.id === claimId);
+          if (!claim) continue;
+          const booking = await getBookingById(claim.bookingId);
+          if (!booking) continue;
+          const agent = await getUserById(claim.agentId);
+          // In-app notification
+          await createInAppNotification({
+            userId: claim.agentId,
+            bookingId: claim.bookingId,
+            message: `Your commission for booking "${booking.clientName}" has been marked as paid.`,
+            linkUrl: `/commissions`,
+          });
+          // Email notification
+          if (agent?.email) {
+            await sendNotificationEmail({
+              triggerKey: "commission_paid",
+              toEmail: agent.email,
+              toName: agent.name ?? "Agent",
+              variables: { clientName: booking.clientName },
+              bookingId: booking.id,
+            });
+          }
+          // System audit note
+          await createNote({
+            bookingId: claim.bookingId,
+            authorId: ctx.user.id,
+            content: `[System] Commission marked as paid by ${ctx.user.name ?? "Admin"}.`,
+            isInternal: false,
+          });
+        }
+        return { success: true };
+      }),
   }),
 
   // ── Reporting ─────────────────────────────────────────────────────────────

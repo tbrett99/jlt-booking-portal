@@ -5,6 +5,7 @@ import {
   amendments,
   bookings,
   cancellations,
+  commissionClaims,
   inAppNotifications,
   notificationTemplates,
   notes,
@@ -326,6 +327,20 @@ export async function actionAmendment(amendmentId: number, adminId: number) {
     .where(eq(amendments.id, amendmentId));
 }
 
+export async function updateAmendmentPipeline(amendmentId: number, data: {
+  pipelineStage?: "To Do" | "In Progress" | "Actioned";
+  assignedToId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const updateData: Record<string, unknown> = {};
+  if (data.pipelineStage !== undefined) updateData.pipelineStage = data.pipelineStage;
+  if (data.assignedToId !== undefined) updateData.assignedToId = data.assignedToId;
+  await db.update(amendments).set(updateData as any).where(eq(amendments.id, amendmentId));
+  const result = await db.select().from(amendments).where(eq(amendments.id, amendmentId)).limit(1);
+  return result[0];
+}
+
 // ─── Cancellations ────────────────────────────────────────────────────────────
 
 export async function createCancellation(data: { bookingId: number; agentId: number }) {
@@ -393,6 +408,37 @@ export async function getAllRefunds() {
   return db.select().from(refunds).orderBy(desc(refunds.createdAt));
 }
 
+export async function updateRefundPipeline(refundId: number, data: {
+  pipelineStage?: "New Refund Request" | "Acknowledged by Supplier" | "Refund Sent to PTS" | "Refund Received in JLT" | "Refund Processed";
+  assignedToId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const updateData: Record<string, unknown> = {};
+  if (data.pipelineStage !== undefined) updateData.pipelineStage = data.pipelineStage;
+  if (data.assignedToId !== undefined) updateData.assignedToId = data.assignedToId;
+  await db.update(refunds).set(updateData as any).where(eq(refunds.id, refundId));
+  const result = await db.select().from(refunds).where(eq(refunds.id, refundId)).limit(1);
+  return result[0];
+}
+
+// ─── Commission Due ───────────────────────────────────────────────────────────
+
+export async function getCommissionDueBookings() {
+  const db = await getDb();
+  if (!db) return [];
+  const now = new Date();
+  // Bookings where finalSupplierPaymentDate has passed and stage is not terminal
+  const terminalStages = ["Commission Claimable", "Commission Claimed", "Cancelled"];
+  const rows = await db.select().from(bookings).orderBy(desc(bookings.finalSupplierPaymentDate));
+  return rows.filter(
+    (b) =>
+      b.finalSupplierPaymentDate &&
+      b.finalSupplierPaymentDate <= now &&
+      !terminalStages.includes(b.currentStage)
+  );
+}
+
 // ─── Notification Templates ───────────────────────────────────────────────────
 
 export async function getNotificationTemplates() {
@@ -442,6 +488,7 @@ export async function createInAppNotification(data: {
   userId: number;
   bookingId?: number;
   message: string;
+  linkUrl?: string;
 }) {
   const db = await getDb();
   if (!db) return;
@@ -476,4 +523,67 @@ export async function getUnreadNotificationCount(userId: number) {
     .from(inAppNotifications)
     .where(and(eq(inAppNotifications.userId, userId), eq(inAppNotifications.isRead, false)));
   return Number(result[0]?.count ?? 0);
+}
+
+// ─── Commission Claims ────────────────────────────────────────────────────────
+
+export async function createCommissionClaim(bookingId: number, agentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  // Prevent duplicate claims
+  const existing = await db
+    .select()
+    .from(commissionClaims)
+    .where(eq(commissionClaims.bookingId, bookingId))
+    .limit(1);
+  if (existing.length > 0) return existing[0];
+  await db.insert(commissionClaims).values({ bookingId, agentId });
+  const result = await db
+    .select()
+    .from(commissionClaims)
+    .where(eq(commissionClaims.bookingId, bookingId))
+    .limit(1);
+  return result[0];
+}
+
+export async function getCommissionClaimsByAgent(agentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(commissionClaims)
+    .where(eq(commissionClaims.agentId, agentId))
+    .orderBy(desc(commissionClaims.claimedAt));
+}
+
+export async function getAllCommissionClaims() {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(commissionClaims)
+    .orderBy(desc(commissionClaims.claimedAt));
+}
+
+export async function markCommissionPaid(claimIds: number[], paidById: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const now = new Date();
+  for (const id of claimIds) {
+    await db
+      .update(commissionClaims)
+      .set({ status: "paid", paidAt: now, paidById })
+      .where(eq(commissionClaims.id, id));
+  }
+}
+
+export async function getCommissionClaimByBooking(bookingId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(commissionClaims)
+    .where(eq(commissionClaims.bookingId, bookingId))
+    .limit(1);
+  return result[0];
 }

@@ -18,8 +18,15 @@ import AdminBookingDetail from "./pages/admin/AdminBookingDetail";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminAmendments from "./pages/admin/AdminAmendments";
 import AdminRefunds from "./pages/admin/AdminRefunds";
+import AdminAmendmentKanban from "./pages/admin/AdminAmendmentKanban";
+import AdminRefundKanban from "./pages/admin/AdminRefundKanban";
+import CommissionDue from "./pages/admin/CommissionDue";
 import AdminReports from "./pages/admin/AdminReports";
 import NotificationTemplates from "./pages/admin/NotificationTemplates";
+import AgentCommissions from "./pages/agent/AgentCommissions";
+import AgentCancelBooking from "./pages/agent/AgentCancelBooking";
+import AgentRequestAmendment from "./pages/agent/AgentRequestAmendment";
+import AdminCommissions from "./pages/admin/AdminCommissions";
 import PortalLayout from "./components/PortalLayout";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import { useAuth } from "./_core/hooks/useAuth";
@@ -71,6 +78,9 @@ function AuthRouter() {
           <Route path="/bookings/:id/amend" component={AmendmentForm} />
           <Route path="/bookings/:id/cancel" component={CancellationForm} />
           <Route path="/bookings/:id/refund" component={RefundForm} />
+          <Route path="/commissions" component={AgentCommissions} />
+          <Route path="/cancel-booking" component={AgentCancelBooking} />
+          <Route path="/request-amendment" component={AgentRequestAmendment} />
           <Route component={NotFound} />
         </Switch>
       </PortalLayout>
@@ -90,6 +100,9 @@ function AuthRouter() {
           <Route path="/bookings/:id/amend" component={AmendmentForm} />
           <Route path="/bookings/:id/cancel" component={CancellationForm} />
           <Route path="/bookings/:id/refund" component={RefundForm} />
+          <Route path="/commissions" component={AgentCommissions} />
+          <Route path="/cancel-booking" component={AgentCancelBooking} />
+          <Route path="/request-amendment" component={AgentRequestAmendment} />
           <Route component={NotFound} />
         </Switch>
       </PortalLayout>
@@ -106,7 +119,11 @@ function AuthRouter() {
         <Route path="/bookings/:id" component={AdminBookingDetail} />
         <Route path="/users" component={AdminUsers} />
         <Route path="/amendments" component={AdminAmendments} />
+        <Route path="/amendments/pipeline" component={AdminAmendmentKanban} />
         <Route path="/refunds" component={AdminRefunds} />
+        <Route path="/refunds/pipeline" component={AdminRefundKanban} />
+        <Route path="/commission-due" component={CommissionDue} />
+        <Route path="/commissions-admin" component={AdminCommissions} />
         <Route path="/reports" component={AdminReports} />
         <Route path="/notification-templates" component={NotificationTemplates} />
         <Route component={NotFound} />

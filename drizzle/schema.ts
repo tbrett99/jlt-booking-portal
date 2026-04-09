@@ -76,10 +76,13 @@ export const amendments = mysqlTable("amendments", {
   bookingId: int("bookingId").notNull(), // FK → bookings.id
   agentId: int("agentId").notNull(), // FK → users.id
   details: text("details").notNull(),
+  pipelineStage: mysqlEnum("pipelineStage", ["To Do", "In Progress", "Actioned"]).default("To Do").notNull(),
+  assignedToId: int("assignedToId"), // FK → users.id
   status: mysqlEnum("status", ["pending", "actioned"]).default("pending").notNull(),
   actionedAt: timestamp("actionedAt"),
   actionedById: int("actionedById"), // FK → users.id
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type Amendment = typeof amendments.$inferSelect;
@@ -112,6 +115,8 @@ export const refunds = mysqlTable("refunds", {
   clientSortCode: text("clientSortCode"), // encrypted
   clientAccountNumber: text("clientAccountNumber"), // encrypted
   stepsTaken: text("stepsTaken").notNull(),
+  pipelineStage: mysqlEnum("pipelineStage", ["New Refund Request", "Acknowledged by Supplier", "Refund Sent to PTS", "Refund Received in JLT", "Refund Processed"]).default("New Refund Request").notNull(),
+  assignedToId: int("assignedToId"), // FK → users.id
   status: mysqlEnum("status", ["pending", "processing", "completed"]).default("pending").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -180,8 +185,26 @@ export const inAppNotifications = mysqlTable("in_app_notifications", {
   userId: int("userId").notNull(), // FK → users.id
   bookingId: int("bookingId"), // FK → bookings.id (optional)
   message: text("message").notNull(),
+  linkUrl: varchar("linkUrl", { length: 500 }), // optional deep link
   isRead: boolean("isRead").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export type InAppNotification = typeof inAppNotifications.$inferSelect;
+
+// ─── Commission Claims ────────────────────────────────────────────────────────
+
+export const commissionClaims = mysqlTable("commission_claims", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId").notNull(), // FK → bookings.id
+  agentId: int("agentId").notNull(), // FK → users.id
+  claimedAt: timestamp("claimedAt").defaultNow().notNull(),
+  status: mysqlEnum("status", ["claimed_not_paid", "paid"]).default("claimed_not_paid").notNull(),
+  paidAt: timestamp("paidAt"),
+  paidById: int("paidById"), // FK → users.id (admin who marked as paid)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CommissionClaim = typeof commissionClaims.$inferSelect;
+export type InsertCommissionClaim = typeof commissionClaims.$inferInsert;

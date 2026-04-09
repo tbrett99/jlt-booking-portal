@@ -92,3 +92,20 @@
 - [x] Fix SMTP port to 465 (SSL, verified working)
 - [x] Add delete user feature for admin/super admin (Super Admin only, with confirmation dialog)
 - [x] Create test agent account (testagent@thejltgroup.co.uk)
+- [x] Fix notifications bell — full dropdown panel with unread badge, mark-all-read, deep links to bookings
+- [x] System-generated audit notes on all booking actions (booking created, stage moved, amendment submitted, refund submitted, cancellation submitted, admin fields updated, reimbursement doc uploaded)
+- [x] Amendment pipeline Kanban with stages: To Do / In Progress / Actioned, with assignee field and assignee visible on amendment dashboard
+- [x] Refund pipeline Kanban with stages: New Refund Request / Acknowledged by Supplier / Refund Sent to PTS / Refund Received in JLT / Refund Processed, with assignee field
+- [x] Commission Due tab: shows all bookings where finalSupplierPaymentDate has passed and stage is not yet Commission Claimable/Claimed/Cancelled
+
+## Agent Flow & Commission Workflow
+- [x] Fix: add system audit note in bookings.updateAdminFields mutation
+- [x] Fix: verify getCommissionDueBookings excludes Commission Claimable/Claimed/Cancelled stages
+- [x] DB schema: commission_claims table (bookingId, agentId, claimedAt, status: pending/paid, paidAt, paidById)
+- [x] Agent sidebar: Cancel Booking shortcut with booking search & select
+- [x] Agent sidebar: Request Amendment shortcut with booking search & select
+- [x] Agent Commission page: sections for Not Ready / Claimable / Claimed Not Paid / Paid
+- [x] Agent Commission page: Claim Commission button on claimable bookings
+- [x] Admin Commission page: view all claims (pending + paid), bulk mark-as-paid with checkbox selection
+- [x] Admin Commission page: individual mark-as-paid per booking
+- [x] Notifications: agent notified when commission marked as paid by admin
