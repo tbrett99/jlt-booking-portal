@@ -1,11 +1,24 @@
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Loader2, CheckCircle, Clock, Banknote, Lock } from "lucide-react";
+
+type BookingType = "lapland" | "cruise" | "disney" | "other";
+
+const BOOKING_TYPE_LABELS: Record<BookingType, string> = {
+  lapland: "🎅 Lapland",
+  cruise: "🚢 Cruise",
+  disney: "🏰 Disney",
+  other: "✈️ Other",
+};
 
 type BookingWithClaim = {
   id: number;
@@ -18,15 +31,22 @@ type BookingWithClaim = {
     status: string;
     claimedAt: Date | string;
     paidAt: Date | string | null;
+    bookingType?: string | null;
   } | null;
 };
 
 export default function AgentCommissions() {
   const utils = trpc.useUtils();
   const { data: bookings, isLoading } = trpc.commissionClaims.myCommissions.useQuery();
+
+  // Booking type dialog state
+  const [claimTarget, setClaimTarget] = useState<BookingWithClaim | null>(null);
+  const [selectedType, setSelectedType] = useState<BookingType>("other");
+
   const claimMutation = trpc.commissionClaims.claim.useMutation({
     onSuccess: () => {
       toast.success("Commission claimed successfully!");
+      setClaimTarget(null);
       utils.commissionClaims.myCommissions.invalidate();
     },
     onError: (err) => toast.error(err.message),
@@ -50,12 +70,22 @@ export default function AgentCommissions() {
       b.currentStage !== "Cancelled"
   );
   const claimable = all.filter((b) => !b.claim && b.currentStage === "Commission Claimable");
-  const claimedNotPaid = all.filter((b) => b.claim && b.claim.status === "claimed");
+  const claimedNotPaid = all.filter((b) => b.claim && b.claim.status === "claimed_not_paid");
   const paid = all.filter((b) => b.claim && b.claim.status === "paid");
 
   const formatDate = (d: Date | string | null | undefined) => {
     if (!d) return "—";
     return format(new Date(d), "dd/MM/yyyy");
+  };
+
+  const openClaimDialog = (booking: BookingWithClaim) => {
+    setSelectedType("other");
+    setClaimTarget(booking);
+  };
+
+  const submitClaim = () => {
+    if (!claimTarget) return;
+    claimMutation.mutate({ bookingId: claimTarget.id, bookingType: selectedType });
   };
 
   const BookingRow = ({
@@ -77,6 +107,11 @@ export default function AgentCommissions() {
         {booking.claim?.claimedAt && (
           <p className="text-xs text-muted-foreground">Claimed: {formatDate(booking.claim.claimedAt)}</p>
         )}
+        {booking.claim?.bookingType && (
+          <p className="text-xs text-muted-foreground">
+            Type: {BOOKING_TYPE_LABELS[booking.claim.bookingType as BookingType] ?? booking.claim.bookingType}
+          </p>
+        )}
         {booking.claim?.paidAt && (
           <p className="text-xs text-emerald-600 font-medium">Paid: {formatDate(booking.claim.paidAt)}</p>
         )}
@@ -88,7 +123,7 @@ export default function AgentCommissions() {
             className={
               booking.claim?.status === "paid"
                 ? "border-emerald-500 text-emerald-600"
-                : booking.claim?.status === "claimed"
+                : booking.claim?.status === "claimed_not_paid"
                 ? "border-amber-500 text-amber-600"
                 : booking.currentStage === "Commission Claimable"
                 ? "border-[#02E6D2] text-[#02E6D2]"
@@ -97,7 +132,7 @@ export default function AgentCommissions() {
           >
             {booking.claim?.status === "paid"
               ? "Paid"
-              : booking.claim?.status === "claimed"
+              : booking.claim?.status === "claimed_not_paid"
               ? "Claimed – Awaiting Payment"
               : booking.currentStage}
           </Badge>
@@ -106,10 +141,9 @@ export default function AgentCommissions() {
           <Button
             size="sm"
             className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#414141] font-semibold"
-            onClick={() => claimMutation.mutate({ bookingId: booking.id })}
-            disabled={claimMutation.isPending}
+            onClick={() => openClaimDialog(booking)}
           >
-            {claimMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Claim Commission"}
+            Claim Commission
           </Button>
         )}
       </div>
@@ -181,7 +215,14 @@ export default function AgentCommissions() {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="awaiting">Awaiting Payment</TabsTrigger>
+          <TabsTrigger value="awaiting">
+            Awaiting Payment
+            {claimedNotPaid.length > 0 && (
+              <span className="ml-2 bg-amber-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                {claimedNotPaid.length}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="paid">Paid</TabsTrigger>
           <TabsTrigger value="not-ready">Not Ready</TabsTrigger>
         </TabsList>
@@ -254,6 +295,59 @@ export default function AgentCommissions() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Booking Type Dialog */}
+      <Dialog open={!!claimTarget} onOpenChange={(open) => { if (!open) setClaimTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Claim Commission</DialogTitle>
+            <DialogDescription>
+              Please select the booking type for <strong>{claimTarget?.clientName}</strong> before submitting your claim.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            <RadioGroup
+              value={selectedType}
+              onValueChange={(v) => setSelectedType(v as BookingType)}
+              className="grid grid-cols-2 gap-3"
+            >
+              {(Object.entries(BOOKING_TYPE_LABELS) as [BookingType, string][]).map(([value, label]) => (
+                <div key={value} className="relative">
+                  <RadioGroupItem value={value} id={`type-${value}`} className="sr-only" />
+                  <Label
+                    htmlFor={`type-${value}`}
+                    className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 cursor-pointer text-sm font-medium transition-all ${
+                      selectedType === value
+                        ? "border-[#02E6D2] bg-[#02E6D2]/10 text-foreground"
+                        : "border-border bg-card text-muted-foreground hover:border-[#70FFE8]"
+                    }`}
+                  >
+                    {label}
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClaimTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#414141] font-semibold"
+              onClick={submitClaim}
+              disabled={claimMutation.isPending}
+            >
+              {claimMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Submitting...</>
+              ) : (
+                "Submit Claim"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

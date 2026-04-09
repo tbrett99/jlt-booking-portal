@@ -1,0 +1,1 @@
+ALTER TABLE `commission_claims` ADD `bookingType` enum('lapland','cruise','disney','other') DEFAULT 'other' NOT NULL;

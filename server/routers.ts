@@ -565,7 +565,20 @@ export const appRouter = router({
         return getAmendmentsByBooking(input.bookingId);
       }),
     all: adminProcedure.query(async () => {
-      return getAllAmendments();
+      const amendments = await getAllAmendments();
+      // Enrich with booking details
+      const enriched = await Promise.all(
+        amendments.map(async (a) => {
+          const booking = await getBookingById(a.bookingId);
+          return {
+            ...a,
+            clientName: booking?.clientName ?? null,
+            ptsRef: booking?.ptsRef ?? null,
+            topdogRef: booking?.topdogRef ?? null,
+          };
+        })
+      );
+      return enriched;
     }),
     action: adminProcedure
       .input(z.object({ amendmentId: z.number(), bookingId: z.number() }))
@@ -710,7 +723,24 @@ export const appRouter = router({
           clientAccountNumber: decryptOptional(r.clientAccountNumber),
         }));
       }),
-    all: adminProcedure.query(async () => getAllRefunds()),
+    all: adminProcedure.query(async () => {
+      const refunds = await getAllRefunds();
+      const enriched = await Promise.all(
+        refunds.map(async (r) => {
+          const booking = await getBookingById(r.bookingId);
+          return {
+            ...r,
+            clientBankName: decryptOptional(r.clientBankName),
+            clientSortCode: decryptOptional(r.clientSortCode),
+            clientAccountNumber: decryptOptional(r.clientAccountNumber),
+            clientName: booking?.clientName ?? null,
+            ptsRef: booking?.ptsRef ?? null,
+            topdogRef: booking?.topdogRef ?? null,
+          };
+        })
+      );
+      return enriched;
+    }),
     updatePipeline: adminProcedure
       .input(z.object({
         refundId: z.number(),
@@ -782,7 +812,10 @@ export const appRouter = router({
   commissionClaims: router({
     // Agent: claim commission on a claimable booking
     claim: protectedProcedure
-      .input(z.object({ bookingId: z.number() }))
+      .input(z.object({
+        bookingId: z.number(),
+        bookingType: z.enum(["lapland", "cruise", "disney", "other"]).default("other"),
+      }))
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
@@ -792,7 +825,7 @@ export const appRouter = router({
         if (booking.currentStage !== "Commission Claimable") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Booking is not in Commission Claimable stage" });
         }
-        const claim = await createCommissionClaim(input.bookingId, ctx.user.id);
+        const claim = await createCommissionClaim(input.bookingId, ctx.user.id, input.bookingType);
         // Move booking to Commission Claimed
         await updateBookingStage(input.bookingId, "Commission Claimed", ctx.user.id);
         // System audit note

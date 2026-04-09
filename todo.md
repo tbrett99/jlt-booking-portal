@@ -109,3 +109,16 @@
 - [x] Admin Commission page: view all claims (pending + paid), bulk mark-as-paid with checkbox selection
 - [x] Admin Commission page: individual mark-as-paid per booking
 - [x] Notifications: agent notified when commission marked as paid by admin
+
+## Commission Claim & Notifications Fixes
+- [x] Fix blank notifications/templates page (super admin) — seeded 10 default templates
+- [x] Add bookingType field to commission_claims (Lapland, Cruise, Disney, Other) — shown on admin commissions page
+- [x] Commission claim modal: ask agent to select booking type before submitting claim
+- [x] Send test email notification to max@thejltgroup.co.uk — sent successfully via port 465
+
+## Pipeline Card & Routing Fixes
+- [x] Fix 404 on amendment pipeline card click-through to booking detail
+- [x] Fix 404 on refund pipeline card click-through to booking detail
+- [x] Show client name + PTS ref + TD ref on amendment pipeline cards
+- [x] Show client name + PTS ref + TD ref on refund pipeline cards
+- [x] Bug: commission claim not appearing on admin commissions page after agent claims it (status filter was "claimed" instead of "claimed_not_paid")

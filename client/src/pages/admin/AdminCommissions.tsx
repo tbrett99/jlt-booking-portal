@@ -20,6 +20,7 @@ type ClaimRow = {
   claimedAt: Date | string;
   paidAt: Date | string | null;
   paidByName: string | null;
+  bookingType?: string | null;
   booking: {
     clientName: string;
     departureDate: Date | string | null;
@@ -43,7 +44,7 @@ export default function AdminCommissions() {
   });
 
   const allClaims = (claims ?? []) as ClaimRow[];
-  const pending = allClaims.filter((c) => c.status === "claimed");
+  const pending = allClaims.filter((c) => c.status === "claimed_not_paid");
   const paid = allClaims.filter((c) => c.status === "paid");
 
   const toggleSelect = (id: number) => {
@@ -107,6 +108,7 @@ export default function AdminCommissions() {
             <th className="py-3 px-4 text-left font-medium">Agent</th>
             <th className="py-3 px-4 text-left font-medium">Departure</th>
             <th className="py-3 px-4 text-left font-medium">Expected Comm.</th>
+            <th className="py-3 px-4 text-left font-medium">Type</th>
             <th className="py-3 px-4 text-left font-medium">Claimed On</th>
             {!showSelect && <th className="py-3 px-4 text-left font-medium">Paid On</th>}
             {!showSelect && <th className="py-3 px-4 text-left font-medium">Paid By</th>}
@@ -143,6 +145,7 @@ export default function AdminCommissions() {
                 <td className="py-3 px-4">
                   {c.booking?.expectedCommission != null ? `£${c.booking.expectedCommission.toFixed(2)}` : "—"}
                 </td>
+                <td className="py-3 px-4 capitalize">{c.bookingType ?? "—"}</td>
                 <td className="py-3 px-4">{formatDate(c.claimedAt)}</td>
                 {!showSelect && <td className="py-3 px-4">{formatDate(c.paidAt)}</td>}
                 {!showSelect && <td className="py-3 px-4">{c.paidByName ?? "—"}</td>}
@@ -163,12 +166,12 @@ export default function AdminCommissions() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => navigate(`/admin/bookings/${c.bookingId}`)}
+                      onClick={() => navigate(`/bookings/${c.bookingId}`)}
                       className="text-[#02E6D2] hover:text-[#02E6D2] hover:bg-[#02E6D2]/10 text-xs"
                     >
                       View
                     </Button>
-                    {showSelect && c.status === "claimed" && (
+                    {showSelect && c.status === "claimed_not_paid" && (
                       <Button
                         variant="ghost"
                         size="sm"

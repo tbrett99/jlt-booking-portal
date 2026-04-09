@@ -198,6 +198,7 @@ export const commissionClaims = mysqlTable("commission_claims", {
   id: int("id").autoincrement().primaryKey(),
   bookingId: int("bookingId").notNull(), // FK → bookings.id
   agentId: int("agentId").notNull(), // FK → users.id
+  bookingType: mysqlEnum("bookingType", ["lapland", "cruise", "disney", "other"]).notNull().default("other"),
   claimedAt: timestamp("claimedAt").defaultNow().notNull(),
   status: mysqlEnum("status", ["claimed_not_paid", "paid"]).default("claimed_not_paid").notNull(),
   paidAt: timestamp("paidAt"),

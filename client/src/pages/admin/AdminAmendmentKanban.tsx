@@ -100,16 +100,24 @@ function AmendmentCard({
     <Card className="shadow-sm hover:shadow-md transition-shadow border-l-4 border-l-[#70FFE8]">
       <CardHeader className="pb-2 pt-3 px-4">
         <div className="flex items-start justify-between gap-2">
-          <div>
-            <Link href={`/admin/bookings/${amendment.bookingId}`}>
-              <span className="font-semibold text-sm text-foreground hover:text-[#02E6D2] cursor-pointer">
-                Booking #{amendment.bookingId}
+          <div className="min-w-0 flex-1">
+            <Link href={`/bookings/${amendment.bookingId}`}>
+              <span className="font-semibold text-sm text-foreground hover:text-[#02E6D2] cursor-pointer block truncate">
+                {amendment.clientName ?? `Booking #${amendment.bookingId}`}
               </span>
             </Link>
-            <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-              <Calendar className="w-3 h-3" />
-              {new Date(amendment.createdAt).toLocaleDateString("en-GB")}
-            </p>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+              {amendment.ptsRef && (
+                <span className="text-xs text-muted-foreground">PTS: {amendment.ptsRef}</span>
+              )}
+              {amendment.topdogRef && (
+                <span className="text-xs text-muted-foreground">TD: {amendment.topdogRef}</span>
+              )}
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {new Date(amendment.createdAt).toLocaleDateString("en-GB")}
+              </span>
+            </div>
           </div>
           <Badge variant="outline" className="text-xs shrink-0">#{amendment.id}</Badge>
         </div>

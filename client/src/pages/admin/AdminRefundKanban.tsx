@@ -112,16 +112,24 @@ function RefundCard({
     <Card className="shadow-sm hover:shadow-md transition-shadow border-l-4 border-l-[#FFC3BC]">
       <CardHeader className="pb-2 pt-3 px-4">
         <div className="flex items-start justify-between gap-2">
-          <div>
-            <Link href={`/admin/bookings/${refund.bookingId}`}>
-              <span className="font-semibold text-sm text-foreground hover:text-[#02E6D2] cursor-pointer">
-                Booking #{refund.bookingId}
+          <div className="min-w-0 flex-1">
+            <Link href={`/bookings/${refund.bookingId}`}>
+              <span className="font-semibold text-sm text-foreground hover:text-[#02E6D2] cursor-pointer block truncate">
+                {refund.clientName ?? `Booking #${refund.bookingId}`}
               </span>
             </Link>
-            <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-              <Calendar className="w-3 h-3" />
-              {new Date(refund.createdAt).toLocaleDateString("en-GB")}
-            </p>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+              {refund.ptsRef && (
+                <span className="text-xs text-muted-foreground">PTS: {refund.ptsRef}</span>
+              )}
+              {refund.topdogRef && (
+                <span className="text-xs text-muted-foreground">TD: {refund.topdogRef}</span>
+              )}
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {new Date(refund.createdAt).toLocaleDateString("en-GB")}
+              </span>
+            </div>
           </div>
           <div className="flex flex-col items-end gap-1">
             <Badge variant="outline" className="text-xs">#{refund.id}</Badge>
