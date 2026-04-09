@@ -357,15 +357,40 @@ export default function AdminBookingDetail() {
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                   {sharedNotes.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">No shared notes yet</p>
-                  ) : sharedNotes.map((note) => {
+                  ) : (sharedNotes as any[]).map((note) => {
+                    const isSystem = note.content?.startsWith('[System]');
                     const isMe = note.authorId === user?.id;
+                    const isAgent = note.authorRole === 'agent';
+
+                    if (isSystem) {
+                      return (
+                        <div key={note.id} className="flex justify-center">
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs"
+                            style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                            <span className="font-bold uppercase tracking-wide text-[10px]">System</span>
+                            <span>{note.content.replace('[System] ', '')}</span>
+                            <span className="opacity-50">{format(new Date(note.createdAt), 'dd MMM, HH:mm')}</span>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     return (
-                      <div key={note.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                      <div key={note.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                         <div className="max-w-[85%] rounded-2xl px-3 py-2 text-sm"
-                          style={{ background: isMe ? '#70FFE8' : '#f3f4f6', color: '#414141' }}>
-                          <p className="text-xs font-medium opacity-70 mb-1">{note.authorName}</p>
+                          style={{
+                            background: isMe ? '#70FFE8' : isAgent ? '#f0fdf4' : '#f3f4f6',
+                            color: '#414141',
+                            border: isAgent ? '1px solid #86efac' : 'none',
+                          }}>
+                          <p className="text-[10px] font-semibold mb-1 flex items-center gap-1.5" style={{ opacity: 0.75 }}>
+                            {isAgent && !isMe && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide" style={{ background: '#16a34a', color: 'white' }}>Agent</span>
+                            )}
+                            {note.authorName}
+                          </p>
                           <NoteContent content={note.content} />
-                          <p className="text-xs opacity-50 mt-1">{format(new Date(note.createdAt), "dd MMM, HH:mm")}</p>
+                          <p className="text-xs opacity-50 mt-1">{format(new Date(note.createdAt), 'dd MMM, HH:mm')}</p>
                         </div>
                       </div>
                     );
@@ -391,17 +416,39 @@ export default function AdminBookingDetail() {
                 <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
                   {internalNotes.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">No internal notes yet</p>
-                  ) : internalNotes.map((note) => (
-                    <div key={note.id} className="p-3 rounded-lg border text-sm"
-                      style={{ background: '#FFF6ED', borderColor: '#FFC3BC' }}>
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <User size={11} className="opacity-50" />
-                        <p className="text-xs font-medium opacity-70">{note.authorName}</p>
+                  ) : (internalNotes as any[]).map((note) => {
+                    const isSystem = note.content?.startsWith('[System]');
+                    const isMe = note.authorId === user?.id;
+
+                    if (isSystem) {
+                      return (
+                        <div key={note.id} className="flex justify-center">
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs"
+                            style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                            <span className="font-bold uppercase tracking-wide text-[10px]">System</span>
+                            <span>{note.content.replace('[System] ', '')}</span>
+                            <span className="opacity-50">{format(new Date(note.createdAt), 'dd MMM, HH:mm')}</span>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={note.id} className={`p-3 rounded-lg border text-sm ${isMe ? 'ml-4' : 'mr-4'}`}
+                        style={{
+                          background: isMe ? '#FFF6ED' : '#faf5ff',
+                          borderColor: isMe ? '#FFC3BC' : '#d8b4fe',
+                        }}>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <User size={11} className="opacity-50" />
+                          <p className="text-[10px] font-semibold opacity-75">{note.authorName}</p>
+                          {isMe && <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: '#7c3aed', color: 'white' }}>You</span>}
+                        </div>
+                        <NoteContent content={note.content} />
+                        <p className="text-xs opacity-50 mt-1">{format(new Date(note.createdAt), 'dd MMM, HH:mm')}</p>
                       </div>
-                      <NoteContent content={note.content} />
-                      <p className="text-xs opacity-50 mt-1">{format(new Date(note.createdAt), "dd MMM, HH:mm")}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {/* @mention textarea with dropdown */}
                 <div className="relative pt-2 border-t">

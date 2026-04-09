@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 import {
   ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
   CheckCircle2, Circle, AlertCircle, Sparkles, TrendingUp, Clock,
-  RefreshCw, Pencil, User
+  RefreshCw, Pencil, User, Check, X
 } from "lucide-react";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -54,6 +55,8 @@ export default function AgentBookingDetail() {
   const [noteContent, setNoteContent] = useState("");
   const [isSendingNote, setIsSendingNote] = useState(false);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const [editingCommission, setEditingCommission] = useState(false);
+  const [commissionInput, setCommissionInput] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
@@ -63,6 +66,21 @@ export default function AgentBookingDetail() {
   const { data: refunds = [] } = trpc.refunds.byBooking.useQuery({ bookingId });
   const addNote = trpc.notes.add.useMutation();
   const uploadDoc = trpc.bookings.uploadReimbDoc.useMutation();
+  const updateCommission = trpc.bookings.updateCommission.useMutation({
+    onSuccess: () => {
+      toast.success("Commission amount saved");
+      setEditingCommission(false);
+      utils.bookings.byId.invalidate({ id: bookingId });
+      refetchNotes();
+    },
+    onError: (err: any) => toast.error(err.message || "Failed to save commission"),
+  });
+
+  const handleSaveCommission = () => {
+    const val = parseFloat(commissionInput);
+    if (isNaN(val) || val < 0) { toast.error("Please enter a valid amount"); return; }
+    updateCommission.mutate({ bookingId, expectedCommission: val });
+  };
 
   const handleSendNote = async () => {
     if (!noteContent.trim()) return;
@@ -247,15 +265,45 @@ export default function AgentBookingDetail() {
           </p>
         </div>
 
-        <div className="rounded-xl p-3 border" style={{ background: booking.expectedCommission ? '#ecfdf5' : '#f9fafb' }}>
-          <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-            <TrendingUp size={11} /> Commission
+        <div className="rounded-xl p-3 border col-span-2 sm:col-span-1" style={{ background: booking.expectedCommission ? '#ecfdf5' : '#fffbeb' }}>
+          <p className="text-xs text-muted-foreground mb-1 flex items-center justify-between gap-1">
+            <span className="flex items-center gap-1"><TrendingUp size={11} /> My Commission</span>
+            {!editingCommission && (
+              <button
+                onClick={() => { setCommissionInput(booking.expectedCommission ? String(Number(booking.expectedCommission)) : ""); setEditingCommission(true); }}
+                className="text-[10px] underline opacity-60 hover:opacity-100"
+              >
+                {booking.expectedCommission ? "Edit" : "Add"}
+              </button>
+            )}
           </p>
-          <p className="font-semibold text-sm" style={{ color: booking.expectedCommission ? '#065f46' : undefined }}>
-            {booking.expectedCommission
-              ? `£${Number(booking.expectedCommission).toFixed(2)}`
-              : <span className="italic text-muted-foreground font-normal">Not set</span>}
-          </p>
+          {editingCommission ? (
+            <div className="flex items-center gap-1 mt-1">
+              <span className="text-sm font-medium">£</span>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={commissionInput}
+                onChange={(e) => setCommissionInput(e.target.value)}
+                className="h-7 text-sm px-2 py-0 w-24"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === "Enter") handleSaveCommission(); if (e.key === "Escape") setEditingCommission(false); }}
+              />
+              <button onClick={handleSaveCommission} disabled={updateCommission.isPending} className="p-1 rounded hover:bg-emerald-100">
+                {updateCommission.isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} style={{ color: '#065f46' }} />}
+              </button>
+              <button onClick={() => setEditingCommission(false)} className="p-1 rounded hover:bg-red-50">
+                <X size={13} style={{ color: '#991b1b' }} />
+              </button>
+            </div>
+          ) : (
+            <p className="font-semibold text-sm" style={{ color: booking.expectedCommission ? '#065f46' : '#92400e' }}>
+              {booking.expectedCommission
+                ? `£${Number(booking.expectedCommission).toFixed(2)}`
+                : <span className="text-xs font-normal">Tap "Add" to enter your expected commission</span>}
+            </p>
+          )}
         </div>
       </div>
 
@@ -414,16 +462,39 @@ export default function AgentBookingDetail() {
                 <p className="text-xs text-muted-foreground mt-1">Start the conversation with the JLT team below.</p>
               </div>
             ) : (
-              sharedNotes.map((note) => {
+              sharedNotes.map((note: any) => {
+                const isSystem = note.content?.startsWith('[System]');
                 const isMe = note.authorId === user?.id;
+                const isAdmin = note.authorRole === 'admin' || note.authorRole === 'super_admin';
+
+                if (isSystem) {
+                  return (
+                    <div key={note.id} className="flex justify-center">
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs"
+                        style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                        <span className="font-semibold uppercase tracking-wide text-[10px]">System</span>
+                        <span>{note.content.replace('[System] ', '')}</span>
+                        <span className="opacity-50">{format(new Date(note.createdAt), 'dd MMM, HH:mm')}</span>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
-                  <div key={note.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${isMe ? "rounded-br-sm" : "rounded-bl-sm"}`}
-                      style={{ background: isMe ? '#70FFE8' : '#f3f4f6', color: '#414141' }}>
-                      <p className="font-medium text-xs mb-1 opacity-70">{note.authorName}</p>
+                  <div key={note.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${isMe ? 'rounded-br-sm' : 'rounded-bl-sm'}`}
+                      style={{
+                        background: isMe ? '#70FFE8' : isAdmin ? '#ede9fe' : '#f3f4f6',
+                        color: '#414141',
+                        border: isAdmin ? '1px solid #c4b5fd' : 'none',
+                      }}>
+                      <p className="font-semibold text-[10px] mb-1 flex items-center gap-1.5" style={{ opacity: 0.75 }}>
+                        {isAdmin && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide" style={{ background: '#7c3aed', color: 'white' }}>JLT Team</span>}
+                        {note.authorName}
+                      </p>
                       <p className="whitespace-pre-wrap">{note.content}</p>
                       <p className="text-xs opacity-50 mt-1 text-right">
-                        {format(new Date(note.createdAt), "dd MMM, HH:mm")}
+                        {format(new Date(note.createdAt), 'dd MMM, HH:mm')}
                       </p>
                     </div>
                   </div>

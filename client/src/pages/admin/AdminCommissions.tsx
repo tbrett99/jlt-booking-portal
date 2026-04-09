@@ -143,7 +143,7 @@ export default function AdminCommissions() {
                 </td>
                 <td className="py-3 px-4">{formatDate(c.booking?.departureDate)}</td>
                 <td className="py-3 px-4">
-                  {c.booking?.expectedCommission != null ? `£${c.booking.expectedCommission.toFixed(2)}` : "—"}
+                  {c.booking?.expectedCommission != null ? `£${Number(c.booking.expectedCommission).toFixed(2)}` : "—"}
                 </td>
                 <td className="py-3 px-4 capitalize">{c.bookingType ?? "—"}</td>
                 <td className="py-3 px-4">{formatDate(c.claimedAt)}</td>

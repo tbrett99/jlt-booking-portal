@@ -91,6 +91,7 @@ export async function createAgentUser(data: {
   name: string;
   email: string;
   hashedPassword: string;
+  phone?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -104,10 +105,56 @@ export async function createAgentUser(data: {
     tempPassword: data.hashedPassword,
     mustChangePassword: true,
     isActive: true,
+    phone: data.phone ?? null,
     lastSignedIn: new Date(),
-  });
+  } as any);
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result[0];
+}
+
+export async function bulkCreateAgentUsers(agents: Array<{
+  name: string;
+  email: string;
+  hashedPassword: string;
+  phone?: string;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const results: Array<{ email: string; success: boolean; error?: string; userId?: number }> = [];
+  for (const agent of agents) {
+    try {
+      // Skip if email already exists
+      const existing = await getUserByEmail(agent.email);
+      if (existing) {
+        results.push({ email: agent.email, success: false, error: "already_exists", userId: existing.id });
+        continue;
+      }
+      const openId = `agent_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      await db.insert(users).values({
+        openId,
+        name: agent.name,
+        email: agent.email,
+        loginMethod: "password",
+        role: "agent",
+        tempPassword: agent.hashedPassword,
+        mustChangePassword: true,
+        isActive: true,
+        phone: agent.phone ?? null,
+        lastSignedIn: new Date(),
+      } as any);
+      const created = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+      results.push({ email: agent.email, success: true, userId: created[0]?.id });
+    } catch (err: any) {
+      results.push({ email: agent.email, success: false, error: err?.message ?? "unknown" });
+    }
+  }
+  return results;
+}
+
+export async function markCredentialsSent(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(users).set({ credentialsSentAt: new Date() } as any).where(eq(users.id, userId));
 }
 
 export async function updateUserRole(userId: number, role: "super_admin" | "admin" | "agent") {

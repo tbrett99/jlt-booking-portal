@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Search, ChevronRight, AlertTriangle, Calendar, Loader2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, ChevronRight, AlertTriangle, Calendar, Loader2, SlidersHorizontal } from "lucide-react";
 import { format } from "date-fns";
 
 const STAGES = [
@@ -50,6 +51,8 @@ const STAGE_COLORS: Record<string, { bg: string; border: string; dot: string }> 
 
 export default function AdminKanban() {
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "departure_asc" | "departure_desc" | "agent_az">("newest");
+  const [agentFilter, setAgentFilter] = useState<string>("all");
   const [movingId, setMovingId] = useState<number | null>(null);
   const [pendingMove, setPendingMove] = useState<{ bookingId: number; toStage: string } | null>(null);
   const [guardPaymentDate, setGuardPaymentDate] = useState("");
@@ -123,12 +126,26 @@ export default function AdminKanban() {
     }
   };
 
-  const filtered = bookings.filter((b) =>
-    !search ||
-    b.clientName.toLowerCase().includes(search.toLowerCase()) ||
-    (b.topdogRef ?? "").toLowerCase().includes(search.toLowerCase()) ||
-    (b.ptsRef ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  // Unique agent names for filter dropdown
+  const agentNames = Array.from(new Set(bookings.map((b: any) => b.agentName).filter(Boolean))).sort() as string[];
+
+  const filtered = bookings
+    .filter((b: any) =>
+      (!search ||
+        b.clientName.toLowerCase().includes(search.toLowerCase()) ||
+        (b.topdogRef ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        (b.ptsRef ?? "").toLowerCase().includes(search.toLowerCase())) &&
+      (agentFilter === "all" || b.agentName === agentFilter)
+    )
+    .slice()
+    .sort((a: any, b: any) => {
+      if (sortBy === "newest") return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+      if (sortBy === "oldest") return new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
+      if (sortBy === "departure_asc") return new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime();
+      if (sortBy === "departure_desc") return new Date(b.departureDate).getTime() - new Date(a.departureDate).getTime();
+      if (sortBy === "agent_az") return (a.agentName ?? "").localeCompare(b.agentName ?? "");
+      return 0;
+    });
 
   const byStage = STAGES.reduce<Record<string, typeof bookings>>((acc, stage) => {
     acc[stage] = filtered.filter((b) => b.currentStage === stage);
@@ -139,19 +156,62 @@ export default function AdminKanban() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Booking Pipeline</h1>
-          <p className="text-sm text-muted-foreground">{bookings.length} total bookings</p>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">Booking Pipeline</h1>
+            <p className="text-sm text-muted-foreground">{filtered.length} of {bookings.length} bookings</p>
+          </div>
+          <div className="relative sm:ml-auto sm:w-72">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search by client, Topdog ref, PTS ref..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
-        <div className="relative sm:ml-auto sm:w-72">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search by client, Topdog ref, PTS ref..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+        {/* Filter & Sort bar */}
+        <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl border bg-muted/30">
+          <SlidersHorizontal size={14} className="text-muted-foreground" />
+          <span className="text-xs font-medium text-muted-foreground mr-1">Sort:</span>
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+            <SelectTrigger className="h-7 text-xs w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">Newest first</SelectItem>
+              <SelectItem value="oldest">Oldest first</SelectItem>
+              <SelectItem value="departure_asc">Departure ↑ (soonest)</SelectItem>
+              <SelectItem value="departure_desc">Departure ↓ (latest)</SelectItem>
+              <SelectItem value="agent_az">Agent A–Z</SelectItem>
+            </SelectContent>
+          </Select>
+          {agentNames.length > 0 && (
+            <>
+              <span className="text-xs font-medium text-muted-foreground ml-2">Agent:</span>
+              <Select value={agentFilter} onValueChange={setAgentFilter}>
+                <SelectTrigger className="h-7 text-xs w-44">
+                  <SelectValue placeholder="All agents" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All agents</SelectItem>
+                  {agentNames.map((name) => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
+          {(search || agentFilter !== "all" || sortBy !== "newest") && (
+            <button
+              onClick={() => { setSearch(""); setAgentFilter("all"); setSortBy("newest"); }}
+              className="ml-auto text-xs underline text-muted-foreground hover:text-foreground"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       </div>
 

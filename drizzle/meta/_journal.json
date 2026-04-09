@@ -36,6 +36,13 @@
       "when": 1775751195956,
       "tag": "0004_black_exodus",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1775763005457,
+      "tag": "0005_previous_umar",
+      "breakpoints": true
     }
   ]
 }

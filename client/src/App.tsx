@@ -27,6 +27,7 @@ import AgentCommissions from "./pages/agent/AgentCommissions";
 import AgentCancelBooking from "./pages/agent/AgentCancelBooking";
 import AgentRequestAmendment from "./pages/agent/AgentRequestAmendment";
 import AdminCommissions from "./pages/admin/AdminCommissions";
+import AdminImport from "./pages/admin/AdminImport";
 import PortalLayout from "./components/PortalLayout";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import { useAuth } from "./_core/hooks/useAuth";
@@ -126,6 +127,7 @@ function AuthRouter() {
         <Route path="/commissions-admin" component={AdminCommissions} />
         <Route path="/reports" component={AdminReports} />
         <Route path="/notification-templates" component={NotificationTemplates} />
+        <Route path="/import" component={AdminImport} />
         <Route component={NotFound} />
       </Switch>
     </PortalLayout>

@@ -155,14 +155,14 @@
 - [ ] Mobile: full QA pass across agent/admin pages — fix any confirmed overflow/wrapping issues
 
 ## Query Stage Message Dialog
-- [ ] When moving a booking to "Query", show a dialog letting the admin compose a message to the agent before confirming the move
-- [ ] Pre-populate the message with a sensible default
-- [ ] Send the message as a shared note AND trigger the existing "query" notification email to the agent
-- [ ] Backend: accept optional queryMessage in moveStage input
+- [x] When moving a booking to "Query", show a dialog letting the admin compose a message to the agent before confirming the move
+- [x] Pre-populate the message with a sensible default
+- [x] Send the message as a shared note AND trigger the existing "query" notification email to the agent
+- [x] Backend: accept optional queryMessage in moveStage input
 
 ## Urgent Attention Logic
-- [ ] Document and surface clearly what criteria cause a booking to appear in the urgent attention banner
-- [ ] Fix any incorrect or unclear urgent attention criteria
+- [x] Document and surface clearly what criteria cause a booking to appear in the urgent attention banner (Query, Reimb Docs Missing, Urgent/Reimb stages)
+- [x] Fix any incorrect or unclear urgent attention criteria (criteria confirmed correct — admin dashboard banner now describes the stages)
 
 ## Agent Refund & Amendment Visibility
 - [x] Agent booking detail: show amendments with status (pending/assigned/actioned) and assigned admin name
@@ -174,3 +174,34 @@
 - [x] Commission summary bar: show total pending (active bookings), claimable, claimed not yet paid, and paid amounts
 - [x] Prompt agents to contact JLT when commission amount is missing from their bookings (amounts are set by admins)
 - [x] Show per-booking commission amount on the claimable/claimed lists
+
+## Bug Fixes & UX Improvements (Apr 9)
+- [x] Fix admin commissions page crash: D.booking.expectedCommission.toFixed is not a function (coerce to Number)
+- [x] Allow agents to set their own expected commission amount on their booking detail page (inline edit)
+- [x] Remove all "contact JLT" messaging around missing commission amounts — agents own this field
+- [x] Note styling: visually distinguish system-generated notes, agent notes, and admin/super_admin notes with different colours and labels
+
+## Kanban Filters & Sorting
+- [x] Add sort controls to Kanban: newest first, oldest first, departure date ascending/descending, agent name A-Z
+- [x] Add filter controls: filter by agent, filter by booking type, search by client name
+- [x] Persist sort/filter state in URL params or local state
+
+## Admin Dashboard Redesign
+- [x] Reduce whitespace — use a denser grid layout
+- [x] Add a comprehensive metrics row: total bookings, active, this month, revenue/commission pending
+- [x] Add a live activity feed showing recent stage changes, new bookings, new amendments/refunds
+- [x] Add a mini pipeline overview: count of bookings per stage
+- [x] Add upcoming departures widget (next 7 days)
+- [x] Add recent commission claims widget
+
+## CSV Bulk Import
+- [x] Admin-only CSV import page at /import
+- [x] Parse CSV: extract client name from Lead Pax Name, agent first name from Opportunity Name (middle segment), stage, departure date, PTS ref, Topdog ref, reimbursements flag, payment date
+- [x] Map CSV stage names to portal stage names (e.g. "Comms Claimable" → "Commission Claimable")
+- [x] Agent matching: fuzzy match agent first name against existing agent accounts by first name
+- [x] Review UI: show matched/unmatched agents, allow admin to manually assign unmatched bookings to an existing agent or leave as "Unassigned"
+- [x] Import confirmation: show count of bookings to be imported, warn about duplicates
+- [x] Backend: bulk insert procedure (admin only) that enforces agent ownership — each booking is assigned to exactly one agent
+- [x] Security: agents can ONLY query their own bookings (enforce agentId === ctx.user.id on all agent-facing procedures)
+- [x] Audit: imported bookings get a system note recording the import date and source
+- [x] Navigation: add Import link to admin sidebar

@@ -131,7 +131,9 @@ export default function AgentCommissions() {
             £{booking.expectedCommission.toFixed(2)}
           </p>
         ) : (
-          <p className="text-sm text-muted-foreground italic mt-0.5">Commission amount not set — contact JLT</p>
+          <Link href={`/bookings/${booking.id}`}>
+            <p className="text-sm text-[#02E6D2] italic mt-0.5 hover:underline cursor-pointer">Add your expected commission →</p>
+          </Link>
         )}
         {booking.claim?.claimedAt && (
           <p className="text-xs text-muted-foreground">Claimed: {fmt(booking.claim.claimedAt)}</p>
@@ -201,7 +203,7 @@ export default function AgentCommissions() {
               {missingCommission.length} booking{missingCommission.length > 1 ? "s are" : " is"} missing a commission amount
             </p>
             <p className="text-xs mt-0.5" style={{ color: '#92400e', opacity: 0.8 }}>
-              Commission amounts are set by the JLT admin team. If you believe an amount is missing, please message the JLT team via the booking page.
+              Open each booking to add your expected commission amount. This helps us track your earnings accurately.
             </p>
             <p className="text-xs mt-1 font-medium" style={{ color: '#92400e' }}>
               {missingCommission.map((b) => b.clientName).join(", ")}
@@ -404,7 +406,7 @@ export default function AgentCommissions() {
                 <div className="rounded-lg p-3 text-sm flex items-center gap-2"
                   style={{ background: '#fffbeb', color: '#92400e' }}>
                   <AlertCircle size={14} />
-                  <span>{missingCommission.length} booking{missingCommission.length > 1 ? "s are" : " is"} missing a commission amount — contact the JLT team via the booking page to get this added.</span>
+                  <span>{missingCommission.length} booking{missingCommission.length > 1 ? "s are" : " is"} missing a commission amount — open each booking to add your expected amount.</span>
                 </div>
               )}
               {notReady.map((b) => (

@@ -50,6 +50,8 @@ import {
   markNotificationsRead,
   getUnreadNotificationCount,
   upsertUser,
+  bulkCreateAgentUsers,
+  markCredentialsSent,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import { sendNotificationEmail, sendCredentialsEmail } from "./email";
@@ -257,6 +259,73 @@ export const appRouter = router({
         await deleteUser(input.userId);
         return { success: true };
       }),
+
+    // Bulk create agent accounts silently (no credentials email)
+    bulkCreate: adminProcedure
+      .input(
+        z.array(
+          z.object({
+            name: z.string().min(1),
+            email: z.string().email(),
+            phone: z.string().optional(),
+          })
+        )
+      )
+      .mutation(async ({ input }) => {
+        const agentsWithPasswords = await Promise.all(
+          input.map(async (agent) => {
+            const tempPassword = nanoid(12);
+            const hashed = await bcrypt.hash(tempPassword, 12);
+            return { name: agent.name, email: agent.email, phone: agent.phone, hashedPassword: hashed, tempPassword };
+          })
+        );
+        const results = await bulkCreateAgentUsers(
+          agentsWithPasswords.map(({ name, email, phone, hashedPassword }) => ({ name, email, phone, hashedPassword }))
+        );
+        return { results };
+      }),
+
+    // Send login credentials to a specific agent
+    sendCredentials: adminProcedure
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ input }) => {
+        const user = await getUserById(input.userId);
+        if (!user) throw new TRPCError({ code: "NOT_FOUND" });
+        if (!user.email) throw new TRPCError({ code: "BAD_REQUEST", message: "User has no email" });
+        // Generate a fresh temp password and re-hash
+        const tempPassword = nanoid(12);
+        const hashed = await bcrypt.hash(tempPassword, 12);
+        // updateUserPassword sets mustChangePassword=false, so we set it back manually
+        await updateUserPassword(user.id, hashed);
+        await sendCredentialsEmail({ toEmail: user.email, toName: user.name ?? user.email, tempPassword });
+        await markCredentialsSent(user.id);
+        return { success: true };
+      }),
+
+    // Bulk send credentials to all agents who haven't received them yet
+    bulkSendCredentials: adminProcedure
+      .input(z.object({ userIds: z.array(z.number()) }))
+      .mutation(async ({ input }) => {
+        const results: Array<{ userId: number; success: boolean; error?: string }> = [];
+        for (const userId of input.userIds) {
+          try {
+            const user = await getUserById(userId);
+            if (!user || !user.email) {
+              results.push({ userId, success: false, error: "no_email" });
+              continue;
+            }
+            const tempPassword = nanoid(12);
+            const hashed = await bcrypt.hash(tempPassword, 12);
+            await updateUserPassword(user.id, hashed);
+            await sendCredentialsEmail({ toEmail: user.email, toName: user.name ?? user.email, tempPassword });
+            await markCredentialsSent(user.id);
+            results.push({ userId, success: true });
+          } catch (err: any) {
+            results.push({ userId, success: false, error: err?.message ?? "unknown" });
+          }
+        }
+        return { results };
+      }),
   }),
 
   // ── Bookings ──────────────────────────────────────────────────────────────
@@ -437,6 +506,23 @@ export const appRouter = router({
         });
         return updated;
       }),
+    updateCommission: protectedProcedure
+      .input(z.object({ bookingId: z.number(), expectedCommission: z.number().min(0) }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        await updateBookingAdminFields(input.bookingId, { expectedCommission: input.expectedCommission });
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Expected commission set to £${input.expectedCommission.toFixed(2)} by ${ctx.user.name ?? "Agent"}.`,
+          isInternal: false,
+        });
+        return { success: true };
+      }),
     updateAdminFields: adminProcedure
       .input(
         z.object({
@@ -485,6 +571,69 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return getPipelineHistory(input.bookingId);
       }),
+
+    // Bulk import bookings from CSV (admin only)
+    bulkImport: adminProcedure
+      .input(
+        z.array(
+          z.object({
+            agentId: z.number(),
+            clientName: z.string().min(1),
+            departureDate: z.date(),
+            topdogRef: z.string().optional(),
+            ptsRef: z.string().optional(),
+            currentStage: z.string().optional(),
+            reimbursementsRequired: z.boolean().default(false),
+            expectedCommission: z.number().optional(),
+            finalSupplierPaymentDate: z.date().optional(),
+          })
+        )
+      )
+      .mutation(async ({ input, ctx }) => {
+        const results: Array<{ clientName: string; success: boolean; bookingId?: number; error?: string }> = [];
+        for (const row of input) {
+          try {
+            // Security: validate agentId is a real agent account
+            const agentUser = await getUserById(row.agentId);
+            if (!agentUser || agentUser.role !== "agent") {
+              results.push({ clientName: row.clientName, success: false, error: "invalid_agent_id" });
+              continue;
+            }
+            const booking = await createBooking({
+              agentId: row.agentId,
+              clientName: row.clientName,
+              departureDate: row.departureDate,
+              topdogRef: row.topdogRef,
+              reimbursementsRequired: row.reimbursementsRequired,
+            });
+            if (!booking?.id) throw new Error("Insert failed");
+            // Apply extra fields (stage, ptsRef, commission, payment date)
+            const adminUpdates: Record<string, unknown> = {};
+            if (row.ptsRef) adminUpdates.ptsRef = row.ptsRef;
+            if (row.expectedCommission !== undefined) adminUpdates.expectedCommission = row.expectedCommission;
+            if (row.finalSupplierPaymentDate) adminUpdates.finalSupplierPaymentDate = row.finalSupplierPaymentDate;
+            if (Object.keys(adminUpdates).length > 0) {
+              await updateBookingAdminFields(booking.id, adminUpdates as any);
+            }
+            // Set stage if not default
+            const stage = row.currentStage ?? "New Booking";
+            if (stage !== "New Booking") {
+              await updateBookingStage(booking.id, stage, ctx.user.id);
+            }
+            // System note
+            await createNote({
+              bookingId: booking.id,
+              authorId: ctx.user.id,
+              content: `[System] Booking imported from CSV by ${ctx.user.name ?? "Admin"}.`,
+              isInternal: true,
+            });
+            results.push({ clientName: row.clientName, success: true, bookingId: booking.id });
+          } catch (err: any) {
+            results.push({ clientName: row.clientName, success: false, error: err?.message ?? "unknown" });
+          }
+        }
+        return { results, total: input.length, succeeded: results.filter((r) => r.success).length };
+      }),
   }),
 
   // ── Notes ─────────────────────────────────────────────────────────────────
@@ -503,7 +652,11 @@ export const appRouter = router({
         const enriched = await Promise.all(
           noteRows.map(async (n) => {
             const author = await getUserById(n.authorId);
-            return { ...n, authorName: author?.name ?? "Unknown" };
+            return {
+              ...n,
+              authorName: author?.name ?? "Unknown",
+              authorRole: author?.role ?? "agent",
+            };
           })
         );
         return enriched;
