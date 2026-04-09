@@ -34,7 +34,6 @@ interface CsvBookingRow {
   twoTNumber: string;
   finalSupplierPaymentDate: string;
   reimbursementsRequired: boolean;
-  rawRow: Record<string, string>;
 }
 
 interface MappedBooking extends CsvBookingRow {
@@ -278,7 +277,6 @@ export default function AdminImport() {
             twoTNumber: (r["2T Number"] || "").trim(),
             finalSupplierPaymentDate: parseDate(r["Final Supplier Payment Date"] || ""),
             reimbursementsRequired: reimb === "yes" || reimb === "true",
-            rawRow: r,
           };
         });
       // Auto-match agents by full name (case-insensitive), with fallback to first+last token matching
@@ -343,10 +341,12 @@ export default function AdminImport() {
       };
       const reader = new FileReader();
       reader.onload = (e) => {
-        const text = e.target?.result as string;
-        worker.postMessage({ type: "parse", text });
+        // Transfer the ArrayBuffer to the worker (zero-copy) instead of
+        // postMessage-ing a string copy, to halve peak memory usage
+        const buffer = e.target?.result as ArrayBuffer;
+        worker.postMessage({ type: "parse", buffer }, [buffer]);
       };
-      reader.readAsText(file);
+      reader.readAsArrayBuffer(file);
     },
     [processRawRows]
   );

@@ -3,7 +3,7 @@
 
 export type CsvParseMessage = {
   type: "parse";
-  text: string;
+  buffer: ArrayBuffer;
 };
 
 export type CsvParseResult = {
@@ -74,10 +74,40 @@ function parseCsv(text: string): Record<string, string>[] {
   });
 }
 
+// Only the columns we actually use — strip Notes and other large/unused columns
+// to keep the postMessage payload small (< 1 MB vs 11+ MB for full rows)
+const NEEDED_COLUMNS = new Set([
+  "Opportunity Name",
+  "Contact Name",
+  "Lead Pax Name",
+  "stage",
+  "Stage",
+  "Departure Date",
+  "Close Date",
+  "Lead Value",
+  "Amount",
+  "PTS Booking Reference",
+  "Topdog Booking Reference",
+  "2T Number",
+  "Final Supplier Payment Date",
+  "Do you require any reimbursements?",
+  "Name",
+]);
+
 self.onmessage = (event: MessageEvent<CsvParseMessage>) => {
   if (event.data.type === "parse") {
     try {
-      const rows = parseCsv(event.data.text);
+      // Decode the transferred ArrayBuffer to a string inside the worker
+      const text = new TextDecoder("utf-8").decode(event.data.buffer);
+      const allRows = parseCsv(text);
+      // Strip unused columns to minimise postMessage payload
+      const rows = allRows.map((row) => {
+        const slim: Record<string, string> = {};
+        for (const key of Object.keys(row)) {
+          if (NEEDED_COLUMNS.has(key)) slim[key] = row[key];
+        }
+        return slim;
+      });
       const result: CsvParseResult = {
         type: "done",
         rows,

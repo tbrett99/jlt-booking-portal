@@ -243,3 +243,6 @@
 
 ## CSV Import Crash Fix (Apr 9 v4)
 - [x] Fix CSV import page crash on large files — moved CSV parsing to Web Worker (csvParser.worker.ts) so the 8.3 MB file is parsed off the main thread; added spinner loading state during parsing
+
+## CSV Import Crash Fix (Apr 9 v5)
+- [x] Fix persistent CSV import crash — root cause was rawRow storing all 50 CSV columns (incl. 6.8 MB Notes) = 11.3 MB postMessage payload. Fixed by: (1) stripping to 14 needed columns in worker (932 KB), (2) using ArrayBuffer zero-copy transfer instead of string copy to halve peak memory
