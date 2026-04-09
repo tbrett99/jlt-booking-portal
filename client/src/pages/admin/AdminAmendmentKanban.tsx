@@ -19,13 +19,11 @@ const STAGE_COLORS: Record<Stage, string> = {
 
 export default function AdminAmendmentKanban() {
   const { data: amendments, refetch } = trpc.amendments.all.useQuery();
-  const { data: allUsers } = trpc.users.list.useQuery();
+  const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const updatePipeline = trpc.amendments.updatePipeline.useMutation({
     onSuccess: () => { refetch(); toast.success("Amendment updated"); },
     onError: (e) => toast.error(e.message),
   });
-
-  const adminUsers = allUsers?.filter((u) => u.role === "admin" || u.role === "super_admin") ?? [];
 
   const byStage = (stage: Stage) =>
     (amendments ?? []).filter((a) => (a.pipelineStage ?? "To Do") === stage);

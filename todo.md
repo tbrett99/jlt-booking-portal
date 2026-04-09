@@ -215,3 +215,10 @@
 - [x] Admin dashboard: flag bookings with margin < 5%
 - [x] Fix agent commissions page crash (TypeError on expectedCommission)
 - [x] Fix Import CSV agent upload — show clear error for non-CSV files (.numbers, .xlsx) with export instructions; submit button visible once CSV is parsed
+
+## Performance Fix: Large User List (Apr 9)
+- [ ] Add pagination/search to users.list procedure (currently returns all 416 users)
+- [ ] Add users.listAgents procedure that returns only agents (for Import matching dropdown)
+- [ ] Update AdminImport to use users.listAgents instead of users.list
+- [ ] Update AdminUsers page to use paginated/searchable users.list
+- [ ] Update Send Credentials tab to use paginated list

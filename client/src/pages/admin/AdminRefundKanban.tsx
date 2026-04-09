@@ -32,13 +32,11 @@ const REFUND_TYPE_LABELS: Record<string, string> = {
 
 export default function AdminRefundKanban() {
   const { data: refunds, refetch } = trpc.refunds.all.useQuery();
-  const { data: allUsers } = trpc.users.list.useQuery();
+  const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const updatePipeline = trpc.refunds.updatePipeline.useMutation({
     onSuccess: () => { refetch(); toast.success("Refund updated"); },
     onError: (e) => toast.error(e.message),
   });
-
-  const adminUsers = allUsers?.filter((u) => u.role === "admin" || u.role === "super_admin") ?? [];
 
   const byStage = (stage: Stage) =>
     (refunds ?? []).filter((r) => (r.pipelineStage ?? "New Refund Request") === stage);

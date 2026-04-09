@@ -14,8 +14,7 @@ export default function AdminReports() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
-  const { data: users = [] } = trpc.users.list.useQuery();
-  const agents = users.filter((u) => u.role === "agent");
+  const { data: agents = [] } = trpc.users.listAgents.useQuery();
 
   const { data: bookings = [], isLoading, refetch } = trpc.reports.bookings.useQuery({
     agentId: agentId !== "all" ? Number(agentId) : undefined,

@@ -108,11 +108,10 @@ function parseAgentsCsv(text: string): AgentRow[] {
 export default function AdminImport() {
   const utils = trpc.useUtils();
 
-  // ── Existing agents from DB ──────────────────────────────────────────────
-  const { data: existingUsers = [], refetch: refetchUsers } = trpc.users.list.useQuery();
-  const existingAgents = existingUsers.filter((u) => u.role === "agent");
+  // ── Existing agents from DB ───────────────────────────────────────────────────────────────────
+  const { data: existingAgents = [], refetch: refetchUsers } = trpc.users.listAgents.useQuery();
 
-  // ── Tab 1: Bulk create agents ────────────────────────────────────────────
+  // ── Tab 1: Bulk create agents ───────────────────────────────────────────────────────────────────
   const [agentFile, setAgentFile] = useState<File | null>(null);
   const [parsedAgents, setParsedAgents] = useState<AgentRow[]>([]);
   const [agentCreateResults, setAgentCreateResults] = useState<Array<{ email: string; success: boolean; error?: string }> | null>(null);

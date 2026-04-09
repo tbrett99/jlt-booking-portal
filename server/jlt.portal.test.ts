@@ -123,7 +123,8 @@ describe("role guards", () => {
     const ctx = makeCtx("admin");
     const caller = appRouter.createCaller(ctx);
     const result = await caller.users.list();
-    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveProperty('items');
+    expect(Array.isArray(result.items)).toBe(true);
   });
 
   it("notifications.templates.update is forbidden for admin (not super_admin)", async () => {

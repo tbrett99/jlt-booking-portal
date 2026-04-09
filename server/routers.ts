@@ -198,9 +198,42 @@ export const appRouter = router({
 
   // ── Users ─────────────────────────────────────────────────────────────────
   users: router({
-    list: adminProcedure.query(async () => {
+    list: adminProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        role: z.enum(["super_admin", "admin", "agent"]).optional(),
+        page: z.number().min(1).default(1),
+        pageSize: z.number().min(1).max(200).default(50),
+      }).optional())
+      .query(async ({ input }) => {
+        const all = await getAllUsers();
+        let filtered = all;
+        if (input?.role) filtered = filtered.filter((u) => u.role === input.role);
+        if (input?.search) {
+          const q = input.search.toLowerCase();
+          filtered = filtered.filter((u) =>
+            (u.name ?? "").toLowerCase().includes(q) ||
+            (u.email ?? "").toLowerCase().includes(q)
+          );
+        }
+        const page = input?.page ?? 1;
+        const pageSize = input?.pageSize ?? 50;
+        const total = filtered.length;
+        const items = filtered.slice((page - 1) * pageSize, page * pageSize);
+        return {
+          items: items.map((u) => ({ ...u, tempPassword: undefined })),
+          total,
+          page,
+          pageSize,
+          totalPages: Math.ceil(total / pageSize),
+        };
+      }),
+    // Lightweight list of all agents for dropdowns/matching (no pagination needed, names only)
+    listAgents: adminProcedure.query(async () => {
       const all = await getAllUsers();
-      return all.map((u) => ({ ...u, tempPassword: undefined }));
+      return all
+        .filter((u) => u.role === "agent")
+        .map((u) => ({ id: u.id, name: u.name ?? "", email: u.email ?? "", phone: (u as any).phone ?? "", credentialsSentAt: (u as any).credentialsSentAt ?? null }));
     }),
     listAdmins: protectedProcedure.query(async () => {
       const all = await getAllUsers();

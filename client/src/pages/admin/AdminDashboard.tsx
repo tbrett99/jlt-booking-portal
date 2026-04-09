@@ -37,7 +37,8 @@ const URGENT_STAGES = new Set(["Reimb Docs Missing", "Urgent/Reimb", "Query"]);
 
 export default function AdminDashboard() {
   const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery({});
-  const { data: users = [] } = trpc.users.list.useQuery();
+  const { data: usersData } = trpc.users.list.useQuery({ pageSize: 200 });
+  const users = usersData?.items ?? [];
   const { data: amendments = [] } = trpc.amendments.all.useQuery();
   const { data: refunds = [] } = trpc.refunds.all.useQuery();
   const { data: notifications = [] } = trpc.notifications.myNotifications.useQuery();

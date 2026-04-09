@@ -11,24 +11,38 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Search, UserCheck, UserX, Loader2, Trash2 } from "lucide-react";
+import { Plus, Search, ChevronLeft, ChevronRight, Loader2, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
 export default function AdminUsers() {
   const { user: me } = useAuth();
   const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"" | "super_admin" | "admin" | "agent">("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<"agent" | "admin" | "super_admin">("agent");
   const [isCreating, setIsCreating] = useState(false);
 
-  // Delete confirmation state
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const { data: users = [], isLoading } = trpc.users.list.useQuery();
+  const { data, isLoading } = trpc.users.list.useQuery({
+    search: search || undefined,
+    role: roleFilter || undefined,
+    page,
+    pageSize: PAGE_SIZE,
+  });
+
+  const users = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = data?.totalPages ?? 1;
+
   const createUser = trpc.users.create.useMutation();
   const updateRole = trpc.users.updateRole.useMutation();
   const toggleActive = trpc.users.toggleActive.useMutation({
@@ -38,12 +52,11 @@ export default function AdminUsers() {
     onSuccess: () => utils.users.list.invalidate(),
   });
 
-  const filtered = users.filter(
-    (u) =>
-      !search ||
-      (u.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
-      (u.email ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSearch(searchInput);
+    setPage(1);
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,6 +85,7 @@ export default function AdminUsers() {
       await deleteUser.mutateAsync({ userId: deleteTarget.id });
       toast.success(`${deleteTarget.name} has been deleted.`);
       setDeleteTarget(null);
+      await utils.users.list.invalidate();
     } catch (err: any) {
       toast.error(err.message || "Failed to delete user");
     } finally {
@@ -98,18 +112,30 @@ export default function AdminUsers() {
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold">User Management</h1>
-          <p className="text-sm text-muted-foreground">{users.length} users total</p>
+          <p className="text-sm text-muted-foreground">{total} users total</p>
         </div>
         <div className="sm:ml-auto flex gap-3 flex-wrap">
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search users..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 w-64"
-            />
-          </div>
+          <form onSubmit={handleSearch} className="flex gap-2">
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search users..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="pl-9 w-52"
+              />
+            </div>
+            <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v as any); setPage(1); }}>
+              <SelectTrigger className="w-32"><SelectValue placeholder="All roles" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All roles</SelectItem>
+                <SelectItem value="agent">Agent</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="super_admin">Super Admin</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="submit" variant="outline">Search</Button>
+          </form>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
               <Button style={{ background: "#70FFE8", color: "#414141" }} className="gap-2 font-semibold">
@@ -141,7 +167,7 @@ export default function AdminUsers() {
                   </Select>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  A temporary password will be generated and emailed to the user from support@thejltgroup.co.uk.
+                  A temporary password will be generated and emailed to the user.
                 </p>
                 <div className="flex gap-3 pt-2">
                   <Button type="submit" disabled={isCreating} style={{ background: "#70FFE8", color: "#414141" }} className="font-semibold">
@@ -161,18 +187,12 @@ export default function AdminUsers() {
           <DialogHeader>
             <DialogTitle>Delete User</DialogTitle>
             <DialogDescription>
-              Are you sure you want to permanently delete <strong>{deleteTarget?.name}</strong>? This action cannot be undone and will remove all their data.
+              Are you sure you want to permanently delete <strong>{deleteTarget?.name}</strong>? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 mt-4">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={isDeleting}>Cancel</Button>
+            <Button onClick={handleDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700 text-white">
               {isDeleting ? <><Loader2 size={14} className="animate-spin mr-2" />Deleting...</> : "Delete Permanently"}
             </Button>
           </DialogFooter>
@@ -186,74 +206,106 @@ export default function AdminUsers() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: "#70FFE8" }} />
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="py-3 font-semibold text-muted-foreground">Name</th>
-                    <th className="py-3 font-semibold text-muted-foreground hidden sm:table-cell">Email</th>
-                    <th className="py-3 font-semibold text-muted-foreground">Role</th>
-                    <th className="py-3 font-semibold text-muted-foreground hidden md:table-cell">Created</th>
-                    <th className="py-3 font-semibold text-muted-foreground">Status</th>
-                    <th className="py-3 font-semibold text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filtered.map((u) => (
-                    <tr
-                      key={u.id}
-                      className={`hover:bg-muted/30 transition-colors ${!u.isActive ? "opacity-50" : ""}`}
-                    >
-                      <td className="py-3 font-medium">{u.name ?? "—"}</td>
-                      <td className="py-3 text-muted-foreground hidden sm:table-cell">{u.email ?? "—"}</td>
-                      <td className="py-3">
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={roleBg(u.role)}>
-                          {roleLabel(u.role)}
-                        </span>
-                      </td>
-                      <td className="py-3 text-muted-foreground hidden md:table-cell">
-                        {format(new Date(u.createdAt), "dd MMM yyyy")}
-                      </td>
-                      <td className="py-3">
-                        <span className={`text-xs font-medium ${u.isActive ? "text-green-600" : "text-red-500"}`}>
-                          {u.isActive ? "Active" : "Suspended"}
-                        </span>
-                      </td>
-                      <td className="py-3">
-                        {u.id !== me?.id && (
-                          <div className="flex items-center gap-1">
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left">
+                      <th className="py-3 font-semibold text-muted-foreground">Name</th>
+                      <th className="py-3 font-semibold text-muted-foreground hidden sm:table-cell">Email</th>
+                      <th className="py-3 font-semibold text-muted-foreground">Role</th>
+                      <th className="py-3 font-semibold text-muted-foreground hidden md:table-cell">Created</th>
+                      <th className="py-3 font-semibold text-muted-foreground">Status</th>
+                      <th className="py-3 font-semibold text-muted-foreground">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {users.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                          No users found{search ? ` matching "${search}"` : ""}.
+                        </td>
+                      </tr>
+                    ) : users.map((u) => (
+                      <tr key={u.id} className={`hover:bg-muted/30 transition-colors ${!u.isActive ? "opacity-50" : ""}`}>
+                        <td className="py-3 font-medium">{u.name ?? "—"}</td>
+                        <td className="py-3 text-muted-foreground hidden sm:table-cell">{u.email ?? "—"}</td>
+                        <td className="py-3">
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={roleBg(u.role)}>
+                            {roleLabel(u.role)}
+                          </span>
+                        </td>
+                        <td className="py-3 text-muted-foreground hidden md:table-cell">
+                          {format(new Date(u.createdAt), "dd MMM yyyy")}
+                        </td>
+                        <td className="py-3">
+                          <span className={`text-xs font-medium ${u.isActive ? "text-green-600" : "text-red-500"}`}>
+                            {u.isActive ? "Active" : "Suspended"}
+                          </span>
+                        </td>
+                        <td className="py-3">
+                          <div className="flex gap-2">
                             <Button
-                              variant="ghost"
                               size="sm"
-                              className="text-xs h-7 gap-1"
-                              onClick={() => toggleActive.mutate({ userId: u.id, isActive: !u.isActive })}
+                              variant="outline"
+                              className="text-xs h-7"
+                              onClick={async () => {
+                                try {
+                                  await toggleActive.mutateAsync({ userId: u.id, isActive: !u.isActive });
+                                  toast.success(u.isActive ? "User suspended" : "User reactivated");
+                                } catch (err: any) {
+                                  toast.error(err.message || "Failed to update user");
+                                }
+                              }}
                             >
-                              {u.isActive
-                                ? <><UserX size={12} />Suspend</>
-                                : <><UserCheck size={12} />Activate</>}
+                              {u.isActive ? "Suspend" : "Reactivate"}
                             </Button>
-                            {/* Delete only available to super admin */}
                             {isSuperAdmin && (
                               <Button
-                                variant="ghost"
                                 size="sm"
-                                className="text-xs h-7 gap-1 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                variant="outline"
+                                className="text-xs h-7 text-red-600 border-red-200 hover:bg-red-50"
                                 onClick={() => setDeleteTarget({ id: u.id, name: u.name ?? "this user" })}
                               >
-                                <Trash2 size={12} />Delete
+                                <Trash2 size={12} />
                               </Button>
                             )}
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {filtered.length === 0 && (
-                <p className="text-center py-8 text-muted-foreground">No users found</p>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-4 border-t mt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                    >
+                      <ChevronLeft size={14} />
+                    </Button>
+                    <span className="text-sm flex items-center px-2">Page {page} of {totalPages}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={page >= totalPages}
+                    >
+                      <ChevronRight size={14} />
+                    </Button>
+                  </div>
+                </div>
               )}
-            </div>
+            </>
           )}
         </CardContent>
       </Card>
