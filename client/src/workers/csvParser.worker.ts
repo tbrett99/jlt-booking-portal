@@ -1,78 +1,24 @@
 // CSV Parser Web Worker
-// Runs off the main thread to avoid blocking the UI on large files
+// Uses PapaParse for robust RFC 4180 parsing (handles multi-line quoted fields,
+// large files, BOM, etc.) without blocking the main thread.
+
+import Papa from "papaparse";
 
 export type CsvParseMessage = {
   type: "parse";
   buffer: ArrayBuffer;
 };
 
-export type CsvParseResult = {
-  type: "done";
-  rows: Record<string, string>[];
-  rowCount: number;
-} | {
-  type: "error";
-  message: string;
-};
-
-/**
- * RFC 4180-compliant CSV parser that handles:
- * - Quoted fields with embedded commas
- * - Quoted fields with embedded newlines (like GHL's Notes column)
- * - Escaped double-quotes ("") inside quoted fields
- */
-function parseCsv(text: string): Record<string, string>[] {
-  const tokens: string[][] = [[]];
-  let current = "";
-  let inQuotes = false;
-  const n = text.length;
-
-  for (let i = 0; i < n; i++) {
-    const ch = text[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (i + 1 < n && text[i + 1] === '"') {
-          // Escaped quote inside quoted field
-          current += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        current += ch;
-      }
-    } else {
-      if (ch === '"') {
-        inQuotes = true;
-      } else if (ch === ',') {
-        tokens[tokens.length - 1].push(current);
-        current = "";
-      } else if (ch === '\n' || (ch === '\r' && i + 1 < n && text[i + 1] === '\n')) {
-        if (ch === '\r') i++; // skip \n of \r\n
-        tokens[tokens.length - 1].push(current);
-        current = "";
-        tokens.push([]);
-      } else {
-        current += ch;
-      }
+export type CsvParseResult =
+  | {
+      type: "done";
+      rows: Record<string, string>[];
+      rowCount: number;
     }
-  }
-  // Push last field
-  tokens[tokens.length - 1].push(current);
-
-  // Remove empty trailing rows
-  const nonEmpty = tokens.filter((row) => row.some((cell) => cell.trim() !== ""));
-  if (nonEmpty.length < 2) return [];
-
-  const headers = nonEmpty[0].map((h) => h.trim());
-  return nonEmpty.slice(1).map((values) => {
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => {
-      row[h] = (values[i] ?? "").trim();
-    });
-    return row;
-  });
-}
+  | {
+      type: "error";
+      message: string;
+    };
 
 // Only the columns we actually use — strip Notes and other large/unused columns
 // to keep the postMessage payload small (< 1 MB vs 11+ MB for full rows)
@@ -99,27 +45,39 @@ self.onmessage = (event: MessageEvent<CsvParseMessage>) => {
     try {
       // Decode the transferred ArrayBuffer to a string inside the worker
       const text = new TextDecoder("utf-8").decode(event.data.buffer);
-      const allRows = parseCsv(text);
+
+      // Use PapaParse — handles quoted multi-line fields, BOM, empty rows, etc.
+      const result = Papa.parse<Record<string, string>>(text, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.trim(),
+        transform: (v) => v.trim(),
+      });
+
+      if (result.errors && result.errors.length > 0) {
+        // Log errors but don't fail — PapaParse recovers from most errors
+        console.warn("[csvParser.worker] PapaParse warnings:", result.errors.slice(0, 5));
+      }
+
       // Strip unused columns to minimise postMessage payload
-      const rows = allRows.map((row) => {
+      const rows = (result.data as Record<string, string>[]).map((row) => {
         const slim: Record<string, string> = {};
         for (const key of Object.keys(row)) {
-          if (NEEDED_COLUMNS.has(key)) slim[key] = row[key];
+          if (NEEDED_COLUMNS.has(key)) slim[key] = row[key] ?? "";
         }
         return slim;
       });
-      const result: CsvParseResult = {
+
+      const out: CsvParseResult = {
         type: "done",
         rows,
         rowCount: rows.length,
       };
-      self.postMessage(result);
-    } catch (err: any) {
-      const result: CsvParseResult = {
-        type: "error",
-        message: err?.message ?? "Unknown parsing error",
-      };
-      self.postMessage(result);
+      self.postMessage(out);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown parsing error";
+      const out: CsvParseResult = { type: "error", message };
+      self.postMessage(out);
     }
   }
 };

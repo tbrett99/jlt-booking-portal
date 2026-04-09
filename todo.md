@@ -246,3 +246,6 @@
 
 ## CSV Import Crash Fix (Apr 9 v5)
 - [x] Fix persistent CSV import crash — root cause was rawRow storing all 50 CSV columns (incl. 6.8 MB Notes) = 11.3 MB postMessage payload. Fixed by: (1) stripping to 14 needed columns in worker (932 KB), (2) using ArrayBuffer zero-copy transfer instead of string copy to halve peak memory
+
+## CSV Import Crash Fix (Apr 9 v6)
+- [x] Replace custom char-by-char CSV parser with PapaParse 5.5.3 in the Web Worker — handles multi-line quoted fields natively, no custom tokeniser needed
