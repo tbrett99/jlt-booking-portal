@@ -236,3 +236,7 @@
 - [x] Add grossCost to bulkImport schema and persist via updateBookingAdminFields
 - [x] Improve agent matching logic (case-insensitive, prefix/nickname matching for ANT DAIR → Anthony Dair etc.)
 - [x] Add 3 new vitest tests for bulkImport (grossCost, dedup, invalid agentId) — 27 tests total
+
+## Bug Fixes (Apr 9 v3)
+- [x] Fix Users page crash: Select.Item with empty string value prop (replaced "" with "all" sentinel)
+- [x] Fix CSV import: file drop/select silently does nothing — replaced broken line-split parser with RFC 4180-compliant char-by-char parser that handles multi-line quoted fields (Notes column had embedded newlines causing 452k fake lines from 2,435 real rows)

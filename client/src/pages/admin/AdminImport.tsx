@@ -81,23 +81,47 @@ function mapStage(raw: string): string {
   return STAGE_MAP[raw.trim()] ?? "New Booking";
 }
 
-// ── CSV parser ────────────────────────────────────────────────────────────────
-
+/// ── CSV parser (RFC 4180 compliant — handles multi-line quoted fields) ────────
 function parseCsv(text: string): Record<string, string>[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
-  return lines.slice(1).map((line) => {
-    // Handle quoted fields with commas inside
-    const values: string[] = [];
-    let current = "";
-    let inQuotes = false;
-    for (const ch of line) {
-      if (ch === '"') { inQuotes = !inQuotes; }
-      else if (ch === "," && !inQuotes) { values.push(current.trim()); current = ""; }
-      else { current += ch; }
+  // Tokenise the entire file character by character so embedded newlines
+  // inside quoted fields do not break row boundaries.
+  const tokens: string[][] = [[]];
+  let current = "";
+  let inQuotes = false;
+  const n = text.length;
+  for (let i = 0; i < n; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        // Peek ahead: "" is an escaped quote inside a quoted field
+        if (i + 1 < n && text[i + 1] === '"') { current += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        current += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        tokens[tokens.length - 1].push(current);
+        current = "";
+      } else if (ch === '\n' || (ch === '\r' && text[i + 1] === '\n')) {
+        if (ch === '\r') i++; // skip the \n of \r\n
+        tokens[tokens.length - 1].push(current);
+        current = "";
+        tokens.push([]);
+      } else {
+        current += ch;
+      }
     }
-    values.push(current.trim());
+  }
+  // Push the last field
+  tokens[tokens.length - 1].push(current);
+  // Remove empty trailing rows
+  const nonEmpty = tokens.filter((row) => row.some((cell) => cell.trim() !== ""));
+  if (nonEmpty.length < 2) return [];
+  const headers = nonEmpty[0].map((h) => h.trim());
+  return nonEmpty.slice(1).map((values) => {
     const row: Record<string, string> = {};
     headers.forEach((h, i) => { row[h] = values[i] ?? ""; });
     return row;

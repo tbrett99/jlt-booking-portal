@@ -19,7 +19,7 @@ export default function AdminUsers() {
   const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
-  const [roleFilter, setRoleFilter] = useState<"" | "super_admin" | "admin" | "agent">("");
+  const [roleFilter, setRoleFilter] = useState<"all" | "super_admin" | "admin" | "agent">("all");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
 
@@ -34,7 +34,7 @@ export default function AdminUsers() {
 
   const { data, isLoading } = trpc.users.list.useQuery({
     search: search || undefined,
-    role: roleFilter || undefined,
+    role: roleFilter === "all" ? undefined : roleFilter,
     page,
     pageSize: PAGE_SIZE,
   });
@@ -125,10 +125,10 @@ export default function AdminUsers() {
                 className="pl-9 w-52"
               />
             </div>
-            <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v as any); setPage(1); }}>
+            <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v as any); setPage(1); }} defaultValue="all">
               <SelectTrigger className="w-32"><SelectValue placeholder="All roles" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All roles</SelectItem>
+                <SelectItem value="all">All roles</SelectItem>
                 <SelectItem value="agent">Agent</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="super_admin">Super Admin</SelectItem>
