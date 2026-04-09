@@ -54,6 +54,8 @@ export default function AdminKanban() {
   const [pendingMove, setPendingMove] = useState<{ bookingId: number; toStage: string } | null>(null);
   const [guardPaymentDate, setGuardPaymentDate] = useState("");
   const [isSavingGuard, setIsSavingGuard] = useState(false);
+  const [queryMove, setQueryMove] = useState<{ bookingId: number } | null>(null);
+  const [queryMessage, setQueryMessage] = useState("");
   const utils = trpc.useUtils();
 
   const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery({});
@@ -80,8 +82,22 @@ export default function AdminKanban() {
       setGuardPaymentDate("");
       return;
     }
+    if (newStage === "Query") {
+      const firstName = booking?.clientName?.split(" ")[0] ?? "there";
+      setQueryMove({ bookingId });
+      setQueryMessage(`Hi ${firstName},\n\nWe have a query regarding your booking. Please review the details and respond at your earliest convenience.\n\nThank you,\nJLT Group`);
+      return;
+    }
     setMovingId(bookingId);
     moveStage.mutate({ bookingId, toStage: newStage });
+  };
+
+  const handleSendQueryAndMove = () => {
+    if (!queryMove) return;
+    setMovingId(queryMove.bookingId);
+    moveStage.mutate({ bookingId: queryMove.bookingId, toStage: "Query", queryMessage: queryMessage.trim() || undefined });
+    setQueryMove(null);
+    setQueryMessage("");
   };
 
   const handleGuardSaveAndMove = async () => {
@@ -246,6 +262,50 @@ export default function AdminKanban() {
           </div>
         </div>
       )}
+
+      {/* Query Message Dialog */}
+      {(() => {
+        const queryBooking = queryMove ? bookings.find((b) => b.id === queryMove.bookingId) : null;
+        return (
+          <Dialog open={!!queryMove} onOpenChange={(open) => { if (!open) { setQueryMove(null); setQueryMessage(""); } }}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold" style={{ background: '#fefce8', color: '#854d0e' }}>?</span>
+                  Send Query to Agent
+                </DialogTitle>
+                <DialogDescription>
+                  {queryBooking && (
+                    <>Compose a message for <strong>{queryBooking.clientName}</strong>. It will be posted as a shared note visible to the agent and trigger a query notification email.</>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2 py-2">
+                <Label className="text-sm font-medium">Message to Agent</Label>
+                <textarea
+                  className="w-full min-h-[140px] rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                  value={queryMessage}
+                  onChange={(e) => setQueryMessage(e.target.value)}
+                  placeholder="Describe the query for the agent..."
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">This will also move the booking to the <strong>Query</strong> stage.</p>
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => { setQueryMove(null); setQueryMessage(""); }}>Cancel</Button>
+                <Button
+                  onClick={handleSendQueryAndMove}
+                  disabled={moveStage.isPending}
+                  style={{ background: '#eab308', color: '#fff' }}
+                >
+                  {moveStage.isPending ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
+                  Send &amp; Move to Query
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       {/* Payment Date Guard Dialog */}
       <Dialog open={!!pendingMove} onOpenChange={(open) => { if (!open) { setPendingMove(null); setGuardPaymentDate(""); } }}>

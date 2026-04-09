@@ -7,7 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
-  CheckCircle2, Circle, AlertCircle, Sparkles, TrendingUp, Clock
+  CheckCircle2, Circle, AlertCircle, Sparkles, TrendingUp, Clock,
+  RefreshCw, Pencil, User
 } from "lucide-react";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -58,6 +59,8 @@ export default function AgentBookingDetail() {
   const utils = trpc.useUtils();
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
   const { data: notes = [], refetch: refetchNotes } = trpc.notes.list.useQuery({ bookingId });
+  const { data: amendments = [] } = trpc.amendments.byBooking.useQuery({ bookingId });
+  const { data: refunds = [] } = trpc.refunds.byBooking.useQuery({ bookingId });
   const addNote = trpc.notes.add.useMutation();
   const uploadDoc = trpc.bookings.uploadReimbDoc.useMutation();
 
@@ -298,6 +301,81 @@ export default function AgentBookingDetail() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Amendments & Refunds Status */}
+      {(amendments.length > 0 || refunds.length > 0) && (
+        <div className="grid sm:grid-cols-2 gap-4">
+          {/* Amendments */}
+          {amendments.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Pencil size={14} style={{ color: '#6366f1' }} />
+                  Amendment Requests
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {amendments.map((a: any) => {
+                  const stageColor = a.pipelineStage === "Actioned" ? '#065f46' : a.pipelineStage === "In Progress" ? '#1d4ed8' : '#92400e';
+                  const stageBg = a.pipelineStage === "Actioned" ? '#d1fae5' : a.pipelineStage === "In Progress" ? '#dbeafe' : '#fef3c7';
+                  return (
+                    <div key={a.id} className="rounded-lg border p-3 text-sm" style={{ background: stageBg + '80' }}>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: stageBg, color: stageColor }}>
+                          {a.pipelineStage ?? 'To Do'}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{format(new Date(a.createdAt), 'dd MMM yyyy')}</span>
+                      </div>
+                      <p className="text-xs text-foreground line-clamp-2">{a.details}</p>
+                      {a.assignedToName && (
+                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                          <User size={10} /> Assigned to {a.assignedToName}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Refunds */}
+          {refunds.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <RefreshCw size={14} style={{ color: '#0891b2' }} />
+                  Refund Requests
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {refunds.map((r: any) => {
+                  const isProcessed = r.pipelineStage === 'Refund Processed';
+                  const isInProgress = r.pipelineStage && r.pipelineStage !== 'New Refund Request' && !isProcessed;
+                  const stageColor = isProcessed ? '#065f46' : isInProgress ? '#1d4ed8' : '#92400e';
+                  const stageBg = isProcessed ? '#d1fae5' : isInProgress ? '#dbeafe' : '#fef3c7';
+                  return (
+                    <div key={r.id} className="rounded-lg border p-3 text-sm" style={{ background: stageBg + '80' }}>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: stageBg, color: stageColor }}>
+                          {r.pipelineStage ?? 'New Refund Request'}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{format(new Date(r.createdAt), 'dd MMM yyyy')}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground capitalize">{r.refundType} refund</p>
+                      {r.assignedToName && (
+                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                          <User size={10} /> Assigned to {r.assignedToName}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* Actions */}

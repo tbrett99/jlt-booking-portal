@@ -65,6 +65,8 @@ export default function AdminBookingDetail() {
   const [detailsInitialised, setDetailsInitialised] = useState(false);
   const [pendingStage, setPendingStage] = useState<string | null>(null);
   const [showPaymentDateGuard, setShowPaymentDateGuard] = useState(false);
+  const [showQueryDialog, setShowQueryDialog] = useState(false);
+  const [queryMessage, setQueryMessage] = useState("");
 
   // @mention state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -143,7 +145,21 @@ export default function AdminBookingDetail() {
       setShowPaymentDateGuard(true);
       return;
     }
+    if (newStage === "Query") {
+      setPendingStage(newStage);
+      setQueryMessage(`Hi ${booking?.clientName ? booking.clientName.split(" ")[0] : "there"},\n\nWe have a query regarding your booking. Please review the details and respond at your earliest convenience.\n\nThank you,\nJLT Group`);
+      setShowQueryDialog(true);
+      return;
+    }
     moveStage.mutate({ bookingId, toStage: newStage });
+  };
+
+  const handleSendQueryAndMove = () => {
+    if (!pendingStage) return;
+    moveStage.mutate({ bookingId, toStage: pendingStage, queryMessage: queryMessage.trim() || undefined });
+    setShowQueryDialog(false);
+    setPendingStage(null);
+    setQueryMessage("");
   };
 
   const handleGuardSaveAndMove = async () => {
@@ -438,6 +454,45 @@ export default function AdminBookingDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Query Message Dialog */}
+      <Dialog open={showQueryDialog} onOpenChange={(open) => { if (!open) { setShowQueryDialog(false); setPendingStage(null); setQueryMessage(""); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-sm" style={{ background: '#fefce8', color: '#854d0e' }}>?</span>
+              Send Query to Agent
+            </DialogTitle>
+            <DialogDescription>
+              This message will be posted as a shared note visible to the agent and will also trigger a query notification email. You can edit the message below before sending.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label className="text-sm font-medium">Message to Agent</Label>
+            <Textarea
+              value={queryMessage}
+              onChange={(e) => setQueryMessage(e.target.value)}
+              className="min-h-[140px] text-sm resize-none"
+              placeholder="Describe the query for the agent..."
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">This will also move the booking to the <strong>Query</strong> stage.</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setShowQueryDialog(false); setPendingStage(null); setQueryMessage(""); }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSendQueryAndMove}
+              disabled={moveStage.isPending}
+              style={{ background: '#eab308', color: '#fff' }}
+            >
+              {moveStage.isPending ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
+              Send &amp; Move to Query
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Payment Date Guard Dialog */}
       <Dialog open={showPaymentDateGuard} onOpenChange={setShowPaymentDateGuard}>

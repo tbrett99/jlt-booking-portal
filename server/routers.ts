@@ -370,7 +370,7 @@ export const appRouter = router({
         return { success: true, isLate };
       }),
     moveStage: adminProcedure
-      .input(z.object({ bookingId: z.number(), toStage: z.string() }))
+      .input(z.object({ bookingId: z.number(), toStage: z.string(), queryMessage: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
@@ -418,6 +418,16 @@ export const appRouter = router({
             linkUrl: `/bookings/${booking.id}`,
           });
         }
+        // If moving to Query and a message was provided, post it as a shared note visible to the agent
+        if (input.toStage === "Query" && input.queryMessage?.trim()) {
+          await createNote({
+            bookingId: booking.id,
+            authorId: ctx.user.id,
+            content: input.queryMessage.trim(),
+            isInternal: false,
+          });
+        }
+
         // System audit note for stage change
         await createNote({
           bookingId: booking.id,
@@ -605,8 +615,21 @@ export const appRouter = router({
       }),
     byBooking: protectedProcedure
       .input(z.object({ bookingId: z.number() }))
-      .query(async ({ input }) => {
-        return getAmendmentsByBooking(input.bookingId);
+      .query(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        // Agents can only see amendments for their own bookings
+        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        const amendments = await getAmendmentsByBooking(input.bookingId);
+        // Enrich with assignee name
+        const allUsers = await getAllUsers();
+        const userMap = new Map(allUsers.map((u) => [u.id, u]));
+        return amendments.map((a) => ({
+          ...a,
+          assignedToName: a.assignedToId ? (userMap.get(a.assignedToId)?.name ?? null) : null,
+        }));
       }),
     all: adminProcedure.query(async () => {
       const amendments = await getAllAmendments();
@@ -659,12 +682,38 @@ export const appRouter = router({
     updatePipeline: adminProcedure
       .input(z.object({
         amendmentId: z.number(),
+        bookingId: z.number().optional(),
         pipelineStage: z.enum(["To Do", "In Progress", "Actioned"]).optional(),
         assignedToId: z.number().nullable().optional(),
       }))
-      .mutation(async ({ input }) => {
-        const { amendmentId, ...data } = input;
-        return updateAmendmentPipeline(amendmentId, data as any);
+      .mutation(async ({ input, ctx }) => {
+        const { amendmentId, bookingId: bId, ...data } = input;
+        const updated = await updateAmendmentPipeline(amendmentId, data as any);
+        // Notify agent when assigned or actioned
+        const resolvedBookingId = bId ?? updated?.bookingId;
+        if (resolvedBookingId) {
+          const booking = await getBookingById(resolvedBookingId);
+          if (booking) {
+            if (data.assignedToId) {
+              const assignee = await getUserById(data.assignedToId);
+              await createInAppNotification({
+                userId: booking.agentId,
+                bookingId: booking.id,
+                message: `Your amendment for "${booking.clientName}" has been assigned to ${assignee?.name ?? "an admin"} and is being reviewed`,
+                linkUrl: `/bookings/${booking.id}`,
+              });
+            }
+            if (data.pipelineStage === "Actioned") {
+              await createInAppNotification({
+                userId: booking.agentId,
+                bookingId: booking.id,
+                message: `Your amendment for "${booking.clientName}" has been actioned by ${ctx.user.name ?? "Admin"}`,
+                linkUrl: `/bookings/${booking.id}`,
+              });
+            }
+          }
+        }
+        return updated;
       }),
   }),
 
@@ -755,7 +804,27 @@ export const appRouter = router({
         });
         return { success: true, refundId };
       }),
-    byBooking: adminProcedure
+    byBooking: protectedProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        const refundRows = await getRefundsByBooking(input.bookingId);
+        const allUsers = await getAllUsers();
+        const userMap = new Map(allUsers.map((u) => [u.id, u]));
+        return refundRows.map((r) => ({
+          // Only expose bank details to admins
+          ...r,
+          clientBankName: ctx.user.role !== "agent" ? decryptOptional(r.clientBankName) : undefined,
+          clientSortCode: ctx.user.role !== "agent" ? decryptOptional(r.clientSortCode) : undefined,
+          clientAccountNumber: ctx.user.role !== "agent" ? decryptOptional(r.clientAccountNumber) : undefined,
+          assignedToName: r.assignedToId ? (userMap.get(r.assignedToId)?.name ?? null) : null,
+        }));
+      }),
+    byBookingAdmin: adminProcedure
       .input(z.object({ bookingId: z.number() }))
       .query(async ({ input }) => {
         const refundRows = await getRefundsByBooking(input.bookingId);
@@ -802,6 +871,37 @@ export const appRouter = router({
             content: `[System] Refund stage moved to "${data.pipelineStage}" by ${ctx.user.name ?? "Admin"}.`,
             isInternal: true,
           });
+          // Notify agent
+          const booking = await getBookingById(updated.bookingId);
+          if (booking) {
+            const stageMessages: Record<string, string> = {
+              "Acknowledged by Supplier": `Your refund request for "${booking.clientName}" has been acknowledged by the supplier`,
+              "Refund Sent to PTS": `Your refund for "${booking.clientName}" has been sent to PTS`,
+              "Refund Received in JLT": `Your refund for "${booking.clientName}" has been received by JLT`,
+              "Refund Processed": `Your refund for "${booking.clientName}" has been fully processed`,
+            };
+            const msg = stageMessages[data.pipelineStage];
+            if (msg) {
+              await createInAppNotification({
+                userId: booking.agentId,
+                bookingId: booking.id,
+                message: msg,
+                linkUrl: `/bookings/${booking.id}`,
+              });
+            }
+          }
+        }
+        if (data.assignedToId && updated?.bookingId) {
+          const booking = await getBookingById(updated.bookingId);
+          if (booking) {
+            const assignee = await getUserById(data.assignedToId);
+            await createInAppNotification({
+              userId: booking.agentId,
+              bookingId: booking.id,
+              message: `Your refund request for "${booking.clientName}" has been assigned to ${assignee?.name ?? "an admin"} and is being reviewed`,
+              linkUrl: `/bookings/${booking.id}`,
+            });
+          }
         }
         return updated;
       }),

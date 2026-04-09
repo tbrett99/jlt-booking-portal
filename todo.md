@@ -153,3 +153,24 @@
 - [ ] Agent dashboard: surface per-booking pipeline history timeline (stage change log) on booking detail page
 - [ ] Global: replace spinner-only loading states with skeleton components on key pages (dashboard, kanban, booking detail)
 - [ ] Mobile: full QA pass across agent/admin pages — fix any confirmed overflow/wrapping issues
+
+## Query Stage Message Dialog
+- [ ] When moving a booking to "Query", show a dialog letting the admin compose a message to the agent before confirming the move
+- [ ] Pre-populate the message with a sensible default
+- [ ] Send the message as a shared note AND trigger the existing "query" notification email to the agent
+- [ ] Backend: accept optional queryMessage in moveStage input
+
+## Urgent Attention Logic
+- [ ] Document and surface clearly what criteria cause a booking to appear in the urgent attention banner
+- [ ] Fix any incorrect or unclear urgent attention criteria
+
+## Agent Refund & Amendment Visibility
+- [x] Agent booking detail: show amendments with status (pending/assigned/actioned) and assigned admin name
+- [x] Agent booking detail: show refunds with status (new/acknowledged/sent to PTS/received/processed) and assigned admin name
+- [x] Notify agent when amendment/refund is assigned to an admin
+- [x] Notify agent when amendment/refund is actioned/completed
+
+## Commission Page Enhancements
+- [x] Commission summary bar: show total pending (active bookings), claimable, claimed not yet paid, and paid amounts
+- [x] Prompt agents to contact JLT when commission amount is missing from their bookings (amounts are set by admins)
+- [x] Show per-booking commission amount on the claimable/claimed lists

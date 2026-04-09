@@ -2,14 +2,15 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { Loader2, CheckCircle, Clock, Banknote, Lock } from "lucide-react";
+import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight } from "lucide-react";
+import { Link } from "wouter";
 
 type BookingType = "lapland" | "cruise" | "disney" | "other";
 
@@ -35,11 +36,19 @@ type BookingWithClaim = {
   } | null;
 };
 
+function fmt(d: Date | string | null | undefined) {
+  if (!d) return "—";
+  return format(new Date(d), "dd/MM/yyyy");
+}
+
+function sumCommission(list: BookingWithClaim[]) {
+  return list.reduce((acc, b) => acc + (b.expectedCommission ?? 0), 0);
+}
+
 export default function AgentCommissions() {
   const utils = trpc.useUtils();
   const { data: bookings, isLoading } = trpc.commissionClaims.myCommissions.useQuery();
 
-  // Booking type dialog state
   const [claimTarget, setClaimTarget] = useState<BookingWithClaim | null>(null);
   const [selectedType, setSelectedType] = useState<BookingType>("other");
 
@@ -73,10 +82,14 @@ export default function AgentCommissions() {
   const claimedNotPaid = all.filter((b) => b.claim && b.claim.status === "claimed_not_paid");
   const paid = all.filter((b) => b.claim && b.claim.status === "paid");
 
-  const formatDate = (d: Date | string | null | undefined) => {
-    if (!d) return "—";
-    return format(new Date(d), "dd/MM/yyyy");
-  };
+  // Bookings missing a commission amount (active, not cancelled)
+  const missingCommission = notReady.filter((b) => !b.expectedCommission);
+
+  // Monetary totals
+  const pendingTotal = sumCommission(notReady);
+  const claimableTotal = sumCommission(claimable);
+  const awaitingTotal = sumCommission(claimedNotPaid);
+  const paidTotal = sumCommission(paid);
 
   const openClaimDialog = (booking: BookingWithClaim) => {
     setSelectedType("other");
@@ -92,20 +105,36 @@ export default function AgentCommissions() {
     booking,
     showClaim,
     showStatus,
+    highlightMissing,
   }: {
     booking: BookingWithClaim;
     showClaim?: boolean;
     showStatus?: boolean;
+    highlightMissing?: boolean;
   }) => (
-    <div className="flex items-center justify-between p-4 border border-border rounded-lg bg-card hover:bg-accent/30 transition-colors">
+    <div className={`flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-accent/30 transition-colors ${
+      highlightMissing && !booking.expectedCommission ? "border-amber-300" : "border-border"
+    }`}>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-foreground truncate">{booking.clientName}</p>
-        <p className="text-sm text-muted-foreground">Departure: {formatDate(booking.departureDate)}</p>
-        {booking.expectedCommission != null && (
-          <p className="text-sm text-muted-foreground">Expected: £{booking.expectedCommission.toFixed(2)}</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="font-semibold text-foreground truncate">{booking.clientName}</p>
+          {highlightMissing && !booking.expectedCommission && (
+            <span className="flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full"
+              style={{ background: '#fef3c7', color: '#92400e' }}>
+              <AlertCircle size={10} /> No amount set
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground">Departure: {fmt(booking.departureDate)}</p>
+        {booking.expectedCommission != null ? (
+          <p className="text-sm font-semibold mt-0.5" style={{ color: '#065f46' }}>
+            £{booking.expectedCommission.toFixed(2)}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground italic mt-0.5">Commission amount not set — contact JLT</p>
         )}
         {booking.claim?.claimedAt && (
-          <p className="text-xs text-muted-foreground">Claimed: {formatDate(booking.claim.claimedAt)}</p>
+          <p className="text-xs text-muted-foreground">Claimed: {fmt(booking.claim.claimedAt)}</p>
         )}
         {booking.claim?.bookingType && (
           <p className="text-xs text-muted-foreground">
@@ -113,10 +142,10 @@ export default function AgentCommissions() {
           </p>
         )}
         {booking.claim?.paidAt && (
-          <p className="text-xs text-emerald-600 font-medium">Paid: {formatDate(booking.claim.paidAt)}</p>
+          <p className="text-xs text-emerald-600 font-medium">Paid: {fmt(booking.claim.paidAt)}</p>
         )}
       </div>
-      <div className="flex items-center gap-3 ml-4">
+      <div className="flex items-center gap-3 ml-4 flex-shrink-0">
         {showStatus && (
           <Badge
             variant="outline"
@@ -146,67 +175,122 @@ export default function AgentCommissions() {
             Claim Commission
           </Button>
         )}
+        <Link href={`/bookings/${booking.id}`}>
+          <button className="p-1 rounded hover:bg-muted">
+            <ChevronRight size={16} className="text-muted-foreground" />
+          </button>
+        </Link>
       </div>
     </div>
   );
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <div className="mb-6">
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
+      <div>
         <h1 className="text-2xl font-bold text-foreground">My Commissions</h1>
         <p className="text-muted-foreground mt-1">Track and claim your commission for completed bookings.</p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      {/* Missing commission prompt */}
+      {missingCommission.length > 0 && (
+        <div className="rounded-xl border-l-4 p-4 flex items-start gap-3"
+          style={{ borderLeftColor: '#f59e0b', background: '#fffbeb' }}>
+          <AlertCircle size={18} style={{ color: '#f59e0b' }} className="flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm" style={{ color: '#92400e' }}>
+              {missingCommission.length} booking{missingCommission.length > 1 ? "s are" : " is"} missing a commission amount
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: '#92400e', opacity: 0.8 }}>
+              Commission amounts are set by the JLT admin team. If you believe an amount is missing, please message the JLT team via the booking page.
+            </p>
+            <p className="text-xs mt-1 font-medium" style={{ color: '#92400e' }}>
+              {missingCommission.map((b) => b.clientName).join(", ")}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Financial summary bar */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="border-border">
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2">
-              <Lock className="h-4 w-4 text-muted-foreground" />
-              <div>
-                <p className="text-2xl font-bold">{notReady.length}</p>
-                <p className="text-xs text-muted-foreground">Not Ready</p>
+            <div className="flex items-start gap-2">
+              <Lock className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Pending</p>
+                <p className="text-xl font-bold truncate">
+                  {pendingTotal > 0 ? `£${pendingTotal.toFixed(2)}` : <span className="text-muted-foreground text-base">—</span>}
+                </p>
+                <p className="text-xs text-muted-foreground">{notReady.length} booking{notReady.length !== 1 ? "s" : ""}</p>
               </div>
             </div>
           </CardContent>
         </Card>
+
         <Card className="border-[#02E6D2]">
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-[#02E6D2]" />
-              <div>
-                <p className="text-2xl font-bold text-[#02E6D2]">{claimable.length}</p>
+            <div className="flex items-start gap-2">
+              <CheckCircle className="h-4 w-4 text-[#02E6D2] mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
                 <p className="text-xs text-muted-foreground">Ready to Claim</p>
+                <p className="text-xl font-bold text-[#02E6D2] truncate">
+                  {claimableTotal > 0 ? `£${claimableTotal.toFixed(2)}` : <span className="text-muted-foreground text-base">—</span>}
+                </p>
+                <p className="text-xs text-muted-foreground">{claimable.length} booking{claimable.length !== 1 ? "s" : ""}</p>
               </div>
             </div>
           </CardContent>
         </Card>
+
         <Card className="border-amber-400">
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-amber-500" />
-              <div>
-                <p className="text-2xl font-bold text-amber-500">{claimedNotPaid.length}</p>
+            <div className="flex items-start gap-2">
+              <Clock className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
                 <p className="text-xs text-muted-foreground">Awaiting Payment</p>
+                <p className="text-xl font-bold text-amber-500 truncate">
+                  {awaitingTotal > 0 ? `£${awaitingTotal.toFixed(2)}` : <span className="text-muted-foreground text-base">—</span>}
+                </p>
+                <p className="text-xs text-muted-foreground">{claimedNotPaid.length} booking{claimedNotPaid.length !== 1 ? "s" : ""}</p>
               </div>
             </div>
           </CardContent>
         </Card>
+
         <Card className="border-emerald-400">
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2">
-              <Banknote className="h-4 w-4 text-emerald-500" />
-              <div>
-                <p className="text-2xl font-bold text-emerald-500">{paid.length}</p>
-                <p className="text-xs text-muted-foreground">Paid</p>
+            <div className="flex items-start gap-2">
+              <Banknote className="h-4 w-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Total Paid</p>
+                <p className="text-xl font-bold text-emerald-500 truncate">
+                  {paidTotal > 0 ? `£${paidTotal.toFixed(2)}` : <span className="text-muted-foreground text-base">—</span>}
+                </p>
+                <p className="text-xs text-muted-foreground">{paid.length} booking{paid.length !== 1 ? "s" : ""}</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
+      {/* Lifetime earnings callout */}
+      {paidTotal > 0 && (
+        <div className="rounded-xl p-4 flex items-center gap-3"
+          style={{ background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)', border: '1px solid #6ee7b7' }}>
+          <TrendingUp size={20} style={{ color: '#059669' }} className="flex-shrink-0" />
+          <div>
+            <p className="font-semibold text-sm" style={{ color: '#065f46' }}>
+              You've earned £{(paidTotal + awaitingTotal).toFixed(2)} in total commissions
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: '#065f46', opacity: 0.75 }}>
+              £{paidTotal.toFixed(2)} paid · £{awaitingTotal.toFixed(2)} awaiting payment
+            </p>
+          </div>
+        </div>
+      )}
+
       <Tabs defaultValue="claimable">
-        <TabsList className="mb-4">
+        <TabsList className="mb-4 flex-wrap h-auto gap-1">
           <TabsTrigger value="claimable">
             Ready to Claim
             {claimable.length > 0 && (
@@ -224,7 +308,14 @@ export default function AgentCommissions() {
             )}
           </TabsTrigger>
           <TabsTrigger value="paid">Paid</TabsTrigger>
-          <TabsTrigger value="not-ready">Not Ready</TabsTrigger>
+          <TabsTrigger value="not-ready">
+            In Progress
+            {notReady.length > 0 && (
+              <span className="ml-2 bg-muted text-muted-foreground text-xs font-bold rounded-full px-2 py-0.5">
+                {notReady.length}
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="claimable">
@@ -238,6 +329,13 @@ export default function AgentCommissions() {
             </Card>
           ) : (
             <div className="space-y-3">
+              {claimable.length > 1 && (
+                <div className="rounded-lg p-3 text-sm flex items-center gap-2"
+                  style={{ background: '#ecfdf5', color: '#065f46' }}>
+                  <CheckCircle size={14} />
+                  <span>You have <strong>£{claimableTotal.toFixed(2)}</strong> ready to claim across {claimable.length} bookings.</span>
+                </div>
+              )}
               {claimable.map((b) => (
                 <BookingRow key={b.id} booking={b} showClaim />
               ))}
@@ -255,6 +353,13 @@ export default function AgentCommissions() {
             </Card>
           ) : (
             <div className="space-y-3">
+              {claimedNotPaid.length > 1 && (
+                <div className="rounded-lg p-3 text-sm flex items-center gap-2"
+                  style={{ background: '#fffbeb', color: '#92400e' }}>
+                  <Clock size={14} />
+                  <span><strong>£{awaitingTotal.toFixed(2)}</strong> is awaiting payment from JLT across {claimedNotPaid.length} bookings.</span>
+                </div>
+              )}
               {claimedNotPaid.map((b) => (
                 <BookingRow key={b.id} booking={b} showStatus />
               ))}
@@ -272,6 +377,13 @@ export default function AgentCommissions() {
             </Card>
           ) : (
             <div className="space-y-3">
+              {paid.length > 0 && (
+                <div className="rounded-lg p-3 text-sm flex items-center gap-2"
+                  style={{ background: '#ecfdf5', color: '#065f46' }}>
+                  <Banknote size={14} />
+                  <span>Total paid to date: <strong>£{paidTotal.toFixed(2)}</strong></span>
+                </div>
+              )}
               {paid.map((b) => (
                 <BookingRow key={b.id} booking={b} showStatus />
               ))}
@@ -288,8 +400,15 @@ export default function AgentCommissions() {
             </Card>
           ) : (
             <div className="space-y-3">
+              {missingCommission.length > 0 && (
+                <div className="rounded-lg p-3 text-sm flex items-center gap-2"
+                  style={{ background: '#fffbeb', color: '#92400e' }}>
+                  <AlertCircle size={14} />
+                  <span>{missingCommission.length} booking{missingCommission.length > 1 ? "s are" : " is"} missing a commission amount — contact the JLT team via the booking page to get this added.</span>
+                </div>
+              )}
               {notReady.map((b) => (
-                <BookingRow key={b.id} booking={b} showStatus />
+                <BookingRow key={b.id} booking={b} showStatus highlightMissing />
               ))}
             </div>
           )}
@@ -303,6 +422,11 @@ export default function AgentCommissions() {
             <DialogTitle>Claim Commission</DialogTitle>
             <DialogDescription>
               Please select the booking type for <strong>{claimTarget?.clientName}</strong> before submitting your claim.
+              {claimTarget?.expectedCommission && (
+                <span className="block mt-1 font-semibold" style={{ color: '#065f46' }}>
+                  Expected commission: £{claimTarget.expectedCommission.toFixed(2)}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
 
