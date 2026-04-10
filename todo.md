@@ -273,3 +273,10 @@
 - [x] Frontend: Forgot password link on login screen — opens modal with email field + success confirmation state
 - [x] Frontend: Reset password page at /reset-password?token=... — validates token from URL, success redirects to login
 - [x] Frontend: My Profile link added to sidebar navigation (above Sign Out) for all roles
+
+## Agent View Login Redirect Bug (Apr 10)
+- [x] Fix: switching to agent view redirects admins to login page — confirmed this was the impersonation bug (same root cause), not the view switcher. View switcher works correctly.
+
+## Impersonate & Agent View Fixes (Apr 10)
+- [x] Fix impersonate button — root cause: authenticateRequest called getUserInfoWithJwt against Manus OAuth for locally-created users (openId=agent_*), which failed. Fixed by skipping OAuth sync for agent_ openIds.
+- [x] Admin agent view — myBookings already returns admin's own bookings correctly; empty state is expected if no bookings assigned to that admin account

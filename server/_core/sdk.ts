@@ -270,8 +270,11 @@ class SDKServer {
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
 
-    // If user not in DB, sync from OAuth server automatically
-    if (!user) {
+    // If user not in DB, sync from OAuth server automatically.
+    // Skip OAuth sync for locally-created users (openId starts with "agent_") —
+    // these users were created via the portal's own password system and are not
+    // registered with Manus OAuth, so calling getUserInfoWithJwt would fail.
+    if (!user && !sessionUserId.startsWith("agent_")) {
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
         await db.upsertUser({
