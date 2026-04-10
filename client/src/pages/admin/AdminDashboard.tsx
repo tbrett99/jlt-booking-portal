@@ -140,7 +140,7 @@ export default function AdminDashboard() {
                   {missingPaymentDate.length} booking{missingPaymentDate.length > 1 ? "s" : ""} missing a Final Supplier Payment Date
                 </span>
               </div>
-              <Link href="/pipeline"><Button size="sm" variant="ghost" className="text-xs text-amber-700 h-7 px-2">Review</Button></Link>
+              <Link href="/pts-missing-payment"><Button size="sm" variant="ghost" className="text-xs text-amber-700 h-7 px-2">Review</Button></Link>
             </div>
           )}
           {pendingClaims.length > 0 && (

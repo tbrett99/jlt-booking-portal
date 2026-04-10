@@ -229,6 +229,28 @@ export async function getBookingById(id: number) {
   return result[0];
 }
 
+export async function getBookingWithAgent(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select({
+      booking: bookings,
+      agentName: users.name,
+      agentEmail: users.email,
+    })
+    .from(bookings)
+    .leftJoin(users, eq(bookings.agentId, users.id))
+    .where(eq(bookings.id, id))
+    .limit(1);
+  if (!result[0]) return undefined;
+  const { booking, agentName, agentEmail } = result[0];
+  return {
+    ...booking,
+    agentName: agentName ?? null,
+    agentEmail: agentEmail ?? null,
+  };
+}
+
 export async function getBookingsByAgent(agentId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -692,4 +714,30 @@ export async function updateUserProfile(
   if (data.phone !== undefined) updateSet.phone = data.phone;
   if (Object.keys(updateSet).length === 0) return;
   await db.update(users).set(updateSet as any).where(eq(users.id, userId));
+}
+
+export async function getPtsMissingPaymentDate() {
+  const db = await getDb();
+  if (!db) return [];
+  // Bookings in "Added to PTS" stage with no finalSupplierPaymentDate, joined with agent name
+  const result = await db
+    .select({
+      booking: bookings,
+      agentName: users.name,
+      agentEmail: users.email,
+    })
+    .from(bookings)
+    .leftJoin(users, eq(bookings.agentId, users.id))
+    .where(
+      and(
+        eq(bookings.currentStage, "Added to PTS"),
+        sql`${bookings.finalSupplierPaymentDate} IS NULL`
+      )
+    )
+    .orderBy(bookings.createdAt);
+  return result.map(({ booking, agentName, agentEmail }) => ({
+    ...booking,
+    agentName: agentName ?? null,
+    agentEmail: agentEmail ?? null,
+  }));
 }

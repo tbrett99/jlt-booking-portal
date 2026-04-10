@@ -278,7 +278,9 @@ export default function AdminBookingDetail() {
               </div>
               <div>
                 <dt className="text-muted-foreground">Agent</dt>
-                <dd className="font-medium mt-0.5">Agent #{booking.agentId}</dd>
+                <dd className="font-medium mt-0.5">
+                  {(booking as any).agentName ?? `Agent #${booking.agentId}`}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Reimbursements</dt>

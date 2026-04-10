@@ -28,6 +28,7 @@ import AgentCancelBooking from "./pages/agent/AgentCancelBooking";
 import AgentRequestAmendment from "./pages/agent/AgentRequestAmendment";
 import AdminCommissions from "./pages/admin/AdminCommissions";
 import AdminImport from "./pages/admin/AdminImport";
+import PtsMissingPaymentDate from "./pages/admin/PtsMissingPaymentDate";
 import PortalLayout from "./components/PortalLayout";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
@@ -136,6 +137,7 @@ function AuthRouter() {
         <Route path="/reports" component={AdminReports} />
         <Route path="/notification-templates" component={NotificationTemplates} />
         <Route path="/import" component={AdminImport} />
+        <Route path="/pts-missing-payment" component={PtsMissingPaymentDate} />
         <Route path="/profile" component={ProfilePage} />
         <Route component={NotFound} />
       </Switch>

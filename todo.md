@@ -283,3 +283,10 @@
 
 ## Impersonation Password Redirect Bug (Apr 10)
 - [x] Fix: impersonating an agent redirects admin to "set new password" page — fixed by reading is_impersonating cookie in App.tsx and skipping mustChangePassword redirect when impersonating
+
+## Booking Detail Agent Name (Apr 10)
+- [x] Show agent name on admin booking detail page (visible when clicking into a booking from the pipeline)
+
+## Booking Detail & PTS Missing Payment View (Apr 10)
+- [x] Show agent name on admin booking detail page — getBookingWithAgent joins users table, bookings.byId now returns agentName + agentEmail
+- [x] Add "Added to PTS – Missing Payment Date" view at /pts-missing-payment — table with search, inline date setter, link to booking detail; dashboard alert now links here

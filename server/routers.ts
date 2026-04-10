@@ -17,6 +17,8 @@ import {
   updateUserPassword,
   createBooking,
   getBookingById,
+  getBookingWithAgent,
+  getPtsMissingPaymentDate,
   getBookingsByAgent,
   getAllBookings,
   updateBookingStage,
@@ -469,10 +471,13 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return getAllBookings(input);
       }),
+    ptsMissingPaymentDate: adminProcedure.query(async () => {
+      return getPtsMissingPaymentDate();
+    }),
     byId: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input, ctx }) => {
-        const booking = await getBookingById(input.id);
+        const booking = await getBookingWithAgent(input.id);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
         // Agents can only see their own bookings
         if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
