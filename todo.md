@@ -360,3 +360,12 @@
 - [x] On upload: email all admins with booking name, agent name, and "View Booking" link button
 - [x] On upload: create in-app notification for all admins with direct link to booking
 - [x] Backend: uploadReimbDoc now always notifies admins (not just on late uploads)
+
+## Reimbursement Multi-Doc & Fixes (Apr 10)
+- [x] Add reimbursement_docs table (bookingId, uploadedBy, fileUrl, fileName, uploadedAt) for multi-doc support
+- [x] Backend: bookings.uploadReimbDoc now appends to reimbursement_docs table (not replace); isReimbursementDoc flag set on amendment
+- [x] Backend: bookings.listReimbDocs query returns all docs for a booking with uploader name
+- [x] Fix red border: now uses booking.currentStage === "Reimb Docs Missing" || "Urgent/Reimb" (not just reimbursementsRequired flag)
+- [x] Agent booking detail: shows list of all uploaded docs with filename + date; button changes to "Upload Additional Document" when docs exist
+- [x] Hide reimbursement amendments from agent view (filter out isReimbursementDoc amendments in agent booking detail)
+- [x] Amendment pipeline: red left border + "REIMBURSEMENT DOCS UPLOADED / Action required" banner on cards where isReimbursementDoc = true

@@ -81,6 +81,7 @@ export const amendments = mysqlTable("amendments", {
   bookingId: int("bookingId").notNull(), // FK → bookings.id
   agentId: int("agentId").notNull(), // FK → users.id
   details: text("details").notNull(),
+  isReimbursementDoc: boolean("isReimbursementDoc").default(false).notNull(), // true = created from doc upload
   pipelineStage: mysqlEnum("pipelineStage", ["To Do", "In Progress", "Actioned"]).default("To Do").notNull(),
   assignedToId: int("assignedToId"), // FK → users.id
   status: mysqlEnum("status", ["pending", "actioned"]).default("pending").notNull(),
@@ -226,6 +227,21 @@ export const passwordResetTokens = mysqlTable("password_reset_tokens", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
+// ─── Reimbursement Documents ────────────────────────────────────────────────────
+// Stores multiple reimbursement docs per booking (replaces single reimbursementDocUrl on bookings)
+export const reimbursementDocs = mysqlTable("reimbursement_docs", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId").notNull(), // FK → bookings.id
+  uploadedById: int("uploadedById").notNull(), // FK → users.id
+  fileUrl: text("fileUrl").notNull(), // S3 URL
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  mimeType: varchar("mimeType", { length: 100 }),
+  uploadedAt: timestamp("uploadedAt").defaultNow().notNull(),
+});
+
+export type ReimbursementDoc = typeof reimbursementDocs.$inferSelect;
+export type InsertReimbursementDoc = typeof reimbursementDocs.$inferInsert;
 
 // ─── System Settings ──────────────────────────────────────────────────────────
 // Simple key-value store for global system flags (e.g. notifications paused)

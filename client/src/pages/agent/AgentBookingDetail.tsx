@@ -65,6 +65,7 @@ export default function AgentBookingDetail() {
   const { data: notes = [], refetch: refetchNotes } = trpc.notes.list.useQuery({ bookingId });
   const { data: amendments = [] } = trpc.amendments.byBooking.useQuery({ bookingId });
   const { data: refunds = [] } = trpc.refunds.byBooking.useQuery({ bookingId });
+  const { data: reimbDocs = [], refetch: refetchReimbDocs } = trpc.bookings.listReimbDocs.useQuery({ bookingId });
   const addNote = trpc.notes.add.useMutation();
   const uploadDoc = trpc.bookings.uploadReimbDoc.useMutation();
   const updateCommission = trpc.bookings.updateCommission.useMutation({
@@ -107,14 +108,15 @@ export default function AgentBookingDetail() {
       const arrayBuffer = await file.arrayBuffer();
       const uint8 = new Uint8Array(arrayBuffer);
       const base64 = btoa(Array.from(uint8).map(b => String.fromCharCode(b)).join(''));
-      const result = await uploadDoc.mutateAsync({
+      await uploadDoc.mutateAsync({
         bookingId,
         fileBase64: base64,
         fileName: file.name,
         mimeType: file.type,
       });
       await utils.bookings.byId.invalidate({ id: bookingId });
-      toast.success(result.isLate ? "Document uploaded — the JLT team has been notified" : "Document uploaded successfully");
+      await refetchReimbDocs();
+      toast.success("Document uploaded — the JLT team has been notified");
     } catch (err: any) {
       toast.error(err.message || "Upload failed");
     } finally {
@@ -316,80 +318,82 @@ export default function AgentBookingDetail() {
       </div>
 
       {/* Reimbursement Document Upload Card — always visible */}
-      <Card className="border-2" style={{ borderColor: booking.reimbursementsRequired && !booking.reimbursementDocUrl ? '#ef4444' : '#70FFE8' }}>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base font-bold">
-            <FileText size={18} style={{ color: '#02E6D2' }} />
-            Reimbursement Documents
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {booking.reimbursementDocUrl ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: '#d1fae5' }}>
-                <CheckCircle2 size={20} style={{ color: '#065f46' }} />
-                <div className="flex-1">
-                  <p className="text-sm font-semibold" style={{ color: '#065f46' }}>Document uploaded</p>
-                  <a href={booking.reimbursementDocUrl} target="_blank" rel="noopener noreferrer"
-                    className="text-xs underline" style={{ color: '#065f46' }}>
-                    View document
-                  </a>
-                </div>
-                {booking.reimbursementDocLateUpload && (
-                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#fef3c7', color: '#92400e' }}>
-                    Late upload
+      {(() => {
+        const isReimbMissing = booking.currentStage === "Reimb Docs Missing" || booking.currentStage === "Urgent/Reimb";
+        const hasDocs = reimbDocs.length > 0;
+        const borderColor = isReimbMissing && !hasDocs ? '#ef4444' : '#70FFE8';
+        return (
+          <Card className="border-2" style={{ borderColor }}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base font-bold">
+                <FileText size={18} style={{ color: isReimbMissing && !hasDocs ? '#ef4444' : '#02E6D2' }} />
+                Reimbursement Documents
+                {hasDocs && (
+                  <span className="ml-auto text-xs font-normal px-2 py-0.5 rounded-full" style={{ background: '#d1fae5', color: '#065f46' }}>
+                    {reimbDocs.length} uploaded
                   </span>
                 )}
-              </div>
-              <p className="text-xs text-muted-foreground">Need to replace this document? Upload a new file below — the JLT team will be notified.</p>
-              <Button
-                onClick={() => fileRef.current?.click()}
-                disabled={isUploadingDoc}
-                className="w-full gap-2 font-semibold"
-                style={{ background: '#70FFE8', color: '#414141' }}
-              >
-                {isUploadingDoc ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                {isUploadingDoc ? 'Uploading...' : 'Upload Replacement Document'}
-              </Button>
-              <input ref={fileRef} type="file" className="hidden" onChange={handleDocUpload}
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {booking.reimbursementsRequired ? (
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* Required but missing alert */}
+              {isReimbMissing && !hasDocs && (
                 <div className="flex items-start gap-3 p-3 rounded-lg" style={{ background: '#fee2e2' }}>
                   <AlertCircle size={20} style={{ color: '#991b1b' }} className="flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-bold" style={{ color: '#991b1b' }}>Document required — not yet uploaded</p>
-                    <p className="text-xs mt-0.5" style={{ color: '#7f1d1d' }}>Please upload your reimbursement document as soon as possible. The JLT team is waiting.</p>
+                    <p className="text-sm font-bold" style={{ color: '#991b1b' }}>Documents required — not yet uploaded</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#7f1d1d' }}>Please upload your reimbursement documents as soon as possible. The JLT team is waiting.</p>
                   </div>
                 </div>
-              ) : (
+              )}
+              {/* Uploaded docs list */}
+              {hasDocs && (
+                <div className="space-y-2">
+                  {reimbDocs.map((doc: any) => (
+                    <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border" style={{ background: '#f0fdf4' }}>
+                      <CheckCircle2 size={16} style={{ color: '#065f46' }} className="flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer"
+                          className="text-sm font-medium underline truncate block" style={{ color: '#065f46' }}>
+                          {doc.fileName}
+                        </a>
+                        <p className="text-xs text-muted-foreground">
+                          {format(new Date(doc.uploadedAt), 'dd MMM yyyy HH:mm')}
+                          {doc.uploaderName ? ` · ${doc.uploaderName}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Info text for non-required bookings */}
+              {!isReimbMissing && !hasDocs && (
                 <div className="flex items-start gap-3 p-3 rounded-lg" style={{ background: '#f0fdf4' }}>
-                  <FileText size={20} style={{ color: '#02E6D2' }} className="flex-shrink-0 mt-0.5" />
+                  <FileText size={18} style={{ color: '#02E6D2' }} className="flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm font-semibold text-foreground">Have reimbursement documents to add?</p>
                     <p className="text-xs text-muted-foreground mt-0.5">Upload them here and the JLT team will be notified immediately to set up your reimbursement.</p>
                   </div>
                 </div>
               )}
+              {/* Upload button — always shown */}
               <Button
                 onClick={() => fileRef.current?.click()}
                 disabled={isUploadingDoc}
                 size="lg"
                 className="w-full gap-2 font-bold text-base py-6"
-                style={{ background: '#70FFE8', color: '#414141' }}
+                style={{ background: isReimbMissing && !hasDocs ? '#ef4444' : '#70FFE8', color: isReimbMissing && !hasDocs ? '#fff' : '#414141' }}
               >
                 {isUploadingDoc ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
-                {isUploadingDoc ? 'Uploading...' : 'Upload Reimbursement Documents'}
+                {isUploadingDoc ? 'Uploading...' : hasDocs ? 'Upload Additional Document' : 'Upload Reimbursement Documents'}
               </Button>
               <p className="text-xs text-center text-muted-foreground">Accepted: PDF, JPG, PNG, Word documents (max 10MB)</p>
               <input ref={fileRef} type="file" className="hidden" onChange={handleDocUpload}
                 accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Amendments & Refunds Status */}
       {(amendments.length > 0 || refunds.length > 0) && (
@@ -404,7 +408,7 @@ export default function AgentBookingDetail() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {amendments.map((a: any) => {
+                {amendments.filter((a: any) => !a.isReimbursementDoc).map((a: any) => {
                   const stageColor = a.pipelineStage === "Actioned" ? '#065f46' : a.pipelineStage === "In Progress" ? '#1d4ed8' : '#92400e';
                   const stageBg = a.pipelineStage === "Actioned" ? '#d1fae5' : a.pipelineStage === "In Progress" ? '#dbeafe' : '#fef3c7';
                   return (

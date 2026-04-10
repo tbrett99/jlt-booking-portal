@@ -62,6 +62,8 @@ import {
   setSystemSetting,
   markNotesReadByAdmin,
   getBookingsWithUnreadAgentNotes,
+  getReimbursementDocs,
+  addReimbursementDoc,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
@@ -540,23 +542,26 @@ export const appRouter = router({
         if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
-        // isLate = uploading after the booking was already created (doc not uploaded at booking time)
-        // This covers: replacing an existing doc, OR uploading when reimbursementsRequired was false
-        const isLate = !!booking.reimbursementDocUrl || !booking.reimbursementsRequired;
+        // Upload to S3 and store in reimbursement_docs table (multi-doc support)
         const buffer = Buffer.from(input.fileBase64, "base64");
         const key = `reimb-docs/${input.bookingId}-${nanoid(8)}-${input.fileName}`;
         const { url } = await storagePut(key, buffer, input.mimeType);
-        await uploadReimbursementDoc(input.bookingId, url, isLate);
+        await addReimbursementDoc({
+          bookingId: input.bookingId,
+          uploadedById: ctx.user.id,
+          fileUrl: url,
+          fileName: input.fileName,
+          mimeType: input.mimeType,
+        });
+        // Also update the legacy reimbursementDocUrl field for backwards compatibility
+        await uploadReimbursementDoc(input.bookingId, url, false);
 
-        // Always create an amendment and notify admins when a reimbursement doc is uploaded
-        const amendmentLabel = isLate
-          ? `Reimbursement documents uploaded (late) by ${ctx.user.name ?? "Agent"}. Please set up the reimbursement ASAP. Booking: #${input.bookingId} — ${booking.clientName}.`
-          : `Reimbursement documents submitted by ${ctx.user.name ?? "Agent"}. Please set up the reimbursement ASAP. Booking: #${input.bookingId} — ${booking.clientName}.`;
-
+        // Always create an amendment flagged as reimbursement doc
         await createAmendment({
           bookingId: input.bookingId,
           agentId: ctx.user.id,
-          details: amendmentLabel,
+          details: `Reimbursement documents submitted for booking #${input.bookingId} — ${booking.clientName}. Please set up the reimbursement ASAP.`,
+          isReimbursementDoc: true,
         });
 
         // Notify all admins in-app and by email
@@ -581,14 +586,17 @@ export const appRouter = router({
             });
           }
         }
-
-        await createNote({
-          bookingId: input.bookingId,
-          authorId: ctx.user.id,
-          content: `[System] Reimbursement document uploaded by ${ctx.user.name ?? "Agent"}${isLate ? " (late submission)" : ""}. Amendment created — admin notified to set up reimbursement.`,
-          isInternal: false,
-        });
-        return { success: true, isLate };
+        return { success: true };
+      }),
+    listReimbDocs: protectedProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        return getReimbursementDocs(input.bookingId);
       }),
     moveStage: adminProcedure
       .input(z.object({ bookingId: z.number(), toStage: z.string(), queryMessage: z.string().optional() }))

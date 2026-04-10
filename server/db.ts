@@ -13,6 +13,7 @@ import {
   pipelineHistory,
   refundSuppliers,
   refunds,
+  reimbursementDocs,
   users,
   systemSettings,
 } from "../drizzle/schema";
@@ -429,10 +430,16 @@ export async function createAmendment(data: {
   bookingId: number;
   agentId: number;
   details: string;
+  isReimbursementDoc?: boolean;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.insert(amendments).values(data);
+  await db.insert(amendments).values({
+    bookingId: data.bookingId,
+    agentId: data.agentId,
+    details: data.details,
+    isReimbursementDoc: data.isReimbursementDoc ?? false,
+  });
 }
 
 export async function getAmendmentsByBooking(bookingId: number) {
@@ -822,4 +829,43 @@ export async function getPtsMissingPaymentDate() {
     agentName: agentName ?? null,
     agentEmail: agentEmail ?? null,
   }));
+}
+
+// ─── Reimbursement Documents ──────────────────────────────────────────────────
+
+export async function getReimbursementDocs(bookingId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: reimbursementDocs.id,
+      bookingId: reimbursementDocs.bookingId,
+      fileUrl: reimbursementDocs.fileUrl,
+      fileName: reimbursementDocs.fileName,
+      mimeType: reimbursementDocs.mimeType,
+      uploadedAt: reimbursementDocs.uploadedAt,
+      uploaderName: users.name,
+    })
+    .from(reimbursementDocs)
+    .leftJoin(users, eq(reimbursementDocs.uploadedById, users.id))
+    .where(eq(reimbursementDocs.bookingId, bookingId))
+    .orderBy(reimbursementDocs.uploadedAt);
+}
+
+export async function addReimbursementDoc(params: {
+  bookingId: number;
+  uploadedById: number;
+  fileUrl: string;
+  fileName: string;
+  mimeType?: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(reimbursementDocs).values({
+    bookingId: params.bookingId,
+    uploadedById: params.uploadedById,
+    fileUrl: params.fileUrl,
+    fileName: params.fileName,
+    mimeType: params.mimeType ?? null,
+  });
 }

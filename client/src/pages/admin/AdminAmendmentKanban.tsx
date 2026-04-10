@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { User, Calendar, ArrowRight } from "lucide-react";
+import { User, Calendar, ArrowRight, FileText } from "lucide-react";
 import { useState } from "react";
 
 const STAGES = ["To Do", "In Progress", "Actioned"] as const;
@@ -94,8 +94,19 @@ function AmendmentCard({
   const assignedUser = adminUsers.find((u) => u.id === amendment.assignedToId);
   const currentIdx = stages.indexOf(stage);
 
+  const isReimb = !!amendment.isReimbursementDoc;
+
   return (
-    <Card className="shadow-sm hover:shadow-md transition-shadow border-l-4 border-l-[#70FFE8]">
+    <Card className={`shadow-sm hover:shadow-md transition-shadow border-l-4 ${isReimb ? 'border-l-red-500' : 'border-l-[#70FFE8]'}`}>
+      {isReimb && (
+        <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-bold" style={{ background: '#fee2e2', color: '#991b1b' }}>
+            <FileText size={12} />
+            REIMBURSEMENT DOCS UPLOADED
+          </div>
+          <span className="text-xs text-red-600 font-medium">Action required</span>
+        </div>
+      )}
       <CardHeader className="pb-2 pt-3 px-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
@@ -121,7 +132,14 @@ function AmendmentCard({
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-3 space-y-3">
-        <p className="text-sm text-foreground line-clamp-3 bg-muted/50 rounded p-2">{amendment.details}</p>
+        {isReimb ? (
+          <div className="flex items-center gap-2 p-2 rounded" style={{ background: '#fff7ed' }}>
+            <FileText size={14} style={{ color: '#92400e' }} className="flex-shrink-0" />
+            <p className="text-sm text-foreground">{amendment.details}</p>
+          </div>
+        ) : (
+          <p className="text-sm text-foreground line-clamp-3 bg-muted/50 rounded p-2">{amendment.details}</p>
+        )}
 
         {/* Assignee */}
         <div className="space-y-1">
