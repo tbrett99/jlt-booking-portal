@@ -395,3 +395,6 @@
 ## Amendments List Sync Fix (Apr 10)
 - [x] AdminAmendments page: filter pending/actioned by pipelineStage ("To Do"/"In Progress" = pending, "Actioned" = actioned) instead of legacy status field so it stays in sync with the Amendment Pipeline Kanban
 - [x] Also sync: "Mark Actioned" button on list page should set pipelineStage = "Actioned" (not just status = "actioned")
+
+## Agent Commissions Tab Labels (Apr 10)
+- [x] Rename "In Progress" tab to "Pending" and add descriptions to all four tabs

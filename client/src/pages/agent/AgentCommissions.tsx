@@ -311,7 +311,7 @@ export default function AgentCommissions() {
           </TabsTrigger>
           <TabsTrigger value="paid">Paid</TabsTrigger>
           <TabsTrigger value="not-ready">
-            In Progress
+            Pending
             {notReady.length > 0 && (
               <span className="ml-2 bg-muted text-muted-foreground text-xs font-bold rounded-full px-2 py-0.5">
                 {notReady.length}
@@ -321,6 +321,7 @@ export default function AgentCommissions() {
         </TabsList>
 
         <TabsContent value="claimable">
+          <p className="text-sm text-muted-foreground mb-4">All suppliers have been paid and you can now claim your commission on these bookings.</p>
           {claimable.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
@@ -346,6 +347,7 @@ export default function AgentCommissions() {
         </TabsContent>
 
         <TabsContent value="awaiting">
+          <p className="text-sm text-muted-foreground mb-4">You have claimed commission on these bookings and we're processing payment for you.</p>
           {claimedNotPaid.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
@@ -370,6 +372,7 @@ export default function AgentCommissions() {
         </TabsContent>
 
         <TabsContent value="paid">
+          <p className="text-sm text-muted-foreground mb-4">Your commission claim has been approved and you'll receive payment in the next payment run.</p>
           {paid.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
@@ -394,6 +397,7 @@ export default function AgentCommissions() {
         </TabsContent>
 
         <TabsContent value="not-ready">
+          <p className="text-sm text-muted-foreground mb-4">These bookings have commission due but aren't ready to claim yet — we'll notify you as each one moves to Ready to Claim.</p>
           {notReady.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
