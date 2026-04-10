@@ -208,6 +208,7 @@ export const commissionClaims = mysqlTable("commission_claims", {
   bookingType: mysqlEnum("bookingType", ["lapland", "cruise", "disney", "other"]).notNull().default("other"),
   claimedAt: timestamp("claimedAt").defaultNow().notNull(),
   status: mysqlEnum("status", ["claimed_not_paid", "paid"]).default("claimed_not_paid").notNull(),
+  grossAmount: decimal("grossAmount", { precision: 10, scale: 2 }), // Agent's declared gross commission before fees
   paidAt: timestamp("paidAt"),
   paidById: int("paidById"), // FK → users.id (admin who marked as paid)
   createdAt: timestamp("createdAt").defaultNow().notNull(),

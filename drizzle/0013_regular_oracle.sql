@@ -1,0 +1,1 @@
+ALTER TABLE `commission_claims` ADD `grossAmount` decimal(10,2);

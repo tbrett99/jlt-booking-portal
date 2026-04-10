@@ -821,7 +821,7 @@ export async function createCommissionClaim(bookingId: number, agentId: number, 
     .where(eq(commissionClaims.bookingId, bookingId))
     .limit(1);
   if (existing.length > 0) return existing[0];
-  await db.insert(commissionClaims).values({ bookingId, agentId, bookingType, grossAmount: grossAmount ?? null } as any);
+  await db.insert(commissionClaims).values({ bookingId, agentId, bookingType, grossAmount: grossAmount?.toString() ?? null });
   const result = await db
     .select()
     .from(commissionClaims)
