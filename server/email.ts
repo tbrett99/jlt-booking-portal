@@ -147,6 +147,10 @@ export async function sendCredentialsEmail(params: {
             <p style="margin: 8px 0 0; color: #414141;"><strong>Temporary Password:</strong> ${params.tempPassword}</p>
           </div>
           <p style="color: #414141;">You will be prompted to change your password on first login.</p>
+          <div style="text-align: center; margin: 28px 0;">
+            <a href="https://portal.thejltgroup.co.uk" style="display: inline-block; background: #02E6D2; color: #414141; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px;">Log in to the Portal</a>
+          </div>
+          <p style="color: #414141; font-size: 13px;">Or copy and paste this link into your browser:<br><a href="https://portal.thejltgroup.co.uk" style="color: #02E6D2;">https://portal.thejltgroup.co.uk</a></p>
           <p style="color: #414141;">If you have any questions, please contact your administrator.</p>
           <p style="color: #414141; margin-top: 32px;">The JLT Group Team</p>
         </div>
