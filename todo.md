@@ -249,3 +249,10 @@
 
 ## CSV Import Crash Fix (Apr 9 v6)
 - [x] Replace custom char-by-char CSV parser with PapaParse 5.5.3 in the Web Worker — handles multi-line quoted fields natively, no custom tokeniser needed
+
+## Impersonate Agent Feature
+- [x] Backend: add impersonate/stopImpersonating tRPC procedures (super_admin only) — sets session cookie to target user + backs up admin token in app_session_admin_backup cookie
+- [x] Backend: non-httpOnly is_impersonating=1 flag cookie set so client JS can detect impersonation mode
+- [x] Frontend: Impersonate button (blue UserCheck icon) added to Users page for each non-super-admin user row
+- [x] Frontend: ImpersonationBanner component shows sticky amber banner with agent name and Stop Impersonating button on all pages
+- [x] Frontend: banner reads is_impersonating cookie to detect state; stop restores admin session and redirects to /users

@@ -25,6 +25,7 @@ import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
+import { ImpersonationBanner } from './ImpersonationBanner';
 import { Button } from "./ui/button";
 
 const menuItems = [
@@ -243,6 +244,7 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
+        <ImpersonationBanner />
         {isMobile && (
           <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
             <div className="flex items-center gap-2">

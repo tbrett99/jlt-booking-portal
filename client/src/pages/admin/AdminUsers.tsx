@@ -11,8 +11,9 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Search, ChevronLeft, ChevronRight, Loader2, Trash2 } from "lucide-react";
+import { Plus, Search, ChevronLeft, ChevronRight, Loader2, Trash2, UserCheck } from "lucide-react";
 import { format } from "date-fns";
+import { useLocation } from "wouter";
 
 export default function AdminUsers() {
   const { user: me } = useAuth();
@@ -50,6 +51,15 @@ export default function AdminUsers() {
   });
   const deleteUser = trpc.users.delete.useMutation({
     onSuccess: () => utils.users.list.invalidate(),
+  });
+  const [, navigate] = useLocation();
+  const impersonate = trpc.users.impersonate.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Now viewing as ${data.targetName}`);
+      // Reload the page so the new session cookie takes effect
+      window.location.href = "/";
+    },
+    onError: (err) => toast.error(err.message || "Failed to impersonate user"),
   });
 
   const handleSearch = (e: React.FormEvent) => {
@@ -260,6 +270,18 @@ export default function AdminUsers() {
                             >
                               {u.isActive ? "Suspend" : "Reactivate"}
                             </Button>
+                            {isSuperAdmin && u.role !== "super_admin" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-7 text-blue-600 border-blue-200 hover:bg-blue-50"
+                                title={`View portal as ${u.name ?? u.email}`}
+                                disabled={impersonate.isPending}
+                                onClick={() => impersonate.mutate({ userId: u.id })}
+                              >
+                                <UserCheck size={12} />
+                              </Button>
+                            )}
                             {isSuperAdmin && (
                               <Button
                                 size="sm"

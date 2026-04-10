@@ -359,6 +359,50 @@ export const appRouter = router({
         }
         return { results };
       }),
+
+    // Impersonate an agent — super admin only
+    impersonate: superAdminProcedure
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const target = await getUserById(input.userId);
+        if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+        if (target.role === "super_admin") throw new TRPCError({ code: "FORBIDDEN", message: "Cannot impersonate another super admin" });
+        // Sign a short-lived session for the target user
+        const impersonationToken = await sdk.createSessionToken(
+          target.openId,
+          { name: target.name ?? "", expiresInMs: 1000 * 60 * 60 * 4 }
+        );
+        // Back up the admin's current session cookie so we can restore it later
+        const rawCookies = ctx.req.headers.cookie ?? "";
+        const originalToken = rawCookies
+          .split(";")
+          .map((c) => c.trim())
+          .find((c) => c.startsWith(COOKIE_NAME + "="))
+          ?.slice(COOKIE_NAME.length + 1) ?? "";
+        const cookieOpts = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, impersonationToken, { ...cookieOpts, maxAge: 1000 * 60 * 60 * 4 });
+        ctx.res.cookie("app_session_admin_backup", originalToken, { ...cookieOpts, maxAge: 1000 * 60 * 60 * 4 });
+        // Non-httpOnly flag cookie so the client JS can detect impersonation mode
+        ctx.res.cookie("is_impersonating", "1", { ...cookieOpts, httpOnly: false, maxAge: 1000 * 60 * 60 * 4 });
+        return { success: true, targetName: target.name ?? target.email };
+      }),
+
+    stopImpersonating: protectedProcedure.mutation(async ({ ctx }) => {
+      const rawCookies = ctx.req.headers.cookie ?? "";
+      const cookieMap = Object.fromEntries(
+        rawCookies.split(";").map((c) => {
+          const [k, ...v] = c.trim().split("=");
+          return [k, v.join("=")];
+        })
+      );
+      const adminToken = cookieMap["app_session_admin_backup"];
+      if (!adminToken) throw new TRPCError({ code: "BAD_REQUEST", message: "No active impersonation session" });
+      const cookieOpts = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie(COOKIE_NAME, adminToken, { ...cookieOpts, maxAge: 1000 * 60 * 60 * 24 * 365 });
+      ctx.res.clearCookie("app_session_admin_backup", cookieOpts);
+      ctx.res.clearCookie("is_impersonating", cookieOpts);
+      return { success: true };
+    }),
   }),
 
   // ── Bookings ──────────────────────────────────────────────────────────────
