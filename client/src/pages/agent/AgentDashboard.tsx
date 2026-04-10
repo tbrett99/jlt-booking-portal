@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import CopyableRef from "@/components/CopyableRef";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link } from "wouter";
@@ -308,10 +309,10 @@ export default function AgentDashboard() {
                             {departed ? "Departed" : `${daysUntilDeparture}d`} — {format(new Date(booking.departureDate), "dd MMM yyyy")}
                           </span>
                           {booking.topdogRef && (
-                            <span className="text-xs text-muted-foreground">TD: {booking.topdogRef}</span>
+                            <CopyableRef value={booking.topdogRef} label="Topdog ref" />
                           )}
                           {booking.ptsRef && (
-                            <span className="text-xs text-muted-foreground">PTS: {booking.ptsRef}</span>
+                            <CopyableRef value={booking.ptsRef} label="PTS ref" />
                           )}
                         </div>
                       </div>

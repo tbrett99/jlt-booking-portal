@@ -1,4 +1,5 @@
 import { useState } from "react";
+import CopyableRef from "@/components/CopyableRef";
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import { Input } from "@/components/ui/input";
@@ -261,10 +262,10 @@ export default function AdminKanban() {
                                 {format(new Date(booking.departureDate), "dd MMM yyyy")}
                               </p>
                               {booking.topdogRef && (
-                                <p className="text-xs text-muted-foreground">TD: {booking.topdogRef}</p>
+                                <CopyableRef value={booking.topdogRef} label="Topdog ref" />
                               )}
                               {booking.ptsRef && (
-                                <p className="text-xs text-muted-foreground">PTS: {booking.ptsRef}</p>
+                                <CopyableRef value={booking.ptsRef} label="PTS ref" />
                               )}
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {booking.reimbursementsRequired && !booking.reimbursementDocUrl && (

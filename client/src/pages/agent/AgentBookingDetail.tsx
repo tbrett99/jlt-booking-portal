@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import CopyableRef from "@/components/CopyableRef";
 import { trpc } from "@/lib/trpc";
 import { useParams, Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -253,16 +254,16 @@ export default function AgentBookingDetail() {
 
         <div className="rounded-xl p-3 border" style={{ background: '#f9fafb' }}>
           <p className="text-xs text-muted-foreground mb-1">Topdog Ref</p>
-          <p className="font-semibold text-sm truncate">
-            {booking.topdogRef ?? <span className="italic text-muted-foreground font-normal">Not set</span>}
-          </p>
+          {booking.topdogRef
+            ? <CopyableRef value={booking.topdogRef} label="Topdog ref" />
+            : <span className="italic text-muted-foreground text-sm">Not set</span>}
         </div>
 
         <div className="rounded-xl p-3 border" style={{ background: '#f9fafb' }}>
           <p className="text-xs text-muted-foreground mb-1">PTS Ref</p>
-          <p className="font-semibold text-sm truncate">
-            {booking.ptsRef ?? <span className="italic text-muted-foreground font-normal">Not set</span>}
-          </p>
+          {booking.ptsRef
+            ? <CopyableRef value={booking.ptsRef} label="PTS ref" />
+            : <span className="italic text-muted-foreground text-sm">Not set</span>}
         </div>
 
         <div className="rounded-xl p-3 border col-span-2 sm:col-span-1" style={{ background: booking.expectedCommission ? '#ecfdf5' : '#fffbeb' }}>

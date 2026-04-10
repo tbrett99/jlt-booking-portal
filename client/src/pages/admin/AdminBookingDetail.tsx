@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
+import CopyableRef from "@/components/CopyableRef";
 
 const STAGES = [
   "New Booking", "Creating own PTS file", "Not on Topdog", "Query",
@@ -307,11 +308,17 @@ export default function AdminBookingDetail() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Topdog Ref</Label>
-                  <Input value={editTopdog} onChange={(e) => setEditTopdog(e.target.value)} placeholder="TD..." className="h-8 text-sm" />
+                  <div className="flex items-center gap-1.5">
+                    <Input value={editTopdog} onChange={(e) => setEditTopdog(e.target.value)} placeholder="TD..." className="h-8 text-sm" />
+                    {booking.topdogRef && <CopyableRef value={booking.topdogRef} label="Topdog ref" className="flex-shrink-0" />}
+                  </div>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">PTS Ref</Label>
-                  <Input value={editPts} onChange={(e) => setEditPts(e.target.value)} placeholder="PTS..." className="h-8 text-sm" />
+                  <div className="flex items-center gap-1.5">
+                    <Input value={editPts} onChange={(e) => setEditPts(e.target.value)} placeholder="PTS..." className="h-8 text-sm" />
+                    {booking.ptsRef && <CopyableRef value={booking.ptsRef} label="PTS ref" className="flex-shrink-0" />}
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">

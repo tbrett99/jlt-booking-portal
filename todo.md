@@ -290,3 +290,10 @@
 ## Booking Detail & PTS Missing Payment View (Apr 10)
 - [x] Show agent name on admin booking detail page — getBookingWithAgent joins users table, bookings.byId now returns agentName + agentEmail
 - [x] Add "Added to PTS – Missing Payment Date" view at /pts-missing-payment — table with search, inline date setter, link to booking detail; dashboard alert now links here
+
+## Copy Refs & PTS Bulk Date (Apr 10)
+- [x] Create CopyableRef component — click to copy Topdog/PTS ref to clipboard with visual feedback
+- [x] Apply CopyableRef to all locations where Topdog ref or PTS ref appears (booking detail, pipeline cards, PTS missing payment page, etc.)
+- [x] Add "Past departure only" filter toggle to PtsMissingPaymentDate page — amber toggle, past dates highlighted red with "(past)" label
+- [x] Add bulk date setter on PtsMissingPaymentDate — checkbox selection (per row + select all header), amber bulk action bar with date input + Apply button
+- [x] Add CSV export button on PtsMissingPaymentDate page — exports current filtered rows (respects search + past-departure filter)
