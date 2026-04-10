@@ -398,3 +398,6 @@
 
 ## Agent Commissions Tab Labels (Apr 10)
 - [x] Rename "In Progress" tab to "Pending" and add descriptions to all four tabs
+
+## Bulk Credentials Send Speed Fix (Apr 10)
+- [x] Rewrite bulkSendCredentials to use parallel batches of 10 instead of sequential loop

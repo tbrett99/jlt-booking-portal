@@ -399,22 +399,31 @@ export const appRouter = router({
       .input(z.object({ userIds: z.array(z.number()) }))
       .mutation(async ({ input }) => {
         const results: Array<{ userId: number; success: boolean; error?: string }> = [];
-        for (const userId of input.userIds) {
-          try {
-            const user = await getUserById(userId);
-            if (!user || !user.email) {
-              results.push({ userId, success: false, error: "no_email" });
-              continue;
-            }
-            const tempPassword = nanoid(12);
-            const hashed = await bcrypt.hash(tempPassword, 12);
-            await updateUserPassword(user.id, hashed);
-            await sendCredentialsEmail({ toEmail: user.email, toName: user.name ?? user.email, tempPassword });
-            await markCredentialsSent(user.id);
-            results.push({ userId, success: true });
-          } catch (err: any) {
-            results.push({ userId, success: false, error: err?.message ?? "unknown" });
-          }
+        const BATCH_SIZE = 10;
+
+        // Process in parallel batches to avoid overwhelming SMTP while being much faster than sequential
+        for (let i = 0; i < input.userIds.length; i += BATCH_SIZE) {
+          const batch = input.userIds.slice(i, i + BATCH_SIZE);
+          const batchResults = await Promise.all(
+            batch.map(async (userId) => {
+              try {
+                const user = await getUserById(userId);
+                if (!user || !user.email) {
+                  return { userId, success: false, error: "no_email" };
+                }
+                const tempPassword = nanoid(12);
+                // Use bcrypt cost 10 instead of 12 for bulk operations — still secure, ~4x faster
+                const hashed = await bcrypt.hash(tempPassword, 10);
+                await updateUserPassword(user.id, hashed);
+                await sendCredentialsEmail({ toEmail: user.email, toName: user.name ?? user.email, tempPassword });
+                await markCredentialsSent(user.id);
+                return { userId, success: true };
+              } catch (err: any) {
+                return { userId, success: false, error: err?.message ?? "unknown" };
+              }
+            })
+          );
+          results.push(...batchResults);
         }
         return { results };
       }),
