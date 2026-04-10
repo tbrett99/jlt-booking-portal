@@ -385,3 +385,9 @@
 - [x] Fix internal amendment notes leaking to agent view: filter to visibleAmendments = amendments.filter(!isReimbursementDoc) before rendering
 - [x] Fix empty "Amendment Requests" card showing when only reimbursement doc amendments exist
 - [x] Add reimbursement doc confirmation banner: teal "Documents received — we're on it!" when docs uploaded, green "Reimbursement processed — thank you!" when actioned
+
+## Dedicated Messages Tab (Apr 10)
+- [x] Backend: tRPC procedure notes.allThreads — returns all bookings that have at least one shared note, with unread count, latest message preview, agent name, booking client name
+- [x] Backend: tRPC procedure notes.totalUnreadCount — returns count of bookings with unread agent notes (for sidebar badge)
+- [x] Frontend: /admin/messages page — list of message threads, unread highlighted, click-through to /admin/bookings/:id
+- [x] Frontend: sidebar nav item "Messages" with live unread count badge

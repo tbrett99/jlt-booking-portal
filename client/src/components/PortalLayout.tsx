@@ -4,7 +4,8 @@ import { useViewMode } from "@/contexts/ViewModeContext";
 import {
   Bell, BookOpen, ChevronLeft, ChevronRight, ClipboardList,
   FileText, Home, LayoutDashboard, LogOut, Mail, Menu, Users, X,
-  ArrowLeftRight, CheckCircle2, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle
+  ArrowLeftRight, CheckCircle2, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
+  MessageSquare
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -27,6 +28,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const isAdminUser = user?.role === "admin" || user?.role === "super_admin";
 
   const { data: unreadCount = 0, refetch: refetchCount } = trpc.notifications.unreadCount.useQuery(undefined, {
+    refetchInterval: 30000,
+  });
+
+  const { data: unreadMessageCount = 0 } = trpc.notes.totalUnreadCount.useQuery(undefined, {
+    enabled: isAdminUser && !isAgentView,
     refetchInterval: 30000,
   });
 
@@ -53,6 +59,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     { label: "Refund Pipeline", href: "/refunds/pipeline", icon: <FileText size={18} /> },
     { label: "Commission Due", href: "/commission-due", icon: <AlertCircle size={18} /> },
     { label: "Commissions", href: "/commissions-admin", icon: <Banknote size={18} /> },
+    { label: "Messages", href: "/messages", icon: <MessageSquare size={18} /> },
     { label: "Reports", href: "/reports", icon: <FileText size={18} /> },
     { label: "Import CSV", href: "/import", icon: <Upload size={18} /> },
     { label: "Users", href: "/users", icon: <Users size={18} /> },
@@ -170,6 +177,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
+            const isMessages = item.href === "/messages";
+            const badge = isMessages && unreadMessageCount > 0 ? unreadMessageCount : 0;
             return (
               <Link
                 key={item.href}
@@ -181,8 +190,20 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                 `}
                 onClick={() => setSidebarOpen(false)}
               >
-                {item.icon}
-                {!collapsed && <span>{item.label}</span>}
+                <span className="relative flex-shrink-0">
+                  {item.icon}
+                  {badge > 0 && collapsed && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-0.5 rounded-full text-[10px] font-bold flex items-center justify-center" style={{ background: '#ef4444', color: 'white' }}>
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
+                </span>
+                {!collapsed && <span className="flex-1">{item.label}</span>}
+                {!collapsed && badge > 0 && (
+                  <span className="ml-auto min-w-[20px] h-5 px-1 rounded-full text-xs font-bold flex items-center justify-center" style={{ background: '#ef4444', color: 'white' }}>
+                    {badge > 99 ? '99+' : badge}
+                  </span>
+                )}
               </Link>
             );
           })}

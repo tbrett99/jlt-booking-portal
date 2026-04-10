@@ -425,6 +425,90 @@ export async function getBookingsWithUnreadAgentNotes() {
   return result;
 }
 
+// Get ALL bookings that have at least one shared note — for the Messages page
+// Returns threads sorted by latest message date, with unread count per thread
+export async function getAllMessageThreads() {
+  const db = await getDb();
+  if (!db) return [];
+  // Get all distinct bookingIds that have shared notes
+  const threadRows = await db
+    .select({ bookingId: notes.bookingId })
+    .from(notes)
+    .where(eq(notes.isInternal, false))
+    .groupBy(notes.bookingId);
+  if (threadRows.length === 0) return [];
+
+  const result = [];
+  for (const { bookingId } of threadRows) {
+    const booking = await getBookingById(bookingId);
+    if (!booking) continue;
+    // Latest shared note
+    const latestNote = await db
+      .select()
+      .from(notes)
+      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false)))
+      .orderBy(desc(notes.createdAt))
+      .limit(1);
+    if (!latestNote[0]) continue;
+    const latestAuthor = await getUserById(latestNote[0].authorId);
+    // Unread count (agent notes not yet read by admin)
+    const unreadRows = await db
+      .select({ id: notes.id })
+      .from(notes)
+      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)));
+    // Count only unread notes authored by agents
+    let unreadCount = 0;
+    for (const row of unreadRows) {
+      const noteRow = await db.select().from(notes).where(eq(notes.id, row.id)).limit(1);
+      if (!noteRow[0]) continue;
+      const noteAuthor = await getUserById(noteRow[0].authorId);
+      if (noteAuthor?.role === 'agent') unreadCount++;
+    }
+    const agentUser = await getUserById(booking.agentId);
+    result.push({
+      bookingId,
+      clientName: booking.clientName,
+      agentId: booking.agentId,
+      agentName: agentUser?.name ?? 'Agent',
+      ptsRef: booking.ptsRef ?? null,
+      topdogRef: booking.topdogRef ?? null,
+      latestMessage: latestNote[0].content,
+      latestMessageAt: latestNote[0].createdAt,
+      latestAuthorName: latestAuthor?.name ?? 'Unknown',
+      latestAuthorRole: latestAuthor?.role ?? 'agent',
+      unreadCount,
+    });
+  }
+  // Sort by latest message date descending
+  result.sort((a, b) => new Date(b.latestMessageAt).getTime() - new Date(a.latestMessageAt).getTime());
+  return result;
+}
+
+// Count of bookings with unread agent notes (for sidebar badge)
+export async function getTotalUnreadMessageCount(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db
+    .select({ bookingId: notes.bookingId })
+    .from(notes)
+    .where(and(eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)))
+    .groupBy(notes.bookingId);
+  // Filter to only those with at least one agent-authored unread note
+  let count = 0;
+  for (const { bookingId } of rows) {
+    const latestUnread = await db
+      .select()
+      .from(notes)
+      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)))
+      .orderBy(desc(notes.createdAt))
+      .limit(1);
+    if (!latestUnread[0]) continue;
+    const author = await getUserById(latestUnread[0].authorId);
+    if (author?.role === 'agent') count++;
+  }
+  return count;
+}
+
 // Get the last admin/super_admin who sent a shared (non-internal) note on a booking
 // Used to route reply emails back to the specific admin who last messaged, not all admins
 export async function getLastAdminNoteAuthor(bookingId: number): Promise<{ id: number; name: string | null; email: string | null } | null> {

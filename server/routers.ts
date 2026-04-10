@@ -65,6 +65,8 @@ import {
   getReimbursementDocs,
   addReimbursementDoc,
   getLastAdminNoteAuthor,
+  getAllMessageThreads,
+  getTotalUnreadMessageCount,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
@@ -881,6 +883,14 @@ export const appRouter = router({
     // Admin: get all bookings with unread agent messages
     unreadAgentMessages: adminProcedure.query(async () => {
       return getBookingsWithUnreadAgentNotes();
+    }),
+    // Admin: all message threads (for Messages page)
+    allThreads: adminProcedure.query(async () => {
+      return getAllMessageThreads();
+    }),
+    // Admin: total count of bookings with unread agent messages (for sidebar badge)
+    totalUnreadCount: adminProcedure.query(async () => {
+      return getTotalUnreadMessageCount();
     }),
     // Admin: mark all notes on a booking as read
     markBookingNotesRead: adminProcedure
