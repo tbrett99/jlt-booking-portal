@@ -280,3 +280,6 @@
 ## Impersonate & Agent View Fixes (Apr 10)
 - [x] Fix impersonate button — root cause: authenticateRequest called getUserInfoWithJwt against Manus OAuth for locally-created users (openId=agent_*), which failed. Fixed by skipping OAuth sync for agent_ openIds.
 - [x] Admin agent view — myBookings already returns admin's own bookings correctly; empty state is expected if no bookings assigned to that admin account
+
+## Impersonation Password Redirect Bug (Apr 10)
+- [x] Fix: impersonating an agent redirects admin to "set new password" page — fixed by reading is_impersonating cookie in App.tsx and skipping mustChangePassword redirect when impersonating

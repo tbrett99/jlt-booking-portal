@@ -63,8 +63,11 @@ function AuthRouter() {
     );
   }
 
-  // Force password change before accessing any other page
-  if (user.mustChangePassword) {
+  // Force password change before accessing any other page.
+  // Skip this check during impersonation — admins should not be forced to change
+  // the agent's password just to view their account.
+  const isImpersonating = document.cookie.split(";").some((c) => c.trim().startsWith("is_impersonating="));
+  if (user.mustChangePassword && !isImpersonating) {
     return <ChangePasswordPage />;
   }
 
