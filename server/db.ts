@@ -387,12 +387,13 @@ export async function getBookingsWithUnreadAgentNotes() {
   const db = await getDb();
   if (!db) return [];
   // Find distinct bookingIds where there's an agent note not yet read by admin
+  // Note: orderBy(createdAt) is intentionally omitted here — MySQL strict mode rejects
+  // ordering by a non-aggregated column that isn't in GROUP BY. We sort per-booking below.
   const unreadNotes = await db
     .select({ bookingId: notes.bookingId })
     .from(notes)
     .where(and(eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)))
-    .groupBy(notes.bookingId)
-    .orderBy(desc(notes.createdAt));
+    .groupBy(notes.bookingId);
   if (unreadNotes.length === 0) return [];
   // Filter to only notes authored by agents
   const bookingIds = unreadNotes.map((n) => n.bookingId);

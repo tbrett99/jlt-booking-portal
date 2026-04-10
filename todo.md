@@ -371,9 +371,9 @@
 - [x] Amendment pipeline: red left border + "REIMBURSEMENT DOCS UPLOADED / Action required" banner on cards where isReimbursementDoc = true
 
 ## Agent Reimbursement UX Fix (Apr 10)
-- [ ] Fix: internal amendment notes (isReimbursementDoc) still showing on agent booking detail — ensure filter is applied correctly
-- [ ] Agent booking detail: after docs uploaded, show a teal confirmation banner "Documents received — the JLT team will review and be in touch shortly"
-- [ ] Agent booking detail: when the reimbursement amendment is marked as Actioned by admin, show a green "Reimbursement processed — thank you" confirmation instead
+- [x] Fix: internal amendment notes (isReimbursementDoc) still showing on agent booking detail — ensure filter is applied correctly
+- [x] Agent booking detail: after docs uploaded, show a teal confirmation banner "Documents received — the JLT team will review and be in touch shortly"
+- [x] Agent booking detail: when the reimbursement amendment is marked as Actioned by admin, show a green "Reimbursement processed — thank you" confirmation instead
 
 ## Email Notification Routing (Apr 10)
 - [x] Agent → Admin message: email only the last admin who replied on that booking (not all admins); fall back to support@ if no admin has ever replied
