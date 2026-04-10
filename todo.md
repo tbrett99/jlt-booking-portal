@@ -302,3 +302,10 @@
 - [x] Backend: nightly scheduled job (node-cron) at 4 AM UTC that queries all bookings and formats as CSV
 - [x] Backend: send CSV as email attachment to max@thejltgroup.co.uk via existing SMTP config
 - [x] Commission Due page (admin): add Topdog Ref and PTS Ref columns with CopyableRef component
+
+## Commission Due Page Overhaul (Apr 10)
+- [x] Show PTS Ref on each card alongside Topdog Ref, both as CopyableRef components
+- [x] Add past-departure filter toggle (filter where departureDate < today) — amber toggle, past departure dates highlighted red
+- [x] Add checkbox multi-select per card + select-all toggle in filter bar
+- [x] Bulk action bar: when rows selected, show "Move X to Commission Claimable" and "Move X to Commission Claimed" buttons
+- [x] Backend: add bulkMoveStage procedure (admin only) — moves multiple bookings, writes audit note, sends agent notifications

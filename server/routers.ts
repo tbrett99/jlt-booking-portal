@@ -786,6 +786,65 @@ export const appRouter = router({
         }
         return { results, total: input.length, succeeded: results.filter((r) => r.success).length };
       }),
+
+    // Bulk move multiple bookings to a given stage (admin only)
+    bulkMoveStage: adminProcedure
+      .input(z.object({
+        bookingIds: z.array(z.number()).min(1),
+        toStage: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const STAGES_REQUIRING_PAYMENT_DATE = [
+          "Added to PTS",
+          "Commission Claimable",
+          "Commission Claimed",
+          "Holding Accounts",
+        ];
+        const results: Array<{ bookingId: number; success: boolean; error?: string }> = [];
+        for (const bookingId of input.bookingIds) {
+          try {
+            const booking = await getBookingById(bookingId);
+            if (!booking) { results.push({ bookingId, success: false, error: "not_found" }); continue; }
+            if (STAGES_REQUIRING_PAYMENT_DATE.includes(input.toStage) && !booking.finalSupplierPaymentDate) {
+              results.push({ bookingId, success: false, error: "missing_payment_date" }); continue;
+            }
+            await updateBookingStage(bookingId, input.toStage, ctx.user.id);
+            await createNote({
+              bookingId,
+              authorId: ctx.user.id,
+              content: `[System] Booking stage bulk-moved from "${booking.currentStage}" to "${input.toStage}" by ${ctx.user.name ?? "Admin"}.`,
+              isInternal: true,
+            });
+            // Notify agent
+            const stageToTrigger: Record<string, string> = {
+              "Commission Claimable": "commission_claimable",
+              "Commission Claimed": "commission_claimed",
+            };
+            const triggerKey = stageToTrigger[input.toStage];
+            const agent = await getUserById(booking.agentId);
+            if (triggerKey && agent?.email) {
+              await sendNotificationEmail({
+                triggerKey,
+                toEmail: agent.email,
+                toName: agent.name ?? "Agent",
+                variables: { clientName: booking.clientName },
+                bookingId: booking.id,
+              });
+              await createInAppNotification({
+                userId: booking.agentId,
+                bookingId: booking.id,
+                message: `Your booking "${booking.clientName}" has moved to: ${input.toStage}`,
+                linkUrl: `/bookings/${booking.id}`,
+              });
+            }
+            results.push({ bookingId, success: true });
+          } catch (err: any) {
+            results.push({ bookingId, success: false, error: err?.message ?? "unknown" });
+          }
+        }
+        const succeeded = results.filter((r) => r.success).length;
+        return { results, total: input.bookingIds.length, succeeded };
+      }),
   }),
 
   // ── Notes ─────────────────────────────────────────────────────────────────
