@@ -317,3 +317,9 @@
 - [x] Set destination field from CSV COUNTRY column for all matched bookings
 - [x] Move matched bookings where PROFIT CLAIMED = Y into "Commission Claimed" stage
 - [x] Show destination field in booking detail and admin views
+
+## Fuzzy Match Revert (Apr 10 - urgent)
+- [x] Revert all 243 fuzzy-name-matched ptsRef assignments (clear ptsRef and destination where set by name match)
+- [x] Re-run destination updates using exact PTS ref matching only (safe)
+- [x] Fix 315 misplaced 2T refs (moved from topdogRef to ptsRef)
+- [x] Verify no booking has a ptsRef that doesn't match its CSV row — 0 bookings with 2T in topdogRef
