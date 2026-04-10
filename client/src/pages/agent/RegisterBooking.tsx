@@ -131,7 +131,7 @@ export default function RegisterBooking() {
 
             {/* Topdog Ref */}
             <div className="space-y-2">
-              <Label htmlFor="topdogRef">Topdog Booking Reference <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Label htmlFor="topdogRef">Topdog Booking Reference <span className="text-muted-foreground text-xs font-medium text-amber-600">(mandatory if you have one)</span></Label>
               <Input
                 id="topdogRef"
                 placeholder="e.g. TD123456"

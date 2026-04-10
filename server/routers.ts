@@ -538,13 +538,21 @@ export const appRouter = router({
         if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
-        const isLate = !!booking.reimbursementDocUrl;
+        // isLate = uploading after the booking was already created (doc not uploaded at booking time)
+        // This covers: replacing an existing doc, OR uploading when reimbursementsRequired was false
+        const isLate = !!booking.reimbursementDocUrl || !booking.reimbursementsRequired;
         const buffer = Buffer.from(input.fileBase64, "base64");
         const key = `reimb-docs/${input.bookingId}-${nanoid(8)}-${input.fileName}`;
         const { url } = await storagePut(key, buffer, input.mimeType);
         await uploadReimbursementDoc(input.bookingId, url, isLate);
 
         if (isLate) {
+          // Auto-create an amendment so admins see it in the amendment pipeline
+          await createAmendment({
+            bookingId: input.bookingId,
+            agentId: ctx.user.id,
+            details: `Reimbursement documents uploaded late by ${ctx.user.name ?? "Agent"}. Please review the attached document for booking #${input.bookingId} (${booking.clientName}).`,
+          });
           // Notify admins
           const allUsers = await getAllUsers();
           const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
@@ -552,14 +560,14 @@ export const appRouter = router({
             await createInAppNotification({
               userId: admin.id,
               bookingId: input.bookingId,
-              message: `Late reimbursement document uploaded for booking #${input.bookingId} (${booking.clientName}) by ${ctx.user.name}`,
+              message: `⚠️ Late reimbursement docs uploaded for booking #${input.bookingId} (${booking.clientName}) by ${ctx.user.name} — added to amendment pipeline`,
               linkUrl: `/admin/bookings/${input.bookingId}`,
             });
           }
           await createNote({
             bookingId: input.bookingId,
             authorId: ctx.user.id,
-            content: `[System] Reimbursement document uploaded late by ${ctx.user.name ?? "Agent"}.`,
+            content: `[System] Reimbursement document uploaded late by ${ctx.user.name ?? "Agent"}. Amendment created for admin review.`,
             isInternal: true,
           });
         } else {

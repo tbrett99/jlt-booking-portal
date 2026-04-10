@@ -336,3 +336,9 @@
 - [x] Wire kill-switch into createInAppNotification — skip create if paused (logs to console)
 - [x] Add toggle button in admin dashboard header (amber when paused, shows current state, click to toggle)
 - [x] Set notifications to PAUSED immediately via setup-system-settings.mjs script
+
+## Three New Features (Apr 10)
+- [x] Commission Due page: inline "Move Date" amber button per card — opens popover with date picker and Save button, updates finalSupplierPaymentDate via updateAdminFields
+- [x] Agent booking detail: reimbursement doc card now shows for ALL bookings (not just reimbursementsRequired=true); non-required bookings see explanatory text about late upload creating an amendment
+- [x] Late reimbursement doc upload: auto-creates amendment "Reimbursement documents uploaded late by [Agent]" in pipeline as To Do; notifies all admins in-app
+- [x] Booking form: TD reference label updated to amber "(mandatory if you have one)"

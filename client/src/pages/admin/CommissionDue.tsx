@@ -4,11 +4,95 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { AlertCircle, Calendar, CheckCircle2, User, Square, CheckSquare } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, User, Square, CheckSquare, CalendarClock } from "lucide-react";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import CopyableRef from "@/components/CopyableRef";
+
+function MoveDatePopover({ bookingId, currentDate, onSuccess }: {
+  bookingId: number;
+  currentDate?: string | Date | null;
+  onSuccess: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [dateValue, setDateValue] = useState(() => {
+    if (!currentDate) return "";
+    const d = new Date(currentDate);
+    return d.toISOString().split("T")[0];
+  });
+
+  const updateAdminFields = trpc.bookings.updateAdminFields.useMutation({
+    onSuccess: () => {
+      toast.success("Payment date updated");
+      setOpen(false);
+      onSuccess();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleSave() {
+    if (!dateValue) { toast.error("Please select a date"); return; }
+    updateAdminFields.mutate({
+      bookingId,
+      finalSupplierPaymentDate: new Date(dateValue),
+    });
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+          title="Move payment date"
+        >
+          <CalendarClock size={13} />
+          Move Date
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-4 space-y-3" align="end">
+        <div>
+          <p className="text-sm font-semibold">Move Final Payment Date</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Set a new date to be reminded when this booking is ready to claim.
+          </p>
+        </div>
+        {currentDate && (
+          <p className="text-xs text-muted-foreground">
+            Current: <span className="font-medium text-foreground">
+              {format(new Date(currentDate), "dd MMM yyyy")}
+            </span>
+          </p>
+        )}
+        <div className="space-y-1">
+          <label className="text-xs font-medium">New date</label>
+          <Input
+            type="date"
+            value={dateValue}
+            onChange={(e) => setDateValue(e.target.value)}
+            className="h-8 text-sm"
+          />
+        </div>
+        <div className="flex gap-2 justify-end">
+          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="h-7 text-xs bg-amber-500 hover:bg-amber-600 text-white"
+            onClick={handleSave}
+            disabled={updateAdminFields.isPending}
+          >
+            Save
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function CommissionDue() {
   const { data: bookings, isLoading, refetch } = trpc.commissionDue.list.useQuery();
@@ -57,11 +141,8 @@ export default function CommissionDue() {
   const someSelected = selectedIds.size > 0;
 
   function toggleAll() {
-    if (allSelected) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filtered.map((b) => b.id)));
-    }
+    if (allSelected) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filtered.map((b) => b.id)));
   }
 
   function toggleOne(id: number) {
@@ -74,17 +155,14 @@ export default function CommissionDue() {
   }
 
   function handleBulkMove(toStage: string) {
-    const ids = Array.from(selectedIds);
-    bulkMoveStage.mutate({ bookingIds: ids, toStage });
+    bulkMoveStage.mutate({ bookingIds: Array.from(selectedIds), toStage });
   }
 
   if (isLoading) {
     return (
       <div className="p-6">
         <div className="animate-pulse space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-20 bg-muted rounded-lg" />
-          ))}
+          {[1, 2, 3].map((i) => <div key={i} className="h-20 bg-muted rounded-lg" />)}
         </div>
       </div>
     );
@@ -253,17 +331,25 @@ export default function CommissionDue() {
                       </div>
                     </div>
 
-                    <Button
-                      size="sm"
-                      className="bg-[#70FFE8] text-[#414141] hover:bg-[#02E6D2] shrink-0"
-                      onClick={() =>
-                        moveStage.mutate({ bookingId: booking.id, toStage: "Commission Claimable" })
-                      }
-                      disabled={moveStage.isPending || bulkMoveStage.isPending}
-                    >
-                      <CheckCircle2 className="w-4 h-4 mr-1.5" />
-                      Mark Claimable
-                    </Button>
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                      <MoveDatePopover
+                        bookingId={booking.id}
+                        currentDate={booking.finalSupplierPaymentDate}
+                        onSuccess={refetch}
+                      />
+                      <Button
+                        size="sm"
+                        className="bg-[#70FFE8] text-[#414141] hover:bg-[#02E6D2] h-8"
+                        onClick={() =>
+                          moveStage.mutate({ bookingId: booking.id, toStage: "Commission Claimable" })
+                        }
+                        disabled={moveStage.isPending || bulkMoveStage.isPending}
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                        Mark Claimable
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

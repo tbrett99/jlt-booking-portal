@@ -315,14 +315,14 @@ export default function AgentBookingDetail() {
         </div>
       </div>
 
-      {/* Reimbursement doc */}
-      {booking.reimbursementsRequired && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Reimbursement Document</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {booking.reimbursementDocUrl ? (
+      {/* Reimbursement doc — show for all bookings */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold">Reimbursement Document</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {booking.reimbursementDocUrl ? (
+            <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm">
                 <CheckCircle2 size={16} style={{ color: '#02E6D2' }} />
                 <a href={booking.reimbursementDocUrl} target="_blank" rel="noopener noreferrer"
@@ -335,29 +335,56 @@ export default function AgentBookingDetail() {
                   </span>
                 )}
               </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-destructive">Document not yet uploaded</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Please upload your reimbursement document as soon as possible.</p>
-                </div>
+              {/* Allow replacing the document */}
+              <div className="flex items-center gap-2">
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   onClick={() => fileRef.current?.click()}
                   disabled={isUploadingDoc}
-                  className="gap-2 flex-shrink-0"
+                  className="gap-2 text-xs text-muted-foreground h-7"
                 >
-                  {isUploadingDoc ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                  Upload
+                  {isUploadingDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                  Replace document
                 </Button>
                 <input ref={fileRef} type="file" className="hidden" onChange={handleDocUpload}
                   accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                {booking.reimbursementsRequired ? (
+                  <>
+                    <p className="text-sm font-medium text-destructive">Document not yet uploaded</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Please upload your reimbursement document as soon as possible.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-foreground">Upload reimbursement documents</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      If you have reimbursement documents to add to this booking, upload them here.
+                      This will create an amendment for the JLT team to review.
+                    </p>
+                  </>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+                disabled={isUploadingDoc}
+                className="gap-2 flex-shrink-0"
+              >
+                {isUploadingDoc ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                Upload
+              </Button>
+              <input ref={fileRef} type="file" className="hidden" onChange={handleDocUpload}
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Amendments & Refunds Status */}
       {(amendments.length > 0 || refunds.length > 0) && (
