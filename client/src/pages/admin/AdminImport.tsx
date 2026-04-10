@@ -302,6 +302,18 @@ export default function AdminImport() {
   const [importing, setImporting] = useState(false);
   const [parsingCsv, setParsingCsv] = useState(false);
   const [searchFilter, setSearchFilter] = useState("");
+  const [showUnmatchedOnly, setShowUnmatchedOnly] = useState(false);
+  // Bulk-assign: group unmatched rows by their agentToken
+  const unmatchedGroups = (() => {
+    const groups: Record<string, number[]> = {};
+    mappedBookings.forEach((b, i) => {
+      if (b.agentId !== null || !b.agentToken) return;
+      const key = b.agentToken.trim();
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(i);
+    });
+    return Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
+  })();
   const bookingFileRef = useRef<HTMLInputElement>(null);
   const csvWorkerRef = useRef<Worker | null>(null);
 
@@ -474,6 +486,7 @@ export default function AdminImport() {
   };
 
   const filteredMappings = mappedBookings.filter((b) => {
+    if (showUnmatchedOnly && b.agentId !== null) return false;
     if (!searchFilter) return true;
     const q = searchFilter.toLowerCase();
     return (
@@ -482,6 +495,15 @@ export default function AdminImport() {
       b.agentName.toLowerCase().includes(q)
     );
   });
+
+  const bulkAssign = (indices: number[], agentId: number | null) => {
+    const agent = agentId !== null ? existingAgents.find((a) => a.id === agentId) : null;
+    setMappedBookings((prev) =>
+      prev.map((b, i) =>
+        indices.includes(i) ? { ...b, agentId, agentName: agent?.name ?? "" } : b
+      )
+    );
+  };
 
   const unmappedCount = mappedBookings.filter((b) => b.agentId === null).length;
   const mappedCount = mappedBookings.filter((b) => b.agentId !== null).length;
@@ -762,6 +784,15 @@ export default function AdminImport() {
                           className="pl-8 h-8 w-48 text-sm"
                         />
                       </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`h-8 text-xs gap-1.5 ${showUnmatchedOnly ? "bg-amber-100 border-amber-400 text-amber-800" : ""}`}
+                        onClick={() => setShowUnmatchedOnly((v) => !v)}
+                      >
+                        <AlertTriangle size={12} />
+                        {showUnmatchedOnly ? "Show all" : `Unmatched only (${unmappedCount})`}
+                      </Button>
                       <Button onClick={handleImport} disabled={importing || mappedCount === 0}>
                         {importing ? "Importing..." : `Import ${mappedCount} Bookings`}
                       </Button>
@@ -774,6 +805,33 @@ export default function AdminImport() {
                       <span>
                         {unmappedCount} bookings could not be automatically matched to an agent. Please assign them manually below, or they will be skipped during import.
                       </span>
+                    </div>
+                  )}
+
+                  {/* Bulk-assign panel: one row per unique unmatched agent token */}
+                  {unmatchedGroups.length > 0 && (
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="bg-amber-50 border-b px-3 py-2 flex items-center gap-2">
+                        <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+                        <span className="text-xs font-semibold text-amber-800">Bulk Assign Unmatched Agents ({unmatchedGroups.length} unique names)</span>
+                      </div>
+                      <div className="divide-y">
+                        {unmatchedGroups.map(([token, indices]) => (
+                          <div key={token} className="flex items-center gap-3 px-3 py-2">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm font-medium truncate block">{token}</span>
+                              <span className="text-xs text-muted-foreground">{indices.length} booking{indices.length !== 1 ? "s" : ""}</span>
+                            </div>
+                            <AgentCombobox
+                              agents={existingAgents}
+                              value={null}
+                              onChange={(id) => {
+                                if (id !== null) bulkAssign(indices, id);
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 

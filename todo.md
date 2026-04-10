@@ -260,3 +260,7 @@
 ## Import Page UX Fixes (Apr 10)
 - [x] Make agent dropdown in CSV import review table searchable — replaced Select with AgentCombobox (Popover + Command) with live type-to-filter
 - [x] Fix agent name matching — listAgents now includes admin role users (not just agents), so Kirsty Henwood and other admins are auto-matched
+
+## Import Page Bulk Assign & Filter (Apr 10)
+- [x] Add "show unmatched only" toggle to CSV import review table — amber button in controls bar, filters table to unmatched rows only
+- [x] Add bulk-assign panel: groups all unmatched rows by agent token, shows count per name, one AgentCombobox per group to assign all rows at once
