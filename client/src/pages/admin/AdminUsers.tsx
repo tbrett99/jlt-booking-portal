@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Search, ChevronLeft, ChevronRight, Loader2, Trash2, UserCheck } from "lucide-react";
+import { Plus, Search, ChevronLeft, ChevronRight, Loader2, Trash2, UserCheck, LogIn } from "lucide-react";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
 
@@ -21,6 +21,7 @@ export default function AdminUsers() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | "super_admin" | "admin" | "agent">("all");
+  const [loginFilter, setLoginFilter] = useState<"all" | "never">("all");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
 
@@ -40,7 +41,11 @@ export default function AdminUsers() {
     pageSize: PAGE_SIZE,
   });
 
-  const users = data?.items ?? [];
+  const allUsers = data?.items ?? [];
+  // Client-side filter for never-logged-in (lastSignedIn is set to createdAt on account creation, so we check credentialsSentAt set but lastSignedIn hasn't changed meaningfully — use mustChangePassword as proxy: if credentials sent and mustChangePassword is still true, they haven't logged in yet)
+  const users = loginFilter === "never"
+    ? allUsers.filter((u) => (u as any).credentialsSentAt && (u as any).mustChangePassword)
+    : allUsers;
   const total = data?.total ?? 0;
   const totalPages = data?.totalPages ?? 1;
 
@@ -145,6 +150,18 @@ export default function AdminUsers() {
               </SelectContent>
             </Select>
             <Button type="submit" variant="outline">Search</Button>
+            <button
+              type="button"
+              onClick={() => { setLoginFilter(loginFilter === "never" ? "all" : "never"); setPage(1); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                loginFilter === "never"
+                  ? "border-orange-400 bg-orange-50 text-orange-700"
+                  : "border-border text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              <LogIn size={13} />
+              {loginFilter === "never" ? "Showing: Never logged in" : "Never logged in"}
+            </button>
           </form>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
@@ -225,6 +242,7 @@ export default function AdminUsers() {
                       <th className="py-3 font-semibold text-muted-foreground hidden sm:table-cell">Email</th>
                       <th className="py-3 font-semibold text-muted-foreground">Role</th>
                       <th className="py-3 font-semibold text-muted-foreground hidden md:table-cell">Created</th>
+                      <th className="py-3 font-semibold text-muted-foreground hidden lg:table-cell">Last Login</th>
                       <th className="py-3 font-semibold text-muted-foreground">Status</th>
                       <th className="py-3 font-semibold text-muted-foreground">Actions</th>
                     </tr>
@@ -247,6 +265,19 @@ export default function AdminUsers() {
                         </td>
                         <td className="py-3 text-muted-foreground hidden md:table-cell">
                           {format(new Date(u.createdAt), "dd MMM yyyy")}
+                        </td>
+                        <td className="py-3 hidden lg:table-cell">
+                          {(u as any).mustChangePassword && (u as any).credentialsSentAt ? (
+                            <span className="text-xs font-medium text-orange-500 flex items-center gap-1">
+                              <LogIn size={11} /> Never logged in
+                            </span>
+                          ) : (u as any).lastSignedIn ? (
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date((u as any).lastSignedIn), "dd MMM yyyy")}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </td>
                         <td className="py-3">
                           <span className={`text-xs font-medium ${u.isActive ? "text-green-600" : "text-red-500"}`}>

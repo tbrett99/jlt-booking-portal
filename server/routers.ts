@@ -67,6 +67,7 @@ import {
   getLastAdminNoteAuthor,
   getAllMessageThreads,
   getTotalUnreadMessageCount,
+  markAllAgentNotesAsRead,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
@@ -900,6 +901,11 @@ export const appRouter = router({
     // Admin: total count of bookings with unread agent messages (for sidebar badge)
     totalUnreadCount: adminProcedure.query(async () => {
       return getTotalUnreadMessageCount();
+    }),
+    // Admin: mark ALL unread agent notes as read ("Mark all as read" button on Messages page)
+    markAllRead: adminProcedure.mutation(async () => {
+      await markAllAgentNotesAsRead();
+      return { success: true };
     }),
     // Admin: mark all notes on a booking as read
     markBookingNotesRead: adminProcedure

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, like, lte, not, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -434,7 +434,7 @@ export async function getAllMessageThreads() {
   const threadRows = await db
     .select({ bookingId: notes.bookingId })
     .from(notes)
-    .where(eq(notes.isInternal, false))
+    .where(and(eq(notes.isInternal, false), not(like(notes.content, '[System]%'))))
     .groupBy(notes.bookingId);
   if (threadRows.length === 0) return [];
 
@@ -446,7 +446,7 @@ export async function getAllMessageThreads() {
     const latestNote = await db
       .select()
       .from(notes)
-      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false)))
+      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false), not(like(notes.content, '[System]%'))))
       .orderBy(desc(notes.createdAt))
       .limit(1);
     if (!latestNote[0]) continue;
@@ -455,7 +455,7 @@ export async function getAllMessageThreads() {
     const unreadRows = await db
       .select({ id: notes.id })
       .from(notes)
-      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)));
+      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false), eq(notes.isReadByAdmin, false), not(like(notes.content, '[System]%'))));
     // Count only unread notes authored by agents
     let unreadCount = 0;
     for (const row of unreadRows) {
@@ -491,7 +491,7 @@ export async function getTotalUnreadMessageCount(): Promise<number> {
   const rows = await db
     .select({ bookingId: notes.bookingId })
     .from(notes)
-    .where(and(eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)))
+    .where(and(eq(notes.isInternal, false), eq(notes.isReadByAdmin, false), not(like(notes.content, '[System]%'))))
     .groupBy(notes.bookingId);
   // Filter to only those with at least one agent-authored unread note
   let count = 0;
@@ -507,6 +507,16 @@ export async function getTotalUnreadMessageCount(): Promise<number> {
     if (author?.role === 'agent') count++;
   }
   return count;
+}
+
+// Mark all unread agent notes as read by admin (for "Mark all as read" button)
+export async function markAllAgentNotesAsRead(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(notes)
+    .set({ isReadByAdmin: true })
+    .where(and(eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)));
 }
 
 // Get the last admin/super_admin who sent a shared (non-internal) note on a booking

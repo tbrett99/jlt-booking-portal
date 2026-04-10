@@ -401,3 +401,8 @@
 
 ## Bulk Credentials Send Speed Fix (Apr 10)
 - [x] Rewrite bulkSendCredentials to use parallel batches of 10 instead of sequential loop
+
+## Messages Tab & First-Login Tracking (Apr 10)
+- [x] Messages tab: filter to only show genuine agent-to-admin messages (exclude system-generated notes like reimbursement doc uploads, amendment submissions, etc.)
+- [x] Messages tab: add "Mark all as read" button
+- [x] Users page: show first-login status — flag agents who have credentials sent but have never logged in

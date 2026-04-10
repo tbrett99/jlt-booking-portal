@@ -11,9 +11,19 @@ export default function AdminMessages() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "unread">("unread");
 
+  const utils = trpc.useUtils();
   const { data: threads = [], isLoading, refetch } = trpc.notes.allThreads.useQuery();
   const markRead = trpc.notes.markBookingNotesRead.useMutation({
-    onSuccess: () => refetch(),
+    onSuccess: () => {
+      refetch();
+      utils.notes.totalUnreadCount.invalidate();
+    },
+  });
+  const markAllRead = trpc.notes.markAllRead.useMutation({
+    onSuccess: () => {
+      refetch();
+      utils.notes.totalUnreadCount.invalidate();
+    },
   });
 
   const filtered = threads.filter((t) => {
@@ -47,6 +57,18 @@ export default function AdminMessages() {
               {totalUnread > 0 ? `${totalUnread} booking${totalUnread !== 1 ? "s" : ""} with unread messages` : "All messages read"}
             </p>
           </div>
+          {totalUnread > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 text-sm gap-1.5"
+              onClick={() => markAllRead.mutate()}
+              disabled={markAllRead.isPending}
+            >
+              <CheckCheck size={14} />
+              {markAllRead.isPending ? "Marking…" : "Mark all as read"}
+            </Button>
+          )}
         </div>
       </div>
 
