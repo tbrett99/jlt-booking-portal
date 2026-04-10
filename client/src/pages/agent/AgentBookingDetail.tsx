@@ -315,70 +315,75 @@ export default function AgentBookingDetail() {
         </div>
       </div>
 
-      {/* Reimbursement doc — show for all bookings */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold">Reimbursement Document</CardTitle>
+      {/* Reimbursement Document Upload Card — always visible */}
+      <Card className="border-2" style={{ borderColor: booking.reimbursementsRequired && !booking.reimbursementDocUrl ? '#ef4444' : '#70FFE8' }}>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-bold">
+            <FileText size={18} style={{ color: '#02E6D2' }} />
+            Reimbursement Documents
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {booking.reimbursementDocUrl ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                <CheckCircle2 size={16} style={{ color: '#02E6D2' }} />
-                <a href={booking.reimbursementDocUrl} target="_blank" rel="noopener noreferrer"
-                  className="underline font-medium" style={{ color: '#02E6D2' }}>
-                  View uploaded document
-                </a>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: '#d1fae5' }}>
+                <CheckCircle2 size={20} style={{ color: '#065f46' }} />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold" style={{ color: '#065f46' }}>Document uploaded</p>
+                  <a href={booking.reimbursementDocUrl} target="_blank" rel="noopener noreferrer"
+                    className="text-xs underline" style={{ color: '#065f46' }}>
+                    View document
+                  </a>
+                </div>
                 {booking.reimbursementDocLateUpload && (
-                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#fef3c7', color: '#92400e' }}>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#fef3c7', color: '#92400e' }}>
                     Late upload
                   </span>
                 )}
               </div>
-              {/* Allow replacing the document */}
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={isUploadingDoc}
-                  className="gap-2 text-xs text-muted-foreground h-7"
-                >
-                  {isUploadingDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                  Replace document
-                </Button>
-                <input ref={fileRef} type="file" className="hidden" onChange={handleDocUpload}
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                {booking.reimbursementsRequired ? (
-                  <>
-                    <p className="text-sm font-medium text-destructive">Document not yet uploaded</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Please upload your reimbursement document as soon as possible.</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium text-foreground">Upload reimbursement documents</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      If you have reimbursement documents to add to this booking, upload them here.
-                      This will create an amendment for the JLT team to review.
-                    </p>
-                  </>
-                )}
-              </div>
+              <p className="text-xs text-muted-foreground">Need to replace this document? Upload a new file below — the JLT team will be notified.</p>
               <Button
-                variant="outline"
-                size="sm"
                 onClick={() => fileRef.current?.click()}
                 disabled={isUploadingDoc}
-                className="gap-2 flex-shrink-0"
+                className="w-full gap-2 font-semibold"
+                style={{ background: '#70FFE8', color: '#414141' }}
               >
-                {isUploadingDoc ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                Upload
+                {isUploadingDoc ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                {isUploadingDoc ? 'Uploading...' : 'Upload Replacement Document'}
               </Button>
+              <input ref={fileRef} type="file" className="hidden" onChange={handleDocUpload}
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {booking.reimbursementsRequired ? (
+                <div className="flex items-start gap-3 p-3 rounded-lg" style={{ background: '#fee2e2' }}>
+                  <AlertCircle size={20} style={{ color: '#991b1b' }} className="flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: '#991b1b' }}>Document required — not yet uploaded</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#7f1d1d' }}>Please upload your reimbursement document as soon as possible. The JLT team is waiting.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 p-3 rounded-lg" style={{ background: '#f0fdf4' }}>
+                  <FileText size={20} style={{ color: '#02E6D2' }} className="flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Have reimbursement documents to add?</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Upload them here and the JLT team will be notified immediately to set up your reimbursement.</p>
+                  </div>
+                </div>
+              )}
+              <Button
+                onClick={() => fileRef.current?.click()}
+                disabled={isUploadingDoc}
+                size="lg"
+                className="w-full gap-2 font-bold text-base py-6"
+                style={{ background: '#70FFE8', color: '#414141' }}
+              >
+                {isUploadingDoc ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+                {isUploadingDoc ? 'Uploading...' : 'Upload Reimbursement Documents'}
+              </Button>
+              <p className="text-xs text-center text-muted-foreground">Accepted: PDF, JPG, PNG, Word documents (max 10MB)</p>
               <input ref={fileRef} type="file" className="hidden" onChange={handleDocUpload}
                 accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
             </div>

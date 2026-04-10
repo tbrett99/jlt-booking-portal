@@ -548,38 +548,46 @@ export const appRouter = router({
         const { url } = await storagePut(key, buffer, input.mimeType);
         await uploadReimbursementDoc(input.bookingId, url, isLate);
 
-        if (isLate) {
-          // Auto-create an amendment so admins see it in the amendment pipeline
-          await createAmendment({
+        // Always create an amendment and notify admins when a reimbursement doc is uploaded
+        const amendmentLabel = isLate
+          ? `Reimbursement documents uploaded (late) by ${ctx.user.name ?? "Agent"}. Please set up the reimbursement ASAP. Booking: #${input.bookingId} — ${booking.clientName}.`
+          : `Reimbursement documents submitted by ${ctx.user.name ?? "Agent"}. Please set up the reimbursement ASAP. Booking: #${input.bookingId} — ${booking.clientName}.`;
+
+        await createAmendment({
+          bookingId: input.bookingId,
+          agentId: ctx.user.id,
+          details: amendmentLabel,
+        });
+
+        // Notify all admins in-app and by email
+        const allUsers = await getAllUsers();
+        const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
+        for (const admin of admins) {
+          await createInAppNotification({
+            userId: admin.id,
             bookingId: input.bookingId,
-            agentId: ctx.user.id,
-            details: `Reimbursement documents uploaded late by ${ctx.user.name ?? "Agent"}. Please review the attached document for booking #${input.bookingId} (${booking.clientName}).`,
+            message: `📎 Reimbursement docs uploaded for booking #${input.bookingId} (${booking.clientName}) by ${ctx.user.name ?? "Agent"} — please set up reimbursement ASAP`,
+            linkUrl: `/admin/bookings/${input.bookingId}`,
           });
-          // Notify admins
-          const allUsers = await getAllUsers();
-          const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
-          for (const admin of admins) {
-            await createInAppNotification({
-              userId: admin.id,
-              bookingId: input.bookingId,
-              message: `⚠️ Late reimbursement docs uploaded for booking #${input.bookingId} (${booking.clientName}) by ${ctx.user.name} — added to amendment pipeline`,
-              linkUrl: `/admin/bookings/${input.bookingId}`,
+          if (admin.email) {
+            await sendDirectEmail({
+              toEmail: admin.email,
+              toName: admin.name ?? "Admin",
+              subject: `Reimbursement docs uploaded — ${booking.clientName} (Booking #${input.bookingId})`,
+              html: `<p>Hi ${admin.name ?? "Admin"},</p>
+<p><strong>${ctx.user.name ?? "An agent"}</strong> has uploaded reimbursement documents for booking <strong>#${input.bookingId} — ${booking.clientName}</strong>.</p>
+<p>Please set up the reimbursement as soon as possible.</p>
+<p><a href="/admin/bookings/${input.bookingId}" style="background:#70FFE8;color:#414141;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:8px;">View Booking &rarr;</a></p>`,
             });
           }
-          await createNote({
-            bookingId: input.bookingId,
-            authorId: ctx.user.id,
-            content: `[System] Reimbursement document uploaded late by ${ctx.user.name ?? "Agent"}. Amendment created for admin review.`,
-            isInternal: true,
-          });
-        } else {
-          await createNote({
-            bookingId: input.bookingId,
-            authorId: ctx.user.id,
-            content: `[System] Reimbursement document uploaded by ${ctx.user.name ?? "Agent"}.`,
-            isInternal: false,
-          });
         }
+
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Reimbursement document uploaded by ${ctx.user.name ?? "Agent"}${isLate ? " (late submission)" : ""}. Amendment created — admin notified to set up reimbursement.`,
+          isInternal: false,
+        });
         return { success: true, isLate };
       }),
     moveStage: adminProcedure

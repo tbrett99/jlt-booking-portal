@@ -352,3 +352,11 @@
 - [x] Admin dashboard: add "Agent Messages Awaiting Reply" amber panel — lists bookings with unread agent notes, with Reply and Mark Read (double-tick) buttons; hidden when no unread messages
 - [x] Backend: add notes.unreadAgentMessages query and notes.markBookingNotesRead mutation
 - [x] When admin replies (adds a shared note), auto-mark all prior unread agent notes on that booking as read
+
+## Reimbursement Doc Upload Redesign (Apr 10)
+- [x] Agent booking detail: replaced subtle link with large full-width teal "Upload Reimbursement Documents" button (py-6, bold, prominent)
+- [x] Show current doc status clearly: red border + red alert when required but missing; teal border + green "Document uploaded" when present
+- [x] On upload: always create amendment in pipeline ("Reimbursement documents submitted — please set up reimbursement ASAP")
+- [x] On upload: email all admins with booking name, agent name, and "View Booking" link button
+- [x] On upload: create in-app notification for all admins with direct link to booking
+- [x] Backend: uploadReimbDoc now always notifies admins (not just on late uploads)
