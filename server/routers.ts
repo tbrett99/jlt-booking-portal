@@ -58,6 +58,8 @@ import {
   getPasswordResetToken,
   markPasswordResetTokenUsed,
   updateUserProfile,
+  areNotificationsPaused,
+  setSystemSetting,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail } from "./email";
@@ -1447,6 +1449,19 @@ export const appRouter = router({
           agentName: userMap.get(b.agentId)?.name ?? "Unknown",
           agentEmail: userMap.get(b.agentId)?.email ?? "",
         }));
+      }),
+  }),
+
+  // ── System Settings ────────────────────────────────────────────────────────────────────────────────────────
+  settings: router({
+    getNotificationsPaused: adminProcedure.query(async () => {
+      return { paused: await areNotificationsPaused() };
+    }),
+    setNotificationsPaused: adminProcedure
+      .input(z.object({ paused: z.boolean() }))
+      .mutation(async ({ input }) => {
+        await setSystemSetting("notifications_paused", input.paused ? "true" : "false");
+        return { paused: input.paused };
       }),
   }),
 });

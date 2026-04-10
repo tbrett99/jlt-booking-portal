@@ -14,6 +14,7 @@ import {
   refundSuppliers,
   refunds,
   users,
+  systemSettings,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -562,6 +563,29 @@ export async function upsertNotificationTemplate(data: {
     });
 }
 
+// ─── System Settings ─────────────────────────────────────────────────────────
+
+export async function getSystemSetting(key: string): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(systemSettings).where(eq(systemSettings.key, key)).limit(1);
+  return rows[0]?.value ?? null;
+}
+
+export async function setSystemSetting(key: string, value: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .insert(systemSettings)
+    .values({ key, value })
+    .onDuplicateKeyUpdate({ set: { value } });
+}
+
+export async function areNotificationsPaused(): Promise<boolean> {
+  const val = await getSystemSetting("notifications_paused");
+  return val === "true";
+}
+
 // ─── In-App Notifications ─────────────────────────────────────────────────────
 
 export async function createInAppNotification(data: {
@@ -570,6 +594,11 @@ export async function createInAppNotification(data: {
   message: string;
   linkUrl?: string;
 }) {
+  // Respect global notifications kill-switch
+  if (await areNotificationsPaused()) {
+    console.log("[Notifications] Paused — skipping in-app notification:", data.message.slice(0, 60));
+    return;
+  }
   const db = await getDb();
   if (!db) return;
   await db.insert(inAppNotifications).values(data);

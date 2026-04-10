@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import { getNotificationTemplate } from "./db";
+import { getNotificationTemplate, areNotificationsPaused } from "./db";
 
 // Always create a fresh transporter so env changes take effect without restart
 function getTransporter() {
@@ -24,6 +24,11 @@ export async function sendNotificationEmail(params: {
   bookingId?: number;
 }): Promise<{ success: boolean; error?: string }> {
   try {
+    // Respect global notifications kill-switch
+    if (await areNotificationsPaused()) {
+      console.log(`[Notifications] Paused — skipping email (${params.triggerKey}) to ${params.toEmail}`);
+      return { success: false, error: "Notifications are currently paused" };
+    }
     const template = await getNotificationTemplate(params.triggerKey);
     if (!template || !template.isActive) {
       return { success: false, error: "Template not found or inactive" };

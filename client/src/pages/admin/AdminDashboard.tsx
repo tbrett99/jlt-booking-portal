@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   BookOpen, Users, FileText, TrendingUp, Bell, ArrowRight,
   AlertTriangle, Sparkles, AlertCircle, Calendar, Clock,
-  CheckCircle2, Banknote, RefreshCw, ChevronRight, Upload
+  CheckCircle2, Banknote, RefreshCw, ChevronRight, Upload, BellOff
 } from "lucide-react";
 import { format, differenceInDays, isAfter, addDays } from "date-fns";
 
@@ -44,6 +44,12 @@ export default function AdminDashboard() {
   const { data: refunds = [] } = trpc.refunds.all.useQuery();
   const { data: notifications = [] } = trpc.notifications.myNotifications.useQuery();
   const { data: claims = [] } = trpc.commissionClaims.all.useQuery();
+  const utils = trpc.useUtils();
+  const { data: notifSettings } = trpc.settings.getNotificationsPaused.useQuery();
+  const notificationsPaused = notifSettings?.paused ?? false;
+  const setNotifPaused = trpc.settings.setNotificationsPaused.useMutation({
+    onSuccess: () => utils.settings.getNotificationsPaused.invalidate(),
+  });
 
   const agents = agentList;
   const activeBookings = bookings.filter((b) => b.currentStage !== "Cancelled");
@@ -99,6 +105,17 @@ export default function AdminDashboard() {
           <p className="text-muted-foreground text-xs mt-0.5">{format(now, "EEEE d MMMM yyyy")}</p>
         </div>
         <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className={`gap-1.5 text-xs ${notificationsPaused ? 'border-amber-400 text-amber-700 bg-amber-50' : 'text-muted-foreground'}`}
+            onClick={() => setNotifPaused.mutate({ paused: !notificationsPaused })}
+            disabled={setNotifPaused.isPending}
+            title={notificationsPaused ? 'Notifications are paused — click to resume' : 'Notifications are active — click to pause'}
+          >
+            <BellOff size={13} />
+            {notificationsPaused ? 'Notifs Paused' : 'Notifs Active'}
+          </Button>
           <Link href="/import">
             <Button size="sm" variant="outline" className="gap-1.5 text-xs">
               <Upload size={13} /> Import CSV

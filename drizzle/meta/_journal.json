@@ -71,6 +71,13 @@
       "when": 1775824446319,
       "tag": "0009_unique_jean_grey",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1775827682630,
+      "tag": "0010_furry_starfox",
+      "breakpoints": true
     }
   ]
 }

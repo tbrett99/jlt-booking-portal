@@ -329,3 +329,10 @@
 - [x] Add paymentDateDismissed boolean flag to bookings table — suppresses booking from dashboard missing-payment-date alert
 - [x] Set paymentDateDismissed = true for all moved bookings that have no finalSupplierPaymentDate (1 dismissed)
 - [x] Update dashboard missing-payment-date query to exclude dismissed bookings (both db.ts and AdminDashboard.tsx)
+
+## Notifications Kill-Switch (Apr 10)
+- [x] Add notificationsPaused boolean to system_settings table (key-value store)
+- [x] Wire kill-switch into sendNotificationEmail — skip send if paused (logs to console)
+- [x] Wire kill-switch into createInAppNotification — skip create if paused (logs to console)
+- [x] Add toggle button in admin dashboard header (amber when paused, shows current state, click to toggle)
+- [x] Set notifications to PAUSED immediately via setup-system-settings.mjs script
