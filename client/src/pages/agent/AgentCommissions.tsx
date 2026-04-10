@@ -9,6 +9,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { Input } from "@/components/ui/input";
 import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight } from "lucide-react";
 import { Link } from "wouter";
 
@@ -51,6 +52,7 @@ export default function AgentCommissions() {
 
   const [claimTarget, setClaimTarget] = useState<BookingWithClaim | null>(null);
   const [selectedType, setSelectedType] = useState<BookingType>("other");
+  const [grossAmount, setGrossAmount] = useState<string>("");
 
   const claimMutation = trpc.commissionClaims.claim.useMutation({
     onSuccess: () => {
@@ -93,12 +95,18 @@ export default function AgentCommissions() {
 
   const openClaimDialog = (booking: BookingWithClaim) => {
     setSelectedType("other");
+    setGrossAmount("");
     setClaimTarget(booking);
   };
 
   const submitClaim = () => {
     if (!claimTarget) return;
-    claimMutation.mutate({ bookingId: claimTarget.id, bookingType: selectedType });
+    const amount = parseFloat(grossAmount);
+    if (!grossAmount || isNaN(amount) || amount <= 0) {
+      toast.error("Please enter your expected gross commission amount");
+      return;
+    }
+    claimMutation.mutate({ bookingId: claimTarget.id, bookingType: selectedType, grossAmount: amount });
   };
 
   const BookingRow = ({
@@ -436,7 +444,32 @@ export default function AgentCommissions() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4">
+          <div className="py-4 space-y-5">
+            {/* Required: gross commission amount */}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold" htmlFor="gross-amount">
+                Expected Gross Commission <span className="text-red-500">*</span>
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Enter the total commission before PTS fees, card charges, and any commission split.
+              </p>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                <Input
+                  id="gross-amount"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={grossAmount}
+                  onChange={(e) => setGrossAmount(e.target.value)}
+                  className="pl-7"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Booking Type</Label>
             <RadioGroup
               value={selectedType}
               onValueChange={(v) => setSelectedType(v as BookingType)}
@@ -458,6 +491,8 @@ export default function AgentCommissions() {
                 </div>
               ))}
             </RadioGroup>
+            </div>
+
           </div>
 
           <DialogFooter>

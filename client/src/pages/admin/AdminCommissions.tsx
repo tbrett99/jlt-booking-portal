@@ -7,7 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { Loader2, Banknote, CheckCircle, Clock } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Loader2, Banknote, CheckCircle, Clock, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
 
 type ClaimRow = {
@@ -31,9 +32,19 @@ type ClaimRow = {
 export default function AdminCommissions() {
   const [, navigate] = useLocation();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<ClaimRow | null>(null);
   const utils = trpc.useUtils();
 
   const { data: claims, isLoading } = trpc.commissionClaims.all.useQuery();
+  const deleteClaimMutation = trpc.commissionClaims.deleteClaim.useMutation({
+    onSuccess: () => {
+      toast.success("Commission claim deleted.");
+      setDeleteTarget(null);
+      utils.commissionClaims.all.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const markPaidMutation = trpc.commissionClaims.markPaid.useMutation({
     onSuccess: () => {
       toast.success(`${selectedIds.size} commission(s) marked as paid.`);
@@ -182,6 +193,14 @@ export default function AdminCommissions() {
                         Pay
                       </Button>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDeleteTarget(c)}
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50 text-xs"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </td>
               </tr>
@@ -299,6 +318,30 @@ export default function AdminCommissions() {
           </Card>
         </TabsContent>
       </Tabs>
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Commission Claim</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the commission claim for{" "}
+              <strong>{deleteTarget?.booking?.clientName ?? "this booking"}</strong> by{" "}
+              <strong>{deleteTarget?.agentName}</strong>? The booking will be reverted to{" "}
+              <em>Commission Claimable</em> so the agent can re-claim if needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => deleteTarget && deleteClaimMutation.mutate({ claimId: deleteTarget.id })}
+              disabled={deleteClaimMutation.isPending}
+            >
+              {deleteClaimMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -811,7 +811,7 @@ export async function getUnreadNotificationCount(userId: number) {
 
 // ─── Commission Claims ────────────────────────────────────────────────────────
 
-export async function createCommissionClaim(bookingId: number, agentId: number, bookingType: "lapland" | "cruise" | "disney" | "other" = "other") {
+export async function createCommissionClaim(bookingId: number, agentId: number, bookingType: "lapland" | "cruise" | "disney" | "other" = "other", grossAmount?: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   // Prevent duplicate claims
@@ -821,7 +821,7 @@ export async function createCommissionClaim(bookingId: number, agentId: number, 
     .where(eq(commissionClaims.bookingId, bookingId))
     .limit(1);
   if (existing.length > 0) return existing[0];
-  await db.insert(commissionClaims).values({ bookingId, agentId, bookingType });
+  await db.insert(commissionClaims).values({ bookingId, agentId, bookingType, grossAmount: grossAmount ?? null } as any);
   const result = await db
     .select()
     .from(commissionClaims)
@@ -870,6 +870,12 @@ export async function getCommissionClaimByBooking(bookingId: number) {
     .where(eq(commissionClaims.bookingId, bookingId))
     .limit(1);
   return result[0];
+}
+
+export async function deleteCommissionClaim(claimId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(commissionClaims).where(eq(commissionClaims.id, claimId));
 }
 
 // ─── Password Reset Tokens ────────────────────────────────────────────────────

@@ -44,6 +44,7 @@ import {
   getAllCommissionClaims,
   markCommissionPaid,
   getCommissionClaimByBooking,
+  deleteCommissionClaim,
   getNotificationTemplates,
   getNotificationTemplate,
   upsertNotificationTemplate,
@@ -1463,6 +1464,7 @@ ${input.reason ? `<blockquote style="border-left:4px solid #f87171;padding:8px 1
       .input(z.object({
         bookingId: z.number(),
         bookingType: z.enum(["lapland", "cruise", "disney", "other"]).default("other"),
+        grossAmount: z.number().positive({ message: "Please enter your expected gross commission amount" }),
       }))
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
@@ -1473,7 +1475,7 @@ ${input.reason ? `<blockquote style="border-left:4px solid #f87171;padding:8px 1
         if (booking.currentStage !== "Commission Claimable") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Booking is not in Commission Claimable stage" });
         }
-        const claim = await createCommissionClaim(input.bookingId, ctx.user.id, input.bookingType);
+        const claim = await createCommissionClaim(input.bookingId, ctx.user.id, input.bookingType, input.grossAmount);
         // Move booking to Commission Claimed
         await updateBookingStage(input.bookingId, "Commission Claimed", ctx.user.id);
         // System audit note
@@ -1523,6 +1525,20 @@ ${input.reason ? `<blockquote style="border-left:4px solid #f87171;padding:8px 1
         paidByName: c.paidById ? (userMap.get(c.paidById)?.name ?? "Admin") : null,
       }));
     }),
+
+    // Admin: delete a commission claim (e.g. test claims or holding accounts)
+    deleteClaim: adminProcedure
+      .input(z.object({ claimId: z.number() }))
+      .mutation(async ({ input }) => {
+        // Also revert the booking back to Commission Claimable so the agent can re-claim if needed
+        const allClaims = await getAllCommissionClaims();
+        const claim = allClaims.find((c) => c.id === input.claimId);
+        if (claim) {
+          await updateBookingStage(claim.bookingId, "Commission Claimable", 0);
+        }
+        await deleteCommissionClaim(input.claimId);
+        return { success: true };
+      }),
 
     // Admin: mark one or more claims as paid
     markPaid: adminProcedure

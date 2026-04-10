@@ -409,3 +409,8 @@
 
 ## Bulk Credentials Send Speed Fix v2 (Apr 10)
 - [x] Increase batch size from 10 to 50, reduce bcrypt cost to 8, skip already-sent users
+
+## Commission Improvements (Apr 10)
+- [x] Admin commissions page: add delete button per claim (with confirmation dialog)
+- [x] Backend: add commissionClaims.delete procedure (admin only)
+- [x] Agent claim form: make grossAmount (expected gross commission) a required field
