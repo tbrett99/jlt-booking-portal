@@ -342,3 +342,13 @@
 - [x] Agent booking detail: reimbursement doc card now shows for ALL bookings (not just reimbursementsRequired=true); non-required bookings see explanatory text about late upload creating an amendment
 - [x] Late reimbursement doc upload: auto-creates amendment "Reimbursement documents uploaded late by [Agent]" in pipeline as To Do; notifies all admins in-app
 - [x] Booking form: TD reference label updated to amber "(mandatory if you have one)"
+
+## Communication & Fixes (Apr 10 - Session 4)
+- [x] Commission Due page — Move Date button confirmed present in code; page shows bookings with past payment dates not yet in terminal stage
+- [x] Agent booking detail — reimbursement doc upload section confirmed present for all bookings in AgentBookingDetail.tsx
+- [x] Email notification: when agent adds a shared note, email all admins with message preview and "Reply" link
+- [x] Email notification: when admin adds a shared note, email the agent with message preview and "View Booking" link
+- [x] Add isReadByAdmin boolean field to notes table (migration applied)
+- [x] Admin dashboard: add "Agent Messages Awaiting Reply" amber panel — lists bookings with unread agent notes, with Reply and Mark Read (double-tick) buttons; hidden when no unread messages
+- [x] Backend: add notes.unreadAgentMessages query and notes.markBookingNotesRead mutation
+- [x] When admin replies (adds a shared note), auto-mark all prior unread agent notes on that booking as read

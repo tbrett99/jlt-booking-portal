@@ -371,6 +371,58 @@ export async function getNotesByBooking(bookingId: number, includeInternal: bool
   return db.select().from(notes).where(condition).orderBy(notes.createdAt);
 }
 
+// Mark all agent notes on a booking as read by admin
+export async function markNotesReadByAdmin(bookingId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(notes)
+    .set({ isReadByAdmin: true })
+    .where(and(eq(notes.bookingId, bookingId), eq(notes.isReadByAdmin, false)));
+}
+
+// Get bookings that have unread agent notes (for admin dashboard panel)
+export async function getBookingsWithUnreadAgentNotes() {
+  const db = await getDb();
+  if (!db) return [];
+  // Find distinct bookingIds where there's an agent note not yet read by admin
+  const unreadNotes = await db
+    .select({ bookingId: notes.bookingId })
+    .from(notes)
+    .where(and(eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)))
+    .groupBy(notes.bookingId)
+    .orderBy(desc(notes.createdAt));
+  if (unreadNotes.length === 0) return [];
+  // Filter to only notes authored by agents
+  const bookingIds = unreadNotes.map((n) => n.bookingId);
+  // Get the bookings + latest unread note content
+  const result = [];
+  for (const { bookingId } of unreadNotes) {
+    const booking = await getBookingById(bookingId);
+    if (!booking) continue;
+    // Get the latest unread note for this booking
+    const latestUnread = await db
+      .select()
+      .from(notes)
+      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)))
+      .orderBy(desc(notes.createdAt))
+      .limit(1);
+    if (!latestUnread[0]) continue;
+    // Only include if the latest unread note was written by an agent
+    const author = await getUserById(latestUnread[0].authorId);
+    if (!author || (author.role !== 'agent')) continue;
+    result.push({
+      bookingId,
+      clientName: booking.clientName,
+      agentId: booking.agentId,
+      latestMessage: latestUnread[0].content,
+      latestMessageAt: latestUnread[0].createdAt,
+      authorName: author.name ?? 'Agent',
+    });
+  }
+  return result;
+}
+
 // ─── Amendments ───────────────────────────────────────────────────────────────
 
 export async function createAmendment(data: {

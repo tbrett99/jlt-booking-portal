@@ -1,0 +1,1 @@
+ALTER TABLE `notes` ADD `isReadByAdmin` boolean DEFAULT false NOT NULL;

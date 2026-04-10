@@ -60,9 +60,11 @@ import {
   updateUserProfile,
   areNotificationsPaused,
   setSystemSetting,
+  markNotesReadByAdmin,
+  getBookingsWithUnreadAgentNotes,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
-import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail } from "./email";
+import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { ENV } from "./_core/env";
@@ -861,6 +863,17 @@ export const appRouter = router({
 
   // ── Notes ─────────────────────────────────────────────────────────────────
   notes: router({
+    // Admin: get all bookings with unread agent messages
+    unreadAgentMessages: adminProcedure.query(async () => {
+      return getBookingsWithUnreadAgentNotes();
+    }),
+    // Admin: mark all notes on a booking as read
+    markBookingNotesRead: adminProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .mutation(async ({ input }) => {
+        await markNotesReadByAdmin(input.bookingId);
+        return { success: true };
+      }),
     list: protectedProcedure
       .input(z.object({ bookingId: z.number() }))
       .query(async ({ input, ctx }) => {
@@ -935,7 +948,7 @@ export const appRouter = router({
         // Notify the other party for shared notes
         if (!input.isInternal) {
           if (ctx.user.role === "agent") {
-            // Notify admins
+            // Agent sent a message — notify all admins (in-app + email)
             const allUsers = await getAllUsers();
             const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
             for (const admin of admins) {
@@ -943,15 +956,58 @@ export const appRouter = router({
                 userId: admin.id,
                 bookingId: input.bookingId,
                 message: `${ctx.user.name} left a note on booking "${booking.clientName}"`,
+                linkUrl: `/admin/bookings/${input.bookingId}`,
               });
+              // Email the admin
+              if (admin.email) {
+                await sendDirectEmail({
+                  toEmail: admin.email,
+                  toName: admin.name ?? "Admin",
+                  subject: `New message from ${ctx.user.name} — Booking: ${booking.clientName}`,
+                  html: `
+                    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+                      <h2 style="color:#1a1a2e;">New Agent Message</h2>
+                      <p><strong>${ctx.user.name}</strong> has left a message on booking <strong>${booking.clientName}</strong> (Booking #${input.bookingId}).</p>
+                      <div style="background:#f5f5f5;border-left:4px solid #70FFE8;padding:12px 16px;margin:16px 0;border-radius:4px;">
+                        <p style="margin:0;color:#333;">${input.content.replace(/\n/g, '<br>')}</p>
+                      </div>
+                      <a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;margin-top:8px;">View Booking &amp; Reply</a>
+                      <p style="color:#888;font-size:12px;margin-top:24px;">JLT Group Booking Portal</p>
+                    </div>
+                  `,
+                });
+              }
             }
           } else {
-            // Notify agent
+            // Admin sent a message — notify the agent (in-app + email)
             await createInAppNotification({
               userId: booking.agentId,
               bookingId: input.bookingId,
               message: `Admin left a note on your booking "${booking.clientName}"`,
+              linkUrl: `/bookings/${input.bookingId}`,
             });
+            // Email the agent
+            const agent = await getUserById(booking.agentId);
+            if (agent?.email) {
+              await sendDirectEmail({
+                toEmail: agent.email,
+                toName: agent.name ?? "Agent",
+                subject: `New message on your booking: ${booking.clientName}`,
+                html: `
+                  <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+                    <h2 style="color:#1a1a2e;">New Message from JLT Group</h2>
+                    <p>There is a new message on your booking for <strong>${booking.clientName}</strong> (Booking #${input.bookingId}).</p>
+                    <div style="background:#f5f5f5;border-left:4px solid #70FFE8;padding:12px 16px;margin:16px 0;border-radius:4px;">
+                      <p style="margin:0;color:#333;">${input.content.replace(/\n/g, '<br>')}</p>
+                    </div>
+                    <a href="https://portal.thejltgroup.co.uk/bookings/${input.bookingId}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;margin-top:8px;">View Booking &amp; Reply</a>
+                    <p style="color:#888;font-size:12px;margin-top:24px;">JLT Group Booking Portal</p>
+                  </div>
+                `,
+              });
+            }
+            // Mark existing unread agent notes on this booking as read (admin has seen them)
+            await markNotesReadByAdmin(input.bookingId);
           }
         }
         return { success: true };

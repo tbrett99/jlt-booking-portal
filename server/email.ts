@@ -16,6 +16,32 @@ function getTransporter() {
   });
 }
 
+// Direct email — bypasses template system, used for message notifications
+export async function sendDirectEmail(params: {
+  toEmail: string;
+  toName: string;
+  subject: string;
+  html: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (await areNotificationsPaused()) {
+      console.log(`[Notifications] Paused — skipping direct email to ${params.toEmail}`);
+      return { success: false, error: "Notifications are currently paused" };
+    }
+    const t = getTransporter();
+    await t.sendMail({
+      from: `"JLT Group" <support@thejltgroup.co.uk>`,
+      to: `"${params.toName}" <${params.toEmail}>`,
+      subject: params.subject,
+      html: params.html,
+    });
+    return { success: true };
+  } catch (err: any) {
+    console.error("[Email] Failed to send direct email:", err?.message);
+    return { success: false, error: err?.message };
+  }
+}
+
 export async function sendNotificationEmail(params: {
   triggerKey: string;
   toEmail: string;

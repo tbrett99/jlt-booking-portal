@@ -78,6 +78,13 @@
       "when": 1775827682630,
       "tag": "0010_furry_starfox",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1775833187830,
+      "tag": "0011_mushy_dragon_lord",
+      "breakpoints": true
     }
   ]
 }
