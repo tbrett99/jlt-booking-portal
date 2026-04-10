@@ -661,6 +661,7 @@ export const appRouter = router({
           bookingId: z.number(),
           ptsRef: z.string().optional(),
           topdogRef: z.string().optional(),
+          destination: z.string().optional(),
           finalSupplierPaymentDate: z.date().nullable().optional(),
           expectedCommission: z.number().optional(),
           grossCost: z.number().optional(),
@@ -687,6 +688,7 @@ export const appRouter = router({
               });
             }
           }
+          if (input.destination !== undefined) changes.push(`Destination set to "${input.destination}"`);
           if (input.expectedCommission !== undefined) changes.push(`Expected Commission set to £${input.expectedCommission}`);
           if (input.grossCost !== undefined) changes.push(`Gross Cost set to £${input.grossCost}`);
           if (changes.length > 0) {

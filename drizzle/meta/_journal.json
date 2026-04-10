@@ -57,6 +57,13 @@
       "when": 1775812758371,
       "tag": "0007_previous_swordsman",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1775822859248,
+      "tag": "0008_nasty_shaman",
+      "breakpoints": true
     }
   ]
 }

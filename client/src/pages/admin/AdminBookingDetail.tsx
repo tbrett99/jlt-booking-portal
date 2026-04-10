@@ -60,6 +60,7 @@ export default function AdminBookingDetail() {
   const [isSendingInternal, setIsSendingInternal] = useState(false);
   const [editPts, setEditPts] = useState("");
   const [editTopdog, setEditTopdog] = useState("");
+  const [editDestination, setEditDestination] = useState("");
   const [editPaymentDate, setEditPaymentDate] = useState("");
   const [editCommission, setEditCommission] = useState("");
   const [editGrossCost, setEditGrossCost] = useState("");
@@ -82,6 +83,7 @@ export default function AdminBookingDetail() {
   if (booking && !detailsInitialised) {
     setEditPts(booking.ptsRef ?? "");
     setEditTopdog(booking.topdogRef ?? "");
+    setEditDestination((booking as any).destination ?? "");
     setEditPaymentDate(booking.finalSupplierPaymentDate ? format(new Date(booking.finalSupplierPaymentDate), "yyyy-MM-dd") : "");
     setEditCommission(booking.expectedCommission ? String(booking.expectedCommission) : "");
     setEditGrossCost((booking as any).grossCost ? String((booking as any).grossCost) : "");
@@ -213,6 +215,7 @@ export default function AdminBookingDetail() {
         bookingId,
         ptsRef: editPts || undefined,
         topdogRef: editTopdog || undefined,
+        destination: editDestination || undefined,
         finalSupplierPaymentDate: editPaymentDate ? new Date(editPaymentDate) : null,
         expectedCommission: editCommission ? Number(editCommission) : undefined,
         grossCost: editGrossCost ? Number(editGrossCost) : undefined,
@@ -305,6 +308,12 @@ export default function AdminBookingDetail() {
             )}
 
             <div className="space-y-3 pt-2 border-t">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs">Destination</Label>
+                  <Input value={editDestination} onChange={(e) => setEditDestination(e.target.value)} placeholder="e.g. Spain" className="h-8 text-sm" />
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Topdog Ref</Label>

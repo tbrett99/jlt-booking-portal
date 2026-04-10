@@ -48,6 +48,7 @@ export const bookings = mysqlTable("bookings", {
   grossCost: decimal("grossCost", { precision: 10, scale: 2 }),
   // Admin-managed fields
   ptsRef: varchar("ptsRef", { length: 100 }),
+  destination: varchar("destination", { length: 255 }), // Country/destination from PTS
   finalSupplierPaymentDate: timestamp("finalSupplierPaymentDate"),
   finalSupplierPaymentNotified: boolean("finalSupplierPaymentNotified").default(false).notNull(),
   // Current pipeline stage

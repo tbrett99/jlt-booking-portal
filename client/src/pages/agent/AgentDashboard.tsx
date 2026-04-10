@@ -314,6 +314,9 @@ export default function AgentDashboard() {
                           {booking.ptsRef && (
                             <CopyableRef value={booking.ptsRef} label="PTS ref" />
                           )}
+                          {(booking as any).destination && (
+                            <span className="text-xs text-muted-foreground">{(booking as any).destination}</span>
+                          )}
                         </div>
                       </div>
 

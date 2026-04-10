@@ -309,3 +309,11 @@
 - [x] Add checkbox multi-select per card + select-all toggle in filter bar
 - [x] Bulk action bar: when rows selected, show "Move X to Commission Claimable" and "Move X to Commission Claimed" buttons
 - [x] Backend: add bulkMoveStage procedure (admin only) — moves multiple bookings, writes audit note, sends agent notifications
+
+## PTS CSV Match & Update (Apr 10)
+- [x] Add destination varchar field to bookings table in drizzle schema + run migration
+- [x] Fix misplaced 2T refs: move topdogRef → ptsRef where topdogRef starts with "2T" and ptsRef is blank
+- [x] Match CSV rows by PTS ref, fill blank ptsRef from CSV BOOKINGREFERENCE where client name fuzzy-matches
+- [x] Set destination field from CSV COUNTRY column for all matched bookings
+- [x] Move matched bookings where PROFIT CLAIMED = Y into "Commission Claimed" stage
+- [x] Show destination field in booking detail and admin views
