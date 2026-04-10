@@ -1476,6 +1476,8 @@ ${input.reason ? `<blockquote style="border-left:4px solid #f87171;padding:8px 1
           throw new TRPCError({ code: "BAD_REQUEST", message: "Booking is not in Commission Claimable stage" });
         }
         const claim = await createCommissionClaim(input.bookingId, ctx.user.id, input.bookingType, input.grossAmount);
+        // Sync the booking's expectedCommission with the gross amount the agent declared
+        await updateBookingAdminFields(input.bookingId, { expectedCommission: input.grossAmount });
         // Move booking to Commission Claimed
         await updateBookingStage(input.bookingId, "Commission Claimed", ctx.user.id);
         // System audit note

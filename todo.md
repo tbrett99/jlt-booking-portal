@@ -414,3 +414,7 @@
 - [x] Admin commissions page: add delete button per claim (with confirmation dialog)
 - [x] Backend: add commissionClaims.delete procedure (admin only)
 - [x] Agent claim form: make grossAmount (expected gross commission) a required field
+
+## Commission Gross Amount Continuity Fix (Apr 10)
+- [x] Claim dialog: pre-fill grossAmount from booking's expectedCommission when opening
+- [x] On claim submit: update booking's expectedCommission with the submitted grossAmount so admin view stays in sync

@@ -95,7 +95,8 @@ export default function AgentCommissions() {
 
   const openClaimDialog = (booking: BookingWithClaim) => {
     setSelectedType("other");
-    setGrossAmount("");
+    // Pre-fill with the booking's existing expected commission if set
+    setGrossAmount(booking.expectedCommission != null ? String(Number(booking.expectedCommission).toFixed(2)) : "");
     setClaimTarget(booking);
   };
 
