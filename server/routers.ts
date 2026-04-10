@@ -400,9 +400,9 @@ export const appRouter = router({
       .input(z.object({ userIds: z.array(z.number()) }))
       .mutation(async ({ input }) => {
         const results: Array<{ userId: number; success: boolean; error?: string }> = [];
-        const BATCH_SIZE = 10;
+        // Batch size 50 — large enough to be fast, small enough not to overwhelm SMTP
+        const BATCH_SIZE = 50;
 
-        // Process in parallel batches to avoid overwhelming SMTP while being much faster than sequential
         for (let i = 0; i < input.userIds.length; i += BATCH_SIZE) {
           const batch = input.userIds.slice(i, i + BATCH_SIZE);
           const batchResults = await Promise.all(
@@ -412,9 +412,13 @@ export const appRouter = router({
                 if (!user || !user.email) {
                   return { userId, success: false, error: "no_email" };
                 }
+                // Skip users who already received credentials in a previous send
+                if ((user as any).credentialsSentAt) {
+                  return { userId, success: true };
+                }
                 const tempPassword = nanoid(12);
-                // Use bcrypt cost 10 instead of 12 for bulk operations — still secure, ~4x faster
-                const hashed = await bcrypt.hash(tempPassword, 10);
+                // bcrypt cost 8: ~60ms per hash (vs 400ms at cost 12) — still secure for temp passwords
+                const hashed = await bcrypt.hash(tempPassword, 8);
                 await updateUserPassword(user.id, hashed);
                 await sendCredentialsEmail({ toEmail: user.email, toName: user.name ?? user.email, tempPassword });
                 await markCredentialsSent(user.id);

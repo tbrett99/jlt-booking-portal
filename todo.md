@@ -406,3 +406,6 @@
 - [x] Messages tab: filter to only show genuine agent-to-admin messages (exclude system-generated notes like reimbursement doc uploads, amendment submissions, etc.)
 - [x] Messages tab: add "Mark all as read" button
 - [x] Users page: show first-login status — flag agents who have credentials sent but have never logged in
+
+## Bulk Credentials Send Speed Fix v2 (Apr 10)
+- [x] Increase batch size from 10 to 50, reduce bcrypt cost to 8, skip already-sent users
