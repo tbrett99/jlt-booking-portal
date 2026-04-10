@@ -6,11 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   Upload, Users, Send, CheckCircle2, XCircle, AlertTriangle,
-  FileText, UserPlus, Mail, Search, ChevronDown, ChevronUp
+  FileText, UserPlus, Mail, Search, ChevronDown, ChevronUp, ChevronsUpDown, Check
 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -163,6 +165,72 @@ function parseAgentsCsv(text: string): AgentRow[] {
       phone: (r["Phone"] || r["phone"] || "").trim(),
     }))
     .filter((a) => a.email && a.firstName);
+}
+
+// ── AgentCombobox ────────────────────────────────────────────────────────────
+
+interface AgentComboboxProps {
+  agents: Array<{ id: number; name: string }>;
+  value: number | null;
+  onChange: (id: number | null) => void;
+}
+
+function AgentCombobox({ agents, value, onChange }: AgentComboboxProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const selected = value !== null ? agents.find((a) => a.id === value) : null;
+  const filtered = search.trim()
+    ? agents.filter((a) => (a.name ?? "").toLowerCase().includes(search.toLowerCase()))
+    : agents;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="h-7 text-xs w-48 justify-between font-normal px-2"
+        >
+          <span className="truncate">{selected ? selected.name : "— Skip this booking —"}</span>
+          <ChevronsUpDown size={12} className="ml-1 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Search agent..."
+            value={search}
+            onValueChange={setSearch}
+            className="h-8 text-xs"
+          />
+          <CommandList>
+            <CommandEmpty>No agent found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="unassigned"
+                onSelect={() => { onChange(null); setOpen(false); setSearch(""); }}
+                className="text-xs"
+              >
+                <Check size={12} className={`mr-2 ${value === null ? "opacity-100" : "opacity-0"}`} />
+                — Skip this booking —
+              </CommandItem>
+              {filtered.map((a) => (
+                <CommandItem
+                  key={a.id}
+                  value={a.id.toString()}
+                  onSelect={() => { onChange(a.id); setOpen(false); setSearch(""); }}
+                  className="text-xs"
+                >
+                  <Check size={12} className={`mr-2 ${value === a.id ? "opacity-100" : "opacity-0"}`} />
+                  {a.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -728,22 +796,11 @@ export default function AdminImport() {
                               <td className="px-3 py-2 font-medium max-w-[180px] truncate">{b.clientName}</td>
                               <td className="px-3 py-2 text-muted-foreground">{b.agentToken || "—"}</td>
                               <td className="px-3 py-2">
-                                <Select
-                                  value={b.agentId?.toString() ?? "unassigned"}
-                                  onValueChange={(v) => updateMapping(realIndex, v === "unassigned" ? null : parseInt(v))}
-                                >
-                                  <SelectTrigger className="h-7 text-xs w-44">
-                                    <SelectValue placeholder="Select agent..." />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="unassigned">— Skip this booking —</SelectItem>
-                                    {existingAgents.map((a) => (
-                                      <SelectItem key={a.id} value={a.id.toString()}>
-                                        {a.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                <AgentCombobox
+                                  agents={existingAgents}
+                                  value={b.agentId}
+                                  onChange={(id) => updateMapping(realIndex, id)}
+                                />
                               </td>
                               <td className="px-3 py-2">
                                 <Badge variant="outline" className="text-xs">{mapStage(b.stage)}</Badge>

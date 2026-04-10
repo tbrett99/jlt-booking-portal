@@ -256,3 +256,7 @@
 - [x] Frontend: Impersonate button (blue UserCheck icon) added to Users page for each non-super-admin user row
 - [x] Frontend: ImpersonationBanner component shows sticky amber banner with agent name and Stop Impersonating button on all pages
 - [x] Frontend: banner reads is_impersonating cookie to detect state; stop restores admin session and redirects to /users
+
+## Import Page UX Fixes (Apr 10)
+- [x] Make agent dropdown in CSV import review table searchable — replaced Select with AgentCombobox (Popover + Command) with live type-to-filter
+- [x] Fix agent name matching — listAgents now includes admin role users (not just agents), so Kirsty Henwood and other admins are auto-matched
