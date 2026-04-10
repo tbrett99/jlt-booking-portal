@@ -395,11 +395,38 @@ export default function AgentBookingDetail() {
         );
       })()}
 
+      {/* Reimbursement doc submission confirmation banner */}
+      {(() => {
+        const reimbAmendments = amendments.filter((a: any) => a.isReimbursementDoc);
+        if (reimbAmendments.length === 0) return null;
+        const latest = reimbAmendments[reimbAmendments.length - 1];
+        const isActioned = latest?.pipelineStage === 'Actioned';
+        return (
+          <div className="rounded-xl border-2 p-4 flex items-start gap-3" style={{ borderColor: isActioned ? '#10b981' : '#02E6D2', background: isActioned ? '#f0fdf4' : '#f0fdfa' }}>
+            {isActioned
+              ? <CheckCircle2 size={22} style={{ color: '#10b981' }} className="flex-shrink-0 mt-0.5" />
+              : <Clock size={22} style={{ color: '#02E6D2' }} className="flex-shrink-0 mt-0.5" />}
+            <div>
+              <p className="font-bold text-sm" style={{ color: isActioned ? '#065f46' : '#0f766e' }}>
+                {isActioned ? 'Reimbursement processed — thank you!' : 'Documents received — we\'re on it!'}
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: isActioned ? '#047857' : '#0f766e' }}>
+                {isActioned
+                  ? 'Your reimbursement has been processed by the JLT team. If you have any questions, please get in touch.'
+                  : 'Your reimbursement documents have been received. The JLT team will review them and be in touch if anything else is needed.'}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Amendments & Refunds Status */}
-      {(amendments.length > 0 || refunds.length > 0) && (
+      {(() => {
+        const visibleAmendments = amendments.filter((a: any) => !a.isReimbursementDoc);
+        return (visibleAmendments.length > 0 || refunds.length > 0) && (
         <div className="grid sm:grid-cols-2 gap-4">
           {/* Amendments */}
-          {amendments.length > 0 && (
+          {visibleAmendments.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -408,7 +435,7 @@ export default function AgentBookingDetail() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {amendments.filter((a: any) => !a.isReimbursementDoc).map((a: any) => {
+                {visibleAmendments.map((a: any) => {
                   const stageColor = a.pipelineStage === "Actioned" ? '#065f46' : a.pipelineStage === "In Progress" ? '#1d4ed8' : '#92400e';
                   const stageBg = a.pipelineStage === "Actioned" ? '#d1fae5' : a.pipelineStage === "In Progress" ? '#dbeafe' : '#fef3c7';
                   return (
@@ -468,7 +495,8 @@ export default function AgentBookingDetail() {
             </Card>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Actions */}
       {!isCancelled && (

@@ -369,3 +369,19 @@
 - [x] Agent booking detail: shows list of all uploaded docs with filename + date; button changes to "Upload Additional Document" when docs exist
 - [x] Hide reimbursement amendments from agent view (filter out isReimbursementDoc amendments in agent booking detail)
 - [x] Amendment pipeline: red left border + "REIMBURSEMENT DOCS UPLOADED / Action required" banner on cards where isReimbursementDoc = true
+
+## Agent Reimbursement UX Fix (Apr 10)
+- [ ] Fix: internal amendment notes (isReimbursementDoc) still showing on agent booking detail — ensure filter is applied correctly
+- [ ] Agent booking detail: after docs uploaded, show a teal confirmation banner "Documents received — the JLT team will review and be in touch shortly"
+- [ ] Agent booking detail: when the reimbursement amendment is marked as Actioned by admin, show a green "Reimbursement processed — thank you" confirmation instead
+
+## Email Notification Routing (Apr 10)
+- [x] Agent → Admin message: email only the last admin who replied on that booking (not all admins); fall back to support@ if no admin has ever replied
+- [x] Workflow events (reimbursement docs, amendment requests, refund requests, cancellations): email support@thejltgroup.co.uk only (not all admins)
+- [x] In-app notifications for all admins preserved on all events
+- [x] New db helper: getLastAdminNoteAuthor(bookingId) — finds last admin/super_admin who sent a shared note
+
+## Agent Booking Detail Fixes (Apr 10)
+- [x] Fix internal amendment notes leaking to agent view: filter to visibleAmendments = amendments.filter(!isReimbursementDoc) before rendering
+- [x] Fix empty "Amendment Requests" card showing when only reimbursement doc amendments exist
+- [x] Add reimbursement doc confirmation banner: teal "Documents received — we're on it!" when docs uploaded, green "Reimbursement processed — thank you!" when actioned

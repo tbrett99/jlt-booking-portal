@@ -64,6 +64,7 @@ import {
   getBookingsWithUnreadAgentNotes,
   getReimbursementDocs,
   addReimbursementDoc,
+  getLastAdminNoteAuthor,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
@@ -564,7 +565,7 @@ export const appRouter = router({
           isReimbursementDoc: true,
         });
 
-        // Notify all admins in-app and by email
+        // Notify all admins in-app, but only email support@ for workflow events
         const allUsers = await getAllUsers();
         const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
         for (const admin of admins) {
@@ -574,18 +575,16 @@ export const appRouter = router({
             message: `📎 Reimbursement docs uploaded for booking #${input.bookingId} (${booking.clientName}) by ${ctx.user.name ?? "Agent"} — please set up reimbursement ASAP`,
             linkUrl: `/admin/bookings/${input.bookingId}`,
           });
-          if (admin.email) {
-            await sendDirectEmail({
-              toEmail: admin.email,
-              toName: admin.name ?? "Admin",
-              subject: `Reimbursement docs uploaded — ${booking.clientName} (Booking #${input.bookingId})`,
-              html: `<p>Hi ${admin.name ?? "Admin"},</p>
+        }
+        await sendDirectEmail({
+          toEmail: "support@thejltgroup.co.uk",
+          toName: "JLT Support",
+          subject: `Reimbursement docs uploaded — ${booking.clientName} (Booking #${input.bookingId})`,
+          html: `<p>Hi team,</p>
 <p><strong>${ctx.user.name ?? "An agent"}</strong> has uploaded reimbursement documents for booking <strong>#${input.bookingId} — ${booking.clientName}</strong>.</p>
 <p>Please set up the reimbursement as soon as possible.</p>
-<p><a href="/admin/bookings/${input.bookingId}" style="background:#70FFE8;color:#414141;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:8px;">View Booking &rarr;</a></p>`,
-            });
-          }
-        }
+<p><a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="background:#70FFE8;color:#414141;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:8px;">View Booking &rarr;</a></p>`,
+        });
         return { success: true };
       }),
     listReimbDocs: protectedProcedure
@@ -964,7 +963,7 @@ export const appRouter = router({
         // Notify the other party for shared notes
         if (!input.isInternal) {
           if (ctx.user.role === "agent") {
-            // Agent sent a message — notify all admins (in-app + email)
+            // Agent sent a message — notify all admins in-app, but only email the last admin who replied
             const allUsers = await getAllUsers();
             const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
             for (const admin of admins) {
@@ -974,26 +973,27 @@ export const appRouter = router({
                 message: `${ctx.user.name} left a note on booking "${booking.clientName}"`,
                 linkUrl: `/admin/bookings/${input.bookingId}`,
               });
-              // Email the admin
-              if (admin.email) {
-                await sendDirectEmail({
-                  toEmail: admin.email,
-                  toName: admin.name ?? "Admin",
-                  subject: `New message from ${ctx.user.name} — Booking: ${booking.clientName}`,
-                  html: `
-                    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-                      <h2 style="color:#1a1a2e;">New Agent Message</h2>
-                      <p><strong>${ctx.user.name}</strong> has left a message on booking <strong>${booking.clientName}</strong> (Booking #${input.bookingId}).</p>
-                      <div style="background:#f5f5f5;border-left:4px solid #70FFE8;padding:12px 16px;margin:16px 0;border-radius:4px;">
-                        <p style="margin:0;color:#333;">${input.content.replace(/\n/g, '<br>')}</p>
-                      </div>
-                      <a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;margin-top:8px;">View Booking &amp; Reply</a>
-                      <p style="color:#888;font-size:12px;margin-top:24px;">JLT Group Booking Portal</p>
-                    </div>
-                  `,
-                });
-              }
             }
+            // Email only the last admin who replied on this booking (or support@ as fallback)
+            const lastAdminReply = await getLastAdminNoteAuthor(input.bookingId);
+            const replyToEmail = lastAdminReply?.email ?? "support@thejltgroup.co.uk";
+            const replyToName = lastAdminReply?.name ?? "JLT Support";
+            await sendDirectEmail({
+              toEmail: replyToEmail,
+              toName: replyToName,
+              subject: `New message from ${ctx.user.name} — Booking: ${booking.clientName}`,
+              html: `
+                <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+                  <h2 style="color:#1a1a2e;">New Agent Message</h2>
+                  <p><strong>${ctx.user.name}</strong> has left a message on booking <strong>${booking.clientName}</strong> (Booking #${input.bookingId}).</p>
+                  <div style="background:#f5f5f5;border-left:4px solid #70FFE8;padding:12px 16px;margin:16px 0;border-radius:4px;">
+                    <p style="margin:0;color:#333;">${input.content.replace(/\n/g, '<br>')}</p>
+                  </div>
+                  <a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;margin-top:8px;">View Booking &amp; Reply</a>
+                  <p style="color:#888;font-size:12px;margin-top:24px;">JLT Group Booking Portal</p>
+                </div>
+              `,
+            });
           } else {
             // Admin sent a message — notify the agent (in-app + email)
             await createInAppNotification({
@@ -1048,7 +1048,7 @@ export const appRouter = router({
           content: `[System] Amendment submitted by ${ctx.user.name ?? "Agent"}: ${input.details.slice(0, 120)}.`,
           isInternal: false,
         });
-        // Notify admins
+        // Notify admins in-app + email support@ for workflow events
         const allUsers = await getAllUsers();
         const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
         for (const admin of admins) {
@@ -1059,6 +1059,15 @@ export const appRouter = router({
             linkUrl: `/admin/bookings/${input.bookingId}`,
           });
         }
+        await sendDirectEmail({
+          toEmail: "support@thejltgroup.co.uk",
+          toName: "JLT Support",
+          subject: `Amendment request — ${booking.clientName} (Booking #${input.bookingId})`,
+          html: `<p>Hi team,</p>
+<p><strong>${ctx.user.name ?? "An agent"}</strong> has submitted an amendment request for booking <strong>#${input.bookingId} — ${booking.clientName}</strong>.</p>
+<blockquote style="border-left:4px solid #70FFE8;padding:8px 16px;background:#f5f5f5;margin:16px 0;">${input.details.replace(/\n/g, '<br>')}</blockquote>
+<p><a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="background:#70FFE8;color:#414141;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:8px;">View Booking &rarr;</a></p>`,
+        });
         return { success: true };
       }),
     byBooking: protectedProcedure
@@ -1185,7 +1194,7 @@ export const appRouter = router({
           content: `[System] Cancellation submitted by ${ctx.user.name ?? "Agent"}.${reasonText}`,
           isInternal: false,
         });
-        // Notify admins
+        // Notify admins in-app + email support@ for workflow events
         const allUsers = await getAllUsers();
         const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
         for (const admin of admins) {
@@ -1196,6 +1205,15 @@ export const appRouter = router({
             linkUrl: `/admin/bookings/${input.bookingId}`,
           });
         }
+        await sendDirectEmail({
+          toEmail: "support@thejltgroup.co.uk",
+          toName: "JLT Support",
+          subject: `Cancellation request — ${booking.clientName} (Booking #${input.bookingId})`,
+          html: `<p>Hi team,</p>
+<p><strong>${ctx.user.name ?? "An agent"}</strong> has requested a cancellation for booking <strong>#${input.bookingId} — ${booking.clientName}</strong>.</p>
+${input.reason ? `<blockquote style="border-left:4px solid #f87171;padding:8px 16px;background:#fef2f2;margin:16px 0;">Reason: ${input.reason.replace(/\n/g, '<br>')}</blockquote>` : ''}
+<p><a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="background:#70FFE8;color:#414141;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:8px;">View Booking &rarr;</a></p>`,
+        });
         return { success: true };
       }),
     all: adminProcedure.query(async () => getAllCancellations()),
@@ -1233,7 +1251,7 @@ export const appRouter = router({
           clientSortCode: encryptOptional(input.clientSortCode) ?? undefined,
           clientAccountNumber: encryptOptional(input.clientAccountNumber) ?? undefined,
         });
-        // Notify admins
+        // Notify admins in-app + email support@ for workflow events
         const allUsers = await getAllUsers();
         const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
         for (const admin of admins) {
@@ -1243,6 +1261,15 @@ export const appRouter = router({
             message: `Refund request submitted for booking "${booking.clientName}" by ${ctx.user.name}`,
           });
         }
+        await sendDirectEmail({
+          toEmail: "support@thejltgroup.co.uk",
+          toName: "JLT Support",
+          subject: `Refund request — ${booking.clientName} (Booking #${input.bookingId})`,
+          html: `<p>Hi team,</p>
+<p><strong>${ctx.user.name ?? "An agent"}</strong> has submitted a refund request for booking <strong>#${input.bookingId} — ${booking.clientName}</strong>.</p>
+<p><strong>Type:</strong> ${input.refundType} &nbsp; | &nbsp; <strong>Reason:</strong> ${input.refundReason.replace(/\n/g, ' ')}</p>
+<p><a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="background:#70FFE8;color:#414141;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:8px;">View Booking &rarr;</a></p>`,
+        });
         // System audit note
         await createNote({
           bookingId: input.bookingId,

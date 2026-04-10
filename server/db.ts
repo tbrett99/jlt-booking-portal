@@ -424,6 +424,27 @@ export async function getBookingsWithUnreadAgentNotes() {
   return result;
 }
 
+// Get the last admin/super_admin who sent a shared (non-internal) note on a booking
+// Used to route reply emails back to the specific admin who last messaged, not all admins
+export async function getLastAdminNoteAuthor(bookingId: number): Promise<{ id: number; name: string | null; email: string | null } | null> {
+  const db = await getDb();
+  if (!db) return null;
+  // Find the most recent shared note on this booking authored by an admin
+  const rows = await db
+    .select({ authorId: notes.authorId })
+    .from(notes)
+    .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false)))
+    .orderBy(desc(notes.createdAt))
+    .limit(20); // look back up to 20 notes
+  for (const row of rows) {
+    const user = await getUserById(row.authorId);
+    if (user && (user.role === 'admin' || user.role === 'super_admin')) {
+      return { id: user.id, name: user.name ?? null, email: user.email ?? null };
+    }
+  }
+  return null;
+}
+
 // ─── Amendments ───────────────────────────────────────────────────────────────
 
 export async function createAmendment(data: {
