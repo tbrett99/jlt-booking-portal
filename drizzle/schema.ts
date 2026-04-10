@@ -51,6 +51,7 @@ export const bookings = mysqlTable("bookings", {
   destination: varchar("destination", { length: 255 }), // Country/destination from PTS
   finalSupplierPaymentDate: timestamp("finalSupplierPaymentDate"),
   finalSupplierPaymentNotified: boolean("finalSupplierPaymentNotified").default(false).notNull(),
+  paymentDateDismissed: boolean("paymentDateDismissed").default(false).notNull(), // Suppress from missing-payment-date dashboard alert
   // Current pipeline stage
   currentStage: varchar("currentStage", { length: 100 }).default("New Booking").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

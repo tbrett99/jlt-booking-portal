@@ -52,7 +52,7 @@ export default function AdminDashboard() {
   const unreadNotifs = notifications.filter((n) => !n.isRead);
   const commissionReady = bookings.filter((b) => b.currentStage === "Commission Claimable");
   const urgentBookings = bookings.filter((b) => URGENT_STAGES.has(b.currentStage));
-  const missingPaymentDate = activeBookings.filter((b) => !b.finalSupplierPaymentDate);
+  const missingPaymentDate = activeBookings.filter((b) => !b.finalSupplierPaymentDate && !b.paymentDateDismissed);
   const pendingClaims = (claims as any[]).filter((c) => c.status === "claimed_not_paid");
 
   // Departures in next 14 days

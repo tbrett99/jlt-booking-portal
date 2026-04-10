@@ -719,7 +719,7 @@ export async function updateUserProfile(
 export async function getPtsMissingPaymentDate() {
   const db = await getDb();
   if (!db) return [];
-  // Bookings in "Added to PTS" stage with no finalSupplierPaymentDate, joined with agent name
+  // Bookings in "Added to PTS" stage with no finalSupplierPaymentDate, not dismissed, joined with agent name
   const result = await db
     .select({
       booking: bookings,
@@ -731,7 +731,8 @@ export async function getPtsMissingPaymentDate() {
     .where(
       and(
         eq(bookings.currentStage, "Added to PTS"),
-        sql`${bookings.finalSupplierPaymentDate} IS NULL`
+        sql`${bookings.finalSupplierPaymentDate} IS NULL`,
+        eq(bookings.paymentDateDismissed, false)
       )
     )
     .orderBy(bookings.createdAt);

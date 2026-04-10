@@ -323,3 +323,9 @@
 - [x] Re-run destination updates using exact PTS ref matching only (safe)
 - [x] Fix 315 misplaced 2T refs (moved from topdogRef to ptsRef)
 - [x] Verify no booking has a ptsRef that doesn't match its CSV row — 0 bookings with 2T in topdogRef
+
+## Bulk Stage Move — Pre-31-Mar-2026 Departures (Apr 10)
+- [x] Move all bookings with departureDate < 31 Mar 2026 that are not Commission Claimable/Claimed/Cancelled to Commission Claimable (361 moved: 360 from Added to PTS, 1 from New Booking)
+- [x] Add paymentDateDismissed boolean flag to bookings table — suppresses booking from dashboard missing-payment-date alert
+- [x] Set paymentDateDismissed = true for all moved bookings that have no finalSupplierPaymentDate (1 dismissed)
+- [x] Update dashboard missing-payment-date query to exclude dismissed bookings (both db.ts and AdminDashboard.tsx)

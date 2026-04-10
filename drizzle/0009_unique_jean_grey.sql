@@ -1,0 +1,1 @@
+ALTER TABLE `bookings` ADD `paymentDateDismissed` boolean DEFAULT false NOT NULL;
