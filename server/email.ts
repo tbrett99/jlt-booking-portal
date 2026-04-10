@@ -58,6 +58,40 @@ export async function sendNotificationEmail(params: {
   }
 }
 
+export async function sendPasswordResetEmail(params: {
+  toEmail: string;
+  toName: string;
+  resetUrl: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const t = getTransporter();
+    await t.sendMail({
+      from: `"JLT Group" <support@thejltgroup.co.uk>`,
+      to: `"${params.toName}" <${params.toEmail}>`,
+      subject: "Reset your JLT Group Booking Portal password",
+      html: `
+        <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #FFF6ED; padding: 32px; border-radius: 12px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #414141; font-size: 24px; margin: 0;">JLT Group Booking Portal</h1>
+            <div style="width: 60px; height: 4px; background: #70FFE8; margin: 12px auto 0;"></div>
+          </div>
+          <p style="color: #414141;">Hi ${params.toName},</p>
+          <p style="color: #414141;">We received a request to reset your password. Click the button below to set a new password. This link expires in 1 hour.</p>
+          <div style="text-align: center; margin: 28px 0;">
+            <a href="${params.resetUrl}" style="background: #02E6D2; color: #414141; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Reset Password</a>
+          </div>
+          <p style="color: #888; font-size: 13px;">If you didn't request a password reset, you can safely ignore this email. The link will expire in 1 hour.</p>
+          <p style="color: #414141; margin-top: 32px;">The JLT Group Team</p>
+        </div>
+      `,
+    });
+    return { success: true };
+  } catch (err: any) {
+    console.error("[Email] Failed to send password reset:", err?.message);
+    return { success: false, error: err?.message };
+  }
+}
+
 export async function sendCredentialsEmail(params: {
   toEmail: string;
   toName: string;

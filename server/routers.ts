@@ -52,9 +52,13 @@ import {
   upsertUser,
   bulkCreateAgentUsers,
   markCredentialsSent,
+  createPasswordResetToken,
+  getPasswordResetToken,
+  markPasswordResetTokenUsed,
+  updateUserProfile,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
-import { sendNotificationEmail, sendCredentialsEmail } from "./email";
+import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail } from "./email";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { ENV } from "./_core/env";
@@ -194,6 +198,50 @@ export const appRouter = router({
       }
       return { success: true };
     }),
+    // Forgot password — sends a reset link to the agent's email
+    forgotPassword: publicProcedure
+      .input(z.object({ email: z.string().email(), origin: z.string().url() }))
+      .mutation(async ({ input }) => {
+        // Always return success to avoid user enumeration
+        const user = await getUserByEmail(input.email);
+        if (!user || !user.isActive || user.loginMethod !== "password") {
+          return { success: true };
+        }
+        const token = nanoid(48);
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+        await createPasswordResetToken(user.id, token, expiresAt);
+        const resetUrl = `${input.origin}/reset-password?token=${token}`;
+        await sendPasswordResetEmail({
+          toEmail: user.email!,
+          toName: user.name ?? user.email!,
+          resetUrl,
+        });
+        return { success: true };
+      }),
+    // Reset password — validates token and sets new password
+    resetPassword: publicProcedure
+      .input(z.object({ token: z.string(), newPassword: z.string().min(8) }))
+      .mutation(async ({ input }) => {
+        const record = await getPasswordResetToken(input.token);
+        if (!record) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid or expired reset link" });
+        if (record.usedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "This reset link has already been used" });
+        if (new Date() > record.expiresAt) throw new TRPCError({ code: "BAD_REQUEST", message: "This reset link has expired" });
+        const hashed = await bcrypt.hash(input.newPassword, 12);
+        await updateUserPassword(record.userId, hashed);
+        await markPasswordResetTokenUsed(record.id);
+        return { success: true };
+      }),
+    // Update own profile (name, email, phone)
+    updateProfile: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1).optional(),
+        email: z.string().email().optional(),
+        phone: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await updateUserProfile(ctx.user.id, input);
+        return { success: true };
+      }),
   }),
 
   // ── Users ─────────────────────────────────────────────────────────────────

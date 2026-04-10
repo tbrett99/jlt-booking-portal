@@ -30,6 +30,8 @@ import AdminCommissions from "./pages/admin/AdminCommissions";
 import AdminImport from "./pages/admin/AdminImport";
 import PortalLayout from "./components/PortalLayout";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
+import ProfilePage from "./pages/ProfilePage";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 
@@ -55,6 +57,7 @@ function AuthRouter() {
       <Switch>
         <Route path="/" component={LoginPage} />
         <Route path="/login" component={LoginPage} />
+        <Route path="/reset-password" component={ResetPasswordPage} />
         <Route component={LoginPage} />
       </Switch>
     );
@@ -82,6 +85,7 @@ function AuthRouter() {
           <Route path="/commissions" component={AgentCommissions} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
+          <Route path="/profile" component={ProfilePage} />
           <Route component={NotFound} />
         </Switch>
       </PortalLayout>
@@ -104,6 +108,7 @@ function AuthRouter() {
           <Route path="/commissions" component={AgentCommissions} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
+          <Route path="/profile" component={ProfilePage} />
           <Route component={NotFound} />
         </Switch>
       </PortalLayout>
@@ -128,6 +133,7 @@ function AuthRouter() {
         <Route path="/reports" component={AdminReports} />
         <Route path="/notification-templates" component={NotificationTemplates} />
         <Route path="/import" component={AdminImport} />
+        <Route path="/profile" component={ProfilePage} />
         <Route component={NotFound} />
       </Switch>
     </PortalLayout>

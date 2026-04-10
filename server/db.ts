@@ -9,6 +9,7 @@ import {
   inAppNotifications,
   notificationTemplates,
   notes,
+  passwordResetTokens,
   pipelineHistory,
   refundSuppliers,
   refunds,
@@ -643,4 +644,52 @@ export async function getCommissionClaimByBooking(bookingId: number) {
     .where(eq(commissionClaims.bookingId, bookingId))
     .limit(1);
   return result[0];
+}
+
+// ─── Password Reset Tokens ────────────────────────────────────────────────────
+
+export async function createPasswordResetToken(userId: number, token: string, expiresAt: Date) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  // Invalidate any existing unused tokens for this user
+  await db
+    .delete(passwordResetTokens)
+    .where(and(eq(passwordResetTokens.userId, userId)));
+  await db.insert(passwordResetTokens).values({ userId, token, expiresAt });
+}
+
+export async function getPasswordResetToken(token: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(passwordResetTokens)
+    .where(eq(passwordResetTokens.token, token))
+    .limit(1);
+  return result[0];
+}
+
+export async function markPasswordResetTokenUsed(tokenId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .update(passwordResetTokens)
+    .set({ usedAt: new Date() })
+    .where(eq(passwordResetTokens.id, tokenId));
+}
+
+// ─── User Profile ─────────────────────────────────────────────────────────────
+
+export async function updateUserProfile(
+  userId: number,
+  data: { name?: string; email?: string; phone?: string }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const updateSet: Record<string, unknown> = {};
+  if (data.name !== undefined) updateSet.name = data.name;
+  if (data.email !== undefined) updateSet.email = data.email;
+  if (data.phone !== undefined) updateSet.phone = data.phone;
+  if (Object.keys(updateSet).length === 0) return;
+  await db.update(users).set(updateSet as any).where(eq(users.id, userId));
 }

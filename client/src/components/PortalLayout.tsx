@@ -4,7 +4,7 @@ import { useViewMode } from "@/contexts/ViewModeContext";
 import {
   Bell, BookOpen, ChevronLeft, ChevronRight, ClipboardList,
   FileText, Home, LayoutDashboard, LogOut, Mail, Menu, Users, X,
-  ArrowLeftRight, CheckCircle2, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload
+  ArrowLeftRight, CheckCircle2, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -203,8 +203,16 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           </div>
         )}
 
-        {/* Logout */}
-        <div className="px-2 py-3 border-t border-sidebar-border">
+        {/* Profile + Logout */}
+        <div className="px-2 py-3 border-t border-sidebar-border space-y-1">
+          <Link
+            href="/profile"
+            className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent opacity-70 hover:opacity-100 transition-colors ${collapsed ? "justify-center" : ""}`}
+            onClick={() => setSidebarOpen(false)}
+          >
+            <UserCircle size={18} />
+            {!collapsed && <span>My Profile</span>}
+          </Link>
           <button
             onClick={logout}
             className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent opacity-70 hover:opacity-100 transition-colors ${collapsed ? "justify-center" : ""}`}

@@ -264,3 +264,12 @@
 ## Import Page Bulk Assign & Filter (Apr 10)
 - [x] Add "show unmatched only" toggle to CSV import review table — amber button in controls bar, filters table to unmatched rows only
 - [x] Add bulk-assign panel: groups all unmatched rows by agent token, shows count per name, one AgentCombobox per group to assign all rows at once
+
+## Agent Profile & Forgot Password (Apr 10)
+- [x] Backend: updateProfile procedure (protected) — allows agent to update their own name, email, phone
+- [x] Backend: forgotPassword procedure (public) — sends reset email with 1-hour token, anti-enumeration (always returns success)
+- [x] Backend: resetPassword procedure (public) — validates token, updates password, marks token used
+- [x] Frontend: Profile page at /profile — edit name/email/phone + change password sections
+- [x] Frontend: Forgot password link on login screen — opens modal with email field + success confirmation state
+- [x] Frontend: Reset password page at /reset-password?token=... — validates token from URL, success redirects to login
+- [x] Frontend: My Profile link added to sidebar navigation (above Sign Out) for all roles
