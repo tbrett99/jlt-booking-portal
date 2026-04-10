@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 import { AlertCircle, Calendar, CheckCircle2, User } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import CopyableRef from "@/components/CopyableRef";
 
 export default function CommissionDue() {
   const { data: bookings, isLoading, refetch } = trpc.commissionDue.list.useQuery();
@@ -89,10 +90,10 @@ export default function CommissionDue() {
                         </span>
                       )}
                       {booking.topdogRef && (
-                        <span>Topdog: <strong>{booking.topdogRef}</strong></span>
+                        <span className="flex items-center gap-1">Topdog: <CopyableRef value={booking.topdogRef} label="Topdog ref" /></span>
                       )}
                       {booking.ptsRef && (
-                        <span>PTS: <strong>{booking.ptsRef}</strong></span>
+                        <span className="flex items-center gap-1">PTS: <CopyableRef value={booking.ptsRef} label="PTS ref" /></span>
                       )}
                       {booking.expectedCommission && (
                         <span>Expected commission: <strong>£{Number(booking.expectedCommission).toFixed(2)}</strong></span>

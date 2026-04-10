@@ -297,3 +297,8 @@
 - [x] Add "Past departure only" filter toggle to PtsMissingPaymentDate page — amber toggle, past dates highlighted red with "(past)" label
 - [x] Add bulk date setter on PtsMissingPaymentDate — checkbox selection (per row + select all header), amber bulk action bar with date input + Apply button
 - [x] Add CSV export button on PtsMissingPaymentDate page — exports current filtered rows (respects search + past-departure filter)
+
+## Nightly CSV Export & Commission Due Refs (Apr 10)
+- [x] Backend: nightly scheduled job (node-cron) at 4 AM UTC that queries all bookings and formats as CSV
+- [x] Backend: send CSV as email attachment to max@thejltgroup.co.uk via existing SMTP config
+- [x] Commission Due page (admin): add Topdog Ref and PTS Ref columns with CopyableRef component
