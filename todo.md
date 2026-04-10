@@ -391,3 +391,7 @@
 - [x] Backend: tRPC procedure notes.totalUnreadCount — returns count of bookings with unread agent notes (for sidebar badge)
 - [x] Frontend: /admin/messages page — list of message threads, unread highlighted, click-through to /admin/bookings/:id
 - [x] Frontend: sidebar nav item "Messages" with live unread count badge
+
+## Amendments List Sync Fix (Apr 10)
+- [x] AdminAmendments page: filter pending/actioned by pipelineStage ("To Do"/"In Progress" = pending, "Actioned" = actioned) instead of legacy status field so it stays in sync with the Amendment Pipeline Kanban
+- [x] Also sync: "Mark Actioned" button on list page should set pipelineStage = "Actioned" (not just status = "actioned")
