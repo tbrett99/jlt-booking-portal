@@ -144,7 +144,7 @@ export default function AdminMessages() {
 
                   {/* Actions */}
                   <div className="flex flex-col gap-2 flex-shrink-0 items-end">
-                    <Link href={`/admin/bookings/${thread.bookingId}`}>
+                    <Link href={`/bookings/${thread.bookingId}`}>
                       <Button size="sm" className="h-8 text-xs gap-1.5" style={{ background: "#02E6D2", color: "#414141" }}>
                         Open <ArrowRight size={13} />
                       </Button>
