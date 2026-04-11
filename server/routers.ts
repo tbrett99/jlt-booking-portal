@@ -550,6 +550,26 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        // Duplicate guard: reject if same agent submitted same client name + departure date within 10 minutes
+        const recentBookings = await getBookingsByAgent(ctx.user.id);
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+        const inputDeparture = input.departureDate.toISOString().slice(0, 10);
+        const duplicate = recentBookings.find((b) => {
+          const bDeparture = b.departureDate ? new Date(b.departureDate).toISOString().slice(0, 10) : null;
+          const bCreated = b.createdAt ? new Date(b.createdAt as any) : null;
+          return (
+            b.clientName?.trim().toLowerCase() === input.clientName.trim().toLowerCase() &&
+            bDeparture === inputDeparture &&
+            bCreated !== null && bCreated > tenMinutesAgo
+          );
+        });
+        if (duplicate) {
+          const minsAgo = Math.round((Date.now() - new Date(duplicate.createdAt as any).getTime()) / 60000);
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `A booking for "${input.clientName}" with that departure date was already submitted ${minsAgo} minute(s) ago (Booking #${duplicate.id}). If this is a different booking, please wait a few minutes before resubmitting.`,
+          });
+        }
         const booking = await createBooking({ ...input, agentId: ctx.user.id });
         // Notify all admins of new booking
         const allUsers = await getAllUsers();

@@ -84,6 +84,7 @@ export default function AdminBookingDetail() {
 
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
+  const { data: reimbDocs = [] } = trpc.bookings.listReimbDocs.useQuery({ bookingId }, { enabled: !!bookingId });
 
   // Populate editable fields once booking loads
   if (booking && !detailsInitialised) {
@@ -321,18 +322,28 @@ export default function AdminBookingDetail() {
               </div>
             </dl>
 
-            {booking.reimbursementDocUrl && (
-              <div className="flex items-center gap-2 text-sm pt-2 border-t">
-                <FileText size={14} style={{ color: '#02E6D2' }} />
-                <a href={booking.reimbursementDocUrl} target="_blank" rel="noopener noreferrer"
-                  className="underline" style={{ color: '#02E6D2' }}>
-                  View reimbursement document
-                </a>
-                {booking.reimbursementDocLateUpload && (
-                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#fef3c7', color: '#92400e' }}>
-                    Late upload
-                  </span>
-                )}
+            {(reimbDocs as any[]).length > 0 && (
+              <div className="pt-2 border-t space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Reimbursement Documents ({(reimbDocs as any[]).length})</p>
+                {(reimbDocs as any[]).map((doc: any) => (
+                  <div key={doc.id} className="flex items-center gap-2 text-sm">
+                    <FileText size={13} style={{ color: '#02E6D2' }} className="flex-shrink-0" />
+                    <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer"
+                      className="underline truncate flex-1" style={{ color: '#02E6D2' }}>
+                      {doc.fileName || 'View document'}
+                    </a>
+                    <span className="text-xs text-muted-foreground flex-shrink-0">
+                      {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {booking.reimbursementsRequired && (reimbDocs as any[]).length === 0 && (
+              <div className="pt-2 border-t">
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <FileText size={12} /> No documents uploaded yet
+                </p>
               </div>
             )}
 

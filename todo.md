@@ -618,3 +618,7 @@
 - [x] Add booking search autocomplete in task creation form (search by client name / Topdog ref / PTS ref)
 - [x] Replace manual "Booking ID" number input with a searchable booking picker
 - [x] Add "Create Task" button on AdminBookingDetail page (pre-fills linkedType=booking and linkedId)
+
+## Bugs - Apr 11 (Reimbursement & Duplicate Booking)
+- [x] Bug: booking appears twice in pipeline when registered (duplicate booking creation)
+- [x] Bug: reimbursement documents not uploading individually per booking (only one doc showing)
