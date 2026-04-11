@@ -84,7 +84,7 @@ function ExpandablePanel({
               <CheckCircle2 size={14} className="text-emerald-400" /> {emptyText}
             </div>
           ) : (
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
               {children}
             </div>
           )}
@@ -130,7 +130,9 @@ export default function AdminDashboard() {
   const unreadNotifs = notifications.filter((n) => !n.isRead);
   const commissionReady = bookings.filter((b) => b.currentStage === "Commission Claimable");
   const urgentBookings = bookings.filter((b) => URGENT_STAGES.has(b.currentStage));
-  const missingPaymentDate = activeBookings.filter((b) => !b.finalSupplierPaymentDate && !(b as any).paymentDateDismissed);
+  const missingPaymentDate = activeBookings.filter(
+    (b) => !b.finalSupplierPaymentDate && !(b as any).paymentDateDismissed && b.currentStage !== "Cancelled"
+  );
   const pendingClaims = (claims as any[]).filter((c) => c.status === "claimed_not_paid");
 
   const now = new Date();
@@ -192,9 +194,35 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* ── PENDING ACTIONS (moved to top) ── */}
+      {/* ── KEY METRICS (moved to top) ── */}
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+        {[
+          { label: "Active Bookings", value: activeBookings.length, icon: BookOpen, color: "#70FFE8", textColor: "#414141" },
+          { label: "Agents", value: agents.length, icon: Users, color: "#FFC3BC", textColor: "#414141" },
+          { label: "This Month", value: thisMonth.length, icon: Calendar, color: "#e0e7ff", textColor: "#4338ca" },
+          { label: "Amendments", value: pendingAmendments.length, icon: FileText, color: pendingAmendments.length > 0 ? "#fef3c7" : "#f3f4f6", textColor: pendingAmendments.length > 0 ? "#92400e" : "#6b7280" },
+          { label: "Refunds", value: pendingRefunds.length, icon: RefreshCw, color: pendingRefunds.length > 0 ? "#fce7f3" : "#f3f4f6", textColor: pendingRefunds.length > 0 ? "#9d174d" : "#6b7280" },
+          { label: "Comm. Ready", value: commissionReady.length, icon: Sparkles, color: commissionReady.length > 0 ? "#d1fae5" : "#f3f4f6", textColor: commissionReady.length > 0 ? "#065f46" : "#6b7280" },
+        ].map(({ label, value, icon: Icon, color, textColor }) => (
+          <Card key={label} className="cursor-default">
+            <CardContent className="p-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color }}>
+                  <Icon size={15} style={{ color: textColor }} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-lg font-bold leading-none">{value}</p>
+                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5 truncate">{label}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* ── PENDING ACTIONS ── */}
       <div>
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 mb-2">
           <Clock size={14} className="text-muted-foreground" />
           <h2 className="text-sm font-semibold">Pending Actions</h2>
           {totalPendingActions > 0 && (
@@ -211,13 +239,13 @@ export default function AdminDashboard() {
             title="Amendments to Review"
             count={pendingAmendments.length}
             color="#92400e" bg="#fef3c7" icon={FileText}
-            linkHref="/amendments" linkLabel="Amendment Pipeline"
+            linkHref="/amendments/pipeline" linkLabel="Amendment Pipeline"
             emptyText="No pending amendments"
           >
             {pendingAmendments.map((a: any) => (
-              <Link key={a.id} href={`/amendments`}>
-                <div className="flex items-start gap-3 p-2.5 rounded-lg border bg-amber-50/40 hover:bg-amber-50 transition-colors cursor-pointer">
-                  <FileText size={12} className="mt-0.5 flex-shrink-0 text-amber-700" />
+              <Link key={a.id} href={`/amendments/pipeline`}>
+                <div className="flex items-center gap-2 p-2 rounded-lg border bg-amber-50/40 hover:bg-amber-50 transition-colors cursor-pointer">
+                  <FileText size={11} className="flex-shrink-0 text-amber-700" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-semibold truncate">{a.clientName ?? `Booking #${a.bookingId}`}</span>
@@ -237,7 +265,7 @@ export default function AdminDashboard() {
                       </p>
                     )}
                   </div>
-                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0" />
                 </div>
               </Link>
             ))}
@@ -248,13 +276,13 @@ export default function AdminDashboard() {
             title="Reimbursement Docs Submitted"
             count={reimbAmendments.length}
             color="#dc2626" bg="#fef2f2" icon={AlertCircle}
-            linkHref="/amendments" linkLabel="Amendment Pipeline"
+            linkHref="/amendments/pipeline" linkLabel="Amendment Pipeline"
             emptyText="No reimbursement docs pending"
           >
             {reimbAmendments.map((a: any) => (
-              <Link key={a.id} href={`/amendments`}>
-                <div className="flex items-start gap-3 p-2.5 rounded-lg border bg-red-50/40 hover:bg-red-50 transition-colors cursor-pointer">
-                  <AlertCircle size={12} className="mt-0.5 flex-shrink-0 text-red-600" />
+              <Link key={a.id} href={`/amendments/pipeline`}>
+                <div className="flex items-center gap-2 p-2 rounded-lg border bg-red-50/40 hover:bg-red-50 transition-colors cursor-pointer">
+                  <AlertCircle size={11} className="flex-shrink-0 text-red-600" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-semibold truncate">{a.clientName ?? `Booking #${a.bookingId}`}</span>
@@ -273,7 +301,7 @@ export default function AdminDashboard() {
                       </p>
                     )}
                   </div>
-                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0" />
                 </div>
               </Link>
             ))}
@@ -284,13 +312,13 @@ export default function AdminDashboard() {
             title="Refunds to Process"
             count={pendingRefunds.length}
             color="#9d174d" bg="#fce7f3" icon={RefreshCw}
-            linkHref="/refunds" linkLabel="Refund Pipeline"
+            linkHref="/refunds/pipeline" linkLabel="Refund Pipeline"
             emptyText="No pending refunds"
           >
             {pendingRefunds.map((r: any) => (
-              <Link key={r.id} href={`/bookings/${r.bookingId}`}>
-                <div className="flex items-start gap-3 p-2.5 rounded-lg border bg-pink-50/40 hover:bg-pink-50 transition-colors cursor-pointer">
-                  <RefreshCw size={12} className="mt-0.5 flex-shrink-0 text-pink-700" />
+              <Link key={r.id} href={`/refunds/pipeline`}>
+                <div className="flex items-center gap-2 p-2 rounded-lg border bg-pink-50/40 hover:bg-pink-50 transition-colors cursor-pointer">
+                  <RefreshCw size={11} className="flex-shrink-0 text-pink-700" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-semibold truncate">{r.clientName ?? `Booking #${r.bookingId}`}</span>
@@ -312,7 +340,7 @@ export default function AdminDashboard() {
                       </p>
                     )}
                   </div>
-                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0" />
                 </div>
               </Link>
             ))}
@@ -328,8 +356,8 @@ export default function AdminDashboard() {
           >
             {pendingCancellations.map((c: any) => (
               <Link key={c.id} href={`/bookings/${c.bookingId}`}>
-                <div className="flex items-start gap-3 p-2.5 rounded-lg border bg-violet-50/40 hover:bg-violet-50 transition-colors cursor-pointer">
-                  <XCircle size={12} className="mt-0.5 flex-shrink-0 text-violet-700" />
+                <div className="flex items-center gap-2 p-2 rounded-lg border bg-violet-50/40 hover:bg-violet-50 transition-colors cursor-pointer">
+                  <XCircle size={11} className="flex-shrink-0 text-violet-700" />
                   <div className="flex-1 min-w-0">
                     <span className="text-xs font-semibold truncate block">{c.clientName ?? `Booking #${c.bookingId}`}</span>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -340,7 +368,7 @@ export default function AdminDashboard() {
                       Requested: {format(new Date(c.confirmedAt), "dd MMM yyyy, HH:mm")}
                     </p>
                   </div>
-                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0" />
                 </div>
               </Link>
             ))}
@@ -410,32 +438,6 @@ export default function AdminDashboard() {
           )}
         </div>
       )}
-
-      {/* Key metrics */}
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
-        {[
-          { label: "Active Bookings", value: activeBookings.length, icon: BookOpen, color: "#70FFE8", textColor: "#414141" },
-          { label: "Agents", value: agents.length, icon: Users, color: "#FFC3BC", textColor: "#414141" },
-          { label: "This Month", value: thisMonth.length, icon: Calendar, color: "#e0e7ff", textColor: "#4338ca" },
-          { label: "Amendments", value: pendingAmendments.length, icon: FileText, color: pendingAmendments.length > 0 ? "#fef3c7" : "#f3f4f6", textColor: pendingAmendments.length > 0 ? "#92400e" : "#6b7280" },
-          { label: "Refunds", value: pendingRefunds.length, icon: RefreshCw, color: pendingRefunds.length > 0 ? "#fce7f3" : "#f3f4f6", textColor: pendingRefunds.length > 0 ? "#9d174d" : "#6b7280" },
-          { label: "Comm. Ready", value: commissionReady.length, icon: Sparkles, color: commissionReady.length > 0 ? "#d1fae5" : "#f3f4f6", textColor: commissionReady.length > 0 ? "#065f46" : "#6b7280" },
-        ].map(({ label, value, icon: Icon, color, textColor }) => (
-          <Card key={label} className="cursor-default">
-            <CardContent className="p-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color }}>
-                  <Icon size={15} style={{ color: textColor }} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-lg font-bold leading-none">{value}</p>
-                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5 truncate">{label}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
 
       {/* Main content: pipeline + activity */}
       <div className="grid lg:grid-cols-3 gap-4">

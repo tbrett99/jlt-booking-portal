@@ -420,10 +420,10 @@
 - [x] On claim submit: update booking's expectedCommission with the submitted grossAmount so admin view stays in sync
 
 ## Admin Dashboard Redesign (Apr 11)
-- [ ] Move pending actions section to the top of the dashboard
-- [ ] Amendments panel: show client name, TD ref, status, assignee; link to amendment pipeline
-- [ ] Refunds panel: show client name, TD ref (2T reference), status; link to refund pipeline
-- [ ] Add cancellations panel: show pending cancellation requests with client name and TD ref
+- [x] Move pending actions section to the top of the dashboard
+- [x] Amendments panel: show client name, TD ref, status, assignee; link to amendment pipeline
+- [x] Refunds panel: show client name, TD ref (2T reference), status; link to refund pipeline
+- [x] Add cancellations panel: show pending cancellation requests with client name and TD ref
 
 ## Admin Dashboard Redesign (Apr 11)
 - [x] Move Pending Actions section to the top of the admin dashboard
@@ -432,3 +432,19 @@
 - [x] Add Cancellation Requests panel to dashboard showing pending cancellations with client name and refs
 - [x] Enrich getAllAmendments, getAllRefunds, getAllCancellations with booking client name, ptsRef, topdogRef and assignee name
 - [x] Add separate Reimbursement Docs Submitted panel on dashboard
+
+## Dashboard & Pipeline Page Fixes (Apr 11)
+- [x] Dashboard: move summary stat cards (active bookings, agents, commission claims etc) to the top
+- [x] Dashboard: compact pending actions panels — reduce visual weight/height of each row
+- [x] AdminAmendments (/amendments): show client name, PTS ref, TD ref, assignee per amendment; add "View in Pipeline" link per row
+- [x] AdminRefunds (/refunds): show client name, PTS ref, TD ref per refund; add "View in Pipeline" link per row
+
+## Cancelled Bookings Payment Date Fix (Apr 11)
+- [x] Exclude Cancelled stage bookings from getMissingPaymentDateBookings db helper
+- [x] Exclude Cancelled stage bookings from dashboard missing payment date alert query
+- [x] Exclude Cancelled stage bookings from PtsMissingPaymentDate page
+
+## Admin Booking Editable Fields (Apr 11)
+- [x] Admin booking detail: add editable Client Name field
+- [x] Admin booking detail: add editable Departure Date field
+- [x] Backend: add clientName and departureDate to updateAdminFields procedure and updateBookingAdminFields db helper

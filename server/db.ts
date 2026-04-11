@@ -311,9 +311,12 @@ export async function updateBookingAdminFields(
   data: {
     ptsRef?: string;
     topdogRef?: string;
+    destination?: string;
     finalSupplierPaymentDate?: Date | null;
     expectedCommission?: number;
     grossCost?: number;
+    clientName?: string;
+    departureDate?: Date;
   }
 ) {
   const db = await getDb();
@@ -991,7 +994,8 @@ export async function getPtsMissingPaymentDate() {
       and(
         eq(bookings.currentStage, "Added to PTS"),
         sql`${bookings.finalSupplierPaymentDate} IS NULL`,
-        eq(bookings.paymentDateDismissed, false)
+        eq(bookings.paymentDateDismissed, false),
+        not(eq(bookings.currentStage, "Cancelled"))
       )
     )
     .orderBy(bookings.createdAt);

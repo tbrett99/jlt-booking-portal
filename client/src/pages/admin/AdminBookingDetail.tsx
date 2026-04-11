@@ -64,6 +64,8 @@ export default function AdminBookingDetail() {
   const [editPaymentDate, setEditPaymentDate] = useState("");
   const [editCommission, setEditCommission] = useState("");
   const [editGrossCost, setEditGrossCost] = useState("");
+  const [editClientName, setEditClientName] = useState("");
+  const [editDepartureDate, setEditDepartureDate] = useState("");
   const [isSavingDetails, setIsSavingDetails] = useState(false);
   const [detailsInitialised, setDetailsInitialised] = useState(false);
   const [pendingStage, setPendingStage] = useState<string | null>(null);
@@ -87,6 +89,8 @@ export default function AdminBookingDetail() {
     setEditPaymentDate(booking.finalSupplierPaymentDate ? format(new Date(booking.finalSupplierPaymentDate), "yyyy-MM-dd") : "");
     setEditCommission(booking.expectedCommission ? String(booking.expectedCommission) : "");
     setEditGrossCost((booking as any).grossCost ? String((booking as any).grossCost) : "");
+    setEditClientName(booking.clientName ?? "");
+    setEditDepartureDate(booking.departureDate ? format(new Date(booking.departureDate), "yyyy-MM-dd") : "");
     setDetailsInitialised(true);
   }
 
@@ -219,6 +223,8 @@ export default function AdminBookingDetail() {
         finalSupplierPaymentDate: editPaymentDate ? new Date(editPaymentDate) : null,
         expectedCommission: editCommission ? Number(editCommission) : undefined,
         grossCost: editGrossCost ? Number(editGrossCost) : undefined,
+        clientName: editClientName.trim() || undefined,
+        departureDate: editDepartureDate ? new Date(editDepartureDate) : undefined,
       });
       await utils.bookings.byId.invalidate({ id: bookingId });
       toast.success("Details saved");
@@ -310,6 +316,14 @@ export default function AdminBookingDetail() {
             <div className="space-y-3 pt-2 border-t">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1 col-span-2">
+                  <Label className="text-xs flex items-center gap-1"><User size={11} />Client Name</Label>
+                  <Input value={editClientName} onChange={(e) => setEditClientName(e.target.value)} placeholder="Client full name" className="h-8 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs flex items-center gap-1"><Calendar size={11} />Departure Date</Label>
+                  <Input type="date" value={editDepartureDate} onChange={(e) => setEditDepartureDate(e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div className="space-y-1">
                   <Label className="text-xs">Destination</Label>
                   <Input value={editDestination} onChange={(e) => setEditDestination(e.target.value)} placeholder="e.g. Spain" className="h-8 text-sm" />
                 </div>

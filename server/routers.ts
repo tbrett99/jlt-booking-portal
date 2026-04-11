@@ -709,6 +709,8 @@ export const appRouter = router({
           finalSupplierPaymentDate: z.date().nullable().optional(),
           expectedCommission: z.number().optional(),
           grossCost: z.number().optional(),
+          clientName: z.string().min(1).optional(),
+          departureDate: z.date().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -735,6 +737,8 @@ export const appRouter = router({
           if (input.destination !== undefined) changes.push(`Destination set to "${input.destination}"`);
           if (input.expectedCommission !== undefined) changes.push(`Expected Commission set to £${input.expectedCommission}`);
           if (input.grossCost !== undefined) changes.push(`Gross Cost set to £${input.grossCost}`);
+          if (input.clientName !== undefined) changes.push(`Client Name updated to "${input.clientName}"`);
+          if (input.departureDate !== undefined) changes.push(`Departure Date updated to ${input.departureDate.toLocaleDateString('en-GB')}`);
           if (changes.length > 0) {
             await createNote({
               bookingId,
