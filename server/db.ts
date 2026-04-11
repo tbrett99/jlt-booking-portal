@@ -1199,3 +1199,55 @@ export async function addAdminTaskComment(data: {
   const { adminTaskComments } = await import("../drizzle/schema");
   await db.insert(adminTaskComments).values(data);
 }
+
+// ─── Delete Booking (cascade) ─────────────────────────────────────────────────
+export async function deleteBooking(bookingId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { adminTasks } = await import("../drizzle/schema");
+  // Cascade delete in dependency order
+  await db.delete(pipelineHistory).where(eq(pipelineHistory.bookingId, bookingId));
+  await db.delete(notes).where(eq(notes.bookingId, bookingId));
+  await db.delete(reimbursementDocs).where(eq(reimbursementDocs.bookingId, bookingId));
+  await db.delete(commissionClaims).where(eq(commissionClaims.bookingId, bookingId));
+  await db.delete(amendments).where(eq(amendments.bookingId, bookingId));
+  await db.delete(cancellations).where(eq(cancellations.bookingId, bookingId));
+  await db.delete(refunds).where(eq(refunds.bookingId, bookingId));
+  // Unlink admin tasks (don't delete tasks, just clear the link)
+  await db.update(adminTasks)
+    .set({ linkedType: "none", linkedId: null } as any)
+    .where(and(eq(adminTasks.linkedType, "booking"), eq(adminTasks.linkedId, bookingId)));
+  // Finally delete the booking itself
+  await db.delete(bookings).where(eq(bookings.id, bookingId));
+}
+
+// ─── Merge Bookings ───────────────────────────────────────────────────────────
+export async function mergeBookings(sourceId: number, targetId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { adminTasks } = await import("../drizzle/schema");
+  // Move all related records from source to target
+  await db.update(pipelineHistory).set({ bookingId: targetId } as any).where(eq(pipelineHistory.bookingId, sourceId));
+  await db.update(notes).set({ bookingId: targetId } as any).where(eq(notes.bookingId, sourceId));
+  await db.update(reimbursementDocs).set({ bookingId: targetId } as any).where(eq(reimbursementDocs.bookingId, sourceId));
+  await db.update(commissionClaims).set({ bookingId: targetId } as any).where(eq(commissionClaims.bookingId, sourceId));
+  await db.update(amendments).set({ bookingId: targetId } as any).where(eq(amendments.bookingId, sourceId));
+  await db.update(cancellations).set({ bookingId: targetId } as any).where(eq(cancellations.bookingId, sourceId));
+  await db.update(refunds).set({ bookingId: targetId } as any).where(eq(refunds.bookingId, sourceId));
+  // Re-link admin tasks
+  await db.update(adminTasks)
+    .set({ linkedId: targetId } as any)
+    .where(and(eq(adminTasks.linkedType, "booking"), eq(adminTasks.linkedId, sourceId)));
+  // Delete the source booking (now orphaned)
+  await db.delete(bookings).where(eq(bookings.id, sourceId));
+}
+
+// ─── Delete Reimbursement Doc ─────────────────────────────────────────────────
+export async function deleteReimbursementDoc(docId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const rows = await db.select().from(reimbursementDocs).where(eq(reimbursementDocs.id, docId)).limit(1);
+  if (!rows[0]) return null;
+  await db.delete(reimbursementDocs).where(eq(reimbursementDocs.id, docId));
+  return rows[0];
+}

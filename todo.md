@@ -622,3 +622,21 @@
 ## Bugs - Apr 11 (Reimbursement & Duplicate Booking)
 - [x] Bug: booking appears twice in pipeline when registered (duplicate booking creation)
 - [x] Bug: reimbursement documents not uploading individually per booking (only one doc showing)
+
+## Apr 11 - Delete Booking, Merge Bookings, Delete Reimb Doc
+
+### Delete Booking (Super Admin Only)
+- [x] DB helper: deleteBooking(id) — cascades to notes, amendments, refunds, cancellations, reimb_docs, pipeline_history, commission_claims, notifications, task links
+- [x] tRPC procedure: bookings.delete (superAdminProcedure) — hard delete with audit log
+- [x] Frontend: "Delete Booking" button in AdminBookingDetail header (super admin only), confirmation dialog with booking name, navigates to pipeline after delete
+
+### Merge Bookings (Super Admin Only)
+- [x] DB helper: mergeBookings(sourceId, targetId) — moves all docs, notes, amendments, refunds, cancellations, commission claims from source to target, then deletes source
+- [x] tRPC procedure: bookings.merge (superAdminProcedure) — accepts sourceId + targetId
+- [x] Frontend: "Merge into another booking" option in AdminBookingDetail (super admin only), booking search picker to select target, confirmation dialog listing what will be moved
+
+### Delete Reimbursement Document
+- [x] DB helper: deleteReimbursementDoc(docId, requestingUserId) — removes row from reimbursement_docs, checks ownership (agent can only delete own uploads, admin can delete any)
+- [x] tRPC procedure: bookings.deleteReimbDoc — protected, checks ownership
+- [x] Frontend: Delete (trash) icon on each doc in AdminBookingDetail reimbursement docs list
+- [x] Frontend: Delete (trash) icon on each doc in AgentBookingDetail reimbursement docs list

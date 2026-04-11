@@ -80,6 +80,9 @@ import {
   deleteAdminTask,
   getAdminTaskComments,
   addAdminTaskComment,
+  deleteBooking,
+  mergeBookings,
+  deleteReimbursementDoc,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
@@ -942,11 +945,53 @@ export const appRouter = router({
             results.push({ bookingId, success: false, error: err?.message ?? "unknown" });
           }
         }
-        const succeeded = results.filter((r) => r.success).length;
+         const succeeded = results.filter((r) => r.success).length;
         return { results, total: input.bookingIds.length, succeeded };
       }),
+    // Super admin: hard delete a booking and all related records
+    delete: superAdminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.id);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        await deleteBooking(input.id);
+        return { success: true, deletedId: input.id, clientName: booking.clientName };
+      }),
+    // Super admin: merge source booking into target booking
+    merge: superAdminProcedure
+      .input(z.object({ sourceId: z.number(), targetId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.sourceId === input.targetId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Source and target must be different bookings" });
+        }
+        const source = await getBookingById(input.sourceId);
+        const target = await getBookingById(input.targetId);
+        if (!source) throw new TRPCError({ code: "NOT_FOUND", message: "Source booking not found" });
+        if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Target booking not found" });
+        await mergeBookings(input.sourceId, input.targetId);
+        // Add audit note to target booking
+        await createNote({
+          bookingId: input.targetId,
+          authorId: ctx.user.id,
+          content: `[System] Booking #${input.sourceId} (${source.clientName}) was merged into this booking by ${ctx.user.name ?? "Super Admin"}. All documents, notes, amendments, refunds, and cancellations have been moved here.`,
+          isInternal: true,
+        });
+        return { success: true, mergedId: input.sourceId, targetId: input.targetId };
+      }),
+    // Delete a single reimbursement document
+    deleteReimbDoc: protectedProcedure
+      .input(z.object({ docId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        // deleteReimbursementDoc returns the row or null
+        const doc = await deleteReimbursementDoc(input.docId);
+        if (!doc) throw new TRPCError({ code: "NOT_FOUND" });
+        // Agents can only delete their own uploads; admins/super_admins can delete any
+        if (ctx.user.role === "agent" && doc.uploadedById !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        return { success: true, docId: input.docId };
+      }),
   }),
-
   // ── Notes ─────────────────────────────────────────────────────────────────
   notes: router({
     // Admin: get all bookings with unread agent messages

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import {
   ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
   CheckCircle2, Circle, AlertCircle, Sparkles, TrendingUp, Clock,
-  RefreshCw, Pencil, User, Check, X
+  RefreshCw, Pencil, User, Check, X, Trash2
 } from "lucide-react";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -68,6 +68,10 @@ export default function AgentBookingDetail() {
   const { data: reimbDocs = [], refetch: refetchReimbDocs } = trpc.bookings.listReimbDocs.useQuery({ bookingId });
   const addNote = trpc.notes.add.useMutation();
   const uploadDoc = trpc.bookings.uploadReimbDoc.useMutation();
+  const deleteReimbDocMutation = trpc.bookings.deleteReimbDoc.useMutation({
+    onSuccess: () => utils.bookings.listReimbDocs.invalidate({ bookingId }),
+    onError: (err: any) => toast.error(err.message || "Failed to delete document"),
+  });
   const updateCommission = trpc.bookings.updateCommission.useMutation({
     onSuccess: () => {
       toast.success("Commission amount saved");
@@ -375,6 +379,18 @@ export default function AgentBookingDetail() {
                           {doc.uploaderName ? ` · ${doc.uploaderName}` : ''}
                         </p>
                       </div>
+                      <button
+                        type="button"
+                        className="text-red-400 hover:text-red-600 flex-shrink-0"
+                        title="Delete document"
+                        onClick={() => {
+                          if (confirm(`Delete "${doc.fileName}"? This cannot be undone.`)) {
+                            deleteReimbDocMutation.mutate({ docId: doc.id });
+                          }
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                   ))}
                 </div>

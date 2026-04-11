@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare } from "lucide-react";
+import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
 import CopyableRef from "@/components/CopyableRef";
@@ -76,6 +76,11 @@ export default function AdminBookingDetail() {
   const [showQueryDialog, setShowQueryDialog] = useState(false);
   const [queryMessage, setQueryMessage] = useState("");
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<{ id: number; clientName: string } | null>(null);
+  const [mergeSearchQuery, setMergeSearchQuery] = useState("");
+  const isSuperAdmin = user?.role === "super_admin";
 
   // @mention state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -101,12 +106,23 @@ export default function AdminBookingDetail() {
   }
 
   const { data: allNotes = [], refetch: refetchNotes } = trpc.notes.list.useQuery({ bookingId });
+  const { data: quickSearchResults = [] } = trpc.bookings.quickSearch.useQuery(
+    { query: mergeSearchQuery },
+    { enabled: mergeSearchQuery.length >= 2 }
+  );
+  const mergeSearchFiltered = (quickSearchResults as any[]).filter((r: any) => r.bookingId !== bookingId);
   const sharedNotes = allNotes.filter(n => !n.isInternal);
   const internalNotes = allNotes.filter(n => n.isInternal);
 
   const addNote = trpc.notes.add.useMutation();
   const markNotesRead = trpc.notes.markBookingNotesRead.useMutation();
   const updateDetails = trpc.bookings.updateAdminFields.useMutation();
+  const deleteBookingMutation = trpc.bookings.delete.useMutation();
+  const mergeBookingMutation = trpc.bookings.merge.useMutation();
+  const deleteReimbDocMutation = trpc.bookings.deleteReimbDoc.useMutation({
+    onSuccess: () => utils.bookings.listReimbDocs.invalidate({ bookingId }),
+    onError: (err) => toast.error(err.message || "Failed to delete document"),
+  });
   const moveStage = trpc.bookings.moveStage.useMutation({
     onSuccess: () => utils.bookings.byId.invalidate({ id: bookingId }),
     onError: (err) => toast.error(err.message || "Failed to move booking"),
@@ -271,6 +287,26 @@ export default function AdminBookingDetail() {
               <AlertTriangle size={10} /> Payment date missing
             </Badge>
           )}
+          {isSuperAdmin && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+                onClick={() => setShowMergeDialog(true)}
+              >
+                <GitMerge size={13} /> Merge
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs border-red-300 text-red-600 hover:bg-red-50"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                <Trash2 size={13} /> Delete
+              </Button>
+            </>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -335,6 +371,18 @@ export default function AdminBookingDetail() {
                     <span className="text-xs text-muted-foreground flex-shrink-0">
                       {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''}
                     </span>
+                    <button
+                      type="button"
+                      className="text-red-400 hover:text-red-600 flex-shrink-0 ml-1"
+                      title="Delete document"
+                      onClick={() => {
+                        if (confirm(`Delete "${doc.fileName || 'this document'}"? This cannot be undone.`)) {
+                          deleteReimbDocMutation.mutate({ docId: doc.id });
+                        }
+                      }}
+                    >
+                      <Trash2 size={12} />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -670,6 +718,117 @@ export default function AdminBookingDetail() {
             >
               {isSavingDetails ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
               Save &amp; Move
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Booking Confirm Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 size={18} /> Delete Booking
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently delete <strong>{booking.clientName}</strong> (Booking #{booking.id}) and all associated notes, documents, amendments, refunds, and cancellations. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+            <Button
+              className="bg-red-600 text-white hover:bg-red-700"
+              disabled={deleteBookingMutation.isPending}
+              onClick={async () => {
+                try {
+                  await deleteBookingMutation.mutateAsync({ id: bookingId });
+                  toast.success(`Booking "${booking.clientName}" deleted.`);
+                  window.location.href = "/pipeline";
+                } catch (err: any) {
+                  toast.error(err.message || "Failed to delete booking");
+                }
+              }}
+            >
+              {deleteBookingMutation.isPending ? <Loader2 size={14} className="animate-spin mr-2" /> : <Trash2 size={14} className="mr-2" />}
+              Delete Permanently
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Merge Booking Dialog */}
+      <Dialog open={showMergeDialog} onOpenChange={(open) => { if (!open) { setShowMergeDialog(false); setMergeTarget(null); setMergeSearchQuery(""); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <GitMerge size={18} /> Merge into Another Booking
+            </DialogTitle>
+            <DialogDescription>
+              Search for the booking to merge <strong>{booking.clientName} (#{booking.id})</strong> into. All documents, notes, amendments, refunds, and cancellations from this booking will be moved to the target, and this booking will be deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                className="w-full pl-8 pr-4 py-2 text-sm border rounded-md bg-background"
+                placeholder="Search by client name, PTS ref, or TD ref..."
+                value={mergeSearchQuery}
+                onChange={(e) => { setMergeSearchQuery(e.target.value); setMergeTarget(null); }}
+                autoFocus
+              />
+            </div>
+            {mergeSearchQuery.length >= 2 && (
+              <div className="border rounded-md overflow-hidden max-h-48 overflow-y-auto">
+                {mergeSearchFiltered.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No bookings found</p>
+                ) : mergeSearchFiltered.map((r: any) => (
+                  <button
+                    key={r.bookingId}
+                    type="button"
+                    className={`w-full text-left px-3 py-2.5 text-sm hover:bg-muted flex items-center justify-between ${
+                      mergeTarget?.id === r.bookingId ? 'bg-amber-50 border-l-2 border-amber-400' : ''
+                    }`}
+                    onClick={() => setMergeTarget({ id: r.bookingId, clientName: r.clientName })}
+                  >
+                    <div>
+                      <p className="font-medium">{r.clientName}</p>
+                      <p className="text-xs text-muted-foreground">#{r.bookingId} · {r.stage}</p>
+                    </div>
+                    {mergeTarget?.id === r.bookingId && <span className="text-amber-600 text-xs font-semibold">Selected</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {mergeTarget && (
+              <div className="p-3 rounded-lg text-sm" style={{ background: '#fffbeb', border: '1px solid #fcd34d' }}>
+                <p className="font-medium text-amber-800">Merge summary:</p>
+                <p className="text-amber-700 mt-1">
+                  <strong>{booking.clientName} (#{booking.id})</strong> → <strong>{mergeTarget.clientName} (#{mergeTarget.id})</strong>
+                </p>
+                <p className="text-xs text-amber-600 mt-1">Booking #{booking.id} will be permanently deleted after the merge.</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setShowMergeDialog(false); setMergeTarget(null); setMergeSearchQuery(""); }}>Cancel</Button>
+            <Button
+              disabled={!mergeTarget || mergeBookingMutation.isPending}
+              className="bg-amber-500 text-white hover:bg-amber-600"
+              onClick={async () => {
+                if (!mergeTarget) return;
+                try {
+                  await mergeBookingMutation.mutateAsync({ sourceId: bookingId, targetId: mergeTarget.id });
+                  toast.success(`Merged into ${mergeTarget.clientName} (#${mergeTarget.id}).`);
+                  window.location.href = `/admin/bookings/${mergeTarget.id}`;
+                } catch (err: any) {
+                  toast.error(err.message || "Failed to merge bookings");
+                }
+              }}
+            >
+              {mergeBookingMutation.isPending ? <Loader2 size={14} className="animate-spin mr-2" /> : <GitMerge size={14} className="mr-2" />}
+              Merge &amp; Delete Source
             </Button>
           </DialogFooter>
         </DialogContent>
