@@ -643,3 +643,14 @@
 
 ## Bug - Merge Bookings Error
 - [x] Fix: Merge Bookings procedure throws an error when executed (dynamic import of adminTasks replaced with static import)
+
+## Personal Booking Flag
+- [x] Schema: add `isPersonalBooking` boolean column (default false) to bookings table
+- [x] Apply migration via SQL
+- [x] DB helper: createBooking accepts isPersonalBooking; updateBookingAdminFields accepts isPersonalBooking
+- [x] Registration procedure: accept isPersonalBooking; if true, auto-set finalSupplierPaymentDate = departureDate
+- [x] Commission claim area: exclude personal bookings from commission claimable list and commission due list
+- [x] PTS missing payment date page: exclude personal bookings (they always have payment date = departure date)
+- [x] Frontend RegisterBooking: add "Personal Booking" checkbox with tooltip explanation; when checked, show info that no commission will be claimed and payment date = departure date
+- [x] Frontend AdminBookingDetail: show "Personal Booking" badge in header; allow admin to toggle the flag
+- [x] Backfill: find all bookings where agent name (case-insensitive, trimmed) matches client name and mark isPersonalBooking = true, set finalSupplierPaymentDate = departureDate where null

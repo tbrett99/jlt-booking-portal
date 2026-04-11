@@ -1,0 +1,1 @@
+ALTER TABLE `bookings` ADD `isPersonalBooking` boolean DEFAULT false NOT NULL;

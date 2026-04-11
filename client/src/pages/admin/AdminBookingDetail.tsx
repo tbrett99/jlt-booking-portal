@@ -282,6 +282,11 @@ export default function AdminBookingDetail() {
           <p className="text-sm text-muted-foreground">Booking #{booking.id}</p>
         </div>
         <div className="flex items-center gap-2">
+          {booking.isPersonalBooking && (
+            <Badge className="gap-1 text-xs bg-teal-100 text-teal-800 border border-teal-300 hover:bg-teal-100">
+              Personal Booking
+            </Badge>
+          )}
           {missingPaymentDate && STAGES_REQUIRING_PAYMENT_DATE.includes(booking.currentStage) && (
             <Badge variant="destructive" className="gap-1 text-xs">
               <AlertTriangle size={10} /> Payment date missing

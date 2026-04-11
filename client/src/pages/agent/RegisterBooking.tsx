@@ -22,6 +22,7 @@ export default function RegisterBooking() {
   const [expectedCommission, setExpectedCommission] = useState("");
   const [grossCost, setGrossCost] = useState("");
   const [destination, setDestination] = useState("");
+  const [isPersonalBooking, setIsPersonalBooking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successBooking, setSuccessBooking] = useState<{ id: number; clientName: string; departureDate: Date } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -60,9 +61,10 @@ export default function RegisterBooking() {
         bookedDate: bookedDate ? new Date(bookedDate) : undefined,
         topdogRef: topdogRef || undefined,
         reimbursementsRequired,
-        expectedCommission: commNum > 0 ? commNum : undefined,
+        expectedCommission: !isPersonalBooking && commNum > 0 ? commNum : undefined,
         grossCost: grossNum > 0 ? grossNum : undefined,
         destination: destination || undefined,
+        isPersonalBooking,
       });
 
       if (booking && docFile) {
@@ -109,14 +111,32 @@ export default function RegisterBooking() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Personal Booking Toggle */}
+            <div className="rounded-lg border-2 border-dashed p-4 space-y-2" style={{ borderColor: isPersonalBooking ? '#70FFE8' : undefined, background: isPersonalBooking ? '#F0FFFB' : undefined }}>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isPersonalBooking}
+                  onChange={(e) => setIsPersonalBooking(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 accent-teal-500"
+                />
+                <div>
+                  <span className="text-sm font-semibold">This is my personal booking</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Tick this if you are the client (e.g. your own holiday). Commission will not be claimed and the final supplier payment date will automatically be set to your departure date.
+                  </p>
+                </div>
+              </label>
+            </div>
+
             {/* Client Name */}
             <div className="space-y-2">
               <Label htmlFor="clientName">
-                Client Name <span className="text-destructive">*</span>
+                {isPersonalBooking ? "Your Name" : "Client Name"} <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="clientName"
-                placeholder="Full name of the client"
+                placeholder={isPersonalBooking ? "Your full name" : "Full name of the client"}
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
                 required
@@ -171,8 +191,14 @@ export default function RegisterBooking() {
               />
             </div>
 
-            {/* Commission & Gross Cost */}
-            <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
+            {/* Commission & Gross Cost — hidden for personal bookings */}
+            {isPersonalBooking && (
+              <div className="rounded-lg border bg-teal-50 border-teal-200 p-3 text-sm text-teal-800 flex items-start gap-2">
+                <Info size={14} className="mt-0.5 shrink-0" />
+                <span>Commission fields are hidden for personal bookings. The final supplier payment date will be set to your departure date automatically.</span>
+              </div>
+            )}
+            {!isPersonalBooking && <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
               <div className="flex items-center gap-2">
                 <PoundSterling size={16} className="text-primary" />
                 <h3 className="text-sm font-semibold">Commission & Booking Value</h3>
@@ -231,7 +257,7 @@ export default function RegisterBooking() {
                 <Info size={12} className="mt-0.5 shrink-0" />
                 You can update these amounts at any time from your booking page.
               </p>
-            </div>
+            </div>}
 
             {/* Reimbursements */}
             <div className="space-y-3">

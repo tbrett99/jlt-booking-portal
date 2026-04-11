@@ -120,6 +120,13 @@
       "when": 1775916404213,
       "tag": "0016_plain_havok",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1775924048870,
+      "tag": "0017_blushing_oracle",
+      "breakpoints": true
     }
   ]
 }

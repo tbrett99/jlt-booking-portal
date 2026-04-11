@@ -550,6 +550,7 @@ export const appRouter = router({
           expectedCommission: z.number().min(0).optional(),
           grossCost: z.number().min(0).optional(),
           destination: z.string().optional(),
+          isPersonalBooking: z.boolean().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -763,6 +764,7 @@ export const appRouter = router({
           clientName: z.string().min(1).optional(),
           departureDate: z.date().optional(),
           bookedDate: z.date().nullable().optional(),
+          isPersonalBooking: z.boolean().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {

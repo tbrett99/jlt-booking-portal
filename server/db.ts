@@ -208,9 +208,12 @@ export async function createBooking(data: {
   expectedCommission?: number;
   grossCost?: number;
   destination?: string;
+  isPersonalBooking?: boolean;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+  // Personal bookings: payment date = departure date automatically
+  const finalSupplierPaymentDate = data.isPersonalBooking ? data.departureDate : undefined;
   const result = await db.insert(bookings).values({
     agentId: data.agentId,
     clientName: data.clientName,
@@ -223,6 +226,8 @@ export async function createBooking(data: {
     expectedCommission: data.expectedCommission != null ? String(data.expectedCommission) : undefined,
     grossCost: data.grossCost != null ? String(data.grossCost) : undefined,
     destination: data.destination,
+    isPersonalBooking: data.isPersonalBooking ?? false,
+    finalSupplierPaymentDate,
     currentStage: "New Booking",
   } as any);
   const id = (result as any)[0]?.insertId ?? (result as any).insertId;
@@ -323,6 +328,7 @@ export async function updateBookingAdminFields(
     clientName?: string;
     departureDate?: Date;
     bookedDate?: Date | null;
+    isPersonalBooking?: boolean;
   }
 ) {
   const db = await getDb();
@@ -742,14 +748,15 @@ export async function getCommissionDueBookings() {
   const db = await getDb();
   if (!db) return [];
   const now = new Date();
-  // Bookings where finalSupplierPaymentDate has passed and stage is not terminal
+  // Bookings where finalSupplierPaymentDate has passed and stage is not terminal, and not personal
   const terminalStages = ["Commission Claimable", "Commission Claimed", "Cancelled"];
   const rows = await db.select().from(bookings).orderBy(desc(bookings.finalSupplierPaymentDate));
   return rows.filter(
     (b) =>
       b.finalSupplierPaymentDate &&
       b.finalSupplierPaymentDate <= now &&
-      !terminalStages.includes(b.currentStage)
+      !terminalStages.includes(b.currentStage) &&
+      !(b as any).isPersonalBooking
   );
 }
 
@@ -1001,7 +1008,8 @@ export async function getPtsMissingPaymentDate() {
         eq(bookings.currentStage, "Added to PTS"),
         sql`${bookings.finalSupplierPaymentDate} IS NULL`,
         eq(bookings.paymentDateDismissed, false),
-        not(eq(bookings.currentStage, "Cancelled"))
+        not(eq(bookings.currentStage, "Cancelled")),
+        eq(bookings.isPersonalBooking, false)
       )
     )
     .orderBy(bookings.createdAt);

@@ -53,6 +53,7 @@ export const bookings = mysqlTable("bookings", {
   finalSupplierPaymentDate: timestamp("finalSupplierPaymentDate"),
   finalSupplierPaymentNotified: boolean("finalSupplierPaymentNotified").default(false).notNull(),
   paymentDateDismissed: boolean("paymentDateDismissed").default(false).notNull(), // Suppress from missing-payment-date dashboard alert
+  isPersonalBooking: boolean("isPersonalBooking").default(false).notNull(), // Agent's own travel — no commission, payment date = departure date
   // Current pipeline stage
   currentStage: varchar("currentStage", { length: 100 }).default("New Booking").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
