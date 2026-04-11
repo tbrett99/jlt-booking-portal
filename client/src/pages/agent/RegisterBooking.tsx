@@ -13,6 +13,7 @@ export default function RegisterBooking() {
   const [, navigate] = useLocation();
   const [clientName, setClientName] = useState("");
   const [departureDate, setDepartureDate] = useState("");
+  const [bookedDate, setBookedDate] = useState("");
   const [topdogRef, setTopdogRef] = useState("");
   const [reimbursementsRequired, setReimbursementsRequired] = useState(false);
   const [docFile, setDocFile] = useState<File | null>(null);
@@ -52,6 +53,7 @@ export default function RegisterBooking() {
       const booking = await createBooking.mutateAsync({
         clientName,
         departureDate: new Date(departureDate),
+        bookedDate: bookedDate ? new Date(bookedDate) : undefined,
         topdogRef: topdogRef || undefined,
         reimbursementsRequired,
         expectedCommission: commNum > 0 ? commNum : undefined,
@@ -112,6 +114,19 @@ export default function RegisterBooking() {
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
                 required
+              />
+            </div>
+
+            {/* Booked Date */}
+            <div className="space-y-2">
+              <Label htmlFor="bookedDate">
+                Booked Date <span className="text-muted-foreground text-xs">(date the booking was made)</span>
+              </Label>
+              <Input
+                id="bookedDate"
+                type="date"
+                value={bookedDate}
+                onChange={(e) => setBookedDate(e.target.value)}
               />
             </div>
 

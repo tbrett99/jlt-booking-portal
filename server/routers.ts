@@ -514,6 +514,7 @@ export const appRouter = router({
         z.object({
           clientName: z.string().min(1),
           departureDate: z.date(),
+          bookedDate: z.date().optional(),
           topdogRef: z.string().optional(),
           reimbursementsRequired: z.boolean(),
           reimbursementDocUrl: z.string().optional(),
@@ -711,6 +712,7 @@ export const appRouter = router({
           grossCost: z.number().optional(),
           clientName: z.string().min(1).optional(),
           departureDate: z.date().optional(),
+          bookedDate: z.date().nullable().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -739,6 +741,7 @@ export const appRouter = router({
           if (input.grossCost !== undefined) changes.push(`Gross Cost set to £${input.grossCost}`);
           if (input.clientName !== undefined) changes.push(`Client Name updated to "${input.clientName}"`);
           if (input.departureDate !== undefined) changes.push(`Departure Date updated to ${input.departureDate.toLocaleDateString('en-GB')}`);
+          if (input.bookedDate !== undefined) changes.push(`Booked Date updated to ${input.bookedDate ? input.bookedDate.toLocaleDateString('en-GB') : 'cleared'}`);
           if (changes.length > 0) {
             await createNote({
               bookingId,
@@ -1251,6 +1254,17 @@ ${input.reason ? `<blockquote style="border-left:4px solid #f87171;padding:8px 1
         return { success: true };
       }),
     all: adminProcedure.query(async () => getAllCancellations()),
+    markActioned: adminProcedure
+      .input(z.object({ cancellationId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await import("./db").then((m) => m.getDb());
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db
+          .update((await import("../drizzle/schema")).cancellations)
+          .set({ status: "actioned", processedById: ctx.user.id, processedAt: new Date() })
+          .where((await import("drizzle-orm")).eq((await import("../drizzle/schema")).cancellations.id, input.cancellationId));
+        return { success: true };
+      }),
   }),
 
   // ── Refunds ───────────────────────────────────────────────────────────────

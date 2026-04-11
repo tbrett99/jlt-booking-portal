@@ -8,8 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   BookOpen, XCircle, Bell, Plus, TrendingUp, Search,
-  Calendar, ChevronRight, AlertCircle, CheckCircle2, Clock, Sparkles
+  Calendar, ChevronRight, AlertCircle, CheckCircle2, Clock, Sparkles, Filter
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
 import { format, differenceInDays, isPast } from "date-fns";
 
 const STAGE_BADGE: Record<string, { label: string; color: string; bg: string; icon?: React.ReactNode }> = {
@@ -42,6 +43,8 @@ export default function AgentDashboard() {
   const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [bookedFrom, setBookedFrom] = useState("");
+  const [bookedTo, setBookedTo] = useState("");
 
   const { data: bookings = [], isLoading } = trpc.bookings.myBookings.useQuery();
   const { data: notifications = [] } = trpc.notifications.myNotifications.useQuery();
@@ -58,6 +61,15 @@ export default function AgentDashboard() {
     else if (statusFilter === "attention") list = list.filter((b) => ATTENTION_STAGES.has(b.currentStage));
     else if (statusFilter === "commission") list = list.filter((b) => b.currentStage === "Commission Claimable");
     else if (statusFilter === "cancelled") list = list.filter((b) => b.currentStage === "Cancelled");
+    if (bookedFrom) {
+      const from = new Date(bookedFrom);
+      list = list.filter((b) => b.bookedDate && new Date(b.bookedDate) >= from);
+    }
+    if (bookedTo) {
+      const to = new Date(bookedTo);
+      to.setHours(23, 59, 59, 999);
+      list = list.filter((b) => b.bookedDate && new Date(b.bookedDate) <= to);
+    }
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -68,7 +80,7 @@ export default function AgentDashboard() {
       );
     }
     return list;
-  }, [bookings, statusFilter, search]);
+  }, [bookings, statusFilter, search, bookedFrom, bookedTo]);
 
   return (
     <div className="space-y-6">
@@ -230,6 +242,34 @@ export default function AgentDashboard() {
                   className="pl-8 h-8 text-sm w-full sm:w-52"
                 />
               </div>
+              {/* Booked date range filter */}
+              <div className="flex items-center gap-1.5">
+                <Filter size={13} className="text-muted-foreground flex-shrink-0" />
+                <span className="text-xs text-muted-foreground">Booked:</span>
+                <Input
+                  type="date"
+                  value={bookedFrom}
+                  onChange={(e) => setBookedFrom(e.target.value)}
+                  className="h-8 text-xs w-32"
+                  title="Booked from"
+                />
+                <span className="text-xs text-muted-foreground">–</span>
+                <Input
+                  type="date"
+                  value={bookedTo}
+                  onChange={(e) => setBookedTo(e.target.value)}
+                  className="h-8 text-xs w-32"
+                  title="Booked to"
+                />
+                {(bookedFrom || bookedTo) && (
+                  <button
+                    onClick={() => { setBookedFrom(""); setBookedTo(""); }}
+                    className="text-xs underline text-muted-foreground hover:text-foreground"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
               <div className="flex gap-1 flex-wrap">
                 {STATUS_FILTERS.map((f) => (
                   <button
@@ -308,6 +348,11 @@ export default function AgentDashboard() {
                             <Calendar size={10} />
                             {departed ? "Departed" : `${daysUntilDeparture}d`} — {format(new Date(booking.departureDate), "dd MMM yyyy")}
                           </span>
+                          {(booking as any).bookedDate && (
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              Booked: {format(new Date((booking as any).bookedDate), "dd MMM yyyy")}
+                            </span>
+                          )}
                           {booking.topdogRef && (
                             <CopyableRef value={booking.topdogRef} label="Topdog ref" />
                           )}

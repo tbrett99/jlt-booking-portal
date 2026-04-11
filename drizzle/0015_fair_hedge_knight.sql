@@ -1,0 +1,1 @@
+ALTER TABLE `cancellations` ADD `status` enum('pending','actioned') DEFAULT 'pending' NOT NULL;

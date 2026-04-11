@@ -39,6 +39,7 @@ export const bookings = mysqlTable("bookings", {
   agentId: int("agentId").notNull(), // FK → users.id
   clientName: varchar("clientName", { length: 255 }).notNull(),
   departureDate: timestamp("departureDate").notNull(),
+  bookedDate: timestamp("bookedDate"), // Date the booking was made (agent-entered)
   topdogRef: varchar("topdogRef", { length: 100 }),
   reimbursementsRequired: boolean("reimbursementsRequired").default(false).notNull(),
   reimbursementDocUrl: text("reimbursementDocUrl"), // S3 URL
@@ -102,6 +103,7 @@ export const cancellations = mysqlTable("cancellations", {
   confirmedAt: timestamp("confirmedAt").defaultNow().notNull(),
   processedById: int("processedById"), // FK → users.id
   processedAt: timestamp("processedAt"),
+  status: mysqlEnum("status", ["pending", "actioned"]).default("pending").notNull(),
 });
 
 export type Cancellation = typeof cancellations.$inferSelect;

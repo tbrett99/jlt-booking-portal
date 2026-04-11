@@ -113,6 +113,9 @@ export default function AdminDashboard() {
   const markRead = trpc.notes.markBookingNotesRead.useMutation({
     onSuccess: () => refetchUnread(),
   });
+  const markCancellationActioned = trpc.cancellations.markActioned.useMutation({
+    onSuccess: () => utils.cancellations.all.invalidate(),
+  });
 
   const agents = agentList;
   const activeBookings = bookings.filter((b) => b.currentStage !== "Cancelled");
@@ -126,7 +129,7 @@ export default function AdminDashboard() {
   const pendingRefunds = (refunds as any[]).filter(
     (r) => r.pipelineStage !== "Refund Processed"
   );
-  const pendingCancellations = (cancellations as any[]).filter((c) => !c.processed);
+  const pendingCancellations = (cancellations as any[]).filter((c) => c.status !== "actioned");
   const unreadNotifs = notifications.filter((n) => !n.isRead);
   const commissionReady = bookings.filter((b) => b.currentStage === "Commission Claimable");
   const urgentBookings = bookings.filter((b) => URGENT_STAGES.has(b.currentStage));
@@ -355,22 +358,30 @@ export default function AdminDashboard() {
             emptyText="No pending cancellation requests"
           >
             {pendingCancellations.map((c: any) => (
-              <Link key={c.id} href={`/bookings/${c.bookingId}`}>
-                <div className="flex items-center gap-2 p-2 rounded-lg border bg-violet-50/40 hover:bg-violet-50 transition-colors cursor-pointer">
-                  <XCircle size={11} className="flex-shrink-0 text-violet-700" />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-xs font-semibold truncate block">{c.clientName ?? `Booking #${c.bookingId}`}</span>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      <RefRow label="PTS" value={c.ptsRef} />
-                      <RefRow label="TD" value={c.topdogRef} />
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Requested: {format(new Date(c.confirmedAt), "dd MMM yyyy, HH:mm")}
-                    </p>
+              <div key={c.id} className="flex items-center gap-2 p-2 rounded-lg border bg-violet-50/40">
+                <XCircle size={11} className="flex-shrink-0 text-violet-700" />
+                <div className="flex-1 min-w-0">
+                  <Link href={`/bookings/${c.bookingId}`}>
+                    <span className="text-xs font-semibold truncate block hover:underline cursor-pointer">{c.clientName ?? `Booking #${c.bookingId}`}</span>
+                  </Link>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <RefRow label="PTS" value={c.ptsRef} />
+                    <RefRow label="TD" value={c.topdogRef} />
                   </div>
-                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0" />
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Requested: {format(new Date(c.confirmedAt), "dd MMM yyyy, HH:mm")}
+                  </p>
                 </div>
-              </Link>
+                <button
+                  onClick={(e) => { e.stopPropagation(); markCancellationActioned.mutate({ cancellationId: c.id }); }}
+                  disabled={markCancellationActioned.isPending}
+                  className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors hover:bg-green-100 text-green-700 border border-green-200"
+                  title="Mark as actioned — removes from this panel"
+                >
+                  <CheckCircle2 size={10} />
+                  Done
+                </button>
+              </div>
             ))}
           </ExpandablePanel>
 

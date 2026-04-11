@@ -448,3 +448,17 @@
 - [x] Admin booking detail: add editable Client Name field
 - [x] Admin booking detail: add editable Departure Date field
 - [x] Backend: add clientName and departureDate to updateAdminFields procedure and updateBookingAdminFields db helper
+
+## Booked Date Feature (Apr 11)
+- [x] Add bookedDate column (date, nullable) to bookings schema in drizzle/schema.ts
+- [x] Generate migration SQL and apply via database
+- [x] Add bookedDate to agent booking registration form
+- [x] Add bookedDate to getBookingsByAgent query return shape
+- [x] Add booked date range filter (from/to date pickers) to agent bookings list page
+- [x] Show booked date column on agent bookings list table
+
+## Cancellation Mark-as-Cancelled (Apr 11)
+- [ ] Add status field to cancellations table (pending / actioned), default pending; apply migration
+- [ ] Backend: cancellations.markActioned procedure (admin only) — sets status = actioned
+- [ ] Dashboard: filter cancellations panel to only show status = pending; add "Mark Actioned" button per row
+- [ ] Cancellations pipeline: also show Mark Actioned button per card

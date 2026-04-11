@@ -200,6 +200,7 @@ export async function createBooking(data: {
   agentId: number;
   clientName: string;
   departureDate: Date;
+  bookedDate?: Date;
   topdogRef?: string;
   reimbursementsRequired: boolean;
   reimbursementDocUrl?: string;
@@ -212,6 +213,7 @@ export async function createBooking(data: {
     agentId: data.agentId,
     clientName: data.clientName,
     departureDate: data.departureDate,
+    bookedDate: data.bookedDate,
     topdogRef: data.topdogRef,
     reimbursementsRequired: data.reimbursementsRequired,
     reimbursementDocUrl: data.reimbursementDocUrl,
@@ -317,6 +319,7 @@ export async function updateBookingAdminFields(
     grossCost?: number;
     clientName?: string;
     departureDate?: Date;
+    bookedDate?: Date | null;
   }
 ) {
   const db = await getDb();

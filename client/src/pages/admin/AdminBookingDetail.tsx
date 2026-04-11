@@ -66,6 +66,7 @@ export default function AdminBookingDetail() {
   const [editGrossCost, setEditGrossCost] = useState("");
   const [editClientName, setEditClientName] = useState("");
   const [editDepartureDate, setEditDepartureDate] = useState("");
+  const [editBookedDate, setEditBookedDate] = useState("");
   const [isSavingDetails, setIsSavingDetails] = useState(false);
   const [detailsInitialised, setDetailsInitialised] = useState(false);
   const [pendingStage, setPendingStage] = useState<string | null>(null);
@@ -91,6 +92,7 @@ export default function AdminBookingDetail() {
     setEditGrossCost((booking as any).grossCost ? String((booking as any).grossCost) : "");
     setEditClientName(booking.clientName ?? "");
     setEditDepartureDate(booking.departureDate ? format(new Date(booking.departureDate), "yyyy-MM-dd") : "");
+    setEditBookedDate((booking as any).bookedDate ? format(new Date((booking as any).bookedDate), "yyyy-MM-dd") : "");
     setDetailsInitialised(true);
   }
 
@@ -225,6 +227,7 @@ export default function AdminBookingDetail() {
         grossCost: editGrossCost ? Number(editGrossCost) : undefined,
         clientName: editClientName.trim() || undefined,
         departureDate: editDepartureDate ? new Date(editDepartureDate) : undefined,
+        bookedDate: editBookedDate ? new Date(editBookedDate) : null,
       });
       await utils.bookings.byId.invalidate({ id: bookingId });
       toast.success("Details saved");
@@ -286,6 +289,12 @@ export default function AdminBookingDetail() {
                 <dt className="text-muted-foreground">Departure</dt>
                 <dd className="font-medium mt-0.5">{format(new Date(booking.departureDate), "dd MMM yyyy")}</dd>
               </div>
+              {(booking as any).bookedDate && (
+                <div>
+                  <dt className="text-muted-foreground">Booked Date</dt>
+                  <dd className="font-medium mt-0.5">{format(new Date((booking as any).bookedDate), "dd MMM yyyy")}</dd>
+                </div>
+              )}
               <div>
                 <dt className="text-muted-foreground">Agent</dt>
                 <dd className="font-medium mt-0.5">
@@ -322,6 +331,10 @@ export default function AdminBookingDetail() {
                 <div className="space-y-1">
                   <Label className="text-xs flex items-center gap-1"><Calendar size={11} />Departure Date</Label>
                   <Input type="date" value={editDepartureDate} onChange={(e) => setEditDepartureDate(e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs flex items-center gap-1"><Calendar size={11} />Booked Date</Label>
+                  <Input type="date" value={editBookedDate} onChange={(e) => setEditBookedDate(e.target.value)} className="h-8 text-sm" />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Destination</Label>
