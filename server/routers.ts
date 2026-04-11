@@ -70,6 +70,16 @@ import {
   getTotalUnreadMessageCount,
   markAllAgentNotesAsRead,
   getUnreadBookingIds,
+  getAdminNotifPrefs,
+  upsertAdminNotifPref,
+  isAdminEmailEnabledForTrigger,
+  createAdminTask,
+  getAllAdminTasks,
+  getAdminTaskById,
+  updateAdminTask,
+  deleteAdminTask,
+  getAdminTaskComments,
+  addAdminTaskComment,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
@@ -1695,6 +1705,139 @@ export const appRouter = router({
         await setSystemSetting("notifications_paused", input.paused ? "true" : "false");
         return { paused: input.paused };
       }),
+  }),
+  // ── Admin Notification Preferences ─────────────────────────────────────────────────────────────────────────
+  notifPrefs: router({
+    // Get own notification preferences
+    list: adminProcedure.query(async ({ ctx }) => {
+      return getAdminNotifPrefs(ctx.user.id);
+    }),
+    // Toggle a specific trigger key on/off
+    update: adminProcedure
+      .input(z.object({ triggerKey: z.string(), emailEnabled: z.boolean() }))
+      .mutation(async ({ input, ctx }) => {
+        await upsertAdminNotifPref(ctx.user.id, input.triggerKey, input.emailEnabled);
+        return { success: true };
+      }),
+  }),
+  // ── Admin Tasks ─────────────────────────────────────────────────────────────────────────────────────────────
+  tasks: router({
+    list: adminProcedure.query(async () => {
+      const tasks = await getAllAdminTasks();
+      // Enrich with assignee and creator names
+      const enriched = await Promise.all(tasks.map(async (t) => {
+        const assignee = t.assigneeId ? await getUserById(t.assigneeId) : null;
+        const creator = await getUserById(t.createdById);
+        return {
+          ...t,
+          assigneeName: assignee?.name ?? null,
+          creatorName: creator?.name ?? null,
+        };
+      }));
+      return enriched;
+    }),
+    create: adminProcedure
+      .input(z.object({
+        title: z.string().min(1),
+        description: z.string().optional(),
+        priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+        assigneeId: z.number().optional(),
+        dueDate: z.date().optional(),
+        linkedType: z.enum(["booking", "amendment", "refund", "cancellation", "none"]).optional(),
+        linkedId: z.number().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const task = await createAdminTask({ ...input, createdById: ctx.user.id });
+        // Notify assignee if different from creator
+        if (input.assigneeId && input.assigneeId !== ctx.user.id) {
+          await createInAppNotification({
+            userId: input.assigneeId,
+            message: `You have been assigned a new task: "${input.title}" by ${ctx.user.name ?? "Admin"}`,
+            linkUrl: `/admin/tasks`,
+          });
+        }
+        return task;
+      }),
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        title: z.string().min(1).optional(),
+        description: z.string().optional(),
+        status: z.enum(["open", "in_progress", "done"]).optional(),
+        priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+        assigneeId: z.number().nullable().optional(),
+        dueDate: z.date().nullable().optional(),
+        linkedType: z.enum(["booking", "amendment", "refund", "cancellation", "none"]).optional(),
+        linkedId: z.number().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        const existing = await getAdminTaskById(id);
+        const updated = await updateAdminTask(id, data as any);
+        // Notify new assignee if changed
+        if (data.assigneeId && data.assigneeId !== existing?.assigneeId && data.assigneeId !== ctx.user.id) {
+          await createInAppNotification({
+            userId: data.assigneeId,
+            message: `You have been assigned task: "${updated?.title ?? input.title}" by ${ctx.user.name ?? "Admin"}`,
+            linkUrl: `/admin/tasks`,
+          });
+        }
+        return updated;
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteAdminTask(input.id);
+        return { success: true };
+      }),
+    getComments: adminProcedure
+      .input(z.object({ taskId: z.number() }))
+      .query(async ({ input }) => {
+        const comments = await getAdminTaskComments(input.taskId);
+        const enriched = await Promise.all(comments.map(async (c) => {
+          const author = await getUserById(c.authorId);
+          return { ...c, authorName: author?.name ?? "Admin" };
+        }));
+        return enriched;
+      }),
+    addComment: adminProcedure
+      .input(z.object({ taskId: z.number(), content: z.string().min(1) }))
+      .mutation(async ({ input, ctx }) => {
+        const task = await getAdminTaskById(input.taskId);
+        if (!task) throw new TRPCError({ code: "NOT_FOUND" });
+        await addAdminTaskComment({ taskId: input.taskId, authorId: ctx.user.id, content: input.content });
+        // Auto-mirror to booking notes if task is linked to a booking
+        if (task.linkedType === "booking" && task.linkedId) {
+          await createNote({
+            bookingId: task.linkedId,
+            authorId: ctx.user.id,
+            content: `[Task: ${task.title}] ${ctx.user.name ?? "Admin"}: ${input.content}`,
+            isInternal: true,
+          });
+        }
+        // Notify assignee of new comment (if not the commenter)
+        if (task.assigneeId && task.assigneeId !== ctx.user.id) {
+          await createInAppNotification({
+            userId: task.assigneeId,
+            message: `New comment on task "${task.title}" by ${ctx.user.name ?? "Admin"}`,
+            linkUrl: `/admin/tasks`,
+          });
+        }
+        // Notify creator of new comment (if not the commenter and not the assignee)
+        if (task.createdById !== ctx.user.id && task.createdById !== task.assigneeId) {
+          await createInAppNotification({
+            userId: task.createdById,
+            message: `New comment on your task "${task.title}" by ${ctx.user.name ?? "Admin"}`,
+            linkUrl: `/admin/tasks`,
+          });
+        }
+        return { success: true };
+      }),
+    // Count of open tasks assigned to the current user (for sidebar badge)
+    myOpenCount: adminProcedure.query(async ({ ctx }) => {
+      const tasks = await getAllAdminTasks();
+      return tasks.filter((t) => t.assigneeId === ctx.user.id && t.status !== "done").length;
+    }),
   }),
 });
 

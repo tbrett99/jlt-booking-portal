@@ -16,7 +16,7 @@ import {
   BookOpen, Users, FileText, TrendingUp, Bell, ArrowRight,
   AlertTriangle, Sparkles, AlertCircle, Calendar, Clock,
   CheckCircle2, Banknote, RefreshCw, ChevronRight, Upload, BellOff,
-  MessageSquare, CheckCheck, XCircle, ChevronDown, ChevronUp,
+  XCircle, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { format, differenceInDays, addDays } from "date-fns";
 
@@ -116,10 +116,6 @@ export default function AdminDashboard() {
   const notificationsPaused = notifSettings?.paused ?? false;
   const setNotifPaused = trpc.settings.setNotificationsPaused.useMutation({
     onSuccess: () => utils.settings.getNotificationsPaused.invalidate(),
-  });
-  const { data: unreadMessages = [], refetch: refetchUnread } = trpc.notes.unreadAgentMessages.useQuery();
-  const markRead = trpc.notes.markBookingNotesRead.useMutation({
-    onSuccess: () => refetchUnread(),
   });
   const [cancelConfirmId, setCancelConfirmId] = useState<number | null>(null);
   const markCancellationActioned = trpc.cancellations.markActioned.useMutation({
@@ -529,49 +525,6 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Unread agent messages */}
-      {unreadMessages.length > 0 && (
-        <Card className="border-l-4" style={{ borderLeftColor: '#f59e0b' }}>
-          <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
-              <MessageSquare size={13} style={{ color: '#f59e0b' }} />
-              Agent Messages Awaiting Reply
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1" style={{ background: '#fef3c7', color: '#92400e' }}>
-                {unreadMessages.length}
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {(unreadMessages as any[]).map((msg) => (
-                <div key={msg.bookingId} className="flex items-start gap-3 p-2.5 rounded-lg border bg-amber-50/50 hover:bg-amber-50 transition-colors">
-                  <MessageSquare size={13} className="mt-0.5 flex-shrink-0" style={{ color: '#f59e0b' }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Link href={`/bookings/${msg.bookingId}`}>
-                        <span className="text-xs font-semibold hover:underline cursor-pointer">{msg.clientName}</span>
-                      </Link>
-                      <span className="text-[10px] text-muted-foreground">from {msg.authorName}</span>
-                      <span className="text-[10px] text-muted-foreground">{format(new Date(msg.latestMessageAt), "dd MMM, HH:mm")}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{msg.latestMessage}</p>
-                  </div>
-                  <div className="flex gap-1 flex-shrink-0">
-                    <Link href={`/bookings/${msg.bookingId}`}>
-                      <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1">Reply</Button>
-                    </Link>
-                    <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1 text-muted-foreground"
-                      onClick={() => markRead.mutate({ bookingId: msg.bookingId })} title="Mark as read">
-                      <CheckCheck size={11} />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Bottom row: departures + recent bookings */}
       <div className="grid lg:grid-cols-2 gap-4">

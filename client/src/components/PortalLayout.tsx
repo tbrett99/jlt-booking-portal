@@ -6,7 +6,7 @@ import {
   Bell, BookOpen, ChevronLeft, ChevronRight, ClipboardList,
   FileText, Home, LayoutDashboard, LogOut, Mail, Menu, Users, X,
   ArrowLeftRight, CheckCircle2, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
-  MessageSquare, BarChart2
+  MessageSquare, BarChart2, CheckSquare, BellRing
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -61,6 +61,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     { label: "Commission Due", href: "/commission-due", icon: <AlertCircle size={18} /> },
     { label: "Commissions", href: "/commissions-admin", icon: <Banknote size={18} /> },
     { label: "Messages", href: "/messages", icon: <MessageSquare size={18} /> },
+    { label: "Tasks", href: "/admin/tasks", icon: <CheckSquare size={18} /> },
     { label: "Reports", href: "/reports", icon: <FileText size={18} /> },
     { label: "Agent Performance", href: "/agent-performance", icon: <BarChart2 size={18} /> },
     { label: "Import CSV", href: "/import", icon: <Upload size={18} /> },
@@ -68,6 +69,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     ...(user?.role === "super_admin"
       ? [{ label: "Notifications", href: "/notification-templates", icon: <Mail size={18} /> }]
       : []),
+    { label: "Notif. Preferences", href: "/notif-prefs", icon: <BellRing size={18} /> },
   ];
 
   const navItems = user?.role === "agent"

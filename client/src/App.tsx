@@ -31,6 +31,8 @@ import AdminImport from "./pages/admin/AdminImport";
 import AdminAgentPerformance from "./pages/admin/AdminAgentPerformance";
 import AdminMessages from "./pages/admin/AdminMessages";
 import PtsMissingPaymentDate from "./pages/admin/PtsMissingPaymentDate";
+import AdminNotifPrefs from "./pages/admin/AdminNotifPrefs";
+import AdminTasks from "./pages/admin/AdminTasks";
 import PortalLayout from "./components/PortalLayout";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
@@ -142,6 +144,8 @@ function AuthRouter() {
         <Route path="/import" component={AdminImport} />
         <Route path="/pts-missing-payment" component={PtsMissingPaymentDate} />
         <Route path="/messages" component={AdminMessages} />
+        <Route path="/notif-prefs" component={AdminNotifPrefs} />
+        <Route path="/admin/tasks" component={AdminTasks} />
         <Route path="/profile" component={ProfilePage} />
         <Route component={NotFound} />
       </Switch>

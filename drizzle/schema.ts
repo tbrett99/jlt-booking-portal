@@ -246,6 +246,45 @@ export const reimbursementDocs = mysqlTable("reimbursement_docs", {
 export type ReimbursementDoc = typeof reimbursementDocs.$inferSelect;
 export type InsertReimbursementDoc = typeof reimbursementDocs.$inferInsert;
 
+// ─── Admin Notification Preferences ─────────────────────────────────────────
+// Per-admin, per-trigger-key opt-in/out for email notifications
+export const adminNotificationPrefs = mysqlTable("admin_notification_prefs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  triggerKey: varchar("triggerKey", { length: 100 }).notNull(),
+  emailEnabled: boolean("emailEnabled").default(true).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AdminNotificationPref = typeof adminNotificationPrefs.$inferSelect;
+
+// ─── Admin Tasks ──────────────────────────────────────────────────────────────
+export const adminTasks = mysqlTable("admin_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  status: mysqlEnum("status", ["open", "in_progress", "done"]).default("open").notNull(),
+  priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).default("medium").notNull(),
+  assigneeId: int("assigneeId"),
+  createdById: int("createdById").notNull(),
+  dueDate: timestamp("dueDate"),
+  linkedType: mysqlEnum("linkedType", ["booking", "amendment", "refund", "cancellation", "none"]).default("none").notNull(),
+  linkedId: int("linkedId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AdminTask = typeof adminTasks.$inferSelect;
+export type InsertAdminTask = typeof adminTasks.$inferInsert;
+
+// ─── Admin Task Comments ──────────────────────────────────────────────────────
+export const adminTaskComments = mysqlTable("admin_task_comments", {
+  id: int("id").autoincrement().primaryKey(),
+  taskId: int("taskId").notNull(),
+  authorId: int("authorId").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AdminTaskComment = typeof adminTaskComments.$inferSelect;
+
 // ─── System Settings ──────────────────────────────────────────────────────────
 // Simple key-value store for global system flags (e.g. notifications paused)
 export const systemSettings = mysqlTable("system_settings", {

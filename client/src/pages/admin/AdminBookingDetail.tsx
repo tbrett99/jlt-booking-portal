@@ -102,6 +102,7 @@ export default function AdminBookingDetail() {
   const internalNotes = allNotes.filter(n => n.isInternal);
 
   const addNote = trpc.notes.add.useMutation();
+  const markNotesRead = trpc.notes.markBookingNotesRead.useMutation();
   const updateDetails = trpc.bookings.updateAdminFields.useMutation();
   const moveStage = trpc.bookings.moveStage.useMutation({
     onSuccess: () => utils.bookings.byId.invalidate({ id: bookingId }),
@@ -205,6 +206,8 @@ export default function AdminBookingDetail() {
     if (isInternal) setIsSendingInternal(true); else setIsSendingShared(true);
     try {
       await addNote.mutateAsync({ bookingId, content, isInternal });
+      // When admin replies via a shared note, auto-mark all unread agent messages as read
+      if (!isInternal) { markNotesRead.mutate({ bookingId }); }
       if (isInternal) { setInternalNote(""); await refetchNotes(); }
       else { setSharedNote(""); await refetchNotes(); }
       toast.success("Note added");

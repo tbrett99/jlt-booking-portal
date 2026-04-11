@@ -11,6 +11,8 @@ import CopyableRef from "@/components/CopyableRef";
 export default function PtsMissingPaymentDate() {
   const [search, setSearch] = useState("");
   const [pastDepartureOnly, setPastDepartureOnly] = useState(false);
+  const [departureDateFrom, setDepartureDateFrom] = useState("");
+  const [departureDateTo, setDepartureDateTo] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDate, setBulkDate] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -32,6 +34,16 @@ export default function PtsMissingPaymentDate() {
     if (pastDepartureOnly) {
       list = list.filter((b) => b.departureDate && isPast(new Date(b.departureDate)));
     }
+    if (departureDateFrom) {
+      const from = new Date(departureDateFrom);
+      from.setHours(0, 0, 0, 0);
+      list = list.filter((b) => b.departureDate && new Date(b.departureDate) >= from);
+    }
+    if (departureDateTo) {
+      const to = new Date(departureDateTo);
+      to.setHours(23, 59, 59, 999);
+      list = list.filter((b) => b.departureDate && new Date(b.departureDate) <= to);
+    }
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -43,7 +55,7 @@ export default function PtsMissingPaymentDate() {
       );
     }
     return list;
-  }, [bookings, pastDepartureOnly, search]);
+  }, [bookings, pastDepartureOnly, departureDateFrom, departureDateTo, search]);
 
   // Selection helpers
   const allSelected = filtered.length > 0 && filtered.every((b) => selectedIds.has(b.id));
@@ -152,6 +164,34 @@ export default function PtsMissingPaymentDate() {
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-sm h-9"
         />
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground font-medium whitespace-nowrap">Depart from</label>
+          <Input
+            type="date"
+            value={departureDateFrom}
+            onChange={(e) => setDepartureDateFrom(e.target.value)}
+            className="h-9 text-sm w-36"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground font-medium whitespace-nowrap">to</label>
+          <Input
+            type="date"
+            value={departureDateTo}
+            onChange={(e) => setDepartureDateTo(e.target.value)}
+            className="h-9 text-sm w-36"
+          />
+        </div>
+        {(departureDateFrom || departureDateTo) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 text-xs text-muted-foreground"
+            onClick={() => { setDepartureDateFrom(""); setDepartureDateTo(""); }}
+          >
+            Clear dates
+          </Button>
+        )}
         <Button
           variant={pastDepartureOnly ? "default" : "outline"}
           size="sm"
@@ -207,7 +247,7 @@ export default function PtsMissingPaymentDate() {
         <div className="text-muted-foreground text-sm py-12 text-center">Loading bookings…</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
-          {search || pastDepartureOnly
+          {search || pastDepartureOnly || departureDateFrom || departureDateTo
             ? "No bookings match your filters."
             : "All Added to PTS bookings have a payment date set."}
         </div>

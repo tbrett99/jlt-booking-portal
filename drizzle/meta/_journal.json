@@ -113,6 +113,13 @@
       "when": 1775901998068,
       "tag": "0015_fair_hedge_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1775916404213,
+      "tag": "0016_plain_havok",
+      "breakpoints": true
     }
   ]
 }

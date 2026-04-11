@@ -1066,3 +1066,136 @@ export async function getUnreadBookingIds(): Promise<number[]> {
   }
   return Array.from(result);
 }
+
+// ─── Admin Notification Preferences ──────────────────────────────────────────
+
+export async function getAdminNotifPrefs(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { adminNotificationPrefs } = await import("../drizzle/schema");
+  return db.select().from(adminNotificationPrefs).where(eq(adminNotificationPrefs.userId, userId));
+}
+
+export async function upsertAdminNotifPref(userId: number, triggerKey: string, emailEnabled: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { adminNotificationPrefs } = await import("../drizzle/schema");
+  // Check if row exists
+  const existing = await db
+    .select()
+    .from(adminNotificationPrefs)
+    .where(and(eq(adminNotificationPrefs.userId, userId), eq(adminNotificationPrefs.triggerKey, triggerKey)))
+    .limit(1);
+  if (existing[0]) {
+    await db
+      .update(adminNotificationPrefs)
+      .set({ emailEnabled })
+      .where(and(eq(adminNotificationPrefs.userId, userId), eq(adminNotificationPrefs.triggerKey, triggerKey)));
+  } else {
+    await db.insert(adminNotificationPrefs).values({ userId, triggerKey, emailEnabled });
+  }
+}
+
+// Check if a specific admin has email enabled for a trigger key (default: true if no row)
+export async function isAdminEmailEnabledForTrigger(userId: number, triggerKey: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return true;
+  const { adminNotificationPrefs } = await import("../drizzle/schema");
+  const rows = await db
+    .select()
+    .from(adminNotificationPrefs)
+    .where(and(eq(adminNotificationPrefs.userId, userId), eq(adminNotificationPrefs.triggerKey, triggerKey)))
+    .limit(1);
+  if (!rows[0]) return true; // default: enabled
+  return rows[0].emailEnabled;
+}
+
+// ─── Admin Tasks ──────────────────────────────────────────────────────────────
+
+export async function createAdminTask(data: {
+  title: string;
+  description?: string;
+  priority?: "low" | "medium" | "high" | "urgent";
+  assigneeId?: number;
+  createdById: number;
+  dueDate?: Date;
+  linkedType?: "booking" | "amendment" | "refund" | "cancellation" | "none";
+  linkedId?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { adminTasks } = await import("../drizzle/schema");
+  const result = await db.insert(adminTasks).values({
+    title: data.title,
+    description: data.description ?? null,
+    priority: data.priority ?? "medium",
+    assigneeId: data.assigneeId ?? null,
+    createdById: data.createdById,
+    dueDate: data.dueDate ?? null,
+    linkedType: data.linkedType ?? "none",
+    linkedId: data.linkedId ?? null,
+  } as any);
+  const id = (result as any)[0]?.insertId ?? (result as any).insertId;
+  const { adminTasks: at } = await import("../drizzle/schema");
+  const rows = await db.select().from(at).where(eq(at.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function getAllAdminTasks() {
+  const db = await getDb();
+  if (!db) return [];
+  const { adminTasks } = await import("../drizzle/schema");
+  return db.select().from(adminTasks).orderBy(desc(adminTasks.createdAt));
+}
+
+export async function getAdminTaskById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const { adminTasks } = await import("../drizzle/schema");
+  const rows = await db.select().from(adminTasks).where(eq(adminTasks.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function updateAdminTask(id: number, data: {
+  title?: string;
+  description?: string;
+  status?: "open" | "in_progress" | "done";
+  priority?: "low" | "medium" | "high" | "urgent";
+  assigneeId?: number | null;
+  dueDate?: Date | null;
+  linkedType?: "booking" | "amendment" | "refund" | "cancellation" | "none";
+  linkedId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { adminTasks } = await import("../drizzle/schema");
+  await db.update(adminTasks).set(data as any).where(eq(adminTasks.id, id));
+  const rows = await db.select().from(adminTasks).where(eq(adminTasks.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function deleteAdminTask(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { adminTasks, adminTaskComments } = await import("../drizzle/schema");
+  await db.delete(adminTaskComments).where(eq(adminTaskComments.taskId, id));
+  await db.delete(adminTasks).where(eq(adminTasks.id, id));
+}
+
+export async function getAdminTaskComments(taskId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { adminTaskComments } = await import("../drizzle/schema");
+  return db.select().from(adminTaskComments).where(eq(adminTaskComments.taskId, taskId)).orderBy(adminTaskComments.createdAt);
+}
+
+export async function addAdminTaskComment(data: {
+  taskId: number;
+  authorId: number;
+  content: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { adminTaskComments } = await import("../drizzle/schema");
+  await db.insert(adminTaskComments).values(data);
+}
