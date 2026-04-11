@@ -573,43 +573,48 @@
 ## Apr 11 - Admin Notification Preferences, Dashboard Cleanup, Tasks Page
 
 ### Dashboard Cleanup
-- [ ] Remove "Agent Messages Awaiting Reply" panel from Admin Dashboard (Messages page covers this)
+- [x] Remove "Agent Messages Awaiting Reply" panel from Admin Dashboard (Messages page covers this)
 
 ### Auto-Mark-Read on Admin Reply
-- [ ] When admin sends a shared note (reply) on a booking detail page, auto-mark all unread agent notes on that booking as read
-- [ ] Invalidate notes.unreadBookingIds and notes.totalUnreadCount after admin reply
+- [x] When admin sends a shared note (reply) on a booking detail page, auto-mark all unread agent notes on that booking as read
+- [x] Invalidate notes.unreadBookingIds and notes.totalUnreadCount after admin reply
 
 ### Admin Notification Preferences
-- [ ] DB schema: admin_notification_prefs table (userId, triggerKey, emailEnabled) — one row per admin per trigger key
-- [ ] Apply migration via webdev_execute_sql
-- [ ] DB helpers: getAdminNotifPrefs(userId), upsertAdminNotifPref(userId, triggerKey, emailEnabled)
-- [ ] tRPC procedures: notifPrefs.list (get own prefs), notifPrefs.update (toggle a key)
-- [ ] Modify sendNotificationEmail to check admin prefs before sending to each admin recipient
-- [ ] Frontend: Admin Notification Preferences page at /admin/notification-preferences
-- [ ] Show all trigger keys as toggle rows (label + description + on/off switch)
-- [ ] Default: all notifications ON (no row in DB = enabled)
-- [ ] Add link from admin sidebar (under Settings or Profile)
+- [x] DB schema: admin_notification_prefs table (userId, triggerKey, emailEnabled) — one row per admin per trigger key
+- [x] Apply migration via webdev_execute_sql
+- [x] DB helpers: getAdminNotifPrefs(userId), upsertAdminNotifPref(userId, triggerKey, emailEnabled)
+- [x] tRPC procedures: notifPrefs.list (get own prefs), notifPrefs.update (toggle a key)
+- [x] Modify sendNotificationEmail to check admin prefs before sending to each admin recipient
+- [x] Frontend: Admin Notification Preferences page at /admin/notification-preferences
+- [x] Show all trigger keys as toggle rows (label + description + on/off switch)
+- [x] Default: all notifications ON (no row in DB = enabled)
+- [x] Add link from admin sidebar (under Settings or Profile)
 
 ### Admin Tasks Page
-- [ ] DB schema: admin_tasks table (id, title, description, status: open/in_progress/done, priority: low/medium/high/urgent, assigneeId, createdById, dueDate, linkedType: booking/amendment/refund/cancellation/none, linkedId, createdAt, updatedAt)
-- [ ] DB schema: admin_task_comments table (id, taskId, authorId, content, createdAt)
-- [ ] Apply migration via webdev_execute_sql
-- [ ] DB helpers: createTask, getTaskById, getAllTasks, updateTask, deleteTask, getTaskComments, addTaskComment
-- [ ] tRPC procedures: tasks.list, tasks.create, tasks.update, tasks.delete, tasks.addComment, tasks.getComments
-- [ ] Frontend: Admin Tasks page at /admin/tasks
-- [ ] Task list view with filters: status, priority, assignee, linked entity
-- [ ] Create task modal: title, description, priority, assignee (admin users), due date, linked entity (type + search/select)
-- [ ] Task detail panel/drawer: full details, edit fields, comment thread
-- [ ] Comment thread on task: add comment, show history with timestamps and author
-- [ ] In-app notification when a task is assigned to you
-- [ ] In-app notification when a comment is added to a task you're assigned to or created
-- [ ] Add "Tasks" link to admin sidebar
-- [ ] Show task count badge on sidebar (open tasks assigned to me)
+- [x] DB schema: admin_tasks table (id, title, description, status: open/in_progress/done, priority: low/medium/high/urgent, assigneeId, createdById, dueDate, linkedType: booking/amendment/refund/cancellation/none, linkedId, createdAt, updatedAt)
+- [x] DB schema: admin_task_comments table (id, taskId, authorId, content, createdAt)
+- [x] Apply migration via webdev_execute_sql
+- [x] DB helpers: createTask, getTaskById, getAllTasks, updateTask, deleteTask, getTaskComments, addTaskComment
+- [x] tRPC procedures: tasks.list, tasks.create, tasks.update, tasks.delete, tasks.addComment, tasks.getComments
+- [x] Frontend: Admin Tasks page at /admin/tasks
+- [x] Task list view with filters: status, priority, assignee, linked entity
+- [x] Create task modal: title, description, priority, assignee (admin users), due date, linked entity (type + search/select)
+- [x] Task detail panel/drawer: full details, edit fields, comment thread
+- [x] Comment thread on task: add comment, show history with timestamps and author
+- [x] In-app notification when a task is assigned to you
+- [x] In-app notification when a comment is added to a task you're assigned to or created
+- [x] Add "Tasks" link to admin sidebar
+- [x] Show task count badge on sidebar (open tasks assigned to me)
 
 ### Admin Tasks - Comment Auto-Mirror [DONE] to Booking Notes
-- [ ] When a task comment is added and the task is linked to a booking (linkedType = 'booking'), automatically create an internal admin note on that booking with the comment content and a reference to the task title
-- [ ] Format: "[Task: {task title}] {comment author}: {comment content}"
+- [x] When a task comment is added and the task is linked to a booking (linkedType = 'booking'), automatically create an internal admin note on that booking with the comment content and a reference to the task title
+- [x] Format: "[Task: {task title}] {comment author}: {comment content}"
 
 ### Missing Payment Date Page - Departure Date Filter
 - [x] Add departure date range filter (from/to date pickers) to the Added to PTS — Missing Payment Date page
 - [x] Filter should update the displayed list in real-time without a page reload
+
+### Admin Tasks - Booking Search in Form & Quick-Create from Booking
+- [x] Add booking search autocomplete in task creation form (search by client name / Topdog ref / PTS ref)
+- [x] Replace manual "Booking ID" number input with a searchable booking picker
+- [x] Add "Create Task" button on AdminBookingDetail page (pre-fills linkedType=booking and linkedId)

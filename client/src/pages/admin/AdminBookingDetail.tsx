@@ -11,11 +11,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign } from "lucide-react";
+import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
 import CopyableRef from "@/components/CopyableRef";
 import CountrySelect from "@/components/CountrySelect";
+import TaskFormDialog from "./TaskFormDialog";
 
 const STAGES = [
   "New Booking", "Creating own PTS file", "Not on Topdog", "Query",
@@ -74,6 +75,7 @@ export default function AdminBookingDetail() {
   const [showPaymentDateGuard, setShowPaymentDateGuard] = useState(false);
   const [showQueryDialog, setShowQueryDialog] = useState(false);
   const [queryMessage, setQueryMessage] = useState("");
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
 
   // @mention state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -268,6 +270,14 @@ export default function AdminBookingDetail() {
               <AlertTriangle size={10} /> Payment date missing
             </Badge>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs"
+            onClick={() => setCreateTaskOpen(true)}
+          >
+            <CheckSquare size={13} /> Create Task
+          </Button>
           <Select value={booking.currentStage} onValueChange={handleStageChange}>
             <SelectTrigger className="w-52">
               <SelectValue />
@@ -653,6 +663,20 @@ export default function AdminBookingDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Create Task dialog */}
+      {createTaskOpen && (
+        <TaskFormDialog
+          open={createTaskOpen}
+          onClose={() => setCreateTaskOpen(false)}
+          onSaved={() => setCreateTaskOpen(false)}
+          adminUsers={adminUsers as { id: number; name: string }[]}
+          prefillBooking={{
+            id: booking.id,
+            label: `${booking.clientName} (#${booking.id})`,
+          }}
+        />
+      )}
     </div>
   );
 }
