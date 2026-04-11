@@ -640,3 +640,6 @@
 - [x] tRPC procedure: bookings.deleteReimbDoc — protected, checks ownership
 - [x] Frontend: Delete (trash) icon on each doc in AdminBookingDetail reimbursement docs list
 - [x] Frontend: Delete (trash) icon on each doc in AgentBookingDetail reimbursement docs list
+
+## Bug - Merge Bookings Error
+- [x] Fix: Merge Bookings procedure throws an error when executed (dynamic import of adminTasks replaced with static import)

@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, like, lte, not, or, sql } from "drizzle-or
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
+  adminTasks,
   amendments,
   bookings,
   cancellations,
@@ -1225,7 +1226,6 @@ export async function deleteBooking(bookingId: number) {
 export async function mergeBookings(sourceId: number, targetId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const { adminTasks } = await import("../drizzle/schema");
   // Move all related records from source to target
   await db.update(pipelineHistory).set({ bookingId: targetId } as any).where(eq(pipelineHistory.bookingId, sourceId));
   await db.update(notes).set({ bookingId: targetId } as any).where(eq(notes.bookingId, sourceId));
