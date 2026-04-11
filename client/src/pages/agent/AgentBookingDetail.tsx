@@ -499,23 +499,27 @@ export default function AgentBookingDetail() {
       })()}
 
       {/* Actions */}
-      {!isCancelled && (
+      {(!isCancelled || true) && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold">Actions</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            <Link href={`/bookings/${bookingId}/amend`}>
-              <Button variant="outline" size="sm">Request Amendment</Button>
-            </Link>
+            {!isCancelled && (
+              <Link href={`/bookings/${bookingId}/amend`}>
+                <Button variant="outline" size="sm">Request Amendment</Button>
+              </Link>
+            )}
             <Link href={`/bookings/${bookingId}/refund`}>
               <Button variant="outline" size="sm">Request Refund</Button>
             </Link>
-            <Link href={`/bookings/${bookingId}/cancel`}>
-              <Button variant="outline" size="sm" className="text-destructive border-destructive hover:bg-destructive/10">
-                Cancel Booking
-              </Button>
-            </Link>
+            {!isCancelled && (
+              <Link href={`/bookings/${bookingId}/cancel`}>
+                <Button variant="outline" size="sm" className="text-destructive border-destructive hover:bg-destructive/10">
+                  Cancel Booking
+                </Button>
+              </Link>
+            )}
           </CardContent>
         </Card>
       )}

@@ -458,7 +458,18 @@
 - [x] Show booked date column on agent bookings list table
 
 ## Cancellation Mark-as-Cancelled (Apr 11)
-- [ ] Add status field to cancellations table (pending / actioned), default pending; apply migration
-- [ ] Backend: cancellations.markActioned procedure (admin only) — sets status = actioned
-- [ ] Dashboard: filter cancellations panel to only show status = pending; add "Mark Actioned" button per row
-- [ ] Cancellations pipeline: also show Mark Actioned button per card
+- [x] Add status field to cancellations table (pending / actioned), default pending; apply migration
+- [x] Backend: cancellations.markActioned procedure (admin only) — sets status = actioned
+- [x] Dashboard: filter cancellations panel to only show status = pending; add "Mark Actioned" button per row
+- [x] Cancellations pipeline: also show Mark Actioned button per card
+
+## Booked Date Admin & Display (Apr 11)
+- [x] Add bookedDate to admin booking detail (read display + editable field)
+- [x] Wire bookedDate into updateAdminFields router procedure and db helper
+- [x] Show booked date in agent dashboard booking rows
+
+## Refund on Cancelled Bookings (Apr 11)
+- [x] Allow agents to submit refund forms on bookings in the Cancelled stage (remove any block on cancelled status)
+
+## Client Name Edit Bug (Apr 11)
+- [x] Fix: client name cannot be amended on admin booking detail page — investigated, confirmed working correctly (user confirmed)
