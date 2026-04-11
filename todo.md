@@ -473,3 +473,76 @@
 
 ## Client Name Edit Bug (Apr 11)
 - [x] Fix: client name cannot be amended on admin booking detail page — investigated, confirmed working correctly (user confirmed)
+
+## Refund Button on Cancelled Bookings - Agent View Fix (Apr 11)
+- [x] Fix: Actions card (Request Refund button) not showing on cancelled bookings in agent booking detail view
+
+## Portal Improvements Batch (Apr 11)
+
+### A1 - Country Destination Dropdown
+- [x] Create shared CountrySelect component (searchable combobox with full country list)
+- [x] Add destination country field to RegisterBooking form using CountrySelect
+- [x] Add destination country field to AdminBookingDetail editable fields (replace free-text with CountrySelect)
+- [x] Display destination country in agent booking list rows and agent booking detail header
+- [x] Ensure destination is included in reports CSV export
+
+### A2 - PTS Ref Prominence for Agents
+- [x] Show PTS Ref prominently in agent booking detail header (large, copyable)
+- [x] Add bank transfer guidance banner on agent booking detail: "Use your PTS Ref as the reference for client bank transfers and the order description on manual PPS card links"
+- [x] Show PTS Ref in agent booking list rows (alongside Topdog Ref)
+
+### A4 - Booking Success Modal
+- [x] After booking registration, show a success modal with booking summary (client name, departure date, booking ID)
+- [x] Modal has "View Booking" button and "Register Another" button
+
+### A6 - Refund Status Visibility for Agents
+- [x] Show current refund pipeline stage on agent booking detail page for each submitted refund
+- [x] Show refund stage badge with 5-step progress tracker (Submitted / With Supplier / Sent to PTS / Received / Processed)
+
+### A7 - Commission Label Fix
+- [x] Change "Paid on" to "Processed on" in agent commissions paid tab
+- [x] Add note: "Processed means funds will be included in your next payment run"
+
+### Commissions CSV Export
+- [x] Add CSV export button to admin commissions page (pending + paid tabs)
+- [x] Add CSV export button to agent commissions page
+
+### B1 - Pipeline Stage Filter
+- [ ] Add stage filter chips to AdminKanban to show/hide specific stages
+- [ ] Allow multi-select stage filtering
+
+### B2 - Cancellation Auto-Move Booking
+- [ ] When admin marks a cancellation as actioned, prompt: "Also move booking to Cancelled stage?"
+- [ ] If confirmed, auto-move booking stage to Cancelled
+
+### B3 - Refund Pipeline Search + Financial Summary
+- [ ] Add search bar to AdminRefundKanban
+- [ ] Add agent filter to AdminRefundKanban
+- [ ] Add total refund value in progress summary header
+
+### B4 - In-Portal Analytics on Reports Page
+- [ ] Add bookings-by-month bar chart to Reports page
+- [ ] Add commission totals by agent table (filterable by date range)
+
+### B6 - Agent View / Impersonate Agent Clarification
+- [ ] "Agent View" = admin sees their own bookings as an agent (keep as-is, update label/tooltip to clarify)
+- [ ] "Impersonate Agent" = existing feature (already built) — ensure it is clearly labelled and accessible from sidebar
+
+### B7 - Age Badges on Amendment/Refund Cards
+- [ ] Add colour-coded age badge to amendment pipeline cards (green <2d, amber 2-5d, red >5d)
+- [ ] Add colour-coded age badge to refund pipeline cards
+
+### B9 - Agent Performance Overview
+- [ ] Create AdminAgentPerformance page at /agent-performance
+- [ ] Show per-agent stats: bookings registered, total commission, amendments, cancellations, avg margin
+- [ ] Add link from admin sidebar and Users page
+
+### B10 - Unread Message Badge on Kanban Cards
+- [ ] Query unread message counts per booking in bookings.all
+- [ ] Show message badge icon on Kanban cards that have unread messages
+
+### C2 - Global Search
+- [ ] Add global search bar to top navigation (PortalLayout topbar)
+- [ ] Search across client name, Topdog Ref, PTS Ref
+- [ ] For admins: search all bookings; for agents: search own bookings
+- [ ] Show results dropdown with links to matching bookings

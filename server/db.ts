@@ -206,6 +206,7 @@ export async function createBooking(data: {
   reimbursementDocUrl?: string;
   expectedCommission?: number;
   grossCost?: number;
+  destination?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -220,6 +221,7 @@ export async function createBooking(data: {
     reimbursementDocUploadedAt: data.reimbursementDocUrl ? new Date() : undefined,
     expectedCommission: data.expectedCommission != null ? String(data.expectedCommission) : undefined,
     grossCost: data.grossCost != null ? String(data.grossCost) : undefined,
+    destination: data.destination,
     currentStage: "New Booking",
   } as any);
   const id = (result as any)[0]?.insertId ?? (result as any).insertId;

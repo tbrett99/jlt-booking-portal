@@ -15,6 +15,7 @@ import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar
 import { format } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
 import CopyableRef from "@/components/CopyableRef";
+import CountrySelect from "@/components/CountrySelect";
 
 const STAGES = [
   "New Booking", "Creating own PTS file", "Not on Topdog", "Query",
@@ -338,7 +339,7 @@ export default function AdminBookingDetail() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Destination</Label>
-                  <Input value={editDestination} onChange={(e) => setEditDestination(e.target.value)} placeholder="e.g. Spain" className="h-8 text-sm" />
+                  <CountrySelect value={editDestination} onChange={setEditDestination} placeholder="Select country..." className="h-8 text-sm" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">

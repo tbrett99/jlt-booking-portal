@@ -261,11 +261,11 @@ export default function AgentBookingDetail() {
             : <span className="italic text-muted-foreground text-sm">Not set</span>}
         </div>
 
-        <div className="rounded-xl p-3 border" style={{ background: '#f9fafb' }}>
-          <p className="text-xs text-muted-foreground mb-1">PTS Ref</p>
+        <div className={`rounded-xl p-3 border ${booking.ptsRef ? 'border-[#70FFE8]' : ''}`} style={{ background: booking.ptsRef ? '#ecfdf5' : '#f9fafb' }}>
+          <p className="text-xs text-muted-foreground mb-1 font-semibold">PTS Ref</p>
           {booking.ptsRef
-            ? <CopyableRef value={booking.ptsRef} label="PTS ref" />
-            : <span className="italic text-muted-foreground text-sm">Not set</span>}
+            ? <CopyableRef value={booking.ptsRef} label="PTS ref" className="font-bold text-base" />
+            : <span className="italic text-muted-foreground text-sm">Not set yet</span>}
         </div>
 
         {(booking as any).destination && (
@@ -316,6 +316,19 @@ export default function AgentBookingDetail() {
           )}
         </div>
       </div>
+
+      {/* PTS Ref bank transfer guidance banner */}
+      {booking.ptsRef && (
+        <div className="rounded-xl border-l-4 p-4 flex items-start gap-3" style={{ borderLeftColor: '#70FFE8', background: '#f0fdf4' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#02E6D2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          <div>
+            <p className="font-semibold text-sm" style={{ color: '#065f46' }}>Use your PTS Ref for client payments</p>
+            <p className="text-xs mt-0.5" style={{ color: '#065f46', opacity: 0.85 }}>
+              Ask your client to use <strong>{booking.ptsRef}</strong> as the payment reference for bank transfers, and as the order description on manual PPS card links.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Reimbursement Document Upload Card — always visible */}
       {(() => {
@@ -468,26 +481,55 @@ export default function AgentBookingDetail() {
                   Refund Requests
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-3">
                 {refunds.map((r: any) => {
+                  const REFUND_STAGES = [
+                    { key: 'New Refund Request', label: 'Submitted' },
+                    { key: 'Acknowledged by Supplier', label: 'With Supplier' },
+                    { key: 'Refund Sent to PTS', label: 'Sent to PTS' },
+                    { key: 'Refund Received in JLT', label: 'Received' },
+                    { key: 'Refund Processed', label: 'Processed' },
+                  ];
+                  const REFUND_STAGE_LABELS: Record<string, string> = {
+                    'New Refund Request': 'Submitted — awaiting review',
+                    'Acknowledged by Supplier': 'Supplier acknowledged — refund in progress',
+                    'Refund Sent to PTS': 'Refund sent to PTS',
+                    'Refund Received in JLT': 'Refund received — processing payment',
+                    'Refund Processed': 'Refund processed — complete',
+                  };
+                  const currentIdx = REFUND_STAGES.findIndex(s => s.key === r.pipelineStage);
                   const isProcessed = r.pipelineStage === 'Refund Processed';
-                  const isInProgress = r.pipelineStage && r.pipelineStage !== 'New Refund Request' && !isProcessed;
+                  const isInProgress = currentIdx > 0 && !isProcessed;
                   const stageColor = isProcessed ? '#065f46' : isInProgress ? '#1d4ed8' : '#92400e';
                   const stageBg = isProcessed ? '#d1fae5' : isInProgress ? '#dbeafe' : '#fef3c7';
                   return (
-                    <div key={r.id} className="rounded-lg border p-3 text-sm" style={{ background: stageBg + '80' }}>
-                      <div className="flex items-center justify-between gap-2 mb-1">
+                    <div key={r.id} className="rounded-lg border p-3 text-sm space-y-2" style={{ background: stageBg + '40' }}>
+                      <div className="flex items-center justify-between gap-2">
                         <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: stageBg, color: stageColor }}>
-                          {r.pipelineStage ?? 'New Refund Request'}
+                          {REFUND_STAGE_LABELS[r.pipelineStage] ?? r.pipelineStage ?? 'Submitted'}
                         </span>
                         <span className="text-xs text-muted-foreground">{format(new Date(r.createdAt), 'dd MMM yyyy')}</span>
                       </div>
+                      {/* Progress steps */}
+                      <div className="flex items-center gap-0 mt-1">
+                        {REFUND_STAGES.map((step, idx) => {
+                          const done = idx <= currentIdx;
+                          const isLast = idx === REFUND_STAGES.length - 1;
+                          return (
+                            <div key={step.key} className="flex items-center flex-1 min-w-0">
+                              <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center`}
+                                  style={{ background: done ? '#02E6D2' : 'transparent', borderColor: done ? '#02E6D2' : '#d1d5db' }}>
+                                  {done && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                </div>
+                                <span className="text-[9px] text-center leading-tight max-w-[40px] text-muted-foreground">{step.label}</span>
+                              </div>
+                              {!isLast && <div className="flex-1 h-0.5 mb-3 mx-0.5" style={{ background: done && idx < currentIdx ? '#02E6D2' : '#e5e7eb' }} />}
+                            </div>
+                          );
+                        })}
+                      </div>
                       <p className="text-xs text-muted-foreground capitalize">{r.refundType} refund</p>
-                      {r.assignedToName && (
-                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                          <User size={10} /> Assigned to {r.assignedToName}
-                        </p>
-                      )}
                     </div>
                   );
                 })}

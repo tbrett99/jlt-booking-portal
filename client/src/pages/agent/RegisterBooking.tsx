@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import { ArrowLeft, Upload, X, Loader2, PoundSterling, Info } from "lucide-react";
+import { ArrowLeft, Upload, X, Loader2, PoundSterling, Info, CheckCircle2 } from "lucide-react";
 import { Link } from "wouter";
+import CountrySelect from "@/components/CountrySelect";
 
 export default function RegisterBooking() {
   const [, navigate] = useLocation();
@@ -19,7 +21,9 @@ export default function RegisterBooking() {
   const [docFile, setDocFile] = useState<File | null>(null);
   const [expectedCommission, setExpectedCommission] = useState("");
   const [grossCost, setGrossCost] = useState("");
+  const [destination, setDestination] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successBooking, setSuccessBooking] = useState<{ id: number; clientName: string; departureDate: Date } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
@@ -58,6 +62,7 @@ export default function RegisterBooking() {
         reimbursementsRequired,
         expectedCommission: commNum > 0 ? commNum : undefined,
         grossCost: grossNum > 0 ? grossNum : undefined,
+        destination: destination || undefined,
       });
 
       if (booking && docFile) {
@@ -73,8 +78,9 @@ export default function RegisterBooking() {
       }
 
       await utils.bookings.myBookings.invalidate();
-      toast.success("Booking registered successfully!");
-      navigate("/dashboard");
+      if (booking) {
+        setSuccessBooking({ id: booking.id, clientName: booking.clientName, departureDate: booking.departureDate as Date });
+      }
     } catch (err: any) {
       toast.error(err.message || "Failed to register booking");
     } finally {
@@ -141,6 +147,16 @@ export default function RegisterBooking() {
                 value={departureDate}
                 onChange={(e) => setDepartureDate(e.target.value)}
                 required
+              />
+            </div>
+
+            {/* Destination Country */}
+            <div className="space-y-2">
+              <Label>Destination Country</Label>
+              <CountrySelect
+                value={destination}
+                onChange={setDestination}
+                placeholder="Select destination country..."
               />
             </div>
 
@@ -288,6 +304,57 @@ export default function RegisterBooking() {
           </form>
         </CardContent>
       </Card>
+      {/* Success Modal */}
+      {successBooking && (
+        <Dialog open onOpenChange={() => setSuccessBooking(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CheckCircle2 size={20} className="text-green-500" />
+                Booking Registered!
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Client</span>
+                  <span className="font-medium">{successBooking.clientName}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Departure</span>
+                  <span className="font-medium">{new Date(successBooking.departureDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Booking ID</span>
+                  <span className="font-medium">#{successBooking.id}</span>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">Your booking has been submitted to the JLT team for processing.</p>
+              <div className="flex gap-3">
+                <Button
+                  className="flex-1 font-semibold"
+                  style={{ background: '#70FFE8', color: '#414141' }}
+                  onClick={() => { setSuccessBooking(null); navigate(`/bookings/${successBooking.id}`); }}
+                >
+                  View Booking
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setSuccessBooking(null);
+                    setClientName(""); setDepartureDate(""); setBookedDate(""); setTopdogRef("");
+                    setReimbursementsRequired(false); setDocFile(null); setExpectedCommission("");
+                    setGrossCost(""); setDestination("");
+                  }}
+                >
+                  Register Another
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

@@ -520,6 +520,7 @@ export const appRouter = router({
           reimbursementDocUrl: z.string().optional(),
           expectedCommission: z.number().min(0).optional(),
           grossCost: z.number().min(0).optional(),
+          destination: z.string().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {

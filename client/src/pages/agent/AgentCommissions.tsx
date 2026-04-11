@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
-import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight } from "lucide-react";
+import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight, Download } from "lucide-react";
 import { Link } from "wouter";
 
 type BookingType = "lapland" | "cruise" | "disney" | "other";
@@ -153,7 +153,7 @@ export default function AgentCommissions() {
           </p>
         )}
         {booking.claim?.paidAt && (
-          <p className="text-xs text-emerald-600 font-medium">Paid: {fmt(booking.claim.paidAt)}</p>
+          <p className="text-xs text-emerald-600 font-medium">Processed: {fmt(booking.claim.paidAt)}</p>
         )}
       </div>
       <div className="flex items-center gap-3 ml-4 flex-shrink-0">
@@ -381,7 +381,31 @@ export default function AgentCommissions() {
         </TabsContent>
 
         <TabsContent value="paid">
-          <p className="text-sm text-muted-foreground mb-4">Your commission claim has been approved and you'll receive payment in the next payment run.</p>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-muted-foreground">Your commission has been processed and paid into your account.</p>
+            {paid.length > 0 && (
+              <Button variant="outline" size="sm" className="text-xs gap-1 flex-shrink-0 ml-3"
+                onClick={() => {
+                  const headers = ["Client", "Departure", "Expected Commission (£)", "Booking Type", "Claimed On", "Processed On"];
+                  const rows = paid.map((b) => [
+                    b.clientName,
+                    fmt(b.departureDate),
+                    b.expectedCommission != null ? Number(b.expectedCommission).toFixed(2) : "",
+                    b.claim?.bookingType ?? "",
+                    fmt(b.claim?.claimedAt),
+                    fmt(b.claim?.paidAt),
+                  ]);
+                  const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+                  const blob = new Blob([csv], { type: "text/csv" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a"); a.href = url; a.download = `my-commissions-${format(new Date(), 'yyyy-MM-dd')}.csv`; a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                <Download size={13} /> Export CSV
+              </Button>
+            )}
+          </div>
           {paid.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">

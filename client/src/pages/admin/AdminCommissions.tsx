@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, Banknote, CheckCircle, Clock, Trash2 } from "lucide-react";
+import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download } from "lucide-react";
 import { useLocation } from "wouter";
 
 type ClaimRow = {
@@ -94,6 +94,28 @@ export default function AdminCommissions() {
     return format(new Date(d), "dd/MM/yyyy");
   };
 
+  const exportCSV = (rows: ClaimRow[], filename: string) => {
+    const headers = ["Client", "Agent", "Agent Email", "Departure", "Expected Commission (£)", "Booking Type", "Claimed On", "Processed On", "Processed By", "Status"];
+    const csvRows = rows.map((c) => [
+      c.booking?.clientName ?? "",
+      c.agentName,
+      c.agentEmail,
+      formatDate(c.booking?.departureDate),
+      c.booking?.expectedCommission != null ? Number(c.booking.expectedCommission).toFixed(2) : "",
+      c.bookingType ?? "",
+      formatDate(c.claimedAt),
+      formatDate(c.paidAt),
+      c.paidByName ?? "",
+      c.status === "paid" ? "Processed" : "Awaiting Payment",
+    ]);
+    const csv = [headers, ...csvRows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -121,8 +143,8 @@ export default function AdminCommissions() {
             <th className="py-3 px-4 text-left font-medium">Expected Comm.</th>
             <th className="py-3 px-4 text-left font-medium">Type</th>
             <th className="py-3 px-4 text-left font-medium">Claimed On</th>
-            {!showSelect && <th className="py-3 px-4 text-left font-medium">Paid On</th>}
-            {!showSelect && <th className="py-3 px-4 text-left font-medium">Paid By</th>}
+            {!showSelect && <th className="py-3 px-4 text-left font-medium">Processed On</th>}
+            {!showSelect && <th className="py-3 px-4 text-left font-medium">Processed By</th>}
             <th className="py-3 px-4 text-left font-medium">Status</th>
             <th className="py-3 px-4 text-left font-medium">Booking</th>
           </tr>
@@ -289,16 +311,18 @@ export default function AdminCommissions() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center justify-between">
                 <span>Claims Awaiting Payment</span>
-                {pending.length > 0 && selectedIds.size === 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => toggleSelectAll(pending)}
-                    className="text-xs"
-                  >
-                    Select All
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {pending.length > 0 && selectedIds.size === 0 && (
+                    <Button variant="outline" size="sm" onClick={() => toggleSelectAll(pending)} className="text-xs">
+                      Select All
+                    </Button>
+                  )}
+                  {pending.length > 0 && (
+                    <Button variant="outline" size="sm" onClick={() => exportCSV(pending, `commissions-pending-${format(new Date(), 'yyyy-MM-dd')}.csv`)} className="text-xs gap-1">
+                      <Download size={13} /> Export CSV
+                    </Button>
+                  )}
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -310,7 +334,14 @@ export default function AdminCommissions() {
         <TabsContent value="paid">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Payment History</CardTitle>
+              <CardTitle className="text-base flex items-center justify-between">
+              <span>Payment History</span>
+              {paid.length > 0 && (
+                <Button variant="outline" size="sm" onClick={() => exportCSV(paid, `commissions-paid-${format(new Date(), 'yyyy-MM-dd')}.csv`)} className="text-xs gap-1">
+                  <Download size={13} /> Export CSV
+                </Button>
+              )}
+            </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <ClaimTable rows={paid} />

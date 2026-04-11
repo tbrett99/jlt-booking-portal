@@ -24,12 +24,14 @@ export default function AdminReports() {
 
   const downloadCSV = () => {
     if (bookings.length === 0) { toast.error("No data to export"); return; }
-    const headers = ["ID", "Client Name", "Agent", "Departure Date", "Topdog Ref", "PTS Ref", "Stage", "Expected Commission", "Reimbursements", "Created At"];
+    const headers = ["ID", "Client Name", "Agent", "Booked Date", "Departure Date", "Destination", "Topdog Ref", "PTS Ref", "Stage", "Expected Commission", "Reimbursements", "Created At"];
     const rows = bookings.map((b) => [
       b.id,
       `"${b.clientName}"`,
       `"${(b as any).agentName ?? ''}"`,
+      (b as any).bookedDate ? format(new Date((b as any).bookedDate), "dd/MM/yyyy") : "",
       format(new Date(b.departureDate), "dd/MM/yyyy"),
+      `"${(b as any).destination ?? ''}"`,
       b.topdogRef ?? "",
       b.ptsRef ?? "",
       `"${b.currentStage}"`,
@@ -51,12 +53,14 @@ export default function AdminReports() {
   const downloadExcel = () => {
     if (bookings.length === 0) { toast.error("No data to export"); return; }
     // Build a simple HTML table that Excel can open
-    const headers = ["ID", "Client Name", "Agent", "Departure Date", "Topdog Ref", "PTS Ref", "Stage", "Expected Commission (£)", "Reimbursements", "Created At"];
+    const headers = ["ID", "Client Name", "Agent", "Booked Date", "Departure Date", "Destination", "Topdog Ref", "PTS Ref", "Stage", "Expected Commission (£)", "Reimbursements", "Created At"];
     const rows = bookings.map((b) => [
       b.id,
       b.clientName,
       (b as any).agentName ?? "",
+      (b as any).bookedDate ? format(new Date((b as any).bookedDate), "dd/MM/yyyy") : "",
       format(new Date(b.departureDate), "dd/MM/yyyy"),
+      (b as any).destination ?? "",
       b.topdogRef ?? "",
       b.ptsRef ?? "",
       b.currentStage,
