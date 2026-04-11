@@ -123,7 +123,7 @@ export default function RegisterBooking() {
                 <div>
                   <span className="text-sm font-semibold">This is my personal booking</span>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Tick this if you are the client (e.g. your own holiday). Commission will not be claimed and the final supplier payment date will automatically be set to your departure date.
+                    Tick this if you are a passenger on this booking. No commission will be claimed.
                   </p>
                 </div>
               </label>
@@ -191,21 +191,15 @@ export default function RegisterBooking() {
               />
             </div>
 
-            {/* Commission & Gross Cost — hidden for personal bookings */}
-            {isPersonalBooking && (
-              <div className="rounded-lg border bg-teal-50 border-teal-200 p-3 text-sm text-teal-800 flex items-start gap-2">
-                <Info size={14} className="mt-0.5 shrink-0" />
-                <span>Commission fields are hidden for personal bookings. The final supplier payment date will be set to your departure date automatically.</span>
-              </div>
-            )}
-            {!isPersonalBooking && <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
+            {/* Gross Cost & Commission */}
+            <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
               <div className="flex items-center gap-2">
                 <PoundSterling size={16} className="text-primary" />
-                <h3 className="text-sm font-semibold">Commission & Booking Value</h3>
+                <h3 className="text-sm font-semibold">Booking Value</h3>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className={`grid gap-4 ${isPersonalBooking ? '' : 'grid-cols-2'}`}>
                 <div className="space-y-2">
-                  <Label htmlFor="grossCost">Gross Cost (£) <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                  <Label htmlFor="grossCost">Gross Price (£) <span className="text-destructive">*</span></Label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
                     <Input
@@ -217,28 +211,32 @@ export default function RegisterBooking() {
                       value={grossCost}
                       onChange={(e) => setGrossCost(e.target.value)}
                       className="pl-7"
+                      required
                     />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="expectedCommission">Expected Commission (£) <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
-                    <Input
-                      id="expectedCommission"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={expectedCommission}
-                      onChange={(e) => setExpectedCommission(e.target.value)}
-                      className="pl-7"
-                    />
+                {!isPersonalBooking && (
+                  <div className="space-y-2">
+                    <Label htmlFor="expectedCommission">Expected Commission (£) <span className="text-destructive">*</span> <span className="text-muted-foreground text-xs font-normal">(gross, before fees & split)</span></Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                      <Input
+                        id="expectedCommission"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={expectedCommission}
+                        onChange={(e) => setExpectedCommission(e.target.value)}
+                        className="pl-7"
+                        required
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
-              {/* Live margin preview */}
-              {marginPct !== null && (
+              {/* Live margin preview — only for non-personal */}
+              {!isPersonalBooking && marginPct !== null && (
                 <div className={`flex items-center gap-2 text-sm rounded-md px-3 py-2 ${
                   marginPct < 5
                     ? "bg-red-50 text-red-700 border border-red-200"
@@ -257,7 +255,7 @@ export default function RegisterBooking() {
                 <Info size={12} className="mt-0.5 shrink-0" />
                 You can update these amounts at any time from your booking page.
               </p>
-            </div>}
+            </div>
 
             {/* Reimbursements */}
             <div className="space-y-3">

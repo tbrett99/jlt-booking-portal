@@ -654,3 +654,9 @@
 - [x] Frontend RegisterBooking: add "Personal Booking" checkbox with tooltip explanation; when checked, show info that no commission will be claimed and payment date = departure date
 - [x] Frontend AdminBookingDetail: show "Personal Booking" badge in header; allow admin to toggle the flag
 - [x] Backfill: find all bookings where agent name (case-insensitive, trimmed) matches client name and mark isPersonalBooking = true, set finalSupplierPaymentDate = departureDate where null
+
+## Registration Form Fixes (Apr 11)
+- [x] Remove supplier payment date mention from personal booking checkbox description
+- [x] Personal booking: show gross price field (always visible), hide expected commission only
+- [x] Non-personal bookings: make gross price and expected commission mandatory (required fields)
+- [x] Verify backfill: confirmed 135 bookings marked personal; all 135 now have finalSupplierPaymentDate = departureDate (0 mismatches, 0 nulls)
