@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Download, FileSpreadsheet, FileText } from "lucide-react";
-import { format } from "date-fns";
+import { FileSpreadsheet, FileText, TrendingUp, BarChart3 } from "lucide-react";
+import { format, startOfMonth, subMonths } from "date-fns";
+import { useMemo } from "react";
 
 export default function AdminReports() {
   const [agentId, setAgentId] = useState<string>("all");
@@ -79,6 +80,40 @@ export default function AdminReports() {
     toast.success("Excel file downloaded");
   };
 
+  // Analytics calculations
+  const allBookings = bookings;
+
+  // Bookings per month (last 6 months)
+  const monthlyData = useMemo(() => {
+    const months = Array.from({ length: 6 }, (_, i) => subMonths(new Date(), 5 - i));
+    return months.map((m) => {
+      const label = format(m, "MMM yy");
+      const count = allBookings.filter((b) => {
+        const d = new Date(b.createdAt);
+        return d.getMonth() === m.getMonth() && d.getFullYear() === m.getFullYear();
+      }).length;
+      return { label, count };
+    });
+  }, [allBookings]);
+
+  const maxMonthly = Math.max(...monthlyData.map((m) => m.count), 1);
+
+  // Commission by agent
+  const agentCommission = useMemo(() => {
+    const map: Record<string, { name: string; total: number; count: number }> = {};
+    for (const b of allBookings) {
+      const name = (b as any).agentName ?? "Unknown";
+      if (!map[name]) map[name] = { name, total: 0, count: 0 };
+      map[name].total += Number(b.expectedCommission ?? 0);
+      map[name].count += 1;
+    }
+    return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 8);
+  }, [allBookings]);
+
+  const maxCommission = Math.max(...agentCommission.map((a) => a.total), 1);
+
+  const totalCommission = allBookings.reduce((s, b) => s + Number(b.expectedCommission ?? 0), 0);
+
   return (
     <div className="space-y-6">
       <div>
@@ -116,6 +151,69 @@ export default function AdminReports() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Analytics Charts */}
+      {allBookings.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Bookings by month */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <TrendingUp size={16} className="text-[#70FFE8]" />
+                Bookings per Month
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end gap-2 h-32">
+                {monthlyData.map((m) => (
+                  <div key={m.label} className="flex-1 flex flex-col items-center gap-1">
+                    <span className="text-xs font-semibold text-foreground">{m.count > 0 ? m.count : ''}</span>
+                    <div
+                      className="w-full rounded-t transition-all"
+                      style={{
+                        height: `${Math.max((m.count / maxMonthly) * 96, m.count > 0 ? 8 : 2)}px`,
+                        background: m.count > 0 ? '#70FFE8' : '#e5e7eb',
+                      }}
+                    />
+                    <span className="text-[10px] text-muted-foreground">{m.label}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Commission by agent */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <BarChart3 size={16} className="text-[#FFC3BC]" />
+                Commission by Agent
+                <span className="ml-auto text-sm font-normal text-muted-foreground">Total: £{totalCommission.toFixed(2)}</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {agentCommission.map((a) => (
+                  <div key={a.name} className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-24 truncate shrink-0">{a.name}</span>
+                    <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${(a.total / maxCommission) * 100}%`, background: '#FFC3BC' }}
+                      />
+                    </div>
+                    <span className="text-xs font-semibold w-16 text-right">£{a.total.toFixed(0)}</span>
+                    <span className="text-[10px] text-muted-foreground w-10 text-right">{a.count} bk</span>
+                  </div>
+                ))}
+                {agentCommission.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">No commission data</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Results */}
       <Card>

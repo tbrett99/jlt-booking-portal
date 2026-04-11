@@ -498,6 +498,21 @@ export const appRouter = router({
     ptsMissingPaymentDate: adminProcedure.query(async () => {
       return getPtsMissingPaymentDate();
     }),
+    quickSearch: protectedProcedure
+      .input(z.object({ query: z.string().min(1).max(100) }))
+      .query(async ({ input, ctx }) => {
+        const all = ctx.user.role === 'agent'
+          ? await getBookingsByAgent(ctx.user.id)
+          : await getAllBookings();
+        const q = input.query.toLowerCase();
+        const results = (all as any[]).filter((b) =>
+          (b.clientName ?? '').toLowerCase().includes(q) ||
+          (b.ptsRef ?? '').toLowerCase().includes(q) ||
+          (b.topdogRef ?? '').toLowerCase().includes(q) ||
+          String(b.id).includes(q)
+        );
+        return results.slice(0, 10);
+      }),
     byId: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input, ctx }) => {
@@ -576,15 +591,15 @@ export const appRouter = router({
         // Also update the legacy reimbursementDocUrl field for backwards compatibility
         await uploadReimbursementDoc(input.bookingId, url, false);
 
-        // Always create an amendment flagged as reimbursement doc
-        await createAmendment({
+        // Create a system audit note for the doc upload (no amendment record — docs are tracked in reimbursement_docs table)
+        await createNote({
           bookingId: input.bookingId,
-          agentId: ctx.user.id,
-          details: `Reimbursement documents submitted for booking #${input.bookingId} — ${booking.clientName}. Please set up the reimbursement ASAP.`,
-          isReimbursementDoc: true,
+          authorId: ctx.user.id,
+          content: `[System] Reimbursement document uploaded by ${ctx.user.name ?? "Agent"}: ${input.fileName}.`,
+          isInternal: false,
         });
 
-        // Notify all admins in-app, but only email support@ for workflow events
+        // Notify all admins in-app about the doc upload
         const allUsers = await getAllUsers();
         const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
         for (const admin of admins) {
@@ -1097,15 +1112,7 @@ export const appRouter = router({
             linkUrl: `/admin/bookings/${input.bookingId}`,
           });
         }
-        await sendDirectEmail({
-          toEmail: "support@thejltgroup.co.uk",
-          toName: "JLT Support",
-          subject: `Amendment request — ${booking.clientName} (Booking #${input.bookingId})`,
-          html: `<p>Hi team,</p>
-<p><strong>${ctx.user.name ?? "An agent"}</strong> has submitted an amendment request for booking <strong>#${input.bookingId} — ${booking.clientName}</strong>.</p>
-<blockquote style="border-left:4px solid #70FFE8;padding:8px 16px;background:#f5f5f5;margin:16px 0;">${input.details.replace(/\n/g, '<br>')}</blockquote>
-<p><a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="background:#70FFE8;color:#414141;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:8px;">View Booking &rarr;</a></p>`,
-        });
+        // Admin email notification disabled — admins use dashboard + in-app notifications
         return { success: true };
       }),
     byBooking: protectedProcedure
@@ -1243,15 +1250,7 @@ export const appRouter = router({
             linkUrl: `/admin/bookings/${input.bookingId}`,
           });
         }
-        await sendDirectEmail({
-          toEmail: "support@thejltgroup.co.uk",
-          toName: "JLT Support",
-          subject: `Cancellation request — ${booking.clientName} (Booking #${input.bookingId})`,
-          html: `<p>Hi team,</p>
-<p><strong>${ctx.user.name ?? "An agent"}</strong> has requested a cancellation for booking <strong>#${input.bookingId} — ${booking.clientName}</strong>.</p>
-${input.reason ? `<blockquote style="border-left:4px solid #f87171;padding:8px 16px;background:#fef2f2;margin:16px 0;">Reason: ${input.reason.replace(/\n/g, '<br>')}</blockquote>` : ''}
-<p><a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="background:#70FFE8;color:#414141;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:8px;">View Booking &rarr;</a></p>`,
-        });
+        // Admin email notification disabled — admins use dashboard + in-app notifications
         return { success: true };
       }),
     all: adminProcedure.query(async () => getAllCancellations()),
@@ -1310,15 +1309,7 @@ ${input.reason ? `<blockquote style="border-left:4px solid #f87171;padding:8px 1
             message: `Refund request submitted for booking "${booking.clientName}" by ${ctx.user.name}`,
           });
         }
-        await sendDirectEmail({
-          toEmail: "support@thejltgroup.co.uk",
-          toName: "JLT Support",
-          subject: `Refund request — ${booking.clientName} (Booking #${input.bookingId})`,
-          html: `<p>Hi team,</p>
-<p><strong>${ctx.user.name ?? "An agent"}</strong> has submitted a refund request for booking <strong>#${input.bookingId} — ${booking.clientName}</strong>.</p>
-<p><strong>Type:</strong> ${input.refundType} &nbsp; | &nbsp; <strong>Reason:</strong> ${input.refundReason.replace(/\n/g, ' ')}</p>
-<p><a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="background:#70FFE8;color:#414141;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:8px;">View Booking &rarr;</a></p>`,
-        });
+        // Admin email notification disabled — admins use dashboard + in-app notifications
         // System audit note
         await createNote({
           bookingId: input.bookingId,

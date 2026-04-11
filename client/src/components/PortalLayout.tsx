@@ -1,11 +1,12 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import GlobalSearch from "@/components/GlobalSearch";
 import { trpc } from "@/lib/trpc";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import {
   Bell, BookOpen, ChevronLeft, ChevronRight, ClipboardList,
   FileText, Home, LayoutDashboard, LogOut, Mail, Menu, Users, X,
   ArrowLeftRight, CheckCircle2, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
-  MessageSquare
+  MessageSquare, BarChart2
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -61,6 +62,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     { label: "Commissions", href: "/commissions-admin", icon: <Banknote size={18} /> },
     { label: "Messages", href: "/messages", icon: <MessageSquare size={18} /> },
     { label: "Reports", href: "/reports", icon: <FileText size={18} /> },
+    { label: "Agent Performance", href: "/agent-performance", icon: <BarChart2 size={18} /> },
     { label: "Import CSV", href: "/import", icon: <Upload size={18} /> },
     { label: "Users", href: "/users", icon: <Users size={18} /> },
     ...(user?.role === "super_admin"
@@ -158,7 +160,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               </span>
               {isAdminUser && isAgentView && (
                 <span className="inline-block text-xs px-2 py-0.5 rounded-full font-medium border" style={{ background: "transparent", color: "#70FFE8", borderColor: "#70FFE8" }}>
-                  Agent View
+                  My Agent View
                 </span>
               )}
             </div>
@@ -169,7 +171,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         {isAdminUser && isAgentView && !collapsed && (
           <div className="mx-3 mt-3 mb-1 px-3 py-2 rounded-lg text-xs flex items-center gap-2" style={{ background: "rgba(112,255,232,0.12)", color: "#70FFE8", border: "1px solid rgba(112,255,232,0.3)" }}>
             <ArrowLeftRight size={12} />
-            <span>Viewing as Agent</span>
+            <span>My Agent View — showing your own bookings as an agent</span>
           </div>
         )}
 
@@ -214,12 +216,12 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           <div className="px-2 pb-1 border-t border-sidebar-border pt-3">
             <button
               onClick={handleSwitchView}
-              title={isAgentView ? "Switch to Admin View" : "Switch to Agent View"}
+              title={isAgentView ? "Switch to Admin View" : "My Agent View — view your own bookings as an agent"}
               className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${collapsed ? "justify-center" : ""}`}
               style={{ color: "#70FFE8", background: "rgba(112,255,232,0.08)" }}
             >
               <ArrowLeftRight size={18} />
-              {!collapsed && <span>{isAgentView ? "Switch to Admin View" : "Switch to Agent View"}</span>}
+              {!collapsed && <span>{isAgentView ? "Switch to Admin View" : "My Agent View"}</span>}
             </button>
           </div>
         )}
@@ -255,11 +257,13 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           {isAdminUser && isAgentView && (
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium" style={{ background: "rgba(112,255,232,0.15)", color: "#02E6D2", border: "1px solid rgba(2,230,210,0.3)" }}>
               <ArrowLeftRight size={12} />
-              Agent View
+              My Agent View
             </div>
           )}
 
-          <div className="flex-1" />
+          <div className="flex-1 flex items-center justify-center px-2">
+            <GlobalSearch />
+          </div>
 
           {/* Notification bell */}
           <div className="relative">

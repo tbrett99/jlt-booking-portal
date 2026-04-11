@@ -5,8 +5,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { User, Calendar, ArrowRight, FileText } from "lucide-react";
+import { User, Calendar, ArrowRight, FileText, Clock } from "lucide-react";
 import { useState } from "react";
+import { differenceInDays } from "date-fns";
+
+function AgeBadge({ createdAt }: { createdAt: string | Date }) {
+  const days = differenceInDays(new Date(), new Date(createdAt));
+  const color = days >= 7 ? { bg: '#fee2e2', text: '#991b1b' } : days >= 3 ? { bg: '#fef3c7', text: '#92400e' } : { bg: '#f0fdf4', text: '#166534' };
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full font-medium" style={{ background: color.bg, color: color.text }}>
+      <Clock size={9} />{days === 0 ? 'Today' : `${days}d`}
+    </span>
+  );
+}
 
 const STAGES = ["To Do", "In Progress", "Actioned"] as const;
 type Stage = (typeof STAGES)[number];
@@ -128,7 +139,10 @@ function AmendmentCard({
               </span>
             </div>
           </div>
-          <Badge variant="outline" className="text-xs shrink-0">#{amendment.id}</Badge>
+          <div className="flex items-center gap-1 shrink-0">
+            <AgeBadge createdAt={amendment.createdAt} />
+            <Badge variant="outline" className="text-xs">#{amendment.id}</Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-3 space-y-3">

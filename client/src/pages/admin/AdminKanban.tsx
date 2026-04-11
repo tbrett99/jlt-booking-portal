@@ -54,6 +54,12 @@ export default function AdminKanban() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "departure_asc" | "departure_desc" | "agent_az">("newest");
   const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [hiddenStages, setHiddenStages] = useState<Set<string>>(new Set());
+  const toggleStage = (stage: string) => setHiddenStages((prev) => {
+    const next = new Set(prev);
+    if (next.has(stage)) next.delete(stage); else next.add(stage);
+    return next;
+  });
   const [movingId, setMovingId] = useState<number | null>(null);
   const [pendingMove, setPendingMove] = useState<{ bookingId: number; toStage: string } | null>(null);
   const [guardPaymentDate, setGuardPaymentDate] = useState("");
@@ -148,6 +154,7 @@ export default function AdminKanban() {
       return 0;
     });
 
+  const visibleStages = STAGES.filter((s) => !hiddenStages.has(s));
   const byStage = STAGES.reduce<Record<string, typeof bookings>>((acc, stage) => {
     acc[stage] = filtered.filter((b) => b.currentStage === stage);
     return acc;
@@ -214,6 +221,39 @@ export default function AdminKanban() {
             </button>
           )}
         </div>
+        {/* Stage visibility filter chips */}
+        <div className="flex flex-wrap gap-1.5">
+          <span className="text-xs text-muted-foreground self-center mr-1">Show stages:</span>
+          {STAGES.map((stage) => {
+            const colors = STAGE_COLORS[stage] ?? { dot: "#9ca3af", border: "#e5e7eb" };
+            const isHidden = hiddenStages.has(stage);
+            return (
+              <button
+                key={stage}
+                onClick={() => toggleStage(stage)}
+                className={`text-xs px-2 py-0.5 rounded-full border transition-all ${
+                  isHidden ? "opacity-40 line-through" : ""
+                }`}
+                style={{
+                  borderColor: isHidden ? "#d1d5db" : colors.dot,
+                  background: isHidden ? "#f3f4f6" : colors.dot + "20",
+                  color: isHidden ? "#9ca3af" : colors.dot,
+                }}
+                title={isHidden ? `Show ${stage}` : `Hide ${stage}`}
+              >
+                {stage} ({byStage[stage]?.length ?? 0})
+              </button>
+            );
+          })}
+          {hiddenStages.size > 0 && (
+            <button
+              onClick={() => setHiddenStages(new Set())}
+              className="text-xs px-2 py-0.5 rounded-full border border-dashed text-muted-foreground hover:text-foreground"
+            >
+              Show all
+            </button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -223,7 +263,7 @@ export default function AdminKanban() {
       ) : (
         <div className="overflow-x-auto pb-4">
           <div className="flex gap-4 min-w-max">
-            {STAGES.map((stage) => {
+            {visibleStages.map((stage) => {
               const cols = byStage[stage] ?? [];
               const colors = STAGE_COLORS[stage] ?? { bg: "#f9fafb", border: "#e5e7eb", dot: "#9ca3af" };
               return (

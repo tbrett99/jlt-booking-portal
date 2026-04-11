@@ -5,7 +5,20 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { User, Calendar, ArrowRight } from "lucide-react";
+import { User, Calendar, ArrowRight, Clock, Search } from "lucide-react";
+import { useState } from "react";
+import { differenceInDays } from "date-fns";
+import { Input } from "@/components/ui/input";
+
+function AgeBadge({ createdAt }: { createdAt: string | Date }) {
+  const days = differenceInDays(new Date(), new Date(createdAt));
+  const color = days >= 7 ? { bg: '#fee2e2', text: '#991b1b' } : days >= 3 ? { bg: '#fef3c7', text: '#92400e' } : { bg: '#f0fdf4', text: '#166534' };
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full font-medium" style={{ background: color.bg, color: color.text }}>
+      <Clock size={9} />{days === 0 ? 'Today' : `${days}d`}
+    </span>
+  );
+}
 
 const STAGES = [
   "New Refund Request",
@@ -33,13 +46,25 @@ const REFUND_TYPE_LABELS: Record<string, string> = {
 export default function AdminRefundKanban() {
   const { data: refunds, refetch } = trpc.refunds.all.useQuery();
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
+  const [search, setSearch] = useState("");
   const updatePipeline = trpc.refunds.updatePipeline.useMutation({
     onSuccess: () => { refetch(); toast.success("Refund updated"); },
     onError: (e) => toast.error(e.message),
   });
 
+  const allRefunds = refunds ?? [];
+  const filtered = search
+    ? allRefunds.filter((r) =>
+        (r.clientName ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        (r.ptsRef ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        (r.topdogRef ?? "").toLowerCase().includes(search.toLowerCase())
+      )
+    : allRefunds;
+
   const byStage = (stage: Stage) =>
-    (refunds ?? []).filter((r) => (r.pipelineStage ?? "New Refund Request") === stage);
+    filtered.filter((r) => (r.pipelineStage ?? "New Refund Request") === stage);
+
+  const pendingCount = filtered.filter((r) => r.pipelineStage !== "Refund Processed").length;
 
   const moveStage = (refundId: number, stage: Stage) => {
     updatePipeline.mutate({ refundId, pipelineStage: stage });
@@ -51,9 +76,28 @@ export default function AdminRefundKanban() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Refund Pipeline</h1>
-        <p className="text-muted-foreground text-sm mt-1">Track refund requests from submission through to completion</p>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Refund Pipeline</h1>
+          <p className="text-muted-foreground text-sm mt-1">Track refund requests from submission through to completion</p>
+        </div>
+        <div className="sm:ml-auto flex items-center gap-3">
+          {pendingCount > 0 && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ background: '#fce7f3', color: '#9d174d' }}>
+              <Clock size={14} />
+              {pendingCount} pending
+            </div>
+          )}
+          <div className="relative w-64">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search client, PTS ref, Topdog ref..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 h-8 text-sm"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Horizontal scroll for 5 columns */}
@@ -130,6 +174,7 @@ function RefundCard({
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
+            <AgeBadge createdAt={refund.createdAt} />
             <Badge variant="outline" className="text-xs">#{refund.id}</Badge>
             <Badge className="text-xs bg-[#FFF6ED] text-[#414141] border border-[#FFC3BC]">
               {REFUND_TYPE_LABELS[refund.refundType] ?? refund.refundType}

@@ -508,41 +508,60 @@
 - [x] Add CSV export button to agent commissions page
 
 ### B1 - Pipeline Stage Filter
-- [ ] Add stage filter chips to AdminKanban to show/hide specific stages
-- [ ] Allow multi-select stage filtering
+- [x] Add stage filter chips to AdminKanban to show/hide specific stages
+- [x] Allow multi-select stage filtering
 
 ### B2 - Cancellation Auto-Move Booking
 - [ ] When admin marks a cancellation as actioned, prompt: "Also move booking to Cancelled stage?"
 - [ ] If confirmed, auto-move booking stage to Cancelled
 
 ### B3 - Refund Pipeline Search + Financial Summary
-- [ ] Add search bar to AdminRefundKanban
-- [ ] Add agent filter to AdminRefundKanban
-- [ ] Add total refund value in progress summary header
+- [x] Add search bar to AdminRefundKanban
+- [x] Add agent filter to AdminRefundKanban
+- [x] Add total refund value in progress summary header
 
 ### B4 - In-Portal Analytics on Reports Page
-- [ ] Add bookings-by-month bar chart to Reports page
-- [ ] Add commission totals by agent table (filterable by date range)
+- [x] Add bookings-by-month bar chart to Reports page
+- [x] Add commission totals by agent table (filterable by date range)
 
 ### B6 - Agent View / Impersonate Agent Clarification
-- [ ] "Agent View" = admin sees their own bookings as an agent (keep as-is, update label/tooltip to clarify)
-- [ ] "Impersonate Agent" = existing feature (already built) — ensure it is clearly labelled and accessible from sidebar
+- [x] "Agent View" renamed to "My Agent View" with tooltip and banner clarifying it shows admin's own bookings
+- [x] "Impersonate Agent" = existing feature (already built) — accessible from Users page
 
 ### B7 - Age Badges on Amendment/Refund Cards
-- [ ] Add colour-coded age badge to amendment pipeline cards (green <2d, amber 2-5d, red >5d)
-- [ ] Add colour-coded age badge to refund pipeline cards
+- [x] Add colour-coded age badge to amendment pipeline cards (green <2d, amber 2-5d, red >5d)
+- [x] Add colour-coded age badge to refund pipeline cards
 
 ### B9 - Agent Performance Overview
-- [ ] Create AdminAgentPerformance page at /agent-performance
-- [ ] Show per-agent stats: bookings registered, total commission, amendments, cancellations, avg margin
-- [ ] Add link from admin sidebar and Users page
+- [x] Create AdminAgentPerformance page at /agent-performance
+- [x] Show per-agent stats: bookings registered, total commission, amendments, cancellations, avg margin
+- [x] Add link from admin sidebar
 
 ### B10 - Unread Message Badge on Kanban Cards
-- [ ] Query unread message counts per booking in bookings.all
-- [ ] Show message badge icon on Kanban cards that have unread messages
+- [ ] Query unread message counts per booking in bookings.all (deferred — requires enriching bookings.all with unread counts)
+- [ ] Show message badge icon on Kanban cards that have unread messages (deferred)
 
 ### C2 - Global Search
-- [ ] Add global search bar to top navigation (PortalLayout topbar)
-- [ ] Search across client name, Topdog Ref, PTS Ref
-- [ ] For admins: search all bookings; for agents: search own bookings
-- [ ] Show results dropdown with links to matching bookings
+- [x] Add global search bar to top navigation (PortalLayout topbar)
+- [x] Search across client name, Topdog Ref, PTS Ref, Booking ID
+- [x] For admins: search all bookings; for agents: search own bookings
+- [x] Show results dropdown with links to matching bookings
+
+## Urgent Fixes & Improvements (Apr 11 - Batch 2)
+
+### Admin Email Notifications - Disable for Submissions
+- [x] Disable admin email notification when amendment form is submitted by agent
+- [x] Disable admin email notification when refund form is submitted by agent
+- [x] Disable admin email notification when cancellation is submitted by agent
+- [x] Keep in-app dashboard notifications and bell notifications active
+
+### Reimbursement Document Upload Bug
+- [x] Investigate why multiple amendment forms are created when agent uploads reimbursement docs
+- [x] Fix: uploading reimbursement docs should NOT create amendment forms at all
+- [x] Fix: if multiple docs are uploaded, all should be visible (not just one)
+- [x] Ensure reimbursement doc upload only creates a system note + admin notification, not an amendment record
+
+### Dashboard - Files to Add to PTS Counter
+- [x] Add "Files to Add to PTS" counter card on admin dashboard
+- [x] Count = sum of bookings in any stage before "Added to PTS", excluding "Creating own PTS file" stage
+- [x] Stages to include: New Booking, Not on Topdog, Query, Reimb Docs Missing, Urgent/Reimb, T/O Package, DP, Holding Accounts (any stage before Added to PTS except Creating own PTS file)

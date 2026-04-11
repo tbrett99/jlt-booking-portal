@@ -165,6 +165,10 @@ export default function AdminDashboard() {
 
   const totalPendingActions = pendingAmendments.length + reimbAmendments.length + pendingRefunds.length + pendingCancellations.length + pendingClaims.length;
 
+  // Files to Add to PTS: bookings in stages before "Added to PTS", excluding "Creating own PTS file" and "Cancelled"
+  const STAGES_BEFORE_PTS = new Set(["New Booking", "Not on Topdog", "Query", "Reimb Docs Missing", "Urgent/Reimb", "T/O Package", "DP", "Holding Accounts"]);
+  const filesToAddToPts = bookings.filter((b) => STAGES_BEFORE_PTS.has(b.currentStage)).length;
+
   return (
     <div className="space-y-4 p-1">
       {/* Header row */}
@@ -198,11 +202,12 @@ export default function AdminDashboard() {
       </div>
 
       {/* ── KEY METRICS (moved to top) ── */}
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
         {[
           { label: "Active Bookings", value: activeBookings.length, icon: BookOpen, color: "#70FFE8", textColor: "#414141" },
           { label: "Agents", value: agents.length, icon: Users, color: "#FFC3BC", textColor: "#414141" },
           { label: "This Month", value: thisMonth.length, icon: Calendar, color: "#e0e7ff", textColor: "#4338ca" },
+          { label: "To Add to PTS", value: filesToAddToPts, icon: FileText, color: filesToAddToPts > 0 ? "#fef3c7" : "#f3f4f6", textColor: filesToAddToPts > 0 ? "#92400e" : "#6b7280" },
           { label: "Amendments", value: pendingAmendments.length, icon: FileText, color: pendingAmendments.length > 0 ? "#fef3c7" : "#f3f4f6", textColor: pendingAmendments.length > 0 ? "#92400e" : "#6b7280" },
           { label: "Refunds", value: pendingRefunds.length, icon: RefreshCw, color: pendingRefunds.length > 0 ? "#fce7f3" : "#f3f4f6", textColor: pendingRefunds.length > 0 ? "#9d174d" : "#6b7280" },
           { label: "Comm. Ready", value: commissionReady.length, icon: Sparkles, color: commissionReady.length > 0 ? "#d1fae5" : "#f3f4f6", textColor: commissionReady.length > 0 ? "#065f46" : "#6b7280" },
