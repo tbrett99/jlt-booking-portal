@@ -565,3 +565,7 @@
 - [x] Add "Files to Add to PTS" counter card on admin dashboard
 - [x] Count = sum of bookings in any stage before "Added to PTS", excluding "Creating own PTS file" stage
 - [x] Stages to include: New Booking, Not on Topdog, Query, Reimb Docs Missing, Urgent/Reimb, T/O Package, DP, Holding Accounts (any stage before Added to PTS except Creating own PTS file)
+
+## @Mention Email Notification (Apr 11)
+- [x] When an admin is @mentioned in an internal note, send them an email with the note content and a link to the booking
+- [x] Email should include: who mentioned them, the note text, booking client name, and a "View Booking" button

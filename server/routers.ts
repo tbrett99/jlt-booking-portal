@@ -1006,8 +1006,36 @@ export const appRouter = router({
                   userId: mentioned.id,
                   bookingId: input.bookingId,
                   message: `${ctx.user.name ?? "Admin"} mentioned you in a note on booking "${booking.clientName}"`,
-                  linkUrl: `/bookings/${input.bookingId}`,
+                  linkUrl: `/admin/bookings/${input.bookingId}`,
                 });
+                // Also send email to the mentioned admin
+                if (mentioned.email) {
+                  const mentionerName = ctx.user.name ?? "An admin";
+                  const notePreview = input.content.length > 300 ? input.content.slice(0, 300) + "..." : input.content;
+                  await sendDirectEmail({
+                    toEmail: mentioned.email,
+                    toName: mentioned.name ?? mentioned.email,
+                    subject: `You were mentioned in a note — ${booking.clientName}`,
+                    html: `
+                      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+                        <div style="background:#1a1a2e;padding:20px;border-radius:8px 8px 0 0;">
+                          <h2 style="color:#70FFE8;margin:0;font-size:18px;">You were mentioned in a note</h2>
+                        </div>
+                        <div style="background:#f9f9f9;padding:20px;border:1px solid #e0e0e0;">
+                          <p style="margin:0 0 12px;"><strong>${mentionerName}</strong> mentioned you in an internal note on booking <strong>${booking.clientName}</strong>.</p>
+                          <div style="background:#fff;border-left:4px solid #70FFE8;padding:12px 16px;border-radius:4px;margin:12px 0;font-style:italic;color:#333;">
+                            ${notePreview.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>")}
+                          </div>
+                          <p style="margin-top:16px;">
+                            <a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">View Booking &rarr;</a>
+                          </p>
+                        </div>
+                        <div style="background:#e8e8e8;padding:12px 20px;border-radius:0 0 8px 8px;font-size:12px;color:#666;">
+                          JLT Group Booking Portal &bull; Internal notification
+                        </div>
+                      </div>`,
+                  });
+                }
               }
             }
           }
