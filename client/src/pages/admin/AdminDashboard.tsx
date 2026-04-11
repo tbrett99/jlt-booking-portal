@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -7,9 +8,9 @@ import {
   BookOpen, Users, FileText, TrendingUp, Bell, ArrowRight,
   AlertTriangle, Sparkles, AlertCircle, Calendar, Clock,
   CheckCircle2, Banknote, RefreshCw, ChevronRight, Upload, BellOff,
-  MessageSquare, CheckCheck
+  MessageSquare, CheckCheck, XCircle, ChevronDown, ChevronUp,
 } from "lucide-react";
-import { format, differenceInDays, isAfter, addDays } from "date-fns";
+import { format, differenceInDays, addDays } from "date-fns";
 
 const STAGE_COLORS: Record<string, string> = {
   "New Booking": "#3b82f6",
@@ -36,13 +37,70 @@ const STAGE_ORDER = [
 
 const URGENT_STAGES = new Set(["Reimb Docs Missing", "Urgent/Reimb", "Query"]);
 
+function RefRow({ label, value }: { label: string; value: string | null | undefined }) {
+  if (!value) return null;
+  return <span className="text-[10px] text-muted-foreground">{label}: <span className="font-medium">{value}</span></span>;
+}
+
+function ExpandablePanel({
+  title, count, color, bg, icon: Icon, linkHref, linkLabel, children, emptyText,
+}: {
+  title: string; count: number; color: string; bg: string; icon: React.ElementType;
+  linkHref: string; linkLabel: string; children: React.ReactNode; emptyText: string;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <Card className="border-l-4" style={{ borderLeftColor: color }}>
+      <CardHeader className="pb-2 pt-4 px-4">
+        <div className="flex items-center justify-between">
+          <button
+            className="flex items-center gap-2 text-left flex-1"
+            onClick={() => setOpen((o) => !o)}
+          >
+            <div className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
+              style={{ background: count > 0 ? color + '22' : '#f3f4f6' }}>
+              <Icon size={13} style={{ color: count > 0 ? color : '#9ca3af' }} />
+            </div>
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              {title}
+              <span className="text-xs px-1.5 py-0.5 rounded-full font-bold"
+                style={{ background: count > 0 ? bg : '#f3f4f6', color: count > 0 ? color : '#9ca3af' }}>
+                {count}
+              </span>
+            </CardTitle>
+            {open ? <ChevronUp size={13} className="text-muted-foreground ml-1" /> : <ChevronDown size={13} className="text-muted-foreground ml-1" />}
+          </button>
+          <Link href={linkHref}>
+            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 flex-shrink-0" style={{ color }}>
+              {linkLabel} <ArrowRight size={11} />
+            </Button>
+          </Link>
+        </div>
+      </CardHeader>
+      {open && (
+        <CardContent className="px-4 pb-4">
+          {count === 0 ? (
+            <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
+              <CheckCircle2 size={14} className="text-emerald-400" /> {emptyText}
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {children}
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 export default function AdminDashboard() {
   const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery({});
   const { data: agentList = [] } = trpc.users.listAgents.useQuery();
   const { data: adminList = [] } = trpc.users.listAdmins.useQuery();
-  const users = [...agentList, ...adminList];
   const { data: amendments = [] } = trpc.amendments.all.useQuery();
   const { data: refunds = [] } = trpc.refunds.all.useQuery();
+  const { data: cancellations = [] } = trpc.cancellations.all.useQuery();
   const { data: notifications = [] } = trpc.notifications.myNotifications.useQuery();
   const { data: claims = [] } = trpc.commissionClaims.all.useQuery();
   const utils = trpc.useUtils();
@@ -58,36 +116,36 @@ export default function AdminDashboard() {
 
   const agents = agentList;
   const activeBookings = bookings.filter((b) => b.currentStage !== "Cancelled");
-  const pendingAmendments = amendments.filter((a: any) => a.status === "pending");
-  const pendingRefunds = refunds.filter((r: any) => r.pipelineStage === "New Refund Request");
+  // Amendments: pending = To Do or In Progress (not Actioned), excluding reimbursement doc entries
+  const pendingAmendments = (amendments as any[]).filter(
+    (a) => a.pipelineStage !== "Actioned" && !a.isReimbursementDoc
+  );
+  const reimbAmendments = (amendments as any[]).filter(
+    (a) => a.pipelineStage !== "Actioned" && a.isReimbursementDoc
+  );
+  const pendingRefunds = (refunds as any[]).filter(
+    (r) => r.pipelineStage !== "Refund Processed"
+  );
+  const pendingCancellations = (cancellations as any[]).filter((c) => !c.processed);
   const unreadNotifs = notifications.filter((n) => !n.isRead);
   const commissionReady = bookings.filter((b) => b.currentStage === "Commission Claimable");
   const urgentBookings = bookings.filter((b) => URGENT_STAGES.has(b.currentStage));
-  const missingPaymentDate = activeBookings.filter((b) => !b.finalSupplierPaymentDate && !b.paymentDateDismissed);
+  const missingPaymentDate = activeBookings.filter((b) => !b.finalSupplierPaymentDate && !(b as any).paymentDateDismissed);
   const pendingClaims = (claims as any[]).filter((c) => c.status === "claimed_not_paid");
 
-  // Departures in next 14 days
   const now = new Date();
   const in14 = addDays(now, 14);
   const upcomingDepartures = activeBookings
-    .filter((b) => {
-      const d = new Date(b.departureDate);
-      return d >= now && d <= in14;
-    })
+    .filter((b) => { const d = new Date(b.departureDate); return d >= now && d <= in14; })
     .sort((a, b) => new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime());
 
-  // Stage distribution (ordered)
   const stageCount: Record<string, number> = {};
-  for (const b of bookings) {
-    stageCount[b.currentStage] = (stageCount[b.currentStage] ?? 0) + 1;
-  }
+  for (const b of bookings) stageCount[b.currentStage] = (stageCount[b.currentStage] ?? 0) + 1;
 
-  // Recent bookings
   const recentBookings = [...bookings]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 6);
 
-  // Low margin bookings (<5%)
   const lowMarginBookings = activeBookings.filter((b) => {
     const gc = Number((b as any).grossCost || 0);
     const ec = Number(b.expectedCommission || 0);
@@ -95,11 +153,12 @@ export default function AdminDashboard() {
     return (ec / gc) * 100 < 5;
   });
 
-  // This month bookings
   const thisMonth = bookings.filter((b) => {
     const d = new Date(b.createdAt);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
+
+  const totalPendingActions = pendingAmendments.length + reimbAmendments.length + pendingRefunds.length + pendingCancellations.length + pendingClaims.length;
 
   return (
     <div className="space-y-4 p-1">
@@ -111,8 +170,7 @@ export default function AdminDashboard() {
         </div>
         <div className="flex gap-2">
           <Button
-            size="sm"
-            variant="outline"
+            size="sm" variant="outline"
             className={`gap-1.5 text-xs ${notificationsPaused ? 'border-amber-400 text-amber-700 bg-amber-50' : 'text-muted-foreground'}`}
             onClick={() => setNotifPaused.mutate({ paused: !notificationsPaused })}
             disabled={setNotifPaused.isPending}
@@ -134,7 +192,164 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Alert banners — compact */}
+      {/* ── PENDING ACTIONS (moved to top) ── */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <Clock size={14} className="text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Pending Actions</h2>
+          {totalPendingActions > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold"
+              style={{ background: '#fef3c7', color: '#92400e' }}>
+              {totalPendingActions} outstanding
+            </span>
+          )}
+        </div>
+        <div className="grid lg:grid-cols-2 gap-3">
+
+          {/* Amendments */}
+          <ExpandablePanel
+            title="Amendments to Review"
+            count={pendingAmendments.length}
+            color="#92400e" bg="#fef3c7" icon={FileText}
+            linkHref="/amendments" linkLabel="Amendment Pipeline"
+            emptyText="No pending amendments"
+          >
+            {pendingAmendments.map((a: any) => (
+              <Link key={a.id} href={`/amendments`}>
+                <div className="flex items-start gap-3 p-2.5 rounded-lg border bg-amber-50/40 hover:bg-amber-50 transition-colors cursor-pointer">
+                  <FileText size={12} className="mt-0.5 flex-shrink-0 text-amber-700" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold truncate">{a.clientName ?? `Booking #${a.bookingId}`}</span>
+                      <Badge variant="outline" className="text-[9px] h-4 px-1.5"
+                        style={{ borderColor: a.pipelineStage === 'In Progress' ? '#f59e0b' : '#d1d5db', color: a.pipelineStage === 'In Progress' ? '#92400e' : '#6b7280' }}>
+                        {a.pipelineStage}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <RefRow label="PTS" value={a.ptsRef} />
+                      <RefRow label="TD" value={a.topdogRef} />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{a.details}</p>
+                    {a.assignedToName && (
+                      <p className="text-[10px] mt-0.5" style={{ color: '#92400e' }}>
+                        Assigned to: <span className="font-medium">{a.assignedToName}</span>
+                      </p>
+                    )}
+                  </div>
+                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0 mt-0.5" />
+                </div>
+              </Link>
+            ))}
+          </ExpandablePanel>
+
+          {/* Reimbursement docs */}
+          <ExpandablePanel
+            title="Reimbursement Docs Submitted"
+            count={reimbAmendments.length}
+            color="#dc2626" bg="#fef2f2" icon={AlertCircle}
+            linkHref="/amendments" linkLabel="Amendment Pipeline"
+            emptyText="No reimbursement docs pending"
+          >
+            {reimbAmendments.map((a: any) => (
+              <Link key={a.id} href={`/amendments`}>
+                <div className="flex items-start gap-3 p-2.5 rounded-lg border bg-red-50/40 hover:bg-red-50 transition-colors cursor-pointer">
+                  <AlertCircle size={12} className="mt-0.5 flex-shrink-0 text-red-600" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold truncate">{a.clientName ?? `Booking #${a.bookingId}`}</span>
+                      <Badge variant="outline" className="text-[9px] h-4 px-1.5"
+                        style={{ borderColor: '#fca5a5', color: '#dc2626' }}>
+                        {a.pipelineStage}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <RefRow label="PTS" value={a.ptsRef} />
+                      <RefRow label="TD" value={a.topdogRef} />
+                    </div>
+                    {a.assignedToName && (
+                      <p className="text-[10px] mt-0.5" style={{ color: '#dc2626' }}>
+                        Assigned to: <span className="font-medium">{a.assignedToName}</span>
+                      </p>
+                    )}
+                  </div>
+                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0 mt-0.5" />
+                </div>
+              </Link>
+            ))}
+          </ExpandablePanel>
+
+          {/* Refunds */}
+          <ExpandablePanel
+            title="Refunds to Process"
+            count={pendingRefunds.length}
+            color="#9d174d" bg="#fce7f3" icon={RefreshCw}
+            linkHref="/refunds" linkLabel="Refund Pipeline"
+            emptyText="No pending refunds"
+          >
+            {pendingRefunds.map((r: any) => (
+              <Link key={r.id} href={`/bookings/${r.bookingId}`}>
+                <div className="flex items-start gap-3 p-2.5 rounded-lg border bg-pink-50/40 hover:bg-pink-50 transition-colors cursor-pointer">
+                  <RefreshCw size={12} className="mt-0.5 flex-shrink-0 text-pink-700" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold truncate">{r.clientName ?? `Booking #${r.bookingId}`}</span>
+                      <Badge variant="outline" className="text-[9px] h-4 px-1.5"
+                        style={{ borderColor: '#f9a8d4', color: '#9d174d' }}>
+                        {r.pipelineStage}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <RefRow label="PTS" value={r.ptsRef} />
+                      <RefRow label="TD" value={r.topdogRef} />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Type: {r.refundType} · {r.refundReason ? r.refundReason.slice(0, 60) : ""}
+                    </p>
+                    {r.assignedToName && (
+                      <p className="text-[10px] mt-0.5" style={{ color: '#9d174d' }}>
+                        Assigned to: <span className="font-medium">{r.assignedToName}</span>
+                      </p>
+                    )}
+                  </div>
+                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0 mt-0.5" />
+                </div>
+              </Link>
+            ))}
+          </ExpandablePanel>
+
+          {/* Cancellations */}
+          <ExpandablePanel
+            title="Cancellation Requests"
+            count={pendingCancellations.length}
+            color="#7c3aed" bg="#f5f3ff" icon={XCircle}
+            linkHref="/pipeline" linkLabel="View Pipeline"
+            emptyText="No pending cancellation requests"
+          >
+            {pendingCancellations.map((c: any) => (
+              <Link key={c.id} href={`/bookings/${c.bookingId}`}>
+                <div className="flex items-start gap-3 p-2.5 rounded-lg border bg-violet-50/40 hover:bg-violet-50 transition-colors cursor-pointer">
+                  <XCircle size={12} className="mt-0.5 flex-shrink-0 text-violet-700" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-semibold truncate block">{c.clientName ?? `Booking #${c.bookingId}`}</span>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <RefRow label="PTS" value={c.ptsRef} />
+                      <RefRow label="TD" value={c.topdogRef} />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Requested: {format(new Date(c.confirmedAt), "dd MMM yyyy, HH:mm")}
+                    </p>
+                  </div>
+                  <ChevronRight size={11} className="text-muted-foreground flex-shrink-0 mt-0.5" />
+                </div>
+              </Link>
+            ))}
+          </ExpandablePanel>
+
+        </div>
+      </div>
+
+      {/* Alert banners */}
       {(urgentBookings.length > 0 || missingPaymentDate.length > 0 || pendingClaims.length > 0 || lowMarginBookings.length > 0) && (
         <div className="space-y-2">
           {urgentBookings.length > 0 && (
@@ -196,7 +411,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Key metrics — 6 compact stat tiles */}
+      {/* Key metrics */}
       <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
         {[
           { label: "Active Bookings", value: activeBookings.length, icon: BookOpen, color: "#70FFE8", textColor: "#414141" },
@@ -206,11 +421,10 @@ export default function AdminDashboard() {
           { label: "Refunds", value: pendingRefunds.length, icon: RefreshCw, color: pendingRefunds.length > 0 ? "#fce7f3" : "#f3f4f6", textColor: pendingRefunds.length > 0 ? "#9d174d" : "#6b7280" },
           { label: "Comm. Ready", value: commissionReady.length, icon: Sparkles, color: commissionReady.length > 0 ? "#d1fae5" : "#f3f4f6", textColor: commissionReady.length > 0 ? "#065f46" : "#6b7280" },
         ].map(({ label, value, icon: Icon, color, textColor }) => (
-          <Card key={label} className="border-0 shadow-sm">
+          <Card key={label} className="cursor-default">
             <CardContent className="p-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ background: color }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color }}>
                   <Icon size={15} style={{ color: textColor }} />
                 </div>
                 <div className="min-w-0">
@@ -223,17 +437,13 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* Main content: 3-column grid */}
+      {/* Main content: pipeline + activity */}
       <div className="grid lg:grid-cols-3 gap-4">
-
-        {/* Pipeline overview — spans 2 cols */}
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-semibold">Pipeline Breakdown</CardTitle>
             <Link href="/pipeline">
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
-                Kanban <ArrowRight size={12} />
-              </Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">Kanban <ArrowRight size={12} /></Button>
             </Link>
           </CardHeader>
           <CardContent className="px-4 pb-4">
@@ -243,36 +453,30 @@ export default function AdminDashboard() {
                 const pct = Math.round((count / Math.max(bookings.length, 1)) * 100);
                 const isUrgent = URGENT_STAGES.has(stage);
                 return (
-                  <Link key={stage} href={`/pipeline`}>
+                  <Link key={stage} href="/pipeline">
                     <div className="flex items-center gap-2 group cursor-pointer hover:opacity-80 transition-opacity">
-                      <div className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ background: STAGE_COLORS[stage] ?? '#9ca3af' }} />
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STAGE_COLORS[stage] ?? '#9ca3af' }} />
                       <span className="text-xs flex-1 truncate">{stage}</span>
                       {isUrgent && <AlertCircle size={10} style={{ color: '#dc2626' }} />}
                       <span className="text-xs font-bold tabular-nums w-5 text-right">{count}</span>
                       <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full rounded-full"
-                          style={{ width: `${pct}%`, background: STAGE_COLORS[stage] ?? '#9ca3af' }} />
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: STAGE_COLORS[stage] ?? '#9ca3af' }} />
                       </div>
                     </div>
                   </Link>
                 );
               })}
-              {bookings.length === 0 && (
-                <p className="text-xs text-muted-foreground col-span-2 text-center py-4">No bookings yet</p>
-              )}
+              {bookings.length === 0 && <p className="text-xs text-muted-foreground col-span-2 text-center py-4">No bookings yet</p>}
             </div>
           </CardContent>
         </Card>
 
-        {/* Notifications */}
         <Card>
           <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
               <Bell size={13} /> Activity
               {unreadNotifs.length > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold"
-                  style={{ background: '#70FFE8', color: '#414141' }}>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: '#70FFE8', color: '#414141' }}>
                   {unreadNotifs.length}
                 </span>
               )}
@@ -284,66 +488,50 @@ export default function AdminDashboard() {
                 <div key={n.id} className="flex gap-2">
                   <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${n.isRead ? 'bg-muted' : 'bg-[#02E6D2]'}`} />
                   <div className="min-w-0">
-                    <p className={`text-xs leading-snug ${n.isRead ? 'text-muted-foreground' : 'text-foreground font-medium'}`}>
-                      {n.message}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      {format(new Date(n.createdAt), "dd MMM, HH:mm")}
-                    </p>
+                    <p className={`text-xs leading-snug ${n.isRead ? 'text-muted-foreground' : 'text-foreground font-medium'}`}>{n.message}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{format(new Date(n.createdAt), "dd MMM, HH:mm")}</p>
                   </div>
                 </div>
               ))}
-              {notifications.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-6">No activity yet</p>
-              )}
+              {notifications.length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No activity yet</p>}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Unread agent messages panel — only shown when there are unread messages */}
+      {/* Unread agent messages */}
       {unreadMessages.length > 0 && (
         <Card className="border-l-4" style={{ borderLeftColor: '#f59e0b' }}>
           <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
               <MessageSquare size={13} style={{ color: '#f59e0b' }} />
               Agent Messages Awaiting Reply
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1"
-                style={{ background: '#fef3c7', color: '#92400e' }}>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1" style={{ background: '#fef3c7', color: '#92400e' }}>
                 {unreadMessages.length}
               </span>
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {unreadMessages.map((msg) => (
+              {(unreadMessages as any[]).map((msg) => (
                 <div key={msg.bookingId} className="flex items-start gap-3 p-2.5 rounded-lg border bg-amber-50/50 hover:bg-amber-50 transition-colors">
                   <MessageSquare size={13} className="mt-0.5 flex-shrink-0" style={{ color: '#f59e0b' }} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Link href={`/admin/bookings/${msg.bookingId}`}>
+                      <Link href={`/bookings/${msg.bookingId}`}>
                         <span className="text-xs font-semibold hover:underline cursor-pointer">{msg.clientName}</span>
                       </Link>
                       <span className="text-[10px] text-muted-foreground">from {msg.authorName}</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {format(new Date(msg.latestMessageAt), "dd MMM, HH:mm")}
-                      </span>
+                      <span className="text-[10px] text-muted-foreground">{format(new Date(msg.latestMessageAt), "dd MMM, HH:mm")}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5 truncate">{msg.latestMessage}</p>
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
-                    <Link href={`/admin/bookings/${msg.bookingId}`}>
-                      <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1">
-                        Reply
-                      </Button>
+                    <Link href={`/bookings/${msg.bookingId}`}>
+                      <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1">Reply</Button>
                     </Link>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 text-[10px] px-2 gap-1 text-muted-foreground"
-                      onClick={() => markRead.mutate({ bookingId: msg.bookingId })}
-                      title="Mark as read"
-                    >
+                    <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1 text-muted-foreground"
+                      onClick={() => markRead.mutate({ bookingId: msg.bookingId })} title="Mark as read">
                       <CheckCheck size={11} />
                     </Button>
                   </div>
@@ -354,17 +542,14 @@ export default function AdminDashboard() {
         </Card>
       )}
 
-      {/* Bottom row: Upcoming departures + Recent bookings + Pending actions */}
-      <div className="grid lg:grid-cols-3 gap-4">
-
-        {/* Upcoming departures (next 14 days) */}
+      {/* Bottom row: departures + recent bookings */}
+      <div className="grid lg:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
               <Calendar size={13} /> Departures — Next 14 Days
               {upcomingDepartures.length > 0 && (
-                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full font-bold"
-                  style={{ background: '#FFF6ED', color: '#92400e' }}>
+                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: '#FFF6ED', color: '#92400e' }}>
                   {upcomingDepartures.length}
                 </span>
               )}
@@ -401,7 +586,6 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent bookings */}
         <Card>
           <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-semibold">Recent Bookings</CardTitle>
@@ -420,11 +604,8 @@ export default function AdminDashboard() {
                   const isUrgent = URGENT_STAGES.has(booking.currentStage);
                   return (
                     <Link key={booking.id} href={`/bookings/${booking.id}`}>
-                      <div className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
-                        isUrgent ? "bg-red-50 hover:bg-red-100" : "hover:bg-muted/50"
-                      }`}>
-                        <div className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ background: STAGE_COLORS[booking.currentStage] ?? '#9ca3af' }} />
+                      <div className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${isUrgent ? "bg-red-50 hover:bg-red-100" : "hover:bg-muted/50"}`}>
+                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STAGE_COLORS[booking.currentStage] ?? '#9ca3af' }} />
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold truncate">{booking.clientName}</p>
                           <p className="text-[10px] text-muted-foreground truncate">{booking.currentStage}</p>
@@ -435,71 +616,9 @@ export default function AdminDashboard() {
                     </Link>
                   );
                 })}
-                {recentBookings.length === 0 && (
-                  <p className="text-xs text-muted-foreground text-center py-6">No bookings yet</p>
-                )}
+                {recentBookings.length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No bookings yet</p>}
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Pending actions */}
-        <Card>
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
-              <Clock size={13} /> Pending Actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 space-y-2">
-            {[
-              {
-                label: "Amendments to review",
-                count: pendingAmendments.length,
-                href: "/amendments",
-                color: "#92400e",
-                bg: "#fef3c7",
-                icon: FileText,
-              },
-              {
-                label: "Refunds to process",
-                count: pendingRefunds.length,
-                href: "/refunds",
-                color: "#9d174d",
-                bg: "#fce7f3",
-                icon: RefreshCw,
-              },
-              {
-                label: "Commission claims",
-                count: pendingClaims.length,
-                href: "/commissions-admin",
-                color: "#065f46",
-                bg: "#d1fae5",
-                icon: Banknote,
-              },
-              {
-                label: "Commission ready",
-                count: commissionReady.length,
-                href: "/pipeline",
-                color: "#02E6D2",
-                bg: "#ecfdf5",
-                icon: Sparkles,
-              },
-            ].map(({ label, count, href, color, bg, icon: Icon }) => (
-              <Link key={label} href={href}>
-                <div className="flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer hover:shadow-sm transition-shadow"
-                  style={{ background: count > 0 ? bg : undefined }}>
-                  <div className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
-                    style={{ background: count > 0 ? color + '20' : '#f3f4f6' }}>
-                    <Icon size={13} style={{ color: count > 0 ? color : '#9ca3af' }} />
-                  </div>
-                  <span className="text-xs flex-1">{label}</span>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: count > 0 ? color : '#9ca3af' }}>
-                    {count}
-                  </span>
-                  <ChevronRight size={12} className="text-muted-foreground" />
-                </div>
-              </Link>
-            ))}
           </CardContent>
         </Card>
       </div>

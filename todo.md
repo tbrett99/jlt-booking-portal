@@ -418,3 +418,17 @@
 ## Commission Gross Amount Continuity Fix (Apr 10)
 - [x] Claim dialog: pre-fill grossAmount from booking's expectedCommission when opening
 - [x] On claim submit: update booking's expectedCommission with the submitted grossAmount so admin view stays in sync
+
+## Admin Dashboard Redesign (Apr 11)
+- [ ] Move pending actions section to the top of the dashboard
+- [ ] Amendments panel: show client name, TD ref, status, assignee; link to amendment pipeline
+- [ ] Refunds panel: show client name, TD ref (2T reference), status; link to refund pipeline
+- [ ] Add cancellations panel: show pending cancellation requests with client name and TD ref
+
+## Admin Dashboard Redesign (Apr 11)
+- [x] Move Pending Actions section to the top of the admin dashboard
+- [x] Amendments panel: expand to show client name, PTS ref, TD ref, assignee, link to /amendments
+- [x] Refunds panel: expand to show client name, PTS ref, TD ref, assignee, link to /refunds
+- [x] Add Cancellation Requests panel to dashboard showing pending cancellations with client name and refs
+- [x] Enrich getAllAmendments, getAllRefunds, getAllCancellations with booking client name, ptsRef, topdogRef and assignee name
+- [x] Add separate Reimbursement Docs Submitted panel on dashboard
