@@ -512,8 +512,8 @@
 - [x] Allow multi-select stage filtering
 
 ### B2 - Cancellation Auto-Move Booking
-- [ ] When admin marks a cancellation as actioned, prompt: "Also move booking to Cancelled stage?"
-- [ ] If confirmed, auto-move booking stage to Cancelled
+- [x] When admin marks a cancellation as actioned, prompt: "Also move booking to Cancelled stage?"
+- [x] If confirmed, auto-move booking stage to Cancelled (backend: markActioned accepts optional moveToCancelled flag)
 
 ### B3 - Refund Pipeline Search + Financial Summary
 - [x] Add search bar to AdminRefundKanban
@@ -538,8 +538,8 @@
 - [x] Add link from admin sidebar
 
 ### B10 - Unread Message Badge on Kanban Cards
-- [ ] Query unread message counts per booking in bookings.all (deferred — requires enriching bookings.all with unread counts)
-- [ ] Show message badge icon on Kanban cards that have unread messages (deferred)
+- [x] Query unread message counts per booking in bookings.all
+- [x] Show message badge icon on Kanban cards that have unread messages
 
 ### C2 - Global Search
 - [x] Add global search bar to top navigation (PortalLayout topbar)

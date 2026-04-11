@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, ChevronRight, AlertTriangle, Calendar, Loader2, SlidersHorizontal } from "lucide-react";
+import { Search, ChevronRight, AlertTriangle, Calendar, Loader2, SlidersHorizontal, MessageSquare } from "lucide-react";
 import { format } from "date-fns";
 
 const STAGES = [
@@ -69,9 +69,12 @@ export default function AdminKanban() {
   const utils = trpc.useUtils();
 
   const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery({});
+  const { data: unreadIds = [] } = trpc.notes.unreadBookingIds.useQuery();
+  const unreadSet = new Set(unreadIds);
   const moveStage = trpc.bookings.moveStage.useMutation({
     onSuccess: () => {
       utils.bookings.all.invalidate();
+      utils.notes.unreadBookingIds.invalidate();
       setMovingId(null);
     },
     onError: (err) => {
@@ -296,7 +299,19 @@ export default function AdminKanban() {
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-sm truncate">{booking.clientName}</p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="font-semibold text-sm truncate">{booking.clientName}</p>
+                                {unreadSet.has(booking.id) && (
+                                  <span
+                                    className="flex-shrink-0 flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                    style={{ background: '#fef3c7', color: '#92400e' }}
+                                    title="Unread agent message"
+                                  >
+                                    <MessageSquare size={9} />
+                                    New
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-xs text-muted-foreground mt-0.5">
                                 <Calendar size={10} className="inline mr-1 opacity-60" />
                                 {format(new Date(booking.departureDate), "dd MMM yyyy")}

@@ -55,6 +55,7 @@ vi.mock("./db", () => ({
 vi.mock("./email", () => ({
   sendNotificationEmail: vi.fn().mockResolvedValue(undefined),
   sendCredentialsEmail: vi.fn().mockResolvedValue(undefined),
+  sendDirectEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./encryption", () => ({

@@ -5,6 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   BookOpen, Users, FileText, TrendingUp, Bell, ArrowRight,
   AlertTriangle, Sparkles, AlertCircle, Calendar, Clock,
   CheckCircle2, Banknote, RefreshCw, ChevronRight, Upload, BellOff,
@@ -113,8 +121,13 @@ export default function AdminDashboard() {
   const markRead = trpc.notes.markBookingNotesRead.useMutation({
     onSuccess: () => refetchUnread(),
   });
+  const [cancelConfirmId, setCancelConfirmId] = useState<number | null>(null);
   const markCancellationActioned = trpc.cancellations.markActioned.useMutation({
-    onSuccess: () => utils.cancellations.all.invalidate(),
+    onSuccess: () => {
+      utils.cancellations.all.invalidate();
+      utils.bookings.all.invalidate();
+      setCancelConfirmId(null);
+    },
   });
 
   const agents = agentList;
@@ -378,7 +391,7 @@ export default function AdminDashboard() {
                   </p>
                 </div>
                 <button
-                  onClick={(e) => { e.stopPropagation(); markCancellationActioned.mutate({ cancellationId: c.id }); }}
+                  onClick={(e) => { e.stopPropagation(); setCancelConfirmId(c.id); }}
                   disabled={markCancellationActioned.isPending}
                   className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors hover:bg-green-100 text-green-700 border border-green-200"
                   title="Mark as actioned — removes from this panel"
@@ -640,6 +653,35 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Cancellation actioned confirmation dialog */}
+      <Dialog open={cancelConfirmId !== null} onOpenChange={(open) => { if (!open) setCancelConfirmId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Mark Cancellation as Done</DialogTitle>
+            <DialogDescription>
+              Would you also like to move this booking to the <strong>Cancelled</strong> stage in the pipeline?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            <Button
+              className="w-full"
+              onClick={() => markCancellationActioned.mutate({ cancellationId: cancelConfirmId!, moveToCancelled: true })}
+              disabled={markCancellationActioned.isPending}
+            >
+              Yes — Mark Done &amp; Move to Cancelled
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full bg-background"
+              onClick={() => markCancellationActioned.mutate({ cancellationId: cancelConfirmId!, moveToCancelled: false })}
+              disabled={markCancellationActioned.isPending}
+            >
+              No — Just Mark as Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

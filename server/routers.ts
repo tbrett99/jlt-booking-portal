@@ -69,6 +69,7 @@ import {
   getAllMessageThreads,
   getTotalUnreadMessageCount,
   markAllAgentNotesAsRead,
+  getUnreadBookingIds,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
@@ -922,6 +923,10 @@ export const appRouter = router({
     unreadAgentMessages: adminProcedure.query(async () => {
       return getBookingsWithUnreadAgentNotes();
     }),
+    // Admin: get booking IDs with unread agent messages (lightweight, for Kanban badges)
+    unreadBookingIds: adminProcedure.query(async () => {
+      return getUnreadBookingIds();
+    }),
     // Admin: all message threads (for Messages page)
     allThreads: adminProcedure.query(async () => {
       return getAllMessageThreads();
@@ -1283,14 +1288,49 @@ export const appRouter = router({
       }),
     all: adminProcedure.query(async () => getAllCancellations()),
     markActioned: adminProcedure
-      .input(z.object({ cancellationId: z.number() }))
+      .input(z.object({ cancellationId: z.number(), moveToCancelled: z.boolean().optional() }))
       .mutation(async ({ input, ctx }) => {
         const db = await import("./db").then((m) => m.getDb());
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { cancellations: cancellationsTable } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        // Fetch the cancellation to get bookingId
+        const [cancellation] = await db.select().from(cancellationsTable).where(eq(cancellationsTable.id, input.cancellationId));
+        if (!cancellation) throw new TRPCError({ code: "NOT_FOUND" });
         await db
-          .update((await import("../drizzle/schema")).cancellations)
+          .update(cancellationsTable)
           .set({ status: "actioned", processedById: ctx.user.id, processedAt: new Date() })
-          .where((await import("drizzle-orm")).eq((await import("../drizzle/schema")).cancellations.id, input.cancellationId));
+          .where(eq(cancellationsTable.id, input.cancellationId));
+        // Optionally move the booking to the Cancelled stage
+        if (input.moveToCancelled) {
+          await updateBookingStage(cancellation.bookingId, "Cancelled", ctx.user.id);
+          // Notify the agent
+          const booking = await getBookingById(cancellation.bookingId);
+          if (booking) {
+            const agent = await getUserById(booking.agentId);
+            if (agent?.email) {
+              await sendNotificationEmail({
+                triggerKey: "cancelled",
+                toEmail: agent.email,
+                toName: agent.name ?? "Agent",
+                variables: { clientName: booking.clientName },
+                bookingId: booking.id,
+              });
+            }
+            await createInAppNotification({
+              userId: booking.agentId,
+              bookingId: booking.id,
+              message: `Your booking "${booking.clientName}" has been marked as Cancelled.`,
+              linkUrl: `/bookings/${booking.id}`,
+            });
+            await createNote({
+              bookingId: booking.id,
+              authorId: ctx.user.id,
+              content: `[System] Booking moved to Cancelled stage by ${ctx.user.name ?? "Admin"} after cancellation request was actioned.`,
+              isInternal: true,
+            });
+          }
+        }
         return { success: true };
       }),
   }),

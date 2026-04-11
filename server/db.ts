@@ -1049,3 +1049,20 @@ export async function addReimbursementDoc(params: {
     mimeType: params.mimeType ?? null,
   });
 }
+
+// Get all booking IDs that have at least one unread agent message (for Kanban badges)
+export async function getUnreadBookingIds(): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({ bookingId: notes.bookingId, authorId: notes.authorId })
+    .from(notes)
+    .where(and(eq(notes.isInternal, false), eq(notes.isReadByAdmin, false), not(like(notes.content, '[System]%'))));
+  // Only include notes authored by agents
+  const result = new Set<number>();
+  for (const row of rows) {
+    const author = await getUserById(row.authorId);
+    if (author?.role === 'agent') result.add(row.bookingId);
+  }
+  return Array.from(result);
+}
