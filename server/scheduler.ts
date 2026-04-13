@@ -5,8 +5,8 @@
  */
 import cron from "node-cron";
 import nodemailer from "nodemailer";
-import { getDb } from "./db";
-import { bookings, users } from "../drizzle/schema";
+import { getDb, getTasksDueForReminder, markCalendarReminderSent } from "./db";
+import { bookings, users, inAppNotifications } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { format } from "date-fns";
 
@@ -159,10 +159,46 @@ export async function runNightlyExport(): Promise<{ success: boolean; rowCount?:
   }
 }
 
+// ─── Task reminder logic ──────────────────────────────────────────────────────
+
+export async function runTaskReminders(): Promise<{ sent: number; errors: number }> {
+  let sent = 0;
+  let errors = 0;
+  try {
+    const db = await getDb();
+    if (!db) return { sent: 0, errors: 1 };
+    const tasks = await getTasksDueForReminder();
+    for (const task of tasks) {
+      if (!task.assigneeId) continue;
+      try {
+        const dueDateStr = task.dueDate
+          ? format(new Date(task.dueDate), "d MMM yyyy")
+          : "tomorrow";
+        await db.insert(inAppNotifications).values({
+          userId: task.assigneeId,
+          message: `Reminder: Task "${task.title}" is due ${dueDateStr}.`,
+          linkUrl: `/admin/calendar`,
+          isRead: false,
+        });
+        await markCalendarReminderSent(task.id);
+        sent++;
+        console.log(`[Scheduler] Task reminder sent for task #${task.id} to user #${task.assigneeId}`);
+      } catch (err: any) {
+        console.error(`[Scheduler] Failed to send reminder for task #${task.id}:`, err?.message);
+        errors++;
+      }
+    }
+  } catch (err: any) {
+    console.error("[Scheduler] Task reminders job failed:", err?.message);
+    errors++;
+  }
+  return { sent, errors };
+}
+
 // ─── Register cron jobs ───────────────────────────────────────────────────────
 
 export function startScheduler() {
-  // Run at 04:00 UTC every day
+  // Run at 04:00 UTC every day — nightly booking export
   cron.schedule("0 4 * * *", async () => {
     console.log("[Scheduler] Starting nightly booking export…");
     const result = await runNightlyExport();
@@ -171,9 +207,15 @@ export function startScheduler() {
     } else {
       console.error(`[Scheduler] Export failed — ${result.error}`);
     }
-  }, {
-    timezone: "UTC",
-  });
+  }, { timezone: "UTC" });
+
+  // Run at 08:00 UTC every day — task due-date reminders
+  cron.schedule("0 8 * * *", async () => {
+    console.log("[Scheduler] Running task due-date reminders…");
+    const result = await runTaskReminders();
+    console.log(`[Scheduler] Task reminders: ${result.sent} sent, ${result.errors} errors`);
+  }, { timezone: "UTC" });
 
   console.log("[Scheduler] Nightly export scheduled at 04:00 UTC → " + EXPORT_RECIPIENT);
+  console.log("[Scheduler] Task reminders scheduled at 08:00 UTC");
 }

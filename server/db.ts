@@ -1256,6 +1256,7 @@ export async function mergeBookings(sourceId: number, targetId: number) {
 export async function getCalendarEvents(from: Date, to: Date) {
   const db = await getDb();
   if (!db) return [];
+  // Fetch base events that start within range OR are recurring (need expansion)
   const rows = await db
     .select({
       id: calendarEvents.id,
@@ -1269,13 +1270,30 @@ export async function getCalendarEvents(from: Date, to: Date) {
       createdById: calendarEvents.createdById,
       createdAt: calendarEvents.createdAt,
       assigneeName: users.name,
+      recurrenceRule: calendarEvents.recurrenceRule,
+      recurrenceEndDate: calendarEvents.recurrenceEndDate,
+      dueDate: calendarEvents.dueDate,
+      reminderSentAt: calendarEvents.reminderSentAt,
     })
     .from(calendarEvents)
     .leftJoin(users, eq(calendarEvents.assigneeId, users.id))
     .where(
-      and(
-        lte(calendarEvents.startDate, to),
-        gte(calendarEvents.endDate, from)
+      or(
+        // Non-recurring: overlap with range
+        and(
+          eq(calendarEvents.recurrenceRule, "none"),
+          lte(calendarEvents.startDate, to),
+          gte(calendarEvents.endDate, from)
+        ),
+        // Recurring: started before range end (and not ended before range start)
+        and(
+          not(eq(calendarEvents.recurrenceRule, "none")),
+          lte(calendarEvents.startDate, to),
+          or(
+            sql`${calendarEvents.recurrenceEndDate} IS NULL`,
+            gte(calendarEvents.recurrenceEndDate, from)
+          )
+        )
       )
     )
     .orderBy(calendarEvents.startDate);
@@ -1291,6 +1309,9 @@ export async function createCalendarEvent(data: {
   allDay: boolean;
   assigneeId?: number | null;
   createdById: number;
+  recurrenceRule?: "none" | "daily" | "weekly" | "monthly" | "yearly";
+  recurrenceEndDate?: Date | null;
+  dueDate?: Date | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -1303,6 +1324,9 @@ export async function createCalendarEvent(data: {
     allDay: data.allDay,
     assigneeId: data.assigneeId ?? null,
     createdById: data.createdById,
+    recurrenceRule: data.recurrenceRule ?? "none",
+    recurrenceEndDate: data.recurrenceEndDate ?? null,
+    dueDate: data.dueDate ?? null,
   });
   return result;
 }
@@ -1317,11 +1341,49 @@ export async function updateCalendarEvent(
     endDate: Date;
     allDay: boolean;
     assigneeId: number | null;
+    recurrenceRule: "none" | "daily" | "weekly" | "monthly" | "yearly";
+    recurrenceEndDate: Date | null;
+    dueDate: Date | null;
   }>
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(calendarEvents).set(data as any).where(eq(calendarEvents.id, id));
+}
+
+// Returns tasks whose dueDate is tomorrow and reminderSentAt is null
+export async function getTasksDueForReminder() {
+  const db = await getDb();
+  if (!db) return [];
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStart = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 0, 0, 0);
+  const tomorrowEnd   = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 23, 59, 59);
+  const rows = await db
+    .select({
+      id: calendarEvents.id,
+      title: calendarEvents.title,
+      dueDate: calendarEvents.dueDate,
+      assigneeId: calendarEvents.assigneeId,
+      assigneeName: users.name,
+    })
+    .from(calendarEvents)
+    .leftJoin(users, eq(calendarEvents.assigneeId, users.id))
+    .where(
+      and(
+        eq(calendarEvents.type, "task"),
+        gte(calendarEvents.dueDate, tomorrowStart),
+        lte(calendarEvents.dueDate, tomorrowEnd),
+        sql`${calendarEvents.reminderSentAt} IS NULL`
+      )
+    );
+  return rows;
+}
+
+export async function markCalendarReminderSent(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(calendarEvents).set({ reminderSentAt: new Date() }).where(eq(calendarEvents.id, id));
 }
 
 export async function deleteCalendarEvent(id: number) {

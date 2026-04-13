@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -13,17 +12,19 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, List, LayoutGrid,
-  Pencil, Trash2, X, Check, ChevronsUpDown, User
+  Pencil, Trash2, X, Check, ChevronsUpDown, User, RefreshCw, Clock
 } from "lucide-react";
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addMonths, subMonths, addWeeks, subWeeks, eachDayOfInterval,
-  isSameMonth, isSameDay, isToday, parseISO, addDays
+  isSameMonth, isSameDay, isToday, addDays, addYears,
+  differenceInDays, isBefore, isAfter
 } from "date-fns";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EventType = "holiday" | "event" | "task";
+type RecurrenceRule = "none" | "daily" | "weekly" | "monthly" | "yearly";
 
 interface CalEvent {
   id: number;
@@ -37,6 +38,17 @@ interface CalEvent {
   assigneeName: string | null;
   createdById: number;
   createdAt: Date;
+  recurrenceRule: RecurrenceRule;
+  recurrenceEndDate: Date | null;
+  dueDate: Date | null;
+  reminderSentAt: Date | null;
+}
+
+// A virtual occurrence of a recurring event (has a base event id + shifted dates)
+interface CalEventOccurrence extends CalEvent {
+  occurrenceStart: Date;
+  occurrenceEnd: Date;
+  isRecurring: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -53,12 +65,73 @@ const TYPE_LABELS: Record<EventType, string> = {
   task:    "Task",
 };
 
+const RECURRENCE_LABELS: Record<RecurrenceRule, string> = {
+  none:    "Does not repeat",
+  daily:   "Daily",
+  weekly:  "Weekly",
+  monthly: "Monthly",
+  yearly:  "Yearly",
+};
+
 function toLocalDateString(d: Date) {
   return format(d, "yyyy-MM-dd");
 }
 
 function toLocalDateTimeString(d: Date) {
   return format(d, "yyyy-MM-dd'T'HH:mm");
+}
+
+/**
+ * Expand a recurring event into all occurrences that overlap [rangeFrom, rangeTo].
+ * Returns an array of CalEventOccurrence objects.
+ */
+function expandRecurring(ev: CalEvent, rangeFrom: Date, rangeTo: Date): CalEventOccurrence[] {
+  if (ev.recurrenceRule === "none") {
+    return [{
+      ...ev,
+      occurrenceStart: new Date(ev.startDate),
+      occurrenceEnd: new Date(ev.endDate),
+      isRecurring: false,
+    }];
+  }
+
+  const duration = differenceInDays(new Date(ev.endDate), new Date(ev.startDate));
+  const recEnd = ev.recurrenceEndDate ? new Date(ev.recurrenceEndDate) : addYears(new Date(ev.startDate), 3); // cap at 3 years if no end
+  const occurrences: CalEventOccurrence[] = [];
+  let cursor = new Date(ev.startDate);
+  let safety = 0;
+
+  while (!isAfter(cursor, rangeTo) && !isAfter(cursor, recEnd) && safety < 500) {
+    safety++;
+    const occEnd = addDays(cursor, duration);
+    // Check if this occurrence overlaps the range
+    if (!isBefore(occEnd, rangeFrom) && !isAfter(cursor, rangeTo)) {
+      occurrences.push({
+        ...ev,
+        occurrenceStart: new Date(cursor),
+        occurrenceEnd: occEnd,
+        isRecurring: true,
+      });
+    }
+    // Advance cursor
+    switch (ev.recurrenceRule) {
+      case "daily":   cursor = addDays(cursor, 1); break;
+      case "weekly":  cursor = addDays(cursor, 7); break;
+      case "monthly": {
+        const next = new Date(cursor);
+        next.setMonth(next.getMonth() + 1);
+        cursor = next;
+        break;
+      }
+      case "yearly": {
+        const next = new Date(cursor);
+        next.setFullYear(next.getFullYear() + 1);
+        cursor = next;
+        break;
+      }
+    }
+  }
+  return occurrences;
 }
 
 // ─── Event Form Dialog ────────────────────────────────────────────────────────
@@ -79,15 +152,22 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
   const [type, setType] = useState<EventType>(event?.type ?? "event");
   const [allDay, setAllDay] = useState(event?.allDay ?? true);
   const [startDate, setStartDate] = useState(
-    event ? (allDay ? toLocalDateString(event.startDate) : toLocalDateTimeString(event.startDate))
+    event ? (event.allDay ? toLocalDateString(new Date(event.startDate)) : toLocalDateTimeString(new Date(event.startDate)))
           : toLocalDateString(today)
   );
   const [endDate, setEndDate] = useState(
-    event ? (allDay ? toLocalDateString(event.endDate) : toLocalDateTimeString(event.endDate))
+    event ? (event.allDay ? toLocalDateString(new Date(event.endDate)) : toLocalDateTimeString(new Date(event.endDate)))
           : toLocalDateString(today)
   );
   const [assigneeId, setAssigneeId] = useState<number | null>(event?.assigneeId ?? null);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [recurrenceRule, setRecurrenceRule] = useState<RecurrenceRule>(event?.recurrenceRule ?? "none");
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState(
+    event?.recurrenceEndDate ? toLocalDateString(new Date(event.recurrenceEndDate)) : ""
+  );
+  const [dueDate, setDueDate] = useState(
+    event?.dueDate ? toLocalDateString(new Date(event.dueDate)) : ""
+  );
 
   const createMutation = trpc.calendar.create.useMutation({ onSuccess: () => { onSaved(); onClose(); } });
   const updateMutation = trpc.calendar.update.useMutation({ onSuccess: () => { onSaved(); onClose(); } });
@@ -98,10 +178,21 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
     if (!title.trim()) return;
     const start = allDay ? new Date(startDate + "T00:00:00") : new Date(startDate);
     const end   = allDay ? new Date(endDate   + "T23:59:59") : new Date(endDate);
+    const recEnd = recurrenceRule !== "none" && recurrenceEndDate ? new Date(recurrenceEndDate + "T23:59:59") : null;
+    const due = type === "task" && dueDate ? new Date(dueDate + "T23:59:59") : null;
+
     if (event) {
-      updateMutation.mutate({ id: event.id, title, description: description || null, type, startDate: start, endDate: end, allDay, assigneeId });
+      updateMutation.mutate({
+        id: event.id, title, description: description || null, type,
+        startDate: start, endDate: end, allDay, assigneeId,
+        recurrenceRule, recurrenceEndDate: recEnd, dueDate: due,
+      });
     } else {
-      createMutation.mutate({ title, description: description || undefined, type, startDate: start, endDate: end, allDay, assigneeId });
+      createMutation.mutate({
+        title, description: description || undefined, type,
+        startDate: start, endDate: end, allDay, assigneeId,
+        recurrenceRule, recurrenceEndDate: recEnd, dueDate: due,
+      });
     }
   }
 
@@ -109,21 +200,22 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{event ? "Edit Event" : "New Event"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
+          {/* Title */}
           <div>
             <Label>Title *</Label>
             <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Event title" className="mt-1" />
           </div>
+
+          {/* Type */}
           <div>
             <Label>Type</Label>
             <Select value={type} onValueChange={v => setType(v as EventType)}>
-              <SelectTrigger className="mt-1">
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="holiday">Holiday / Leave</SelectItem>
                 <SelectItem value="event">Company Event</SelectItem>
@@ -131,40 +223,33 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
               </SelectContent>
             </Select>
           </div>
+
+          {/* All day toggle */}
           <div className="flex items-center gap-3">
             <Switch id="allday" checked={allDay} onCheckedChange={setAllDay} />
             <Label htmlFor="allday">All day</Label>
           </div>
+
+          {/* Start / End */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Start {allDay ? "Date" : "Date & Time"}</Label>
-              <Input
-                type={allDay ? "date" : "datetime-local"}
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                className="mt-1"
-              />
+              <Input type={allDay ? "date" : "datetime-local"} value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1" />
             </div>
             <div>
               <Label>End {allDay ? "Date" : "Date & Time"}</Label>
-              <Input
-                type={allDay ? "date" : "datetime-local"}
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className="mt-1"
-              />
+              <Input type={allDay ? "date" : "datetime-local"} value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1" />
             </div>
           </div>
+
+          {/* Assignee */}
           {(type === "holiday" || type === "task") && (
             <div>
               <Label>{type === "holiday" ? "Who is off?" : "Assigned to"}</Label>
               <Popover open={assigneeOpen} onOpenChange={setAssigneeOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full mt-1 justify-between">
-                    <span className="flex items-center gap-2">
-                      <User size={14} />
-                      {assigneeName}
-                    </span>
+                    <span className="flex items-center gap-2"><User size={14} />{assigneeName}</span>
                     <ChevronsUpDown size={14} className="opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -191,6 +276,36 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
               </Popover>
             </div>
           )}
+
+          {/* Task Due Date */}
+          {type === "task" && (
+            <div>
+              <Label className="flex items-center gap-1"><Clock size={13} /> Due Date (optional)</Label>
+              <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="mt-1" />
+              <p className="text-xs text-muted-foreground mt-1">The assignee will receive a reminder the day before this date.</p>
+            </div>
+          )}
+
+          {/* Recurrence */}
+          <div>
+            <Label className="flex items-center gap-1"><RefreshCw size={13} /> Repeat</Label>
+            <Select value={recurrenceRule} onValueChange={v => setRecurrenceRule(v as RecurrenceRule)}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(Object.entries(RECURRENCE_LABELS) as [RecurrenceRule, string][]).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {recurrenceRule !== "none" && (
+              <div className="mt-2">
+                <Label className="text-xs text-muted-foreground">End date (optional — leave blank to repeat indefinitely)</Label>
+                <Input type="date" value={recurrenceEndDate} onChange={e => setRecurrenceEndDate(e.target.value)} className="mt-1" />
+              </div>
+            )}
+          </div>
+
+          {/* Description */}
           <div>
             <Label>Description (optional)</Label>
             <Textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="mt-1" placeholder="Add details..." />
@@ -210,7 +325,7 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
 // ─── Event Detail Popover ─────────────────────────────────────────────────────
 
 interface EventDetailProps {
-  event: CalEvent;
+  event: CalEventOccurrence;
   onEdit: () => void;
   onDelete: () => void;
   onClose: () => void;
@@ -218,26 +333,38 @@ interface EventDetailProps {
 
 function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
   const colors = TYPE_COLORS[event.type];
+  const start = event.occurrenceStart;
+  const end   = event.occurrenceEnd;
   return (
     <div className="p-4 space-y-3 min-w-[260px]">
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-semibold text-sm">{event.title}</p>
-          <Badge className={`mt-1 text-xs ${colors.badge}`}>{TYPE_LABELS[event.type]}</Badge>
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
+            <Badge className={`text-xs ${colors.badge}`}>{TYPE_LABELS[event.type]}</Badge>
+            {event.isRecurring && (
+              <Badge variant="outline" className="text-xs gap-1"><RefreshCw size={10} />{RECURRENCE_LABELS[event.recurrenceRule]}</Badge>
+            )}
+          </div>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose} className="h-6 w-6 shrink-0"><X size={14} /></Button>
       </div>
       <div className="text-xs text-muted-foreground space-y-1">
         <p>
           {event.allDay
-            ? isSameDay(event.startDate, event.endDate)
-              ? format(event.startDate, "d MMM yyyy")
-              : `${format(event.startDate, "d MMM")} – ${format(event.endDate, "d MMM yyyy")}`
-            : `${format(event.startDate, "d MMM yyyy HH:mm")} – ${format(event.endDate, "HH:mm")}`
+            ? isSameDay(start, end)
+              ? format(start, "d MMM yyyy")
+              : `${format(start, "d MMM")} – ${format(end, "d MMM yyyy")}`
+            : `${format(start, "d MMM yyyy HH:mm")} – ${format(end, "HH:mm")}`
           }
         </p>
         {event.assigneeName && (
           <p className="flex items-center gap-1"><User size={12} /> {event.assigneeName}</p>
+        )}
+        {event.dueDate && (
+          <p className="flex items-center gap-1 text-amber-700 font-medium">
+            <Clock size={12} /> Due: {format(new Date(event.dueDate), "d MMM yyyy")}
+          </p>
         )}
         {event.description && <p className="text-foreground/80">{event.description}</p>}
       </div>
@@ -254,15 +381,14 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
 type ViewMode = "month" | "week" | "agenda";
 
 export default function AdminCalendar() {
-  const { user } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [formOpen, setFormOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<CalEvent | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<CalEventOccurrence | null>(null);
   const [defaultFormDate, setDefaultFormDate] = useState<Date | undefined>(undefined);
 
-  // Compute date range for query
+  // Compute date range for query — fetch a wider window for recurring events
   const { from, to } = useMemo(() => {
     if (viewMode === "month") {
       return {
@@ -275,15 +401,24 @@ export default function AdminCalendar() {
         to: endOfWeek(currentDate, { weekStartsOn: 1 }),
       };
     } else {
-      // Agenda: next 60 days
       return { from: currentDate, to: addDays(currentDate, 60) };
     }
   }, [viewMode, currentDate]);
 
-  const { data: events = [], refetch } = trpc.calendar.list.useQuery(
+  const { data: rawEvents = [], refetch } = trpc.calendar.list.useQuery(
     { from, to },
     { refetchOnWindowFocus: false }
   );
+
+  // Expand recurring events into individual occurrences
+  const events = useMemo<CalEventOccurrence[]>(() => {
+    const result: CalEventOccurrence[] = [];
+    for (const ev of rawEvents as CalEvent[]) {
+      const occurrences = expandRecurring(ev, from, to);
+      result.push(...occurrences);
+    }
+    return result;
+  }, [rawEvents, from, to]);
 
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
 
@@ -306,31 +441,43 @@ export default function AdminCalendar() {
     setDefaultFormDate(date);
     setFormOpen(true);
   }
-  function openEdit(ev: CalEvent) {
-    setEditingEvent(ev);
+  function openEdit(ev: CalEventOccurrence) {
+    // Edit the base event (not the occurrence)
+    setEditingEvent(ev as CalEvent);
     setSelectedEvent(null);
     setFormOpen(true);
   }
-  function handleDelete(ev: CalEvent) {
-    if (confirm(`Delete "${ev.title}"?`)) deleteMutation.mutate({ id: ev.id });
+  function handleDelete(ev: CalEventOccurrence) {
+    if (confirm(`Delete "${ev.title}"?${ev.isRecurring ? "\n\nThis will delete all occurrences of this recurring event." : ""}`)) {
+      deleteMutation.mutate({ id: ev.id });
+    }
   }
 
   // Events that overlap a given day
-  function eventsOnDay(day: Date): CalEvent[] {
-    return (events as CalEvent[]).filter(ev => {
-      const start = new Date(ev.startDate);
-      const end   = new Date(ev.endDate);
+  function eventsOnDay(day: Date): CalEventOccurrence[] {
+    return events.filter(ev => {
+      const start = ev.occurrenceStart;
+      const end   = ev.occurrenceEnd;
       return day >= start && day <= end;
     });
   }
 
   // Who's away today
-  const todayAway = (events as CalEvent[]).filter(ev => {
+  const todayAway = events.filter(ev => {
     if (ev.type !== "holiday") return false;
-    const start = new Date(ev.startDate);
-    const end   = new Date(ev.endDate);
+    const start = ev.occurrenceStart;
+    const end   = ev.occurrenceEnd;
     const today = new Date();
     return today >= start && today <= end;
+  });
+
+  // Tasks due soon (within 3 days)
+  const tasksDueSoon = events.filter(ev => {
+    if (ev.type !== "task" || !ev.dueDate) return false;
+    const due = new Date(ev.dueDate);
+    const now = new Date();
+    const diffDays = differenceInDays(due, now);
+    return diffDays >= 0 && diffDays <= 3;
   });
 
   const headerLabel = viewMode === "month"
@@ -356,9 +503,22 @@ export default function AdminCalendar() {
       {todayAway.length > 0 && (
         <div className="rounded-lg border border-[#FFC3BC] bg-[#FFF6ED] px-4 py-2 flex flex-wrap gap-2 items-center">
           <span className="text-sm font-medium text-[#414141]">Away today:</span>
-          {todayAway.map(ev => (
-            <Badge key={ev.id} className="bg-[#FFC3BC] text-[#414141] text-xs">
+          {todayAway.map((ev, i) => (
+            <Badge key={`${ev.id}-${i}`} className="bg-[#FFC3BC] text-[#414141] text-xs">
               {ev.assigneeName ?? ev.title}
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      {/* Tasks due soon */}
+      {tasksDueSoon.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 flex flex-wrap gap-2 items-center">
+          <span className="text-sm font-medium text-amber-800 flex items-center gap-1"><Clock size={14} /> Due soon:</span>
+          {tasksDueSoon.map((ev, i) => (
+            <Badge key={`${ev.id}-${i}`} className="bg-amber-200 text-amber-900 text-xs">
+              {ev.title}
+              {ev.dueDate && ` — ${format(new Date(ev.dueDate), "d MMM")}`}
             </Badge>
           ))}
         </div>
@@ -390,17 +550,18 @@ export default function AdminCalendar() {
       </div>
 
       {/* Legend */}
-      <div className="flex gap-3 flex-wrap text-xs">
+      <div className="flex gap-3 flex-wrap text-xs items-center">
         {(Object.entries(TYPE_COLORS) as [EventType, typeof TYPE_COLORS[EventType]][]).map(([t, c]) => (
           <span key={t} className={`px-2 py-0.5 rounded-full font-medium ${c.badge}`}>{TYPE_LABELS[t]}</span>
         ))}
+        <span className="flex items-center gap-1 text-muted-foreground"><RefreshCw size={11} /> = recurring</span>
+        <span className="flex items-center gap-1 text-muted-foreground"><Clock size={11} /> = due date</span>
       </div>
 
       {/* Month View */}
       {viewMode === "month" && (
         <MonthView
           currentDate={currentDate}
-          events={events as CalEvent[]}
           eventsOnDay={eventsOnDay}
           onDayClick={openCreate}
           onEventClick={setSelectedEvent}
@@ -430,7 +591,7 @@ export default function AdminCalendar() {
         <AgendaView
           from={from}
           to={to}
-          events={events as CalEvent[]}
+          events={events}
           onEventClick={setSelectedEvent}
           selectedEvent={selectedEvent}
           onEditEvent={openEdit}
@@ -458,13 +619,12 @@ export default function AdminCalendar() {
 
 interface MonthViewProps {
   currentDate: Date;
-  events: CalEvent[];
-  eventsOnDay: (d: Date) => CalEvent[];
+  eventsOnDay: (d: Date) => CalEventOccurrence[];
   onDayClick: (d: Date) => void;
-  onEventClick: (ev: CalEvent) => void;
-  selectedEvent: CalEvent | null;
-  onEditEvent: (ev: CalEvent) => void;
-  onDeleteEvent: (ev: CalEvent) => void;
+  onEventClick: (ev: CalEventOccurrence) => void;
+  selectedEvent: CalEventOccurrence | null;
+  onEditEvent: (ev: CalEventOccurrence) => void;
+  onDeleteEvent: (ev: CalEventOccurrence) => void;
   onCloseDetail: () => void;
 }
 
@@ -478,13 +638,11 @@ function MonthView({ currentDate, eventsOnDay, onDayClick, onEventClick, selecte
 
   return (
     <div className="border rounded-xl overflow-hidden">
-      {/* Day headers */}
       <div className="grid grid-cols-7 bg-[#414141]">
         {weekDays.map(d => (
           <div key={d} className="text-center text-xs font-semibold text-[#70FFE8] py-2">{d}</div>
         ))}
       </div>
-      {/* Day cells */}
       <div className="grid grid-cols-7">
         {days.map(day => {
           const dayEvents = eventsOnDay(day);
@@ -500,17 +658,21 @@ function MonthView({ currentDate, eventsOnDay, onDayClick, onEventClick, selecte
                 {format(day, "d")}
               </div>
               <div className="space-y-0.5">
-                {dayEvents.slice(0, 3).map(ev => {
+                {dayEvents.slice(0, 3).map((ev, i) => {
                   const colors = TYPE_COLORS[ev.type];
                   return (
-                    <Popover key={ev.id} open={selectedEvent?.id === ev.id} onOpenChange={(o) => !o && onCloseDetail()}>
+                    <Popover key={`${ev.id}-${i}`} open={selectedEvent?.id === ev.id && isSameDay(selectedEvent.occurrenceStart, ev.occurrenceStart)} onOpenChange={(o) => !o && onCloseDetail()}>
                       <PopoverTrigger asChild>
                         <div
-                          className={`text-xs px-1 rounded truncate cursor-pointer ${colors.bg} ${colors.text} font-medium`}
+                          className={`text-xs px-1 rounded truncate cursor-pointer ${colors.bg} ${colors.text} font-medium flex items-center gap-0.5`}
                           onClick={e => { e.stopPropagation(); onEventClick(ev); }}
                         >
-                          {ev.assigneeName && ev.type === "holiday" ? `${ev.assigneeName.split(" ")[0]}: ` : ""}
-                          {ev.title}
+                          {ev.isRecurring && <RefreshCw size={9} className="shrink-0 opacity-70" />}
+                          {ev.dueDate && ev.type === "task" && <Clock size={9} className="shrink-0 opacity-70" />}
+                          <span className="truncate">
+                            {ev.assigneeName && ev.type === "holiday" ? `${ev.assigneeName.split(" ")[0]}: ` : ""}
+                            {ev.title}
+                          </span>
                         </div>
                       </PopoverTrigger>
                       <PopoverContent className="p-0 w-auto" side="right">
@@ -535,12 +697,12 @@ function MonthView({ currentDate, eventsOnDay, onDayClick, onEventClick, selecte
 
 interface WeekViewProps {
   currentDate: Date;
-  eventsOnDay: (d: Date) => CalEvent[];
+  eventsOnDay: (d: Date) => CalEventOccurrence[];
   onDayClick: (d: Date) => void;
-  onEventClick: (ev: CalEvent) => void;
-  selectedEvent: CalEvent | null;
-  onEditEvent: (ev: CalEvent) => void;
-  onDeleteEvent: (ev: CalEvent) => void;
+  onEventClick: (ev: CalEventOccurrence) => void;
+  selectedEvent: CalEventOccurrence | null;
+  onEditEvent: (ev: CalEventOccurrence) => void;
+  onDeleteEvent: (ev: CalEventOccurrence) => void;
   onCloseDetail: () => void;
 }
 
@@ -567,17 +729,21 @@ function WeekView({ currentDate, eventsOnDay, onDayClick, onEventClick, selected
               className="border-r p-2 cursor-pointer hover:bg-muted/20 space-y-1"
               onClick={() => onDayClick(day)}
             >
-              {dayEvents.map(ev => {
+              {dayEvents.map((ev, i) => {
                 const colors = TYPE_COLORS[ev.type];
                 return (
-                  <Popover key={ev.id} open={selectedEvent?.id === ev.id} onOpenChange={o => !o && onCloseDetail()}>
+                  <Popover key={`${ev.id}-${i}`} open={selectedEvent?.id === ev.id && isSameDay(selectedEvent.occurrenceStart, ev.occurrenceStart)} onOpenChange={o => !o && onCloseDetail()}>
                     <PopoverTrigger asChild>
                       <div
-                        className={`text-xs px-2 py-1 rounded-md cursor-pointer ${colors.bg} ${colors.text} font-medium`}
+                        className={`text-xs px-2 py-1 rounded-md cursor-pointer ${colors.bg} ${colors.text} font-medium flex items-center gap-1`}
                         onClick={e => { e.stopPropagation(); onEventClick(ev); }}
                       >
-                        {ev.assigneeName && ev.type === "holiday" ? `${ev.assigneeName.split(" ")[0]}: ` : ""}
-                        {ev.title}
+                        {ev.isRecurring && <RefreshCw size={9} className="shrink-0 opacity-70" />}
+                        {ev.dueDate && ev.type === "task" && <Clock size={9} className="shrink-0 opacity-70" />}
+                        <span className="truncate">
+                          {ev.assigneeName && ev.type === "holiday" ? `${ev.assigneeName.split(" ")[0]}: ` : ""}
+                          {ev.title}
+                        </span>
                       </div>
                     </PopoverTrigger>
                     <PopoverContent className="p-0 w-auto" side="bottom">
@@ -599,24 +765,20 @@ function WeekView({ currentDate, eventsOnDay, onDayClick, onEventClick, selected
 interface AgendaViewProps {
   from: Date;
   to: Date;
-  events: CalEvent[];
-  onEventClick: (ev: CalEvent) => void;
-  selectedEvent: CalEvent | null;
-  onEditEvent: (ev: CalEvent) => void;
-  onDeleteEvent: (ev: CalEvent) => void;
+  events: CalEventOccurrence[];
+  onEventClick: (ev: CalEventOccurrence) => void;
+  selectedEvent: CalEventOccurrence | null;
+  onEditEvent: (ev: CalEventOccurrence) => void;
+  onDeleteEvent: (ev: CalEventOccurrence) => void;
   onCloseDetail: () => void;
 }
 
 function AgendaView({ from, to, events, onEventClick, selectedEvent, onEditEvent, onDeleteEvent, onCloseDetail }: AgendaViewProps) {
   const days = eachDayOfInterval({ start: from, end: to });
 
-  const daysWithEvents = days.filter(day => {
-    return events.some(ev => {
-      const start = new Date(ev.startDate);
-      const end   = new Date(ev.endDate);
-      return day >= start && day <= end;
-    });
-  });
+  const daysWithEvents = days.filter(day =>
+    events.some(ev => day >= ev.occurrenceStart && day <= ev.occurrenceEnd)
+  );
 
   if (daysWithEvents.length === 0) {
     return (
@@ -631,11 +793,7 @@ function AgendaView({ from, to, events, onEventClick, selectedEvent, onEditEvent
   return (
     <div className="border rounded-xl overflow-hidden divide-y">
       {daysWithEvents.map(day => {
-        const dayEvents = events.filter(ev => {
-          const start = new Date(ev.startDate);
-          const end   = new Date(ev.endDate);
-          return day >= start && day <= end;
-        });
+        const dayEvents = events.filter(ev => day >= ev.occurrenceStart && day <= ev.occurrenceEnd);
         return (
           <div key={day.toISOString()} className="flex gap-0">
             <div className={`w-24 shrink-0 p-3 text-center border-r ${isToday(day) ? "bg-[#02E6D2]/20" : "bg-muted/10"}`}>
@@ -644,20 +802,28 @@ function AgendaView({ from, to, events, onEventClick, selectedEvent, onEditEvent
               <p className="text-xs text-muted-foreground">{format(day, "MMM")}</p>
             </div>
             <div className="flex-1 p-3 space-y-2">
-              {dayEvents.map(ev => {
+              {dayEvents.map((ev, i) => {
                 const colors = TYPE_COLORS[ev.type];
                 return (
-                  <Popover key={ev.id} open={selectedEvent?.id === ev.id} onOpenChange={o => !o && onCloseDetail()}>
+                  <Popover key={`${ev.id}-${i}`} open={selectedEvent?.id === ev.id && isSameDay(selectedEvent.occurrenceStart, ev.occurrenceStart)} onOpenChange={o => !o && onCloseDetail()}>
                     <PopoverTrigger asChild>
                       <div
                         className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer hover:opacity-90 ${colors.bg}`}
                         onClick={() => onEventClick(ev)}
                       >
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-semibold truncate ${colors.text}`}>{ev.title}</p>
+                          <p className={`text-sm font-semibold truncate flex items-center gap-1 ${colors.text}`}>
+                            {ev.isRecurring && <RefreshCw size={11} className="shrink-0 opacity-70" />}
+                            {ev.title}
+                          </p>
                           {ev.assigneeName && (
                             <p className={`text-xs flex items-center gap-1 ${colors.text} opacity-80`}>
                               <User size={10} /> {ev.assigneeName}
+                            </p>
+                          )}
+                          {ev.dueDate && ev.type === "task" && (
+                            <p className={`text-xs flex items-center gap-1 text-amber-700 font-medium`}>
+                              <Clock size={10} /> Due: {format(new Date(ev.dueDate), "d MMM yyyy")}
                             </p>
                           )}
                           {ev.description && (

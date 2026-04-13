@@ -677,3 +677,17 @@
 - [x] Historic booking toggle on RegisterBooking form — when on, booking auto-moves to "Added to PTS" stage immediately after creation
 - [x] Make bookedDate mandatory on RegisterBooking form
 - [x] Default bookedDate to today's date on RegisterBooking form
+
+## Calendar: Recurring Events & Task Reminders (Apr 13)
+- [x] DB schema: add recurrence fields to calendar_events (recurrenceRule: none/daily/weekly/monthly/yearly, recurrenceEndDate nullable)
+- [x] DB schema: add dueDate (nullable timestamp) and reminderSentAt (nullable timestamp) to calendar_events for task reminders
+- [x] Apply migration via webdev_execute_sql
+- [x] DB helpers: update createCalendarEvent and updateCalendarEvent to accept recurrence + dueDate fields
+- [x] tRPC: update calendar.create and calendar.update schemas to include recurrenceRule, recurrenceEndDate, dueDate
+- [x] Frontend: recurrence selector in event form (None / Daily / Weekly / Monthly / Yearly + optional end date)
+- [x] Frontend: due date field in event form (visible only for Task type)
+- [x] Frontend: show recurrence icon on recurring events in month/week/agenda views
+- [x] Frontend: show due date badge on task events in agenda/week views
+- [x] Frontend: expand recurring events when fetching — generate virtual occurrences between from/to range based on recurrenceRule
+- [x] Backend: nightly job to check tasks with dueDate = tomorrow and send in-app notification to assignee
+- [x] Backend: mark reminderSentAt to avoid duplicate notifications

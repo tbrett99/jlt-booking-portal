@@ -86,6 +86,8 @@ import {
   getCalendarEvents,
   createCalendarEvent,
   updateCalendarEvent,
+  getTasksDueForReminder,
+  markCalendarReminderSent,
   deleteCalendarEvent,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
@@ -1944,6 +1946,9 @@ export const appRouter = router({
           endDate: z.date(),
           allDay: z.boolean().default(true),
           assigneeId: z.number().nullable().optional(),
+          recurrenceRule: z.enum(["none", "daily", "weekly", "monthly", "yearly"]).default("none"),
+          recurrenceEndDate: z.date().nullable().optional(),
+          dueDate: z.date().nullable().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -1961,6 +1966,9 @@ export const appRouter = router({
           endDate: z.date().optional(),
           allDay: z.boolean().optional(),
           assigneeId: z.number().nullable().optional(),
+          recurrenceRule: z.enum(["none", "daily", "weekly", "monthly", "yearly"]).optional(),
+          recurrenceEndDate: z.date().nullable().optional(),
+          dueDate: z.date().nullable().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -1975,6 +1983,27 @@ export const appRouter = router({
         await deleteCalendarEvent(input.id);
         return { success: true };
       }),
+
+    // Called by a scheduled job (or manually) to send due-date reminders for tasks due tomorrow
+    sendTaskReminders: adminProcedure.mutation(async () => {
+      const tasks = await getTasksDueForReminder();
+      let sent = 0;
+      for (const task of tasks) {
+        if (task.assigneeId) {
+          const dueDateStr = task.dueDate
+            ? new Date(task.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+            : "tomorrow";
+          await createInAppNotification({
+            userId: task.assigneeId,
+            message: `Reminder: Task "${task.title}" is due ${dueDateStr}.`,
+            linkUrl: `/admin/calendar`,
+          });
+          await markCalendarReminderSent(task.id);
+          sent++;
+        }
+      }
+      return { sent };
+    }),
   }),
 });
 export type AppRouter = typeof appRouter;

@@ -298,6 +298,12 @@ export const calendarEvents = mysqlTable("calendar_events", {
   allDay: boolean("allDay").default(true).notNull(),
   assigneeId: int("assigneeId"), // FK → users.id (for holiday: who is off; for task: who is assigned)
   createdById: int("createdById").notNull(), // FK → users.id
+  // Recurrence
+  recurrenceRule: mysqlEnum("recurrenceRule", ["none", "daily", "weekly", "monthly", "yearly"]).default("none").notNull(),
+  recurrenceEndDate: timestamp("recurrenceEndDate"), // null = recur indefinitely
+  // Task-specific
+  dueDate: timestamp("dueDate"), // for tasks: the due date
+  reminderSentAt: timestamp("reminderSentAt"), // set when reminder notification was sent
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
