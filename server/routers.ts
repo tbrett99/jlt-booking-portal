@@ -871,6 +871,43 @@ export const appRouter = router({
         return getPipelineHistory(input.bookingId);
       }),
 
+    // Agent-only: update PTS ref and final supplier payment date
+    // Only allowed when booking is in "Creating own PTS file" stage
+    updatePtsDetails: protectedProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        ptsRef: z.string().min(1).optional(),
+        finalSupplierPaymentDate: z.date().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
+        // Agents can only update their own bookings
+        if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: 'FORBIDDEN' });
+        }
+        // Only allowed in "Creating own PTS file" stage
+        if (booking.currentStage !== 'Creating own PTS file') {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'PTS details can only be edited when the booking is in "Creating own PTS file" stage.' });
+        }
+        await updateBookingAdminFields(input.bookingId, {
+          ...(input.ptsRef !== undefined ? { ptsRef: input.ptsRef } : {}),
+          ...(input.finalSupplierPaymentDate !== undefined ? { finalSupplierPaymentDate: input.finalSupplierPaymentDate } : {}),
+        });
+        const changes: string[] = [];
+        if (input.ptsRef) changes.push(`PTS Ref set to "${input.ptsRef}"`);
+        if (input.finalSupplierPaymentDate) changes.push(`Final Supplier Payment Date set to ${input.finalSupplierPaymentDate.toLocaleDateString('en-GB')}`);
+        if (changes.length > 0) {
+          await createNote({
+            bookingId: input.bookingId,
+            authorId: ctx.user.id,
+            content: `[System] Agent updated PTS details: ${changes.join('; ')}.`,
+            isInternal: false,
+          });
+        }
+        return { success: true };
+      }),
+
     // Bulk import bookings from CSV (admin only)
     bulkImport: adminProcedure
       .input(
@@ -2202,6 +2239,30 @@ export const appRouter = router({
         }
         return getReimbursementItemDocs(input.reimbursementItemId);
       }),
+
+    // Admin: assign a reimbursement item to an admin user
+    assign: adminProcedure
+      .input(z.object({ id: z.number(), assignedToId: z.number().nullable() }))
+      .mutation(async ({ input }) => {
+        const { updateReimbursementAssignee } = await import("./db");
+        await updateReimbursementAssignee(input.id, input.assignedToId);
+        return { success: true };
+      }),
+
+    // Admin: mark a late reimbursement as actioned
+    markActioned: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const { markReimbursementActioned } = await import("./db");
+        await markReimbursementActioned(input.id);
+        return { success: true };
+      }),
+
+    // Admin: get all admin users for assignee dropdown
+    listAdminsForAssign: adminProcedure.query(async () => {
+      const allUsers = await getAllUsers();
+      return allUsers.filter((u) => u.role === "admin" || u.role === "super_admin").map((u) => ({ id: u.id, name: u.name ?? u.email }));
+    }),
   }),
 });
 export type AppRouter = typeof appRouter;

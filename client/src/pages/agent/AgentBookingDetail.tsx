@@ -69,6 +69,11 @@ export default function AgentBookingDetail() {
   const [addReimbItems, setAddReimbItems] = useState([{ supplierName: "", amount: "" }]);
   const [isSubmittingReimb, setIsSubmittingReimb] = useState(false);
 
+  // PTS details editing (only in Creating own PTS file stage)
+  const [editingPts, setEditingPts] = useState(false);
+  const [ptsRefInput, setPtsRefInput] = useState("");
+  const [paymentDateInput, setPaymentDateInput] = useState("");
+
   const utils = trpc.useUtils();
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
   const { data: notes = [], refetch: refetchNotes } = trpc.notes.list.useQuery({ bookingId });
@@ -78,6 +83,23 @@ export default function AgentBookingDetail() {
   const addNote = trpc.notes.add.useMutation();
   const addLateReimb = trpc.reimbursements.addLate.useMutation();
   const uploadItemDoc = trpc.reimbursements.uploadItemDoc.useMutation();
+  const updatePtsDetails = trpc.bookings.updatePtsDetails.useMutation({
+    onSuccess: () => {
+      utils.bookings.byId.invalidate({ id: bookingId });
+      setEditingPts(false);
+      toast.success("PTS details saved");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleSavePtsDetails = () => {
+    updatePtsDetails.mutate({
+      bookingId,
+      ptsRef: ptsRefInput.trim() || undefined,
+      finalSupplierPaymentDate: paymentDateInput ? new Date(paymentDateInput) : undefined,
+    });
+  };
+
   const updateCommission = trpc.bookings.updateCommission.useMutation({
     onSuccess: () => {
       toast.success("Commission amount saved");
@@ -304,11 +326,58 @@ export default function AgentBookingDetail() {
             : <span className="italic text-muted-foreground text-sm">Not set</span>}
         </div>
 
-        <div className={`rounded-xl p-3 border ${booking.ptsRef ? 'border-[#70FFE8]' : ''}`} style={{ background: booking.ptsRef ? '#ecfdf5' : '#f9fafb' }}>
-          <p className="text-xs text-muted-foreground mb-1 font-semibold">PTS Ref</p>
-          {booking.ptsRef
-            ? <CopyableRef value={booking.ptsRef} label="PTS ref" className="font-bold text-base" />
-            : <span className="italic text-muted-foreground text-sm">Not set yet</span>}
+        <div className={`rounded-xl p-3 border col-span-2 sm:col-span-1 ${booking.ptsRef ? 'border-[#70FFE8]' : booking.currentStage === 'Creating own PTS file' ? 'border-amber-300' : ''}`} style={{ background: booking.ptsRef ? '#ecfdf5' : booking.currentStage === 'Creating own PTS file' ? '#fffbeb' : '#f9fafb' }}>
+          <p className="text-xs text-muted-foreground mb-1 font-semibold flex items-center justify-between">
+            <span>PTS Ref</span>
+            {booking.currentStage === 'Creating own PTS file' && !editingPts && (
+              <button
+                onClick={() => { setPtsRefInput(booking.ptsRef ?? ""); setPaymentDateInput((booking as any).finalSupplierPaymentDate ? new Date((booking as any).finalSupplierPaymentDate).toISOString().split('T')[0] : ""); setEditingPts(true); }}
+                className="text-[10px] underline opacity-60 hover:opacity-100"
+              >
+                {booking.ptsRef ? "Edit" : "Add"}
+              </button>
+            )}
+          </p>
+          {editingPts && booking.currentStage === 'Creating own PTS file' ? (
+            <div className="space-y-2 mt-1">
+              <div>
+                <label className="text-[10px] text-muted-foreground">PTS Reference</label>
+                <Input
+                  value={ptsRefInput}
+                  onChange={(e) => setPtsRefInput(e.target.value)}
+                  placeholder="e.g. 2T0119631"
+                  className="h-7 text-xs mt-0.5"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground">Final Supplier Payment Date</label>
+                <Input
+                  type="date"
+                  value={paymentDateInput}
+                  onChange={(e) => setPaymentDateInput(e.target.value)}
+                  className="h-7 text-xs mt-0.5"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <button onClick={handleSavePtsDetails} disabled={updatePtsDetails.isPending} className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[10px] font-medium">
+                  {updatePtsDetails.isPending ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Save
+                </button>
+                <button onClick={() => setEditingPts(false)} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-red-50 text-red-600 text-[10px]">
+                  <X size={10} /> Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {booking.ptsRef
+                ? <CopyableRef value={booking.ptsRef} label="PTS ref" className="font-bold text-base" />
+                : <span className="italic text-muted-foreground text-sm">{booking.currentStage === 'Creating own PTS file' ? 'Tap "Add" to enter your PTS ref' : 'Not set yet'}</span>}
+              {(booking as any).finalSupplierPaymentDate && (
+                <p className="text-[10px] text-muted-foreground mt-1">Payment due: {format(new Date((booking as any).finalSupplierPaymentDate), 'dd MMM yyyy')}</p>
+              )}
+            </>
+          )}
         </div>
 
         {(booking as any).destination && (

@@ -407,32 +407,53 @@ export default function AdminBookingDetail() {
 
             {/* Reimbursement Items Panel */}
             {(reimbItems as any[]).length > 0 && (
-              <div className="pt-2 border-t space-y-2">
+              <div className="pt-2 border-t space-y-3">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Reimbursement Items ({(reimbItems as any[]).length})</p>
                 {(reimbItems as any[]).map((item: any) => {
                   const statusColor = item.status === 'paid' ? '#065f46' : item.status === 'scheduled' ? '#1d4ed8' : '#92400e';
                   const statusBg = item.status === 'paid' ? '#d1fae5' : item.status === 'scheduled' ? '#dbeafe' : '#fef3c7';
                   const statusLabel = item.status === 'paid' ? 'Paid' : item.status === 'scheduled' ? 'Scheduled' : 'Pending';
+                  const docs: any[] = item.docs ?? [];
                   return (
-                    <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg border text-sm" style={{ background: '#fafafa' }}>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{item.supplierName}</p>
-                        <p className="text-xs text-muted-foreground">£{Number(item.amount).toFixed(2)}{item.isLate ? ' · Late' : ''}</p>
+                    <div key={item.id} className="rounded-lg border overflow-hidden" style={{ background: item.isLate ? '#fffbeb' : '#fafafa', borderColor: item.isLate ? '#f59e0b' : undefined }}>
+                      {/* Item header */}
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate">{item.supplierName}</p>
+                          <p className="text-xs text-muted-foreground">£{Number(item.amount).toFixed(2)}{item.isLate ? ' · 🕒 Late submission' : ''}</p>
+                        </div>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: statusBg, color: statusColor }}>
+                          {statusLabel}
+                        </span>
+                        {item.status !== 'paid' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-6 px-2 flex-shrink-0"
+                            disabled={updateReimbStatus.isPending}
+                            onClick={() => updateReimbStatus.mutate({ id: item.id, status: item.status === 'pending' ? 'scheduled' : 'paid' })}
+                          >
+                            {item.status === 'pending' ? 'Mark Scheduled' : 'Mark Paid'}
+                          </Button>
+                        )}
                       </div>
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: statusBg, color: statusColor }}>
-                        {statusLabel}
-                      </span>
-                      {item.status !== 'paid' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs h-6 px-2 flex-shrink-0"
-                          disabled={updateReimbStatus.isPending}
-                          onClick={() => updateReimbStatus.mutate({ id: item.id, status: item.status === 'pending' ? 'scheduled' : 'paid' })}
-                        >
-                          {item.status === 'pending' ? 'Mark Scheduled' : 'Mark Paid'}
-                        </Button>
-                      )}
+                      {/* Documents for this item */}
+                      <div className="border-t px-3 py-2 space-y-1" style={{ background: '#f8fafc' }}>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">
+                          Documents ({docs.length})
+                        </p>
+                        {docs.length === 0 ? (
+                          <p className="text-xs text-muted-foreground italic">No documents uploaded yet for this reimbursement.</p>
+                        ) : (
+                          docs.map((doc: any) => (
+                            <div key={doc.id} className="flex items-center gap-2 text-xs">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#065f46" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                              <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="underline truncate flex-1" style={{ color: '#065f46' }}>{doc.fileName}</a>
+                              <span className="text-muted-foreground flex-shrink-0">{doc.createdAt ? new Date(doc.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : ''}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
                   );
                 })}

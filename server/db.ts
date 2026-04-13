@@ -1431,7 +1431,37 @@ export async function createReimbursementItems(items: Array<{
 export async function getReimbursementsByBooking(bookingId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(reimbursementItems).where(eq(reimbursementItems.bookingId, bookingId)).orderBy(reimbursementItems.createdAt);
+  const { reimbursementItemDocs } = await import("../drizzle/schema");
+  // Fetch items
+  const items = await db
+    .select()
+    .from(reimbursementItems)
+    .where(eq(reimbursementItems.bookingId, bookingId))
+    .orderBy(reimbursementItems.createdAt);
+  if (items.length === 0) return [];
+  // Fetch all docs for this booking
+  const docs = await db
+    .select()
+    .from(reimbursementItemDocs)
+    .where(eq(reimbursementItemDocs.bookingId, bookingId))
+    .orderBy(reimbursementItemDocs.createdAt);
+  // Group docs under their item
+  return items.map((item) => ({
+    ...item,
+    docs: docs.filter((d) => d.reimbursementItemId === item.id),
+  }));
+}
+
+export async function updateReimbursementAssignee(id: number, assignedToId: number | null) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(reimbursementItems).set({ assignedToId } as any).where(eq(reimbursementItems.id, id));
+}
+
+export async function markReimbursementActioned(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(reimbursementItems).set({ actionedAt: new Date() } as any).where(eq(reimbursementItems.id, id));
 }
 
 export async function getReimbursementsAdmin(filters?: {

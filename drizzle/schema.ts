@@ -323,6 +323,8 @@ export const reimbursementItems = mysqlTable("reimbursement_items", {
   scheduledAt: timestamp("scheduledAt"),          // when status moved to scheduled
   paidAt: timestamp("paidAt"),                    // when admin marked as paid
   paidById: int("paidById"),                      // FK → users.id (admin who marked paid)
+  assignedToId: int("assignedToId"),               // FK → users.id (admin assigned to handle this item)
+  actionedAt: timestamp("actionedAt"),             // when admin marked as actioned (for late items)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

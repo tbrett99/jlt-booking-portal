@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 
-type StatusFilter = "all" | "pending" | "scheduled" | "paid";
+type StatusFilter = "all" | "pending" | "scheduled" | "paid" | "late";
 
 const STATUS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
   pending:   { label: "Pending",   color: "#92400e", bg: "#fef3c7" },
@@ -21,13 +21,21 @@ const STATUS_BADGE: Record<string, { label: string; color: string; bg: string }>
 export default function AdminReimbursements() {
   const [, navigate] = useLocation();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const utils = trpc.useUtils();
 
-  const { data: items = [], isLoading, refetch } = trpc.reimbursements.list.useQuery({ status: statusFilter === "all" ? undefined : statusFilter });
+  const { data: allItems = [], isLoading, refetch } = trpc.reimbursements.list.useQuery({});
   const { data: stats } = trpc.reimbursements.dashboardStats.useQuery();
+  const { data: adminUsersForAssign = [] } = trpc.reimbursements.listAdminsForAssign.useQuery();
   const updateStatus = trpc.reimbursements.updateStatus.useMutation({
     onSuccess: () => { refetch(); },
     onError: (e) => toast.error(e.message),
   });
+  const assignReimb = trpc.reimbursements.assign.useMutation({ onSuccess: () => refetch() });
+  const markActioned = trpc.reimbursements.markActioned.useMutation({ onSuccess: () => refetch() });
+
+  const items = statusFilter === "all" ? allItems
+    : statusFilter === "late" ? allItems.filter((r) => r.isLate)
+    : allItems.filter((r) => r.status === statusFilter);
 
   const handleSchedule = (id: number) => {
     updateStatus.mutate({ id, status: "scheduled" });
@@ -142,7 +150,7 @@ export default function AdminReimbursements() {
 
       {/* Filter tabs */}
       <div className="flex gap-2 flex-wrap">
-        {(["all", "pending", "scheduled", "paid"] as StatusFilter[]).map((f) => (
+        {(["all", "pending", "scheduled", "paid", "late"] as StatusFilter[]).map((f) => (
           <button
             key={f}
             onClick={() => setStatusFilter(f)}
@@ -180,6 +188,7 @@ export default function AdminReimbursements() {
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Amount</th>
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Status</th>
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Departure</th>
+                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Assigned To</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Action</th>
                 </tr>
               </thead>
@@ -211,34 +220,46 @@ export default function AdminReimbursements() {
                       <td className="px-4 py-3 text-muted-foreground text-xs">
                         {r.departureDate ? format(new Date(r.departureDate), "dd MMM yyyy") : "—"}
                       </td>
+                      <td className="px-4 py-3">
+                        <select
+                          className="text-xs border rounded px-1.5 py-1 bg-white min-w-[120px]"
+                          value={(r as any).assignedToId ?? ""}
+                          onChange={(e) => assignReimb.mutate({ id: r.id, assignedToId: e.target.value ? Number(e.target.value) : null })}
+                        >
+                          <option value="">Unassigned</option>
+                          {adminUsersForAssign.map((a: any) => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                        </select>
+                      </td>
                       <td className="px-4 py-3 text-right">
-                        {r.status === "pending" && r.isLate && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7"
-                            disabled={updateStatus.isPending}
-                            onClick={() => handleSchedule(r.id)}
-                          >
-                            Mark Scheduled
-                          </Button>
-                        )}
-                        {r.status === "scheduled" && (
-                          <Button
-                            size="sm"
-                            className="text-xs h-7 font-semibold"
-                            style={{ background: "#70FFE8", color: "#414141" }}
-                            disabled={updateStatus.isPending}
-                            onClick={() => handlePaid(r.id)}
-                          >
-                            Mark Paid
-                          </Button>
-                        )}
-                        {r.status === "paid" && (
-                          <span className="text-xs text-muted-foreground">
-                            {r.paidAt ? format(new Date(r.paidAt), "dd MMM yyyy") : "Paid"}
-                          </span>
-                        )}
+                        <div className="flex items-center justify-end gap-2 flex-wrap">
+                          {r.status === "pending" && r.isLate && (
+                            <Button size="sm" variant="outline" className="text-xs h-7" disabled={updateStatus.isPending} onClick={() => handleSchedule(r.id)}>
+                              Mark Scheduled
+                            </Button>
+                          )}
+                          {r.status === "scheduled" && (
+                            <Button size="sm" className="text-xs h-7 font-semibold" style={{ background: "#70FFE8", color: "#414141" }} disabled={updateStatus.isPending} onClick={() => handlePaid(r.id)}>
+                              Mark Paid
+                            </Button>
+                          )}
+                          {r.status === "paid" && (
+                            <span className="text-xs text-muted-foreground">{(r as any).paidAt ? format(new Date((r as any).paidAt), "dd MMM yyyy") : "Paid"}</span>
+                          )}
+                          {r.isLate && !(r as any).actionedAt && (
+                            <button
+                              onClick={() => markActioned.mutate({ id: r.id })}
+                              disabled={markActioned.isPending}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium hover:bg-green-100 text-green-700 border border-green-200"
+                            >
+                              <CheckCircle2 size={10} /> Actioned
+                            </button>
+                          )}
+                          {r.isLate && (r as any).actionedAt && (
+                            <span className="text-[10px] text-green-600 font-medium">✓ Actioned</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

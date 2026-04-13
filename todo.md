@@ -727,3 +727,15 @@
 - [x] Agent booking detail: "Request Additional Reimbursement" button — opens form (supplier name + amount), creates late reimbursement item and notifies admin
 - [x] Remove old free-floating reimbursement doc upload from agent booking detail (replace with per-item upload)
 - [x] Admin Reimbursements page: show doc count per item with link to view docs
+
+## Reimbursement & PTS File Improvements (Apr 13 - Round 3)
+- [x] Admin booking detail: group reimbursement documents under their respective reimbursement item with clear supplier/amount label headers
+- [x] DB schema: add assignedToId (nullable FK to users) and actionedAt (nullable timestamp) to reimbursement_items
+- [x] Apply migration via webdev_execute_sql
+- [x] DB helpers: update getReimbursementsAdmin to include assignedTo name; add updateReimbursementAssignee and markReimbursementActioned helpers
+- [x] tRPC: reimbursements.assign (admin — set assignedToId on a reimbursement item), reimbursements.markActioned (admin — set actionedAt)
+- [x] Admin dashboard: prominent "Late Reimbursement Requests" alert card showing count of unactioned late reimbursements with link to Reimbursements page
+- [x] Admin Reimbursements page: highlight late/unactioned rows visually; add Assignee dropdown per row; add "Mark Actioned" button per late row
+- [x] Agent booking detail: show editable PTS reference field ONLY when booking is in "Creating own PTS file" stage
+- [x] Agent booking detail: show editable final supplier payment date field ONLY when booking is in "Creating own PTS file" stage
+- [x] Agent booking detail: on save, call a new tRPC mutation to update ptsRef and finalSupplierPaymentDate (agent-only, stage-gated)

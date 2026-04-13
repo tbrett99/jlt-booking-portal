@@ -114,6 +114,10 @@ export default function AdminDashboard() {
   const utils = trpc.useUtils();
   const { data: notifSettings } = trpc.settings.getNotificationsPaused.useQuery();
   const { data: reimbStats } = trpc.reimbursements.dashboardStats.useQuery();
+  const { data: allReimbs = [] } = trpc.reimbursements.list.useQuery({});
+  const { data: adminUsersForAssign = [] } = trpc.reimbursements.listAdminsForAssign.useQuery();
+  const assignReimb = trpc.reimbursements.assign.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
+  const markReimbActioned = trpc.reimbursements.markActioned.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
   const notificationsPaused = notifSettings?.paused ?? false;
   const setNotifPaused = trpc.settings.setNotificationsPaused.useMutation({
     onSuccess: () => utils.settings.getNotificationsPaused.invalidate(),
@@ -173,7 +177,8 @@ export default function AdminDashboard() {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
 
-  const totalPendingActions = pendingAmendments.length + reimbAmendments.length + pendingRefunds.length + pendingCancellations.length + pendingClaims.length;
+  const lateUnactioned = (allReimbs as any[]).filter((r) => r.isLate && !r.actionedAt);
+  const totalPendingActions = pendingAmendments.length + reimbAmendments.length + pendingRefunds.length + pendingCancellations.length + pendingClaims.length + lateUnactioned.length;
 
   // Files to Add to PTS: bookings in stages before "Added to PTS", excluding "Creating own PTS file" and "Cancelled"
   const STAGES_BEFORE_PTS = new Set(["New Booking", "Not on Topdog", "Query", "Reimb Docs Missing", "Urgent/Reimb", "T/O Package", "DP", "Holding Accounts"]);
@@ -400,6 +405,56 @@ export default function AdminDashboard() {
               </div>
             ))}
           </ExpandablePanel>
+
+          {/* Late Reimbursement Requests */}
+          {lateUnactioned.length > 0 && (
+            <ExpandablePanel
+              title="Late Reimbursement Requests"
+              count={lateUnactioned.length}
+              color="#dc2626" bg="#fff1f2" icon={Banknote}
+              linkHref="/reimbursements" linkLabel="Reimbursements Page"
+              emptyText="No unactioned late reimbursements"
+            >
+              {lateUnactioned.map((r: any) => (
+                <div key={r.id} className="flex items-start gap-2 p-2 rounded-lg border bg-rose-50/60">
+                  <Banknote size={11} className="flex-shrink-0 text-rose-600 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Link href={`/bookings/${r.bookingId}`}>
+                        <span className="text-xs font-semibold hover:underline cursor-pointer">{r.clientName ?? `Booking #${r.bookingId}`}</span>
+                      </Link>
+                      <Badge variant="outline" className="text-[9px] h-4 px-1.5" style={{ borderColor: '#fca5a5', color: '#dc2626' }}>Late</Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className="text-[10px] text-muted-foreground">Supplier: <span className="font-medium">{r.supplierName}</span></span>
+                      <span className="text-[10px] text-muted-foreground">£{Number(r.amount).toFixed(2)}</span>
+                      {r.agentName && <span className="text-[10px] text-muted-foreground">Agent: {r.agentName}</span>}
+                    </div>
+                    {/* Assignee dropdown */}
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <select
+                        className="text-[10px] border rounded px-1 py-0.5 bg-white"
+                        value={r.assignedToId ?? ""}
+                        onChange={(e) => assignReimb.mutate({ id: r.id, assignedToId: e.target.value ? Number(e.target.value) : null })}
+                      >
+                        <option value="">Unassigned</option>
+                        {adminUsersForAssign.map((a: any) => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => markReimbActioned.mutate({ id: r.id })}
+                        disabled={markReimbActioned.isPending}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors hover:bg-green-100 text-green-700 border border-green-200"
+                      >
+                        <CheckCircle2 size={10} /> Mark Actioned
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </ExpandablePanel>
+          )}
 
         </div>
       </div>
