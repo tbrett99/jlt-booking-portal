@@ -110,7 +110,7 @@ export default function AdminBookingDetail() {
     { query: mergeSearchQuery },
     { enabled: mergeSearchQuery.length >= 2 }
   );
-  const mergeSearchFiltered = (quickSearchResults as any[]).filter((r: any) => r.bookingId !== bookingId);
+  const mergeSearchFiltered = (quickSearchResults as any[]).filter((r: any) => r.id !== bookingId);
   const sharedNotes = allNotes.filter(n => !n.isInternal);
   const internalNotes = allNotes.filter(n => n.isInternal);
 
@@ -790,18 +790,18 @@ export default function AdminBookingDetail() {
                   <p className="text-sm text-muted-foreground text-center py-4">No bookings found</p>
                 ) : mergeSearchFiltered.map((r: any) => (
                   <button
-                    key={r.bookingId}
+                    key={r.id}
                     type="button"
                     className={`w-full text-left px-3 py-2.5 text-sm hover:bg-muted flex items-center justify-between ${
-                      mergeTarget?.id === r.bookingId ? 'bg-amber-50 border-l-2 border-amber-400' : ''
+                      mergeTarget?.id === r.id ? 'bg-amber-50 border-l-2 border-amber-400' : ''
                     }`}
-                    onClick={() => setMergeTarget({ id: r.bookingId, clientName: r.clientName })}
+                    onClick={() => setMergeTarget({ id: r.id, clientName: r.clientName })}
                   >
                     <div>
                       <p className="font-medium">{r.clientName}</p>
-                      <p className="text-xs text-muted-foreground">#{r.bookingId} · {r.stage}</p>
+                      <p className="text-xs text-muted-foreground">#{r.id} · {r.currentStage}</p>
                     </div>
-                    {mergeTarget?.id === r.bookingId && <span className="text-amber-600 text-xs font-semibold">Selected</span>}
+                    {mergeTarget?.id === r.id && <span className="text-amber-600 text-xs font-semibold">Selected</span>}
                   </button>
                 ))}
               </div>

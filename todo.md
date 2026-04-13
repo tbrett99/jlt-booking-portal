@@ -691,3 +691,26 @@
 - [x] Frontend: expand recurring events when fetching — generate virtual occurrences between from/to range based on recurrenceRule
 - [x] Backend: nightly job to check tasks with dueDate = tomorrow and send in-app notification to assignee
 - [x] Backend: mark reminderSentAt to avoid duplicate notifications
+
+## Reimbursement Workflow (Apr 13)
+- [x] DB schema: create reimbursement_items table (id, bookingId, agentId, supplierName, amount, status: pending/scheduled/paid, isLate, scheduledAt, paidAt, paidById, createdAt, updatedAt)
+- [x] Apply migration via webdev_execute_sql
+- [x] DB helpers: createReimbursementItems, getReimbursementsByBooking, getReimbursementsAdmin (all, filterable), updateReimbursementStatus, getReimbursementDashboardStats
+- [x] tRPC: reimbursements.createForBooking (called during booking creation), reimbursements.list (admin), reimbursements.updateStatus (admin — pending→scheduled, scheduled→paid), reimbursements.addLate (agent — adds late reimbursement to existing booking)
+- [x] Auto-status: when booking moves to "Added to PTS", all pending reimbursements for that booking auto-update to "scheduled"
+- [x] Late reimbursement notification: when admin toggles late reimbursement to "scheduled", send agent notification "Your reimbursement has been scheduled"
+- [x] Booking registration form: reimbursement checkbox → number selector → dynamic supplier rows (supplierName + amount each)
+- [x] Agent booking detail: "Add Late Reimbursement" section — same dynamic rows, submits as late
+- [x] Admin Reimbursements page: table of all reimbursements (client, PTS ref, agent, supplier, amount, status, departure date, late flag), filterable by status, Paid toggle per row
+- [x] Admin sidebar nav: Reimbursements link (admin/super_admin only)
+- [x] Pipeline Kanban cards: show "Reimbursement" badge on any booking with at least one reimbursement item
+- [x] Admin dashboard: pending reimbursements count + total value card
+- [x] Remove reimbursements from amendment pipeline auto-creation
+
+## Creating Own PTS File — Agent Task & Notification (Apr 13)
+- [x] Backend: when booking moves to "Creating own PTS file", send agent in-app notification + email reminding them to add PTS reference and final supplier payment date
+- [x] Email notification template key: creating_own_pts_file (editable by super admin)
+- [x] Agent dashboard: "Bookings Requiring Action" section — shows bookings in "Creating own PTS file" stage where ptsRef or finalSupplierPaymentDate is missing
+
+## Bug Fixes (Apr 13)
+- [x] Fix booking merge error: "Invalid input: expected number, received undefined" for targetId — merge of #30764 into #30763 fails

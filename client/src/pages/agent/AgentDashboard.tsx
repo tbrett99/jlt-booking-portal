@@ -54,6 +54,10 @@ export default function AgentDashboard() {
   const commissionClaimable = bookings.filter((b) => b.currentStage === "Commission Claimable");
   const needsAttention = bookings.filter((b) => ATTENTION_STAGES.has(b.currentStage));
   const unreadNotifs = notifications.filter((n) => !n.isRead);
+  // Bookings in "Creating own PTS file" that still need PTS ref or payment date
+  const requiresAction = bookings.filter(
+    (b) => b.currentStage === "Creating own PTS file" && (!b.ptsRef || !b.finalSupplierPaymentDate)
+  );
 
   const filteredBookings = useMemo(() => {
     let list = bookings;
@@ -194,6 +198,37 @@ export default function AgentDashboard() {
               Claim Now
             </button>
           </Link>
+        </div>
+      )}
+
+      {/* Bookings Requiring Action — Creating own PTS file */}
+      {requiresAction.length > 0 && (
+        <div className="rounded-xl border-2 p-4 space-y-3" style={{ borderColor: '#FFC3BC', background: '#FFF6ED' }}>
+          <div className="flex items-center gap-2">
+            <AlertCircle size={18} style={{ color: '#e11d48' }} />
+            <p className="font-semibold text-sm" style={{ color: '#9f1239' }}>
+              {requiresAction.length} booking{requiresAction.length > 1 ? "s" : ""} require{requiresAction.length === 1 ? "s" : ""} your action
+            </p>
+          </div>
+          <p className="text-xs" style={{ color: '#9f1239', opacity: 0.85 }}>
+            The following booking{requiresAction.length > 1 ? "s are" : " is"} in <strong>Creating own PTS file</strong> — please add the PTS reference and final supplier payment date so we can progress {requiresAction.length > 1 ? "them" : "it"} to Added to PTS.
+          </p>
+          <div className="space-y-2">
+            {requiresAction.map((b) => (
+              <Link key={b.id} href={`/bookings/${b.id}`}>
+                <div className="flex items-center justify-between rounded-lg bg-white border px-3 py-2 hover:shadow-sm transition-shadow cursor-pointer">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: '#414141' }}>{b.clientName}</p>
+                    <div className="flex gap-3 text-xs text-muted-foreground mt-0.5">
+                      {!b.ptsRef && <span className="text-red-600 font-medium">PTS ref missing</span>}
+                      {!b.finalSupplierPaymentDate && <span className="text-red-600 font-medium">Payment date missing</span>}
+                    </div>
+                  </div>
+                  <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 

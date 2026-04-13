@@ -16,6 +16,7 @@ import {
   refundSuppliers,
   refunds,
   reimbursementDocs,
+  reimbursementItems,
   users,
   systemSettings,
 } from "../drizzle/schema";
@@ -1400,4 +1401,138 @@ export async function deleteReimbursementDoc(docId: number) {
   if (!rows[0]) return null;
   await db.delete(reimbursementDocs).where(eq(reimbursementDocs.id, docId));
   return rows[0];
+}
+
+// ─── Reimbursement Items ──────────────────────────────────────────────────────
+
+export async function createReimbursementItems(items: Array<{
+  bookingId: number;
+  agentId: number;
+  supplierName: string;
+  amount: number;
+  isLate?: boolean;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  if (items.length === 0) return [];
+  await db.insert(reimbursementItems).values(
+    items.map((item) => ({
+      bookingId: item.bookingId,
+      agentId: item.agentId,
+      supplierName: item.supplierName,
+      amount: String(item.amount),
+      status: "pending" as const,
+      isLate: item.isLate ?? false,
+    }))
+  );
+  return db.select().from(reimbursementItems).where(eq(reimbursementItems.bookingId, items[0].bookingId));
+}
+
+export async function getReimbursementsByBooking(bookingId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(reimbursementItems).where(eq(reimbursementItems.bookingId, bookingId)).orderBy(reimbursementItems.createdAt);
+}
+
+export async function getReimbursementsAdmin(filters?: {
+  status?: "pending" | "scheduled" | "paid";
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (filters?.status) conditions.push(eq(reimbursementItems.status, filters.status));
+  const rows = await (conditions.length > 0
+    ? db
+        .select({
+          item: reimbursementItems,
+          clientName: bookings.clientName,
+          ptsRef: bookings.ptsRef,
+          departureDate: bookings.departureDate,
+          agentName: users.name,
+          agentEmail: users.email,
+        })
+        .from(reimbursementItems)
+        .leftJoin(bookings, eq(reimbursementItems.bookingId, bookings.id))
+        .leftJoin(users, eq(reimbursementItems.agentId, users.id))
+        .where(and(...conditions))
+        .orderBy(desc(reimbursementItems.createdAt))
+    : db
+        .select({
+          item: reimbursementItems,
+          clientName: bookings.clientName,
+          ptsRef: bookings.ptsRef,
+          departureDate: bookings.departureDate,
+          agentName: users.name,
+          agentEmail: users.email,
+        })
+        .from(reimbursementItems)
+        .leftJoin(bookings, eq(reimbursementItems.bookingId, bookings.id))
+        .leftJoin(users, eq(reimbursementItems.agentId, users.id))
+        .orderBy(desc(reimbursementItems.createdAt)));
+  return rows.map((r) => ({
+    ...r.item,
+    clientName: r.clientName ?? null,
+    ptsRef: r.ptsRef ?? null,
+    departureDate: r.departureDate ?? null,
+    agentName: r.agentName ?? null,
+    agentEmail: r.agentEmail ?? null,
+  }));
+}
+
+export async function updateReimbursementStatus(
+  id: number,
+  status: "pending" | "scheduled" | "paid",
+  actorId: number
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const now = new Date();
+  const updates: Record<string, unknown> = { status };
+  if (status === "scheduled") updates.scheduledAt = now;
+  if (status === "paid") { updates.paidAt = now; updates.paidById = actorId; }
+  await db.update(reimbursementItems).set(updates as any).where(eq(reimbursementItems.id, id));
+  const rows = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function scheduleReimbursementsForBooking(bookingId: number) {
+  // Called when booking moves to "Added to PTS" — auto-schedule all pending non-late items
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(reimbursementItems)
+    .set({ status: "scheduled", scheduledAt: new Date() } as any)
+    .where(
+      and(
+        eq(reimbursementItems.bookingId, bookingId),
+        eq(reimbursementItems.status, "pending"),
+        eq(reimbursementItems.isLate, false)
+      )
+    );
+}
+
+export async function getReimbursementDashboardStats() {
+  const db = await getDb();
+  if (!db) return { pendingCount: 0, pendingTotal: 0, scheduledCount: 0, scheduledTotal: 0 };
+  const rows = await db
+    .select({
+      status: reimbursementItems.status,
+      amount: reimbursementItems.amount,
+    })
+    .from(reimbursementItems)
+    .where(not(eq(reimbursementItems.status, "paid")));
+  let pendingCount = 0, pendingTotal = 0, scheduledCount = 0, scheduledTotal = 0;
+  for (const r of rows) {
+    const amt = Number(r.amount);
+    if (r.status === "pending") { pendingCount++; pendingTotal += amt; }
+    if (r.status === "scheduled") { scheduledCount++; scheduledTotal += amt; }
+  }
+  return { pendingCount, pendingTotal, scheduledCount, scheduledTotal };
+}
+
+export async function getBookingReimbursementFlag(bookingId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db.select({ id: reimbursementItems.id }).from(reimbursementItems).where(eq(reimbursementItems.bookingId, bookingId)).limit(1);
+  return rows.length > 0;
 }

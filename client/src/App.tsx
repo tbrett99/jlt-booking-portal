@@ -34,6 +34,7 @@ import PtsMissingPaymentDate from "./pages/admin/PtsMissingPaymentDate";
 import AdminNotifPrefs from "./pages/admin/AdminNotifPrefs";
 import AdminTasks from "./pages/admin/AdminTasks";
 import AdminCalendar from "./pages/admin/AdminCalendar";
+import AdminReimbursements from "./pages/admin/AdminReimbursements";
 import PortalLayout from "./components/PortalLayout";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
@@ -148,6 +149,7 @@ function AuthRouter() {
         <Route path="/notif-prefs" component={AdminNotifPrefs} />
         <Route path="/admin/tasks" component={AdminTasks} />
         <Route path="/admin/calendar" component={AdminCalendar} />
+        <Route path="/admin/reimbursements" component={AdminReimbursements} />
         <Route path="/profile" component={ProfilePage} />
         <Route component={NotFound} />
       </Switch>

@@ -311,6 +311,24 @@ export const calendarEvents = mysqlTable("calendar_events", {
 export type CalendarEvent = typeof calendarEvents.$inferSelect;
 export type InsertCalendarEvent = typeof calendarEvents.$inferInsert;
 
+// ─── Reimbursement Items ─────────────────────────────────────────────────────
+export const reimbursementItems = mysqlTable("reimbursement_items", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId").notNull(),          // FK → bookings.id
+  agentId: int("agentId").notNull(),              // FK → users.id
+  supplierName: varchar("supplierName", { length: 255 }).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  status: mysqlEnum("status", ["pending", "scheduled", "paid"]).default("pending").notNull(),
+  isLate: boolean("isLate").default(false).notNull(), // true if added after booking reached Added to PTS
+  scheduledAt: timestamp("scheduledAt"),          // when status moved to scheduled
+  paidAt: timestamp("paidAt"),                    // when admin marked as paid
+  paidById: int("paidById"),                      // FK → users.id (admin who marked paid)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ReimbursementItem = typeof reimbursementItems.$inferSelect;
+export type InsertReimbursementItem = typeof reimbursementItems.$inferInsert;
+
 // ─── System Settings ──────────────────────────────────────────────────────────
 // Simple key-value store for global system flags (e.g. notifications paused)
 export const systemSettings = mysqlTable("system_settings", {

@@ -113,6 +113,7 @@ export default function AdminDashboard() {
   const { data: claims = [] } = trpc.commissionClaims.all.useQuery();
   const utils = trpc.useUtils();
   const { data: notifSettings } = trpc.settings.getNotificationsPaused.useQuery();
+  const { data: reimbStats } = trpc.reimbursements.dashboardStats.useQuery();
   const notificationsPaused = notifSettings?.paused ?? false;
   const setNotifPaused = trpc.settings.setNotificationsPaused.useMutation({
     onSuccess: () => utils.settings.getNotificationsPaused.invalidate(),
@@ -220,6 +221,7 @@ export default function AdminDashboard() {
           { label: "Amendments", value: pendingAmendments.length, icon: FileText, color: pendingAmendments.length > 0 ? "#fef3c7" : "#f3f4f6", textColor: pendingAmendments.length > 0 ? "#92400e" : "#6b7280" },
           { label: "Refunds", value: pendingRefunds.length, icon: RefreshCw, color: pendingRefunds.length > 0 ? "#fce7f3" : "#f3f4f6", textColor: pendingRefunds.length > 0 ? "#9d174d" : "#6b7280" },
           { label: "Comm. Ready", value: commissionReady.length, icon: Sparkles, color: commissionReady.length > 0 ? "#d1fae5" : "#f3f4f6", textColor: commissionReady.length > 0 ? "#065f46" : "#6b7280" },
+          { label: "Pending Reimb.", value: reimbStats?.pendingCount ?? 0, icon: Banknote, color: (reimbStats?.pendingCount ?? 0) > 0 ? "#dbeafe" : "#f3f4f6", textColor: (reimbStats?.pendingCount ?? 0) > 0 ? "#1e3a5f" : "#6b7280" },
         ].map(({ label, value, icon: Icon, color, textColor }) => (
           <Card key={label} className="cursor-default">
             <CardContent className="p-3">

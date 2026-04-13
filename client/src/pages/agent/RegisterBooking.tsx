@@ -22,6 +22,7 @@ export default function RegisterBooking() {
   const [isHistoricBooking, setIsHistoricBooking] = useState(false);
   const [topdogRef, setTopdogRef] = useState("");
   const [reimbursementsRequired, setReimbursementsRequired] = useState(false);
+  const [reimbItems, setReimbItems] = useState<{ supplierName: string; amount: string }[]>([{ supplierName: "", amount: "" }]);
   const [docFile, setDocFile] = useState<File | null>(null);
   const [expectedCommission, setExpectedCommission] = useState("");
   const [grossCost, setGrossCost] = useState("");
@@ -59,12 +60,16 @@ export default function RegisterBooking() {
     }
     setIsSubmitting(true);
     try {
+      const validReimbItems = reimbursementsRequired
+        ? reimbItems.filter((r) => r.supplierName.trim() && parseFloat(r.amount) > 0).map((r) => ({ supplierName: r.supplierName.trim(), amount: parseFloat(r.amount) }))
+        : [];
       const booking = await createBooking.mutateAsync({
         clientName,
         departureDate: new Date(departureDate),
         bookedDate: new Date(bookedDate),
         topdogRef: topdogRef || undefined,
         reimbursementsRequired,
+        reimbursementItems: validReimbItems,
         expectedCommission: !isPersonalBooking && commNum > 0 ? commNum : undefined,
         grossCost: grossNum > 0 ? grossNum : undefined,
         destination: destination || undefined,
@@ -286,59 +291,83 @@ export default function RegisterBooking() {
             </div>
 
             {/* Reimbursements */}
-            <div className="space-y-3">
-              <Label>Reimbursements Required?</Label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="reimb"
-                    checked={!reimbursementsRequired}
-                    onChange={() => setReimbursementsRequired(false)}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm">No</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="reimb"
-                    checked={reimbursementsRequired}
-                    onChange={() => setReimbursementsRequired(true)}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm">Yes</span>
-                </label>
-              </div>
-            </div>
+            <div className="rounded-lg border-2 border-dashed p-4 space-y-3" style={{ borderColor: reimbursementsRequired ? '#02E6D2' : '#e5e7eb', background: reimbursementsRequired ? '#f0fffb' : undefined }}>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reimbursementsRequired}
+                  onChange={(e) => {
+                    setReimbursementsRequired(e.target.checked);
+                    if (e.target.checked && reimbItems.length === 0) setReimbItems([{ supplierName: "", amount: "" }]);
+                  }}
+                  className="w-4 h-4 mt-0.5 accent-teal-500"
+                />
+                <div>
+                  <span className="text-sm font-semibold">This booking has reimbursements</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Tick this if you are owed reimbursements from a supplier. Enter each one separately below.
+                  </p>
+                </div>
+              </label>
 
-            {reimbursementsRequired && (
-              <div className="space-y-2 p-4 rounded-lg border-2 border-dashed" style={{ borderColor: '#70FFE8', background: '#FFF6ED' }}>
-                <Label>Reimbursement Documents</Label>
-                <p className="text-xs text-muted-foreground">Upload supporting documents. You can also upload these later from the booking page.</p>
-                {docFile ? (
-                  <div className="flex items-center gap-2 p-2 bg-white rounded-lg border">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{docFile.name}</p>
-                      <p className="text-xs text-muted-foreground">{(docFile.size / 1024).toFixed(1)} KB</p>
+              {reimbursementsRequired && (
+                <div className="space-y-3 pt-1">
+                  {reimbItems.map((item, idx) => (
+                    <div key={idx} className="flex gap-2 items-end">
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs">Supplier Name</Label>
+                        <Input
+                          placeholder="e.g. Cosmos Tours"
+                          value={item.supplierName}
+                          onChange={(e) => {
+                            const updated = [...reimbItems];
+                            updated[idx] = { ...updated[idx], supplierName: e.target.value };
+                            setReimbItems(updated);
+                          }}
+                        />
+                      </div>
+                      <div className="w-32 space-y-1">
+                        <Label className="text-xs">Amount (£)</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={item.amount}
+                            onChange={(e) => {
+                              const updated = [...reimbItems];
+                              updated[idx] = { ...updated[idx], amount: e.target.value };
+                              setReimbItems(updated);
+                            }}
+                            className="pl-7"
+                          />
+                        </div>
+                      </div>
+                      {reimbItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setReimbItems(reimbItems.filter((_, i) => i !== idx))}
+                          className="mb-0.5 text-muted-foreground hover:text-destructive"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
                     </div>
-                    <button type="button" onClick={() => setDocFile(null)} className="text-muted-foreground hover:text-destructive">
-                      <X size={16} />
-                    </button>
-                  </div>
-                ) : (
+                  ))}
                   <button
                     type="button"
-                    onClick={() => fileRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium hover:bg-white transition-colors"
+                    onClick={() => setReimbItems([...reimbItems, { supplierName: "", amount: "" }])}
+                    className="text-xs font-medium underline"
+                    style={{ color: '#02E6D2' }}
                   >
-                    <Upload size={16} />
-                    Choose file
+                    + Add another reimbursement
                   </button>
-                )}
-                <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
-              </div>
-            )}
+                  <p className="text-xs text-muted-foreground">You can upload supporting documents from the booking page after submission.</p>
+                </div>
+              )}
+            </div>
 
             <div className="flex gap-3 pt-2">
               <Button
@@ -397,7 +426,7 @@ export default function RegisterBooking() {
                     setSuccessBooking(null);
                     const todayStr = new Date().toISOString().split("T")[0];
                     setClientName(""); setDepartureDate(""); setBookedDate(todayStr); setTopdogRef("");
-                    setReimbursementsRequired(false); setDocFile(null); setExpectedCommission("");
+                    setReimbursementsRequired(false); setReimbItems([{ supplierName: "", amount: "" }]); setDocFile(null); setExpectedCommission("");
                     setGrossCost(""); setDestination(""); setIsHistoricBooking(false);
                   }}
                 >

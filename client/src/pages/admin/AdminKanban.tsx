@@ -323,6 +323,12 @@ export default function AdminKanban() {
                                 <CopyableRef value={booking.ptsRef} label="PTS ref" />
                               )}
                               <div className="flex flex-wrap gap-1 mt-1">
+                                {booking.reimbursementsRequired && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded font-semibold"
+                                    style={{ background: '#dbeafe', color: '#1e3a5f' }}>
+                                    Reimbursement
+                                  </span>
+                                )}
                                 {booking.reimbursementsRequired && !booking.reimbursementDocUrl && (
                                   <span className="text-xs px-1.5 py-0.5 rounded"
                                     style={{ background: '#fee2e2', color: '#991b1b' }}>

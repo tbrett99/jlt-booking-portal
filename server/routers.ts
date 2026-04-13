@@ -89,6 +89,12 @@ import {
   getTasksDueForReminder,
   markCalendarReminderSent,
   deleteCalendarEvent,
+  createReimbursementItems,
+  getReimbursementsByBooking,
+  getReimbursementsAdmin,
+  updateReimbursementStatus,
+  scheduleReimbursementsForBooking,
+  getReimbursementDashboardStats,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
@@ -184,6 +190,20 @@ const DEFAULT_TEMPLATES = [
     subject: "Reimbursement Document Uploaded Late",
     bodyHtml: `<p>Hi Admin,</p><p>Agent <strong>{{agentName}}</strong> has uploaded a reimbursement document for booking <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) after the initial submission.</p>`,
     recipientType: "admin" as const,
+  },
+  {
+    triggerKey: "creating_own_pts_file",
+    label: "Creating Own PTS File",
+    subject: "Action Required: Add PTS Reference & Payment Date",
+    bodyHtml: `<p>Hi {{agentName}},</p><p>Your booking for <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has been moved to <strong>Creating own PTS file</strong>.</p><p>Please log in to the portal and update the following details on your booking as soon as possible:</p><ul><li><strong>PTS Reference</strong></li><li><strong>Final Supplier Payment Date</strong></li></ul><p>Once these are added, the JLT team will move your booking to Added to PTS and it will continue through the normal process.</p><p>The JLT Group Team</p>`,
+    recipientType: "agent" as const,
+  },
+  {
+    triggerKey: "reimbursement_scheduled",
+    label: "Reimbursement Scheduled",
+    subject: "Your Reimbursement Has Been Scheduled",
+    bodyHtml: `<p>Hi {{agentName}},</p><p>Your reimbursement for <strong>{{supplierName}}</strong> (amount: {{amount}}) on booking <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has been scheduled for payment.</p><p>You will be notified once it has been processed.</p><p>The JLT Group Team</p>`,
+    recipientType: "agent" as const,
   },
 ];
 
@@ -558,6 +578,10 @@ export const appRouter = router({
           destination: z.string().optional(),
           isPersonalBooking: z.boolean().optional(),
           isHistoricBooking: z.boolean().optional(),
+          reimbursementItems: z.array(z.object({
+            supplierName: z.string().min(1),
+            amount: z.number().positive(),
+          })).optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -582,9 +606,22 @@ export const appRouter = router({
           });
         }
         const booking = await createBooking({ ...input, agentId: ctx.user.id });
-        // If historic booking, move immediately to "Added to PTS"
+        // Create reimbursement items if provided
+        if (booking?.id && input.reimbursementItems && input.reimbursementItems.length > 0) {
+          await createReimbursementItems(
+            input.reimbursementItems.map((item) => ({
+              bookingId: booking.id,
+              agentId: ctx.user.id,
+              supplierName: item.supplierName,
+              amount: item.amount,
+              isLate: false,
+            }))
+          );
+        }
+        // If historic booking, move immediately to "Added to PTS" and auto-schedule reimbursements
         if (input.isHistoricBooking && booking?.id) {
           await updateBookingStage(booking.id, "Added to PTS", ctx.user.id);
+          await scheduleReimbursementsForBooking(booking.id);
           await createNote({
             bookingId: booking.id,
             authorId: ctx.user.id,
@@ -705,12 +742,18 @@ export const appRouter = router({
 
         const updated = await updateBookingStage(input.bookingId, input.toStage, ctx.user.id);
 
+        // Auto-schedule pending reimbursements when booking moves to "Added to PTS"
+        if (input.toStage === "Added to PTS") {
+          await scheduleReimbursementsForBooking(input.bookingId);
+        }
+
         // Trigger notifications based on stage
         const agent = await getUserById(booking.agentId);
         const stageToTrigger: Record<string, string> = {
           "Not on Topdog": "not_on_topdog",
           Query: "query",
           "Reimb Docs Missing": "reimb_docs_missing",
+          "Creating own PTS file": "creating_own_pts_file",
           "Added to PTS": "added_to_pts",
           "Commission Claimable": "commission_claimable",
           "Commission Claimed": "commission_claimed",
@@ -2004,6 +2047,107 @@ export const appRouter = router({
       }
       return { sent };
     }),
+  }),
+
+  reimbursements: router({
+    // Agent: get reimbursements for their own booking
+    getByBooking: protectedProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const items = await getReimbursementsByBooking(input.bookingId);
+        // Agents can only see their own booking's reimbursements
+        if (ctx.user.role === "agent" && items.length > 0 && items[0].agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        return items;
+      }),
+
+    // Admin: list all reimbursements with optional status filter
+    list: adminProcedure
+      .input(z.object({ status: z.enum(["pending", "scheduled", "paid"]).optional() }))
+      .query(async ({ input }) => {
+        return getReimbursementsAdmin(input);
+      }),
+
+    // Admin: dashboard stats
+    dashboardStats: adminProcedure.query(async () => {
+      return getReimbursementDashboardStats();
+    }),
+
+    // Admin: update status (pending→scheduled or scheduled→paid)
+    updateStatus: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(["pending", "scheduled", "paid"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const item = await updateReimbursementStatus(input.id, input.status, ctx.user.id);
+        // If a late reimbursement is moved to scheduled, notify the agent
+        if (item && item.isLate && input.status === "scheduled") {
+          await createInAppNotification({
+            userId: item.agentId,
+            message: `Your reimbursement for "${item.supplierName}" has been scheduled for payment.`,
+            linkUrl: `/agent/bookings/${item.bookingId}`,
+          });
+          // Also send email notification
+          try {
+            const agent = await getUserById(item.agentId);
+            if (agent?.email) {
+              await sendNotificationEmail({
+                triggerKey: "reimbursement_scheduled",
+                toEmail: agent.email,
+                toName: agent.name ?? "Agent",
+                bookingId: item.bookingId,
+                variables: { supplierName: item.supplierName, amount: `£${Number(item.amount).toFixed(2)}` },
+              });
+            }
+          } catch { /* email failure is non-fatal */ }
+        }
+        return { success: true };
+      }),
+
+    // Agent: add late reimbursement items to an existing booking
+    addLate: protectedProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        items: z.array(z.object({
+          supplierName: z.string().min(1),
+          amount: z.number().positive(),
+        })).min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        // Verify booking belongs to this agent
+        const { getBookingById: getBooking } = await import("./db");
+        const booking = await getBooking(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        // Determine if this is late (booking already at Added to PTS or later)
+        const lateStages = ["Added to PTS", "Commission Claimable", "Commission Claimed", "Cancelled", "Holding Accounts"];
+        const isLate = lateStages.includes(booking.currentStage);
+        const created = await createReimbursementItems(
+          input.items.map((item) => ({
+            bookingId: input.bookingId,
+            agentId: booking.agentId,
+            supplierName: item.supplierName,
+            amount: item.amount,
+            isLate,
+          }))
+        );
+        // Notify admins of late reimbursement
+        if (isLate) {
+          const admins = (await getAllUsers()).filter((u) => u.role === "admin" || u.role === "super_admin");
+          for (const admin of admins) {
+            await createInAppNotification({
+              userId: admin.id,
+              message: `Late reimbursement added to booking #${input.bookingId} (${booking.clientName}) by ${ctx.user.name ?? "agent"}.`,
+              linkUrl: `/admin/bookings/${input.bookingId}`,
+            });
+          }
+        }
+        return created;
+      }),
   }),
 });
 export type AppRouter = typeof appRouter;

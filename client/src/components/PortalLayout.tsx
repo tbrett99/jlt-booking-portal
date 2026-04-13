@@ -6,7 +6,7 @@ import {
   Bell, BookOpen, CalendarDays, ChevronLeft, ChevronRight, ClipboardList,
   FileText, Home, LayoutDashboard, LogOut, Mail, Menu, Users, X,
   ArrowLeftRight, CheckCircle2, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
-  MessageSquare, BarChart2, CheckSquare, BellRing
+  MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -71,6 +71,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       : []),
     { label: "Notif. Preferences", href: "/notif-prefs", icon: <BellRing size={18} /> },
     { label: "Calendar", href: "/admin/calendar", icon: <CalendarDays size={18} /> },
+    { label: "Reimbursements", href: "/admin/reimbursements", icon: <PoundSterling size={18} /> },
   ];
 
   const navItems = user?.role === "agent"
