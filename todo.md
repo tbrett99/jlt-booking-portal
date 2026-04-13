@@ -752,3 +752,7 @@
 - [x] Investigate "To Add to PTS" count: the 64 figure counts all bookings in pre-PTS stages (New Booking, Not on Topdog, Query, Reimb Docs Missing, Urgent/Reimb, T/O Package, DP, Holding Accounts). The 59 figure was a different filter. Now unified to use the same STAGES_BEFORE_PTS set throughout.
 - [x] Sidebar: collapse into groups with toggles — Bookings (Pipeline), Amendments Pipeline, Refund Pipeline, Reimbursements, Commissions (toggle: Due / Management), Messages, Calendar (toggle: Calendar / Tasks), Reports (Agent Performance + Admin Reports), Users, Import CSV, Notifications (toggle: Notifications / Preferences)
 - [x] Admin dashboard: full UX overhaul — urgency-first layout, prominent action cards for items needing immediate attention, clear visual hierarchy so nothing slips through
+
+## Added to PTS Notification Update (Apr 13)
+- [x] Update "Added to PTS" email template to include PTS reference, bank transfer instructions, and PPS Order Description guidance
+- [x] Ensure ptsRef variable is passed to the notification renderer when the added_to_pts trigger fires

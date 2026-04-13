@@ -145,8 +145,8 @@ const DEFAULT_TEMPLATES = [
   {
     triggerKey: "added_to_pts",
     label: "Added to PTS",
-    subject: "Booking Added to PTS",
-    bodyHtml: `<p>Hi {{agentName}},</p><p>Your booking for <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has been added to PTS.</p><p>The JLT Group Team</p>`,
+    subject: "Booking Added to PTS — Reference: {{ptsRef}}",
+    bodyHtml: `<p>Hi {{agentName}},</p><p>Great news — your booking for <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has been added to PTS.</p><p><strong>Your PTS Reference is: {{ptsRef}}</strong></p><p>Please keep this reference to hand, as you will need it in two important situations:</p><ul><li><strong>Bank transfer payments:</strong> If your client is paying by bank transfer, they should use <strong>{{ptsRef}}</strong> as the payment reference so the funds are matched correctly.</li><li><strong>PPS payment links:</strong> If you are generating a payment link via PPS, please enter <strong>{{ptsRef}}</strong> in the <em>Order Description</em> field when creating the link.</li></ul><p>If you have any questions, please don't hesitate to get in touch.</p><p>The JLT Group Team</p>`,
     recipientType: "agent" as const,
   },
   {
@@ -765,7 +765,10 @@ export const appRouter = router({
             triggerKey,
             toEmail: agent.email,
             toName: agent.name ?? "Agent",
-            variables: { clientName: booking.clientName },
+            variables: {
+              clientName: booking.clientName,
+              ptsRef: (booking as any).ptsRef ?? "",
+            },
             bookingId: booking.id,
           });
           await createInAppNotification({
