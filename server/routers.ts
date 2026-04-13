@@ -2191,7 +2191,8 @@ export const appRouter = router({
       .input(z.object({
         reimbursementItemId: z.number(),
         bookingId: z.number(),
-        fileUrl: z.string().url(),
+        // Accept either a full URL (already uploaded) or a base64 data URL
+        fileUrl: z.string().min(1),
         fileKey: z.string(),
         fileName: z.string(),
       }))
@@ -2204,10 +2205,21 @@ export const appRouter = router({
         if (ctx.user.role === "agent" && item.agentId !== ctx.user.id) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
+        // If the client sent a base64 data URL, upload it to S3 first
+        let finalUrl = input.fileUrl;
+        if (input.fileUrl.startsWith("data:")) {
+          const { storagePut } = await import("./storage");
+          const matches = input.fileUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (!matches) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid file data" });
+          const [, mimeType, b64] = matches;
+          const buffer = Buffer.from(b64, "base64");
+          const { url } = await storagePut(input.fileKey, buffer, mimeType);
+          finalUrl = url;
+        }
         const docs = await addReimbursementItemDoc({
           reimbursementItemId: input.reimbursementItemId,
           bookingId: input.bookingId,
-          fileUrl: input.fileUrl,
+          fileUrl: finalUrl,
           fileKey: input.fileKey,
           fileName: input.fileName,
           uploadedById: ctx.user.id,
@@ -2262,6 +2274,18 @@ export const appRouter = router({
     listAdminsForAssign: adminProcedure.query(async () => {
       const allUsers = await getAllUsers();
       return allUsers.filter((u) => u.role === "admin" || u.role === "super_admin").map((u) => ({ id: u.id, name: u.name ?? u.email }));
+    }),
+
+    // Agent: get bookings that have at least one reimbursement item with no docs
+    myBookingsWithMissingDocs: protectedProcedure.query(async ({ ctx }) => {
+      const { getReimbItemsWithMissingDocsByAgent } = await import("./db");
+      return getReimbItemsWithMissingDocsByAgent(ctx.user.id);
+    }),
+
+    // Admin: count of outstanding reimbursements (pending, not yet scheduled)
+    outstandingCount: adminProcedure.query(async () => {
+      const { getOutstandingReimbursementsCount } = await import("./db");
+      return getOutstandingReimbursementsCount();
     }),
   }),
 });

@@ -16,7 +16,8 @@ import {
   BookOpen, Users, FileText, TrendingUp, Bell, ArrowRight,
   AlertTriangle, Sparkles, AlertCircle, Calendar, Clock,
   CheckCircle2, Banknote, RefreshCw, ChevronRight, Upload, BellOff,
-  XCircle, ChevronDown, ChevronUp,
+  XCircle, ChevronDown, ChevronUp, PoundSterling, ClipboardList,
+  Flame, TriangleAlert
 } from "lucide-react";
 import { format, differenceInDays, addDays } from "date-fns";
 
@@ -50,35 +51,44 @@ function RefRow({ label, value }: { label: string; value: string | null | undefi
   return <span className="text-[10px] text-muted-foreground">{label}: <span className="font-medium">{value}</span></span>;
 }
 
-function ExpandablePanel({
-  title, count, color, bg, icon: Icon, linkHref, linkLabel, children, emptyText,
+// ── Urgency Action Card ────────────────────────────────────────────────────────
+function UrgencyCard({
+  title, count, color, bg, borderColor, icon: Icon, href, linkLabel, children, emptyText, priority,
 }: {
-  title: string; count: number; color: string; bg: string; icon: React.ElementType;
-  linkHref: string; linkLabel: string; children: React.ReactNode; emptyText: string;
+  title: string; count: number; color: string; bg: string; borderColor: string;
+  icon: React.ElementType; href: string; linkLabel: string;
+  children: React.ReactNode; emptyText: string;
+  priority: "critical" | "high" | "normal";
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(count > 0);
+  const priorityRing = priority === "critical" && count > 0
+    ? "ring-2 ring-red-400 ring-offset-1"
+    : priority === "high" && count > 0
+      ? "ring-1 ring-amber-300 ring-offset-1"
+      : "";
+
   return (
-    <Card className="border-l-4" style={{ borderLeftColor: color }}>
-      <CardHeader className="pb-2 pt-4 px-4">
-        <div className="flex items-center justify-between">
+    <Card className={`border-l-4 ${priorityRing}`} style={{ borderLeftColor: borderColor }}>
+      <CardHeader className="pb-2 pt-3 px-4">
+        <div className="flex items-center justify-between gap-2">
           <button
-            className="flex items-center gap-2 text-left flex-1"
+            className="flex items-center gap-2 text-left flex-1 min-w-0"
             onClick={() => setOpen((o) => !o)}
           >
             <div className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
-              style={{ background: count > 0 ? color + '22' : '#f3f4f6' }}>
-              <Icon size={13} style={{ color: count > 0 ? color : '#9ca3af' }} />
+              style={{ background: count > 0 ? borderColor + '22' : '#f3f4f6' }}>
+              <Icon size={13} style={{ color: count > 0 ? borderColor : '#9ca3af' }} />
             </div>
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              {title}
-              <span className="text-xs px-1.5 py-0.5 rounded-full font-bold"
+            <div className="flex items-center gap-2 min-w-0">
+              <CardTitle className="text-sm font-semibold truncate">{title}</CardTitle>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${count > 0 ? "animate-none" : ""}`}
                 style={{ background: count > 0 ? bg : '#f3f4f6', color: count > 0 ? color : '#9ca3af' }}>
                 {count}
               </span>
-            </CardTitle>
-            {open ? <ChevronUp size={13} className="text-muted-foreground ml-1" /> : <ChevronDown size={13} className="text-muted-foreground ml-1" />}
+            </div>
+            {open ? <ChevronUp size={12} className="text-muted-foreground ml-auto flex-shrink-0" /> : <ChevronDown size={12} className="text-muted-foreground ml-auto flex-shrink-0" />}
           </button>
-          <Link href={linkHref}>
+          <Link href={href}>
             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 flex-shrink-0" style={{ color }}>
               {linkLabel} <ArrowRight size={11} />
             </Button>
@@ -86,13 +96,13 @@ function ExpandablePanel({
         </div>
       </CardHeader>
       {open && (
-        <CardContent className="px-4 pb-4">
+        <CardContent className="px-4 pb-3">
           {count === 0 ? (
-            <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
-              <CheckCircle2 size={14} className="text-emerald-400" /> {emptyText}
+            <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+              <CheckCircle2 size={13} className="text-emerald-400" /> {emptyText}
             </div>
           ) : (
-            <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
               {children}
             </div>
           )}
@@ -105,7 +115,6 @@ function ExpandablePanel({
 export default function AdminDashboard() {
   const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery({});
   const { data: agentList = [] } = trpc.users.listAgents.useQuery();
-  const { data: adminList = [] } = trpc.users.listAdmins.useQuery();
   const { data: amendments = [] } = trpc.amendments.all.useQuery();
   const { data: refunds = [] } = trpc.refunds.all.useQuery();
   const { data: cancellations = [] } = trpc.cancellations.all.useQuery();
@@ -116,6 +125,7 @@ export default function AdminDashboard() {
   const { data: reimbStats } = trpc.reimbursements.dashboardStats.useQuery();
   const { data: allReimbs = [] } = trpc.reimbursements.list.useQuery({});
   const { data: adminUsersForAssign = [] } = trpc.reimbursements.listAdminsForAssign.useQuery();
+  const { data: commissionDueList = [] } = trpc.commissionDue.list.useQuery();
   const assignReimb = trpc.reimbursements.assign.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
   const markReimbActioned = trpc.reimbursements.markActioned.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
   const notificationsPaused = notifSettings?.paused ?? false;
@@ -131,17 +141,22 @@ export default function AdminDashboard() {
     },
   });
 
-  const agents = agentList;
+  // ── Derived data ────────────────────────────────────────────────────────────
   const activeBookings = bookings.filter((b) => b.currentStage !== "Cancelled");
-  // Amendments: pending = To Do or In Progress (not Actioned), excluding reimbursement doc entries
   const pendingAmendments = (amendments as any[]).filter(
     (a) => a.pipelineStage !== "Actioned" && !a.isReimbursementDoc
+  );
+  const newAmendments = (amendments as any[]).filter(
+    (a) => a.pipelineStage === "To Do" && !a.isReimbursementDoc
   );
   const reimbAmendments = (amendments as any[]).filter(
     (a) => a.pipelineStage !== "Actioned" && a.isReimbursementDoc
   );
   const pendingRefunds = (refunds as any[]).filter(
     (r) => r.pipelineStage !== "Refund Processed"
+  );
+  const newRefunds = (refunds as any[]).filter(
+    (r) => r.pipelineStage === "New Refund Request"
   );
   const pendingCancellations = (cancellations as any[]).filter((c) => c.status !== "actioned");
   const unreadNotifs = notifications.filter((n) => !n.isRead);
@@ -151,6 +166,8 @@ export default function AdminDashboard() {
     (b) => !b.finalSupplierPaymentDate && !(b as any).paymentDateDismissed && b.currentStage !== "Cancelled"
   );
   const pendingClaims = (claims as any[]).filter((c) => c.status === "claimed_not_paid");
+  const lateUnactioned = (allReimbs as any[]).filter((r) => r.isLate && !r.actionedAt);
+  const outstandingReimbs = (allReimbs as any[]).filter((r) => r.status === "pending");
 
   const now = new Date();
   const in14 = addDays(now, 14);
@@ -177,22 +194,30 @@ export default function AdminDashboard() {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
 
-  const lateUnactioned = (allReimbs as any[]).filter((r) => r.isLate && !r.actionedAt);
-  const totalPendingActions = pendingAmendments.length + reimbAmendments.length + pendingRefunds.length + pendingCancellations.length + pendingClaims.length + lateUnactioned.length;
-
-  // Files to Add to PTS: bookings in stages before "Added to PTS", excluding "Creating own PTS file" and "Cancelled"
   const STAGES_BEFORE_PTS = new Set(["New Booking", "Not on Topdog", "Query", "Reimb Docs Missing", "Urgent/Reimb", "T/O Package", "DP", "Holding Accounts"]);
   const filesToAddToPts = bookings.filter((b) => STAGES_BEFORE_PTS.has(b.currentStage)).length;
 
+  // Total critical actions count (for the header badge)
+  const criticalCount = urgentBookings.length + lateUnactioned.length + reimbAmendments.length;
+  const totalPendingActions = pendingAmendments.length + reimbAmendments.length + pendingRefunds.length + pendingCancellations.length + pendingClaims.length + lateUnactioned.length;
+
   return (
-    <div className="space-y-4 p-1">
-      {/* Header row */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-5 p-1">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold">Admin Dashboard</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold">Admin Dashboard</h1>
+            {criticalCount > 0 && (
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold animate-pulse"
+                style={{ background: '#fef2f2', color: '#dc2626' }}>
+                <Flame size={11} /> {criticalCount} urgent
+              </span>
+            )}
+          </div>
           <p className="text-muted-foreground text-xs mt-0.5">{format(now, "EEEE d MMMM yyyy")}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button
             size="sm" variant="outline"
             className={`gap-1.5 text-xs ${notificationsPaused ? 'border-amber-400 text-amber-700 bg-amber-50' : 'text-muted-foreground'}`}
@@ -216,39 +241,112 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* ── KEY METRICS (moved to top) ── */}
-      <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
-        {[
-          { label: "Active Bookings", value: activeBookings.length, icon: BookOpen, color: "#70FFE8", textColor: "#414141" },
-          { label: "Agents", value: agents.length, icon: Users, color: "#FFC3BC", textColor: "#414141" },
-          { label: "This Month", value: thisMonth.length, icon: Calendar, color: "#e0e7ff", textColor: "#4338ca" },
-          { label: "To Add to PTS", value: filesToAddToPts, icon: FileText, color: filesToAddToPts > 0 ? "#fef3c7" : "#f3f4f6", textColor: filesToAddToPts > 0 ? "#92400e" : "#6b7280" },
-          { label: "Amendments", value: pendingAmendments.length, icon: FileText, color: pendingAmendments.length > 0 ? "#fef3c7" : "#f3f4f6", textColor: pendingAmendments.length > 0 ? "#92400e" : "#6b7280" },
-          { label: "Refunds", value: pendingRefunds.length, icon: RefreshCw, color: pendingRefunds.length > 0 ? "#fce7f3" : "#f3f4f6", textColor: pendingRefunds.length > 0 ? "#9d174d" : "#6b7280" },
-          { label: "Comm. Ready", value: commissionReady.length, icon: Sparkles, color: commissionReady.length > 0 ? "#d1fae5" : "#f3f4f6", textColor: commissionReady.length > 0 ? "#065f46" : "#6b7280" },
-          { label: "Pending Reimb.", value: reimbStats?.pendingCount ?? 0, icon: Banknote, color: (reimbStats?.pendingCount ?? 0) > 0 ? "#dbeafe" : "#f3f4f6", textColor: (reimbStats?.pendingCount ?? 0) > 0 ? "#1e3a5f" : "#6b7280" },
-        ].map(({ label, value, icon: Icon, color, textColor }) => (
-          <Card key={label} className="cursor-default">
-            <CardContent className="p-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color }}>
-                  <Icon size={15} style={{ color: textColor }} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-lg font-bold leading-none">{value}</p>
-                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5 truncate">{label}</p>
-                </div>
+      {/* ── SECTION 1: CRITICAL ALERTS (always visible, red/amber) ── */}
+      {(urgentBookings.length > 0 || missingPaymentDate.length > 0 || pendingClaims.length > 0 || lateUnactioned.length > 0) && (
+        <div className="rounded-xl border-2 border-red-200 bg-red-50/50 p-4 space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <TriangleAlert size={15} style={{ color: '#dc2626' }} />
+            <h2 className="text-sm font-bold" style={{ color: '#991b1b' }}>Requires Immediate Attention</h2>
+          </div>
+          {urgentBookings.length > 0 && (
+            <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 border border-red-200 bg-white">
+              <AlertCircle size={14} style={{ color: '#dc2626' }} className="flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-xs" style={{ color: '#991b1b' }}>
+                  {urgentBookings.length} booking{urgentBookings.length > 1 ? "s" : ""} in urgent stage
+                </span>
+                <p className="text-[10px] opacity-70 mt-0.5 truncate" style={{ color: '#991b1b' }}>
+                  {urgentBookings.slice(0, 4).map((b) => b.clientName).join(", ")}
+                  {urgentBookings.length > 4 && ` +${urgentBookings.length - 4} more`}
+                </p>
               </div>
-            </CardContent>
-          </Card>
+              <Link href="/pipeline"><Button size="sm" variant="ghost" className="text-xs text-red-700 h-7 px-2 flex-shrink-0">View</Button></Link>
+            </div>
+          )}
+          {lateUnactioned.length > 0 && (
+            <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 border border-red-200 bg-white">
+              <PoundSterling size={14} style={{ color: '#dc2626' }} className="flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-xs" style={{ color: '#991b1b' }}>
+                  {lateUnactioned.length} late reimbursement request{lateUnactioned.length > 1 ? "s" : ""} unactioned
+                </span>
+              </div>
+              <Link href="/admin/reimbursements"><Button size="sm" variant="ghost" className="text-xs text-red-700 h-7 px-2 flex-shrink-0">Process</Button></Link>
+            </div>
+          )}
+          {missingPaymentDate.length > 0 && (
+            <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 border border-amber-200 bg-white">
+              <AlertTriangle size={14} style={{ color: '#f59e0b' }} className="flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-xs" style={{ color: '#92400e' }}>
+                  {missingPaymentDate.length} booking{missingPaymentDate.length > 1 ? "s" : ""} missing Final Supplier Payment Date
+                </span>
+              </div>
+              <Link href="/pts-missing-payment"><Button size="sm" variant="ghost" className="text-xs text-amber-700 h-7 px-2 flex-shrink-0">Review</Button></Link>
+            </div>
+          )}
+          {pendingClaims.length > 0 && (
+            <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 border border-teal-200 bg-white">
+              <Banknote size={14} style={{ color: '#02E6D2' }} className="flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-xs" style={{ color: '#065f46' }}>
+                  {pendingClaims.length} commission claim{pendingClaims.length > 1 ? "s" : ""} awaiting payment
+                </span>
+              </div>
+              <Link href="/commissions-admin"><Button size="sm" variant="ghost" className="text-xs text-emerald-700 h-7 px-2 flex-shrink-0">Process</Button></Link>
+            </div>
+          )}
+          {lowMarginBookings.length > 0 && (
+            <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 border border-violet-200 bg-white">
+              <TrendingUp size={14} style={{ color: '#7c3aed' }} className="flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-xs" style={{ color: '#4c1d95' }}>
+                  {lowMarginBookings.length} booking{lowMarginBookings.length > 1 ? 's' : ''} with margin below 5%
+                </span>
+                <p className="text-[10px] opacity-70 mt-0.5 truncate" style={{ color: '#4c1d95' }}>
+                  {lowMarginBookings.slice(0, 3).map((b) => b.clientName).join(', ')}
+                  {lowMarginBookings.length > 3 && ` +${lowMarginBookings.length - 3} more`}
+                </p>
+              </div>
+              <Link href="/pipeline"><Button size="sm" variant="ghost" className="text-xs h-7 px-2 flex-shrink-0" style={{ color: '#7c3aed' }}>Review</Button></Link>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── SECTION 2: KEY METRICS ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+        {[
+          { label: "Active Bookings", value: activeBookings.length, icon: BookOpen, href: "/pipeline", color: "#70FFE8", textColor: "#414141", urgent: false },
+          { label: "To Add to PTS", value: filesToAddToPts, icon: ClipboardList, href: "/pipeline", color: filesToAddToPts > 0 ? "#fef3c7" : "#f3f4f6", textColor: filesToAddToPts > 0 ? "#92400e" : "#6b7280", urgent: filesToAddToPts > 0 },
+          { label: "New Amendments", value: newAmendments.length, icon: FileText, href: "/amendments/pipeline", color: newAmendments.length > 0 ? "#fef3c7" : "#f3f4f6", textColor: newAmendments.length > 0 ? "#92400e" : "#6b7280", urgent: newAmendments.length > 0 },
+          { label: "New Refunds", value: newRefunds.length, icon: RefreshCw, href: "/refunds/pipeline", color: newRefunds.length > 0 ? "#fce7f3" : "#f3f4f6", textColor: newRefunds.length > 0 ? "#9d174d" : "#6b7280", urgent: newRefunds.length > 0 },
+          { label: "Outstanding Reimb.", value: outstandingReimbs.length, icon: PoundSterling, href: "/admin/reimbursements", color: outstandingReimbs.length > 0 ? "#dbeafe" : "#f3f4f6", textColor: outstandingReimbs.length > 0 ? "#1e3a5f" : "#6b7280", urgent: false },
+          { label: "Commission Due", value: commissionDueList.length, icon: Sparkles, href: "/commission-due", color: commissionDueList.length > 0 ? "#d1fae5" : "#f3f4f6", textColor: commissionDueList.length > 0 ? "#065f46" : "#6b7280", urgent: false },
+        ].map(({ label, value, icon: Icon, href, color, textColor, urgent }) => (
+          <Link key={label} href={href}>
+            <Card className={`cursor-pointer hover:shadow-md transition-shadow ${urgent && (value as number) > 0 ? "ring-1 ring-amber-300" : ""}`}>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color }}>
+                    <Icon size={14} style={{ color: textColor }} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-lg font-bold leading-none">{value}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight mt-0.5 truncate">{label}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         ))}
       </div>
 
-      {/* ── PENDING ACTIONS ── */}
+      {/* ── SECTION 3: PENDING ACTIONS (expandable) ── */}
       <div>
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-3">
           <Clock size={14} className="text-muted-foreground" />
-          <h2 className="text-sm font-semibold">Pending Actions</h2>
+          <h2 className="text-sm font-bold">Pending Actions</h2>
           {totalPendingActions > 0 && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold"
               style={{ background: '#fef3c7', color: '#92400e' }}>
@@ -259,22 +357,23 @@ export default function AdminDashboard() {
         <div className="grid lg:grid-cols-2 gap-3">
 
           {/* Amendments */}
-          <ExpandablePanel
+          <UrgencyCard
             title="Amendments to Review"
             count={pendingAmendments.length}
-            color="#92400e" bg="#fef3c7" icon={FileText}
-            linkHref="/amendments/pipeline" linkLabel="Amendment Pipeline"
+            color="#92400e" bg="#fef3c7" borderColor="#f59e0b" icon={FileText}
+            href="/amendments/pipeline" linkLabel="Pipeline"
             emptyText="No pending amendments"
+            priority={newAmendments.length > 0 ? "high" : "normal"}
           >
             {pendingAmendments.map((a: any) => (
               <Link key={a.id} href={`/amendments/pipeline`}>
                 <div className="flex items-center gap-2 p-2 rounded-lg border bg-amber-50/40 hover:bg-amber-50 transition-colors cursor-pointer">
                   <FileText size={11} className="flex-shrink-0 text-amber-700" />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-xs font-semibold truncate">{a.clientName ?? `Booking #${a.bookingId}`}</span>
-                      <Badge variant="outline" className="text-[9px] h-4 px-1.5"
-                        style={{ borderColor: a.pipelineStage === 'In Progress' ? '#f59e0b' : '#d1d5db', color: a.pipelineStage === 'In Progress' ? '#92400e' : '#6b7280' }}>
+                      <Badge variant="outline" className="text-[9px] h-4 px-1"
+                        style={{ borderColor: a.pipelineStage === 'To Do' ? '#ef4444' : a.pipelineStage === 'In Progress' ? '#f59e0b' : '#d1d5db', color: a.pipelineStage === 'To Do' ? '#dc2626' : a.pipelineStage === 'In Progress' ? '#92400e' : '#6b7280' }}>
                         {a.pipelineStage}
                       </Badge>
                     </div>
@@ -285,7 +384,7 @@ export default function AdminDashboard() {
                     <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{a.details}</p>
                     {a.assignedToName && (
                       <p className="text-[10px] mt-0.5" style={{ color: '#92400e' }}>
-                        Assigned to: <span className="font-medium">{a.assignedToName}</span>
+                        → <span className="font-medium">{a.assignedToName}</span>
                       </p>
                     )}
                   </div>
@@ -293,25 +392,25 @@ export default function AdminDashboard() {
                 </div>
               </Link>
             ))}
-          </ExpandablePanel>
+          </UrgencyCard>
 
-          {/* Reimbursement docs */}
-          <ExpandablePanel
+          {/* Reimbursement docs submitted */}
+          <UrgencyCard
             title="Reimbursement Docs Submitted"
             count={reimbAmendments.length}
-            color="#dc2626" bg="#fef2f2" icon={AlertCircle}
-            linkHref="/amendments/pipeline" linkLabel="Amendment Pipeline"
+            color="#dc2626" bg="#fef2f2" borderColor="#dc2626" icon={AlertCircle}
+            href="/amendments/pipeline" linkLabel="Pipeline"
             emptyText="No reimbursement docs pending"
+            priority="critical"
           >
             {reimbAmendments.map((a: any) => (
               <Link key={a.id} href={`/amendments/pipeline`}>
                 <div className="flex items-center gap-2 p-2 rounded-lg border bg-red-50/40 hover:bg-red-50 transition-colors cursor-pointer">
                   <AlertCircle size={11} className="flex-shrink-0 text-red-600" />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-xs font-semibold truncate">{a.clientName ?? `Booking #${a.bookingId}`}</span>
-                      <Badge variant="outline" className="text-[9px] h-4 px-1.5"
-                        style={{ borderColor: '#fca5a5', color: '#dc2626' }}>
+                      <Badge variant="outline" className="text-[9px] h-4 px-1" style={{ borderColor: '#fca5a5', color: '#dc2626' }}>
                         {a.pipelineStage}
                       </Badge>
                     </div>
@@ -321,7 +420,7 @@ export default function AdminDashboard() {
                     </div>
                     {a.assignedToName && (
                       <p className="text-[10px] mt-0.5" style={{ color: '#dc2626' }}>
-                        Assigned to: <span className="font-medium">{a.assignedToName}</span>
+                        → <span className="font-medium">{a.assignedToName}</span>
                       </p>
                     )}
                   </div>
@@ -329,25 +428,25 @@ export default function AdminDashboard() {
                 </div>
               </Link>
             ))}
-          </ExpandablePanel>
+          </UrgencyCard>
 
           {/* Refunds */}
-          <ExpandablePanel
+          <UrgencyCard
             title="Refunds to Process"
             count={pendingRefunds.length}
-            color="#9d174d" bg="#fce7f3" icon={RefreshCw}
-            linkHref="/refunds/pipeline" linkLabel="Refund Pipeline"
+            color="#9d174d" bg="#fce7f3" borderColor="#ec4899" icon={RefreshCw}
+            href="/refunds/pipeline" linkLabel="Pipeline"
             emptyText="No pending refunds"
+            priority={newRefunds.length > 0 ? "high" : "normal"}
           >
             {pendingRefunds.map((r: any) => (
               <Link key={r.id} href={`/refunds/pipeline`}>
                 <div className="flex items-center gap-2 p-2 rounded-lg border bg-pink-50/40 hover:bg-pink-50 transition-colors cursor-pointer">
                   <RefreshCw size={11} className="flex-shrink-0 text-pink-700" />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-xs font-semibold truncate">{r.clientName ?? `Booking #${r.bookingId}`}</span>
-                      <Badge variant="outline" className="text-[9px] h-4 px-1.5"
-                        style={{ borderColor: '#f9a8d4', color: '#9d174d' }}>
+                      <Badge variant="outline" className="text-[9px] h-4 px-1" style={{ borderColor: '#f9a8d4', color: '#9d174d' }}>
                         {r.pipelineStage}
                       </Badge>
                     </div>
@@ -356,11 +455,11 @@ export default function AdminDashboard() {
                       <RefRow label="TD" value={r.topdogRef} />
                     </div>
                     <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Type: {r.refundType} · {r.refundReason ? r.refundReason.slice(0, 60) : ""}
+                      {r.refundType}{r.refundReason ? ` · ${r.refundReason.slice(0, 50)}` : ""}
                     </p>
                     {r.assignedToName && (
                       <p className="text-[10px] mt-0.5" style={{ color: '#9d174d' }}>
-                        Assigned to: <span className="font-medium">{r.assignedToName}</span>
+                        → <span className="font-medium">{r.assignedToName}</span>
                       </p>
                     )}
                   </div>
@@ -368,15 +467,16 @@ export default function AdminDashboard() {
                 </div>
               </Link>
             ))}
-          </ExpandablePanel>
+          </UrgencyCard>
 
           {/* Cancellations */}
-          <ExpandablePanel
+          <UrgencyCard
             title="Cancellation Requests"
             count={pendingCancellations.length}
-            color="#7c3aed" bg="#f5f3ff" icon={XCircle}
-            linkHref="/pipeline" linkLabel="View Pipeline"
+            color="#7c3aed" bg="#f5f3ff" borderColor="#8b5cf6" icon={XCircle}
+            href="/pipeline" linkLabel="Pipeline"
             emptyText="No pending cancellation requests"
+            priority="normal"
           >
             {pendingCancellations.map((c: any) => (
               <div key={c.id} className="flex items-center gap-2 p-2 rounded-lg border bg-violet-50/40">
@@ -397,40 +497,38 @@ export default function AdminDashboard() {
                   onClick={(e) => { e.stopPropagation(); setCancelConfirmId(c.id); }}
                   disabled={markCancellationActioned.isPending}
                   className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors hover:bg-green-100 text-green-700 border border-green-200"
-                  title="Mark as actioned — removes from this panel"
                 >
-                  <CheckCircle2 size={10} />
-                  Done
+                  <CheckCircle2 size={10} /> Done
                 </button>
               </div>
             ))}
-          </ExpandablePanel>
+          </UrgencyCard>
 
           {/* Late Reimbursement Requests */}
           {lateUnactioned.length > 0 && (
-            <ExpandablePanel
+            <UrgencyCard
               title="Late Reimbursement Requests"
               count={lateUnactioned.length}
-              color="#dc2626" bg="#fff1f2" icon={Banknote}
-              linkHref="/reimbursements" linkLabel="Reimbursements Page"
+              color="#dc2626" bg="#fff1f2" borderColor="#dc2626" icon={Banknote}
+              href="/admin/reimbursements" linkLabel="Reimbursements"
               emptyText="No unactioned late reimbursements"
+              priority="critical"
             >
               {lateUnactioned.map((r: any) => (
                 <div key={r.id} className="flex items-start gap-2 p-2 rounded-lg border bg-rose-50/60">
                   <Banknote size={11} className="flex-shrink-0 text-rose-600 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <Link href={`/bookings/${r.bookingId}`}>
                         <span className="text-xs font-semibold hover:underline cursor-pointer">{r.clientName ?? `Booking #${r.bookingId}`}</span>
                       </Link>
-                      <Badge variant="outline" className="text-[9px] h-4 px-1.5" style={{ borderColor: '#fca5a5', color: '#dc2626' }}>Late</Badge>
+                      <Badge variant="outline" className="text-[9px] h-4 px-1" style={{ borderColor: '#fca5a5', color: '#dc2626' }}>Late</Badge>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="text-[10px] text-muted-foreground">Supplier: <span className="font-medium">{r.supplierName}</span></span>
                       <span className="text-[10px] text-muted-foreground">£{Number(r.amount).toFixed(2)}</span>
                       {r.agentName && <span className="text-[10px] text-muted-foreground">Agent: {r.agentName}</span>}
                     </div>
-                    {/* Assignee dropdown */}
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <select
                         className="text-[10px] border rounded px-1 py-0.5 bg-white"
@@ -445,7 +543,7 @@ export default function AdminDashboard() {
                       <button
                         onClick={() => markReimbActioned.mutate({ id: r.id })}
                         disabled={markReimbActioned.isPending}
-                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors hover:bg-green-100 text-green-700 border border-green-200"
+                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium text-green-700 border border-green-200 hover:bg-green-50 transition-colors"
                       >
                         <CheckCircle2 size={10} /> Mark Actioned
                       </button>
@@ -453,75 +551,13 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               ))}
-            </ExpandablePanel>
+            </UrgencyCard>
           )}
 
         </div>
       </div>
 
-      {/* Alert banners */}
-      {(urgentBookings.length > 0 || missingPaymentDate.length > 0 || pendingClaims.length > 0 || lowMarginBookings.length > 0) && (
-        <div className="space-y-2">
-          {urgentBookings.length > 0 && (
-            <div className="rounded-lg border-l-4 px-4 py-2.5 flex items-center gap-3"
-              style={{ borderLeftColor: '#dc2626', background: '#fef2f2' }}>
-              <AlertCircle size={15} style={{ color: '#dc2626' }} className="flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <span className="font-semibold text-xs" style={{ color: '#991b1b' }}>
-                  {urgentBookings.length} booking{urgentBookings.length > 1 ? "s" : ""} need urgent attention
-                </span>
-                <span className="text-xs ml-2 opacity-70" style={{ color: '#991b1b' }}>
-                  {urgentBookings.slice(0, 3).map((b) => b.clientName).join(", ")}
-                  {urgentBookings.length > 3 && ` +${urgentBookings.length - 3} more`}
-                </span>
-              </div>
-              <Link href="/pipeline"><Button size="sm" variant="ghost" className="text-xs text-red-700 h-7 px-2">View</Button></Link>
-            </div>
-          )}
-          {missingPaymentDate.length > 0 && (
-            <div className="rounded-lg border-l-4 px-4 py-2.5 flex items-center gap-3"
-              style={{ borderLeftColor: '#f59e0b', background: '#fffbeb' }}>
-              <AlertTriangle size={15} style={{ color: '#f59e0b' }} className="flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <span className="font-semibold text-xs" style={{ color: '#92400e' }}>
-                  {missingPaymentDate.length} booking{missingPaymentDate.length > 1 ? "s" : ""} missing a Final Supplier Payment Date
-                </span>
-              </div>
-              <Link href="/pts-missing-payment"><Button size="sm" variant="ghost" className="text-xs text-amber-700 h-7 px-2">Review</Button></Link>
-            </div>
-          )}
-          {pendingClaims.length > 0 && (
-            <div className="rounded-lg border-l-4 px-4 py-2.5 flex items-center gap-3"
-              style={{ borderLeftColor: '#02E6D2', background: '#ecfdf5' }}>
-              <Banknote size={15} style={{ color: '#02E6D2' }} className="flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <span className="font-semibold text-xs" style={{ color: '#065f46' }}>
-                  {pendingClaims.length} commission claim{pendingClaims.length > 1 ? "s" : ""} awaiting payment
-                </span>
-              </div>
-              <Link href="/commissions-admin"><Button size="sm" variant="ghost" className="text-xs text-emerald-700 h-7 px-2">Process</Button></Link>
-            </div>
-          )}
-          {lowMarginBookings.length > 0 && (
-            <div className="rounded-lg border-l-4 px-4 py-2.5 flex items-center gap-3"
-              style={{ borderLeftColor: '#7c3aed', background: '#f5f3ff' }}>
-              <TrendingUp size={15} style={{ color: '#7c3aed' }} className="flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <span className="font-semibold text-xs" style={{ color: '#4c1d95' }}>
-                  {lowMarginBookings.length} booking{lowMarginBookings.length > 1 ? 's' : ''} with margin below 5%
-                </span>
-                <span className="text-xs ml-2 opacity-70" style={{ color: '#4c1d95' }}>
-                  {lowMarginBookings.slice(0, 3).map((b) => b.clientName).join(', ')}
-                  {lowMarginBookings.length > 3 && ` +${lowMarginBookings.length - 3} more`}
-                </span>
-              </div>
-              <Link href="/pipeline"><Button size="sm" variant="ghost" className="text-xs h-7 px-2" style={{ color: '#7c3aed' }}>Review</Button></Link>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Main content: pipeline + activity */}
+      {/* ── SECTION 4: PIPELINE + ACTIVITY ── */}
       <div className="grid lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
@@ -583,7 +619,7 @@ export default function AdminDashboard() {
         </Card>
       </div>
 
-      {/* Bottom row: departures + recent bookings */}
+      {/* ── SECTION 5: DEPARTURES + RECENT BOOKINGS ── */}
       <div className="grid lg:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">

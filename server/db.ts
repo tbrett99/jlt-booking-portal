@@ -1610,3 +1610,63 @@ export async function getReimbursementItemDocsByBooking(bookingId: number) {
     .where(eq(reimbursementItemDocs.bookingId, bookingId))
     .orderBy(reimbursementItemDocs.createdAt);
 }
+
+// Get bookings for an agent that have at least one reimbursement item with no uploaded docs
+export async function getReimbItemsWithMissingDocsByAgent(agentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { reimbursementItems, reimbursementItemDocs, bookings } = await import("../drizzle/schema");
+  // Get all reimbursement items for this agent
+  const items = await db
+    .select({
+      id: reimbursementItems.id,
+      bookingId: reimbursementItems.bookingId,
+      supplierName: reimbursementItems.supplierName,
+      amount: reimbursementItems.amount,
+      status: reimbursementItems.status,
+    })
+    .from(reimbursementItems)
+    .where(eq(reimbursementItems.agentId, agentId))
+    .orderBy(reimbursementItems.createdAt);
+
+  if (items.length === 0) return [];
+
+  // For each item, check if it has any docs
+  const itemIds = items.map((i) => i.id);
+  const docs = await db
+    .select({ reimbursementItemId: reimbursementItemDocs.reimbursementItemId })
+    .from(reimbursementItemDocs)
+    .where(inArray(reimbursementItemDocs.reimbursementItemId, itemIds));
+
+  const docItemIds = new Set(docs.map((d) => d.reimbursementItemId));
+  const missingItems = items.filter((i) => !docItemIds.has(i.id));
+
+  if (missingItems.length === 0) return [];
+
+  // Get unique booking IDs and fetch client names
+  const bookingIds = Array.from(new Set(missingItems.map((i) => i.bookingId)));
+  const bookingRows = await db
+    .select({ id: bookings.id, clientName: bookings.clientName, currentStage: bookings.currentStage })
+    .from(bookings)
+    .where(inArray(bookings.id, bookingIds));
+
+  const bookingMap = new Map(bookingRows.map((b) => [b.id, b]));
+
+  return missingItems.map((i) => ({
+    ...i,
+    clientName: bookingMap.get(i.bookingId)?.clientName ?? null,
+    currentStage: bookingMap.get(i.bookingId)?.currentStage ?? null,
+  }));
+}
+
+// Count reimbursement items that are pending (not yet scheduled or paid)
+export async function getOutstandingReimbursementsCount() {
+  const db = await getDb();
+  if (!db) return 0;
+  const { reimbursementItems } = await import("../drizzle/schema");
+  const rows = await db
+    .select({ id: reimbursementItems.id })
+    .from(reimbursementItems)
+    .where(eq(reimbursementItems.status, "pending"));
+  return rows.length;
+}

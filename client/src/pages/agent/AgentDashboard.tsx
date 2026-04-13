@@ -49,6 +49,7 @@ export default function AgentDashboard() {
 
   const { data: bookings = [], isLoading } = trpc.bookings.myBookings.useQuery();
   const { data: notifications = [] } = trpc.notifications.myNotifications.useQuery();
+  const { data: missingDocItems = [] } = trpc.reimbursements.myBookingsWithMissingDocs.useQuery();
 
   const activeBookings = bookings.filter((b) => b.currentStage !== "Cancelled");
   const cancelledBookings = bookings.filter((b) => b.currentStage === "Cancelled");
@@ -59,6 +60,8 @@ export default function AgentDashboard() {
   const requiresAction = bookings.filter(
     (b) => b.currentStage === "Creating own PTS file" && (!b.ptsRef || !b.finalSupplierPaymentDate)
   );
+  // Reimbursement items with no documents uploaded
+  const totalNeedsAction = needsAttention.length + requiresAction.length + missingDocItems.length;
 
   const filteredBookings = useMemo(() => {
     let list = bookings;
@@ -122,14 +125,14 @@ export default function AgentDashboard() {
         <button
           onClick={() => setStatusFilter("attention")}
           className={`text-left rounded-xl p-4 border-2 transition-all ${statusFilter === "attention" ? "border-[#f97316] shadow-sm" : "border-transparent"}`}
-          style={{ background: needsAttention.length > 0 ? '#fff7ed' : '#f9fafb' }}
+          style={{ background: totalNeedsAction > 0 ? '#fff7ed' : '#f9fafb' }}
         >
           <div className="flex items-center gap-2 mb-1">
-            <AlertCircle size={16} style={{ color: needsAttention.length > 0 ? '#f97316' : '#9ca3af' }} />
+            <AlertCircle size={16} style={{ color: totalNeedsAction > 0 ? '#f97316' : '#9ca3af' }} />
             <span className="text-xs text-muted-foreground font-medium">Needs Action</span>
           </div>
-          <p className="text-2xl font-bold" style={{ color: needsAttention.length > 0 ? '#f97316' : '#414141' }}>
-            {needsAttention.length}
+          <p className="text-2xl font-bold" style={{ color: totalNeedsAction > 0 ? '#f97316' : '#414141' }}>
+            {totalNeedsAction}
           </p>
         </button>
 
@@ -226,6 +229,36 @@ export default function AgentDashboard() {
                     </div>
                   </div>
                   <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Reimbursement docs missing panel */}
+      {missingDocItems.length > 0 && (
+        <div className="rounded-xl border-2 p-4 space-y-3" style={{ borderColor: '#f59e0b', background: '#fffbeb' }}>
+          <div className="flex items-center gap-2">
+            <AlertCircle size={18} style={{ color: '#d97706' }} />
+            <p className="font-semibold text-sm" style={{ color: '#92400e' }}>
+              {missingDocItems.length} reimbursement{missingDocItems.length > 1 ? 's' : ''} need{missingDocItems.length === 1 ? 's' : ''} a document
+            </p>
+          </div>
+          <p className="text-xs" style={{ color: '#92400e', opacity: 0.85 }}>
+            Please upload a supporting document for each item below. The JLT team cannot process your reimbursement until a document is attached.
+          </p>
+          <div className="space-y-2">
+            {missingDocItems.map((item: any) => (
+              <Link key={item.id} href={`/bookings/${item.bookingId}`}>
+                <div className="flex items-center justify-between rounded-lg bg-white border border-amber-200 px-3 py-2 hover:shadow-sm transition-shadow cursor-pointer">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: '#414141' }}>{item.clientName ?? `Booking #${item.bookingId}`}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {item.supplierName} — £{Number(item.amount).toFixed(2)}
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: '#fef3c7', color: '#92400e' }}>Upload doc</span>
                 </div>
               </Link>
             ))}

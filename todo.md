@@ -744,3 +744,11 @@
 - [x] Request Additional Reimbursement form: make document upload mandatory per item (cannot submit without attaching a file for each supplier)
 - [x] Agent booking detail: show amber "Doc needed" badge and auto-expand upload section for any reimbursement item with no documents
 - [x] Agent booking detail: show amber banner at top of page when any reimbursement items are missing documents (lists supplier name and amount for single item, count for multiple)
+
+## Dashboard & Navigation Overhaul (Apr 13)
+- [x] Fix: agent booking detail "Upload Supporting Document" button throws error — investigate and fix (backend now accepts base64 data URLs)
+- [x] Agent booking detail: add bookings with undocumented reimbursements to the "Needs Action" / Bookings Requiring Action section on agent dashboard
+- [x] Top bar stats: replace current stats with urgent counts — (1) Files to Add to PTS, (2) New amendment requests not yet picked up, (3) New refund requests, (4) Outstanding reimbursements (not yet scheduled), (5) Commission due not yet marked claimable
+- [x] Investigate "To Add to PTS" count: the 64 figure counts all bookings in pre-PTS stages (New Booking, Not on Topdog, Query, Reimb Docs Missing, Urgent/Reimb, T/O Package, DP, Holding Accounts). The 59 figure was a different filter. Now unified to use the same STAGES_BEFORE_PTS set throughout.
+- [x] Sidebar: collapse into groups with toggles — Bookings (Pipeline), Amendments Pipeline, Refund Pipeline, Reimbursements, Commissions (toggle: Due / Management), Messages, Calendar (toggle: Calendar / Tasks), Reports (Agent Performance + Admin Reports), Users, Import CSV, Notifications (toggle: Notifications / Preferences)
+- [x] Admin dashboard: full UX overhaul — urgency-first layout, prominent action cards for items needing immediate attention, clear visual hierarchy so nothing slips through
