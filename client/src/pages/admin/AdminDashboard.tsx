@@ -163,7 +163,10 @@ export default function AdminDashboard() {
   const commissionReady = bookings.filter((b) => b.currentStage === "Commission Claimable");
   const urgentBookings = bookings.filter((b) => URGENT_STAGES.has(b.currentStage));
   const missingPaymentDate = activeBookings.filter(
-    (b) => !b.finalSupplierPaymentDate && !(b as any).paymentDateDismissed && b.currentStage !== "Cancelled"
+    (b) => !b.finalSupplierPaymentDate && !(b as any).paymentDateDismissed && b.currentStage !== "Cancelled" && b.currentStage !== "Commission Claimable"
+  );
+  const commissionClaimableMissingDate = activeBookings.filter(
+    (b) => !b.finalSupplierPaymentDate && !(b as any).paymentDateDismissed && b.currentStage === "Commission Claimable"
   );
   const pendingClaims = (claims as any[]).filter((c) => c.status === "claimed_not_paid");
   const lateUnactioned = (allReimbs as any[]).filter((r) => r.isLate && !r.actionedAt);
@@ -279,10 +282,21 @@ export default function AdminDashboard() {
               <AlertTriangle size={14} style={{ color: '#f59e0b' }} className="flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <span className="font-semibold text-xs" style={{ color: '#92400e' }}>
-                  {missingPaymentDate.length} booking{missingPaymentDate.length > 1 ? "s" : ""} missing Final Supplier Payment Date
+                  {missingPaymentDate.length} Added to PTS booking{missingPaymentDate.length > 1 ? "s" : ""} missing Final Supplier Payment Date
                 </span>
               </div>
               <Link href="/pts-missing-payment"><Button size="sm" variant="ghost" className="text-xs text-amber-700 h-7 px-2 flex-shrink-0">Review</Button></Link>
+            </div>
+          )}
+          {commissionClaimableMissingDate.length > 0 && (
+            <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 border border-blue-200 bg-white">
+              <AlertTriangle size={14} style={{ color: '#3b82f6' }} className="flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-xs" style={{ color: '#1e3a5f' }}>
+                  {commissionClaimableMissingDate.length} Commission Claimable booking{commissionClaimableMissingDate.length > 1 ? "s" : ""} missing Final Supplier Payment Date
+                </span>
+              </div>
+              <Link href="/commission-claimable-missing-payment"><Button size="sm" variant="ghost" className="text-xs text-blue-700 h-7 px-2 flex-shrink-0">Review</Button></Link>
             </div>
           )}
           {pendingClaims.length > 0 && (

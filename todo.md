@@ -756,3 +756,9 @@
 ## Added to PTS Notification Update (Apr 13)
 - [x] Update "Added to PTS" email template to include PTS reference, bank transfer instructions, and PPS Order Description guidance
 - [x] Ensure ptsRef variable is passed to the notification renderer when the added_to_pts trigger fires
+
+## Commission Claimable — Missing Payment Date View (Apr 13)
+- [x] Add backend procedure bookings.commissionClaimableMissingPaymentDate (mirrors ptsMissingPaymentDate but filters to Commission Claimable stage)
+- [x] Create frontend page CommissionClaimableMissingPaymentDate.tsx at /commission-claimable-missing-payment (clone of PtsMissingPaymentDate with stage-specific labels)
+- [x] Register route in App.tsx
+- [x] Add dashboard alert row linking to the new page

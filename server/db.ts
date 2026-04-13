@@ -1017,6 +1017,33 @@ export async function getPtsMissingPaymentDate() {
     .orderBy(bookings.createdAt);
   return result.map(({ booking, agentName, agentEmail }) => ({
     ...booking,
+     agentName: agentName ?? null,
+    agentEmail: agentEmail ?? null,
+  }));
+}
+
+export async function getCommissionClaimableMissingPaymentDate() {
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db
+    .select({
+      booking: bookings,
+      agentName: users.name,
+      agentEmail: users.email,
+    })
+    .from(bookings)
+    .leftJoin(users, eq(bookings.agentId, users.id))
+    .where(
+      and(
+        eq(bookings.currentStage, "Commission Claimable"),
+        sql`${bookings.finalSupplierPaymentDate} IS NULL`,
+        eq(bookings.paymentDateDismissed, false),
+        eq(bookings.isPersonalBooking, false)
+      )
+    )
+    .orderBy(bookings.createdAt);
+  return result.map(({ booking, agentName, agentEmail }) => ({
+    ...booking,
     agentName: agentName ?? null,
     agentEmail: agentEmail ?? null,
   }));

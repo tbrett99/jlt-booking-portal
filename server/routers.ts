@@ -19,6 +19,7 @@ import {
   getBookingById,
   getBookingWithAgent,
   getPtsMissingPaymentDate,
+  getCommissionClaimableMissingPaymentDate,
   getBookingsByAgent,
   getAllBookings,
   updateBookingStage,
@@ -537,6 +538,9 @@ export const appRouter = router({
       }),
     ptsMissingPaymentDate: adminProcedure.query(async () => {
       return getPtsMissingPaymentDate();
+    }),
+    commissionClaimableMissingPaymentDate: adminProcedure.query(async () => {
+      return getCommissionClaimableMissingPaymentDate();
     }),
     quickSearch: protectedProcedure
       .input(z.object({ query: z.string().min(1).max(100) }))

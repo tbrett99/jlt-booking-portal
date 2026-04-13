@@ -31,6 +31,7 @@ import AdminImport from "./pages/admin/AdminImport";
 import AdminAgentPerformance from "./pages/admin/AdminAgentPerformance";
 import AdminMessages from "./pages/admin/AdminMessages";
 import PtsMissingPaymentDate from "./pages/admin/PtsMissingPaymentDate";
+import CommissionClaimableMissingPaymentDate from "./pages/admin/CommissionClaimableMissingPaymentDate";
 import AdminNotifPrefs from "./pages/admin/AdminNotifPrefs";
 import AdminTasks from "./pages/admin/AdminTasks";
 import AdminCalendar from "./pages/admin/AdminCalendar";
@@ -145,6 +146,7 @@ function AuthRouter() {
         <Route path="/notification-templates" component={NotificationTemplates} />
         <Route path="/import" component={AdminImport} />
         <Route path="/pts-missing-payment" component={PtsMissingPaymentDate} />
+        <Route path="/commission-claimable-missing-payment" component={CommissionClaimableMissingPaymentDate} />
         <Route path="/messages" component={AdminMessages} />
         <Route path="/notif-prefs" component={AdminNotifPrefs} />
         <Route path="/admin/tasks" component={AdminTasks} />
