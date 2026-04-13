@@ -127,6 +127,13 @@
       "when": 1775924048870,
       "tag": "0017_blushing_oracle",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1776075333592,
+      "tag": "0018_ambitious_nitro",
+      "breakpoints": true
     }
   ]
 }

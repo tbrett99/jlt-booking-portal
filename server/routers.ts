@@ -83,6 +83,10 @@ import {
   deleteBooking,
   mergeBookings,
   deleteReimbursementDoc,
+  getCalendarEvents,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
@@ -551,6 +555,7 @@ export const appRouter = router({
           grossCost: z.number().min(0).optional(),
           destination: z.string().optional(),
           isPersonalBooking: z.boolean().optional(),
+          isHistoricBooking: z.boolean().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -575,6 +580,16 @@ export const appRouter = router({
           });
         }
         const booking = await createBooking({ ...input, agentId: ctx.user.id });
+        // If historic booking, move immediately to "Added to PTS"
+        if (input.isHistoricBooking && booking?.id) {
+          await updateBookingStage(booking.id, "Added to PTS", ctx.user.id);
+          await createNote({
+            bookingId: booking.id,
+            authorId: ctx.user.id,
+            content: `[System] Historic booking — automatically moved to "Added to PTS" by ${ctx.user.name ?? "Agent"}.`,
+            isInternal: false,
+          });
+        }
         // Notify all admins of new booking
         const allUsers = await getAllUsers();
         const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
@@ -1906,6 +1921,60 @@ export const appRouter = router({
       return tasks.filter((t) => t.assigneeId === ctx.user.id && t.status !== "done").length;
     }),
   }),
-});
+  // ─── Calendar ──────────────────────────────────────────────────────────────
+  calendar: router({
+    list: adminProcedure
+      .input(
+        z.object({
+          from: z.date(),
+          to: z.date(),
+        })
+      )
+      .query(async ({ input }) => {
+        return getCalendarEvents(input.from, input.to);
+      }),
 
+    create: adminProcedure
+      .input(
+        z.object({
+          title: z.string().min(1),
+          description: z.string().optional(),
+          type: z.enum(["holiday", "event", "task"]),
+          startDate: z.date(),
+          endDate: z.date(),
+          allDay: z.boolean().default(true),
+          assigneeId: z.number().nullable().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        return createCalendarEvent({ ...input, createdById: ctx.user.id });
+      }),
+
+    update: adminProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          title: z.string().min(1).optional(),
+          description: z.string().nullable().optional(),
+          type: z.enum(["holiday", "event", "task"]).optional(),
+          startDate: z.date().optional(),
+          endDate: z.date().optional(),
+          allDay: z.boolean().optional(),
+          assigneeId: z.number().nullable().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateCalendarEvent(id, data);
+        return { success: true };
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteCalendarEvent(input.id);
+        return { success: true };
+      }),
+  }),
+});
 export type AppRouter = typeof appRouter;

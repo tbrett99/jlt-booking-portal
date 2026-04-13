@@ -660,3 +660,20 @@
 - [x] Personal booking: show gross price field (always visible), hide expected commission only
 - [x] Non-personal bookings: make gross price and expected commission mandatory (required fields)
 - [x] Verify backfill: confirmed 135 bookings marked personal; all 135 now have finalSupplierPaymentDate = departureDate (0 mismatches, 0 nulls)
+
+## Admin Shared Calendar (Apr 13)
+- [x] DB schema: calendar_events table (id, title, description, type: holiday/event/task, startDate, endDate, allDay, assigneeId nullable, createdById, createdAt, updatedAt)
+- [x] Apply migration via webdev_execute_sql
+- [x] DB helpers: createCalendarEvent, getCalendarEvents (date range), updateCalendarEvent, deleteCalendarEvent
+- [x] tRPC procedures: calendar.list (admin only), calendar.create (admin only), calendar.update (admin only), calendar.delete (admin only)
+- [x] Frontend: /admin/calendar page — monthly view with event dots, weekly view, agenda view
+- [x] Event types: Holiday (per-person, shows who is away), Event (company-wide), Task (assignable to an admin)
+- [x] Create/edit event modal: title, type, start/end date, all-day toggle, assignee (for holiday/task types), description
+- [x] Colour coding: Holiday = pink, Event = teal, Task = amber
+- [x] "Who's away today" banner on calendar page
+- [x] Add Calendar link to admin sidebar navigation (admin/super_admin only)
+
+## Booking Form Fixes (Apr 13)
+- [x] Historic booking toggle on RegisterBooking form — when on, booking auto-moves to "Added to PTS" stage immediately after creation
+- [x] Make bookedDate mandatory on RegisterBooking form
+- [x] Default bookedDate to today's date on RegisterBooking form

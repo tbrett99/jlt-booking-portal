@@ -15,7 +15,11 @@ export default function RegisterBooking() {
   const [, navigate] = useLocation();
   const [clientName, setClientName] = useState("");
   const [departureDate, setDepartureDate] = useState("");
-  const [bookedDate, setBookedDate] = useState("");
+  const [bookedDate, setBookedDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split("T")[0];
+  });
+  const [isHistoricBooking, setIsHistoricBooking] = useState(false);
   const [topdogRef, setTopdogRef] = useState("");
   const [reimbursementsRequired, setReimbursementsRequired] = useState(false);
   const [docFile, setDocFile] = useState<File | null>(null);
@@ -49,7 +53,7 @@ export default function RegisterBooking() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientName || !departureDate) {
+    if (!clientName || !departureDate || !bookedDate) {
       toast.error("Please fill in all required fields");
       return;
     }
@@ -58,13 +62,14 @@ export default function RegisterBooking() {
       const booking = await createBooking.mutateAsync({
         clientName,
         departureDate: new Date(departureDate),
-        bookedDate: bookedDate ? new Date(bookedDate) : undefined,
+        bookedDate: new Date(bookedDate),
         topdogRef: topdogRef || undefined,
         reimbursementsRequired,
         expectedCommission: !isPersonalBooking && commNum > 0 ? commNum : undefined,
         grossCost: grossNum > 0 ? grossNum : undefined,
         destination: destination || undefined,
         isPersonalBooking,
+        isHistoricBooking,
       });
 
       if (booking && docFile) {
@@ -111,6 +116,24 @@ export default function RegisterBooking() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Historic Booking Toggle */}
+            <div className={`rounded-lg border-2 border-dashed p-4 space-y-2 transition-colors`} style={{ borderColor: isHistoricBooking ? '#FFC3BC' : '#e5e7eb', background: isHistoricBooking ? '#FFF6ED' : undefined }}>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isHistoricBooking}
+                  onChange={(e) => setIsHistoricBooking(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 accent-pink-400"
+                />
+                <div>
+                  <span className="text-sm font-semibold">This is a historic booking</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Tick this if the booking was made previously and you are registering it now to claim commission. It will be moved directly to <strong>Added to PTS</strong>.
+                  </p>
+                </div>
+              </label>
+            </div>
+
             {/* Personal Booking Toggle */}
             <div className="rounded-lg border-2 border-dashed p-4 space-y-2" style={{ borderColor: isPersonalBooking ? '#70FFE8' : undefined, background: isPersonalBooking ? '#F0FFFB' : undefined }}>
               <label className="flex items-start gap-3 cursor-pointer">
@@ -146,14 +169,19 @@ export default function RegisterBooking() {
             {/* Booked Date */}
             <div className="space-y-2">
               <Label htmlFor="bookedDate">
-                Booked Date <span className="text-muted-foreground text-xs">(date the booking was made)</span>
+                Booked Date <span className="text-destructive">*</span>
+                <span className="text-muted-foreground text-xs ml-1">(date the booking was made)</span>
               </Label>
               <Input
                 id="bookedDate"
                 type="date"
                 value={bookedDate}
                 onChange={(e) => setBookedDate(e.target.value)}
+                required
               />
+              {!isHistoricBooking && (
+                <p className="text-xs text-muted-foreground">Defaults to today — bookings should be registered immediately.</p>
+              )}
             </div>
 
             {/* Departure Date */}
@@ -367,9 +395,10 @@ export default function RegisterBooking() {
                   className="flex-1"
                   onClick={() => {
                     setSuccessBooking(null);
-                    setClientName(""); setDepartureDate(""); setBookedDate(""); setTopdogRef("");
+                    const todayStr = new Date().toISOString().split("T")[0];
+                    setClientName(""); setDepartureDate(""); setBookedDate(todayStr); setTopdogRef("");
                     setReimbursementsRequired(false); setDocFile(null); setExpectedCommission("");
-                    setGrossCost(""); setDestination("");
+                    setGrossCost(""); setDestination(""); setIsHistoricBooking(false);
                   }}
                 >
                   Register Another

@@ -286,6 +286,25 @@ export const adminTaskComments = mysqlTable("admin_task_comments", {
 });
 export type AdminTaskComment = typeof adminTaskComments.$inferSelect;
 
+// ─── Calendar Events ─────────────────────────────────────────────────────────
+
+export const calendarEvents = mysqlTable("calendar_events", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  type: mysqlEnum("type", ["holiday", "event", "task"]).notNull().default("event"),
+  startDate: timestamp("startDate").notNull(),
+  endDate: timestamp("endDate").notNull(),
+  allDay: boolean("allDay").default(true).notNull(),
+  assigneeId: int("assigneeId"), // FK → users.id (for holiday: who is off; for task: who is assigned)
+  createdById: int("createdById").notNull(), // FK → users.id
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CalendarEvent = typeof calendarEvents.$inferSelect;
+export type InsertCalendarEvent = typeof calendarEvents.$inferInsert;
+
 // ─── System Settings ──────────────────────────────────────────────────────────
 // Simple key-value store for global system flags (e.g. notifications paused)
 export const systemSettings = mysqlTable("system_settings", {

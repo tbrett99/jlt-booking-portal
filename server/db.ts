@@ -5,6 +5,7 @@ import {
   adminTasks,
   amendments,
   bookings,
+  calendarEvents,
   cancellations,
   commissionClaims,
   inAppNotifications,
@@ -1248,6 +1249,85 @@ export async function mergeBookings(sourceId: number, targetId: number) {
     .where(and(eq(adminTasks.linkedType, "booking"), eq(adminTasks.linkedId, sourceId)));
   // Delete the source booking (now orphaned)
   await db.delete(bookings).where(eq(bookings.id, sourceId));
+}
+
+// ─── Calendar Events ─────────────────────────────────────────────────────────
+
+export async function getCalendarEvents(from: Date, to: Date) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: calendarEvents.id,
+      title: calendarEvents.title,
+      description: calendarEvents.description,
+      type: calendarEvents.type,
+      startDate: calendarEvents.startDate,
+      endDate: calendarEvents.endDate,
+      allDay: calendarEvents.allDay,
+      assigneeId: calendarEvents.assigneeId,
+      createdById: calendarEvents.createdById,
+      createdAt: calendarEvents.createdAt,
+      assigneeName: users.name,
+    })
+    .from(calendarEvents)
+    .leftJoin(users, eq(calendarEvents.assigneeId, users.id))
+    .where(
+      and(
+        lte(calendarEvents.startDate, to),
+        gte(calendarEvents.endDate, from)
+      )
+    )
+    .orderBy(calendarEvents.startDate);
+  return rows;
+}
+
+export async function createCalendarEvent(data: {
+  title: string;
+  description?: string;
+  type: "holiday" | "event" | "task";
+  startDate: Date;
+  endDate: Date;
+  allDay: boolean;
+  assigneeId?: number | null;
+  createdById: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db.insert(calendarEvents).values({
+    title: data.title,
+    description: data.description ?? null,
+    type: data.type,
+    startDate: data.startDate,
+    endDate: data.endDate,
+    allDay: data.allDay,
+    assigneeId: data.assigneeId ?? null,
+    createdById: data.createdById,
+  });
+  return result;
+}
+
+export async function updateCalendarEvent(
+  id: number,
+  data: Partial<{
+    title: string;
+    description: string | null;
+    type: "holiday" | "event" | "task";
+    startDate: Date;
+    endDate: Date;
+    allDay: boolean;
+    assigneeId: number | null;
+  }>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(calendarEvents).set(data as any).where(eq(calendarEvents.id, id));
+}
+
+export async function deleteCalendarEvent(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(calendarEvents).where(eq(calendarEvents.id, id));
 }
 
 // ─── Delete Reimbursement Doc ─────────────────────────────────────────────────

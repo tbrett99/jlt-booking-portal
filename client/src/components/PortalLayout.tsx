@@ -3,7 +3,7 @@ import GlobalSearch from "@/components/GlobalSearch";
 import { trpc } from "@/lib/trpc";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import {
-  Bell, BookOpen, ChevronLeft, ChevronRight, ClipboardList,
+  Bell, BookOpen, CalendarDays, ChevronLeft, ChevronRight, ClipboardList,
   FileText, Home, LayoutDashboard, LogOut, Mail, Menu, Users, X,
   ArrowLeftRight, CheckCircle2, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing
@@ -70,6 +70,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ? [{ label: "Notifications", href: "/notification-templates", icon: <Mail size={18} /> }]
       : []),
     { label: "Notif. Preferences", href: "/notif-prefs", icon: <BellRing size={18} /> },
+    { label: "Calendar", href: "/admin/calendar", icon: <CalendarDays size={18} /> },
   ];
 
   const navItems = user?.role === "agent"
