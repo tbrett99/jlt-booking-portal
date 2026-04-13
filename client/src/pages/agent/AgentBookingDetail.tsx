@@ -40,7 +40,8 @@ const STAGE_BADGE: Record<string, { label: string; color: string; bg: string }> 
   "Holding Accounts":      { label: "Holding",              color: "#92400e", bg: "#fef3c7" },
 };
 
-const ATTENTION_STAGES = new Set(["Query", "Reimb Docs Missing", "Urgent/Reimb", "Not on Topdog"]);
+// Only show action-required banner for stages where agent genuinely needs to act
+const ATTENTION_STAGES = new Set(["Query", "Reimb Docs Missing"]);
 
 function getPipelineProgress(currentStage: string): number {
   const idx = PIPELINE_STEPS.findIndex((s) => s.stage === currentStage);
@@ -59,19 +60,24 @@ export default function AgentBookingDetail() {
   const [editingCommission, setEditingCommission] = useState(false);
   const [commissionInput, setCommissionInput] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  // Per-item doc upload state: maps reimbItemId -> uploading boolean
+  const [uploadingItemId, setUploadingItemId] = useState<number | null>(null);
+  const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
+  // Request additional reimbursement form state
+  const [showAddReimb, setShowAddReimb] = useState(false);
+  const [addReimbCount, setAddReimbCount] = useState(1);
+  const [addReimbItems, setAddReimbItems] = useState([{ supplierName: "", amount: "" }]);
+  const [isSubmittingReimb, setIsSubmittingReimb] = useState(false);
 
   const utils = trpc.useUtils();
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
   const { data: notes = [], refetch: refetchNotes } = trpc.notes.list.useQuery({ bookingId });
   const { data: amendments = [] } = trpc.amendments.byBooking.useQuery({ bookingId });
   const { data: refunds = [] } = trpc.refunds.byBooking.useQuery({ bookingId });
-  const { data: reimbDocs = [], refetch: refetchReimbDocs } = trpc.bookings.listReimbDocs.useQuery({ bookingId });
+  const { data: reimbItems = [], refetch: refetchReimbItems } = trpc.reimbursements.getByBooking.useQuery({ bookingId });
   const addNote = trpc.notes.add.useMutation();
-  const uploadDoc = trpc.bookings.uploadReimbDoc.useMutation();
-  const deleteReimbDocMutation = trpc.bookings.deleteReimbDoc.useMutation({
-    onSuccess: () => utils.bookings.listReimbDocs.invalidate({ bookingId }),
-    onError: (err: any) => toast.error(err.message || "Failed to delete document"),
-  });
+  const addLateReimb = trpc.reimbursements.addLate.useMutation();
+  const uploadItemDoc = trpc.reimbursements.uploadItemDoc.useMutation();
   const updateCommission = trpc.bookings.updateCommission.useMutation({
     onSuccess: () => {
       toast.success("Commission amount saved");
@@ -103,28 +109,61 @@ export default function AgentBookingDetail() {
     }
   };
 
-  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleItemDocUpload = async (e: React.ChangeEvent<HTMLInputElement>, itemId: number) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) { toast.error("File must be under 10MB"); return; }
-    setIsUploadingDoc(true);
+    setUploadingItemId(itemId);
     try {
       const arrayBuffer = await file.arrayBuffer();
       const uint8 = new Uint8Array(arrayBuffer);
       const base64 = btoa(Array.from(uint8).map(b => String.fromCharCode(b)).join(''));
-      await uploadDoc.mutateAsync({
+      // Upload via the booking-level upload endpoint, tagging the reimbursement item
+      await uploadItemDoc.mutateAsync({
+        reimbursementItemId: itemId,
         bookingId,
-        fileBase64: base64,
+        fileUrl: `data:${file.type};base64,${base64}`,
+        fileKey: `reimb-item-${itemId}-${Date.now()}-${file.name}`,
         fileName: file.name,
-        mimeType: file.type,
       });
-      await utils.bookings.byId.invalidate({ id: bookingId });
-      await refetchReimbDocs();
+      await refetchReimbItems();
       toast.success("Document uploaded — the JLT team has been notified");
     } catch (err: any) {
       toast.error(err.message || "Upload failed");
     } finally {
-      setIsUploadingDoc(false);
+      setUploadingItemId(null);
+      // Reset the file input
+      e.target.value = "";
+    }
+  };
+
+  const handleAddReimbCountChange = (n: number) => {
+    setAddReimbCount(n);
+    setAddReimbItems(prev => {
+      const next = [...prev];
+      while (next.length < n) next.push({ supplierName: "", amount: "" });
+      return next.slice(0, n);
+    });
+  };
+
+  const handleSubmitAdditionalReimb = async () => {
+    const valid = addReimbItems.every(i => i.supplierName.trim() && parseFloat(i.amount) > 0);
+    if (!valid) { toast.error("Please fill in all supplier names and amounts"); return; }
+    setIsSubmittingReimb(true);
+    try {
+      await addLateReimb.mutateAsync({
+        bookingId,
+        items: addReimbItems.map(i => ({ supplierName: i.supplierName.trim(), amount: parseFloat(i.amount) })),
+      });
+      await refetchReimbItems();
+      setShowAddReimb(false);
+      setAddReimbItems([{ supplierName: "", amount: "" }]);
+      setAddReimbCount(1);
+      toast.success("Reimbursement request submitted — the JLT team has been notified");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to submit reimbursement");
+    } finally {
+      setIsSubmittingReimb(false);
     }
   };
 
@@ -334,97 +373,144 @@ export default function AgentBookingDetail() {
         </div>
       )}
 
-      {/* Reimbursement Document Upload Card — always visible */}
-      {(() => {
-        const isReimbMissing = booking.currentStage === "Reimb Docs Missing" || booking.currentStage === "Urgent/Reimb";
-        const hasDocs = reimbDocs.length > 0;
-        const borderColor = isReimbMissing && !hasDocs ? '#ef4444' : '#70FFE8';
-        return (
-          <Card className="border-2" style={{ borderColor }}>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base font-bold">
-                <FileText size={18} style={{ color: isReimbMissing && !hasDocs ? '#ef4444' : '#02E6D2' }} />
-                Reimbursement Documents
-                {hasDocs && (
-                  <span className="ml-auto text-xs font-normal px-2 py-0.5 rounded-full" style={{ background: '#d1fae5', color: '#065f46' }}>
-                    {reimbDocs.length} uploaded
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {/* Required but missing alert */}
-              {isReimbMissing && !hasDocs && (
-                <div className="flex items-start gap-3 p-3 rounded-lg" style={{ background: '#fee2e2' }}>
-                  <AlertCircle size={20} style={{ color: '#991b1b' }} className="flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-bold" style={{ color: '#991b1b' }}>Documents required — not yet uploaded</p>
-                    <p className="text-xs mt-0.5" style={{ color: '#7f1d1d' }}>Please upload your reimbursement documents as soon as possible. The JLT team is waiting.</p>
-                  </div>
+      {/* Reimbursements Section — per-item with doc upload */}
+      {(reimbItems.length > 0 || booking.reimbursementsRequired) && (
+        <Card className="border-2" style={{ borderColor: booking.currentStage === 'Reimb Docs Missing' ? '#ef4444' : '#70FFE8' }}>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-bold">
+              <FileText size={18} style={{ color: '#02E6D2' }} />
+              My Reimbursements
+              <span className="ml-auto text-xs font-normal px-2 py-0.5 rounded-full" style={{ background: '#d1fae5', color: '#065f46' }}>
+                {reimbItems.length} item{reimbItems.length !== 1 ? 's' : ''}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {booking.currentStage === 'Reimb Docs Missing' && (
+              <div className="flex items-start gap-3 p-3 rounded-lg" style={{ background: '#fee2e2' }}>
+                <AlertCircle size={18} style={{ color: '#991b1b' }} className="flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-bold" style={{ color: '#991b1b' }}>Documents required</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#7f1d1d' }}>Please upload documents for your reimbursements below. The JLT team is waiting.</p>
                 </div>
-              )}
-              {/* Uploaded docs list */}
-              {hasDocs && (
-                <div className="space-y-2">
-                  {reimbDocs.map((doc: any) => (
-                    <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border" style={{ background: '#f0fdf4' }}>
-                      <CheckCircle2 size={16} style={{ color: '#065f46' }} className="flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer"
-                          className="text-sm font-medium underline truncate block" style={{ color: '#065f46' }}>
-                          {doc.fileName}
-                        </a>
-                        <p className="text-xs text-muted-foreground">
-                          {format(new Date(doc.uploadedAt), 'dd MMM yyyy HH:mm')}
-                          {doc.uploaderName ? ` · ${doc.uploaderName}` : ''}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="text-red-400 hover:text-red-600 flex-shrink-0"
-                        title="Delete document"
-                        onClick={() => {
-                          if (confirm(`Delete "${doc.fileName}"? This cannot be undone.`)) {
-                            deleteReimbDocMutation.mutate({ docId: doc.id });
-                          }
-                        }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+              </div>
+            )}
+            {reimbItems.map((item: any) => {
+              const statusColors: Record<string, { bg: string; color: string }> = {
+                pending:   { bg: '#fef3c7', color: '#92400e' },
+                scheduled: { bg: '#dbeafe', color: '#1d4ed8' },
+                paid:      { bg: '#d1fae5', color: '#065f46' },
+              };
+              const sc = statusColors[item.status] ?? statusColors.pending;
+              const isExpanded = expandedItemId === item.id;
+              return (
+                <div key={item.id} className="rounded-lg border p-3 space-y-2" style={{ background: sc.bg + '40' }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{item.supplierName}</p>
+                      <p className="text-xs text-muted-foreground">£{Number(item.amount).toFixed(2)}{item.isLate ? ' · Late submission' : ''}</p>
                     </div>
-                  ))}
-                </div>
-              )}
-              {/* Info text for non-required bookings */}
-              {!isReimbMissing && !hasDocs && (
-                <div className="flex items-start gap-3 p-3 rounded-lg" style={{ background: '#f0fdf4' }}>
-                  <FileText size={18} style={{ color: '#02E6D2' }} className="flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Have reimbursement documents to add?</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Upload them here and the JLT team will be notified immediately to set up your reimbursement.</p>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 capitalize" style={sc}>{item.status}</span>
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:text-foreground flex-shrink-0 underline"
+                      onClick={() => setExpandedItemId(isExpanded ? null : item.id)}
+                    >
+                      {isExpanded ? 'Hide' : 'Docs'}
+                    </button>
                   </div>
+                  {isExpanded && (
+                    <div className="pt-2 border-t space-y-2">
+                      {(item.docs ?? []).map((doc: any) => (
+                        <div key={doc.id} className="flex items-center gap-2 text-xs">
+                          <CheckCircle2 size={12} style={{ color: '#065f46' }} />
+                          <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="underline truncate flex-1" style={{ color: '#065f46' }}>{doc.fileName}</a>
+                          <span className="text-muted-foreground flex-shrink-0">{format(new Date(doc.createdAt), 'dd MMM')}</span>
+                        </div>
+                      ))}
+                      {(item.docs ?? []).length === 0 && (
+                        <p className="text-xs text-muted-foreground">No documents uploaded yet for this reimbursement.</p>
+                      )}
+                      <label className="block">
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                          onChange={(e) => handleItemDocUpload(e, item.id)}
+                          disabled={uploadingItemId === item.id}
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full gap-1 text-xs"
+                          disabled={uploadingItemId === item.id}
+                          onClick={(e) => { e.preventDefault(); (e.currentTarget.previousElementSibling as HTMLInputElement)?.click(); }}
+                        >
+                          {uploadingItemId === item.id ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                          {uploadingItemId === item.id ? 'Uploading...' : 'Upload Document'}
+                        </Button>
+                      </label>
+                    </div>
+                  )}
                 </div>
-              )}
-              {/* Upload button — always shown */}
+              );
+            })}
+            {/* Request Additional Reimbursement */}
+            {!showAddReimb ? (
               <Button
-                onClick={() => fileRef.current?.click()}
-                disabled={isUploadingDoc}
-                size="lg"
-                className="w-full gap-2 font-bold text-base py-6"
-                style={{ background: isReimbMissing && !hasDocs ? '#ef4444' : '#70FFE8', color: isReimbMissing && !hasDocs ? '#fff' : '#414141' }}
+                variant="outline"
+                size="sm"
+                className="w-full gap-2 text-xs"
+                onClick={() => setShowAddReimb(true)}
               >
-                {isUploadingDoc ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
-                {isUploadingDoc ? 'Uploading...' : hasDocs ? 'Upload Additional Document' : 'Upload Reimbursement Documents'}
+                <Upload size={12} /> Request Additional Reimbursement
               </Button>
-              <p className="text-xs text-center text-muted-foreground">Accepted: PDF, JPG, PNG, Word documents (max 10MB)</p>
-              <input ref={fileRef} type="file" className="hidden" onChange={handleDocUpload}
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
-            </CardContent>
-          </Card>
-        );
-      })()}
+            ) : (
+              <div className="rounded-lg border p-3 space-y-3" style={{ background: '#f0fdf4' }}>
+                <p className="text-sm font-semibold">Request Additional Reimbursement</p>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-muted-foreground">How many?</label>
+                  <select
+                    className="border rounded px-2 py-1 text-xs"
+                    value={addReimbCount}
+                    onChange={(e) => handleAddReimbCountChange(Number(e.target.value))}
+                  >
+                    {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+                {addReimbItems.map((item, idx) => (
+                  <div key={idx} className="grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder="Supplier name"
+                      value={item.supplierName}
+                      onChange={(e) => setAddReimbItems(prev => prev.map((p, i) => i === idx ? { ...p, supplierName: e.target.value } : p))}
+                      className="text-xs h-8"
+                    />
+                    <Input
+                      placeholder="Amount (£)"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.amount}
+                      onChange={(e) => setAddReimbItems(prev => prev.map((p, i) => i === idx ? { ...p, amount: e.target.value } : p))}
+                      className="text-xs h-8"
+                    />
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <Button size="sm" className="flex-1 text-xs" onClick={handleSubmitAdditionalReimb} disabled={isSubmittingReimb}>
+                    {isSubmittingReimb ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
+                    Submit Request
+                  </Button>
+                  <Button size="sm" variant="outline" className="text-xs" onClick={() => setShowAddReimb(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Reimbursement doc submission confirmation banner */}
+      {/* Reimbursement doc submission confirmation banner (legacy) */}
       {(() => {
         const reimbAmendments = amendments.filter((a: any) => a.isReimbursementDoc);
         if (reimbAmendments.length === 0) return null;

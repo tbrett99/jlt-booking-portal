@@ -29,7 +29,8 @@ const STAGE_BADGE: Record<string, { label: string; color: string; bg: string; ic
   "Holding Accounts":     { label: "Holding",          color: "#92400e", bg: "#fef3c7" },
 };
 
-const ATTENTION_STAGES = new Set(["Query", "Reimb Docs Missing", "Urgent/Reimb", "Not on Topdog"]);
+// Only highlight bookings where agent genuinely needs to act
+const ATTENTION_STAGES = new Set(["Query", "Reimb Docs Missing"]);
 
 const STATUS_FILTERS = [
   { label: "All", value: "all" },

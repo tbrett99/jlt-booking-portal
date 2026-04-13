@@ -329,6 +329,20 @@ export const reimbursementItems = mysqlTable("reimbursement_items", {
 export type ReimbursementItem = typeof reimbursementItems.$inferSelect;
 export type InsertReimbursementItem = typeof reimbursementItems.$inferInsert;
 
+// ─── Reimbursement Item Docs ─────────────────────────────────────────────────
+export const reimbursementItemDocs = mysqlTable("reimbursement_item_docs", {
+  id: int("id").autoincrement().primaryKey(),
+  reimbursementItemId: int("reimbursementItemId").notNull(), // FK → reimbursement_items.id
+  bookingId: int("bookingId").notNull(),                    // FK → bookings.id (for easy querying)
+  fileUrl: text("fileUrl").notNull(),
+  fileKey: varchar("fileKey", { length: 500 }).notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  uploadedById: int("uploadedById").notNull(),              // FK → users.id
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ReimbursementItemDoc = typeof reimbursementItemDocs.$inferSelect;
+export type InsertReimbursementItemDoc = typeof reimbursementItemDocs.$inferInsert;
+
 // ─── System Settings ──────────────────────────────────────────────────────────
 // Simple key-value store for global system flags (e.g. notifications paused)
 export const systemSettings = mysqlTable("system_settings", {

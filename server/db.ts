@@ -1536,3 +1536,47 @@ export async function getBookingReimbursementFlag(bookingId: number): Promise<bo
   const rows = await db.select({ id: reimbursementItems.id }).from(reimbursementItems).where(eq(reimbursementItems.bookingId, bookingId)).limit(1);
   return rows.length > 0;
 }
+
+// ─── Reimbursement Item Docs ──────────────────────────────────────────────────
+
+export async function addReimbursementItemDoc(data: {
+  reimbursementItemId: number;
+  bookingId: number;
+  fileUrl: string;
+  fileKey: string;
+  fileName: string;
+  uploadedById: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { reimbursementItemDocs } = await import("../drizzle/schema");
+  await db.insert(reimbursementItemDocs).values(data);
+  const rows = await db
+    .select()
+    .from(reimbursementItemDocs)
+    .where(eq(reimbursementItemDocs.reimbursementItemId, data.reimbursementItemId))
+    .orderBy(desc(reimbursementItemDocs.createdAt));
+  return rows;
+}
+
+export async function getReimbursementItemDocs(reimbursementItemId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { reimbursementItemDocs } = await import("../drizzle/schema");
+  return db
+    .select()
+    .from(reimbursementItemDocs)
+    .where(eq(reimbursementItemDocs.reimbursementItemId, reimbursementItemId))
+    .orderBy(reimbursementItemDocs.createdAt);
+}
+
+export async function getReimbursementItemDocsByBooking(bookingId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { reimbursementItemDocs } = await import("../drizzle/schema");
+  return db
+    .select()
+    .from(reimbursementItemDocs)
+    .where(eq(reimbursementItemDocs.bookingId, bookingId))
+    .orderBy(reimbursementItemDocs.createdAt);
+}

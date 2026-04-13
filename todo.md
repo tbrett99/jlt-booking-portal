@@ -714,3 +714,16 @@
 
 ## Bug Fixes (Apr 13)
 - [x] Fix booking merge error: "Invalid input: expected number, received undefined" for targetId — merge of #30764 into #30763 fails
+
+## Reimbursement Workflow Fixes (Apr 13 - Round 2)
+- [x] Fix agent "Action Required" banner: only show for "Reimb Docs Missing" stage OR booking has reimbursements declared but no docs uploaded — NOT for "Urgent/Reimb"
+- [x] Admin booking detail: show individual reimbursement items (supplier, amount, status) in a dedicated panel
+- [x] DB schema: create reimbursement_item_docs table (id, reimbursementItemId, docUrl, uploadedById, createdAt)
+- [x] Apply migration via webdev_execute_sql
+- [x] DB helpers: addReimbursementItemDoc, getReimbursementItemDocs
+- [x] tRPC: reimbursements.addLateRequest (agent — creates new reimbursement item as late, notifies admin), reimbursements.uploadItemDoc (agent — uploads doc for a specific reimbursement item)
+- [x] Agent booking detail: list all reimbursement items for the booking (supplier, amount, status, docs)
+- [x] Agent booking detail: per-item document upload button
+- [x] Agent booking detail: "Request Additional Reimbursement" button — opens form (supplier name + amount), creates late reimbursement item and notifies admin
+- [x] Remove old free-floating reimbursement doc upload from agent booking detail (replace with per-item upload)
+- [x] Admin Reimbursements page: show doc count per item with link to view docs

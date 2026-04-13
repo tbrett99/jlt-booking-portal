@@ -2148,6 +2148,60 @@ export const appRouter = router({
         }
         return created;
       }),
+
+    // Agent/Admin: upload a document for a specific reimbursement item
+    uploadItemDoc: protectedProcedure
+      .input(z.object({
+        reimbursementItemId: z.number(),
+        bookingId: z.number(),
+        fileUrl: z.string().url(),
+        fileKey: z.string(),
+        fileName: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { addReimbursementItemDoc } = await import("./db");
+        // Verify the reimbursement item exists and belongs to this agent (if agent)
+        const items = await getReimbursementsByBooking(input.bookingId);
+        const item = items.find((i) => i.id === input.reimbursementItemId);
+        if (!item) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.user.role === "agent" && item.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        const docs = await addReimbursementItemDoc({
+          reimbursementItemId: input.reimbursementItemId,
+          bookingId: input.bookingId,
+          fileUrl: input.fileUrl,
+          fileKey: input.fileKey,
+          fileName: input.fileName,
+          uploadedById: ctx.user.id,
+        });
+        // Notify admins when an agent uploads a doc
+        if (ctx.user.role === "agent") {
+          const admins = (await getAllUsers()).filter((u) => u.role === "admin" || u.role === "super_admin");
+          for (const admin of admins) {
+            await createInAppNotification({
+              userId: admin.id,
+              message: `Document uploaded for reimbursement "${item.supplierName}" on booking #${input.bookingId}.`,
+              linkUrl: `/admin/bookings/${input.bookingId}`,
+            });
+          }
+        }
+        return docs;
+      }),
+
+    // Agent/Admin: get docs for a specific reimbursement item
+    getItemDocs: protectedProcedure
+      .input(z.object({ reimbursementItemId: z.number(), bookingId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const { getReimbursementItemDocs } = await import("./db");
+        // Verify ownership for agents
+        if (ctx.user.role === "agent") {
+          const items = await getReimbursementsByBooking(input.bookingId);
+          const item = items.find((i) => i.id === input.reimbursementItemId);
+          if (!item || item.agentId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        return getReimbursementItemDocs(input.reimbursementItemId);
+      }),
   }),
 });
 export type AppRouter = typeof appRouter;

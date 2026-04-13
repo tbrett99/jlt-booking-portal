@@ -90,6 +90,11 @@ export default function AdminBookingDetail() {
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const { data: reimbDocs = [] } = trpc.bookings.listReimbDocs.useQuery({ bookingId }, { enabled: !!bookingId });
+  const { data: reimbItems = [], refetch: refetchReimbItems } = trpc.reimbursements.getByBooking.useQuery({ bookingId }, { enabled: !!bookingId });
+  const updateReimbStatus = trpc.reimbursements.updateStatus.useMutation({
+    onSuccess: () => { refetchReimbItems(); toast.success('Reimbursement status updated'); },
+    onError: (e) => toast.error(e.message),
+  });
 
   // Populate editable fields once booking loads
   if (booking && !detailsInitialised) {
@@ -397,6 +402,40 @@ export default function AdminBookingDetail() {
                 <p className="text-xs text-amber-600 flex items-center gap-1">
                   <FileText size={12} /> No documents uploaded yet
                 </p>
+              </div>
+            )}
+
+            {/* Reimbursement Items Panel */}
+            {(reimbItems as any[]).length > 0 && (
+              <div className="pt-2 border-t space-y-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Reimbursement Items ({(reimbItems as any[]).length})</p>
+                {(reimbItems as any[]).map((item: any) => {
+                  const statusColor = item.status === 'paid' ? '#065f46' : item.status === 'scheduled' ? '#1d4ed8' : '#92400e';
+                  const statusBg = item.status === 'paid' ? '#d1fae5' : item.status === 'scheduled' ? '#dbeafe' : '#fef3c7';
+                  const statusLabel = item.status === 'paid' ? 'Paid' : item.status === 'scheduled' ? 'Scheduled' : 'Pending';
+                  return (
+                    <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg border text-sm" style={{ background: '#fafafa' }}>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{item.supplierName}</p>
+                        <p className="text-xs text-muted-foreground">£{Number(item.amount).toFixed(2)}{item.isLate ? ' · Late' : ''}</p>
+                      </div>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: statusBg, color: statusColor }}>
+                        {statusLabel}
+                      </span>
+                      {item.status !== 'paid' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-6 px-2 flex-shrink-0"
+                          disabled={updateReimbStatus.isPending}
+                          onClick={() => updateReimbStatus.mutate({ id: item.id, status: item.status === 'pending' ? 'scheduled' : 'paid' })}
+                        >
+                          {item.status === 'pending' ? 'Mark Scheduled' : 'Mark Paid'}
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
