@@ -66,8 +66,9 @@ export default function AgentBookingDetail() {
   // Request additional reimbursement form state
   const [showAddReimb, setShowAddReimb] = useState(false);
   const [addReimbCount, setAddReimbCount] = useState(1);
-  const [addReimbItems, setAddReimbItems] = useState([{ supplierName: "", amount: "" }]);
+  const [addReimbItems, setAddReimbItems] = useState<{ supplierName: string; amount: string; file: File | null }[]>([{ supplierName: "", amount: "", file: null }]);
   const [isSubmittingReimb, setIsSubmittingReimb] = useState(false);
+  const addReimbFileRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // PTS details editing (only in Creating own PTS file stage)
   const [editingPts, setEditingPts] = useState(false);
@@ -163,7 +164,7 @@ export default function AgentBookingDetail() {
     setAddReimbCount(n);
     setAddReimbItems(prev => {
       const next = [...prev];
-      while (next.length < n) next.push({ supplierName: "", amount: "" });
+      while (next.length < n) next.push({ supplierName: "", amount: "", file: null });
       return next.slice(0, n);
     });
   };
@@ -171,17 +172,40 @@ export default function AgentBookingDetail() {
   const handleSubmitAdditionalReimb = async () => {
     const valid = addReimbItems.every(i => i.supplierName.trim() && parseFloat(i.amount) > 0);
     if (!valid) { toast.error("Please fill in all supplier names and amounts"); return; }
+    const missingDoc = addReimbItems.findIndex(i => !i.file);
+    if (missingDoc !== -1) {
+      toast.error(`Please attach a document for item ${missingDoc + 1} (${addReimbItems[missingDoc].supplierName || 'supplier'})`);
+      return;
+    }
     setIsSubmittingReimb(true);
     try {
-      await addLateReimb.mutateAsync({
+      // Step 1: create the reimbursement items
+      const created = await addLateReimb.mutateAsync({
         bookingId,
         items: addReimbItems.map(i => ({ supplierName: i.supplierName.trim(), amount: parseFloat(i.amount) })),
       });
+      // Step 2: upload a doc for each item
+      const createdItems: any[] = Array.isArray(created) ? created : [];
+      for (let idx = 0; idx < addReimbItems.length; idx++) {
+        const file = addReimbItems[idx].file!;
+        const itemId = createdItems[idx]?.id;
+        if (!itemId) continue;
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8 = new Uint8Array(arrayBuffer);
+        const base64 = btoa(Array.from(uint8).map(b => String.fromCharCode(b)).join(''));
+        await uploadItemDoc.mutateAsync({
+          reimbursementItemId: itemId,
+          bookingId,
+          fileUrl: `data:${file.type};base64,${base64}`,
+          fileKey: `reimb-item-${itemId}-${Date.now()}-${file.name}`,
+          fileName: file.name,
+        });
+      }
       await refetchReimbItems();
       setShowAddReimb(false);
-      setAddReimbItems([{ supplierName: "", amount: "" }]);
+      setAddReimbItems([{ supplierName: "", amount: "", file: null }]);
       setAddReimbCount(1);
-      toast.success("Reimbursement request submitted — the JLT team has been notified");
+      toast.success("Reimbursement request submitted with documents — the JLT team has been notified");
     } catch (err: any) {
       toast.error(err.message || "Failed to submit reimbursement");
     } finally {
@@ -205,6 +229,9 @@ export default function AgentBookingDetail() {
   const isCancelled = booking.currentStage === "Cancelled";
   const needsAction = ATTENTION_STAGES.has(booking.currentStage);
   const isCommissionReady = booking.currentStage === "Commission Claimable";
+  // Items that have no docs uploaded yet (pending or late items that still need evidence)
+  const itemsMissingDocs = reimbItems.filter((item: any) => !item.docs || item.docs.length === 0);
+  const hasUndocumentedReimbs = itemsMissingDocs.length > 0;
   const sharedNotes = notes.filter(n => !n.isInternal);
 
   const daysUntilDeparture = differenceInDays(new Date(booking.departureDate), new Date());
@@ -238,6 +265,22 @@ export default function AgentBookingDetail() {
             <p className="font-semibold text-sm" style={{ color: '#92400e' }}>Action required on this booking</p>
             <p className="text-xs mt-0.5" style={{ color: '#92400e', opacity: 0.8 }}>
               This booking is in <strong>{booking.currentStage}</strong> status. Please check the messages below for details from the JLT team.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Undocumented reimbursements banner */}
+      {hasUndocumentedReimbs && !needsAction && (
+        <div className="rounded-xl border-l-4 p-4 flex items-start gap-3"
+          style={{ borderLeftColor: '#f59e0b', background: '#fffbeb' }}>
+          <AlertCircle size={18} style={{ color: '#d97706' }} className="flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold text-sm" style={{ color: '#92400e' }}>Documents needed for your reimbursement{itemsMissingDocs.length > 1 ? 's' : ''}</p>
+            <p className="text-xs mt-0.5" style={{ color: '#92400e', opacity: 0.85 }}>
+              {itemsMissingDocs.length === 1
+                ? `Please upload a supporting document for your ${itemsMissingDocs[0].supplierName} reimbursement (£${Number(itemsMissingDocs[0].amount).toFixed(2)}) in the Reimbursements section below.`
+                : `${itemsMissingDocs.length} reimbursement items are missing documents. Please upload supporting documents in the Reimbursements section below.`}
             </p>
           </div>
         </div>
@@ -472,23 +515,32 @@ export default function AgentBookingDetail() {
               };
               const sc = statusColors[item.status] ?? statusColors.pending;
               const isExpanded = expandedItemId === item.id;
+              const docsMissing = !item.docs || item.docs.length === 0;
               return (
-                <div key={item.id} className="rounded-lg border p-3 space-y-2" style={{ background: sc.bg + '40' }}>
+                <div key={item.id} className={`rounded-lg border-2 p-3 space-y-2 ${docsMissing ? 'border-amber-400' : 'border-transparent'}`} style={{ background: docsMissing ? '#fffbeb' : sc.bg + '40' }}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate">{item.supplierName}</p>
                       <p className="text-xs text-muted-foreground">£{Number(item.amount).toFixed(2)}{item.isLate ? ' · Late submission' : ''}</p>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 capitalize" style={sc}>{item.status}</span>
-                    <button
-                      type="button"
-                      className="text-xs text-muted-foreground hover:text-foreground flex-shrink-0 underline"
-                      onClick={() => setExpandedItemId(isExpanded ? null : item.id)}
-                    >
-                      {isExpanded ? 'Hide' : 'Docs'}
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {docsMissing && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: '#fef3c7', color: '#92400e' }}>
+                          <AlertCircle size={10} /> Doc needed
+                        </span>
+                      )}
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold capitalize" style={sc}>{item.status}</span>
+                      <button
+                        type="button"
+                        className={`text-xs flex-shrink-0 underline ${docsMissing ? 'font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+                        style={docsMissing ? { color: '#d97706' } : {}}
+                        onClick={() => setExpandedItemId(isExpanded ? null : item.id)}
+                      >
+                        {isExpanded ? 'Hide' : docsMissing ? 'Upload doc ↑' : 'Docs'}
+                      </button>
+                    </div>
                   </div>
-                  {isExpanded && (
+                  {(isExpanded || docsMissing) && (
                     <div className="pt-2 border-t space-y-2">
                       {(item.docs ?? []).map((doc: any) => (
                         <div key={doc.id} className="flex items-center gap-2 text-xs">
@@ -497,8 +549,8 @@ export default function AgentBookingDetail() {
                           <span className="text-muted-foreground flex-shrink-0">{format(new Date(doc.createdAt), 'dd MMM')}</span>
                         </div>
                       ))}
-                      {(item.docs ?? []).length === 0 && (
-                        <p className="text-xs text-muted-foreground">No documents uploaded yet for this reimbursement.</p>
+                      {docsMissing && (
+                        <p className="text-xs font-medium" style={{ color: '#92400e' }}>No document uploaded yet — please attach one below.</p>
                       )}
                       <label className="block">
                         <input
@@ -510,13 +562,14 @@ export default function AgentBookingDetail() {
                         />
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant={docsMissing ? 'default' : 'outline'}
                           className="w-full gap-1 text-xs"
+                          style={docsMissing ? { background: '#f59e0b', color: 'white' } : {}}
                           disabled={uploadingItemId === item.id}
                           onClick={(e) => { e.preventDefault(); (e.currentTarget.previousElementSibling as HTMLInputElement)?.click(); }}
                         >
                           {uploadingItemId === item.id ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                          {uploadingItemId === item.id ? 'Uploading...' : 'Upload Document'}
+                          {uploadingItemId === item.id ? 'Uploading...' : docsMissing ? 'Upload Supporting Document' : 'Upload Another Document'}
                         </Button>
                       </label>
                     </div>
@@ -535,10 +588,13 @@ export default function AgentBookingDetail() {
                 <Upload size={12} /> Request Additional Reimbursement
               </Button>
             ) : (
-              <div className="rounded-lg border p-3 space-y-3" style={{ background: '#f0fdf4' }}>
-                <p className="text-sm font-semibold">Request Additional Reimbursement</p>
+              <div className="rounded-lg border-2 p-4 space-y-4" style={{ background: '#f0fdf4', borderColor: '#02E6D2' }}>
+                <div>
+                  <p className="text-sm font-bold">Request Additional Reimbursement</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">You must attach a supporting document for each item before submitting.</p>
+                </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-muted-foreground">How many?</label>
+                  <label className="text-xs text-muted-foreground">How many items?</label>
                   <select
                     className="border rounded px-2 py-1 text-xs"
                     value={addReimbCount}
@@ -548,30 +604,81 @@ export default function AgentBookingDetail() {
                   </select>
                 </div>
                 {addReimbItems.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-2 gap-2">
-                    <Input
-                      placeholder="Supplier name"
-                      value={item.supplierName}
-                      onChange={(e) => setAddReimbItems(prev => prev.map((p, i) => i === idx ? { ...p, supplierName: e.target.value } : p))}
-                      className="text-xs h-8"
-                    />
-                    <Input
-                      placeholder="Amount (£)"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={item.amount}
-                      onChange={(e) => setAddReimbItems(prev => prev.map((p, i) => i === idx ? { ...p, amount: e.target.value } : p))}
-                      className="text-xs h-8"
-                    />
+                  <div key={idx} className="rounded-lg border p-3 space-y-2" style={{ background: 'white' }}>
+                    <p className="text-xs font-semibold text-muted-foreground">Item {idx + 1}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        placeholder="Supplier name"
+                        value={item.supplierName}
+                        onChange={(e) => setAddReimbItems(prev => prev.map((p, i) => i === idx ? { ...p, supplierName: e.target.value } : p))}
+                        className="text-xs h-8"
+                      />
+                      <Input
+                        placeholder="Amount (£)"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.amount}
+                        onChange={(e) => setAddReimbItems(prev => prev.map((p, i) => i === idx ? { ...p, amount: e.target.value } : p))}
+                        className="text-xs h-8"
+                      />
+                    </div>
+                    {/* Mandatory document upload */}
+                    <div className={`rounded-md border p-2 flex items-center gap-2 ${item.file ? 'border-emerald-300 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                        ref={el => { addReimbFileRefs.current[idx] = el; }}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] ?? null;
+                          setAddReimbItems(prev => prev.map((p, i) => i === idx ? { ...p, file: f } : p));
+                        }}
+                      />
+                      {item.file ? (
+                        <>
+                          <CheckCircle2 size={14} style={{ color: '#065f46' }} className="flex-shrink-0" />
+                          <span className="text-xs flex-1 truncate font-medium" style={{ color: '#065f46' }}>{item.file.name}</span>
+                          <button
+                            type="button"
+                            className="text-xs text-red-500 hover:text-red-700 flex-shrink-0"
+                            onClick={() => {
+                              setAddReimbItems(prev => prev.map((p, i) => i === idx ? { ...p, file: null } : p));
+                              if (addReimbFileRefs.current[idx]) addReimbFileRefs.current[idx]!.value = "";
+                            }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle size={14} style={{ color: '#92400e' }} className="flex-shrink-0" />
+                          <span className="text-xs flex-1" style={{ color: '#92400e' }}>Document required</span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-6 px-2 flex-shrink-0"
+                            onClick={() => addReimbFileRefs.current[idx]?.click()}
+                          >
+                            <Upload size={10} className="mr-1" /> Attach
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
                 <div className="flex gap-2">
-                  <Button size="sm" className="flex-1 text-xs" onClick={handleSubmitAdditionalReimb} disabled={isSubmittingReimb}>
+                  <Button
+                    size="sm"
+                    className="flex-1 text-xs"
+                    onClick={handleSubmitAdditionalReimb}
+                    disabled={isSubmittingReimb || addReimbItems.some(i => !i.file)}
+                    style={addReimbItems.every(i => i.file) ? { background: '#02E6D2', color: '#414141' } : {}}
+                  >
                     {isSubmittingReimb ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
-                    Submit Request
+                    {isSubmittingReimb ? 'Submitting...' : 'Submit Request'}
                   </Button>
-                  <Button size="sm" variant="outline" className="text-xs" onClick={() => setShowAddReimb(false)}>Cancel</Button>
+                  <Button size="sm" variant="outline" className="text-xs" onClick={() => { setShowAddReimb(false); setAddReimbItems([{ supplierName: '', amount: '', file: null }]); setAddReimbCount(1); }}>Cancel</Button>
                 </div>
               </div>
             )}

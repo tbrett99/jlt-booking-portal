@@ -739,3 +739,8 @@
 - [x] Agent booking detail: show editable PTS reference field ONLY when booking is in "Creating own PTS file" stage
 - [x] Agent booking detail: show editable final supplier payment date field ONLY when booking is in "Creating own PTS file" stage
 - [x] Agent booking detail: on save, call a new tRPC mutation to update ptsRef and finalSupplierPaymentDate (agent-only, stage-gated)
+
+## Reimbursement UX Fixes (Apr 13 - Round 4)
+- [x] Request Additional Reimbursement form: make document upload mandatory per item (cannot submit without attaching a file for each supplier)
+- [x] Agent booking detail: show amber "Doc needed" badge and auto-expand upload section for any reimbursement item with no documents
+- [x] Agent booking detail: show amber banner at top of page when any reimbursement items are missing documents (lists supplier name and amount for single item, count for multiple)
