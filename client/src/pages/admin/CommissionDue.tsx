@@ -289,7 +289,7 @@ export default function CommissionDue() {
 
                     <div className="flex-1 min-w-0 space-y-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Link href={`/admin/bookings/${booking.id}`}>
+                        <Link href={`/bookings/${booking.id}`}>
                           <span className="font-semibold text-foreground hover:text-[#02E6D2] cursor-pointer">
                             {booking.clientName}
                           </span>

@@ -790,3 +790,7 @@
 ## Commissions & Messages Fixes (Apr 14 Round 3)
 - [x] Admin commissions page: add PTS reference column/field to pending and paid claim rows
 - [x] Messages page: default to "Unread" tab (not "All"), keep oldest-first sort order within each tab
+
+## Bug Fix (Apr 14 Round 4)
+- [x] Fix 404 on Commission Due page booking link — uses /admin/bookings/:id instead of /bookings/:id
+- [x] Fix 404 on merge booking navigation — also used /admin/bookings/:id

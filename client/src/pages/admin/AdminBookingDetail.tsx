@@ -1112,7 +1112,7 @@ export default function AdminBookingDetail() {
                 try {
                   await mergeBookingMutation.mutateAsync({ sourceId: bookingId, targetId: mergeTarget.id });
                   toast.success(`Merged into ${mergeTarget.clientName} (#${mergeTarget.id}).`);
-                  window.location.href = `/admin/bookings/${mergeTarget.id}`;
+                  window.location.href = `/bookings/${mergeTarget.id}`;
                 } catch (err: any) {
                   toast.error(err.message || "Failed to merge bookings");
                 }
