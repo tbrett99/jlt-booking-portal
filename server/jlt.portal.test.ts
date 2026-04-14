@@ -29,6 +29,7 @@ vi.mock("./db", () => ({
   actionAmendment: vi.fn().mockResolvedValue(undefined),
   createCancellation: vi.fn().mockResolvedValue(undefined),
   getAllCancellations: vi.fn().mockResolvedValue([]),
+  getCancellationsByBooking: vi.fn().mockResolvedValue([]),
   createRefund: vi.fn().mockResolvedValue({ id: 3 }),
   getRefundsByBooking: vi.fn().mockResolvedValue([]),
   getAllRefunds: vi.fn().mockResolvedValue([]),
@@ -50,6 +51,59 @@ vi.mock("./db", () => ({
   getAllCommissionClaims: vi.fn().mockResolvedValue([]),
   markCommissionPaid: vi.fn().mockResolvedValue(undefined),
   getCommissionClaimByBooking: vi.fn().mockResolvedValue(null),
+  deleteCommissionClaim: vi.fn().mockResolvedValue(undefined),
+  scheduleReimbursementsForBooking: vi.fn().mockResolvedValue(undefined),
+  getReimbursementsByBooking: vi.fn().mockResolvedValue([]),
+  getReimbursementsAdmin: vi.fn().mockResolvedValue([]),
+  updateReimbursementStatus: vi.fn().mockResolvedValue(null),
+  getReimbursementDashboardStats: vi.fn().mockResolvedValue({ pending: 0, scheduled: 0, paid: 0 }),
+  getBookingReimbursementFlag: vi.fn().mockResolvedValue(false),
+  addReimbursementItemDoc: vi.fn().mockResolvedValue(undefined),
+  getReimbursementItemDocs: vi.fn().mockResolvedValue([]),
+  getReimbursementItemDocsByBooking: vi.fn().mockResolvedValue([]),
+  getReimbItemsWithMissingDocsByAgent: vi.fn().mockResolvedValue([]),
+  getOutstandingReimbursementsCount: vi.fn().mockResolvedValue(0),
+  createReimbursementItems: vi.fn().mockResolvedValue(undefined),
+  getReimbursementDocs: vi.fn().mockResolvedValue([]),
+  addReimbursementDoc: vi.fn().mockResolvedValue(undefined),
+  deleteReimbursementDoc: vi.fn().mockResolvedValue(undefined),
+  getBookingWithAgent: vi.fn().mockResolvedValue(null),
+  getPtsMissingPaymentDate: vi.fn().mockResolvedValue([]),
+  getCommissionClaimableMissingPaymentDate: vi.fn().mockResolvedValue([]),
+  getLastAdminNoteAuthor: vi.fn().mockResolvedValue(null),
+  getAllMessageThreads: vi.fn().mockResolvedValue([]),
+  getTotalUnreadMessageCount: vi.fn().mockResolvedValue(0),
+  markAllAgentNotesAsRead: vi.fn().mockResolvedValue(undefined),
+  getUnreadBookingIds: vi.fn().mockResolvedValue([]),
+  getAdminNotifPrefs: vi.fn().mockResolvedValue([]),
+  upsertAdminNotifPref: vi.fn().mockResolvedValue(undefined),
+  isAdminEmailEnabledForTrigger: vi.fn().mockResolvedValue(true),
+  createAdminTask: vi.fn().mockResolvedValue({ id: 1 }),
+  getAllAdminTasks: vi.fn().mockResolvedValue([]),
+  getAdminTaskById: vi.fn().mockResolvedValue(null),
+  updateAdminTask: vi.fn().mockResolvedValue(undefined),
+  deleteAdminTask: vi.fn().mockResolvedValue(undefined),
+  getAdminTaskComments: vi.fn().mockResolvedValue([]),
+  addAdminTaskComment: vi.fn().mockResolvedValue(undefined),
+  deleteBooking: vi.fn().mockResolvedValue(undefined),
+  mergeBookings: vi.fn().mockResolvedValue(undefined),
+  getCalendarEvents: vi.fn().mockResolvedValue([]),
+  createCalendarEvent: vi.fn().mockResolvedValue({ id: 1 }),
+  updateCalendarEvent: vi.fn().mockResolvedValue(undefined),
+  getTasksDueForReminder: vi.fn().mockResolvedValue([]),
+  markCalendarReminderSent: vi.fn().mockResolvedValue(undefined),
+  deleteCalendarEvent: vi.fn().mockResolvedValue(undefined),
+  getBookingsWithUnreadAgentNotes: vi.fn().mockResolvedValue([]),
+  markNotesReadByAdmin: vi.fn().mockResolvedValue(undefined),
+  areNotificationsPaused: vi.fn().mockResolvedValue(false),
+  setSystemSetting: vi.fn().mockResolvedValue(undefined),
+  updateUserProfile: vi.fn().mockResolvedValue(undefined),
+  createPasswordResetToken: vi.fn().mockResolvedValue(undefined),
+  getPasswordResetToken: vi.fn().mockResolvedValue(null),
+  markPasswordResetTokenUsed: vi.fn().mockResolvedValue(undefined),
+  getCancellationsByBooking: vi.fn().mockResolvedValue([]),
+  updateReimbursementAssignee: vi.fn().mockResolvedValue(undefined),
+  markReimbursementActioned: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./email", () => ({
@@ -534,5 +588,59 @@ describe("bookings.bulkImport", () => {
     expect(result.results[0].success).toBe(false);
     expect(result.results[0].error).toBe("invalid_agent_id");
     expect(vi.mocked(createBooking)).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Cancellations.byBooking ──────────────────────────────────────────────────
+
+describe("cancellations.byBooking", () => {
+  it("returns cancellations for a booking (admin)", async () => {
+    const { getCancellationsByBooking } = await import("./db");
+    vi.mocked(getCancellationsByBooking).mockResolvedValueOnce([
+      { id: 1, bookingId: 42, agentId: 3, confirmedAt: new Date(), processedById: null, processedAt: null, status: "pending" } as any,
+    ]);
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.cancellations.byBooking({ bookingId: 42 });
+    expect(result).toHaveLength(1);
+    expect(result[0].bookingId).toBe(42);
+    expect(result[0].status).toBe("pending");
+  });
+
+  it("returns empty array when no cancellations exist", async () => {
+    const { getCancellationsByBooking } = await import("./db");
+    vi.mocked(getCancellationsByBooking).mockResolvedValueOnce([]);
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.cancellations.byBooking({ bookingId: 99 });
+    expect(result).toHaveLength(0);
+  });
+
+  it("rejects non-admin callers", async () => {
+    const ctx = makeCtx("agent");
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.cancellations.byBooking({ bookingId: 42 })).rejects.toThrow();
+  });
+});
+
+// ─── bookings.pipelineHistory ─────────────────────────────────────────────────
+
+describe("bookings.pipelineHistory", () => {
+  it("returns pipeline history for a booking (admin)", async () => {
+    const { getPipelineHistory } = await import("./db");
+    vi.mocked(getPipelineHistory).mockResolvedValueOnce([
+      { id: 1, bookingId: 42, fromStage: "New Booking", toStage: "Added to PTS", movedById: 2, movedAt: new Date(), movedByName: "Test admin" } as any,
+    ]);
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.bookings.pipelineHistory({ bookingId: 42 });
+    expect(result).toHaveLength(1);
+    expect((result[0] as any).toStage).toBe("Added to PTS");
+  });
+
+  it("rejects non-admin callers", async () => {
+    const ctx = makeCtx("agent");
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.bookings.pipelineHistory({ bookingId: 42 })).rejects.toThrow();
   });
 });

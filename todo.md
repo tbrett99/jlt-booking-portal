@@ -774,3 +774,15 @@
 ## Mandatory PTS Reference on Stage Move (Apr 14)
 - [x] Extend "Added to PTS" guard modal to also require PTS reference (alongside existing payment date requirement)
 - [x] Update guard condition to fire when either ptsRef or finalSupplierPaymentDate is missing
+
+## Batch UX Improvements (Apr 14 Round 2)
+- [ ] Fix slow note adding — use optimistic updates so note appears instantly
+- [ ] Sidebar Communication item: show unread message count badge
+- [ ] Messages: default to oldest first (ascending order)
+- [ ] Agent booking view: make Actions tab more prominent (highlight/badge)
+- [ ] Agent booking messaging tab: add disclaimer to use forms for amendments/cancellations, not messages
+- [ ] Pipeline default sort: oldest bookings first
+- [ ] Admin booking page: full history overview section (amendments, refunds, reimbursements, stage changes)
+- [ ] Comms management page: add 2T (PTS) reference number column/field
+- [ ] Fix: file not loading from Commission Due page
+- [ ] Add agent name to booking pipeline cards

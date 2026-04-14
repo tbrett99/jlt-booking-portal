@@ -817,22 +817,26 @@ export default function AgentBookingDetail() {
 
       {/* Actions */}
       {(!isCancelled || true) && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Actions</CardTitle>
+        <Card style={{ border: '2px solid #70FFE8', background: 'rgba(112,255,232,0.04)' }}>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-bold flex items-center gap-2" style={{ color: '#0d7a6b' }}>
+              <span style={{ background: '#70FFE8', color: '#0d7a6b', borderRadius: '6px', padding: '2px 8px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Actions</span>
+              Need to make a change to this booking?
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">Use the buttons below to submit formal requests. Do not send amendment or cancellation requests via the messages box.</p>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
+          <CardContent className="flex flex-wrap gap-3">
             {!isCancelled && (
               <Link href={`/bookings/${bookingId}/amend`}>
-                <Button variant="outline" size="sm">Request Amendment</Button>
+                <Button size="sm" style={{ background: '#70FFE8', color: '#414141', fontWeight: 600 }}>Request Amendment</Button>
               </Link>
             )}
             <Link href={`/bookings/${bookingId}/refund`}>
-              <Button variant="outline" size="sm">Request Refund</Button>
+              <Button size="sm" variant="outline" style={{ fontWeight: 600 }}>Request Refund</Button>
             </Link>
             {!isCancelled && (
               <Link href={`/bookings/${bookingId}/cancel`}>
-                <Button variant="outline" size="sm" className="text-destructive border-destructive hover:bg-destructive/10">
+                <Button size="sm" variant="outline" className="text-destructive border-destructive hover:bg-destructive/10" style={{ fontWeight: 600 }}>
                   Cancel Booking
                 </Button>
               </Link>
@@ -846,6 +850,10 @@ export default function AgentBookingDetail() {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">Messages with JLT Team</CardTitle>
           <p className="text-xs text-muted-foreground">All messages are visible to both you and the JLT team</p>
+          <div className="mt-2 px-3 py-2 rounded-md text-xs flex items-start gap-2" style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#92400e' }}>
+            <span className="font-bold flex-shrink-0">⚠</span>
+            <span>This chat is for general queries only. To request an amendment, refund, or cancellation, please use the <strong>Actions</strong> section above — do not submit these requests via this message box.</span>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-3 max-h-80 overflow-y-auto pr-1">

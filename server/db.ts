@@ -292,8 +292,8 @@ export async function getAllBookings(filters?: {
           .select()
           .from(bookings)
           .where(and(...conditions))
-          .orderBy(desc(bookings.createdAt))
-      : db.select().from(bookings).orderBy(desc(bookings.createdAt));
+          .orderBy(bookings.createdAt)
+      : db.select().from(bookings).orderBy(bookings.createdAt);
   return query;
 }
 
@@ -360,11 +360,18 @@ export async function uploadReimbursementDoc(
 export async function getPipelineHistory(bookingId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db
+  const rows = await db
     .select()
     .from(pipelineHistory)
     .where(eq(pipelineHistory.bookingId, bookingId))
     .orderBy(desc(pipelineHistory.movedAt));
+  // Enrich with mover name
+  const moverIds = Array.from(new Set(rows.map((r) => r.movedById)));
+  const moverRows = moverIds.length > 0
+    ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, moverIds))
+    : [];
+  const moverMap = new Map(moverRows.map((u) => [u.id, u.name]));
+  return rows.map((r) => ({ ...r, movedByName: moverMap.get(r.movedById) ?? null }));
 }
 
 // ─── Notes ────────────────────────────────────────────────────────────────────
@@ -1696,4 +1703,14 @@ export async function getOutstandingReimbursementsCount() {
     .from(reimbursementItems)
     .where(eq(reimbursementItems.status, "pending"));
   return rows.length;
+}
+
+export async function getCancellationsByBooking(bookingId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(cancellations)
+    .where(eq(cancellations.bookingId, bookingId))
+    .orderBy(desc(cancellations.confirmedAt));
 }

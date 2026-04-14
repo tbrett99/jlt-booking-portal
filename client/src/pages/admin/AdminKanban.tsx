@@ -316,6 +316,11 @@ export default function AdminKanban() {
                                 <Calendar size={10} className="inline mr-1 opacity-60" />
                                 {format(new Date(booking.departureDate), "dd MMM yyyy")}
                               </p>
+                              {booking.agentName && (
+                                <p className="text-xs mt-0.5 font-medium" style={{ color: '#7c3aed' }}>
+                                  {booking.agentName}
+                                </p>
+                              )}
                               {booking.topdogRef && (
                                 <CopyableRef value={booking.topdogRef} label="Topdog ref" />
                               )}

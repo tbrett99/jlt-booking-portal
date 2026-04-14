@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X } from "lucide-react";
+import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X, History, ArrowRight, RefreshCw, XCircle, DollarSign, Edit3, Clock } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
 import CopyableRef from "@/components/CopyableRef";
@@ -91,6 +91,10 @@ export default function AdminBookingDetail() {
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const { data: reimbDocs = [] } = trpc.bookings.listReimbDocs.useQuery({ bookingId }, { enabled: !!bookingId });
   const { data: reimbItems = [], refetch: refetchReimbItems } = trpc.reimbursements.getByBooking.useQuery({ bookingId }, { enabled: !!bookingId });
+  const { data: stageHistory = [] } = trpc.bookings.pipelineHistory.useQuery({ bookingId }, { enabled: !!bookingId });
+  const { data: amendments = [] } = trpc.amendments.byBooking.useQuery({ bookingId }, { enabled: !!bookingId });
+  const { data: refundsList = [] } = trpc.refunds.byBookingAdmin.useQuery({ bookingId }, { enabled: !!bookingId });
+  const { data: cancellationsList = [] } = trpc.cancellations.byBooking.useQuery({ bookingId }, { enabled: !!bookingId });
   const updateReimbStatus = trpc.reimbursements.updateStatus.useMutation({
     onSuccess: () => { refetchReimbItems(); toast.success('Reimbursement status updated'); },
     onError: (e) => toast.error(e.message),
@@ -709,6 +713,169 @@ export default function AdminBookingDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Full History Overview */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <History size={16} style={{ color: '#02E6D2' }} />
+            Full Booking History
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {(() => {
+            // Build a unified timeline from all history sources
+            type TimelineEvent = {
+              id: string;
+              type: 'stage' | 'amendment' | 'refund' | 'cancellation' | 'reimbursement';
+              timestamp: Date;
+              title: string;
+              description?: string;
+              status?: string;
+              statusColor?: string;
+              statusBg?: string;
+            };
+
+            const events: TimelineEvent[] = [];
+
+            // Stage changes
+            (stageHistory as any[]).forEach((h) => {
+              events.push({
+                id: `stage-${h.id}`,
+                type: 'stage',
+                timestamp: new Date(h.movedAt),
+                title: h.fromStage ? `Stage: ${h.fromStage} → ${h.toStage}` : `Stage set to: ${h.toStage}`,
+                description: h.movedByName ? `By ${h.movedByName}` : undefined,
+              });
+            });
+
+            // Amendments
+            (amendments as any[]).forEach((a) => {
+              const statusColor = a.status === 'actioned' ? '#065f46' : '#92400e';
+              const statusBg = a.status === 'actioned' ? '#d1fae5' : '#fef3c7';
+              events.push({
+                id: `amendment-${a.id}`,
+                type: 'amendment',
+                timestamp: new Date(a.createdAt),
+                title: 'Amendment Request',
+                description: a.details?.slice(0, 120) + (a.details?.length > 120 ? '…' : ''),
+                status: a.status === 'actioned' ? 'Actioned' : 'Pending',
+                statusColor,
+                statusBg,
+              });
+            });
+
+            // Refunds
+            (refundsList as any[]).forEach((r) => {
+              const statusColor = r.pipelineStage === 'Actioned' ? '#065f46' : '#1d4ed8';
+              const statusBg = r.pipelineStage === 'Actioned' ? '#d1fae5' : '#dbeafe';
+              events.push({
+                id: `refund-${r.id}`,
+                type: 'refund',
+                timestamp: new Date(r.createdAt),
+                title: `Refund Request (${r.refundType})`,
+                description: r.refundReason?.slice(0, 120) + (r.refundReason?.length > 120 ? '…' : ''),
+                status: r.pipelineStage ?? 'To Do',
+                statusColor,
+                statusBg,
+              });
+            });
+
+            // Cancellations
+            (cancellationsList as any[]).forEach((c) => {
+              events.push({
+                id: `cancellation-${c.id}`,
+                type: 'cancellation',
+                timestamp: new Date(c.confirmedAt),
+                title: 'Cancellation Request',
+                description: c.status === 'actioned' ? 'Actioned by admin' : 'Pending admin action',
+                status: c.status === 'actioned' ? 'Actioned' : 'Pending',
+                statusColor: c.status === 'actioned' ? '#065f46' : '#dc2626',
+                statusBg: c.status === 'actioned' ? '#d1fae5' : '#fee2e2',
+              });
+            });
+
+            // Reimbursements
+            (reimbItems as any[]).forEach((ri) => {
+              const statusColor = ri.status === 'paid' ? '#065f46' : ri.status === 'scheduled' ? '#1d4ed8' : '#92400e';
+              const statusBg = ri.status === 'paid' ? '#d1fae5' : ri.status === 'scheduled' ? '#dbeafe' : '#fef3c7';
+              events.push({
+                id: `reimb-${ri.id}`,
+                type: 'reimbursement',
+                timestamp: new Date(ri.createdAt),
+                title: `Reimbursement: ${ri.supplierName}`,
+                description: `£${Number(ri.amount).toFixed(2)}${ri.isLate ? ' · Late submission' : ''}`,
+                status: ri.status === 'paid' ? 'Paid' : ri.status === 'scheduled' ? 'Scheduled' : 'Pending',
+                statusColor,
+                statusBg,
+              });
+            });
+
+            // Sort by timestamp descending (newest first)
+            events.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+            if (events.length === 0) {
+              return (
+                <p className="text-sm text-muted-foreground text-center py-6">
+                  No history recorded yet for this booking.
+                </p>
+              );
+            }
+
+            const typeConfig: Record<string, { icon: React.ReactNode; color: string; bg: string }> = {
+              stage: { icon: <RefreshCw size={13} />, color: '#0369a1', bg: '#e0f2fe' },
+              amendment: { icon: <Edit3 size={13} />, color: '#7c3aed', bg: '#f3e8ff' },
+              refund: { icon: <DollarSign size={13} />, color: '#0891b2', bg: '#cffafe' },
+              cancellation: { icon: <XCircle size={13} />, color: '#dc2626', bg: '#fee2e2' },
+              reimbursement: { icon: <Clock size={13} />, color: '#d97706', bg: '#fef3c7' },
+            };
+
+            return (
+              <div className="relative">
+                {/* Vertical line */}
+                <div className="absolute left-4 top-0 bottom-0 w-0.5" style={{ background: '#e5e7eb' }} />
+                <div className="space-y-0">
+                  {events.map((event, idx) => {
+                    const cfg = typeConfig[event.type];
+                    return (
+                      <div key={event.id} className="relative flex gap-3 pb-4">
+                        {/* Icon bubble */}
+                        <div
+                          className="relative z-10 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
+                          style={{ background: cfg.bg, color: cfg.color, border: `1.5px solid ${cfg.color}20` }}
+                        >
+                          {cfg.icon}
+                        </div>
+                        {/* Content */}
+                        <div className="flex-1 min-w-0 pt-0.5">
+                          <div className="flex items-start gap-2 flex-wrap">
+                            <p className="text-sm font-medium flex-1 min-w-0">{event.title}</p>
+                            {event.status && (
+                              <span
+                                className="text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
+                                style={{ background: event.statusBg, color: event.statusColor }}
+                              >
+                                {event.status}
+                              </span>
+                            )}
+                          </div>
+                          {event.description && (
+                            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{event.description}</p>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                            <Clock size={10} className="opacity-60" />
+                            {format(event.timestamp, 'dd MMM yyyy, HH:mm')}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
 
       {/* Query Message Dialog */}
       <Dialog open={showQueryDialog} onOpenChange={(open) => { if (!open) { setShowQueryDialog(false); setPendingStage(null); setQueryMessage(""); } }}>

@@ -89,6 +89,11 @@ function SidebarGroup({
         className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors text-sidebar-foreground opacity-50 hover:opacity-80"
       >
         <span className="flex-1 text-left">{group.label}</span>
+        {group.label === "Communication" && (unreadMessageCount ?? 0) > 0 && (
+          <span className="min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center" style={{ background: '#ef4444', color: 'white' }}>
+            {(unreadMessageCount ?? 0) > 99 ? '99+' : unreadMessageCount}
+          </span>
+        )}
         <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (

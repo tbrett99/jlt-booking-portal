@@ -35,6 +35,7 @@ import {
   updateAmendmentPipeline,
   createCancellation,
   getAllCancellations,
+  getCancellationsByBooking,
   createRefund,
   getRefundsByBooking,
   getAllRefunds,
@@ -534,7 +535,13 @@ export const appRouter = router({
         }).optional()
       )
       .query(async ({ input }) => {
-        return getAllBookings(input);
+        const rows = await getAllBookings(input);
+        const allUsers = await getAllUsers();
+        const userMap = new Map(allUsers.map((u) => [u.id, u]));
+        return (rows as any[]).map((b) => ({
+          ...b,
+          agentName: userMap.get(b.agentId)?.name ?? null,
+        }));
       }),
     ptsMissingPaymentDate: adminProcedure.query(async () => {
       return getPtsMissingPaymentDate();
@@ -1194,11 +1201,11 @@ export const appRouter = router({
                   message: `${ctx.user.name ?? "Admin"} mentioned you in a note on booking "${booking.clientName}"`,
                   linkUrl: `/admin/bookings/${input.bookingId}`,
                 });
-                // Also send email to the mentioned admin
+                // Also send email to the mentioned admin (fire-and-forget)
                 if (mentioned.email) {
                   const mentionerName = ctx.user.name ?? "An admin";
                   const notePreview = input.content.length > 300 ? input.content.slice(0, 300) + "..." : input.content;
-                  await sendDirectEmail({
+                  void sendDirectEmail({
                     toEmail: mentioned.email,
                     toName: mentioned.name ?? mentioned.email,
                     subject: `You were mentioned in a note — ${booking.clientName}`,
@@ -1241,11 +1248,11 @@ export const appRouter = router({
                 linkUrl: `/admin/bookings/${input.bookingId}`,
               });
             }
-            // Email only the last admin who replied on this booking (or support@ as fallback)
+            // Email only the last admin who replied on this booking (or support@ as fallback) — fire-and-forget
             const lastAdminReply = await getLastAdminNoteAuthor(input.bookingId);
             const replyToEmail = lastAdminReply?.email ?? "support@thejltgroup.co.uk";
             const replyToName = lastAdminReply?.name ?? "JLT Support";
-            await sendDirectEmail({
+            void sendDirectEmail({
               toEmail: replyToEmail,
               toName: replyToName,
               subject: `New message from ${ctx.user.name} — Booking: ${booking.clientName}`,
@@ -1269,10 +1276,10 @@ export const appRouter = router({
               message: `Admin left a note on your booking "${booking.clientName}"`,
               linkUrl: `/bookings/${input.bookingId}`,
             });
-            // Email the agent
+            // Email the agent (fire-and-forget)
             const agent = await getUserById(booking.agentId);
             if (agent?.email) {
-              await sendDirectEmail({
+              void sendDirectEmail({
                 toEmail: agent.email,
                 toName: agent.name ?? "Agent",
                 subject: `New message on your booking: ${booking.clientName}`,
@@ -1289,8 +1296,8 @@ export const appRouter = router({
                 `,
               });
             }
-            // Mark existing unread agent notes on this booking as read (admin has seen them)
-            await markNotesReadByAdmin(input.bookingId);
+            // Mark existing unread agent notes as read (fire-and-forget)
+            void markNotesReadByAdmin(input.bookingId);
           }
         }
         return { success: true };
@@ -1468,6 +1475,11 @@ export const appRouter = router({
         return { success: true };
       }),
     all: adminProcedure.query(async () => getAllCancellations()),
+    byBooking: adminProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .query(async ({ input }) => {
+        return getCancellationsByBooking(input.bookingId);
+      }),
     markActioned: adminProcedure
       .input(z.object({ cancellationId: z.number(), moveToCancelled: z.boolean().optional() }))
       .mutation(async ({ input, ctx }) => {
