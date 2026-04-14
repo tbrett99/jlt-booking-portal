@@ -770,3 +770,7 @@
 - [x] Remove auto-population of Final Supplier Payment Date in admin booking detail form — confirmed: form only populates from existing DB value, no auto-fill from departure date. The date on #300030 was set by the bulk script (booking was already in Added to PTS when script ran).
 - [x] Add mandatory payment date prompt/modal when admin moves a booking to "Added to PTS" without a payment date set — guard already existed and is working correctly
 - [x] Agent registration form: warn if booked date is >7 days in the past and "historic booking" toggle is off — amber warning with one-click "Enable Historic Booking" button added
+
+## Mandatory PTS Reference on Stage Move (Apr 14)
+- [x] Extend "Added to PTS" guard modal to also require PTS reference (alongside existing payment date requirement)
+- [x] Update guard condition to fire when either ptsRef or finalSupplierPaymentDate is missing

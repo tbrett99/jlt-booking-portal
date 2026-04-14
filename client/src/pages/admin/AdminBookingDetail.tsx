@@ -173,11 +173,10 @@ export default function AdminBookingDetail() {
   );
 
   const handleStageChange = (newStage: string) => {
-    if (
-      STAGES_REQUIRING_PAYMENT_DATE.includes(newStage) &&
-      !booking?.finalSupplierPaymentDate &&
-      !editPaymentDate
-    ) {
+    // For "Added to PTS": require BOTH ptsRef and finalSupplierPaymentDate
+    const missingPtsRef = newStage === 'Added to PTS' && !booking?.ptsRef && !editPts.trim();
+    const missingPayDate = STAGES_REQUIRING_PAYMENT_DATE.includes(newStage) && !booking?.finalSupplierPaymentDate && !editPaymentDate;
+    if (missingPtsRef || missingPayDate) {
       setPendingStage(newStage);
       setShowPaymentDateGuard(true);
       return;
@@ -200,15 +199,16 @@ export default function AdminBookingDetail() {
   };
 
   const handleGuardSaveAndMove = async () => {
-    if (!editPaymentDate) {
-      toast.error("Please enter a Final Supplier Payment Date before moving to this stage.");
-      return;
-    }
+    const needsPtsRef = pendingStage === 'Added to PTS' && !booking?.ptsRef && !editPts.trim();
+    const needsPayDate = STAGES_REQUIRING_PAYMENT_DATE.includes(pendingStage ?? '') && !booking?.finalSupplierPaymentDate && !editPaymentDate;
+    if (needsPtsRef) { toast.error("Please enter a PTS Reference."); return; }
+    if (needsPayDate) { toast.error("Please enter a Final Supplier Payment Date."); return; }
     setIsSavingDetails(true);
     try {
       await updateDetails.mutateAsync({
         bookingId,
-        finalSupplierPaymentDate: new Date(editPaymentDate),
+        ...(editPts.trim() && !booking?.ptsRef ? { ptsRef: editPts.trim() } : {}),
+        ...(editPaymentDate && !booking?.finalSupplierPaymentDate ? { finalSupplierPaymentDate: new Date(editPaymentDate) } : {}),
       });
       await utils.bookings.byId.invalidate({ id: bookingId });
       if (pendingStage) {
@@ -216,9 +216,9 @@ export default function AdminBookingDetail() {
       }
       setShowPaymentDateGuard(false);
       setPendingStage(null);
-      toast.success("Payment date saved and booking moved.");
+      toast.success("Details saved and booking moved.");
     } catch (err: any) {
-      toast.error(err.message || "Failed to save payment date");
+      toast.error(err.message || "Failed to save details");
     } finally {
       setIsSavingDetails(false);
     }
@@ -749,28 +749,50 @@ export default function AdminBookingDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Payment Date Guard Dialog */}
+      {/* Stage Move Guard Dialog — requires PTS ref (Added to PTS) and/or payment date */}
       <Dialog open={showPaymentDateGuard} onOpenChange={setShowPaymentDateGuard}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle size={18} className="text-amber-500" />
-              Final Supplier Payment Date Required
+              Required Details to Move to "{pendingStage}"
             </DialogTitle>
             <DialogDescription>
-              You must set a Final Supplier Payment Date before moving this booking to <strong>"{pendingStage}"</strong>.
-              Enter the date below and click Save &amp; Move to continue.
+              Please complete the fields below before moving this booking to <strong>"{pendingStage}"</strong>.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label className="text-sm">Final Supplier Payment Date</Label>
-            <Input
-              type="date"
-              value={editPaymentDate}
-              onChange={(e) => setEditPaymentDate(e.target.value)}
-              className="h-9"
-              autoFocus
-            />
+          <div className="space-y-4 py-2">
+            {/* PTS Reference — only shown when moving to Added to PTS and no ref yet */}
+            {pendingStage === 'Added to PTS' && !booking?.ptsRef && (
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">
+                  PTS Reference <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. 2T0096300"
+                  value={editPts}
+                  onChange={(e) => setEditPts(e.target.value)}
+                  className="h-9"
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">Sent to the agent for bank transfers and PPS payment links.</p>
+              </div>
+            )}
+            {/* Payment Date — shown when required and not yet set */}
+            {STAGES_REQUIRING_PAYMENT_DATE.includes(pendingStage ?? '') && !booking?.finalSupplierPaymentDate && (
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">
+                  Final Supplier Payment Date <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  type="date"
+                  value={editPaymentDate}
+                  onChange={(e) => setEditPaymentDate(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+            )}
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => { setShowPaymentDateGuard(false); setPendingStage(null); }}>
@@ -778,7 +800,11 @@ export default function AdminBookingDetail() {
             </Button>
             <Button
               onClick={handleGuardSaveAndMove}
-              disabled={isSavingDetails || !editPaymentDate}
+              disabled={
+                isSavingDetails ||
+                (pendingStage === 'Added to PTS' && !booking?.ptsRef && !editPts.trim()) ||
+                (STAGES_REQUIRING_PAYMENT_DATE.includes(pendingStage ?? '') && !booking?.finalSupplierPaymentDate && !editPaymentDate)
+              }
               style={{ background: '#70FFE8', color: '#414141' }}
             >
               {isSavingDetails ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
