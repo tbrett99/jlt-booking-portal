@@ -786,3 +786,7 @@
 - [x] Comms management page: add 2T (PTS) reference number column/field (already present)
 - [x] Fix: file not loading from Commission Due page (confirmed working)
 - [x] Add agent name to booking pipeline cards (already implemented)
+
+## Commissions & Messages Fixes (Apr 14 Round 3)
+- [x] Admin commissions page: add PTS reference column/field to pending and paid claim rows
+- [x] Messages page: default to "Unread" tab (not "All"), keep oldest-first sort order within each tab

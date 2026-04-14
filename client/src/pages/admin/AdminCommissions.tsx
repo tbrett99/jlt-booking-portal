@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download } from "lucide-react";
+import CopyableRef from "@/components/CopyableRef";
 import { useLocation } from "wouter";
 
 type ClaimRow = {
@@ -26,6 +27,8 @@ type ClaimRow = {
     clientName: string;
     departureDate: Date | string | null;
     expectedCommission: number | null;
+    ptsRef?: string | null;
+    topdogRef?: string | null;
   } | null;
 };
 
@@ -138,6 +141,7 @@ export default function AdminCommissions() {
               </th>
             )}
             <th className="py-3 px-4 text-left font-medium">Client</th>
+            <th className="py-3 px-4 text-left font-medium">PTS Ref</th>
             <th className="py-3 px-4 text-left font-medium">Agent</th>
             <th className="py-3 px-4 text-left font-medium">Departure</th>
             <th className="py-3 px-4 text-left font-medium">Expected Comm.</th>
@@ -152,7 +156,7 @@ export default function AdminCommissions() {
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={showSelect ? 8 : 9} className="py-12 text-center text-muted-foreground">
+              <td colSpan={showSelect ? 9 : 10} className="py-12 text-center text-muted-foreground">
                 No records found.
               </td>
             </tr>
@@ -168,6 +172,13 @@ export default function AdminCommissions() {
                   </td>
                 )}
                 <td className="py-3 px-4 font-medium">{c.booking?.clientName ?? "—"}</td>
+                <td className="py-3 px-4">
+                  {c.booking?.ptsRef ? (
+                    <CopyableRef value={c.booking.ptsRef} />
+                  ) : (
+                    <span className="text-muted-foreground text-xs">—</span>
+                  )}
+                </td>
                 <td className="py-3 px-4">
                   <div>
                     <p>{c.agentName}</p>

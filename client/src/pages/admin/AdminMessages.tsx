@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 
 export default function AdminMessages() {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "unread">("all");
+  const [filter, setFilter] = useState<"all" | "unread">("unread");
 
   const utils = trpc.useUtils();
   const { data: threads = [], isLoading, refetch } = trpc.notes.allThreads.useQuery();
