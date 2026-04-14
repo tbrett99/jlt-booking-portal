@@ -762,3 +762,6 @@
 - [x] Create frontend page CommissionClaimableMissingPaymentDate.tsx at /commission-claimable-missing-payment (clone of PtsMissingPaymentDate with stage-specific labels)
 - [x] Register route in App.tsx
 - [x] Add dashboard alert row linking to the new page
+
+## Bug Fix: Reimbursement Section Always Visible (Apr 14)
+- [x] Fix: "Request Additional Reimbursement" section only shows on bookings where reimbursementsRequired=Yes — must show on ALL bookings regardless of initial registration choice

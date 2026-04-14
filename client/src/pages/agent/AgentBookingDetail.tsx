@@ -485,9 +485,8 @@ export default function AgentBookingDetail() {
         </div>
       )}
 
-      {/* Reimbursements Section — per-item with doc upload */}
-      {(reimbItems.length > 0 || booking.reimbursementsRequired) && (
-        <Card className="border-2" style={{ borderColor: booking.currentStage === 'Reimb Docs Missing' ? '#ef4444' : '#70FFE8' }}>
+      {/* Reimbursements Section — per-item with doc upload — always visible so agents can request reimbursements on any booking */}
+      <Card className="border-2" style={{ borderColor: booking.currentStage === 'Reimb Docs Missing' ? '#ef4444' : '#70FFE8' }}>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base font-bold">
               <FileText size={18} style={{ color: '#02E6D2' }} />
@@ -684,8 +683,6 @@ export default function AgentBookingDetail() {
             )}
           </CardContent>
         </Card>
-      )}
-
       {/* Reimbursement doc submission confirmation banner (legacy) */}
       {(() => {
         const reimbAmendments = amendments.filter((a: any) => a.isReimbursementDoc);
