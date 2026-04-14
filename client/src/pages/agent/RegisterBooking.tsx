@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,14 @@ export default function RegisterBooking() {
   const [isPersonalBooking, setIsPersonalBooking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successBooking, setSuccessBooking] = useState<{ id: number; clientName: string; departureDate: Date } | null>(null);
+
+  // Warn if booked date is >7 days ago and historic toggle is off
+  const bookedDateIsOld = useMemo(() => {
+    if (!bookedDate) return false;
+    const diff = (Date.now() - new Date(bookedDate).getTime()) / (1000 * 60 * 60 * 24);
+    return diff > 7;
+  }, [bookedDate]);
+  const showHistoricWarning = bookedDateIsOld && !isHistoricBooking;
   const fileRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
@@ -186,6 +194,27 @@ export default function RegisterBooking() {
               />
               {!isHistoricBooking && (
                 <p className="text-xs text-muted-foreground">Defaults to today — bookings should be registered immediately.</p>
+              )}
+              {showHistoricWarning && (
+                <div className="mt-2 flex items-start gap-3 rounded-lg border-2 p-3" style={{ borderColor: '#f59e0b', background: '#fffbeb' }}>
+                  <span className="mt-0.5 text-amber-500" style={{ flexShrink: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold" style={{ color: '#92400e' }}>This looks like a historic booking</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#78350f' }}>
+                      The booked date is more than 7 days ago. If this booking is already on PTS and you need to claim commission, request a refund, or make an amendment — please enable the <strong>"Historic Booking"</strong> toggle above.
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-2 text-xs font-semibold underline"
+                      style={{ color: '#b45309' }}
+                      onClick={() => setIsHistoricBooking(true)}
+                    >
+                      Enable Historic Booking →
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
 
