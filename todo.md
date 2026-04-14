@@ -776,13 +776,13 @@
 - [x] Update guard condition to fire when either ptsRef or finalSupplierPaymentDate is missing
 
 ## Batch UX Improvements (Apr 14 Round 2)
-- [ ] Fix slow note adding — use optimistic updates so note appears instantly
-- [ ] Sidebar Communication item: show unread message count badge
-- [ ] Messages: default to oldest first (ascending order)
-- [ ] Agent booking view: make Actions tab more prominent (highlight/badge)
-- [ ] Agent booking messaging tab: add disclaimer to use forms for amendments/cancellations, not messages
-- [ ] Pipeline default sort: oldest bookings first
-- [ ] Admin booking page: full history overview section (amendments, refunds, reimbursements, stage changes)
-- [ ] Comms management page: add 2T (PTS) reference number column/field
-- [ ] Fix: file not loading from Commission Due page
-- [ ] Add agent name to booking pipeline cards
+- [x] Fix slow note adding — use optimistic updates so note appears instantly
+- [x] Sidebar Communication item: show unread message count badge (already implemented)
+- [x] Messages: default to oldest first (ascending order)
+- [x] Agent booking view: make Actions tab more prominent (already styled with teal border + badge)
+- [x] Agent booking messaging tab: add disclaimer to use forms for amendments/cancellations, not messages (already present)
+- [x] Pipeline default sort: oldest bookings first
+- [x] Admin booking page: full history overview section (amendments, refunds, reimbursements, stage changes)
+- [x] Comms management page: add 2T (PTS) reference number column/field (already present)
+- [x] Fix: file not loading from Commission Due page (confirmed working)
+- [x] Add agent name to booking pipeline cards (already implemented)

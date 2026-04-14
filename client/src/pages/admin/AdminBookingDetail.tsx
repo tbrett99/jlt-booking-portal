@@ -123,7 +123,39 @@ export default function AdminBookingDetail() {
   const sharedNotes = allNotes.filter(n => !n.isInternal);
   const internalNotes = allNotes.filter(n => n.isInternal);
 
-  const addNote = trpc.notes.add.useMutation();
+  const addNote = trpc.notes.add.useMutation({
+    onMutate: async (newNote) => {
+      // Cancel any outgoing refetches
+      await utils.notes.list.cancel({ bookingId });
+      // Snapshot the previous value
+      const previousNotes = utils.notes.list.getData({ bookingId });
+      // Optimistically add the note
+      utils.notes.list.setData({ bookingId }, (old: any) => [
+        ...(old ?? []),
+        {
+          id: -Date.now(),
+          bookingId,
+          content: newNote.content,
+          isInternal: newNote.isInternal,
+          authorId: user?.id ?? 0,
+          authorName: user?.name ?? 'You',
+          authorRole: user?.role ?? 'admin',
+          createdAt: new Date(),
+          isReadByAdmin: true,
+        },
+      ]);
+      return { previousNotes };
+    },
+    onError: (_err, _newNote, context) => {
+      // Rollback on error
+      if (context?.previousNotes) {
+        utils.notes.list.setData({ bookingId }, context.previousNotes);
+      }
+    },
+    onSettled: () => {
+      utils.notes.list.invalidate({ bookingId });
+    },
+  });
   const markNotesRead = trpc.notes.markBookingNotesRead.useMutation();
   const updateDetails = trpc.bookings.updateAdminFields.useMutation();
   const deleteBookingMutation = trpc.bookings.delete.useMutation();
@@ -231,15 +263,16 @@ export default function AdminBookingDetail() {
   const handleSendNote = async (isInternal: boolean) => {
     const content = isInternal ? internalNote : sharedNote;
     if (!content.trim()) return;
+    // Clear input immediately for instant feedback
+    if (isInternal) setInternalNote(""); else setSharedNote("");
     if (isInternal) setIsSendingInternal(true); else setIsSendingShared(true);
     try {
       await addNote.mutateAsync({ bookingId, content, isInternal });
       // When admin replies via a shared note, auto-mark all unread agent messages as read
       if (!isInternal) { markNotesRead.mutate({ bookingId }); }
-      if (isInternal) { setInternalNote(""); await refetchNotes(); }
-      else { setSharedNote(""); await refetchNotes(); }
-      toast.success("Note added");
     } catch (err: any) {
+      // Restore content on failure
+      if (isInternal) setInternalNote(content); else setSharedNote(content);
       toast.error(err.message || "Failed to add note");
     } finally {
       if (isInternal) setIsSendingInternal(false); else setIsSendingShared(false);

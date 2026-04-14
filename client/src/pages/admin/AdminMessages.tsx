@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 
 export default function AdminMessages() {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "unread">("unread");
+  const [filter, setFilter] = useState<"all" | "unread">("all");
 
   const utils = trpc.useUtils();
   const { data: threads = [], isLoading, refetch } = trpc.notes.allThreads.useQuery();
@@ -26,7 +26,10 @@ export default function AdminMessages() {
     },
   });
 
-  const filtered = threads.filter((t) => {
+  // Sort oldest first (ascending by latest message date)
+  const sortedThreads = [...threads].sort((a, b) => new Date(a.latestMessageAt).getTime() - new Date(b.latestMessageAt).getTime());
+
+  const filtered = sortedThreads.filter((t) => {
     if (filter === "unread" && t.unreadCount === 0) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -41,7 +44,7 @@ export default function AdminMessages() {
     return true;
   });
 
-  const totalUnread = threads.filter((t) => t.unreadCount > 0).length;
+  const totalUnread = sortedThreads.filter((t) => t.unreadCount > 0).length;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">

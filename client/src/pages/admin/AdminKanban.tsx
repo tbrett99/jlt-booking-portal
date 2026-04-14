@@ -52,7 +52,7 @@ const STAGE_COLORS: Record<string, { bg: string; border: string; dot: string }> 
 
 export default function AdminKanban() {
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "departure_asc" | "departure_desc" | "agent_az">("newest");
+  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "departure_asc" | "departure_desc" | "agent_az">("oldest");
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [hiddenStages, setHiddenStages] = useState<Set<string>>(new Set());
   const toggleStage = (stage: string) => setHiddenStages((prev) => {
@@ -215,9 +215,9 @@ export default function AdminKanban() {
               </Select>
             </>
           )}
-          {(search || agentFilter !== "all" || sortBy !== "newest") && (
+          {(search || agentFilter !== "all" || sortBy !== "oldest") && (
             <button
-              onClick={() => { setSearch(""); setAgentFilter("all"); setSortBy("newest"); }}
+              onClick={() => { setSearch(""); setAgentFilter("all"); setSortBy("oldest"); }}
               className="ml-auto text-xs underline text-muted-foreground hover:text-foreground"
             >
               Clear filters
