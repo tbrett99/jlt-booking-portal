@@ -794,3 +794,6 @@
 ## Bug Fix (Apr 14 Round 4)
 - [x] Fix 404 on Commission Due page booking link — uses /admin/bookings/:id instead of /bookings/:id
 - [x] Fix 404 on merge booking navigation — also used /admin/bookings/:id
+
+## UI Polish (Apr 14 Round 5)
+- [x] Remove "Admin or Super Admin? Sign in with Manus" text from login screen

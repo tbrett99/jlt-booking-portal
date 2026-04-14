@@ -168,18 +168,6 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="mt-4 pt-4 border-t">
-              <p className="text-xs text-center text-muted-foreground">
-                Admin or Super Admin?{" "}
-                <a
-                  href={getLoginUrl()}
-                  className="font-medium hover:underline"
-                  style={{ color: "#02E6D2" }}
-                >
-                  Sign in with Manus
-                </a>
-              </p>
-            </div>
           </CardContent>
         </Card>
 
