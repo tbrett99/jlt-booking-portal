@@ -801,3 +801,6 @@
 ## Feature Batch (Apr 15)
 - [x] Amendments Pipeline: show full amendment details text (not truncated) so admins can read everything the agent submitted
 - [x] Commissions Management: add VAT input column where admins can enter a VAT figure per claim
+
+## Bug Fix (Apr 15 Round 2)
+- [x] Late Reimbursement Requests action panel: exclude items with status "Scheduled" (or any actioned status)

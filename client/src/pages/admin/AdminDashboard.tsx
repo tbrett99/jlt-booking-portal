@@ -169,7 +169,7 @@ export default function AdminDashboard() {
     (b) => !b.finalSupplierPaymentDate && !(b as any).paymentDateDismissed && b.currentStage === "Commission Claimable"
   );
   const pendingClaims = (claims as any[]).filter((c) => c.status === "claimed_not_paid");
-  const lateUnactioned = (allReimbs as any[]).filter((r) => r.isLate && !r.actionedAt);
+  const lateUnactioned = (allReimbs as any[]).filter((r) => r.isLate && !r.actionedAt && r.status !== "scheduled" && r.status !== "paid");
   const outstandingReimbs = (allReimbs as any[]).filter((r) => r.status === "pending");
 
   const now = new Date();
