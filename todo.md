@@ -894,3 +894,9 @@
 - [x] Fix scoring to use bodyHtml (stripped of tags) as fallback when bodyText is empty
 - [x] Change email download from .txt to PDF — opens formatted HTML in new tab with print dialog (Save as PDF)
 - [x] All 49 tests passing
+
+## Download Fixes (Apr 15 Round 7)
+- [x] Email download — print-dialog code was deployed correctly; old .txt was browser cache (hard refresh fixes it)
+- [x] Fix attachment download — att.id was a base64 opaque ID not a URL; now uses att.s3Url directly (public S3 bucket)
+- [x] Add s3Key and s3Url fields to AttachmentMeta interface on both server and client
+- [x] All 49 tests passing

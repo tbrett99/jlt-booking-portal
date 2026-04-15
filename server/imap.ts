@@ -54,6 +54,8 @@ export interface AttachmentMeta {
   filename: string;
   contentType: string;
   size: number;
+  s3Key?: string;  // S3 key for direct download lookup
+  s3Url?: string;  // Direct S3 URL if available
 }
 
 export interface ImapConnectionConfig {
@@ -349,6 +351,8 @@ export async function searchCachedEmails(params: SearchParams): Promise<EmailRes
           filename: a.filename,
           contentType: a.contentType,
           size: a.size,
+          s3Key: a.s3Key,
+          s3Url: a.s3Url,
         }))
       : legacyData.map((a) => ({
           id: Buffer.from(`${row.uid}::${a.filename}`).toString("base64url"),

@@ -24,6 +24,8 @@ interface AttachmentMeta {
   filename: string;
   contentType: string;
   size: number;
+  s3Key?: string;
+  s3Url?: string;
 }
 
 interface EmailResult {
@@ -235,13 +237,21 @@ function EmailCard({ result }: { result: EmailResult }) {
 
   // Download an attachment directly from its S3 URL
   const handleDownloadAttachment = useCallback((att: AttachmentMeta) => {
-    // att.id is the s3Url for portal-cached emails
+    // Use s3Url directly if available (public S3 bucket)
+    const url = att.s3Url;
+    if (!url) {
+      toast.error("Attachment URL not available. Please try again.");
+      return;
+    }
+    // Open in new tab — browser will download if Content-Disposition is set, otherwise display
     const a = document.createElement("a");
-    a.href = att.id;
+    a.href = url;
     a.download = att.filename;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     toast.success(`Downloading: ${att.filename}`);
   }, []);
 
