@@ -864,3 +864,28 @@
 - [x] Fix: IMAP ECONNRESET TLS socket error was crashing the Node.js process (unhandled error event), causing tRPC "Unable to transform response from server" errors on the home page during import
 - [x] Fix: attach error listener on the underlying imap Connection in safeConnect() to suppress ECONNRESET without crashing the server
 - [x] All 49 tests passing
+
+## Booking Documents: Wider Search, Email Linking & Downloads (Apr 15 Round 5)
+- [ ] Widen search: lower minimum score threshold so partial name matches return more results
+- [ ] Widen SQL pre-filter: also match on date tokens in subject line (not just body)
+- [ ] Add booking_email_links table (bookingId, cachedEmailId, linkedBy, linkedAt, note)
+- [ ] tRPC: inbox.linkEmailToBooking (protected), inbox.getLinkedEmails (protected), inbox.unlinkEmail (protected)
+- [ ] tRPC: inbox.downloadEmail — returns raw email body as .eml download
+- [ ] tRPC: inbox.downloadAttachment — returns attachment bytes by filename/uid
+- [ ] Booking Documents page: "Link to Booking" button on each result card (search/select booking dialog)
+- [ ] Booking Documents page: "Download Email (.eml)" button on each result card
+- [ ] Booking Documents page: "Download" button on each attachment chip
+- [ ] Booking detail page: "Linked Emails" section showing all linked emails with subject, date, and download buttons
+
+## Booking Documents: Wider Search + Link/Download (Apr 15 Round 4)
+- [x] Widen SQL pre-filter to also check attachmentNames and add more date formats (month name, day-month-year)
+- [x] Relax scoring: strong name-only match (score >= 40) qualifies without requiring a date match
+- [x] Add booking_email_links table to schema and apply migration
+- [x] Add db helpers: linkEmail, unlinkEmail, getLinkedEmailsForBooking
+- [x] Add tRPC procedures: inbox.linkEmail, inbox.unlinkEmail, inbox.getLinkedEmails
+- [x] Add bookings.quickSearch tRPC procedure for booking search dialog
+- [x] Build Link-to-Booking dialog on Booking Documents results (search bookings, select, add note, link)
+- [x] Add Download Email button on each result card (downloads as .txt)
+- [x] Add Download button on each attachment in expanded view
+- [x] Add Linked Emails card to AdminBookingDetail page (shows linked emails with download + unlink)
+- [x] All 49 tests passing

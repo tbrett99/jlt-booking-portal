@@ -104,6 +104,10 @@ import {
   getLastImportTime,
   createInboxAuditLog,
   listInboxAuditLogs,
+  linkEmailToBooking,
+  unlinkEmailFromBooking,
+  getLinkedEmailsForBooking,
+  getCachedEmailByUid,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import {
@@ -2557,6 +2561,94 @@ export const appRouter = router({
       const config = await getImapConfig();
       return config?.agentAccessEnabled ?? false;
     }),
+
+    // Agent/Admin: link a cached email to a booking
+    linkEmail: protectedProcedure
+      .input(
+        z.object({
+          bookingId: z.number().int(),
+          emailUid: z.string().min(1),
+          note: z.string().max(500).optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const email = await getCachedEmailByUid(input.emailUid);
+        if (!email) throw new TRPCError({ code: "NOT_FOUND", message: "Email not found in cache." });
+        const link = await linkEmailToBooking({
+          bookingId: input.bookingId,
+          cachedEmailId: email.id,
+          linkedBy: ctx.user.id,
+          note: input.note,
+        });
+        return { success: true, linkId: link?.id };
+      }),
+
+    // Agent/Admin: unlink a cached email from a booking
+    unlinkEmail: protectedProcedure
+      .input(z.object({ linkId: z.number().int() }))
+      .mutation(async ({ input, ctx }) => {
+        await unlinkEmailFromBooking(input.linkId, ctx.user.id);
+        return { success: true };
+      }),
+
+    // Agent/Admin: get all emails linked to a booking
+    getLinkedEmails: protectedProcedure
+      .input(z.object({ bookingId: z.number().int() }))
+      .query(async ({ input }) => {
+        const rows = await getLinkedEmailsForBooking(input.bookingId);
+        return rows.map((r) => ({
+          linkId: r.linkId,
+          note: r.note,
+          linkedAt: r.linkedAt,
+          linkedByName: r.linkedByName,
+          emailId: r.emailId,
+          uid: r.uid,
+          subject: r.subject,
+          fromAddress: r.fromAddress,
+          fromName: r.fromName,
+          emailDate: r.emailDate,
+          snippet: r.snippet,
+          hasAttachments: r.hasAttachments,
+          attachmentNames: r.attachmentNames ? JSON.parse(r.attachmentNames) as string[] : [],
+          s3Keys: r.s3Keys
+            ? (JSON.parse(r.s3Keys) as Array<{ filename: string; contentType: string; s3Key: string; s3Url: string; size: number }>)
+            : [],
+        }));
+      }),
+
+    // Agent/Admin: get a signed download URL for an attachment by s3Key
+    getAttachmentUrl: protectedProcedure
+      .input(z.object({ emailUid: z.string(), s3Key: z.string() }))
+      .query(async ({ input }) => {
+        const email = await getCachedEmailByUid(input.emailUid);
+        if (!email) throw new TRPCError({ code: "NOT_FOUND", message: "Email not found." });
+        const s3Keys: Array<{ filename: string; contentType: string; s3Key: string; s3Url: string; size: number }> =
+          email.s3Keys ? JSON.parse(email.s3Keys) : [];
+        const att = s3Keys.find((a) => a.s3Key === input.s3Key);
+        if (!att) throw new TRPCError({ code: "NOT_FOUND", message: "Attachment not found." });
+        // S3 bucket is public — return the direct URL
+        return { url: att.s3Url, filename: att.filename, contentType: att.contentType };
+      }),
+
+    // Agent/Admin: get the full email body for download as .eml-style text
+    getEmailBody: protectedProcedure
+      .input(z.object({ emailUid: z.string() }))
+      .query(async ({ input }) => {
+        const email = await getCachedEmailByUid(input.emailUid);
+        if (!email) throw new TRPCError({ code: "NOT_FOUND", message: "Email not found." });
+        return {
+          subject: email.subject,
+          fromName: email.fromName,
+          fromAddress: email.fromAddress,
+          emailDate: email.emailDate,
+          bodyText: email.bodyText ?? "",
+          bodyHtml: email.bodyHtml ?? "",
+          attachmentNames: email.attachmentNames ? JSON.parse(email.attachmentNames) as string[] : [],
+          s3Keys: email.s3Keys
+            ? (JSON.parse(email.s3Keys) as Array<{ filename: string; contentType: string; s3Key: string; s3Url: string; size: number }>)
+            : [],
+        };
+      }),
   }),
 });
 export type AppRouter = typeof appRouter;

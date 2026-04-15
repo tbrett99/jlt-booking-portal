@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X, History, ArrowRight, RefreshCw, XCircle, DollarSign, Edit3, Clock } from "lucide-react";
+import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X, History, ArrowRight, RefreshCw, XCircle, DollarSign, Edit3, Clock, Mail, Paperclip, Download, Link2, Unlink } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
 import CopyableRef from "@/components/CopyableRef";
@@ -47,6 +47,146 @@ function NoteContent({ content }: { content: string }) {
         )
       )}
     </p>
+  );
+}
+
+// ─── Linked Emails Card ──────────────────────────────────────────────────────
+
+function LinkedEmailsCard({ bookingId }: { bookingId: number }) {
+  const utils = trpc.useUtils();
+  const { data: linkedEmails, isLoading } = trpc.inbox.getLinkedEmails.useQuery(
+    { bookingId },
+    { enabled: !isNaN(bookingId) }
+  );
+
+  const unlinkEmail = trpc.inbox.unlinkEmail.useMutation({
+    onSuccess: () => {
+      toast.success("Email unlinked.");
+      utils.inbox.getLinkedEmails.invalidate({ bookingId });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleDownloadEmail(email: NonNullable<typeof linkedEmails>[number]) {
+    const header = [
+      `Subject: ${email.subject}`,
+      `From: ${email.fromName} <${email.fromAddress}>`,
+      `Date: ${email.emailDate ? format(new Date(email.emailDate), "d MMM yyyy HH:mm") : ""}`,
+      "",
+    ].join("\n");
+    const blob = new Blob([header + (email.snippet || "")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(email.subject || "email").replace(/[^a-z0-9]/gi, "_").slice(0, 60)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Email downloaded.");
+  }
+
+  function handleDownloadAttachment(s3Url: string, filename: string) {
+    const a = document.createElement("a");
+    a.href = s3Url;
+    a.download = filename;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.click();
+    toast.success(`Downloading: ${filename}`);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Mail size={16} style={{ color: '#02E6D2' }} />
+          Linked Emails
+          {linkedEmails && linkedEmails.length > 0 && (
+            <Badge variant="secondary" className="ml-1">{linkedEmails.length}</Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {!isLoading && (!linkedEmails || linkedEmails.length === 0) && (
+          <p className="text-sm text-muted-foreground">
+            No emails linked yet. Use the <a href="/booking-documents" className="underline text-primary">Booking Documents</a> search to find and link emails.
+          </p>
+        )}
+        {linkedEmails && linkedEmails.length > 0 && (
+          <div className="space-y-3">
+            {linkedEmails.map((email) => (
+              <div key={email.linkId} className="border rounded-lg p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{email.subject || "(no subject)"}</p>
+                    <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
+                      <span className="flex items-center gap-1">
+                        <User size={10} />
+                        {email.fromName || email.fromAddress}
+                      </span>
+                      {email.emailDate && (
+                        <span className="flex items-center gap-1">
+                          <Calendar size={10} />
+                          {format(new Date(email.emailDate), "d MMM yyyy HH:mm")}
+                        </span>
+                      )}
+                      {email.hasAttachments && (
+                        <span className="flex items-center gap-1">
+                          <Paperclip size={10} />
+                          {email.s3Keys.length} attachment{email.s3Keys.length !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                      <span className="text-muted-foreground/60">Linked by {email.linkedByName ?? "unknown"}</span>
+                    </div>
+                    {email.note && (
+                      <p className="text-xs text-muted-foreground mt-1 italic">{email.note}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs gap-1"
+                      onClick={() => handleDownloadEmail(email)}
+                      title="Download email as text"
+                    >
+                      <Download size={12} />
+                      Email
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs gap-1 text-destructive hover:text-destructive"
+                      onClick={() => unlinkEmail.mutate({ linkId: email.linkId })}
+                      disabled={unlinkEmail.isPending}
+                      title="Remove link"
+                    >
+                      <Unlink size={12} />
+                    </Button>
+                  </div>
+                </div>
+                {/* Attachment download chips */}
+                {email.s3Keys.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {email.s3Keys.map((att) => (
+                      <button
+                        key={att.s3Key}
+                        onClick={() => handleDownloadAttachment(att.s3Url, att.filename)}
+                        className="flex items-center gap-1 text-xs bg-muted/50 hover:bg-muted rounded px-2 py-1 transition-colors"
+                      >
+                        <FileText size={10} className="text-muted-foreground" />
+                        <span className="truncate max-w-[160px]">{att.filename}</span>
+                        <Download size={10} className="text-muted-foreground" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -934,6 +1074,9 @@ export default function AdminBookingDetail() {
           })()}
         </CardContent>
       </Card>
+
+      {/* Linked Emails */}
+      <LinkedEmailsCard bookingId={bookingId} />
 
       {/* Query Message Dialog */}
       <Dialog open={showQueryDialog} onOpenChange={(open) => { if (!open) { setShowQueryDialog(false); setPendingStage(null); setQueryMessage(""); } }}>

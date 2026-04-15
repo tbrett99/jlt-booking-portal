@@ -416,3 +416,15 @@ export type InboxAuditLog = typeof inboxAuditLogs.$inferSelect;
 export type InsertCachedEmail = typeof cachedEmails.$inferInsert;
 export type InsertImapConfig = typeof imapConfig.$inferInsert;
 export type InsertInboxAuditLog = typeof inboxAuditLogs.$inferInsert;
+
+// Links a cached inbox email to a booking registration
+export const bookingEmailLinks = mysqlTable("booking_email_links", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId").notNull(),
+  cachedEmailId: int("cachedEmailId").notNull(),
+  linkedBy: int("linkedBy").notNull(),           // userId who created the link
+  note: varchar("note", { length: 500 }),        // optional agent note
+  linkedAt: timestamp("linkedAt").defaultNow().notNull(),
+});
+export type BookingEmailLink = typeof bookingEmailLinks.$inferSelect;
+export type InsertBookingEmailLink = typeof bookingEmailLinks.$inferInsert;

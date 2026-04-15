@@ -1853,21 +1853,24 @@ export async function searchCachedEmailsByKeywords(
   const { cachedEmails } = await import("../drizzle/schema");
   const { sql, or } = await import("drizzle-orm");
 
-  // Build LIKE conditions for name tokens (check subject + bodyText)
+  // Build LIKE conditions for name tokens (check subject, bodyText, snippet, attachmentNames)
   const nameConds = nameTokens
     .filter((t) => t.length >= 3)
     .flatMap((t) => [
       sql`LOWER(${cachedEmails.subject}) LIKE ${`%${t.toLowerCase()}%`}`,
       sql`LOWER(${cachedEmails.bodyText}) LIKE ${`%${t.toLowerCase()}%`}`,
       sql`LOWER(${cachedEmails.snippet}) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(COALESCE(${cachedEmails.attachmentNames}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
     ]);
 
-  // Build LIKE conditions for date tokens (e.g. "22 jul", "22/07", "2026-07-22")
+  // Build LIKE conditions for date tokens (e.g. "22 jul", "22/07", "2026-07-22", "20 May")
+  // Also search subject so emails with the date in the subject line are caught
   const dateConds = dateTokens
     .filter((t) => t.length >= 4)
     .flatMap((t) => [
       sql`LOWER(${cachedEmails.subject}) LIKE ${`%${t.toLowerCase()}%`}`,
       sql`LOWER(${cachedEmails.bodyText}) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(COALESCE(${cachedEmails.attachmentNames}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
     ]);
 
   // Booking reference condition
@@ -1875,6 +1878,7 @@ export async function searchCachedEmailsByKeywords(
     ? [
         sql`LOWER(${cachedEmails.subject}) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
         sql`LOWER(${cachedEmails.bodyText}) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
+        sql`LOWER(COALESCE(${cachedEmails.attachmentNames}, '')) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
       ]
     : [];
 
@@ -1951,4 +1955,73 @@ export async function listInboxAuditLogs(limit = 100, offset = 0) {
     .limit(limit)
     .offset(offset);
   return rows;
+}
+
+// ─── Booking Email Links ──────────────────────────────────────────────────────
+
+export async function linkEmailToBooking(data: {
+  bookingId: number;
+  cachedEmailId: number;
+  linkedBy: number;
+  note?: string;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const { bookingEmailLinks } = await import("../drizzle/schema");
+  // Prevent duplicate links
+  const existing = await db
+    .select({ id: bookingEmailLinks.id })
+    .from(bookingEmailLinks)
+    .where(
+      and(
+        eq(bookingEmailLinks.bookingId, data.bookingId),
+        eq(bookingEmailLinks.cachedEmailId, data.cachedEmailId)
+      )
+    )
+    .limit(1);
+  if (existing.length > 0) return existing[0];
+  const result = await db.insert(bookingEmailLinks).values(data);
+  return { id: Number(result[0].insertId) };
+}
+
+export async function unlinkEmailFromBooking(linkId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  const { bookingEmailLinks } = await import("../drizzle/schema");
+  await db
+    .delete(bookingEmailLinks)
+    .where(
+      and(
+        eq(bookingEmailLinks.id, linkId),
+        eq(bookingEmailLinks.linkedBy, userId)
+      )
+    );
+}
+
+export async function getLinkedEmailsForBooking(bookingId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { bookingEmailLinks, cachedEmails, users } = await import("../drizzle/schema");
+  return db
+    .select({
+      linkId: bookingEmailLinks.id,
+      note: bookingEmailLinks.note,
+      linkedAt: bookingEmailLinks.linkedAt,
+      linkedByName: users.name,
+      emailId: cachedEmails.id,
+      uid: cachedEmails.uid,
+      subject: cachedEmails.subject,
+      fromAddress: cachedEmails.fromAddress,
+      fromName: cachedEmails.fromName,
+      emailDate: cachedEmails.emailDate,
+      snippet: cachedEmails.snippet,
+      hasAttachments: cachedEmails.hasAttachments,
+      attachmentNames: cachedEmails.attachmentNames,
+      s3Keys: cachedEmails.s3Keys,
+    })
+    .from(bookingEmailLinks)
+    .innerJoin(cachedEmails, eq(bookingEmailLinks.cachedEmailId, cachedEmails.id))
+    .leftJoin(users, eq(bookingEmailLinks.linkedBy, users.id))
+    .where(eq(bookingEmailLinks.bookingId, bookingId))
+    .orderBy(desc(bookingEmailLinks.linkedAt));
 }

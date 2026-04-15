@@ -254,11 +254,13 @@ function scoreEmail(
     totalScore += nameScoreAtt * 20;
   }
 
-  // Must qualify: name+date, reference alone, or name+reference
+  // Must qualify: name+date, reference alone, name+reference, or strong name alone (score >= 40)
+  // The strong-name-alone path catches emails where the date is expressed in an unexpected format
+  // (e.g. "Wed 20 May 2026" when agent typed "20/05/2026") but the name is a clear match.
   const hasName = matchReasons.some((r) => ["name","attachment_content","attachment_name"].includes(r));
   const hasDate = matchReasons.includes("date");
   const hasRef = matchReasons.includes("reference");
-  const qualifies = (hasName && hasDate) || (hasRef && totalScore >= 20) || (hasName && hasRef);
+  const qualifies = (hasName && hasDate) || (hasRef && totalScore >= 20) || (hasName && hasRef) || (hasName && totalScore >= 40);
   if (!qualifies) return null;
 
   return {

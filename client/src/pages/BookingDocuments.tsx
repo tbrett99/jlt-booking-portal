@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,10 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
+} from "@/components/ui/dialog";
+import {
   Mail, Search, Paperclip, Calendar, User, FileText,
-  ChevronDown, ChevronUp, ExternalLink, AlertCircle, Info
+  ChevronDown, ChevronUp, AlertCircle, Info, Download, Link2, CheckCircle2
 } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
 
 type MatchReason = "name" | "date" | "reference" | "attachment_name" | "attachment_content";
 
@@ -38,7 +42,7 @@ interface EmailResult {
 const REASON_LABELS: Record<MatchReason, string> = {
   name: "Guest name",
   date: "Departure date",
-  reference: "Booking reference",
+  reference: "Supplier reference",
   attachment_name: "Attachment filename",
   attachment_content: "PDF content",
 };
@@ -57,107 +61,294 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// ─── Link-to-Booking Dialog ───────────────────────────────────────────────────
+
+interface LinkDialogProps {
+  emailUid: string;
+  emailSubject: string;
+  open: boolean;
+  onClose: () => void;
+}
+
+function LinkToBookingDialog({ emailUid, emailSubject, open, onClose }: LinkDialogProps) {
+  const [query, setQuery] = useState("");
+  const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
+  const [note, setNote] = useState("");
+
+  const searchBookings = trpc.bookings.quickSearch.useQuery(
+    { query: query.trim() },
+    { enabled: query.trim().length >= 2 }
+  );
+
+  const linkEmail = trpc.inbox.linkEmail.useMutation({
+    onSuccess: () => {
+      toast.success("Email linked to booking.");
+      onClose();
+      setQuery("");
+      setSelectedBookingId(null);
+      setNote("");
+    },
+    onError: (e) => {
+      toast.error(`Link failed: ${e.message}`);
+    },
+  });
+
+  function handleLink() {
+    if (!selectedBookingId) return;
+    linkEmail.mutate({ bookingId: selectedBookingId, emailUid, note: note || undefined });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Link2 className="h-4 w-4" />
+            Link Email to Booking
+          </DialogTitle>
+          <DialogDescription className="text-xs truncate">
+            {emailSubject}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Search for a booking</Label>
+            <Input
+              placeholder="Guest name, Topdog ref, or destination…"
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setSelectedBookingId(null); }}
+            />
+          </div>
+
+          {searchBookings.data && searchBookings.data.length > 0 && (
+            <div className="border rounded-md divide-y max-h-52 overflow-auto">
+              {searchBookings.data.map((b) => (
+                <button
+                  key={b.id}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors flex items-center justify-between gap-2 ${selectedBookingId === b.id ? "bg-primary/10 font-medium" : ""}`}
+                  onClick={() => setSelectedBookingId(b.id)}
+                >
+                  <span className="truncate">{b.clientName}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {b.topdogRef ?? ""} · {b.departureDate ? format(new Date(b.departureDate), "d MMM yyyy") : ""}
+                  </span>
+                  {selectedBookingId === b.id && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {query.trim().length >= 2 && searchBookings.data?.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-2">No bookings found.</p>
+          )}
+
+          <div className="space-y-1.5">
+            <Label>Note <span className="text-muted-foreground text-xs">(optional)</span></Label>
+            <Input
+              placeholder="e.g. Jet2 confirmation for lead passenger"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={500}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={handleLink}
+            disabled={!selectedBookingId || linkEmail.isPending}
+          >
+            {linkEmail.isPending ? "Linking…" : "Link to Booking"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Email Card ───────────────────────────────────────────────────────────────
+
 function EmailCard({ result }: { result: EmailResult }) {
   const [expanded, setExpanded] = useState(false);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
   const scoreColor =
     result.score >= 70 ? "bg-green-100 text-green-800 border-green-200" :
     result.score >= 40 ? "bg-amber-100 text-amber-800 border-amber-200" :
     "bg-gray-100 text-gray-600 border-gray-200";
 
+  // Download email as a plain-text .txt file (body text)
+  const handleDownloadEmail = useCallback(() => {
+    const header = [
+      `Subject: ${result.subject}`,
+      `From: ${result.from}`,
+      `Date: ${result.date ? format(new Date(result.date), "d MMM yyyy HH:mm") : ""}`,
+      "",
+    ].join("\n");
+    const body = result.bodyText || "(no plain-text body)";
+    const blob = new Blob([header + body], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const safeName = (result.subject || "email").replace(/[^a-z0-9]/gi, "_").slice(0, 60);
+    a.download = `${safeName}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Email downloaded.");
+  }, [result]);
+
+  // Download an attachment directly from its S3 URL
+  const handleDownloadAttachment = useCallback((att: AttachmentMeta) => {
+    // att.id is the s3Url for portal-cached emails
+    const a = document.createElement("a");
+    a.href = att.id;
+    a.download = att.filename;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.click();
+    toast.success(`Downloading: ${att.filename}`);
+  }, []);
+
   return (
-    <Card className="border border-border">
-      <CardContent className="p-4 space-y-3">
-        {/* Header row */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-semibold text-sm text-foreground truncate max-w-md">
-                {result.subject || "(no subject)"}
-              </h3>
-              <Badge className={`text-xs border ${scoreColor} shrink-0`}>
-                {result.score}% match
-              </Badge>
-            </div>
-            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
-              <span className="flex items-center gap-1">
-                <User className="h-3 w-3" />
-                {result.from}
-              </span>
-              {result.date && (
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  {format(new Date(result.date), "d MMM yyyy HH:mm")}
-                </span>
-              )}
-              {result.attachments.length > 0 && (
-                <span className="flex items-center gap-1">
-                  <Paperclip className="h-3 w-3" />
-                  {result.attachments.length} attachment{result.attachments.length !== 1 ? "s" : ""}
-                </span>
-              )}
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setExpanded(!expanded)}
-            className="shrink-0"
-          >
-            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
-        </div>
-
-        {/* Match reasons */}
-        <div className="flex flex-wrap gap-1.5">
-          {result.matchReasons.map((reason) => (
-            <Badge key={reason} className={`text-xs border ${REASON_COLORS[reason]}`}>
-              {REASON_LABELS[reason]}
-            </Badge>
-          ))}
-        </div>
-
-        {/* Snippet */}
-        {!expanded && result.snippet && (
-          <p className="text-xs text-muted-foreground line-clamp-2">{result.snippet}</p>
-        )}
-
-        {/* Expanded body */}
-        {expanded && (
-          <div className="space-y-3">
-            <Separator />
-            {result.bodyHtml ? (
-              <div
-                className="text-xs border rounded p-3 bg-muted/30 max-h-64 overflow-auto prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: result.bodyHtml }}
-              />
-            ) : (
-              <pre className="text-xs whitespace-pre-wrap bg-muted/30 rounded p-3 max-h-64 overflow-auto">
-                {result.bodyText || "(no body)"}
-              </pre>
-            )}
-
-            {/* Attachments */}
-            {result.attachments.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Attachments</p>
-                <div className="space-y-1">
-                  {result.attachments.map((att) => (
-                    <div key={att.id} className="flex items-center gap-2 text-xs p-2 bg-muted/30 rounded">
-                      <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <span className="font-medium truncate flex-1">{att.filename}</span>
-                      <span className="text-muted-foreground shrink-0">{formatBytes(att.size)}</span>
-                    </div>
-                  ))}
-                </div>
+    <>
+      <Card className="border border-border">
+        <CardContent className="p-4 space-y-3">
+          {/* Header row */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-semibold text-sm text-foreground truncate max-w-md">
+                  {result.subject || "(no subject)"}
+                </h3>
+                <Badge className={`text-xs border ${scoreColor} shrink-0`}>
+                  {result.score}% match
+                </Badge>
               </div>
-            )}
+              <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
+                <span className="flex items-center gap-1">
+                  <User className="h-3 w-3" />
+                  {result.from}
+                </span>
+                {result.date && (
+                  <span className="flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {format(new Date(result.date), "d MMM yyyy HH:mm")}
+                  </span>
+                )}
+                {result.attachments.length > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Paperclip className="h-3 w-3" />
+                    {result.attachments.length} attachment{result.attachments.length !== 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-1 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-xs gap-1"
+                onClick={() => setLinkDialogOpen(true)}
+                title="Link to a booking"
+              >
+                <Link2 className="h-3.5 w-3.5" />
+                Link
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-xs gap-1"
+                onClick={handleDownloadEmail}
+                title="Download email as text"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Email
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
-        )}
-      </CardContent>
-    </Card>
+
+          {/* Match reasons */}
+          <div className="flex flex-wrap gap-1.5">
+            {result.matchReasons.map((reason) => (
+              <Badge key={reason} className={`text-xs border ${REASON_COLORS[reason]}`}>
+                {REASON_LABELS[reason]}
+              </Badge>
+            ))}
+          </div>
+
+          {/* Snippet */}
+          {!expanded && result.snippet && (
+            <p className="text-xs text-muted-foreground line-clamp-2">{result.snippet}</p>
+          )}
+
+          {/* Expanded body */}
+          {expanded && (
+            <div className="space-y-3">
+              <Separator />
+              {result.bodyHtml ? (
+                <div
+                  className="text-xs border rounded p-3 bg-muted/30 max-h-64 overflow-auto prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: result.bodyHtml }}
+                />
+              ) : (
+                <pre className="text-xs whitespace-pre-wrap bg-muted/30 rounded p-3 max-h-64 overflow-auto">
+                  {result.bodyText || "(no body)"}
+                </pre>
+              )}
+
+              {/* Attachments */}
+              {result.attachments.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Attachments</p>
+                  <div className="space-y-1">
+                    {result.attachments.map((att) => (
+                      <div key={att.id} className="flex items-center gap-2 text-xs p-2 bg-muted/30 rounded">
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="font-medium truncate flex-1">{att.filename}</span>
+                        <span className="text-muted-foreground shrink-0">{formatBytes(att.size)}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs gap-1 shrink-0"
+                          onClick={() => handleDownloadAttachment(att)}
+                          title={`Download ${att.filename}`}
+                        >
+                          <Download className="h-3 w-3" />
+                          Download
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <LinkToBookingDialog
+        emailUid={result.uid}
+        emailSubject={result.subject}
+        open={linkDialogOpen}
+        onClose={() => setLinkDialogOpen(false)}
+      />
+    </>
   );
 }
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BookingDocuments() {
   const { user } = useAuth();
@@ -176,7 +367,7 @@ export default function BookingDocuments() {
       setResults(data as EmailResult[]);
       setSearched(true);
     },
-    onError: (e) => {
+    onError: () => {
       setResults([]);
       setSearched(true);
     },
@@ -327,7 +518,7 @@ export default function BookingDocuments() {
                   <strong>{departureDate ? format(new Date(departureDate), "d MMM yyyy") : ""}</strong>.
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Try a different spelling or date. The search covers the last 48 hours of cached emails.
+                  Try a different spelling or date. If the import is still running, try again in a few minutes.
                 </p>
               </CardContent>
             </Card>
