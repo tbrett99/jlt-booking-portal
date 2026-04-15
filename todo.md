@@ -859,3 +859,8 @@
 - [x] Fix search performance: add searchCachedEmailsByKeywords SQL pre-filter in db.ts (LIKE on name tokens + date tokens) to avoid loading entire mailbox into memory
 - [x] Update searchCachedEmails in imap.ts to use SQL pre-filter before in-memory fuzzy scoring
 - [x] All 49 tests passing
+
+## IMAP ECONNRESET Crash Fix (Apr 15 Round 4)
+- [x] Fix: IMAP ECONNRESET TLS socket error was crashing the Node.js process (unhandled error event), causing tRPC "Unable to transform response from server" errors on the home page during import
+- [x] Fix: attach error listener on the underlying imap Connection in safeConnect() to suppress ECONNRESET without crashing the server
+- [x] All 49 tests passing

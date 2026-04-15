@@ -374,20 +374,29 @@ export async function searchCachedEmails(params: SearchParams): Promise<EmailRes
 // ─── Safe IMAP connect (catches unhandled socket errors that bypass try/catch) ──
 
 async function safeConnect(config: ImapConnectionConfig): Promise<imaps.ImapSimple> {
-  return new Promise((resolve, reject) => {
-    imaps.connect({
-      imap: {
-        user: config.email,
-        password: config.password,
-        host: config.host,
-        port: config.port,
-        tls: config.useSsl,
-        tlsOptions: { rejectUnauthorized: false },
-        authTimeout: 10000,
-        connTimeout: 15000,
-      },
-    }).then(resolve).catch(reject);
+  const conn = await imaps.connect({
+    imap: {
+      user: config.email,
+      password: config.password,
+      host: config.host,
+      port: config.port,
+      tls: config.useSsl,
+      tlsOptions: { rejectUnauthorized: false },
+      authTimeout: 10000,
+      connTimeout: 15000,
+    },
   });
+  // Attach a no-op error listener on the underlying imap Connection so that
+  // ECONNRESET / TLS socket errors emitted after the promise resolves do NOT
+  // become unhandled 'error' events that crash the Node.js process.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawImap = (conn as unknown as { imap: NodeJS.EventEmitter }).imap;
+  if (rawImap && typeof rawImap.on === "function") {
+    rawImap.on("error", (err: Error) => {
+      console.warn("[IMAP] Connection error (suppressed):", err.message);
+    });
+  }
+  return conn;
 }
 
 // ─── Import emails from IMAP into cache ─────────────────────────────────────
