@@ -208,6 +208,13 @@ const DEFAULT_TEMPLATES = [
     bodyHtml: `<p>Hi {{agentName}},</p><p>Your reimbursement for <strong>{{supplierName}}</strong> (amount: {{amount}}) on booking <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has been scheduled for payment.</p><p>You will be notified once it has been processed.</p><p>The JLT Group Team</p>`,
     recipientType: "agent" as const,
   },
+  {
+    triggerKey: "commission_paid",
+    label: "Commission Paid",
+    subject: "Your Commission Has Been Paid",
+    bodyHtml: `<p>Hi {{agentName}},</p><p>Great news — your commission for booking <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has been marked as paid.</p><p>Please log in to the portal to view your commission history.</p><p>The JLT Group Team</p>`,
+    recipientType: "agent" as const,
+  },
 ];
 
 // ─── App Router ───────────────────────────────────────────────────────────────
@@ -1044,7 +1051,7 @@ export const appRouter = router({
                 triggerKey,
                 toEmail: agent.email,
                 toName: agent.name ?? "Agent",
-                variables: { clientName: booking.clientName },
+                variables: { clientName: booking.clientName, ptsRef: (booking as any).ptsRef ?? "" },
                 bookingId: booking.id,
               });
               await createInAppNotification({

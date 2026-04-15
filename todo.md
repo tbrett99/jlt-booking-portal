@@ -826,3 +826,7 @@
 
 ## Bug Fix (Apr 15 Round 6)
 - [x] Fix reimbursement scheduled email: {{clientName}} placeholder not being replaced with actual booking client name
+
+## Email Template Audit (Apr 15)
+- [x] Audit all email templates: verify every {{variable}} placeholder has a matching value in sendNotificationEmail calls
+- [x] Fix any missing variables found
