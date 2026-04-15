@@ -823,3 +823,6 @@
 - [x] Update admin pipeline card to show structured line item summary instead of free text
 - [x] Update Full Booking History timeline to show line items for amendment entries (line items shown on pipeline card; history shows summary text)
 - [x] Preserve backwards compatibility: show old free-text details if no line items exist
+
+## Bug Fix (Apr 15 Round 6)
+- [x] Fix reimbursement scheduled email: {{clientName}} placeholder not being replaced with actual booking client name

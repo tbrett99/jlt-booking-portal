@@ -2183,13 +2183,19 @@ export const appRouter = router({
           // Also send email notification
           try {
             const agent = await getUserById(item.agentId);
+            const { getBookingById: _getBookingForEmail } = await import("./db");
+            const bookingForEmail = await _getBookingForEmail(item.bookingId);
             if (agent?.email) {
               await sendNotificationEmail({
                 triggerKey: "reimbursement_scheduled",
                 toEmail: agent.email,
                 toName: agent.name ?? "Agent",
                 bookingId: item.bookingId,
-                variables: { supplierName: item.supplierName, amount: `£${Number(item.amount).toFixed(2)}` },
+                variables: {
+                  supplierName: item.supplierName,
+                  amount: `£${Number(item.amount).toFixed(2)}`,
+                  clientName: bookingForEmail?.clientName ?? "your client",
+                },
               });
             }
           } catch { /* email failure is non-fatal */ }
