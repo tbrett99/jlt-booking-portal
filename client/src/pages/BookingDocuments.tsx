@@ -276,9 +276,10 @@ export default function BookingDocuments() {
                 id="bookingRef"
                 value={bookingRef}
                 onChange={(e) => setBookingRef(e.target.value)}
-                placeholder="e.g. PTS12345 or Topdog ref"
+                placeholder="e.g. supplier booking reference"
                 className="max-w-xs"
               />
+              <p className="text-xs text-muted-foreground">This should be a supplier reference, not a Topdog or PTS reference.</p>
             </div>
             <Button type="submit" disabled={search.isPending || !guestName.trim() || !departureDate}>
               {search.isPending ? (
