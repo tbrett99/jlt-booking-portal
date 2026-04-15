@@ -104,6 +104,9 @@ vi.mock("./db", () => ({
   getCancellationsByBooking: vi.fn().mockResolvedValue([]),
   updateReimbursementAssignee: vi.fn().mockResolvedValue(undefined),
   markReimbursementActioned: vi.fn().mockResolvedValue(undefined),
+  getLineItemsByAmendment: vi.fn().mockResolvedValue([]),
+  getLineItemsByAmendments: vi.fn().mockResolvedValue([]),
+  updateCommissionVat: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./email", () => ({
@@ -642,5 +645,43 @@ describe("bookings.pipelineHistory", () => {
     const ctx = makeCtx("agent");
     const caller = appRouter.createCaller(ctx);
     await expect(caller.bookings.pipelineHistory({ bookingId: 42 })).rejects.toThrow();
+  });
+});
+
+describe("amendments.getLineItems", () => {
+  it("returns line items for an amendment (authenticated user)", async () => {
+    const { getLineItemsByAmendment } = await import("./db");
+    vi.mocked(getLineItemsByAmendment).mockResolvedValueOnce([
+      { id: 1, amendmentId: 5, type: "add_supplier", supplierName: "Bedsonline", cost: "420.00", oldCost: null, notes: null, createdAt: new Date() } as any,
+    ]);
+    const ctx = makeCtx("agent");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.amendments.getLineItems({ amendmentId: 5 });
+    expect(result).toHaveLength(1);
+    expect((result[0] as any).supplierName).toBe("Bedsonline");
+  });
+
+  it("rejects unauthenticated callers", async () => {
+    const ctx = makeCtx(null);
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.amendments.getLineItems({ amendmentId: 5 })).rejects.toThrow();
+  });
+});
+
+describe("amendments.submit with line items", () => {
+  it("creates an amendment with structured line items", async () => {
+    const { createAmendment, getBookingById, getAllUsers } = await import("./db");
+    // agentId: 3 matches the id assigned to "agent" role in makeCtx
+    vi.mocked(getBookingById).mockResolvedValueOnce({ id: 1, agentId: 3, clientName: "Test Client" } as any);
+    vi.mocked(createAmendment).mockResolvedValueOnce({ id: 10 } as any);
+    vi.mocked(getAllUsers).mockResolvedValueOnce([]);
+    const ctx = makeCtx("agent");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.amendments.submit({
+      bookingId: 1,
+      details: "+ Add: Bedsonline \u2014 \u00a3420.00",
+      lineItems: [{ type: "add_supplier", supplierName: "Bedsonline", cost: "420.00", oldCost: null, notes: null }],
+    });
+    expect(result).toMatchObject({ success: true });
   });
 });

@@ -86,6 +86,13 @@ export default function AdminAmendmentKanban() {
   );
 }
 
+const LINE_ITEM_LABELS: Record<string, { label: string; prefix: string; color: string; textColor: string }> = {
+  add_supplier:    { label: "Add",         prefix: "+", color: "#d1fae5", textColor: "#065f46" },
+  remove_supplier: { label: "Remove",      prefix: "−", color: "#fee2e2", textColor: "#991b1b" },
+  change_cost:     { label: "Change Cost", prefix: "~", color: "#fef3c7", textColor: "#92400e" },
+  other:           { label: "Other",       prefix: "•", color: "#ede9fe", textColor: "#5b21b6" },
+};
+
 function AmendmentCard({
   amendment,
   stage,
@@ -109,6 +116,13 @@ function AmendmentCard({
   const currentIdx = stages.indexOf(stage);
 
   const isReimb = !!amendment.isReimbursementDoc;
+
+  // Fetch structured line items for this amendment
+  const { data: lineItems = [] } = trpc.amendments.getLineItems.useQuery(
+    { amendmentId: amendment.id },
+    { enabled: !isReimb }
+  );
+  const hasLineItems = lineItems.length > 0;
 
   return (
     <Card className={`shadow-sm hover:shadow-md transition-shadow border-l-4 ${isReimb ? 'border-l-red-500' : 'border-l-[#70FFE8]'}`}>
@@ -154,7 +168,31 @@ function AmendmentCard({
             <FileText size={14} style={{ color: '#92400e' }} className="flex-shrink-0" />
             <p className="text-sm text-foreground">{amendment.details}</p>
           </div>
+        ) : hasLineItems ? (
+          // Structured line items view
+          <div className="space-y-1.5">
+            {(lineItems as any[]).map((li: any) => {
+              const cfg = LINE_ITEM_LABELS[li.type] ?? LINE_ITEM_LABELS.other;
+              return (
+                <div key={li.id} className="flex items-start gap-2 rounded px-2 py-1.5" style={{ background: cfg.color }}>
+                  <span className="font-bold text-xs mt-0.5 flex-shrink-0" style={{ color: cfg.textColor }}>{cfg.prefix}</span>
+                  <div className="min-w-0">
+                    <span className="text-xs font-semibold" style={{ color: cfg.textColor }}>{cfg.label}</span>
+                    {li.supplierName && <span className="text-xs text-foreground ml-1 font-medium">{li.supplierName}</span>}
+                    {li.type === "change_cost" && li.oldCost && li.cost && (
+                      <span className="text-xs text-muted-foreground ml-1">£{li.oldCost} → £{li.cost}</span>
+                    )}
+                    {li.type !== "change_cost" && li.cost && (
+                      <span className="text-xs text-muted-foreground ml-1">— £{li.cost}</span>
+                    )}
+                    {li.notes && <p className="text-xs text-muted-foreground mt-0.5">{li.notes}</p>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
+          // Legacy free-text fallback
           <div className="bg-muted/50 rounded p-2 space-y-1">
             <p className={`text-sm text-foreground whitespace-pre-wrap ${!expanded && isLong ? 'line-clamp-4' : ''}`}>
               {details}

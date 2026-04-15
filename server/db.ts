@@ -571,15 +571,60 @@ export async function createAmendment(data: {
   agentId: number;
   details: string;
   isReimbursementDoc?: boolean;
+  lineItems?: Array<{
+    type: "add_supplier" | "remove_supplier" | "change_cost" | "other";
+    supplierName?: string | null;
+    cost?: string | null;
+    oldCost?: string | null;
+    notes?: string | null;
+  }>;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.insert(amendments).values({
+  const [result] = await db.insert(amendments).values({
     bookingId: data.bookingId,
     agentId: data.agentId,
     details: data.details,
     isReimbursementDoc: data.isReimbursementDoc ?? false,
   });
+  const amendmentId = (result as any).insertId as number;
+  if (data.lineItems && data.lineItems.length > 0) {
+    const { amendmentLineItems } = await import("../drizzle/schema");
+    await db.insert(amendmentLineItems).values(
+      data.lineItems.map((item) => ({
+        amendmentId,
+        type: item.type,
+        supplierName: item.supplierName ?? null,
+        cost: item.cost ?? null,
+        oldCost: item.oldCost ?? null,
+        notes: item.notes ?? null,
+      }))
+    );
+  }
+  return amendmentId;
+}
+
+export async function getLineItemsByAmendment(amendmentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { amendmentLineItems } = await import("../drizzle/schema");
+  return db
+    .select()
+    .from(amendmentLineItems)
+    .where(eq(amendmentLineItems.amendmentId, amendmentId))
+    .orderBy(amendmentLineItems.id);
+}
+
+export async function getLineItemsByAmendments(amendmentIds: number[]) {
+  if (amendmentIds.length === 0) return [];
+  const db = await getDb();
+  if (!db) return [];
+  const { amendmentLineItems } = await import("../drizzle/schema");
+  return db
+    .select()
+    .from(amendmentLineItems)
+    .where(inArray(amendmentLineItems.amendmentId, amendmentIds))
+    .orderBy(amendmentLineItems.amendmentId, amendmentLineItems.id);
 }
 
 export async function getAmendmentsByBooking(bookingId: number) {

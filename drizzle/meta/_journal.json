@@ -169,6 +169,13 @@
       "when": 1776265997826,
       "tag": "0023_exotic_sasquatch",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1776268897268,
+      "tag": "0024_silky_dark_beast",
+      "breakpoints": true
     }
   ]
 }

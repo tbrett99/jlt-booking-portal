@@ -1308,19 +1308,39 @@ export const appRouter = router({
   // ── Amendments ────────────────────────────────────────────────────────────
   amendments: router({
     submit: protectedProcedure
-      .input(z.object({ bookingId: z.number(), details: z.string().min(1) }))
+      .input(z.object({
+        bookingId: z.number(),
+        details: z.string().min(1),
+        lineItems: z.array(z.object({
+          type: z.enum(["add_supplier", "remove_supplier", "change_cost", "other"]),
+          supplierName: z.string().optional().nullable(),
+          cost: z.string().optional().nullable(),
+          oldCost: z.string().optional().nullable(),
+          notes: z.string().optional().nullable(),
+        })).optional(),
+      }))
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
         if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
-        await createAmendment({ ...input, agentId: ctx.user.id });
-        // System audit note
+        await createAmendment({ ...input, agentId: ctx.user.id, lineItems: input.lineItems });
+        // System audit note — show structured summary if line items present
+        const summaryLines = (input.lineItems ?? []).map((li) => {
+          const typeLabel = li.type === "add_supplier" ? "Add" : li.type === "remove_supplier" ? "Remove" : li.type === "change_cost" ? "Change Cost" : "Other";
+          const parts = [typeLabel];
+          if (li.supplierName) parts.push(li.supplierName);
+          if (li.cost) parts.push(`£${li.cost}`);
+          return parts.join(": ");
+        });
+        const auditContent = summaryLines.length > 0
+          ? `[System] Amendment submitted by ${ctx.user.name ?? "Agent"}: ${summaryLines.join(" | ")}.`
+          : `[System] Amendment submitted by ${ctx.user.name ?? "Agent"}: ${input.details.slice(0, 120)}.`;
         await createNote({
           bookingId: input.bookingId,
           authorId: ctx.user.id,
-          content: `[System] Amendment submitted by ${ctx.user.name ?? "Agent"}: ${input.details.slice(0, 120)}.`,
+          content: auditContent,
           isInternal: false,
         });
         // Notify admins in-app + email support@ for workflow events
@@ -1354,6 +1374,12 @@ export const appRouter = router({
           ...a,
           assignedToName: a.assignedToId ? (userMap.get(a.assignedToId)?.name ?? null) : null,
         }));
+      }),
+    getLineItems: protectedProcedure
+      .input(z.object({ amendmentId: z.number() }))
+      .query(async ({ input }) => {
+        const { getLineItemsByAmendment } = await import("./db");
+        return getLineItemsByAmendment(input.amendmentId);
       }),
     all: adminProcedure.query(async () => {
       const amendments = await getAllAmendments();

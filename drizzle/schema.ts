@@ -95,6 +95,21 @@ export const amendments = mysqlTable("amendments", {
 
 export type Amendment = typeof amendments.$inferSelect;
 
+// ─── Amendment Line Items ─────────────────────────────────────────────────────
+
+export const amendmentLineItems = mysqlTable("amendment_line_items", {
+  id: int("id").autoincrement().primaryKey(),
+  amendmentId: int("amendmentId").notNull(), // FK → amendments.id
+  type: mysqlEnum("type", ["add_supplier", "remove_supplier", "change_cost", "other"]).notNull(),
+  supplierName: varchar("supplierName", { length: 255 }),
+  cost: decimal("cost", { precision: 10, scale: 2 }),
+  oldCost: decimal("oldCost", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AmendmentLineItem = typeof amendmentLineItems.$inferSelect;
+
 // ─── Cancellations ────────────────────────────────────────────────────────────
 
 export const cancellations = mysqlTable("cancellations", {

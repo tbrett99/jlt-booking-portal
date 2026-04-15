@@ -812,3 +812,14 @@
 - [x] Add status badge to reimbursement items on admin reimbursements page (already present)
 - [x] Fix Outstanding Reimbursements count to only show unactioned (pending, not scheduled/paid) items
 - [x] Full Booking History timeline: show full text with Show more/less toggle (amendment notes currently truncated)
+
+## Structured Amendment Form (Apr 15)
+- [x] Add amendment_line_items table to schema (amendmentId, type, supplierName, cost, notes)
+- [x] Generate and apply migration SQL for amendment_line_items
+- [x] Add db helpers: createAmendmentLineItems, getLineItemsByAmendment
+- [x] Add amendments.getLineItems procedure to router
+- [x] Update amendments.create procedure to accept and store line items
+- [x] Replace agent amendment free-text form with structured multi-type form (Add/Remove/Change/Other)
+- [x] Update admin pipeline card to show structured line item summary instead of free text
+- [x] Update Full Booking History timeline to show line items for amendment entries (line items shown on pipeline card; history shows summary text)
+- [x] Preserve backwards compatibility: show old free-text details if no line items exist
