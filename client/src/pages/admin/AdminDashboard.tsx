@@ -127,7 +127,7 @@ export default function AdminDashboard() {
   const { data: adminUsersForAssign = [] } = trpc.reimbursements.listAdminsForAssign.useQuery();
   const { data: commissionDueList = [] } = trpc.commissionDue.list.useQuery();
   const assignReimb = trpc.reimbursements.assign.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
-  const markReimbActioned = trpc.reimbursements.markActioned.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
+  const scheduleReimb = trpc.reimbursements.updateStatus.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
   const notificationsPaused = notifSettings?.paused ?? false;
   const setNotifPaused = trpc.settings.setNotificationsPaused.useMutation({
     onSuccess: () => utils.settings.getNotificationsPaused.invalidate(),
@@ -555,11 +555,11 @@ export default function AdminDashboard() {
                         ))}
                       </select>
                       <button
-                        onClick={() => markReimbActioned.mutate({ id: r.id })}
-                        disabled={markReimbActioned.isPending}
-                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium text-green-700 border border-green-200 hover:bg-green-50 transition-colors"
+                        onClick={() => scheduleReimb.mutate({ id: r.id, status: "scheduled" })}
+                        disabled={scheduleReimb.isPending}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium text-blue-700 border border-blue-200 hover:bg-blue-50 transition-colors"
                       >
-                        <CheckCircle2 size={10} /> Mark Actioned
+                        <CheckCircle2 size={10} /> Mark Scheduled
                       </button>
                     </div>
                   </div>

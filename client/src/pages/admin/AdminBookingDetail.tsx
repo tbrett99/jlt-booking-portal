@@ -85,6 +85,7 @@ export default function AdminBookingDetail() {
   // @mention state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
+  const [expandedHistoryItems, setExpandedHistoryItems] = useState<Set<string>>(new Set());
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
@@ -748,6 +749,7 @@ export default function AdminBookingDetail() {
       </div>
 
       {/* Full History Overview */}
+      {/* expandedHistoryItems tracks which timeline event IDs are expanded */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -791,7 +793,7 @@ export default function AdminBookingDetail() {
                 type: 'amendment',
                 timestamp: new Date(a.createdAt),
                 title: 'Amendment Request',
-                description: a.details?.slice(0, 120) + (a.details?.length > 120 ? '…' : ''),
+                description: a.details ?? undefined,
                 status: a.status === 'actioned' ? 'Actioned' : 'Pending',
                 statusColor,
                 statusBg,
@@ -807,7 +809,7 @@ export default function AdminBookingDetail() {
                 type: 'refund',
                 timestamp: new Date(r.createdAt),
                 title: `Refund Request (${r.refundType})`,
-                description: r.refundReason?.slice(0, 120) + (r.refundReason?.length > 120 ? '…' : ''),
+                description: r.refundReason ?? undefined,
                 status: r.pipelineStage ?? 'To Do',
                 statusColor,
                 statusBg,
@@ -892,9 +894,32 @@ export default function AdminBookingDetail() {
                               </span>
                             )}
                           </div>
-                          {event.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{event.description}</p>
-                          )}
+                          {event.description && (() => {
+                              const LIMIT = 200;
+                              const isLong = event.description.length > LIMIT;
+                              const expandKey = event.id;
+                              const isExpanded = expandedHistoryItems.has(expandKey);
+                              return (
+                                <div className="mt-0.5">
+                                  <p className="text-xs text-muted-foreground leading-relaxed">
+                                    {isLong && !isExpanded ? event.description.slice(0, LIMIT) + '…' : event.description}
+                                  </p>
+                                  {isLong && (
+                                    <button
+                                      onClick={() => setExpandedHistoryItems((prev: Set<string>) => {
+                                        const next = new Set(prev);
+                                        if (isExpanded) next.delete(expandKey); else next.add(expandKey);
+                                        return next;
+                                      })}
+                                      className="text-[10px] font-medium mt-0.5 hover:underline"
+                                      style={{ color: '#02E6D2' }}
+                                    >
+                                      {isExpanded ? 'Show less' : 'Show more'}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                             <Clock size={10} className="opacity-60" />
                             {format(event.timestamp, 'dd MMM yyyy, HH:mm')}

@@ -1558,8 +1558,8 @@ export async function updateReimbursementStatus(
   if (!db) throw new Error("DB unavailable");
   const now = new Date();
   const updates: Record<string, unknown> = { status };
-  if (status === "scheduled") updates.scheduledAt = now;
-  if (status === "paid") { updates.paidAt = now; updates.paidById = actorId; }
+  if (status === "scheduled") { updates.scheduledAt = now; updates.actionedAt = now; }
+  if (status === "paid") { updates.paidAt = now; updates.paidById = actorId; updates.actionedAt = now; }
   await db.update(reimbursementItems).set(updates as any).where(eq(reimbursementItems.id, id));
   const rows = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
   return rows[0];
@@ -1707,7 +1707,7 @@ export async function getOutstandingReimbursementsCount() {
   const rows = await db
     .select({ id: reimbursementItems.id })
     .from(reimbursementItems)
-    .where(eq(reimbursementItems.status, "pending"));
+    .where(and(eq(reimbursementItems.status, "pending"), eq(reimbursementItems.isLate, false)));
   return rows.length;
 }
 

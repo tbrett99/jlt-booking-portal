@@ -804,3 +804,11 @@
 
 ## Bug Fix (Apr 15 Round 2)
 - [x] Late Reimbursement Requests action panel: exclude items with status "Scheduled" (or any actioned status)
+
+## Reimbursement UX (Apr 15 Round 3)
+- [x] Auto-mark reimbursement as actioned when status changes to Scheduled or Paid (server-side)
+- [x] Remove manual "Mark Actioned" button from dashboard late reimbursement panel (replaced with Mark Scheduled)
+- [x] Add status badge (Pending/Scheduled/Paid) to reimbursement items on booking detail page (already present)
+- [x] Add status badge to reimbursement items on admin reimbursements page (already present)
+- [x] Fix Outstanding Reimbursements count to only show unactioned (pending, not scheduled/paid) items
+- [x] Full Booking History timeline: show full text with Show more/less toggle (amendment notes currently truncated)
