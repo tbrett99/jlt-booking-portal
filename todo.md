@@ -797,3 +797,7 @@
 
 ## UI Polish (Apr 14 Round 5)
 - [x] Remove "Admin or Super Admin? Sign in with Manus" text from login screen
+
+## Feature Batch (Apr 15)
+- [x] Amendments Pipeline: show full amendment details text (not truncated) so admins can read everything the agent submitted
+- [x] Commissions Management: add VAT input column where admins can enter a VAT figure per claim

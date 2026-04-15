@@ -952,6 +952,12 @@ export async function deleteCommissionClaim(claimId: number) {
   await db.delete(commissionClaims).where(eq(commissionClaims.id, claimId));
 }
 
+export async function updateCommissionVat(claimId: number, vatAmount: number | null) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(commissionClaims).set({ vatAmount: vatAmount !== null ? String(vatAmount) : null }).where(eq(commissionClaims.id, claimId));
+}
+
 // ─── Password Reset Tokens ────────────────────────────────────────────────────
 
 export async function createPasswordResetToken(userId: number, token: string, expiresAt: Date) {

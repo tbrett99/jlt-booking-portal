@@ -212,6 +212,7 @@ export const commissionClaims = mysqlTable("commission_claims", {
   claimedAt: timestamp("claimedAt").defaultNow().notNull(),
   status: mysqlEnum("status", ["claimed_not_paid", "paid"]).default("claimed_not_paid").notNull(),
   grossAmount: decimal("grossAmount", { precision: 10, scale: 2 }), // Agent's declared gross commission before fees
+  vatAmount: decimal("vatAmount", { precision: 10, scale: 2 }), // VAT on the commission
   paidAt: timestamp("paidAt"),
   paidById: int("paidById"), // FK → users.id (admin who marked as paid)
   createdAt: timestamp("createdAt").defaultNow().notNull(),

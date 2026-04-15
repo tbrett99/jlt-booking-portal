@@ -168,7 +168,7 @@ export default function AdminAmendments() {
                             {a.ptsRef && <span className="text-xs text-muted-foreground">PTS: <span className="font-medium text-foreground">{a.ptsRef}</span></span>}
                             {a.topdogRef && <span className="text-xs text-muted-foreground">TD: <span className="font-medium text-foreground">{a.topdogRef}</span></span>}
                           </div>
-                          <p className="text-muted-foreground line-clamp-2">{a.details}</p>
+                          <p className="text-muted-foreground whitespace-pre-wrap">{a.details}</p>
                         </div>
                         <Link href="/amendments/pipeline">
                           <Button size="sm" variant="ghost" className="gap-1 text-xs h-7 flex-shrink-0">

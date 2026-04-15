@@ -102,7 +102,10 @@ function AmendmentCard({
   onAssign: (id: number, userId: number | null) => void;
 }) {
   const [showMove, setShowMove] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const assignedUser = adminUsers.find((u) => u.id === amendment.assignedToId);
+  const details: string = amendment.details ?? "";
+  const isLong = details.length > 200;
   const currentIdx = stages.indexOf(stage);
 
   const isReimb = !!amendment.isReimbursementDoc;
@@ -152,7 +155,20 @@ function AmendmentCard({
             <p className="text-sm text-foreground">{amendment.details}</p>
           </div>
         ) : (
-          <p className="text-sm text-foreground line-clamp-3 bg-muted/50 rounded p-2">{amendment.details}</p>
+          <div className="bg-muted/50 rounded p-2 space-y-1">
+            <p className={`text-sm text-foreground whitespace-pre-wrap ${!expanded && isLong ? 'line-clamp-4' : ''}`}>
+              {details}
+            </p>
+            {isLong && (
+              <button
+                onClick={() => setExpanded((v) => !v)}
+                className="text-xs font-medium hover:underline"
+                style={{ color: '#02E6D2' }}
+              >
+                {expanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
+          </div>
         )}
 
         {/* Assignee */}

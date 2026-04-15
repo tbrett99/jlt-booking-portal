@@ -23,6 +23,7 @@ type ClaimRow = {
   paidAt: Date | string | null;
   paidByName: string | null;
   bookingType?: string | null;
+  vatAmount?: string | number | null;
   booking: {
     clientName: string;
     departureDate: Date | string | null;
@@ -36,7 +37,13 @@ export default function AdminCommissions() {
   const [, navigate] = useLocation();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<ClaimRow | null>(null);
+  const [vatEditing, setVatEditing] = useState<Record<number, string>>({});
   const utils = trpc.useUtils();
+
+  const updateVatMutation = trpc.commissionClaims.updateVat.useMutation({
+    onSuccess: () => utils.commissionClaims.all.invalidate(),
+    onError: (err) => toast.error(err.message),
+  });
 
   const { data: claims, isLoading } = trpc.commissionClaims.all.useQuery();
   const deleteClaimMutation = trpc.commissionClaims.deleteClaim.useMutation({
@@ -97,14 +104,24 @@ export default function AdminCommissions() {
     return format(new Date(d), "dd/MM/yyyy");
   };
 
+  const handleVatBlur = (claimId: number) => {
+    const raw = vatEditing[claimId];
+    if (raw === undefined) return;
+    const parsed = raw.trim() === "" ? null : parseFloat(raw);
+    if (parsed !== null && isNaN(parsed)) { toast.error("Invalid VAT amount"); return; }
+    updateVatMutation.mutate({ claimId, vatAmount: parsed });
+    setVatEditing((prev) => { const n = { ...prev }; delete n[claimId]; return n; });
+  };
+
   const exportCSV = (rows: ClaimRow[], filename: string) => {
-    const headers = ["Client", "Agent", "Agent Email", "Departure", "Expected Commission (£)", "Booking Type", "Claimed On", "Processed On", "Processed By", "Status"];
+    const headers = ["Client", "Agent", "Agent Email", "Departure", "Expected Commission (£)", "VAT (£)", "Booking Type", "Claimed On", "Processed On", "Processed By", "Status"];
     const csvRows = rows.map((c) => [
       c.booking?.clientName ?? "",
       c.agentName,
       c.agentEmail,
       formatDate(c.booking?.departureDate),
       c.booking?.expectedCommission != null ? Number(c.booking.expectedCommission).toFixed(2) : "",
+      c.vatAmount != null ? Number(c.vatAmount).toFixed(2) : "",
       c.bookingType ?? "",
       formatDate(c.claimedAt),
       formatDate(c.paidAt),
@@ -145,6 +162,7 @@ export default function AdminCommissions() {
             <th className="py-3 px-4 text-left font-medium">Agent</th>
             <th className="py-3 px-4 text-left font-medium">Departure</th>
             <th className="py-3 px-4 text-left font-medium">Expected Comm.</th>
+            <th className="py-3 px-4 text-left font-medium">VAT (£)</th>
             <th className="py-3 px-4 text-left font-medium">Type</th>
             <th className="py-3 px-4 text-left font-medium">Claimed On</th>
             {!showSelect && <th className="py-3 px-4 text-left font-medium">Processed On</th>}
@@ -156,7 +174,7 @@ export default function AdminCommissions() {
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={showSelect ? 9 : 10} className="py-12 text-center text-muted-foreground">
+              <td colSpan={showSelect ? 10 : 11} className="py-12 text-center text-muted-foreground">
                 No records found.
               </td>
             </tr>
@@ -188,6 +206,19 @@ export default function AdminCommissions() {
                 <td className="py-3 px-4">{formatDate(c.booking?.departureDate)}</td>
                 <td className="py-3 px-4">
                   {c.booking?.expectedCommission != null ? `£${Number(c.booking.expectedCommission).toFixed(2)}` : "—"}
+                </td>
+                <td className="py-3 px-4">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={vatEditing[c.id] !== undefined ? vatEditing[c.id] : (c.vatAmount != null ? Number(c.vatAmount).toFixed(2) : "")}
+                    onChange={(e) => setVatEditing((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                    onBlur={() => handleVatBlur(c.id)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    className="w-24 h-7 px-2 text-sm border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-[#02E6D2]"
+                  />
                 </td>
                 <td className="py-3 px-4 capitalize">{c.bookingType ?? "—"}</td>
                 <td className="py-3 px-4">{formatDate(c.claimedAt)}</td>

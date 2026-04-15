@@ -47,6 +47,7 @@ import {
   markCommissionPaid,
   getCommissionClaimByBooking,
   deleteCommissionClaim,
+  updateCommissionVat,
   getNotificationTemplates,
   getNotificationTemplate,
   upsertNotificationTemplate,
@@ -1810,6 +1811,14 @@ export const appRouter = router({
           await updateBookingStage(claim.bookingId, "Commission Claimable", 0);
         }
         await deleteCommissionClaim(input.claimId);
+        return { success: true };
+      }),
+
+    // Admin: update VAT amount on a claim
+    updateVat: adminProcedure
+      .input(z.object({ claimId: z.number(), vatAmount: z.number().nonnegative().nullable() }))
+      .mutation(async ({ input }) => {
+        await updateCommissionVat(input.claimId, input.vatAmount);
         return { success: true };
       }),
 

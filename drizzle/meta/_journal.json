@@ -162,6 +162,13 @@
       "when": 1776097705569,
       "tag": "0022_gigantic_doctor_octopus",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1776265997826,
+      "tag": "0023_exotic_sasquatch",
+      "breakpoints": true
     }
   ]
 }
