@@ -853,3 +853,9 @@
 - [x] Incremental 15-min scheduler runs use sinceDate = lastRunAt - 5 min buffer (no missed emails)
 - [x] Alter cached_emails.bodyText and bodyHtml from TEXT to MEDIUMTEXT (fixes large HTML email truncation)
 - [x] All 49 tests passing
+
+## Import OOM & Search Performance Fix (Apr 15 Round 3)
+- [x] Fix OOM crash: rewrite importInbox to fetch all UIDs first (no bodies), then process in batches of 25 with a fresh IMAP connection per batch
+- [x] Fix search performance: add searchCachedEmailsByKeywords SQL pre-filter in db.ts (LIKE on name tokens + date tokens) to avoid loading entire mailbox into memory
+- [x] Update searchCachedEmails in imap.ts to use SQL pre-filter before in-memory fuzzy scoring
+- [x] All 49 tests passing

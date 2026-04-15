@@ -1838,6 +1838,56 @@ export async function getAllCachedEmails() {
   return db.select().from(cachedEmails).orderBy(desc(cachedEmails.emailDate));
 }
 
+/**
+ * Pre-filter cached emails in SQL using LIKE on name tokens and date tokens.
+ * Returns only rows that contain at least one name token OR one date token,
+ * keeping the in-memory scoring set small.
+ */
+export async function searchCachedEmailsByKeywords(
+  nameTokens: string[],
+  dateTokens: string[],
+  bookingReference?: string
+) {
+  const db = await getDb();
+  if (!db) return [];
+  const { cachedEmails } = await import("../drizzle/schema");
+  const { sql, or } = await import("drizzle-orm");
+
+  // Build LIKE conditions for name tokens (check subject + bodyText)
+  const nameConds = nameTokens
+    .filter((t) => t.length >= 3)
+    .flatMap((t) => [
+      sql`LOWER(${cachedEmails.subject}) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(${cachedEmails.bodyText}) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(${cachedEmails.snippet}) LIKE ${`%${t.toLowerCase()}%`}`,
+    ]);
+
+  // Build LIKE conditions for date tokens (e.g. "22 jul", "22/07", "2026-07-22")
+  const dateConds = dateTokens
+    .filter((t) => t.length >= 4)
+    .flatMap((t) => [
+      sql`LOWER(${cachedEmails.subject}) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(${cachedEmails.bodyText}) LIKE ${`%${t.toLowerCase()}%`}`,
+    ]);
+
+  // Booking reference condition
+  const refConds = bookingReference && bookingReference.length >= 3
+    ? [
+        sql`LOWER(${cachedEmails.subject}) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
+        sql`LOWER(${cachedEmails.bodyText}) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
+      ]
+    : [];
+
+  const allConds = [...nameConds, ...dateConds, ...refConds];
+  if (allConds.length === 0) return [];
+
+  return db
+    .select()
+    .from(cachedEmails)
+    .where(or(...allConds))
+    .orderBy(desc(cachedEmails.emailDate));
+}
+
 export async function getCachedEmailByUid(uid: string) {
   const db = await getDb();
   if (!db) return null;

@@ -1,7 +1,7 @@
 import imaps from "imap-simple";
 import { simpleParser, type ParsedMail, type Attachment } from "mailparser";
 import crypto from "crypto";
-import { upsertCachedEmail, getAllCachedEmails, getCachedEmailByUid } from "./db";
+import { upsertCachedEmail, getAllCachedEmails, getCachedEmailByUid, searchCachedEmailsByKeywords } from "./db";
 import { storagePut, storageGet } from "./storage";
 
 const ENCRYPTION_KEY_RAW = process.env.JWT_SECRET ?? "fallback-key-32-chars-padding!!";
@@ -279,7 +279,28 @@ function scoreEmail(
 
 export async function searchCachedEmails(params: SearchParams): Promise<EmailResult[]> {
   const dateWindow = buildDateWindow(params.departureDate);
-  const rows = await getAllCachedEmails();
+
+  // Build SQL pre-filter tokens to avoid loading the entire mailbox into memory
+  const nameTokens = normalise(params.guestName).split(" ").filter((t) => t.length >= 3);
+  const dateTokens: string[] = [];
+  for (const d of dateWindow) {
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = String(d.getFullYear());
+    const monthNames = ["january","february","march","april","may","june",
+      "july","august","september","october","november","december"];
+    const monthName = monthNames[d.getMonth()] ?? "";
+    dateTokens.push(
+      `${year}-${month}-${day}`,
+      `${day}/${month}`,
+      `${day} ${monthName.slice(0, 3)}`,
+      `${day} ${monthName}`,
+    );
+  }
+  // Deduplicate tokens
+  const uniqueDateTokens = Array.from(new Set(dateTokens));
+
+  const rows = await searchCachedEmailsByKeywords(nameTokens, uniqueDateTokens, params.bookingReference);
   const results: EmailResult[] = [];
 
   for (const row of rows) {
@@ -370,106 +391,141 @@ async function safeConnect(config: ImapConnectionConfig): Promise<imaps.ImapSimp
 }
 
 // ─── Import emails from IMAP into cache ─────────────────────────────────────
+// Processes emails in batches of BATCH_SIZE to avoid OOM on large mailboxes.
 // By default fetches ALL emails in the mailbox (no date window).
 // Pass sinceDate to restrict to emails received on or after that date.
+
+const IMPORT_BATCH_SIZE = 25;
+
+async function processOneMessage(
+  msg: { parts: Array<{ which: string; body: unknown }>; attributes?: { uid?: number }; seqno?: number },
+  index: number,
+  uid: string,
+  stats: { imported: number; skipped: number; errors: number }
+): Promise<void> {
+  const allPart = msg.parts.find((p) => p.which === "");
+  if (!allPart) { stats.skipped++; return; }
+
+  const raw = allPart.body as Buffer | string;
+  const parsed: ParsedMail = await simpleParser(
+    typeof raw === "string" ? Buffer.from(raw) : raw
+  );
+
+  const subject = parsed.subject ?? "(no subject)";
+  const fromAddress = parsed.from?.value?.[0]?.address ?? "";
+  const fromName = parsed.from?.value?.[0]?.name ?? fromAddress;
+  const emailDate = parsed.date ?? new Date();
+  const bodyText = parsed.text ?? "";
+  const bodyHtml: string = parsed.html ? (parsed.html as string) : "";
+  const snippet = bodyText.slice(0, 300).replace(/\n+/g, " ");
+
+  const attachmentNames: string[] = [];
+  const s3Keys: Array<{ filename: string; contentType: string; s3Key: string; s3Url: string; size: number }> = [];
+
+  for (const att of parsed.attachments ?? []) {
+    const fn = att.filename ?? "attachment";
+    attachmentNames.push(fn);
+    if (att.content && att.content.length > 0) {
+      try {
+        const safeName = fn.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const s3Path = `email-attachments/${uid}/${safeName}`;
+        const { key, url } = await storagePut(s3Path, att.content, att.contentType ?? "application/octet-stream");
+        s3Keys.push({
+          filename: fn,
+          contentType: att.contentType ?? "application/octet-stream",
+          s3Key: key,
+          s3Url: url,
+          size: att.content.length,
+        });
+      } catch (uploadErr) {
+        console.warn(`[Import] Failed to upload attachment "${fn}" to S3:`, uploadErr);
+      }
+    }
+  }
+
+  await upsertCachedEmail({
+    uid,
+    subject,
+    fromAddress,
+    fromName,
+    emailDate,
+    bodyText,
+    bodyHtml,
+    snippet,
+    hasAttachments: attachmentNames.length > 0,
+    attachmentNames: JSON.stringify(attachmentNames),
+    s3Keys: JSON.stringify(s3Keys),
+  });
+
+  stats.imported++;
+}
 
 export async function importInbox(
   config: ImapConnectionConfig,
   onProgress?: (imported: number, total: number) => void,
   sinceDate?: Date
 ): Promise<{ imported: number; skipped: number; errors: number }> {
-  const connection = await safeConnect(config);
-
   const stats = { imported: 0, skipped: 0, errors: 0 };
 
+  const searchCriteria: unknown[] = sinceDate
+    ? [["SINCE", sinceDate.toUTCString()]]
+    : ["ALL"];
+
+  // Step 1: fetch all UIDs only (no bodies) to get the full list without OOM
+  const uidConnection = await safeConnect(config);
+  let allUids: number[] = [];
   try {
-    await connection.openBox("INBOX");
-
-    // Fetch all emails unless a sinceDate is provided
-    const searchCriteria: unknown[] = sinceDate
-      ? [["SINCE", sinceDate.toUTCString()]]
-      : ["ALL"];
-    const fetchOptions = {
-      bodies: [""],
-      struct: true,
-    };
-
-    const messages = await connection.search(searchCriteria as Parameters<typeof connection.search>[0], fetchOptions);
-    const total = messages.length;
-
-    for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i];
-      try {
-        const allPart = msg.parts.find((p: { which: string }) => p.which === "");
-        if (!allPart) { stats.skipped++; continue; }
-
-        const raw = allPart.body as Buffer | string;
-        const parsed: ParsedMail = await simpleParser(
-          typeof raw === "string" ? Buffer.from(raw) : raw
-        );
-
-        const uid = String(
-          (msg as { attributes?: { uid?: number } }).attributes?.uid ??
-          (msg as { seqno?: number }).seqno ??
-          `${Date.now()}-${i}`
-        );
-
-        const subject = parsed.subject ?? "(no subject)";
-        const fromAddress = parsed.from?.value?.[0]?.address ?? "";
-        const fromName = parsed.from?.value?.[0]?.name ?? fromAddress;
-        const emailDate = parsed.date ?? new Date();
-        const bodyText = parsed.text ?? "";
-        const bodyHtml: string = parsed.html ? (parsed.html as string) : "";
-        const snippet = bodyText.slice(0, 300).replace(/\n+/g, " ");
-
-        // Upload attachments to S3 (no size limit)
-        const attachmentNames: string[] = [];
-        const s3Keys: Array<{ filename: string; contentType: string; s3Key: string; s3Url: string; size: number }> = [];
-
-        for (const att of parsed.attachments ?? []) {
-          const fn = att.filename ?? "attachment";
-          attachmentNames.push(fn);
-          if (att.content && att.content.length > 0) {
-            try {
-              const safeName = fn.replace(/[^a-zA-Z0-9._-]/g, "_");
-              const s3Path = `email-attachments/${uid}/${safeName}`;
-              const { key, url } = await storagePut(s3Path, att.content, att.contentType ?? "application/octet-stream");
-              s3Keys.push({
-                filename: fn,
-                contentType: att.contentType ?? "application/octet-stream",
-                s3Key: key,
-                s3Url: url,
-                size: att.content.length,
-              });
-            } catch (uploadErr) {
-              console.warn(`[Import] Failed to upload attachment "${fn}" to S3:`, uploadErr);
-            }
-          }
-        }
-
-        await upsertCachedEmail({
-          uid,
-          subject,
-          fromAddress,
-          fromName,
-          emailDate,
-          bodyText,
-          bodyHtml,
-          snippet,
-          hasAttachments: attachmentNames.length > 0,
-          attachmentNames: JSON.stringify(attachmentNames),
-          s3Keys: JSON.stringify(s3Keys),
-        });
-
-        stats.imported++;
-        onProgress?.(stats.imported, total);
-      } catch (err) {
-        console.warn("[Import] Failed to process message:", err);
-        stats.errors++;
-      }
-    }
+    await uidConnection.openBox("INBOX");
+    const uidMessages = await uidConnection.search(
+      searchCriteria as Parameters<typeof uidConnection.search>[0],
+      { bodies: [], struct: false }
+    );
+    allUids = uidMessages.map((m) => m.attributes.uid).filter((u) => u > 0);
   } finally {
-    connection.end();
+    uidConnection.end();
+  }
+
+  const total = allUids.length;
+  console.log(`[Import] Found ${total} messages to process`);
+  if (total === 0) return stats;
+
+  // Step 2: process in UID batches — open a fresh connection per batch
+  for (let batchStart = 0; batchStart < total; batchStart += IMPORT_BATCH_SIZE) {
+    const batchUids = allUids.slice(batchStart, batchStart + IMPORT_BATCH_SIZE);
+    // UID range string e.g. "1001,1002,1003,..."
+    const uidList = batchUids.join(",");
+
+    let batchConnection: imaps.ImapSimple | null = null;
+    try {
+      batchConnection = await safeConnect(config);
+      await batchConnection.openBox("INBOX");
+      const batchMessages = await batchConnection.search(
+        [["UID", uidList]] as Parameters<typeof batchConnection.search>[0],
+        { bodies: [""], struct: true }
+      );
+
+      for (const msg of batchMessages) {
+        const uid = String(msg.attributes.uid ?? `${Date.now()}-${batchStart}`);
+        try {
+          await processOneMessage(msg as Parameters<typeof processOneMessage>[0], batchStart, uid, stats);
+          onProgress?.(stats.imported, total);
+        } catch (err) {
+          console.warn(`[Import] Failed to process message uid=${uid}:`, err);
+          stats.errors++;
+        }
+      }
+
+      const batchEnd = Math.min(batchStart + IMPORT_BATCH_SIZE, total);
+      console.log(`[Import] Batch ${batchEnd}/${total} — imported: ${stats.imported}, errors: ${stats.errors}`);
+    } catch (batchErr) {
+      console.warn(`[Import] Batch ${batchStart}-${batchStart + IMPORT_BATCH_SIZE} failed:`, batchErr);
+      stats.errors += batchUids.length;
+    } finally {
+      batchConnection?.end();
+    }
+
+    // Yield to event loop between batches to keep the server responsive
+    await new Promise((r) => setTimeout(r, 50));
   }
 
   return stats;
