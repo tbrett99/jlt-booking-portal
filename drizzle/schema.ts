@@ -370,3 +370,48 @@ export const systemSettings = mysqlTable("system_settings", {
 });
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
+
+// ─── Inbox / IMAP Integration ─────────────────────────────────────────────────
+
+export const imapConfig = mysqlTable("imap_config", {
+  id: int("id").autoincrement().primaryKey(),
+  host: varchar("host", { length: 255 }).notNull().default(""),
+  port: int("port").notNull().default(993),
+  email: varchar("email", { length: 320 }).notNull().default(""),
+  passwordEncrypted: varchar("passwordEncrypted", { length: 2048 }).notNull().default(""),
+  useSsl: boolean("useSsl").notNull().default(true),
+  agentAccessEnabled: boolean("agentAccessEnabled").notNull().default(false), // feature flag: hide from agents until tested
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ImapConfig = typeof imapConfig.$inferSelect;
+
+export const cachedEmails = mysqlTable("cached_emails", {
+  id: int("id").autoincrement().primaryKey(),
+  uid: varchar("uid", { length: 128 }).notNull().unique(),
+  subject: varchar("subject", { length: 1000 }).notNull().default(""),
+  fromAddress: varchar("fromAddress", { length: 320 }).notNull().default(""),
+  fromName: varchar("fromName", { length: 255 }).notNull().default(""),
+  emailDate: timestamp("emailDate").notNull(),
+  bodyText: text("bodyText"),
+  bodyHtml: text("bodyHtml"),
+  snippet: varchar("snippet", { length: 500 }).notNull().default(""),
+  hasAttachments: boolean("hasAttachments").notNull().default(false),
+  attachmentNames: text("attachmentNames"),   // JSON array of filenames
+  s3Keys: text("s3Keys"),                     // JSON array of {filename, contentType, s3Key, s3Url, size}
+  importedAt: timestamp("importedAt").defaultNow().notNull(),
+});
+export type CachedEmail = typeof cachedEmails.$inferSelect;
+
+export const inboxAuditLogs = mysqlTable("inbox_audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  guestName: varchar("guestName", { length: 255 }).notNull(),
+  departureDate: varchar("departureDate", { length: 32 }).notNull(),
+  bookingReference: varchar("bookingReference", { length: 128 }),
+  resultsCount: int("resultsCount").notNull().default(0),
+  searchedAt: timestamp("searchedAt").defaultNow().notNull(),
+});
+export type InboxAuditLog = typeof inboxAuditLogs.$inferSelect;
+export type InsertCachedEmail = typeof cachedEmails.$inferInsert;
+export type InsertImapConfig = typeof imapConfig.$inferInsert;
+export type InsertInboxAuditLog = typeof inboxAuditLogs.$inferInsert;

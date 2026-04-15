@@ -1765,3 +1765,128 @@ export async function getCancellationsByBooking(bookingId: number) {
     .where(eq(cancellations.bookingId, bookingId))
     .orderBy(desc(cancellations.confirmedAt));
 }
+
+// ─── Inbox / IMAP Integration ─────────────────────────────────────────────────
+
+export async function getImapConfig() {
+  const db = await getDb();
+  if (!db) return null;
+  const { imapConfig } = await import("../drizzle/schema");
+  const result = await db.select().from(imapConfig).limit(1);
+  return result[0] ?? null;
+}
+
+export async function upsertImapConfig(data: {
+  host: string;
+  port: number;
+  email: string;
+  passwordEncrypted: string;
+  useSsl: boolean;
+  agentAccessEnabled?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { imapConfig } = await import("../drizzle/schema");
+  const existing = await getImapConfig();
+  if (existing) {
+    await db.update(imapConfig).set(data).where(eq(imapConfig.id, existing.id));
+  } else {
+    await db.insert(imapConfig).values(data);
+  }
+}
+
+export async function upsertCachedEmail(data: {
+  uid: string;
+  subject: string;
+  fromAddress: string;
+  fromName: string;
+  emailDate: Date;
+  bodyText?: string | null;
+  bodyHtml?: string | null;
+  snippet: string;
+  hasAttachments: boolean;
+  attachmentNames?: string | null;
+  s3Keys?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { cachedEmails } = await import("../drizzle/schema");
+  await db
+    .insert(cachedEmails)
+    .values({ ...data, importedAt: new Date() })
+    .onDuplicateKeyUpdate({
+      set: {
+        subject: data.subject,
+        fromAddress: data.fromAddress,
+        fromName: data.fromName,
+        emailDate: data.emailDate,
+        bodyText: data.bodyText ?? null,
+        bodyHtml: data.bodyHtml ?? null,
+        snippet: data.snippet,
+        hasAttachments: data.hasAttachments,
+        attachmentNames: data.attachmentNames ?? null,
+        s3Keys: data.s3Keys ?? null,
+        importedAt: new Date(),
+      },
+    });
+}
+
+export async function getAllCachedEmails() {
+  const db = await getDb();
+  if (!db) return [];
+  const { cachedEmails } = await import("../drizzle/schema");
+  return db.select().from(cachedEmails).orderBy(desc(cachedEmails.emailDate));
+}
+
+export async function getCachedEmailByUid(uid: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const { cachedEmails } = await import("../drizzle/schema");
+  const rows = await db.select().from(cachedEmails).where(eq(cachedEmails.uid, uid)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getCachedEmailCount() {
+  const db = await getDb();
+  if (!db) return 0;
+  const { cachedEmails } = await import("../drizzle/schema");
+  const result = await db.select({ id: cachedEmails.id }).from(cachedEmails);
+  return result.length;
+}
+
+export async function getLastImportTime() {
+  const db = await getDb();
+  if (!db) return null;
+  const { cachedEmails } = await import("../drizzle/schema");
+  const result = await db
+    .select({ importedAt: cachedEmails.importedAt })
+    .from(cachedEmails)
+    .orderBy(desc(cachedEmails.importedAt))
+    .limit(1);
+  return result[0]?.importedAt ?? null;
+}
+
+export async function createInboxAuditLog(data: {
+  userId: number;
+  guestName: string;
+  departureDate: string;
+  bookingReference?: string | null;
+  resultsCount: number;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  const { inboxAuditLogs } = await import("../drizzle/schema");
+  await db.insert(inboxAuditLogs).values(data);
+}
+
+export async function listInboxAuditLogs(limit = 100, offset = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  const { inboxAuditLogs } = await import("../drizzle/schema");
+  return db
+    .select()
+    .from(inboxAuditLogs)
+    .orderBy(desc(inboxAuditLogs.searchedAt))
+    .limit(limit)
+    .offset(offset);
+}

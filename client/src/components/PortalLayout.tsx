@@ -7,7 +7,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp
+  RefreshCw, Sparkles, FileUp, Mail, Settings
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -203,6 +203,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "My Commissions", href: "/commissions", icon: <Banknote size={16} /> },
       ],
     },
+    {
+      label: "Documents",
+      icon: <Mail size={16} />,
+      defaultOpen: false,
+      items: [
+        { label: "Booking Documents", href: "/booking-documents", icon: <Mail size={16} /> },
+      ],
+    },
   ];
 
   // ── Admin nav groups ──────────────────────────────────────────────────────
@@ -269,6 +277,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
+      label: "Documents",
+      icon: <Mail size={16} />,
+      defaultOpen: false,
+      items: [
+        { label: "Booking Documents", href: "/booking-documents", icon: <Mail size={16} /> },
+      ],
+    },
+    {
       label: "Admin",
       icon: <Users size={16} />,
       defaultOpen: false,
@@ -279,6 +295,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           ? [{ label: "Notification Templates", href: "/notification-templates", icon: <Bell size={16} /> }]
           : []),
         { label: "Notif. Preferences", href: "/notif-prefs", icon: <BellRing size={16} /> },
+        { label: "Inbox Config", href: "/admin/inbox-config", icon: <Settings size={16} /> },
       ],
     },
   ];

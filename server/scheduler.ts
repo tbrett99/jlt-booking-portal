@@ -5,10 +5,62 @@
  */
 import cron from "node-cron";
 import nodemailer from "nodemailer";
-import { getDb, getTasksDueForReminder, markCalendarReminderSent } from "./db";
+import { getDb, getTasksDueForReminder, markCalendarReminderSent, getImapConfig } from "./db";
 import { bookings, users, inAppNotifications } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { format } from "date-fns";
+import { importInbox, decryptPassword } from "./imap";
+
+// ─── Inbox auto-import state ──────────────────────────────────────────────────
+
+let inboxImportRunning = false;
+let inboxLastRunAt: Date | null = null;
+let inboxLastResult: { imported: number; skipped: number; errors: number } | null = null;
+let inboxNextRunAt: Date | null = null;
+
+export function getInboxSchedulerStatus() {
+  return {
+    isRunning: inboxImportRunning,
+    lastRunAt: inboxLastRunAt,
+    lastResult: inboxLastResult,
+    nextRunAt: inboxNextRunAt,
+    intervalMinutes: 15,
+  };
+}
+
+async function runInboxImport() {
+  if (inboxImportRunning) {
+    console.log("[InboxScheduler] Import already in progress, skipping");
+    return;
+  }
+  const config = await getImapConfig();
+  if (!config || !config.host || !config.email) {
+    console.log("[InboxScheduler] IMAP not configured — skipping auto-import");
+    return;
+  }
+  inboxImportRunning = true;
+  console.log(`[InboxScheduler] Auto-import started at ${new Date().toISOString()}`);
+  try {
+    const password = decryptPassword(config.passwordEncrypted);
+    const result = await importInbox({
+      host: config.host,
+      port: config.port,
+      email: config.email,
+      password,
+      useSsl: config.useSsl ?? true,
+    });
+    inboxLastRunAt = new Date();
+    inboxLastResult = result;
+    console.log(`[InboxScheduler] Done — ${result.imported} new, ${result.skipped} skipped, ${result.errors} errors`);
+  } catch (err) {
+    console.error("[InboxScheduler] Auto-import failed:", err);
+    inboxLastRunAt = new Date();
+    inboxLastResult = { imported: 0, skipped: 0, errors: 1 };
+  } finally {
+    inboxImportRunning = false;
+    inboxNextRunAt = new Date(Date.now() + 15 * 60 * 1000);
+  }
+}
 
 const EXPORT_RECIPIENT = "max@thejltgroup.co.uk";
 const EXPORT_RECIPIENT_NAME = "Max";
@@ -218,4 +270,15 @@ export function startScheduler() {
 
   console.log("[Scheduler] Nightly export scheduled at 04:00 UTC → " + EXPORT_RECIPIENT);
   console.log("[Scheduler] Task reminders scheduled at 08:00 UTC");
+
+  // Inbox auto-import every 15 minutes
+  inboxNextRunAt = new Date(Date.now() + 15 * 60 * 1000);
+  // Run once on startup after a short delay to let DB connect
+  setTimeout(() => {
+    runInboxImport().catch(console.error);
+  }, 30_000); // 30 second startup delay
+  cron.schedule("*/15 * * * *", () => {
+    runInboxImport().catch(console.error);
+  }, { timezone: "UTC" });
+  console.log("[Scheduler] Inbox auto-import scheduled every 15 minutes");
 }

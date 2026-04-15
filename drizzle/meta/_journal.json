@@ -176,6 +176,13 @@
       "when": 1776268897268,
       "tag": "0024_silky_dark_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1776279173383,
+      "tag": "0025_friendly_krista_starr",
+      "breakpoints": true
     }
   ]
 }

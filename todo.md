@@ -830,3 +830,17 @@
 ## Email Template Audit (Apr 15)
 - [x] Audit all email templates: verify every {{variable}} placeholder has a matching value in sendNotificationEmail calls
 - [x] Fix any missing variables found
+
+## Inbox Integration (Apr 15)
+- [x] Add imap_config, cached_emails, inbox_audit_logs tables to schema
+- [x] Generate and apply migration SQL for inbox tables
+- [x] Copy imap.ts IMAP engine (search, import, scoring, PDF extraction) to portal
+- [x] Add inbox db helpers (upsertCachedEmail, getAllCachedEmails, getImapConfig, upsertImapConfig, createInboxAuditLog)
+- [x] Add inbox tRPC procedures: inbox.search, inbox.saveConfig, inbox.testConnection, inbox.triggerImport, inbox.importStatus, inbox.getConfig, inbox.isAvailable, inbox.auditLogs
+- [x] Merge inbox scheduler (15-min auto-import) into portal scheduler
+- [x] Add admin IMAP config page (/admin/inbox-config) with connection test, import trigger, agent access toggle
+- [x] Build agent Booking Documents search page (/booking-documents)
+- [x] Add Booking Documents link to agent sidebar (hidden behind agentAccessEnabled feature flag)
+- [x] Add Inbox Config link to admin sidebar under Admin group
+- [x] Write Vitest unit tests for inbox router (access control, search guards, config masking)
+- [x] All 49 tests passing

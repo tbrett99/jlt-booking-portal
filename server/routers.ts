@@ -98,8 +98,20 @@ import {
   updateReimbursementStatus,
   scheduleReimbursementsForBooking,
   getReimbursementDashboardStats,
+  getImapConfig,
+  upsertImapConfig,
+  getCachedEmailCount,
+  getLastImportTime,
+  createInboxAuditLog,
+  listInboxAuditLogs,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
+import {
+  searchCachedEmails,
+  importInbox,
+  encryptPassword,
+  decryptPassword,
+} from "./imap";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
@@ -2353,6 +2365,196 @@ export const appRouter = router({
     outstandingCount: adminProcedure.query(async () => {
       const { getOutstandingReimbursementsCount } = await import("./db");
       return getOutstandingReimbursementsCount();
+    }),
+  }),
+
+  // ─── Inbox / Booking Documents ───────────────────────────────────────────────
+  inbox: router({
+    // Admin: get IMAP config (password masked)
+    getConfig: adminProcedure.query(async () => {
+      const config = await getImapConfig();
+      if (!config) return null;
+      return {
+        host: config.host,
+        port: config.port,
+        email: config.email,
+        useSsl: config.useSsl,
+        agentAccessEnabled: config.agentAccessEnabled,
+        isConfigured: !!config.host,
+        updatedAt: config.updatedAt,
+      };
+    }),
+
+    // Admin: save IMAP config (encrypts password)
+    saveConfig: adminProcedure
+      .input(
+        z.object({
+          host: z.string().min(1),
+          port: z.number().int().min(1).max(65535),
+          email: z.string().email(),
+          password: z.string().optional(),
+          useSsl: z.boolean(),
+          agentAccessEnabled: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        let passwordEncrypted = "";
+        if (input.password && input.password.length > 0) {
+          passwordEncrypted = encryptPassword(input.password);
+        } else {
+          const existing = await getImapConfig();
+          passwordEncrypted = existing?.passwordEncrypted ?? "";
+        }
+        await upsertImapConfig({
+          host: input.host,
+          port: input.port,
+          email: input.email,
+          passwordEncrypted,
+          useSsl: input.useSsl,
+          agentAccessEnabled: input.agentAccessEnabled ?? false,
+        });
+        return { success: true };
+      }),
+
+    // Admin: test IMAP connection
+    testConnection: adminProcedure
+      .input(
+        z.object({
+          host: z.string().min(1),
+          port: z.number().int(),
+          email: z.string().email(),
+          password: z.string().optional(),
+          useSsl: z.boolean(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        let password = input.password ?? "";
+        if (!password) {
+          const existing = await getImapConfig();
+          password = existing ? decryptPassword(existing.passwordEncrypted) : "";
+        }
+        const imapsLib = await import("imap-simple");
+        try {
+          const conn = await imapsLib.connect({
+            imap: {
+              user: input.email,
+              password,
+              host: input.host,
+              port: input.port,
+              tls: input.useSsl,
+              tlsOptions: { rejectUnauthorized: false },
+              authTimeout: 8000,
+              connTimeout: 10000,
+            },
+          });
+          conn.end();
+          return { success: true, message: "Connection successful" };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { success: false, message: `Connection failed: ${msg}` };
+        }
+      }),
+
+    // Admin: import status
+    importStatus: adminProcedure.query(async () => {
+      const [count, lastImport] = await Promise.all([getCachedEmailCount(), getLastImportTime()]);
+      return {
+        cachedEmailCount: count,
+        lastImportedAt: lastImport,
+      };
+    }),
+
+    // Admin: trigger manual import
+    triggerImport: adminProcedure.mutation(async () => {
+      const config = await getImapConfig();
+      if (!config || !config.host) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "IMAP is not configured. Please configure it first.",
+        });
+      }
+      const password = decryptPassword(config.passwordEncrypted);
+      const imapConn = { host: config.host, port: config.port, email: config.email, password, useSsl: config.useSsl };
+      try {
+        const stats = await importInbox(imapConn);
+        return { success: true, ...stats };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Import failed: ${msg}` });
+      }
+    }),
+
+    // Admin: list audit logs
+    auditLogs: adminProcedure
+      .input(z.object({ limit: z.number().default(100), offset: z.number().default(0) }))
+      .query(async ({ input }) => {
+        return listInboxAuditLogs(input.limit, input.offset);
+      }),
+
+    // Agent/Admin: search booking documents
+    // Agents can only access if agentAccessEnabled is true
+    search: protectedProcedure
+      .input(
+        z.object({
+          guestName: z.string().min(2),
+          departureDate: z.string().min(1),
+          bookingReference: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        // Check feature flag for agents
+        if (ctx.user.role === "agent") {
+          const config = await getImapConfig();
+          if (!config?.agentAccessEnabled) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Booking Documents search is not yet available. Please contact an administrator.",
+            });
+          }
+        }
+
+        const cachedCount = await getCachedEmailCount();
+        if (cachedCount === 0) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "No emails have been imported yet. Please ask an administrator to run an import.",
+          });
+        }
+
+        const results = await searchCachedEmails({
+          guestName: input.guestName,
+          departureDate: input.departureDate,
+          bookingReference: input.bookingReference,
+        });
+
+        // Audit log
+        await createInboxAuditLog({
+          userId: ctx.user.id,
+          guestName: input.guestName,
+          departureDate: input.departureDate,
+          bookingReference: input.bookingReference ?? null,
+          resultsCount: results.length,
+        });
+
+        return results.map((r) => ({
+          uid: r.uid,
+          subject: r.subject,
+          from: r.from,
+          date: r.date,
+          snippet: r.snippet,
+          bodyText: r.bodyText,
+          bodyHtml: r.bodyHtml,
+          attachments: r.attachments,
+          matchReasons: r.matchReasons,
+          score: r.score,
+        }));
+      }),
+
+    // Agent/Admin: check if inbox search is available
+    isAvailable: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role === "admin" || ctx.user.role === "super_admin") return true;
+      const config = await getImapConfig();
+      return config?.agentAccessEnabled ?? false;
     }),
   }),
 });

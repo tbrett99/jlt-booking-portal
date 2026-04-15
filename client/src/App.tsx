@@ -40,6 +40,8 @@ import PortalLayout from "./components/PortalLayout";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ProfilePage from "./pages/ProfilePage";
+import BookingDocuments from "./pages/BookingDocuments";
+import AdminInboxConfig from "./pages/admin/AdminInboxConfig";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 
@@ -96,6 +98,7 @@ function AuthRouter() {
           <Route path="/commissions" component={AgentCommissions} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
+          <Route path="/booking-documents" component={BookingDocuments} />
           <Route path="/profile" component={ProfilePage} />
           <Route component={NotFound} />
         </Switch>
@@ -119,6 +122,7 @@ function AuthRouter() {
           <Route path="/commissions" component={AgentCommissions} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
+          <Route path="/booking-documents" component={BookingDocuments} />
           <Route path="/profile" component={ProfilePage} />
           <Route component={NotFound} />
         </Switch>
@@ -152,6 +156,8 @@ function AuthRouter() {
         <Route path="/admin/tasks" component={AdminTasks} />
         <Route path="/admin/calendar" component={AdminCalendar} />
         <Route path="/admin/reimbursements" component={AdminReimbursements} />
+        <Route path="/booking-documents" component={BookingDocuments} />
+        <Route path="/admin/inbox-config" component={AdminInboxConfig} />
         <Route path="/profile" component={ProfilePage} />
         <Route component={NotFound} />
       </Switch>
