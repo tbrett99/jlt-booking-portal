@@ -1883,10 +1883,22 @@ export async function listInboxAuditLogs(limit = 100, offset = 0) {
   const db = await getDb();
   if (!db) return [];
   const { inboxAuditLogs } = await import("../drizzle/schema");
-  return db
-    .select()
+  const rows = await db
+    .select({
+      id: inboxAuditLogs.id,
+      userId: inboxAuditLogs.userId,
+      guestName: inboxAuditLogs.guestName,
+      departureDate: inboxAuditLogs.departureDate,
+      bookingReference: inboxAuditLogs.bookingReference,
+      resultsCount: inboxAuditLogs.resultsCount,
+      searchedAt: inboxAuditLogs.searchedAt,
+      userName: users.name,
+      userEmail: users.email,
+    })
     .from(inboxAuditLogs)
+    .leftJoin(users, eq(inboxAuditLogs.userId, users.id))
     .orderBy(desc(inboxAuditLogs.searchedAt))
     .limit(limit)
     .offset(offset);
+  return rows;
 }

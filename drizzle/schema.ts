@@ -3,6 +3,7 @@ import {
   int,
   mysqlEnum,
   mysqlTable,
+  mediumtext,
   text,
   timestamp,
   varchar,
@@ -392,8 +393,8 @@ export const cachedEmails = mysqlTable("cached_emails", {
   fromAddress: varchar("fromAddress", { length: 320 }).notNull().default(""),
   fromName: varchar("fromName", { length: 255 }).notNull().default(""),
   emailDate: timestamp("emailDate").notNull(),
-  bodyText: text("bodyText"),
-  bodyHtml: text("bodyHtml"),
+  bodyText: mediumtext("bodyText"),
+  bodyHtml: mediumtext("bodyHtml"),
   snippet: varchar("snippet", { length: 500 }).notNull().default(""),
   hasAttachments: boolean("hasAttachments").notNull().default(false),
   attachmentNames: text("attachmentNames"),   // JSON array of filenames

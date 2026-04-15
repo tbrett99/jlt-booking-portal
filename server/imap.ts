@@ -369,11 +369,14 @@ async function safeConnect(config: ImapConnectionConfig): Promise<imaps.ImapSimp
   });
 }
 
-// ─── Import last 48 hours from IMAP into cache ────────────────────────────────
+// ─── Import emails from IMAP into cache ─────────────────────────────────────
+// By default fetches ALL emails in the mailbox (no date window).
+// Pass sinceDate to restrict to emails received on or after that date.
 
 export async function importInbox(
   config: ImapConnectionConfig,
-  onProgress?: (imported: number, total: number) => void
+  onProgress?: (imported: number, total: number) => void,
+  sinceDate?: Date
 ): Promise<{ imported: number; skipped: number; errors: number }> {
   const connection = await safeConnect(config);
 
@@ -382,15 +385,16 @@ export async function importInbox(
   try {
     await connection.openBox("INBOX");
 
-    // Search for emails from the last 48 hours
-    const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
-    const searchCriteria = [["SINCE", since.toUTCString()]];
+    // Fetch all emails unless a sinceDate is provided
+    const searchCriteria: unknown[] = sinceDate
+      ? [["SINCE", sinceDate.toUTCString()]]
+      : ["ALL"];
     const fetchOptions = {
       bodies: [""],
       struct: true,
     };
 
-    const messages = await connection.search(searchCriteria, fetchOptions);
+    const messages = await connection.search(searchCriteria as Parameters<typeof connection.search>[0], fetchOptions);
     const total = messages.length;
 
     for (let i = 0; i < messages.length; i++) {

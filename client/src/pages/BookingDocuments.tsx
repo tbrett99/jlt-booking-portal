@@ -271,15 +271,15 @@ export default function BookingDocuments() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="bookingRef">Booking Reference <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Label htmlFor="bookingRef">Supplier Reference <span className="text-muted-foreground text-xs">(optional)</span></Label>
               <Input
                 id="bookingRef"
                 value={bookingRef}
                 onChange={(e) => setBookingRef(e.target.value)}
-                placeholder="e.g. supplier booking reference"
+                placeholder="e.g. supplier confirmation number"
                 className="max-w-xs"
               />
-              <p className="text-xs text-muted-foreground">This should be a supplier reference, not a Topdog or PTS reference.</p>
+              <p className="text-xs text-muted-foreground">Enter the supplier's own reference number, not a Topdog or PTS reference.</p>
             </div>
             <Button type="submit" disabled={search.isPending || !guestName.trim() || !departureDate}>
               {search.isPending ? (

@@ -2476,7 +2476,8 @@ export const appRouter = router({
       const password = decryptPassword(config.passwordEncrypted);
       const imapConn = { host: config.host, port: config.port, email: config.email, password, useSsl: config.useSsl };
       try {
-        const stats = await importInbox(imapConn);
+        // Full import — no sinceDate, fetches entire mailbox history
+        const stats = await importInbox(imapConn, undefined, undefined);
         return { success: true, ...stats };
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

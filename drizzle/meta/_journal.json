@@ -183,6 +183,13 @@
       "when": 1776279173383,
       "tag": "0025_friendly_krista_starr",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1776281572089,
+      "tag": "0026_rainy_puck",
+      "breakpoints": true
     }
   ]
 }

@@ -42,6 +42,7 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ProfilePage from "./pages/ProfilePage";
 import BookingDocuments from "./pages/BookingDocuments";
 import AdminInboxConfig from "./pages/admin/AdminInboxConfig";
+import AdminInboxAudit from "./pages/admin/AdminInboxAudit";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 
@@ -158,6 +159,7 @@ function AuthRouter() {
         <Route path="/admin/reimbursements" component={AdminReimbursements} />
         <Route path="/booking-documents" component={BookingDocuments} />
         <Route path="/admin/inbox-config" component={AdminInboxConfig} />
+        <Route path="/admin/inbox-audit" component={AdminInboxAudit} />
         <Route path="/profile" component={ProfilePage} />
         <Route component={NotFound} />
       </Switch>

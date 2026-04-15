@@ -844,3 +844,12 @@
 - [x] Add Inbox Config link to admin sidebar under Admin group
 - [x] Write Vitest unit tests for inbox router (access control, search guards, config masking)
 - [x] All 49 tests passing
+
+## Inbox UX & History (Apr 15 Round 2)
+- [x] Rename "Booking Reference" field to "Supplier Reference" on Booking Documents search page
+- [x] Build admin Inbox Search History page (/admin/inbox-audit) showing who searched, when, and result counts
+- [x] Add Inbox Search History link to admin sidebar under Admin group
+- [x] Extend IMAP import to fetch ALL historic emails (no date window — full mailbox on first run and manual trigger)
+- [x] Incremental 15-min scheduler runs use sinceDate = lastRunAt - 5 min buffer (no missed emails)
+- [x] Alter cached_emails.bodyText and bodyHtml from TEXT to MEDIUMTEXT (fixes large HTML email truncation)
+- [x] All 49 tests passing

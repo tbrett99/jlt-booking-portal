@@ -28,7 +28,7 @@ export function getInboxSchedulerStatus() {
   };
 }
 
-async function runInboxImport() {
+async function runInboxImport(fullImport = false) {
   if (inboxImportRunning) {
     console.log("[InboxScheduler] Import already in progress, skipping");
     return;
@@ -39,16 +39,23 @@ async function runInboxImport() {
     return;
   }
   inboxImportRunning = true;
-  console.log(`[InboxScheduler] Auto-import started at ${new Date().toISOString()}`);
+  // For incremental runs use a sinceDate of (lastRunAt - 5 min buffer) so we don't miss emails
+  // that arrived just before the previous run. For a full import, pass no sinceDate.
+  const sinceDate = fullImport
+    ? undefined
+    : inboxLastRunAt
+      ? new Date(inboxLastRunAt.getTime() - 5 * 60 * 1000)
+      : undefined; // first run ever — fetch everything
+  console.log(
+    `[InboxScheduler] Auto-import started at ${new Date().toISOString()} (${fullImport ? "full" : sinceDate ? `since ${sinceDate.toISOString()}` : "full — first run"})`
+  );
   try {
     const password = decryptPassword(config.passwordEncrypted);
-    const result = await importInbox({
-      host: config.host,
-      port: config.port,
-      email: config.email,
-      password,
-      useSsl: config.useSsl ?? true,
-    });
+    const result = await importInbox(
+      { host: config.host, port: config.port, email: config.email, password, useSsl: config.useSsl ?? true },
+      undefined,
+      sinceDate
+    );
     inboxLastRunAt = new Date();
     inboxLastResult = result;
     console.log(`[InboxScheduler] Done — ${result.imported} new, ${result.skipped} skipped, ${result.errors} errors`);
@@ -60,6 +67,11 @@ async function runInboxImport() {
     inboxImportRunning = false;
     inboxNextRunAt = new Date(Date.now() + 15 * 60 * 1000);
   }
+}
+
+// Exported so the tRPC triggerImport procedure can request a full re-import
+export async function runFullInboxImport() {
+  return runInboxImport(true);
 }
 
 const EXPORT_RECIPIENT = "max@thejltgroup.co.uk";
