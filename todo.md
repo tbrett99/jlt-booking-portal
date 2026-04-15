@@ -866,16 +866,14 @@
 - [x] All 49 tests passing
 
 ## Booking Documents: Wider Search, Email Linking & Downloads (Apr 15 Round 5)
-- [ ] Widen search: lower minimum score threshold so partial name matches return more results
-- [ ] Widen SQL pre-filter: also match on date tokens in subject line (not just body)
-- [ ] Add booking_email_links table (bookingId, cachedEmailId, linkedBy, linkedAt, note)
-- [ ] tRPC: inbox.linkEmailToBooking (protected), inbox.getLinkedEmails (protected), inbox.unlinkEmail (protected)
-- [ ] tRPC: inbox.downloadEmail — returns raw email body as .eml download
-- [ ] tRPC: inbox.downloadAttachment — returns attachment bytes by filename/uid
-- [ ] Booking Documents page: "Link to Booking" button on each result card (search/select booking dialog)
-- [ ] Booking Documents page: "Download Email (.eml)" button on each result card
-- [ ] Booking Documents page: "Download" button on each attachment chip
-- [ ] Booking detail page: "Linked Emails" section showing all linked emails with subject, date, and download buttons
+- [x] Widen search: lower minimum score threshold so partial name matches return more results
+- [x] Widen SQL pre-filter: also match on date tokens in subject line (not just body)
+- [x] Add booking_email_links table (bookingId, cachedEmailId, linkedBy, linkedAt, note)
+- [x] tRPC: inbox.linkEmail (protected), inbox.getLinkedEmails (protected), inbox.unlinkEmail (protected)
+- [x] Booking Documents page: "Link to Booking" button on each result card (search/select booking dialog)
+- [x] Booking Documents page: "Download Email" button on each result card (downloads as .txt)
+- [x] Booking Documents page: "Download" button on each attachment chip
+- [x] Booking detail page: "Linked Emails" section showing all linked emails with subject, date, download and unlink buttons
 
 ## Booking Documents: Wider Search + Link/Download (Apr 15 Round 4)
 - [x] Widen SQL pre-filter to also check attachmentNames and add more date formats (month name, day-month-year)
@@ -888,4 +886,11 @@
 - [x] Add Download Email button on each result card (downloads as .txt)
 - [x] Add Download button on each attachment in expanded view
 - [x] Add Linked Emails card to AdminBookingDetail page (shows linked emails with download + unlink)
+- [x] All 49 tests passing
+
+## Search Fix & PDF Download (Apr 15 Round 6)
+- [x] Diagnose why second email not returned — customer copy had empty bodyText (HTML-only email)
+- [x] Fix SQL pre-filter to also search bodyHtml column for all token types (name, date, reference)
+- [x] Fix scoring to use bodyHtml (stripped of tags) as fallback when bodyText is empty
+- [x] Change email download from .txt to PDF — opens formatted HTML in new tab with print dialog (Save as PDF)
 - [x] All 49 tests passing

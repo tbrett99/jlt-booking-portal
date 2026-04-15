@@ -202,7 +202,11 @@ function scoreEmail(
   dateWindow: Date[]
 ): EmailResult | null {
   const { guestName, bookingReference } = params;
-  const corpus = [raw.subject, raw.fromText, raw.bodyText, ...raw.pdfTexts].join(" ");
+  // Use bodyHtml (stripped of tags) as fallback when bodyText is empty
+  const bodyForScoring = raw.bodyText.trim()
+    ? raw.bodyText
+    : raw.bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const corpus = [raw.subject, raw.fromText, bodyForScoring, ...raw.pdfTexts].join(" ");
   const normRef = bookingReference ? normalise(bookingReference) : null;
 
   const matchReasons: MatchReason[] = [];

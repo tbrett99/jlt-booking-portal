@@ -181,22 +181,56 @@ function EmailCard({ result }: { result: EmailResult }) {
 
   // Download email as a plain-text .txt file (body text)
   const handleDownloadEmail = useCallback(() => {
-    const header = [
-      `Subject: ${result.subject}`,
-      `From: ${result.from}`,
-      `Date: ${result.date ? format(new Date(result.date), "d MMM yyyy HH:mm") : ""}`,
-      "",
-    ].join("\n");
-    const body = result.bodyText || "(no plain-text body)";
-    const blob = new Blob([header + body], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const safeName = (result.subject || "email").replace(/[^a-z0-9]/gi, "_").slice(0, 60);
-    a.download = `${safeName}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("Email downloaded.");
+    const dateStr = result.date ? format(new Date(result.date), "d MMM yyyy HH:mm") : "";
+    // Use HTML body if available, otherwise fall back to plain text wrapped in <pre>
+    const bodyContent = result.bodyHtml
+      ? result.bodyHtml
+      : `<pre style="font-family:sans-serif;white-space:pre-wrap;">${result.bodyText || "(no body)"}</pre>`;
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${result.subject || "Email"}</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+  .email-header { background: #f5f5f5; border-bottom: 2px solid #ddd; padding: 16px 24px; margin-bottom: 16px; }
+  .email-header h2 { margin: 0 0 8px; font-size: 16px; color: #111; }
+  .email-header p { margin: 2px 0; font-size: 13px; color: #555; }
+  .email-body { padding: 0 24px 24px; }
+  @media print { .email-header { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="email-header">
+  <h2>${result.subject || "(no subject)"}</h2>
+  <p><strong>From:</strong> ${result.from}</p>
+  <p><strong>Date:</strong> ${dateStr}</p>
+</div>
+<div class="email-body">${bodyContent}</div>
+</body>
+</html>`;
+    const printWin = window.open("", "_blank");
+    if (!printWin) {
+      toast.error("Pop-up blocked — please allow pop-ups for this site to download emails as PDF.");
+      return;
+    }
+    printWin.document.write(html);
+    printWin.document.close();
+    // Wait for images/styles to load before triggering print
+    printWin.onload = () => {
+      setTimeout(() => {
+        printWin.focus();
+        printWin.print();
+      }, 400);
+    };
+    // Fallback if onload doesn't fire (e.g. no external resources)
+    setTimeout(() => {
+      if (!printWin.closed) {
+        printWin.focus();
+        printWin.print();
+      }
+    }, 1200);
+    toast.success("Email opened — use your browser's Save as PDF option.");
   }, [result]);
 
   // Download an attachment directly from its S3 URL

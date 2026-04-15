@@ -1853,23 +1853,25 @@ export async function searchCachedEmailsByKeywords(
   const { cachedEmails } = await import("../drizzle/schema");
   const { sql, or } = await import("drizzle-orm");
 
-  // Build LIKE conditions for name tokens (check subject, bodyText, snippet, attachmentNames)
+  // Build LIKE conditions for name tokens (check subject, bodyText, bodyHtml, snippet, attachmentNames)
   const nameConds = nameTokens
     .filter((t) => t.length >= 3)
     .flatMap((t) => [
       sql`LOWER(${cachedEmails.subject}) LIKE ${`%${t.toLowerCase()}%`}`,
-      sql`LOWER(${cachedEmails.bodyText}) LIKE ${`%${t.toLowerCase()}%`}`,
-      sql`LOWER(${cachedEmails.snippet}) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(COALESCE(${cachedEmails.bodyText}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(COALESCE(${cachedEmails.bodyHtml}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(COALESCE(${cachedEmails.snippet}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
       sql`LOWER(COALESCE(${cachedEmails.attachmentNames}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
     ]);
 
   // Build LIKE conditions for date tokens (e.g. "22 jul", "22/07", "2026-07-22", "20 May")
-  // Also search subject so emails with the date in the subject line are caught
+  // Also search subject and bodyHtml so emails with the date only in HTML are caught
   const dateConds = dateTokens
     .filter((t) => t.length >= 4)
     .flatMap((t) => [
       sql`LOWER(${cachedEmails.subject}) LIKE ${`%${t.toLowerCase()}%`}`,
-      sql`LOWER(${cachedEmails.bodyText}) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(COALESCE(${cachedEmails.bodyText}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(COALESCE(${cachedEmails.bodyHtml}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
       sql`LOWER(COALESCE(${cachedEmails.attachmentNames}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
     ]);
 
@@ -1877,7 +1879,8 @@ export async function searchCachedEmailsByKeywords(
   const refConds = bookingReference && bookingReference.length >= 3
     ? [
         sql`LOWER(${cachedEmails.subject}) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
-        sql`LOWER(${cachedEmails.bodyText}) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
+        sql`LOWER(COALESCE(${cachedEmails.bodyText}, '')) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
+        sql`LOWER(COALESCE(${cachedEmails.bodyHtml}, '')) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
         sql`LOWER(COALESCE(${cachedEmails.attachmentNames}, '')) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
       ]
     : [];
