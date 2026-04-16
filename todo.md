@@ -1068,13 +1068,29 @@
 - [x] Route wired in App.tsx
 
 ## Agent CRM Revamp (Apr 2026)
-- [ ] DB: add agentStatus column to agent_crm_profiles (active, paused, in_notice, cancelled)
-- [ ] DB: remove dirty imported tags (active-booking-reg, agents_import_*, member, business class, first class, dd 1st, dd 15th, dd 28th)
-- [ ] DB: migrate membershipTier from tags to the existing membershipTier column where missing
-- [ ] DB: add structured profile fields: businessName, retailerCode, introducedBy, dateJoined, monthlySub, internalNotes (replace adminNotes)
-- [ ] Backend: update agentCrm.updateProfile procedure to accept new fields
-- [ ] Frontend: replace supplier logins tab with supplier access selector (8 fixed suppliers: Easyjet, Major Travel, MSC, NCL, Every Holiday, Holiday Best, Ace Rooms, Koveli)
-- [ ] Frontend: add agentStatus dropdown to profile (Active, Paused, In Notice, Cancelled)
-- [ ] Frontend: membershipTier as dropdown (Business Class, First Class, blank)
-- [ ] Frontend: split admin notes into structured fields (Business Name, Retailer Code, Introduced By, Date Joined, Monthly Sub, Internal Notes)
-- [ ] Frontend: full side sheet redesign — wider, cleaner layout with clear section headers
+- [x] DB: add agentStatus column to agent_crm_profiles (active, paused, in_notice, cancelled)
+- [x] DB: remove dirty imported tags (active-booking-reg, agents_import_*, member, business class, first class, dd 1st, dd 15th, dd 28th)
+- [x] DB: migrate membershipTier from tags to the existing membershipTier column where missing
+- [x] DB: add structured profile fields: businessName, retailerCode, introducedBy, dateJoined, monthlySub, internalNotes (replace adminNotes)
+- [x] Backend: update agentCrm.updateProfile procedure to accept new fields
+- [x] Frontend: replace supplier logins tab with supplier access selector (8 fixed suppliers: Easyjet, Major Travel, MSC, NCL, Every Holiday, Holiday Best, Ace Rooms, Koveli)
+- [x] Frontend: add agentStatus dropdown to profile (Active, Paused, In Notice, Cancelled)
+- [x] Frontend: membershipTier as dropdown (Business Class, First Class, blank)
+- [x] Frontend: split admin notes into structured fields (Business Name, Retailer Code, Introduced By, Date Joined, Monthly Sub, Internal Notes)
+- [x] Frontend: full side sheet redesign — wider, cleaner layout with clear section headers
+
+## CRM–Portal Integration (Apr 2026)
+- [ ] DB: add agent_change_requests table (userId, field, currentValue, requestedValue, status, adminNote, createdAt, reviewedAt, reviewedById)
+- [ ] Backend: agentCrm.getActivity procedure — bookings summary, commission summary, refunds, reimbursements for a given userId
+- [ ] Backend: agentCrm.listChangeRequests (admin) and agentCrm.submitChangeRequest (agent) procedures
+- [ ] Backend: agentCrm.reviewChangeRequest (admin approve/reject + apply) procedure
+- [ ] Admin CRM: Activity tab on agent profile sheet — booking stats, commission stats, refund/reimbursement counts, recent activity feed
+- [ ] Agent portal: My Profile page — read-only view of own CRM data (status, tier, address, bank, suppliers, docs)
+- [ ] Agent portal: Change Request form — agent selects field, enters new value, submits for admin review
+- [ ] Admin: Change Requests page — list of pending/reviewed requests with approve/reject actions
+- [ ] Auto-link: when prospect moved to Won, auto-create/link agent_crm_profile to their portal userId
+- [ ] Sidebar: add My Profile link to agent sidebar nav
+
+## Address Fix (Apr 2026)
+- [ ] Restore address fields (addressLine1, addressLine2, city, postcode) in AgentCrm profile sheet
+- [ ] Auto-populate ukRegion from postcode/city using UK region lookup for all 432 imported agents

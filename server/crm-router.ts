@@ -1010,5 +1010,172 @@ export const crmRouter = router({
         await deleteAgentSupplierLogin(input.id);
         return { success: true };
       }),
+
+    // ── Activity tab — pulls live portal data for a given agent ──────────────
+    getActivity: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const {
+          bookings, commissionClaims, refunds, reimbursementItems,
+        } = await import("../drizzle/schema");
+        const { eq, and, sum, count, desc } = await import("drizzle-orm");
+
+        const [bookingRows, commissionRows, refundRows, reimbRows] = await Promise.all([
+          db.select().from(bookings).where(eq(bookings.agentId, input.userId)).orderBy(desc(bookings.createdAt)).limit(200),
+          db.select().from(commissionClaims).where(eq(commissionClaims.agentId, input.userId)).orderBy(desc(commissionClaims.createdAt)),
+          db.select().from(refunds).where(eq(refunds.agentId, input.userId)).orderBy(desc(refunds.createdAt)),
+          db.select().from(reimbursementItems).where(eq(reimbursementItems.agentId, input.userId)).orderBy(desc(reimbursementItems.createdAt)),
+        ]);
+
+        // Booking stats
+        const totalBookings = bookingRows.length;
+        const activeBookings = bookingRows.filter(b => b.currentStage !== "Cancelled" && b.currentStage !== "Completed").length;
+        const totalBookingValue = bookingRows.reduce((s, b) => s + parseFloat(String(b.grossCost ?? 0)), 0);
+        const lastBookingDate = bookingRows[0]?.createdAt ?? null;
+
+        // Commission stats
+        const totalCommissionClaimed = commissionRows.reduce((s, c) => s + parseFloat(String(c.grossAmount ?? 0)), 0);
+        const totalCommissionPaid = commissionRows.filter(c => c.status === "paid").reduce((s, c) => s + parseFloat(String(c.grossAmount ?? 0)), 0);
+        const commissionOutstanding = totalCommissionClaimed - totalCommissionPaid;
+
+        // Refund stats
+        const totalRefunds = refundRows.length;
+        const completedRefunds = refundRows.filter(r => r.status === "completed").length;
+        const pendingRefunds = refundRows.filter(r => r.status === "pending" || r.status === "processing").length;
+
+        // Reimbursement stats
+        const totalReimb = reimbRows.reduce((s, r) => s + parseFloat(String(r.amount ?? 0)), 0);
+        const paidReimb = reimbRows.filter(r => r.status === "paid").reduce((s, r) => s + parseFloat(String(r.amount ?? 0)), 0);
+        const pendingReimb = reimbRows.filter(r => r.status === "pending" || r.status === "scheduled").reduce((s, r) => s + parseFloat(String(r.amount ?? 0)), 0);
+
+        // Recent activity feed (last 20 events across all tables)
+        const feed: { type: string; label: string; date: Date; meta?: string }[] = [
+          ...bookingRows.slice(0, 10).map(b => ({ type: "booking", label: `Booking: ${b.clientName}`, date: b.createdAt, meta: b.currentStage })),
+          ...commissionRows.slice(0, 5).map(c => ({ type: "commission", label: `Commission claimed`, date: c.claimedAt, meta: c.status === "paid" ? "Paid" : "Pending" })),
+          ...refundRows.slice(0, 5).map(r => ({ type: "refund", label: `Refund request`, date: r.createdAt, meta: r.pipelineStage })),
+        ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 20);
+
+        return {
+          bookings: { total: totalBookings, active: activeBookings, totalValue: totalBookingValue, lastBookingDate },
+          commissions: { totalClaimed: totalCommissionClaimed, totalPaid: totalCommissionPaid, outstanding: commissionOutstanding },
+          refunds: { total: totalRefunds, completed: completedRefunds, pending: pendingRefunds },
+          reimbursements: { total: totalReimb, paid: paidReimb, pending: pendingReimb },
+          recentBookings: bookingRows.slice(0, 10),
+          feed,
+        };
+      }),
+
+    // ── Change Requests ──────────────────────────────────────────────────────
+    submitChangeRequest: protectedProcedure
+      .input(z.object({
+        fieldName: z.string().min(1),
+        fieldLabel: z.string().min(1),
+        currentValue: z.string().optional(),
+        requestedValue: z.string().min(1),
+        reason: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const { agentChangeRequests } = await import("../drizzle/schema");
+        const [result] = await db.insert(agentChangeRequests).values({
+          userId: ctx.user.id,
+          fieldName: input.fieldName,
+          fieldLabel: input.fieldLabel,
+          currentValue: input.currentValue ?? null,
+          requestedValue: input.requestedValue,
+          reason: input.reason ?? null,
+          status: "pending",
+        });
+        return { success: true };
+      }),
+
+    listChangeRequests: adminProcedure
+      .input(z.object({ status: z.enum(["pending", "approved", "rejected", "all"]).default("pending") }).optional())
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) return [];
+        const { agentChangeRequests, users } = await import("../drizzle/schema");
+        const { eq, desc } = await import("drizzle-orm");
+        const statusFilter = input?.status ?? "pending";
+        const rows = await db.select({
+          request: agentChangeRequests,
+          agentName: users.name,
+          agentEmail: users.email,
+        })
+          .from(agentChangeRequests)
+          .leftJoin(users, eq(agentChangeRequests.userId, users.id))
+          .where(statusFilter === "all" ? undefined : eq(agentChangeRequests.status, statusFilter))
+          .orderBy(desc(agentChangeRequests.createdAt));
+        return rows;
+      }),
+
+    getMyChangeRequests: protectedProcedure.query(async ({ ctx }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return [];
+      const { agentChangeRequests } = await import("../drizzle/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      return db.select().from(agentChangeRequests)
+        .where(eq(agentChangeRequests.userId, ctx.user.id))
+        .orderBy(desc(agentChangeRequests.createdAt));
+    }),
+
+    reviewChangeRequest: adminProcedure
+      .input(z.object({
+        id: z.number().int(),
+        action: z.enum(["approve", "reject"]),
+        adminNote: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const { agentChangeRequests } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+
+        // Fetch the request
+        const [req] = await db.select().from(agentChangeRequests).where(eq(agentChangeRequests.id, input.id));
+        if (!req) throw new TRPCError({ code: "NOT_FOUND", message: "Change request not found" });
+
+        const newStatus = input.action === "approve" ? "approved" : "rejected";
+        await db.update(agentChangeRequests)
+          .set({ status: newStatus, adminNote: input.adminNote ?? null, reviewedById: ctx.user.id, reviewedAt: new Date() })
+          .where(eq(agentChangeRequests.id, input.id));
+
+        // If approved, apply the change to the CRM profile
+        if (input.action === "approve") {
+          await upsertAgentCrmProfile(req.userId, { [req.fieldName]: req.requestedValue } as any);
+        }
+
+        // Notify the agent
+        try {
+          await createInAppNotification({
+            userId: req.userId,
+            message: input.action === "approve"
+              ? `Your request to update ${req.fieldLabel} has been approved.`
+              : `Your request to update ${req.fieldLabel} was not approved.${ input.adminNote ? ` Note: ${input.adminNote}` : "" }`,
+            linkUrl: "/my-profile",
+          });
+        } catch {}
+
+        return { success: true };
+      }),
+
+    getMyProfile: protectedProcedure.query(async ({ ctx }) => {
+      const profile = await getAgentCrmProfile(ctx.user.id);
+      const tags = await getAgentTags(ctx.user.id);
+      const supplierLogins = await getAgentSupplierLogins(ctx.user.id);
+      return {
+        profile,
+        tags: tags,
+        suppliers: supplierLogins.map(s => s.supplierName),
+      };
+    }),
   }),
 });

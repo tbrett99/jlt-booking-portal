@@ -55,6 +55,8 @@ import SignContract from "./pages/crm/SignContract";
 import MembershipSelection from "./pages/crm/MembershipSelection";
 import WonAgentPortal from "./pages/crm/WonAgentPortal";
 import AgentCrm from "./pages/crm/AgentCrm";
+import CrmChangeRequests from "./pages/crm/CrmChangeRequests";
+import MyProfile from "./pages/MyProfile";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 
@@ -117,6 +119,7 @@ function AuthRouter() {
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
           <Route path="/booking-documents" component={BookingDocuments} />
+          <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route component={NotFound} />
         </Switch>
@@ -141,6 +144,7 @@ function AuthRouter() {
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
           <Route path="/booking-documents" component={BookingDocuments} />
+          <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route component={NotFound} />
         </Switch>
@@ -185,6 +189,7 @@ function AuthRouter() {
         <Route path="/crm/remittances" component={CrmRemittances} />
         <Route path="/crm/payment-config" component={CrmPaymentConfig} />
         <Route path="/crm/agents" component={AgentCrm} />
+        <Route path="/crm/change-requests" component={CrmChangeRequests} />
         <Route path="/profile" component={ProfilePage} />
         <Route component={NotFound} />
       </Switch>

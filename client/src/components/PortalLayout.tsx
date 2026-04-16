@@ -211,6 +211,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Booking Documents", href: "/booking-documents", icon: <Mail size={16} /> },
       ],
     },
+    {
+      label: "My Account",
+      icon: <UserCheck size={16} />,
+      defaultOpen: false,
+      items: [
+        { label: "My Profile", href: "/my-profile", icon: <UserCheck size={16} /> },
+      ],
+    },
   ];
 
   // ── Admin nav groups ──────────────────────────────────────────────────────
@@ -295,6 +303,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Remittances", href: "/crm/remittances", icon: <Receipt size={16} /> },
         { label: "Payment Config", href: "/crm/payment-config", icon: <PoundSterling size={16} /> },
         { label: "Agent CRM", href: "/crm/agents", icon: <UserCheck size={16} /> },
+        { label: "Change Requests", href: "/crm/change-requests", icon: <ClipboardList size={16} /> },
       ],
     },
     {

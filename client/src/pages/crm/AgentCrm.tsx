@@ -30,10 +30,19 @@ const AGENT_STATUS_OPTIONS = [
   { value: "active", label: "Active", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400" },
   { value: "paused", label: "Paused", color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" },
   { value: "in_notice", label: "In Notice", color: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400" },
+  { value: "suspended", label: "Suspended", color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400" },
   { value: "cancelled", label: "Cancelled", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
 ];
 
-const MEMBERSHIP_TIERS = ["Business Class", "First Class"];
+const MEMBERSHIP_TIERS = [
+  "Business Class",
+  "Business Duo",
+  "Business Trio",
+  "First Class",
+  "First Class Duo",
+  "Economy",
+  "CORE",
+];
 
 const SUPPLIERS = [
   "Easyjet",
@@ -276,8 +285,9 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
         {/* Tabs */}
         <div className="px-6 pt-4">
           <Tabs defaultValue="profile">
-            <TabsList className="grid grid-cols-5 w-full">
+            <TabsList className="grid grid-cols-6 w-full">
               <TabsTrigger value="profile" className="text-xs">Profile</TabsTrigger>
+              <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
               <TabsTrigger value="suppliers" className="text-xs">Suppliers</TabsTrigger>
               <TabsTrigger value="bank" className="text-xs">Bank</TabsTrigger>
               <TabsTrigger value="docs" className="text-xs">Docs</TabsTrigger>
@@ -286,6 +296,9 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
 
             <TabsContent value="profile" className="mt-5 pb-8">
               <ProfileTab userId={agent.id} profile={profile} onRefresh={refresh} />
+            </TabsContent>
+            <TabsContent value="activity" className="mt-5 pb-8">
+              <ActivityTab userId={agent.id} />
             </TabsContent>
             <TabsContent value="suppliers" className="mt-5 pb-8">
               <SupplierAccessTab userId={agent.id} supplierLogins={crmData?.supplierLogins ?? []} onRefresh={refresh} />
@@ -892,6 +905,111 @@ function Field({ label, value, icon, children }: { label: string; value?: string
         {icon && <span className="text-muted-foreground">{icon}</span>}
         {children ?? <p className="text-sm font-medium">{value || <span className="text-muted-foreground font-normal">—</span>}</p>}
       </div>
+    </div>
+  );
+}
+
+function ActivityTab({ userId }: { userId: number }) {
+  const { data, isLoading } = trpc.crm.agentCrm.getActivity.useQuery({ userId });
+
+  if (isLoading) return (
+    <div className="space-y-4">
+      {[1,2,3,4].map(i => <div key={i} className="h-20 rounded-lg bg-muted animate-pulse" />)}
+    </div>
+  );
+
+  if (!data) return <p className="text-sm text-muted-foreground">No activity data available.</p>;
+
+  const fmt = (n: number) => `£${n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  return (
+    <div className="space-y-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-lg border bg-card p-4 space-y-1">
+          <p className="text-xs text-muted-foreground">Total Bookings</p>
+          <p className="text-2xl font-bold">{data.bookings.total}</p>
+          <p className="text-xs text-muted-foreground">{data.bookings.active} active</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4 space-y-1">
+          <p className="text-xs text-muted-foreground">Booking Value</p>
+          <p className="text-2xl font-bold">{fmt(data.bookings.totalValue)}</p>
+          {data.bookings.lastBookingDate && (
+            <p className="text-xs text-muted-foreground">Last: {new Date(data.bookings.lastBookingDate).toLocaleDateString("en-GB")}</p>
+          )}
+        </div>
+        <div className="rounded-lg border bg-card p-4 space-y-1">
+          <p className="text-xs text-muted-foreground">Commission Paid</p>
+          <p className="text-2xl font-bold">{fmt(data.commissions.totalPaid)}</p>
+          <p className="text-xs text-amber-600 dark:text-amber-400">{fmt(data.commissions.outstanding)} outstanding</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4 space-y-1">
+          <p className="text-xs text-muted-foreground">Reimbursements</p>
+          <p className="text-2xl font-bold">{fmt(data.reimbursements.paid)}</p>
+          <p className="text-xs text-muted-foreground">{fmt(data.reimbursements.pending)} pending</p>
+        </div>
+      </div>
+
+      {/* Refunds row */}
+      {data.refunds.total > 0 && (
+        <div className="rounded-lg border bg-card p-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Refund Requests</p>
+            <p className="text-lg font-semibold">{data.refunds.total} total</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">{data.refunds.completed} completed</p>
+            <p className="text-xs text-amber-600 dark:text-amber-400">{data.refunds.pending} pending</p>
+          </div>
+        </div>
+      )}
+
+      {/* Recent bookings */}
+      {data.recentBookings.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Recent Bookings</h3>
+          <div className="space-y-2">
+            {data.recentBookings.map((b: any) => (
+              <div key={b.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                <div>
+                  <p className="font-medium">{b.clientName}</p>
+                  <p className="text-xs text-muted-foreground">{b.bookingType} · {new Date(b.createdAt).toLocaleDateString("en-GB")}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-medium">{fmt(parseFloat(b.grossCost ?? 0))}</p>
+                  <p className="text-xs text-muted-foreground">{b.currentStage}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Activity feed */}
+      {data.feed.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Activity Feed</h3>
+          <div className="space-y-2">
+            {data.feed.map((item: any, i: number) => (
+              <div key={i} className="flex items-start gap-3 text-sm">
+                <div className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${
+                  item.type === "booking" ? "bg-blue-500" :
+                  item.type === "commission" ? "bg-emerald-500" :
+                  item.type === "refund" ? "bg-amber-500" : "bg-muted-foreground"
+                }`} />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{item.label}</p>
+                  <p className="text-xs text-muted-foreground">{item.meta} · {new Date(item.date).toLocaleDateString("en-GB")}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.bookings.total === 0 && data.commissions.totalClaimed === 0 && (
+        <p className="text-sm text-muted-foreground text-center py-8">No portal activity recorded for this agent yet.</p>
+      )}
     </div>
   );
 }

@@ -225,6 +225,13 @@
       "when": 1776367587153,
       "tag": "0031_fair_sprite",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1776371034501,
+      "tag": "0032_stormy_zaran",
+      "breakpoints": true
     }
   ]
 }

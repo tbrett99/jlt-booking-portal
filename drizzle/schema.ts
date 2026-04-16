@@ -734,3 +734,21 @@ export const agentSupplierLogins = mysqlTable("agent_supplier_logins", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type AgentSupplierLogin = typeof agentSupplierLogins.$inferSelect;
+
+// ─── Agent CRM: Change Requests ───────────────────────────────────────────────
+export const agentChangeRequests = mysqlTable("agent_change_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),                                        // FK → users.id (the agent)
+  fieldName: varchar("fieldName", { length: 100 }).notNull(),            // e.g. "addressLine1", "bankSortCode"
+  fieldLabel: varchar("fieldLabel", { length: 150 }).notNull(),          // human-readable label
+  currentValue: text("currentValue"),                                     // current value at time of request
+  requestedValue: text("requestedValue").notNull(),                       // what the agent wants it changed to
+  reason: text("reason"),                                                 // optional reason from agent
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending | approved | rejected
+  adminNote: text("adminNote"),                                           // admin's note on review
+  reviewedById: int("reviewedById"),                                      // FK → users.id (admin who reviewed)
+  reviewedAt: timestamp("reviewedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AgentChangeRequest = typeof agentChangeRequests.$inferSelect;
