@@ -54,6 +54,7 @@ import AgentApplicationForm from "./pages/crm/AgentApplicationForm";
 import SignContract from "./pages/crm/SignContract";
 import MembershipSelection from "./pages/crm/MembershipSelection";
 import WonAgentPortal from "./pages/crm/WonAgentPortal";
+import AgentCrm from "./pages/crm/AgentCrm";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 
@@ -183,6 +184,7 @@ function AuthRouter() {
         <Route path="/crm/campaigns" component={CrmCampaigns} />
         <Route path="/crm/remittances" component={CrmRemittances} />
         <Route path="/crm/payment-config" component={CrmPaymentConfig} />
+        <Route path="/crm/agents" component={AgentCrm} />
         <Route path="/profile" component={ProfilePage} />
         <Route component={NotFound} />
       </Switch>

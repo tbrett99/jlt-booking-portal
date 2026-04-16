@@ -7,7 +7,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -294,6 +294,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Email Campaigns", href: "/crm/campaigns", icon: <Megaphone size={16} /> },
         { label: "Remittances", href: "/crm/remittances", icon: <Receipt size={16} /> },
         { label: "Payment Config", href: "/crm/payment-config", icon: <PoundSterling size={16} /> },
+        { label: "Agent CRM", href: "/crm/agents", icon: <UserCheck size={16} /> },
       ],
     },
     {

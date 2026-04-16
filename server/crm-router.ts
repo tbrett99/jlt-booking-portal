@@ -55,6 +55,21 @@ import { getAllUsers, getUserByEmail } from "./db";
 import { storagePut } from "./storage";
 import { sendDirectEmail } from "./email";
 import { createInAppNotification } from "./db";
+import {
+  listAgentsWithCrm,
+  getAgentCrmProfile,
+  upsertAgentCrmProfile,
+  decryptAgentBankDetails,
+  getAgentTags,
+  addAgentTag,
+  removeAgentTag,
+  getAgentSupplierLogins,
+  addAgentSupplierLogin,
+  updateAgentSupplierLogin,
+  deleteAgentSupplierLogin,
+  decryptSupplierPassword,
+  generateUniqueAgentIdForUser,
+} from "./agent-crm-db";
 
 // ─── Role guards ──────────────────────────────────────────────────────────────
 
@@ -851,6 +866,140 @@ export const crmRouter = router({
         const url = config[key] as string | null;
         if (!url) throw new TRPCError({ code: "NOT_FOUND", message: "Payment link not configured for this option" });
         return { url };
+      }),
+  }),
+
+  // ─── Agent CRM (registered portal agents) ────────────────────────────────
+  agentCrm: router({
+    list: adminProcedure.query(async () => {
+      return listAgentsWithCrm();
+    }),
+
+    get: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .query(async ({ input }) => {
+        const [profile, tags, supplierLogins] = await Promise.all([
+          getAgentCrmProfile(input.userId),
+          getAgentTags(input.userId),
+          getAgentSupplierLogins(input.userId),
+        ]);
+        const decryptedProfile = profile ? await decryptAgentBankDetails(profile) : null;
+        const decryptedLogins = supplierLogins.map((l) => ({
+          ...l,
+          password: decryptSupplierPassword(l),
+        }));
+        return { profile: decryptedProfile, tags, supplierLogins: decryptedLogins };
+      }),
+
+    updateProfile: adminProcedure
+      .input(
+        z.object({
+          userId: z.number().int(),
+          jltEmail: z.string().email().optional().nullable(),
+          personalEmail: z.string().email().optional().nullable(),
+          mobile: z.string().optional().nullable(),
+          addressLine1: z.string().optional().nullable(),
+          addressLine2: z.string().optional().nullable(),
+          city: z.string().optional().nullable(),
+          postcode: z.string().optional().nullable(),
+          ukRegion: z.string().optional().nullable(),
+          bankAccountName: z.string().optional().nullable(),
+          bankSortCode: z.string().optional().nullable(),
+          bankAccountNumber: z.string().optional().nullable(),
+          adminNotes: z.string().optional().nullable(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { userId, ...data } = input;
+        await upsertAgentCrmProfile(userId, data as any);
+        return { success: true };
+      }),
+
+    assignAgentId: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const existing = await getAgentCrmProfile(input.userId);
+        if (existing?.uniqueAgentId) return { uniqueAgentId: existing.uniqueAgentId };
+        const id = await generateUniqueAgentIdForUser();
+        await upsertAgentCrmProfile(input.userId, { uniqueAgentId: id });
+        return { uniqueAgentId: id };
+      }),
+
+    uploadIdDoc: adminProcedure
+      .input(
+        z.object({
+          userId: z.number().int(),
+          fileBase64: z.string(),
+          fileName: z.string(),
+          mimeType: z.string(),
+          docType: z.enum(["id", "proof_of_address"]),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `agent-docs/${input.userId}/${input.docType}-${Date.now()}-${input.fileName}`;
+        const { url } = await storagePut(key, buffer, input.mimeType);
+        if (input.docType === "id") {
+          await upsertAgentCrmProfile(input.userId, { idDocUrl: url, idDocKey: key });
+        } else {
+          await upsertAgentCrmProfile(input.userId, { proofOfAddressUrl: url, proofOfAddressKey: key });
+        }
+        return { url };
+      }),
+
+    addTag: adminProcedure
+      .input(z.object({ userId: z.number().int(), tag: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        await addAgentTag(input.userId, input.tag);
+        return { success: true };
+      }),
+
+    removeTag: adminProcedure
+      .input(z.object({ userId: z.number().int(), tag: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        await removeAgentTag(input.userId, input.tag);
+        return { success: true };
+      }),
+
+    addSupplierLogin: adminProcedure
+      .input(
+        z.object({
+          userId: z.number().int(),
+          supplierName: z.string().min(1),
+          loginUrl: z.string().optional(),
+          username: z.string().optional(),
+          password: z.string().optional(),
+          notes: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { userId, ...data } = input;
+        const id = await addAgentSupplierLogin(userId, data);
+        return { id };
+      }),
+
+    updateSupplierLogin: adminProcedure
+      .input(
+        z.object({
+          id: z.number().int(),
+          supplierName: z.string().optional(),
+          loginUrl: z.string().optional(),
+          username: z.string().optional(),
+          password: z.string().optional(),
+          notes: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateAgentSupplierLogin(id, data);
+        return { success: true };
+      }),
+
+    deleteSupplierLogin: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ input }) => {
+        await deleteAgentSupplierLogin(input.id);
+        return { success: true };
       }),
   }),
 });

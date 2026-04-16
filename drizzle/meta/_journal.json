@@ -204,6 +204,13 @@
       "when": 1776357266786,
       "tag": "0028_lowly_eddie_brock",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "5",
+      "when": 1776360391784,
+      "tag": "0029_material_golden_guardian",
+      "breakpoints": true
     }
   ]
 }

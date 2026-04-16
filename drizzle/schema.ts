@@ -673,3 +673,52 @@ export const paymentConfig = mysqlTable("payment_config", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type PaymentConfig = typeof paymentConfig.$inferSelect;
+
+// ─── Agent CRM: Extended Profile ─────────────────────────────────────────────
+export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(), // FK → users.id
+  uniqueAgentId: varchar("uniqueAgentId", { length: 20 }).unique(), // e.g. JLT-0042
+  jltEmail: varchar("jltEmail", { length: 320 }),
+  personalEmail: varchar("personalEmail", { length: 320 }),
+  mobile: varchar("mobile", { length: 30 }),
+  addressLine1: varchar("addressLine1", { length: 255 }),
+  addressLine2: varchar("addressLine2", { length: 255 }),
+  city: varchar("city", { length: 100 }),
+  postcode: varchar("postcode", { length: 20 }),
+  ukRegion: varchar("ukRegion", { length: 100 }),
+  idDocUrl: text("idDocUrl"),
+  idDocKey: varchar("idDocKey", { length: 500 }),
+  proofOfAddressUrl: text("proofOfAddressUrl"),
+  proofOfAddressKey: varchar("proofOfAddressKey", { length: 500 }),
+  bankAccountName: varchar("bankAccountName", { length: 255 }),
+  bankSortCode: varchar("bankSortCode", { length: 512 }),       // AES-256 encrypted
+  bankAccountNumber: varchar("bankAccountNumber", { length: 512 }), // AES-256 encrypted
+  adminNotes: text("adminNotes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AgentCrmProfile = typeof agentCrmProfiles.$inferSelect;
+
+// ─── Agent CRM: Tags ──────────────────────────────────────────────────────────
+export const agentTags = mysqlTable("agent_tags", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK → users.id
+  tag: varchar("tag", { length: 100 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AgentTag = typeof agentTags.$inferSelect;
+
+// ─── Agent CRM: Supplier Logins ───────────────────────────────────────────────
+export const agentSupplierLogins = mysqlTable("agent_supplier_logins", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK → users.id
+  supplierName: varchar("supplierName", { length: 255 }).notNull(),
+  loginUrl: varchar("loginUrl", { length: 1000 }),
+  username: varchar("username", { length: 255 }),
+  passwordEncrypted: varchar("passwordEncrypted", { length: 512 }), // AES-256 encrypted
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AgentSupplierLogin = typeof agentSupplierLogins.$inferSelect;

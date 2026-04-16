@@ -1050,3 +1050,19 @@
 - [x] Frontend: /admin/crm/agents — list of all portal agents with CRM data
 - [x] Agent CRM profile page: tags, supplier logins manager, bank details, unique ID, JLT email, personal email, address, ID docs
 - [x] Link from existing Users page to agent CRM profile
+
+## Agent CRM (existing registered agents)
+- [x] DB: agent_crm_profiles table (jltEmail, personalEmail, mobile, address, ukRegion, bankAccountName, bankSortCode, bankAccountNumber, uniqueAgentId, idDocUrl, proofOfAddressUrl, adminNotes)
+- [x] DB: agent_tags table (userId, tag)
+- [x] DB: agent_supplier_logins table (userId, supplierName, loginUrl, username, password, notes)
+- [x] tRPC: crm.agentCrm.list — list all registered agents with CRM fields and tags
+- [x] tRPC: crm.agentCrm.get — full CRM profile + supplier logins for one agent
+- [x] tRPC: crm.agentCrm.updateProfile — update all CRM fields
+- [x] tRPC: crm.agentCrm.assignAgentId — auto-generate JLT-XXXX unique agent ID
+- [x] tRPC: crm.agentCrm.addTag / removeTag
+- [x] tRPC: crm.agentCrm.addSupplierLogin / updateSupplierLogin / deleteSupplierLogin
+- [x] tRPC: crm.agentCrm.uploadIdDoc — upload ID doc or proof of address to S3
+- [x] Frontend: /crm/agents — searchable agent list with tag filter
+- [x] Frontend: agent profile sheet with 5 tabs (Profile, Tags, Suppliers, Bank, Docs)
+- [x] Sidebar nav: Agent CRM link under CRM & Recruitment
+- [x] Route wired in App.tsx
