@@ -924,8 +924,9 @@ export const appRouter = router({
         if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
           throw new TRPCError({ code: 'FORBIDDEN' });
         }
-        // Only allowed in "Creating own PTS file" stage
-        if (booking.currentStage !== 'Creating own PTS file') {
+        // Allowed in "Creating own PTS file" stage, OR when ptsRef has not been set yet (e.g. historic imports)
+        const ptsRefMissing = !booking.ptsRef;
+        if (booking.currentStage !== 'Creating own PTS file' && !ptsRefMissing) {
           throw new TRPCError({ code: 'FORBIDDEN', message: 'PTS details can only be edited when the booking is in "Creating own PTS file" stage.' });
         }
         await updateBookingAdminFields(input.bookingId, {

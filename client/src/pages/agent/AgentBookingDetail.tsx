@@ -372,7 +372,7 @@ export default function AgentBookingDetail() {
         <div className={`rounded-xl p-3 border col-span-2 sm:col-span-1 ${booking.ptsRef ? 'border-[#70FFE8]' : booking.currentStage === 'Creating own PTS file' ? 'border-amber-300' : ''}`} style={{ background: booking.ptsRef ? '#ecfdf5' : booking.currentStage === 'Creating own PTS file' ? '#fffbeb' : '#f9fafb' }}>
           <p className="text-xs text-muted-foreground mb-1 font-semibold flex items-center justify-between">
             <span>PTS Ref</span>
-            {booking.currentStage === 'Creating own PTS file' && !editingPts && (
+            {(booking.currentStage === 'Creating own PTS file' || !booking.ptsRef) && !editingPts && (
               <button
                 onClick={() => { setPtsRefInput(booking.ptsRef ?? ""); setPaymentDateInput((booking as any).finalSupplierPaymentDate ? new Date((booking as any).finalSupplierPaymentDate).toISOString().split('T')[0] : ""); setEditingPts(true); }}
                 className="text-[10px] underline opacity-60 hover:opacity-100"
@@ -381,7 +381,7 @@ export default function AgentBookingDetail() {
               </button>
             )}
           </p>
-          {editingPts && booking.currentStage === 'Creating own PTS file' ? (
+          {editingPts ? (
             <div className="space-y-2 mt-1">
               <div>
                 <label className="text-[10px] text-muted-foreground">PTS Reference</label>

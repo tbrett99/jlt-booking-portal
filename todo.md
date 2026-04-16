@@ -923,3 +923,8 @@
 - [x] Fix hardcoded /admin/bookings/:id URL in mention email — corrected to /bookings/:id
 - [x] Fixed all 12 occurrences across routers.ts (email hrefs and in-app notification linkUrls)
 - [x] All 49 tests passing
+
+## PTS Ref Editable Fix (Apr 16)
+- [x] UI: show Add button on PTS Ref card whenever ptsRef is not set (not just in Creating own PTS file stage)
+- [x] Server: relax updatePtsDetails stage guard to allow update when ptsRef is currently empty (historic imports)
+- [x] All 49 tests passing
