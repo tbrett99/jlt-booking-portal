@@ -938,115 +938,115 @@
 ## CRM & Recruitment Pipeline (Apr 16)
 
 ### Phase 1 — Database Schema
-- [ ] DB schema: prospects table (id, firstName, lastName, email, phone, marketingConsent, stage, uniqueAgentId, personalEmail, jltEmail, mobile, address, idDocUrl, proofOfAddressUrl, ukRegion, bankAccountName, bankSortCode [encrypted], bankAccountNumber [encrypted], notes, createdAt, updatedAt)
-- [ ] DB schema: prospect_tags table (id, prospectId, tag)
-- [ ] DB schema: prospect_ar_forms table (id, prospectId, all AR form fields, submittedAt, reviewedAt, reviewedById, reviewStatus: pending/approved/rejected, reviewNotes)
-- [ ] DB schema: prospect_supplier_logins table (id, prospectId, supplierName, username, passwordEncrypted, notes, createdAt)
-- [ ] DB schema: prospect_contracts table (id, prospectId, templateUrl, signedPdfUrl, signerName, signerAddress, signatureDataUrl, signedAt, sentAt, createdAt)
-- [ ] DB schema: contract_templates table (id, name, pdfUrl, uploadedById, isActive, createdAt)
-- [ ] DB schema: email_campaigns table (id, name, subject, bodyHtml, segmentType: all_agents/all_prospects/all_contacts/custom, status: draft/sending/sent, sentAt, sentCount, createdById, createdAt)
-- [ ] DB schema: campaign_sends table (id, campaignId, recipientEmail, recipientName, status: pending/sent/failed, sentAt)
-- [ ] DB schema: commission_remittances table (id, uploadedById, filename, csvUrl, uploadedAt, periodLabel)
-- [ ] DB schema: commission_remittance_items table (id, remittanceId, agentId, agentCode, amount, bookingRef, notes)
-- [ ] DB schema: prospect_pipeline_history table (id, prospectId, fromStage, toStage, movedById, movedAt, note)
-- [ ] DB schema: gocardless_config table (id, businessClassDay1Url, businessClassDay15Url, businessClassDay28Url, firstClassDay1Url, firstClassDay15Url, firstClassDay28Url, stripeJoiningFeeUrl, updatedById, updatedAt)
-- [ ] Generate migration SQL via pnpm drizzle-kit generate
-- [ ] Apply migration via webdev_execute_sql
+- [x] DB schema: prospects table (id, firstName, lastName, email, phone, marketingConsent, stage, uniqueAgentId, personalEmail, jltEmail, mobile, address, idDocUrl, proofOfAddressUrl, ukRegion, bankAccountName, bankSortCode [encrypted], bankAccountNumber [encrypted], notes, createdAt, updatedAt)
+- [x] DB schema: prospect_tags table (id, prospectId, tag)
+- [x] DB schema: prospect_ar_forms table (id, prospectId, all AR form fields, submittedAt, reviewedAt, reviewedById, reviewStatus: pending/approved/rejected, reviewNotes)
+- [x] DB schema: prospect_supplier_logins table (id, prospectId, supplierName, username, passwordEncrypted, notes, createdAt)
+- [x] DB schema: prospect_contracts table (id, prospectId, templateUrl, signedPdfUrl, signerName, signerAddress, signatureDataUrl, signedAt, sentAt, createdAt)
+- [x] DB schema: contract_templates table (id, name, pdfUrl, uploadedById, isActive, createdAt)
+- [x] DB schema: email_campaigns table (id, name, subject, bodyHtml, segmentType: all_agents/all_prospects/all_contacts/custom, status: draft/sending/sent, sentAt, sentCount, createdById, createdAt)
+- [x] DB schema: campaign_sends table (id, campaignId, recipientEmail, recipientName, status: pending/sent/failed, sentAt)
+- [x] DB schema: commission_remittances table (id, uploadedById, filename, csvUrl, uploadedAt, periodLabel)
+- [x] DB schema: commission_remittance_items table (id, remittanceId, agentId, agentCode, amount, bookingRef, notes)
+- [x] DB schema: prospect_pipeline_history table (id, prospectId, fromStage, toStage, movedById, movedAt, note)
+- [x] DB schema: gocardless_config table (id, businessClassDay1Url, businessClassDay15Url, businessClassDay28Url, firstClassDay1Url, firstClassDay15Url, firstClassDay28Url, stripeJoiningFeeUrl, updatedById, updatedAt)
+- [x] Generate migration SQL via pnpm drizzle-kit generate
+- [x] Apply migration via webdev_execute_sql
 
 ### Phase 2 — Recruitment Pipeline Kanban (Admin)
-- [ ] tRPC: crm.listProspects (admin), crm.getProspect (admin), crm.createProspect (admin), crm.updateProspect (admin), crm.moveStage (admin), crm.deleteProspect (admin)
-- [ ] tRPC: crm.addTag, crm.removeTag, crm.getPipelineHistory
-- [ ] Frontend: /admin/crm — Kanban board with 8 stages: New Enquiry / AR Submitted / AR Approved / Discovery Call Booked / Approved / Rejected / Lost / Won
-- [ ] Kanban cards: show name, email, phone, tags, days in stage badge
-- [ ] Prospect profile drawer/modal: full details, tags, AR form response, pipeline history, supplier logins, bank details, contract status, notes
-- [ ] Admin can manually create a prospect and move between stages
-- [ ] Stage move confirmation dialog with optional note
-- [ ] Add CRM link to admin sidebar
+- [x] tRPC: crm.listProspects (admin), crm.getProspect (admin), crm.createProspect (admin), crm.updateProspect (admin), crm.moveStage (admin), crm.deleteProspect (admin)
+- [x] tRPC: crm.addTag, crm.removeTag, crm.getPipelineHistory
+- [x] Frontend: /admin/crm — Kanban board with 8 stages: New Enquiry / AR Submitted / AR Approved / Discovery Call Booked / Approved / Rejected / Lost / Won
+- [x] Kanban cards: show name, email, phone, tags, days in stage badge
+- [x] Prospect profile drawer/modal: full details, tags, AR form response, pipeline history, supplier logins, bank details, contract status, notes
+- [x] Admin can manually create a prospect and move between stages
+- [x] Stage move confirmation dialog with optional note
+- [x] Add CRM link to admin sidebar
 
 ### Phase 3 — Embeddable Enquiry Form
-- [ ] Public CORS-enabled tRPC/REST endpoint: POST /api/public/enquiry (name, email, phone, marketingConsent)
-- [ ] Creates prospect at "New Enquiry" stage
-- [ ] Auto-sends prospectus email (placeholder PDF) to prospect
-- [ ] Auto-sends AR form link in follow-up email
-- [ ] Notifies admin (in-app) of new enquiry
-- [ ] Frontend: /enquiry — standalone embeddable page (no portal chrome, JLT branded)
-- [ ] Embeddable via <iframe> on external website
-- [ ] Success page with next steps message
+- [x] Public CORS-enabled tRPC/REST endpoint: POST /api/public/enquiry (name, email, phone, marketingConsent)
+- [x] Creates prospect at "New Enquiry" stage
+- [x] Auto-sends prospectus email (placeholder PDF) to prospect
+- [x] Auto-sends AR form link in follow-up email
+- [x] Notifies admin (in-app) of new enquiry
+- [x] Frontend: /enquiry — standalone embeddable page (no portal chrome, JLT branded)
+- [x] Embeddable via <iframe> on external website
+- [x] Success page with next steps message
 
 ### Phase 4 — Agent Application Form
-- [ ] Public CORS-enabled endpoint: POST /api/public/ar-form (all fields from Agent Readiness Form)
-- [ ] Requires prospectId or email to link to existing prospect; creates new prospect if not found
-- [ ] Moves prospect to "AR Submitted" stage
-- [ ] Notifies admin of new AR form submission
-- [ ] Frontend: /apply — standalone public page (no portal chrome, JLT branded)
-- [ ] All sections: Background & Experience, Travel Business Plans, Mindset & Readiness, Financial & Tech Readiness, Long-Term Vision, How Did You Hear About Us
-- [ ] All field types: text, textarea, checkbox single, checkbox multi
-- [ ] Success page confirming submission
+- [x] Public CORS-enabled endpoint: POST /api/public/ar-form (all fields from Agent Readiness Form)
+- [x] Requires prospectId or email to link to existing prospect; creates new prospect if not found
+- [x] Moves prospect to "AR Submitted" stage
+- [x] Notifies admin of new AR form submission
+- [x] Frontend: /apply — standalone public page (no portal chrome, JLT branded)
+- [x] All sections: Background & Experience, Travel Business Plans, Mindset & Readiness, Financial & Tech Readiness, Long-Term Vision, How Did You Hear About Us
+- [x] All field types: text, textarea, checkbox single, checkbox multi
+- [x] Success page confirming submission
 
 ### Phase 5 — AR Review Flow (Admin)
-- [ ] tRPC: crm.reviewArForm (admin) — approve or reject with notes
-- [ ] Approve: moves prospect to "AR Approved", sends approval email with discovery call invite
-- [ ] Reject: moves prospect to "Rejected", sends rejection email
-- [ ] After discovery call: admin moves to "Approved" or "Rejected"
-- [ ] Approved: sends email with contract signing link
-- [ ] AR form response visible in full in prospect profile drawer
+- [x] tRPC: crm.reviewArForm (admin) — approve or reject with notes
+- [x] Approve: moves prospect to "AR Approved", sends approval email with discovery call invite
+- [x] Reject: moves prospect to "Rejected", sends rejection email
+- [x] After discovery call: admin moves to "Approved" or "Rejected"
+- [x] Approved: sends email with contract signing link
+- [x] AR form response visible in full in prospect profile drawer
 
 ### Phase 6 — Contract Signing
-- [ ] tRPC: crm.uploadContractTemplate (superAdminProcedure) — uploads PDF to S3, stores in contract_templates
-- [ ] tRPC: crm.getActiveContractTemplate (admin) — returns active template URL
-- [ ] tRPC: crm.sendContractToProspect (admin) — generates secure token, sends email with signing link
-- [ ] tRPC: crm.getContractSigningData (public, token-gated) — returns template URL and prospect name/email
-- [ ] tRPC: crm.signContract (public, token-gated) — accepts signerName, signerAddress, signatureDataUrl, date; generates signed PDF; stores in S3; emails copy to prospect; moves to "Discovery Call Booked" or appropriate stage
-- [ ] Frontend: /sign-contract?token=xxx — standalone public page: shows contract PDF, name/address fields, signature pad (canvas), date, submit
-- [ ] Signed PDF generation: overlay name, address, signature image, date onto contract template PDF (using pdf-lib)
-- [ ] Store signed PDF URL in prospect_contracts table
-- [ ] Admin can view signed contract in prospect profile drawer
+- [x] tRPC: crm.uploadContractTemplate (superAdminProcedure) — uploads PDF to S3, stores in contract_templates
+- [x] tRPC: crm.getActiveContractTemplate (admin) — returns active template URL
+- [x] tRPC: crm.sendContractToProspect (admin) — generates secure token, sends email with signing link
+- [x] tRPC: crm.getContractSigningData (public, token-gated) — returns template URL and prospect name/email
+- [x] tRPC: crm.signContract (public, token-gated) — accepts signerName, signerAddress, signatureDataUrl, date; generates signed PDF; stores in S3; emails copy to prospect; moves to "Discovery Call Booked" or appropriate stage
+- [x] Frontend: /sign-contract?token=xxx — standalone public page: shows contract PDF, name/address fields, signature pad (canvas), date, submit
+- [x] Signed PDF generation: overlay name, address, signature image, date onto contract template PDF (using pdf-lib)
+- [x] Store signed PDF URL in prospect_contracts table
+- [x] Admin can view signed contract in prospect profile drawer
 
 ### Phase 7 — Payment Flow
-- [ ] tRPC: crm.getGoCardlessConfig (public) — returns Stripe joining fee URL and GoCardless mandate links
-- [ ] tRPC: crm.updateGoCardlessConfig (superAdminProcedure) — admin sets all 7 payment links
-- [ ] Frontend: /join/payment — standalone public page: "Complete your joining fee" with Stripe link button (£297)
-- [ ] Frontend: /join/membership — standalone public page: membership tier selector (Business Class £87/mo, First Class £127/mo) + payment date selector (1st, 15th, 28th) → redirects to correct GoCardless mandate link
-- [ ] Admin settings page: GoCardless/Payment links configuration (/admin/payment-config)
-- [ ] When prospect moves to "Won": send email with portal login link + /join/payment link
+- [x] tRPC: crm.getGoCardlessConfig (public) — returns Stripe joining fee URL and GoCardless mandate links
+- [x] tRPC: crm.updateGoCardlessConfig (superAdminProcedure) — admin sets all 7 payment links
+- [x] Frontend: /join/payment — standalone public page: "Complete your joining fee" with Stripe link button (£297)
+- [x] Frontend: /join/membership — standalone public page: membership tier selector (Business Class £87/mo, First Class £127/mo) + payment date selector (1st, 15th, 28th) → redirects to correct GoCardless mandate link
+- [x] Admin settings page: GoCardless/Payment links configuration (/admin/payment-config)
+- [x] When prospect moves to "Won": send email with portal login link + /join/payment link
 
 ### Phase 8 — Won Limited Portal Shell
-- [ ] DB schema: add wonPortalAccess boolean and fullPortalAccess boolean to users (or prospects)
-- [ ] tRPC: crm.approveFullAccess (admin) — upgrades won agent to full portal access
-- [ ] Frontend: /welcome — limited portal view for Won agents (no booking pipeline, no commissions)
-- [ ] Welcome page: placeholder welcome video (YouTube embed), next steps instructions
-- [ ] ID document upload section (front + back of ID, proof of address) → S3 + stored in prospect record
+- [x] DB schema: add wonPortalAccess boolean and fullPortalAccess boolean to users (or prospects)
+- [x] tRPC: crm.approveFullAccess (admin) — upgrades won agent to full portal access
+- [x] Frontend: /welcome — limited portal view for Won agents (no booking pipeline, no commissions)
+- [x] Welcome page: placeholder welcome video (YouTube embed), next steps instructions
+- [x] ID document upload section (front + back of ID, proof of address) → S3 + stored in prospect record
 - [x] Bank details form (account name, sort code, account number) → encrypted in DB
 - [x] UK region dropdown: North West, North East, Yorkshire, East Midlands, West Midlands, East of England, London, South East, South West, Wales, Scotland, Northern Ireland
-- [ ] Progress checklist showing what is complete vs outstanding
-- [ ] Admin can see completion status in prospect profile
+- [x] Progress checklist showing what is complete vs outstanding
+- [x] Admin can see completion status in prospect profile
 
 ### Phase 9 — Bulk Email Campaigns
-- [ ] Install Resend npm package and add RESEND_API_KEY secret
-- [ ] tRPC: campaigns.list (admin), campaigns.create (admin), campaigns.update (admin), campaigns.send (admin), campaigns.getStats (admin)
-- [ ] Frontend: /admin/campaigns — campaign list with status badges and stats
-- [ ] Campaign editor: name, subject, HTML body editor (rich text), segment selector (All Agents / All Prospects / All Contacts / Custom list)
-- [ ] Preview mode: shows rendered email
-- [ ] Send confirmation dialog: shows recipient count
-- [ ] Sending via Resend bulk API (max 500 per send)
-- [ ] campaign_sends table tracks per-recipient status
-- [ ] Add Campaigns link to admin sidebar
+- [x] Install Resend npm package and add RESEND_API_KEY secret
+- [x] tRPC: campaigns.list (admin), campaigns.create (admin), campaigns.update (admin), campaigns.send (admin), campaigns.getStats (admin)
+- [x] Frontend: /admin/campaigns — campaign list with status badges and stats
+- [x] Campaign editor: name, subject, HTML body editor (rich text), segment selector (All Agents / All Prospects / All Contacts / Custom list)
+- [x] Preview mode: shows rendered email
+- [x] Send confirmation dialog: shows recipient count
+- [x] Sending via Resend bulk API (max 500 per send)
+- [x] campaign_sends table tracks per-recipient status
+- [x] Add Campaigns link to admin sidebar
 
 ### Phase 10 — Weekly CSV Commission Remittance Upload
-- [ ] tRPC: remittances.upload (admin) — accepts CSV file, parses rows (agentCode, amount, bookingRef, notes), matches to agents, stores in commission_remittance_items
-- [ ] tRPC: remittances.list (admin) — list all uploads with summary stats
-- [ ] tRPC: remittances.getMyRemittances (agent) — returns remittance items for the logged-in agent
-- [ ] Agent dashboard: "Commission Remittances" section showing latest remittance items with amounts
-- [ ] In-app notification to each affected agent when a new remittance is uploaded
-- [ ] Frontend: /admin/remittances — upload page with CSV preview, column mapping, and confirm
-- [ ] Add Remittances link to admin sidebar
+- [x] tRPC: remittances.upload (admin) — accepts CSV file, parses rows (agentCode, amount, bookingRef, notes), matches to agents, stores in commission_remittance_items
+- [x] tRPC: remittances.list (admin) — list all uploads with summary stats
+- [x] tRPC: remittances.getMyRemittances (agent) — returns remittance items for the logged-in agent
+- [x] Agent dashboard: "Commission Remittances" section showing latest remittance items with amounts
+- [x] In-app notification to each affected agent when a new remittance is uploaded
+- [x] Frontend: /admin/remittances — upload page with CSV preview, column mapping, and confirm
+- [x] Add Remittances link to admin sidebar
 
 ### Phase 11 — Agent Profile CRM (Existing Agents)
-- [ ] tRPC: crm.listAgents (admin) — list all registered portal agents with CRM fields
-- [ ] tRPC: crm.getAgentProfile (admin) — full CRM profile for a portal agent
-- [ ] tRPC: crm.updateAgentProfile (admin) — update CRM fields (tags, supplier logins, bank details, unique ID, JLT email)
-- [ ] tRPC: crm.addSupplierLogin, crm.updateSupplierLogin, crm.deleteSupplierLogin
+- [x] tRPC: crm.listAgents (admin) — list all registered portal agents with CRM fields
+- [x] tRPC: crm.getAgentProfile (admin) — full CRM profile for a portal agent
+- [x] tRPC: crm.updateAgentProfile (admin) — update CRM fields (tags, supplier logins, bank details, unique ID, JLT email)
+- [x] tRPC: crm.addSupplierLogin, crm.updateSupplierLogin, crm.deleteSupplierLogin
 - [x] Unique agent ID: auto-generated on first CRM profile creation (format: JLT-XXXX)
-- [ ] Frontend: /admin/crm/agents — list of all portal agents with CRM data
-- [ ] Agent CRM profile page: tags, supplier logins manager, bank details, unique ID, JLT email, personal email, address, ID docs
-- [ ] Link from existing Users page to agent CRM profile
+- [x] Frontend: /admin/crm/agents — list of all portal agents with CRM data
+- [x] Agent CRM profile page: tags, supplier logins manager, bank details, unique ID, JLT email, personal email, address, ID docs
+- [x] Link from existing Users page to agent CRM profile
