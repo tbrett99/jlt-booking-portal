@@ -138,7 +138,7 @@ function AmendmentCard({
       <CardHeader className="pb-2 pt-3 px-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <Link href={`/bookings/${amendment.bookingId}`}>
+            <Link href={`/bookings/${amendment.bookingId}?from=amendments`}>
               <span className="font-semibold text-sm text-foreground hover:text-[#02E6D2] cursor-pointer block truncate">
                 {amendment.clientName ?? `Booking #${amendment.bookingId}`}
               </span>

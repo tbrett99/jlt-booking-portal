@@ -900,3 +900,15 @@
 - [x] Fix attachment download — att.id was a base64 opaque ID not a URL; now uses att.s3Url directly (public S3 bucket)
 - [x] Add s3Key and s3Url fields to AttachmentMeta interface on both server and client
 - [x] All 49 tests passing
+
+## Pipeline Navigation & Inline Status (Apr 16)
+- [x] Fix back button on AdminBookingDetail to return to the originating pipeline using ?from=amendments or ?from=refunds query param
+- [x] Add inline Amendment Pipeline card to AdminBookingDetail showing all amendments with stage dropdowns and assignee selectors
+- [x] Add inline Refund Pipeline card to AdminBookingDetail showing all refunds with stage dropdowns and assignee selectors
+- [x] Update AdminAmendmentKanban to pass ?from=amendments when linking to /bookings/:id
+- [x] Update AdminRefundKanban to pass ?from=refunds when linking to /bookings/:id
+- [x] Update AdminAmendments list page to pass ?from=amendments when linking to /bookings/:id
+- [x] Update AdminRefunds list page (table + detail dialog) to pass ?from=refunds when linking to /bookings/:id
+- [x] Fix LinkedEmailsCard download to use print-to-PDF (same as BookingDocuments page)
+- [x] Add bodyHtml to getLinkedEmailsForBooking db helper and getLinkedEmails tRPC procedure
+- [x] All 49 tests passing

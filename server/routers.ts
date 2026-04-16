@@ -2608,6 +2608,7 @@ export const appRouter = router({
           fromName: r.fromName,
           emailDate: r.emailDate,
           snippet: r.snippet,
+          bodyHtml: r.bodyHtml ?? "",
           hasAttachments: r.hasAttachments,
           attachmentNames: r.attachmentNames ? JSON.parse(r.attachmentNames) as string[] : [],
           s3Keys: r.s3Keys

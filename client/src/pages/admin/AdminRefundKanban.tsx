@@ -155,7 +155,7 @@ function RefundCard({
       <CardHeader className="pb-2 pt-3 px-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <Link href={`/bookings/${refund.bookingId}`}>
+            <Link href={`/bookings/${refund.bookingId}?from=refunds`}>
               <span className="font-semibold text-sm text-foreground hover:text-[#02E6D2] cursor-pointer block truncate">
                 {refund.clientName ?? `Booking #${refund.bookingId}`}
               </span>

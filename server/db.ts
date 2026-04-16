@@ -2018,6 +2018,7 @@ export async function getLinkedEmailsForBooking(bookingId: number) {
       fromName: cachedEmails.fromName,
       emailDate: cachedEmails.emailDate,
       snippet: cachedEmails.snippet,
+      bodyHtml: cachedEmails.bodyHtml,
       hasAttachments: cachedEmails.hasAttachments,
       attachmentNames: cachedEmails.attachmentNames,
       s3Keys: cachedEmails.s3Keys,

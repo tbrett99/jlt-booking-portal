@@ -74,7 +74,7 @@ export default function AdminAmendments() {
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <Link href={`/bookings/${a.bookingId}`}>
+                            <Link href={`/bookings/${a.bookingId}?from=amendments`}>
                               <span className="font-semibold text-sm hover:underline cursor-pointer" style={{ color: '#02E6D2' }}>
                                 {a.clientName ? `${a.clientName}` : `Booking #${a.bookingId}`}
                               </span>

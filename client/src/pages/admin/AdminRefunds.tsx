@@ -71,7 +71,7 @@ export default function AdminRefunds() {
                   {refunds.map((r: any) => (
                     <tr key={r.id} className="hover:bg-muted/30 transition-colors">
                       <td className="py-3">
-                        <Link href={`/bookings/${r.bookingId}`}>
+                        <Link href={`/bookings/${r.bookingId}?from=refunds`}>
                           <span className="font-medium hover:underline cursor-pointer" style={{ color: '#02E6D2' }}>
                             {r.clientName ?? `Booking #${r.bookingId}`}
                           </span>
@@ -137,7 +137,7 @@ export default function AdminRefunds() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-muted-foreground text-xs">Booking</p>
-                  <Link href={`/bookings/${selectedRefund.bookingId}`}>
+                  <Link href={`/bookings/${selectedRefund.bookingId}?from=refunds`}>
                     <span className="font-medium hover:underline cursor-pointer" style={{ color: '#02E6D2' }}>
                       #{selectedRefund.bookingId}
                     </span>
@@ -231,7 +231,7 @@ export default function AdminRefunds() {
               )}
 
               <div className="flex gap-2 pt-2">
-                <Link href={`/bookings/${selectedRefund.bookingId}`} className="flex-1">
+                <Link href={`/bookings/${selectedRefund.bookingId}?from=refunds`} className="flex-1">
                   <Button variant="outline" size="sm" className="w-full gap-1">
                     <ExternalLink size={12} />View Booking
                   </Button>

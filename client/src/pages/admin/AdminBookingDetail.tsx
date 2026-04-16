@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X, History, ArrowRight, RefreshCw, XCircle, DollarSign, Edit3, Clock, Mail, Paperclip, Download, Link2, Unlink } from "lucide-react";
+import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X, History, ArrowRight, RefreshCw, XCircle, DollarSign, Edit3, Clock, Mail, Paperclip, Download, Link2, Unlink, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
 import CopyableRef from "@/components/CopyableRef";
@@ -50,6 +50,182 @@ function NoteContent({ content }: { content: string }) {
   );
 }
 
+// ─── Amendment Pipeline Card ─────────────────────────────────────────────────
+
+const AMENDMENT_STAGES = ["To Do", "In Progress", "Actioned"] as const;
+type AmendmentStage = (typeof AMENDMENT_STAGES)[number];
+const AMENDMENT_STAGE_COLORS: Record<AmendmentStage, string> = {
+  "To Do": "bg-yellow-100 text-yellow-800 border-yellow-300",
+  "In Progress": "bg-blue-100 text-blue-800 border-blue-300",
+  "Actioned": "bg-green-100 text-green-800 border-green-300",
+};
+
+function AmendmentPipelineCard({
+  amendments,
+  adminUsers,
+  onUpdatePipeline,
+  isPending,
+}: {
+  amendments: any[];
+  adminUsers: any[];
+  onUpdatePipeline: (amendmentId: number, data: { pipelineStage?: AmendmentStage; assignedToId?: number | null }) => void;
+  isPending: boolean;
+}) {
+  if (amendments.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Edit3 size={16} style={{ color: '#7c3aed' }} />
+          Amendments
+          <Badge variant="secondary" className="ml-1">{amendments.length}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {amendments.map((a: any) => {
+          const stage: AmendmentStage = (a.pipelineStage ?? "To Do") as AmendmentStage;
+          return (
+            <div key={a.id} className="border rounded-lg p-3 space-y-2">
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{a.amendmentType ?? "Amendment"}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{a.details ?? a.reason ?? ""}</p>
+                  <p className="text-xs text-muted-foreground">{a.createdAt ? format(new Date(a.createdAt), "d MMM yyyy") : ""}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  {/* Stage selector */}
+                  <Select
+                    value={stage}
+                    onValueChange={(v) => onUpdatePipeline(a.id, { pipelineStage: v as AmendmentStage })}
+                    disabled={isPending}
+                  >
+                    <SelectTrigger className={`h-7 text-xs w-36 border font-medium ${AMENDMENT_STAGE_COLORS[stage]}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AMENDMENT_STAGES.map((s) => (
+                        <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {/* Assignee selector */}
+                  <Select
+                    value={a.assignedToId ? String(a.assignedToId) : "__unassigned__"}
+                    onValueChange={(v) => onUpdatePipeline(a.id, { assignedToId: v === "__unassigned__" ? null : Number(v) })}
+                    disabled={isPending}
+                  >
+                    <SelectTrigger className="h-7 text-xs w-36">
+                      <SelectValue placeholder="Unassigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__unassigned__" className="text-xs">Unassigned</SelectItem>
+                      {adminUsers.map((u: any) => (
+                        <SelectItem key={u.id} value={String(u.id)} className="text-xs">{u.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Refund Pipeline Card ─────────────────────────────────────────────────────
+
+const REFUND_STAGES = [
+  "New Refund Request",
+  "Acknowledged by Supplier",
+  "Refund Sent to PTS",
+  "Refund Received in JLT",
+  "Refund Processed",
+] as const;
+type RefundStage = (typeof REFUND_STAGES)[number];
+const REFUND_STAGE_COLORS: Record<RefundStage, string> = {
+  "New Refund Request": "bg-red-100 text-red-800 border-red-300",
+  "Acknowledged by Supplier": "bg-orange-100 text-orange-800 border-orange-300",
+  "Refund Sent to PTS": "bg-yellow-100 text-yellow-800 border-yellow-300",
+  "Refund Received in JLT": "bg-blue-100 text-blue-800 border-blue-300",
+  "Refund Processed": "bg-green-100 text-green-800 border-green-300",
+};
+
+function RefundPipelineCard({
+  refunds,
+  adminUsers,
+  onUpdatePipeline,
+  isPending,
+}: {
+  refunds: any[];
+  adminUsers: any[];
+  onUpdatePipeline: (refundId: number, data: { pipelineStage?: RefundStage; assignedToId?: number | null }) => void;
+  isPending: boolean;
+}) {
+  if (refunds.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <DollarSign size={16} style={{ color: '#0891b2' }} />
+          Refunds
+          <Badge variant="secondary" className="ml-1">{refunds.length}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {refunds.map((r: any) => {
+          const stage: RefundStage = (r.pipelineStage ?? "New Refund Request") as RefundStage;
+          return (
+            <div key={r.id} className="border rounded-lg p-3 space-y-2">
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{r.refundType ?? "Refund"}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{r.refundReason ?? ""}</p>
+                  <p className="text-xs text-muted-foreground">{r.createdAt ? format(new Date(r.createdAt), "d MMM yyyy") : ""}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  {/* Stage selector */}
+                  <Select
+                    value={stage}
+                    onValueChange={(v) => onUpdatePipeline(r.id, { pipelineStage: v as RefundStage })}
+                    disabled={isPending}
+                  >
+                    <SelectTrigger className={`h-7 text-xs w-44 border font-medium ${REFUND_STAGE_COLORS[stage]}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {REFUND_STAGES.map((s) => (
+                        <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {/* Assignee selector */}
+                  <Select
+                    value={r.assignedToId ? String(r.assignedToId) : "__unassigned__"}
+                    onValueChange={(v) => onUpdatePipeline(r.id, { assignedToId: v === "__unassigned__" ? null : Number(v) })}
+                    disabled={isPending}
+                  >
+                    <SelectTrigger className="h-7 text-xs w-36">
+                      <SelectValue placeholder="Unassigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__unassigned__" className="text-xs">Unassigned</SelectItem>
+                      {adminUsers.map((u: any) => (
+                        <SelectItem key={u.id} value={String(u.id)} className="text-xs">{u.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Linked Emails Card ──────────────────────────────────────────────────────
 
 function LinkedEmailsCard({ bookingId }: { bookingId: number }) {
@@ -68,20 +244,18 @@ function LinkedEmailsCard({ bookingId }: { bookingId: number }) {
   });
 
   function handleDownloadEmail(email: NonNullable<typeof linkedEmails>[number]) {
-    const header = [
-      `Subject: ${email.subject}`,
-      `From: ${email.fromName} <${email.fromAddress}>`,
-      `Date: ${email.emailDate ? format(new Date(email.emailDate), "d MMM yyyy HH:mm") : ""}`,
-      "",
-    ].join("\n");
-    const blob = new Blob([header + (email.snippet || "")], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${(email.subject || "email").replace(/[^a-z0-9]/gi, "_").slice(0, 60)}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("Email downloaded.");
+    const dateStr = email.emailDate ? format(new Date(email.emailDate), "d MMM yyyy HH:mm") : "";
+    const bodyContent = email.bodyHtml
+      ? email.bodyHtml
+      : `<pre style="font-family:sans-serif;white-space:pre-wrap;">${email.snippet || "(no body)"}</pre>`;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${email.subject || "Email"}</title><style>body{font-family:Arial,sans-serif;margin:0;padding:0}.email-header{background:#f5f5f5;border-bottom:2px solid #ddd;padding:16px 24px;margin-bottom:16px}.email-header h2{margin:0 0 8px;font-size:16px;color:#111}.email-header p{margin:2px 0;font-size:13px;color:#555}.email-body{padding:0 24px 24px}@media print{.email-header{break-inside:avoid}}</style></head><body><div class="email-header"><h2>${email.subject || "(no subject)"}</h2><p><strong>From:</strong> ${email.fromName || email.fromAddress}</p><p><strong>Date:</strong> ${dateStr}</p></div><div class="email-body">${bodyContent}</div></body></html>`;
+    const printWin = window.open("", "_blank");
+    if (!printWin) { toast.error("Pop-up blocked — please allow pop-ups to download emails as PDF."); return; }
+    printWin.document.write(html);
+    printWin.document.close();
+    printWin.onload = () => { setTimeout(() => { printWin.focus(); printWin.print(); }, 400); };
+    setTimeout(() => { if (!printWin.closed) { printWin.focus(); printWin.print(); } }, 1200);
+    toast.success("Email opened — use Save as PDF.");
   }
 
   function handleDownloadAttachment(s3Url: string, filename: string) {
@@ -195,6 +369,14 @@ export default function AdminBookingDetail() {
   const bookingId = Number(id);
   const { user } = useAuth();
   const utils = trpc.useUtils();
+  const search = useSearch();
+  const fromParam = new URLSearchParams(search).get("from");
+  const backHref = fromParam === "amendments" ? "/amendments/pipeline"
+    : fromParam === "refunds" ? "/refunds/pipeline"
+    : "/pipeline";
+  const backLabel = fromParam === "amendments" ? "Amendment Pipeline"
+    : fromParam === "refunds" ? "Refund Pipeline"
+    : "Pipeline";
 
   const [sharedNote, setSharedNote] = useState("");
   const [internalNote, setInternalNote] = useState("");
@@ -233,8 +415,16 @@ export default function AdminBookingDetail() {
   const { data: reimbDocs = [] } = trpc.bookings.listReimbDocs.useQuery({ bookingId }, { enabled: !!bookingId });
   const { data: reimbItems = [], refetch: refetchReimbItems } = trpc.reimbursements.getByBooking.useQuery({ bookingId }, { enabled: !!bookingId });
   const { data: stageHistory = [] } = trpc.bookings.pipelineHistory.useQuery({ bookingId }, { enabled: !!bookingId });
-  const { data: amendments = [] } = trpc.amendments.byBooking.useQuery({ bookingId }, { enabled: !!bookingId });
-  const { data: refundsList = [] } = trpc.refunds.byBookingAdmin.useQuery({ bookingId }, { enabled: !!bookingId });
+  const { data: amendments = [], refetch: refetchAmendments } = trpc.amendments.byBooking.useQuery({ bookingId }, { enabled: !!bookingId });
+  const { data: refundsList = [], refetch: refetchRefunds } = trpc.refunds.byBookingAdmin.useQuery({ bookingId }, { enabled: !!bookingId });
+  const updateAmendmentPipeline = trpc.amendments.updatePipeline.useMutation({
+    onSuccess: () => { refetchAmendments(); toast.success('Amendment updated'); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateRefundPipeline = trpc.refunds.updatePipeline.useMutation({
+    onSuccess: () => { refetchRefunds(); toast.success('Refund updated'); },
+    onError: (e) => toast.error(e.message),
+  });
   const { data: cancellationsList = [] } = trpc.cancellations.byBooking.useQuery({ bookingId }, { enabled: !!bookingId });
   const updateReimbStatus = trpc.reimbursements.updateStatus.useMutation({
     onSuccess: () => { refetchReimbItems(); toast.success('Reimbursement status updated'); },
@@ -457,8 +647,8 @@ export default function AdminBookingDetail() {
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
-        <Link href="/pipeline">
-          <Button variant="ghost" size="sm" className="gap-2"><ArrowLeft size={16} />Pipeline</Button>
+        <Link href={backHref}>
+          <Button variant="ghost" size="sm" className="gap-2"><ArrowLeft size={16} />{backLabel}</Button>
         </Link>
         <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold truncate">{booking.clientName}</h1>
@@ -1074,6 +1264,22 @@ export default function AdminBookingDetail() {
           })()}
         </CardContent>
       </Card>
+
+      {/* Amendment Pipeline */}
+      <AmendmentPipelineCard
+        amendments={amendments as any[]}
+        adminUsers={adminUsers}
+        onUpdatePipeline={(amendmentId, data) => updateAmendmentPipeline.mutate({ amendmentId, ...data })}
+        isPending={updateAmendmentPipeline.isPending}
+      />
+
+      {/* Refund Pipeline */}
+      <RefundPipelineCard
+        refunds={refundsList as any[]}
+        adminUsers={adminUsers}
+        onUpdatePipeline={(refundId, data) => updateRefundPipeline.mutate({ refundId, ...data })}
+        isPending={updateRefundPipeline.isPending}
+      />
 
       {/* Linked Emails */}
       <LinkedEmailsCard bookingId={bookingId} />
