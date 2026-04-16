@@ -1066,3 +1066,15 @@
 - [x] Frontend: agent profile sheet with 5 tabs (Profile, Tags, Suppliers, Bank, Docs)
 - [x] Sidebar nav: Agent CRM link under CRM & Recruitment
 - [x] Route wired in App.tsx
+
+## Agent CRM Revamp (Apr 2026)
+- [ ] DB: add agentStatus column to agent_crm_profiles (active, paused, in_notice, cancelled)
+- [ ] DB: remove dirty imported tags (active-booking-reg, agents_import_*, member, business class, first class, dd 1st, dd 15th, dd 28th)
+- [ ] DB: migrate membershipTier from tags to the existing membershipTier column where missing
+- [ ] DB: add structured profile fields: businessName, retailerCode, introducedBy, dateJoined, monthlySub, internalNotes (replace adminNotes)
+- [ ] Backend: update agentCrm.updateProfile procedure to accept new fields
+- [ ] Frontend: replace supplier logins tab with supplier access selector (8 fixed suppliers: Easyjet, Major Travel, MSC, NCL, Every Holiday, Holiday Best, Ace Rooms, Koveli)
+- [ ] Frontend: add agentStatus dropdown to profile (Active, Paused, In Notice, Cancelled)
+- [ ] Frontend: membershipTier as dropdown (Business Class, First Class, blank)
+- [ ] Frontend: split admin notes into structured fields (Business Name, Retailer Code, Introduced By, Date Joined, Monthly Sub, Internal Notes)
+- [ ] Frontend: full side sheet redesign — wider, cleaner layout with clear section headers

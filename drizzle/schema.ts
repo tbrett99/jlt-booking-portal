@@ -698,7 +698,15 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   membershipTier: varchar("membershipTier", { length: 100 }),    // Business Class / First Class
   topdogRetailerName: varchar("topdogRetailerName", { length: 255 }),
   topdogRetailerCode: varchar("topdogRetailerCode", { length: 50 }),
-  adminNotes: text("adminNotes"),
+  // Structured profile fields
+  agentStatus: varchar("agentStatus", { length: 50 }).default("active"),  // active | paused | in_notice | cancelled
+  businessName: varchar("businessName", { length: 255 }),                 // trading/business name
+  retailerCode: varchar("retailerCode", { length: 50 }),                  // supplier retailer code
+  introducedBy: varchar("introducedBy", { length: 255 }),                 // referral source
+  dateJoined: varchar("dateJoined", { length: 30 }),                      // ISO date string
+  monthlySub: varchar("monthlySub", { length: 50 }),                      // e.g. £87 / £127
+  internalNotes: text("internalNotes"),                                   // replaces adminNotes
+  adminNotes: text("adminNotes"),                                         // kept for legacy data
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

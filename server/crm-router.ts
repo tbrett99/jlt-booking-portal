@@ -897,6 +897,7 @@ export const crmRouter = router({
           userId: z.number().int(),
           jltEmail: z.string().email().optional().nullable(),
           personalEmail: z.string().email().optional().nullable(),
+          businessEmail: z.string().email().optional().nullable(),
           mobile: z.string().optional().nullable(),
           addressLine1: z.string().optional().nullable(),
           addressLine2: z.string().optional().nullable(),
@@ -907,6 +908,14 @@ export const crmRouter = router({
           bankSortCode: z.string().optional().nullable(),
           bankAccountNumber: z.string().optional().nullable(),
           adminNotes: z.string().optional().nullable(),
+          agentStatus: z.string().optional().nullable(),
+          membershipTier: z.string().optional().nullable(),
+          businessName: z.string().optional().nullable(),
+          retailerCode: z.string().optional().nullable(),
+          introducedBy: z.string().optional().nullable(),
+          dateJoined: z.string().optional().nullable(),
+          monthlySub: z.string().optional().nullable(),
+          internalNotes: z.string().optional().nullable(),
         })
       )
       .mutation(async ({ input }) => {

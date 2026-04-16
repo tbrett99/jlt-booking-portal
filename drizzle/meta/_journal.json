@@ -218,6 +218,13 @@
       "when": 1776366397227,
       "tag": "0030_square_jubilee",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1776367587153,
+      "tag": "0031_fair_sprite",
+      "breakpoints": true
     }
   ]
 }
