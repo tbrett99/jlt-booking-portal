@@ -918,3 +918,8 @@
 - [x] When pipelineStage = "Actioned": also set status = "actioned", actionedAt = now(), actionedById = ctx.user.id
 - [x] When pipelineStage = "To Do" or "In Progress": also reset status = "pending", actionedAt = null, actionedById = null
 - [x] All 49 tests passing
+
+## Mention Email Link Fix (Apr 16)
+- [x] Fix hardcoded /admin/bookings/:id URL in mention email — corrected to /bookings/:id
+- [x] Fixed all 12 occurrences across routers.ts (email hrefs and in-app notification linkUrls)
+- [x] All 49 tests passing

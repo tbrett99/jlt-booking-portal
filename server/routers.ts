@@ -672,7 +672,7 @@ export const appRouter = router({
             userId: admin.id,
             bookingId: booking?.id,
             message: `New booking registered by ${ctx.user.name}: ${input.clientName}`,
-            linkUrl: `/admin/bookings/${booking?.id}`,
+            linkUrl: `/bookings/${booking?.id}`,
           });
         }
         // System audit note
@@ -731,7 +731,7 @@ export const appRouter = router({
             userId: admin.id,
             bookingId: input.bookingId,
             message: `📎 Reimbursement docs uploaded for booking #${input.bookingId} (${booking.clientName}) by ${ctx.user.name ?? "Agent"} — please set up reimbursement ASAP`,
-            linkUrl: `/admin/bookings/${input.bookingId}`,
+            linkUrl: `/bookings/${input.bookingId}`,
           });
         }
         await sendDirectEmail({
@@ -741,7 +741,7 @@ export const appRouter = router({
           html: `<p>Hi team,</p>
 <p><strong>${ctx.user.name ?? "An agent"}</strong> has uploaded reimbursement documents for booking <strong>#${input.bookingId} — ${booking.clientName}</strong>.</p>
 <p>Please set up the reimbursement as soon as possible.</p>
-<p><a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="background:#70FFE8;color:#414141;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:8px;">View Booking &rarr;</a></p>`,
+<p><a href="https://portal.thejltgroup.co.uk/bookings/${input.bookingId}" style="background:#70FFE8;color:#414141;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:8px;">View Booking &rarr;</a></p>`,
         });
         return { success: true };
       }),
@@ -1223,7 +1223,7 @@ export const appRouter = router({
                   userId: mentioned.id,
                   bookingId: input.bookingId,
                   message: `${ctx.user.name ?? "Admin"} mentioned you in a note on booking "${booking.clientName}"`,
-                  linkUrl: `/admin/bookings/${input.bookingId}`,
+                  linkUrl: `/bookings/${input.bookingId}`,
                 });
                 // Also send email to the mentioned admin (fire-and-forget)
                 if (mentioned.email) {
@@ -1244,7 +1244,7 @@ export const appRouter = router({
                             ${notePreview.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>")}
                           </div>
                           <p style="margin-top:16px;">
-                            <a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">View Booking &rarr;</a>
+                            <a href="https://portal.thejltgroup.co.uk/bookings/${input.bookingId}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">View Booking &rarr;</a>
                           </p>
                         </div>
                         <div style="background:#e8e8e8;padding:12px 20px;border-radius:0 0 8px 8px;font-size:12px;color:#666;">
@@ -1269,7 +1269,7 @@ export const appRouter = router({
                 userId: admin.id,
                 bookingId: input.bookingId,
                 message: `${ctx.user.name} left a note on booking "${booking.clientName}"`,
-                linkUrl: `/admin/bookings/${input.bookingId}`,
+                linkUrl: `/bookings/${input.bookingId}`,
               });
             }
             // Email only the last admin who replied on this booking (or support@ as fallback) — fire-and-forget
@@ -1287,7 +1287,7 @@ export const appRouter = router({
                   <div style="background:#f5f5f5;border-left:4px solid #70FFE8;padding:12px 16px;margin:16px 0;border-radius:4px;">
                     <p style="margin:0;color:#333;">${input.content.replace(/\n/g, '<br>')}</p>
                   </div>
-                  <a href="https://portal.thejltgroup.co.uk/admin/bookings/${input.bookingId}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;margin-top:8px;">View Booking &amp; Reply</a>
+                  <a href="https://portal.thejltgroup.co.uk/bookings/${input.bookingId}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;margin-top:8px;">View Booking &amp; Reply</a>
                   <p style="color:#888;font-size:12px;margin-top:24px;">JLT Group Booking Portal</p>
                 </div>
               `,
@@ -1374,7 +1374,7 @@ export const appRouter = router({
             userId: admin.id,
             bookingId: input.bookingId,
             message: `Amendment submitted for booking "${booking.clientName}" by ${ctx.user.name}`,
-            linkUrl: `/admin/bookings/${input.bookingId}`,
+            linkUrl: `/bookings/${input.bookingId}`,
           });
         }
         // Admin email notification disabled — admins use dashboard + in-app notifications
@@ -1518,7 +1518,7 @@ export const appRouter = router({
             userId: admin.id,
             bookingId: input.bookingId,
             message: `Cancellation requested for booking "${booking.clientName}" by ${ctx.user.name}`,
-            linkUrl: `/admin/bookings/${input.bookingId}`,
+            linkUrl: `/bookings/${input.bookingId}`,
           });
         }
         // Admin email notification disabled — admins use dashboard + in-app notifications
@@ -1816,7 +1816,7 @@ export const appRouter = router({
             userId: admin.id,
             bookingId: input.bookingId,
             message: `Commission claimed by ${ctx.user.name} for booking "${booking.clientName}"`,
-            linkUrl: `/admin/bookings/${input.bookingId}`,
+            linkUrl: `/bookings/${input.bookingId}`,
           });
         }
         return claim;
@@ -2262,7 +2262,7 @@ export const appRouter = router({
             await createInAppNotification({
               userId: admin.id,
               message: `Late reimbursement added to booking #${input.bookingId} (${booking.clientName}) by ${ctx.user.name ?? "agent"}.`,
-              linkUrl: `/admin/bookings/${input.bookingId}`,
+              linkUrl: `/bookings/${input.bookingId}`,
             });
           }
         }
@@ -2314,7 +2314,7 @@ export const appRouter = router({
             await createInAppNotification({
               userId: admin.id,
               message: `Document uploaded for reimbursement "${item.supplierName}" on booking #${input.bookingId}.`,
-              linkUrl: `/admin/bookings/${input.bookingId}`,
+              linkUrl: `/bookings/${input.bookingId}`,
             });
           }
         }
