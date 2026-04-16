@@ -211,6 +211,13 @@
       "when": 1776360391784,
       "tag": "0029_material_golden_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1776366397227,
+      "tag": "0030_square_jubilee",
+      "breakpoints": true
     }
   ]
 }

@@ -25,9 +25,13 @@ type CrmProfile = {
   uniqueAgentId: string | null;
   jltEmail: string | null;
   personalEmail: string | null;
+  businessEmail: string | null;
   mobile: string | null;
   ukRegion: string | null;
   bankAccountName: string | null;
+  membershipTier: string | null;
+  topdogRetailerName: string | null;
+  topdogRetailerCode: string | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   city?: string | null;
@@ -287,8 +291,11 @@ function ProfileTab({ userId, profile, onRefresh }: { userId: number; profile: C
         <div className="grid grid-cols-2 gap-3">
           <InfoRow icon={<Mail className="h-4 w-4" />} label="JLT Email" value={profile?.jltEmail} />
           <InfoRow icon={<Mail className="h-4 w-4" />} label="Personal Email" value={profile?.personalEmail} />
+          <InfoRow icon={<Mail className="h-4 w-4" />} label="Business Email" value={profile?.businessEmail} />
           <InfoRow icon={<Phone className="h-4 w-4" />} label="Mobile" value={profile?.mobile} />
           <InfoRow icon={<MapPin className="h-4 w-4" />} label="Region" value={profile?.ukRegion} />
+          {profile?.membershipTier && <InfoRow icon={<BadgeCheck className="h-4 w-4" />} label="Membership Tier" value={profile.membershipTier} />}
+          {profile?.topdogRetailerCode && <InfoRow icon={<Building2 className="h-4 w-4" />} label="Topdog Retailer" value={`${profile.topdogRetailerName ? profile.topdogRetailerName + ' — ' : ''}Code: ${profile.topdogRetailerCode}`} />}
         </div>
         {(profile?.addressLine1 || profile?.city || profile?.postcode) && (
           <div className="bg-muted/30 rounded-lg p-3 text-sm">

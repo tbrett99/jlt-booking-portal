@@ -694,6 +694,10 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   bankAccountName: varchar("bankAccountName", { length: 255 }),
   bankSortCode: varchar("bankSortCode", { length: 512 }),       // AES-256 encrypted
   bankAccountNumber: varchar("bankAccountNumber", { length: 512 }), // AES-256 encrypted
+  businessEmail: varchar("businessEmail", { length: 320 }),      // IRS/Topdog login email
+  membershipTier: varchar("membershipTier", { length: 100 }),    // Business Class / First Class
+  topdogRetailerName: varchar("topdogRetailerName", { length: 255 }),
+  topdogRetailerCode: varchar("topdogRetailerCode", { length: 50 }),
   adminNotes: text("adminNotes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
