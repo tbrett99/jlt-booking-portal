@@ -1,0 +1,856 @@
+/**
+ * CRM tRPC router — prospects, pipeline, AR forms, contracts, campaigns, remittances, payment config
+ */
+import { router, protectedProcedure, publicProcedure } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import { nanoid } from "nanoid";
+import {
+  createProspect,
+  getProspectById,
+  getProspectByEmail,
+  getAllProspects,
+  updateProspect,
+  deleteProspect,
+  moveProspectStage,
+  getProspectPipelineHistory,
+  getProspectTags,
+  addProspectTag,
+  removeProspectTag,
+  createArForm,
+  getArFormsByProspect,
+  getLatestArForm,
+  reviewArForm,
+  getSupplierLoginsByProspect,
+  addSupplierLogin,
+  updateSupplierLogin,
+  deleteSupplierLogin,
+  getActiveContractTemplate,
+  getAllContractTemplates,
+  createContractTemplate,
+  createProspectContract,
+  getContractByToken,
+  getContractsByProspect,
+  signContract,
+  markContractSent,
+  getAllCampaigns,
+  getCampaignById,
+  createCampaign,
+  updateCampaign,
+  createCampaignSends,
+  updateCampaignSendStatus,
+  getCampaignSends,
+  createRemittance,
+  createRemittanceItems,
+  getAllRemittances,
+  getRemittanceById,
+  getRemittanceItems,
+  getRemittanceItemsByAgent,
+  markRemittanceNotificationSent,
+  getPaymentConfig,
+  upsertPaymentConfig,
+  generateUniqueAgentId,
+} from "./crm-db";
+import { getAllUsers, getUserByEmail } from "./db";
+import { storagePut } from "./storage";
+import { sendDirectEmail } from "./email";
+import { createInAppNotification } from "./db";
+
+// ─── Role guards ──────────────────────────────────────────────────────────────
+
+const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+  }
+  return next({ ctx });
+});
+
+// ─── Prospect stage enum ──────────────────────────────────────────────────────
+
+const PROSPECT_STAGES = [
+  "New Enquiry",
+  "AR Submitted",
+  "AR Approved",
+  "Discovery Call Booked",
+  "Approved",
+  "Rejected",
+  "Lost",
+  "Won",
+] as const;
+
+type ProspectStage = (typeof PROSPECT_STAGES)[number];
+
+// ─── CRM Router ───────────────────────────────────────────────────────────────
+
+export const crmRouter = router({
+  // ── Prospects ──────────────────────────────────────────────────────────────
+
+  prospects: router({
+    list: adminProcedure.query(async () => {
+      const all = await getAllProspects();
+      // Fetch tags for all prospects in one pass
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return all.map((p) => ({ ...p, tags: [] as string[] }));
+      const { prospectTags } = await import("../drizzle/schema");
+      const tagRows = await db.select().from(prospectTags);
+      const tagMap = new Map<number, string[]>();
+      for (const t of tagRows) {
+        if (!tagMap.has(t.prospectId)) tagMap.set(t.prospectId, []);
+        tagMap.get(t.prospectId)!.push(t.tag);
+      }
+      return all.map((p) => ({ ...p, tags: tagMap.get(p.id) ?? [] }));
+    }),
+
+    get: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .query(async ({ input }) => {
+        const p = await getProspectById(input.id);
+        if (!p) throw new TRPCError({ code: "NOT_FOUND", message: "Prospect not found" });
+        const [tags, arForms, contracts, supplierLogins, history] = await Promise.all([
+          getProspectTags(input.id),
+          getArFormsByProspect(input.id),
+          getContractsByProspect(input.id),
+          getSupplierLoginsByProspect(input.id),
+          getProspectPipelineHistory(input.id),
+        ]);
+        return {
+          ...p,
+          tags: tags.map((t) => t.tag),
+          arForms,
+          contracts,
+          supplierLogins,
+          history,
+        };
+      }),
+
+    create: adminProcedure
+      .input(
+        z.object({
+          firstName: z.string().min(1),
+          lastName: z.string().min(1),
+          email: z.string().email(),
+          phone: z.string().optional(),
+          marketingConsent: z.boolean().default(false),
+          source: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const existing = await getProspectByEmail(input.email);
+        if (existing) throw new TRPCError({ code: "CONFLICT", message: "A prospect with this email already exists" });
+        const prospect = await createProspect({
+          ...input,
+          stage: "New Enquiry",
+          source: input.source ?? "manual",
+          createdById: ctx.user.id,
+        });
+        return prospect;
+      }),
+
+    update: adminProcedure
+      .input(
+        z.object({
+          id: z.number().int(),
+          firstName: z.string().min(1).optional(),
+          lastName: z.string().min(1).optional(),
+          email: z.string().email().optional(),
+          phone: z.string().optional().nullable(),
+          mobile: z.string().optional().nullable(),
+          personalEmail: z.string().email().optional().nullable(),
+          jltEmail: z.string().email().optional().nullable(),
+          addressLine1: z.string().optional().nullable(),
+          addressLine2: z.string().optional().nullable(),
+          city: z.string().optional().nullable(),
+          postcode: z.string().optional().nullable(),
+          ukRegion: z.string().optional().nullable(),
+          bankAccountName: z.string().optional().nullable(),
+          bankSortCode: z.string().optional().nullable(),
+          bankAccountNumber: z.string().optional().nullable(),
+          adminNotes: z.string().optional().nullable(),
+          wonPortalAccess: z.boolean().optional(),
+          fullPortalAccess: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        const updated = await updateProspect(id, data);
+        if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Prospect not found" });
+        return updated;
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ input }) => {
+        await deleteProspect(input.id);
+        return { success: true };
+      }),
+
+    moveStage: adminProcedure
+      .input(
+        z.object({
+          id: z.number().int(),
+          stage: z.enum(PROSPECT_STAGES),
+          note: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const updated = await moveProspectStage(input.id, input.stage, ctx.user.id, input.note);
+        // If moved to Won, assign unique agent ID if not already set
+        if (input.stage === "Won" && updated && !updated.uniqueAgentId) {
+          const agentId = await generateUniqueAgentId();
+          await updateProspect(input.id, { uniqueAgentId: agentId, wonPortalAccess: true });
+        }
+        return updated;
+      }),
+
+    assignAgentId: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const agentId = await generateUniqueAgentId();
+        const updated = await updateProspect(input.id, { uniqueAgentId: agentId });
+        return updated;
+      }),
+
+    // Tags
+    addTag: adminProcedure
+      .input(z.object({ prospectId: z.number().int(), tag: z.string().min(1).max(50) }))
+      .mutation(async ({ input }) => {
+        await addProspectTag(input.prospectId, input.tag);
+        return { success: true };
+      }),
+
+    removeTag: adminProcedure
+      .input(z.object({ prospectId: z.number().int(), tag: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        await removeProspectTag(input.prospectId, input.tag);
+        return { success: true };
+      }),
+
+    // Upload ID doc or proof of address
+    uploadDoc: adminProcedure
+      .input(
+        z.object({
+          prospectId: z.number().int(),
+          docType: z.enum(["id", "proofOfAddress"]),
+          fileBase64: z.string(),
+          fileName: z.string(),
+          mimeType: z.string(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const buf = Buffer.from(input.fileBase64, "base64");
+        const ext = input.fileName.split(".").pop() ?? "bin";
+        const key = `crm/docs/${input.prospectId}/${input.docType}-${nanoid(8)}.${ext}`;
+        const { url } = await storagePut(key, buf, input.mimeType);
+        const updateData =
+          input.docType === "id"
+            ? { idDocUrl: url, idDocKey: key }
+            : { proofOfAddressUrl: url, proofOfAddressKey: key };
+        await updateProspect(input.prospectId, updateData);
+        return { url, key };
+      }),
+  }),
+
+  // ── Public enquiry form (embeddable) ───────────────────────────────────────
+
+  enquiry: router({
+    submit: publicProcedure
+      .input(
+        z.object({
+          firstName: z.string().min(1).max(100),
+          lastName: z.string().min(1).max(100),
+          email: z.string().email(),
+          phone: z.string().optional(),
+          marketingConsent: z.boolean().default(false),
+        })
+      )
+      .mutation(async ({ input }) => {
+        // Check for duplicate
+        const existing = await getProspectByEmail(input.email);
+        if (existing) {
+          // Don't reveal the duplicate, just return success silently
+          return { success: true, prospectId: existing.id };
+        }
+        const prospect = await createProspect({
+          ...input,
+          stage: "New Enquiry",
+          source: "enquiry_form",
+        });
+        // Send prospectus email (placeholder until real PDF uploaded)
+        try {
+          await sendDirectEmail({
+            toEmail: input.email,
+            toName: `${input.firstName} ${input.lastName}`,
+            subject: "Welcome to JLT Group — Your Prospectus",
+            html: `<p>Hi ${input.firstName},</p>
+<p>Thank you for your interest in joining the JLT Group travel agency network.</p>
+<p>We're excited to share more about the opportunity with you. Please find attached our prospectus (coming soon — we'll send it shortly).</p>
+<p>In the meantime, we'd love for you to complete our <strong>Agent Application Form</strong> so we can learn more about you:</p>
+<p><a href="${process.env.VITE_OAUTH_PORTAL_URL ?? ""}/apply/${prospect?.id}" style="background:#70FFE8;color:#414141;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">Complete Your Application</a></p>
+<p>If you have any questions, please don't hesitate to get in touch.</p>
+<p>Best regards,<br/>The JLT Group Team</p>`,
+          });
+        } catch (e) {
+          // Non-fatal — log but don't fail the submission
+          console.warn("[CRM] Failed to send prospectus email:", e);
+        }
+        return { success: true, prospectId: prospect?.id };
+      }),
+  }),
+
+  // ── Agent Application (AR) Form ────────────────────────────────────────────
+
+  arForm: router({
+    // Public: submit AR form (prospect fills this in)
+    submit: publicProcedure
+      .input(
+        z.object({
+          prospectId: z.number().int(),
+          whyInterested: z.string().optional(),
+          isSelfEmployed: z.string().optional(),
+          hasTravelExperience: z.string().optional(),
+          travelExperienceDetails: z.string().optional(),
+          currentJob: z.string().optional(),
+          businessGoal12Months: z.string().optional(),
+          travelSpecialisation: z.string().optional(),
+          weeklyHours: z.string().optional(),
+          hasHomeSupport: z.string().optional(),
+          investmentReadiness: z.string().optional(),
+          understandsSelfEmployed: z.string().optional(),
+          biggestHesitation: z.string().optional(),
+          techConfidence: z.string().optional(),
+          financialReadiness: z.string().optional(),
+          twoYearVision: z.string().optional(),
+          hearAboutUs: z.string().optional(),
+          hearAboutUsDetails: z.string().optional(),
+          lookingAtOtherAgencies: z.string().optional(),
+          otherAgenciesDetails: z.string().optional(),
+          confirmationAccepted: z.boolean().default(false),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const prospect = await getProspectById(input.prospectId);
+        if (!prospect) throw new TRPCError({ code: "NOT_FOUND", message: "Prospect not found" });
+        await createArForm(input);
+        // Move to AR Submitted stage
+        await moveProspectStage(input.prospectId, "AR Submitted", null, "AR form submitted by prospect");
+        return { success: true };
+      }),
+
+    // Admin: list AR forms for a prospect
+    list: adminProcedure
+      .input(z.object({ prospectId: z.number().int() }))
+      .query(async ({ input }) => getArFormsByProspect(input.prospectId)),
+
+    // Admin: review (approve/reject) an AR form
+    review: adminProcedure
+      .input(
+        z.object({
+          formId: z.number().int(),
+          prospectId: z.number().int(),
+          reviewStatus: z.enum(["approved", "rejected"]),
+          reviewNotes: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        await reviewArForm(input.formId, input.reviewStatus, input.reviewNotes ?? null, ctx.user.id);
+        const newStage: ProspectStage =
+          input.reviewStatus === "approved" ? "AR Approved" : "Rejected";
+        await moveProspectStage(input.prospectId, newStage, ctx.user.id, input.reviewNotes);
+        return { success: true };
+      }),
+  }),
+
+  // ── Supplier Logins ────────────────────────────────────────────────────────
+
+  supplierLogins: router({
+    list: adminProcedure
+      .input(z.object({ prospectId: z.number().int() }))
+      .query(async ({ input }) => getSupplierLoginsByProspect(input.prospectId)),
+
+    add: adminProcedure
+      .input(
+        z.object({
+          prospectId: z.number().int(),
+          supplierName: z.string().min(1),
+          username: z.string().optional(),
+          password: z.string().optional(),
+          loginUrl: z.string().url().optional(),
+          notes: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const id = await addSupplierLogin(input);
+        return { success: true, id };
+      }),
+
+    update: adminProcedure
+      .input(
+        z.object({
+          id: z.number().int(),
+          supplierName: z.string().optional(),
+          username: z.string().optional(),
+          password: z.string().optional(),
+          loginUrl: z.string().optional(),
+          notes: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateSupplierLogin(id, data);
+        return { success: true };
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ input }) => {
+        await deleteSupplierLogin(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ── Contract Templates ─────────────────────────────────────────────────────
+
+  contractTemplates: router({
+    list: adminProcedure.query(async () => getAllContractTemplates()),
+
+    getActive: adminProcedure.query(async () => getActiveContractTemplate()),
+
+    upload: adminProcedure
+      .input(
+        z.object({
+          name: z.string().min(1),
+          fileBase64: z.string(),
+          fileName: z.string(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const buf = Buffer.from(input.fileBase64, "base64");
+        const key = `crm/contracts/templates/${nanoid(12)}-${input.fileName}`;
+        const { url } = await storagePut(key, buf, "application/pdf");
+        const id = await createContractTemplate({
+          name: input.name,
+          pdfUrl: url,
+          pdfKey: key,
+          uploadedById: ctx.user.id,
+        });
+        return { success: true, id, url };
+      }),
+  }),
+
+  // ── Contract Signing ───────────────────────────────────────────────────────
+
+  contracts: router({
+    // Admin: send signing link to prospect
+    sendSigningLink: adminProcedure
+      .input(
+        z.object({
+          prospectId: z.number().int(),
+          origin: z.string().url(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const prospect = await getProspectById(input.prospectId);
+        if (!prospect) throw new TRPCError({ code: "NOT_FOUND", message: "Prospect not found" });
+        const template = await getActiveContractTemplate();
+        if (!template) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No active contract template. Please upload one first." });
+        const token = nanoid(48);
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+        const contractId = await createProspectContract({
+          prospectId: input.prospectId,
+          templateId: template.id,
+          signingToken: token,
+          signingTokenExpiresAt: expiresAt,
+        });
+        const signingUrl = `${input.origin}/sign-contract/${token}`;
+        // Send email
+        try {
+          await sendDirectEmail({
+            toEmail: prospect.email,
+            toName: `${prospect.firstName} ${prospect.lastName}`,
+            subject: "Your JLT Group Contract — Action Required",
+            html: `<p>Hi ${prospect.firstName},</p>
+<p>Congratulations on being approved to join the JLT Group travel agency network!</p>
+<p>Please review and sign your contract using the link below. This link is valid for 7 days.</p>
+<p><a href="${signingUrl}" style="background:#70FFE8;color:#414141;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">Review & Sign Contract</a></p>
+<p>If you have any questions, please contact us.</p>
+<p>Best regards,<br/>The JLT Group Team</p>`,
+          });
+          await markContractSent(contractId);
+        } catch (e) {
+          console.warn("[CRM] Failed to send contract email:", e);
+        }
+        return { success: true, contractId, signingUrl };
+      }),
+
+    // Public: get contract for signing (by token)
+    getByToken: publicProcedure
+      .input(z.object({ token: z.string() }))
+      .query(async ({ input }) => {
+        const contract = await getContractByToken(input.token);
+        if (!contract) throw new TRPCError({ code: "NOT_FOUND", message: "Contract not found or link has expired" });
+        if (contract.signedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "This contract has already been signed" });
+        if (contract.signingTokenExpiresAt && contract.signingTokenExpiresAt < new Date()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This signing link has expired. Please contact JLT Group." });
+        }
+        // Get template PDF URL
+        const { getAllContractTemplates } = await import("./crm-db");
+        const templates = await getAllContractTemplates();
+        const template = templates.find((t) => t.id === contract.templateId);
+        return {
+          contractId: contract.id,
+          prospectId: contract.prospectId,
+          templatePdfUrl: template?.pdfUrl ?? null,
+          alreadySigned: !!contract.signedAt,
+        };
+      }),
+
+    // Public: submit signed contract
+    sign: publicProcedure
+      .input(
+        z.object({
+          token: z.string(),
+          signerName: z.string().min(1),
+          signerAddress: z.string().min(1),
+          signatureDataUrl: z.string().min(1), // base64 canvas image
+          origin: z.string().url(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const contract = await getContractByToken(input.token);
+        if (!contract) throw new TRPCError({ code: "NOT_FOUND", message: "Contract not found" });
+        if (contract.signedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Already signed" });
+        if (contract.signingTokenExpiresAt && contract.signingTokenExpiresAt < new Date()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Signing link expired" });
+        }
+
+        // Store signature image to S3
+        const sigBuf = Buffer.from(input.signatureDataUrl.replace(/^data:image\/\w+;base64,/, ""), "base64");
+        const sigKey = `crm/contracts/signatures/${contract.id}-${nanoid(8)}.png`;
+        const { url: sigUrl } = await storagePut(sigKey, sigBuf, "image/png");
+
+        // For now store the signature URL as the "signed PDF" — a proper PDF overlay can be added later
+        await signContract(contract.id, {
+          signerName: input.signerName,
+          signerAddress: input.signerAddress,
+          signatureDataUrl: sigUrl,
+          signedPdfUrl: sigUrl, // placeholder until PDF generation is added
+          signedPdfKey: sigKey,
+        });
+
+        // Move prospect to Approved stage
+        const prospect = await getProspectById(contract.prospectId);
+        if (prospect && prospect.stage !== "Approved" && prospect.stage !== "Won") {
+          await moveProspectStage(contract.prospectId, "Approved", null, "Contract signed by prospect");
+        }
+
+        // Email confirmation to prospect
+        if (prospect) {
+          try {
+            const paymentConfig = await getPaymentConfig();
+            const stripeUrl = paymentConfig?.stripeJoiningFeeUrl ?? "#";
+            await sendDirectEmail({
+              toEmail: prospect.email,
+              toName: input.signerName,
+              subject: "Contract Signed — Next Steps",
+              html: `<p>Hi ${input.signerName},</p>
+<p>Thank you for signing your JLT Group contract. A copy has been stored securely.</p>
+<p>Your next step is to pay your joining fee of <strong>£297</strong>. Please click the button below to complete your payment:</p>
+<p><a href="${stripeUrl}" style="background:#70FFE8;color:#414141;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">Pay Joining Fee — £297</a></p>
+<p>Once payment is confirmed, you'll receive access to the JLT Group portal and instructions for your next steps.</p>
+<p>Best regards,<br/>The JLT Group Team</p>`,
+            });
+          } catch (e) {
+            console.warn("[CRM] Failed to send post-sign email:", e);
+          }
+        }
+
+        return { success: true, redirectUrl: `${input.origin}/payment-complete` };
+      }),
+
+    // Admin: list contracts for a prospect
+    list: adminProcedure
+      .input(z.object({ prospectId: z.number().int() }))
+      .query(async ({ input }) => getContractsByProspect(input.prospectId)),
+  }),
+
+  // ── Email Campaigns ────────────────────────────────────────────────────────
+
+  campaigns: router({
+    list: adminProcedure.query(async () => getAllCampaigns()),
+
+    get: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .query(async ({ input }) => {
+        const c = await getCampaignById(input.id);
+        if (!c) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
+        return c;
+      }),
+
+    create: adminProcedure
+      .input(
+        z.object({
+          name: z.string().min(1),
+          subject: z.string().min(1),
+          bodyHtml: z.string().min(1),
+          segmentType: z.enum(["all_agents", "all_prospects", "all_contacts", "won_prospects", "custom"]),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const id = await createCampaign({ ...input, createdById: ctx.user.id });
+        return { success: true, id };
+      }),
+
+    update: adminProcedure
+      .input(
+        z.object({
+          id: z.number().int(),
+          name: z.string().optional(),
+          subject: z.string().optional(),
+          bodyHtml: z.string().optional(),
+          segmentType: z.enum(["all_agents", "all_prospects", "all_contacts", "won_prospects", "custom"]).optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateCampaign(id, data);
+        return { success: true };
+      }),
+
+    // Send a campaign (up to 500 recipients)
+    send: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const campaign = await getCampaignById(input.id);
+        if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
+        if (campaign.status === "sent") throw new TRPCError({ code: "BAD_REQUEST", message: "Campaign already sent" });
+
+        // Build recipient list based on segment
+        const allUsers = await getAllUsers();
+        const allProspects = await (await import("./crm-db")).getAllProspects();
+
+        type Recipient = { email: string; name: string };
+        let recipients: Recipient[] = [];
+
+        if (campaign.segmentType === "all_agents") {
+          recipients = allUsers
+            .filter((u) => u.isActive && u.email)
+            .map((u) => ({ email: u.email!, name: u.name ?? u.email! }));
+        } else if (campaign.segmentType === "all_prospects") {
+          recipients = allProspects
+            .filter((p) => p.email)
+            .map((p) => ({ email: p.email, name: `${p.firstName} ${p.lastName}` }));
+        } else if (campaign.segmentType === "won_prospects") {
+          recipients = allProspects
+            .filter((p) => p.stage === "Won" && p.email)
+            .map((p) => ({ email: p.email, name: `${p.firstName} ${p.lastName}` }));
+        } else {
+          // all_contacts = agents + prospects combined (deduped by email)
+          const emailSet = new Set<string>();
+          const combined: Recipient[] = [];
+          for (const u of allUsers.filter((u) => u.isActive && u.email)) {
+            if (!emailSet.has(u.email!)) {
+              emailSet.add(u.email!);
+              combined.push({ email: u.email!, name: u.name ?? u.email! });
+            }
+          }
+          for (const p of allProspects.filter((p) => p.email)) {
+            if (!emailSet.has(p.email)) {
+              emailSet.add(p.email);
+              combined.push({ email: p.email, name: `${p.firstName} ${p.lastName}` });
+            }
+          }
+          recipients = combined;
+        }
+
+        // Cap at 500
+        recipients = recipients.slice(0, 500);
+
+        // Mark as sending
+        await updateCampaign(input.id, { status: "sending" });
+
+        // Create send records
+        await createCampaignSends(
+          recipients.map((r) => ({
+            campaignId: input.id,
+            recipientEmail: r.email,
+            recipientName: r.name,
+          }))
+        );
+
+        // Send via Resend (or fallback SMTP)
+        const sends = await getCampaignSends(input.id);
+        let sentCount = 0;
+        for (const send of sends) {
+          try {
+            await sendDirectEmail({
+              toEmail: send.recipientEmail,
+              toName: send.recipientName ?? send.recipientEmail,
+              subject: campaign.subject,
+              html: campaign.bodyHtml,
+            });
+            await updateCampaignSendStatus(send.id, "sent");
+            sentCount++;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            await updateCampaignSendStatus(send.id, "failed", msg);
+          }
+        }
+
+        await updateCampaign(input.id, {
+          status: "sent",
+          sentAt: new Date(),
+          sentCount,
+        });
+
+        return { success: true, sentCount };
+      }),
+  }),
+
+  // ── Commission Remittances ─────────────────────────────────────────────────
+
+  remittances: router({
+    list: adminProcedure.query(async () => getAllRemittances()),
+
+    get: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .query(async ({ input }) => {
+        const r = await getRemittanceById(input.id);
+        if (!r) throw new TRPCError({ code: "NOT_FOUND", message: "Remittance not found" });
+        const items = await getRemittanceItems(input.id);
+        return { ...r, items };
+      }),
+
+    // Admin: upload CSV remittance
+    upload: adminProcedure
+      .input(
+        z.object({
+          filename: z.string(),
+          periodLabel: z.string().optional(),
+          csvBase64: z.string(),
+          // Parsed rows from the CSV (client-side parsed)
+          rows: z.array(
+            z.object({
+              agentCode: z.string().optional(),
+              agentName: z.string().optional(),
+              amount: z.string(),
+              bookingRef: z.string().optional(),
+              description: z.string().optional(),
+            })
+          ),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        // Upload CSV to S3
+        const csvBuf = Buffer.from(input.csvBase64, "base64");
+        const csvKey = `crm/remittances/${nanoid(12)}-${input.filename}`;
+        const { url: csvUrl } = await storagePut(csvKey, csvBuf, "text/csv");
+
+        const remittanceId = await createRemittance({
+          uploadedById: ctx.user.id,
+          filename: input.filename,
+          csvUrl,
+          csvKey,
+          periodLabel: input.periodLabel,
+        });
+
+        // Match agents by agentCode (uniqueAgentId)
+        const allUsers = await getAllUsers();
+        const allProspects = await (await import("./crm-db")).getAllProspects();
+
+        const items = input.rows.map((row) => {
+          // Try to match by uniqueAgentId or name
+          const matchedProspect = allProspects.find(
+            (p) =>
+              (row.agentCode && p.uniqueAgentId === row.agentCode) ||
+              (row.agentName && `${p.firstName} ${p.lastName}`.toLowerCase() === row.agentName.toLowerCase())
+          );
+          const matchedUser = allUsers.find(
+            (u) => row.agentName && u.name?.toLowerCase() === row.agentName.toLowerCase()
+          );
+          return {
+            remittanceId,
+            agentId: matchedUser?.id ?? undefined,
+            agentCode: row.agentCode,
+            agentName: row.agentName,
+            amount: row.amount,
+            bookingRef: row.bookingRef,
+            description: row.description,
+          };
+        });
+
+        await createRemittanceItems(items);
+
+        // Send in-app notifications to matched agents
+        for (const item of items) {
+          if (item.agentId) {
+            try {
+              await createInAppNotification({
+                userId: item.agentId,
+                message: `Commission remittance for ${input.periodLabel ?? "this period"} is ready. Amount: £${item.amount}`,
+                linkUrl: "/my-commissions",
+              });
+            } catch (e) {
+              console.warn("[CRM] Failed to send remittance notification:", e);
+            }
+          }
+        }
+
+        return { success: true, remittanceId, itemCount: items.length };
+      }),
+
+    // Agent: get their own remittance items
+    myItems: protectedProcedure.query(async ({ ctx }) => {
+      return getRemittanceItemsByAgent(ctx.user.id);
+    }),
+  }),
+
+  // ── Payment Config ─────────────────────────────────────────────────────────
+
+  paymentConfig: router({
+    get: adminProcedure.query(async () => getPaymentConfig()),
+
+    upsert: adminProcedure
+      .input(
+        z.object({
+          stripeJoiningFeeUrl: z.string().url().optional().nullable(),
+          businessClassDay1Url: z.string().url().optional().nullable(),
+          businessClassDay15Url: z.string().url().optional().nullable(),
+          businessClassDay28Url: z.string().url().optional().nullable(),
+          firstClassDay1Url: z.string().url().optional().nullable(),
+          firstClassDay15Url: z.string().url().optional().nullable(),
+          firstClassDay28Url: z.string().url().optional().nullable(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const config = await upsertPaymentConfig({
+          stripeJoiningFeeUrl: input.stripeJoiningFeeUrl ?? undefined,
+          businessClassDay1Url: input.businessClassDay1Url ?? undefined,
+          businessClassDay15Url: input.businessClassDay15Url ?? undefined,
+          businessClassDay28Url: input.businessClassDay28Url ?? undefined,
+          firstClassDay1Url: input.firstClassDay1Url ?? undefined,
+          firstClassDay15Url: input.firstClassDay15Url ?? undefined,
+          firstClassDay28Url: input.firstClassDay28Url ?? undefined,
+          updatedById: ctx.user.id,
+        });
+        return config;
+      }),
+
+    // Public: get GoCardless redirect URL for chosen tier + payment date
+    getDirectDebitUrl: publicProcedure
+      .input(
+        z.object({
+          tier: z.enum(["business_class", "first_class"]),
+          paymentDay: z.enum(["1", "15", "28"]),
+        })
+      )
+      .query(async ({ input }) => {
+        const config = await getPaymentConfig();
+        if (!config) throw new TRPCError({ code: "NOT_FOUND", message: "Payment configuration not set up yet" });
+        const key = `${input.tier === "business_class" ? "businessClass" : "firstClass"}Day${input.paymentDay}Url` as keyof typeof config;
+        const url = config[key] as string | null;
+        if (!url) throw new TRPCError({ code: "NOT_FOUND", message: "Payment link not configured for this option" });
+        return { url };
+      }),
+  }),
+});

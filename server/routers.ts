@@ -120,6 +120,7 @@ import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, se
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { ENV } from "./_core/env";
+import { crmRouter } from "./crm-router";
 
 // ─── Role middleware ──────────────────────────────────────────────────────────
 
@@ -2374,6 +2375,8 @@ export const appRouter = router({
   }),
 
   // ─── Inbox / Booking Documents ───────────────────────────────────────────────
+  crm: crmRouter,
+
   inbox: router({
     // Admin: get IMAP config (password masked)
     getConfig: adminProcedure.query(async () => {

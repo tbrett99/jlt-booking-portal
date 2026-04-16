@@ -428,3 +428,248 @@ export const bookingEmailLinks = mysqlTable("booking_email_links", {
 });
 export type BookingEmailLink = typeof bookingEmailLinks.$inferSelect;
 export type InsertBookingEmailLink = typeof bookingEmailLinks.$inferInsert;
+
+// ─── CRM: Prospects ───────────────────────────────────────────────────────────
+
+export const prospects = mysqlTable("prospects", {
+  id: int("id").autoincrement().primaryKey(),
+  // Basic contact info (from embeddable enquiry form)
+  firstName: varchar("firstName", { length: 100 }).notNull(),
+  lastName: varchar("lastName", { length: 100 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  phone: varchar("phone", { length: 30 }),
+  marketingConsent: boolean("marketingConsent").default(false).notNull(),
+  // Recruitment pipeline stage
+  stage: mysqlEnum("stage", [
+    "New Enquiry",
+    "AR Submitted",
+    "AR Approved",
+    "Discovery Call Booked",
+    "Approved",
+    "Rejected",
+    "Lost",
+    "Won",
+  ]).default("New Enquiry").notNull(),
+  // Extended CRM profile (filled in over time)
+  uniqueAgentId: varchar("uniqueAgentId", { length: 20 }).unique(), // e.g. JLT-0042
+  personalEmail: varchar("personalEmail", { length: 320 }),
+  jltEmail: varchar("jltEmail", { length: 320 }),
+  mobile: varchar("mobile", { length: 30 }),
+  addressLine1: varchar("addressLine1", { length: 255 }),
+  addressLine2: varchar("addressLine2", { length: 255 }),
+  city: varchar("city", { length: 100 }),
+  postcode: varchar("postcode", { length: 20 }),
+  ukRegion: varchar("ukRegion", { length: 100 }),
+  // ID documents (S3 URLs)
+  idDocUrl: text("idDocUrl"),
+  idDocKey: varchar("idDocKey", { length: 500 }),
+  proofOfAddressUrl: text("proofOfAddressUrl"),
+  proofOfAddressKey: varchar("proofOfAddressKey", { length: 500 }),
+  // Bank details for commission payouts (AES-256 encrypted)
+  bankAccountName: varchar("bankAccountName", { length: 255 }),
+  bankSortCode: varchar("bankSortCode", { length: 512 }),       // encrypted
+  bankAccountNumber: varchar("bankAccountNumber", { length: 512 }), // encrypted
+  // Portal access flags (for Won agents)
+  wonPortalAccess: boolean("wonPortalAccess").default(false).notNull(),
+  fullPortalAccess: boolean("fullPortalAccess").default(false).notNull(),
+  linkedUserId: int("linkedUserId"),  // FK → users.id once they have a portal account
+  // Admin notes
+  adminNotes: text("adminNotes"),
+  // Metadata
+  source: varchar("source", { length: 100 }).default("enquiry_form"), // enquiry_form, manual, import
+  createdById: int("createdById"),  // FK → users.id (null = public form)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Prospect = typeof prospects.$inferSelect;
+export type InsertProspect = typeof prospects.$inferInsert;
+
+// ─── CRM: Prospect Tags ───────────────────────────────────────────────────────
+
+export const prospectTags = mysqlTable("prospect_tags", {
+  id: int("id").autoincrement().primaryKey(),
+  prospectId: int("prospectId").notNull(),  // FK → prospects.id
+  tag: varchar("tag", { length: 100 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ProspectTag = typeof prospectTags.$inferSelect;
+
+// ─── CRM: Prospect Pipeline History ──────────────────────────────────────────
+
+export const prospectPipelineHistory = mysqlTable("prospect_pipeline_history", {
+  id: int("id").autoincrement().primaryKey(),
+  prospectId: int("prospectId").notNull(),  // FK → prospects.id
+  fromStage: varchar("fromStage", { length: 100 }),
+  toStage: varchar("toStage", { length: 100 }).notNull(),
+  movedById: int("movedById"),  // FK → users.id (null = system/public)
+  note: varchar("note", { length: 500 }),
+  movedAt: timestamp("movedAt").defaultNow().notNull(),
+});
+export type ProspectPipelineHistory = typeof prospectPipelineHistory.$inferSelect;
+
+// ─── CRM: Agent Application (AR) Form Responses ───────────────────────────────
+
+export const prospectArForms = mysqlTable("prospect_ar_forms", {
+  id: int("id").autoincrement().primaryKey(),
+  prospectId: int("prospectId").notNull(),  // FK → prospects.id
+  // Section 1: Background & Experience
+  whyInterested: text("whyInterested"),
+  isSelfEmployed: varchar("isSelfEmployed", { length: 10 }),  // Yes/No
+  hasTravelExperience: varchar("hasTravelExperience", { length: 10 }),  // Yes/No
+  travelExperienceDetails: text("travelExperienceDetails"),
+  currentJob: varchar("currentJob", { length: 255 }),
+  // Section 2: Travel Business Plans
+  businessGoal12Months: varchar("businessGoal12Months", { length: 100 }),  // Earn some extra income / Replace my current income / Build a full-time travel business / Not sure yet
+  travelSpecialisation: text("travelSpecialisation"),
+  weeklyHours: varchar("weeklyHours", { length: 50 }),  // Less than 5 hours / 5-10 hours / 10-20 hours / Full time
+  // Section 3: Mindset & Readiness
+  hasHomeSupport: varchar("hasHomeSupport", { length: 20 }),  // Yes/No/Not sure yet
+  investmentReadiness: varchar("investmentReadiness", { length: 100 }),
+  understandsSelfEmployed: varchar("understandsSelfEmployed", { length: 100 }),
+  biggestHesitation: text("biggestHesitation"),
+  // Section 4: Financial & Tech Readiness
+  techConfidence: varchar("techConfidence", { length: 100 }),
+  financialReadiness: varchar("financialReadiness", { length: 100 }),
+  // Section 5: Long-Term Vision
+  twoYearVision: text("twoYearVision"),
+  // Section 6: How Did You Hear About Us
+  hearAboutUs: varchar("hearAboutUs", { length: 255 }),  // comma-separated: Facebook, Instagram, TikTok, Recommended by someone, Other
+  hearAboutUsDetails: varchar("hearAboutUsDetails", { length: 255 }),
+  lookingAtOtherAgencies: varchar("lookingAtOtherAgencies", { length: 10 }),  // Yes/No
+  otherAgenciesDetails: varchar("otherAgenciesDetails", { length: 255 }),
+  confirmationAccepted: boolean("confirmationAccepted").default(false).notNull(),
+  // Admin review
+  reviewStatus: mysqlEnum("reviewStatus", ["pending", "approved", "rejected"]).default("pending").notNull(),
+  reviewNotes: text("reviewNotes"),
+  reviewedById: int("reviewedById"),  // FK → users.id
+  reviewedAt: timestamp("reviewedAt"),
+  submittedAt: timestamp("submittedAt").defaultNow().notNull(),
+});
+export type ProspectArForm = typeof prospectArForms.$inferSelect;
+export type InsertProspectArForm = typeof prospectArForms.$inferInsert;
+
+// ─── CRM: Supplier Logins per Prospect/Agent ─────────────────────────────────
+
+export const prospectSupplierLogins = mysqlTable("prospect_supplier_logins", {
+  id: int("id").autoincrement().primaryKey(),
+  prospectId: int("prospectId").notNull(),  // FK → prospects.id
+  supplierName: varchar("supplierName", { length: 255 }).notNull(),
+  username: varchar("username", { length: 255 }),
+  passwordEncrypted: varchar("passwordEncrypted", { length: 512 }),  // AES-256 encrypted
+  loginUrl: varchar("loginUrl", { length: 500 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ProspectSupplierLogin = typeof prospectSupplierLogins.$inferSelect;
+
+// ─── CRM: Contract Templates ──────────────────────────────────────────────────
+
+export const contractTemplates = mysqlTable("contract_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  pdfUrl: text("pdfUrl").notNull(),
+  pdfKey: varchar("pdfKey", { length: 500 }).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  uploadedById: int("uploadedById").notNull(),  // FK → users.id
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ContractTemplate = typeof contractTemplates.$inferSelect;
+
+// ─── CRM: Signed Contracts ────────────────────────────────────────────────────
+
+export const prospectContracts = mysqlTable("prospect_contracts", {
+  id: int("id").autoincrement().primaryKey(),
+  prospectId: int("prospectId").notNull(),  // FK → prospects.id
+  templateId: int("templateId"),  // FK → contract_templates.id
+  signingToken: varchar("signingToken", { length: 128 }).unique(),  // secure URL token
+  signingTokenExpiresAt: timestamp("signingTokenExpiresAt"),
+  signerName: varchar("signerName", { length: 255 }),
+  signerAddress: text("signerAddress"),
+  signatureDataUrl: text("signatureDataUrl"),  // base64 canvas signature image
+  signedPdfUrl: text("signedPdfUrl"),  // S3 URL of generated signed PDF
+  signedPdfKey: varchar("signedPdfKey", { length: 500 }),
+  sentAt: timestamp("sentAt"),
+  signedAt: timestamp("signedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ProspectContract = typeof prospectContracts.$inferSelect;
+
+// ─── CRM: Email Campaigns ─────────────────────────────────────────────────────
+
+export const emailCampaigns = mysqlTable("email_campaigns", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  bodyHtml: mediumtext("bodyHtml").notNull(),
+  segmentType: mysqlEnum("segmentType", [
+    "all_agents",
+    "all_prospects",
+    "all_contacts",
+    "won_prospects",
+    "custom",
+  ]).default("all_contacts").notNull(),
+  status: mysqlEnum("status", ["draft", "sending", "sent"]).default("draft").notNull(),
+  sentAt: timestamp("sentAt"),
+  sentCount: int("sentCount").default(0).notNull(),
+  createdById: int("createdById").notNull(),  // FK → users.id
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmailCampaign = typeof emailCampaigns.$inferSelect;
+
+// ─── CRM: Campaign Sends (per-recipient tracking) ────────────────────────────
+
+export const campaignSends = mysqlTable("campaign_sends", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaignId").notNull(),  // FK → email_campaigns.id
+  recipientEmail: varchar("recipientEmail", { length: 320 }).notNull(),
+  recipientName: varchar("recipientName", { length: 255 }),
+  status: mysqlEnum("status", ["pending", "sent", "failed"]).default("pending").notNull(),
+  errorMessage: varchar("errorMessage", { length: 500 }),
+  sentAt: timestamp("sentAt"),
+});
+export type CampaignSend = typeof campaignSends.$inferSelect;
+
+// ─── CRM: Commission Remittances (weekly CSV uploads) ────────────────────────
+
+export const commissionRemittances = mysqlTable("commission_remittances", {
+  id: int("id").autoincrement().primaryKey(),
+  uploadedById: int("uploadedById").notNull(),  // FK → users.id
+  filename: varchar("filename", { length: 255 }).notNull(),
+  csvUrl: text("csvUrl"),  // S3 URL of original CSV
+  csvKey: varchar("csvKey", { length: 500 }),
+  periodLabel: varchar("periodLabel", { length: 100 }),  // e.g. "Week ending 14 Apr 2026"
+  uploadedAt: timestamp("uploadedAt").defaultNow().notNull(),
+});
+export type CommissionRemittance = typeof commissionRemittances.$inferSelect;
+
+export const commissionRemittanceItems = mysqlTable("commission_remittance_items", {
+  id: int("id").autoincrement().primaryKey(),
+  remittanceId: int("remittanceId").notNull(),  // FK → commission_remittances.id
+  agentId: int("agentId"),  // FK → users.id (null if not matched)
+  agentCode: varchar("agentCode", { length: 50 }),  // from CSV
+  agentName: varchar("agentName", { length: 255 }),  // from CSV
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  bookingRef: varchar("bookingRef", { length: 100 }),
+  description: varchar("description", { length: 500 }),
+  notificationSentAt: timestamp("notificationSentAt"),
+});
+export type CommissionRemittanceItem = typeof commissionRemittanceItems.$inferSelect;
+
+// ─── CRM: GoCardless / Payment Config ────────────────────────────────────────
+
+export const paymentConfig = mysqlTable("payment_config", {
+  id: int("id").autoincrement().primaryKey(),
+  stripeJoiningFeeUrl: text("stripeJoiningFeeUrl"),  // Stripe payment link for £297
+  // GoCardless mandate links: 2 tiers × 3 payment dates = 6 links
+  businessClassDay1Url: text("businessClassDay1Url"),
+  businessClassDay15Url: text("businessClassDay15Url"),
+  businessClassDay28Url: text("businessClassDay28Url"),
+  firstClassDay1Url: text("firstClassDay1Url"),
+  firstClassDay15Url: text("firstClassDay15Url"),
+  firstClassDay28Url: text("firstClassDay28Url"),
+  updatedById: int("updatedById"),  // FK → users.id
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type PaymentConfig = typeof paymentConfig.$inferSelect;

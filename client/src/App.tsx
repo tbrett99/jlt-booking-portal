@@ -43,6 +43,17 @@ import ProfilePage from "./pages/ProfilePage";
 import BookingDocuments from "./pages/BookingDocuments";
 import AdminInboxConfig from "./pages/admin/AdminInboxConfig";
 import AdminInboxAudit from "./pages/admin/AdminInboxAudit";
+import CrmPipeline from "./pages/crm/CrmPipeline";
+import CrmProspects from "./pages/crm/CrmProspects";
+import ProspectDetail from "./pages/crm/ProspectDetail";
+import CrmCampaigns from "./pages/crm/CrmCampaigns";
+import CrmRemittances from "./pages/crm/CrmRemittances";
+import CrmPaymentConfig from "./pages/crm/CrmPaymentConfig";
+import EnquiryForm from "./pages/crm/EnquiryForm";
+import AgentApplicationForm from "./pages/crm/AgentApplicationForm";
+import SignContract from "./pages/crm/SignContract";
+import MembershipSelection from "./pages/crm/MembershipSelection";
+import WonAgentPortal from "./pages/crm/WonAgentPortal";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 
@@ -69,6 +80,11 @@ function AuthRouter() {
         <Route path="/" component={LoginPage} />
         <Route path="/login" component={LoginPage} />
         <Route path="/reset-password" component={ResetPasswordPage} />
+        {/* Public CRM pages — no auth required */}
+        <Route path="/enquiry" component={EnquiryForm} />
+        <Route path="/apply/:prospectId" component={AgentApplicationForm} />
+        <Route path="/sign-contract/:token" component={SignContract} />
+        <Route path="/membership" component={MembershipSelection} />
         <Route component={LoginPage} />
       </Switch>
     );
@@ -160,6 +176,13 @@ function AuthRouter() {
         <Route path="/booking-documents" component={BookingDocuments} />
         <Route path="/admin/inbox-config" component={AdminInboxConfig} />
         <Route path="/admin/inbox-audit" component={AdminInboxAudit} />
+        {/* CRM Routes */}
+        <Route path="/crm/pipeline" component={CrmPipeline} />
+        <Route path="/crm/prospects" component={CrmProspects} />
+        <Route path="/crm/prospects/:id" component={ProspectDetail} />
+        <Route path="/crm/campaigns" component={CrmCampaigns} />
+        <Route path="/crm/remittances" component={CrmRemittances} />
+        <Route path="/crm/payment-config" component={CrmPaymentConfig} />
         <Route path="/profile" component={ProfilePage} />
         <Route component={NotFound} />
       </Switch>
