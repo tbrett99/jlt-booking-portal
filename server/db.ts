@@ -673,11 +673,25 @@ export async function actionAmendment(amendmentId: number, adminId: number) {
 export async function updateAmendmentPipeline(amendmentId: number, data: {
   pipelineStage?: "To Do" | "In Progress" | "Actioned";
   assignedToId?: number | null;
+  actionedById?: number | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const updateData: Record<string, unknown> = {};
-  if (data.pipelineStage !== undefined) updateData.pipelineStage = data.pipelineStage;
+  if (data.pipelineStage !== undefined) {
+    updateData.pipelineStage = data.pipelineStage;
+    // Keep legacy status field in sync so history notes stay consistent
+    if (data.pipelineStage === "Actioned") {
+      updateData.status = "actioned";
+      updateData.actionedAt = new Date();
+      if (data.actionedById !== undefined) updateData.actionedById = data.actionedById;
+    } else {
+      // Moving back out of Actioned resets legacy status
+      updateData.status = "pending";
+      updateData.actionedAt = null;
+      updateData.actionedById = null;
+    }
+  }
   if (data.assignedToId !== undefined) updateData.assignedToId = data.assignedToId;
   await db.update(amendments).set(updateData as any).where(eq(amendments.id, amendmentId));
   const result = await db.select().from(amendments).where(eq(amendments.id, amendmentId)).limit(1);

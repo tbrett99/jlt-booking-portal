@@ -912,3 +912,9 @@
 - [x] Fix LinkedEmailsCard download to use print-to-PDF (same as BookingDocuments page)
 - [x] Add bodyHtml to getLinkedEmailsForBooking db helper and getLinkedEmails tRPC procedure
 - [x] All 49 tests passing
+
+## Amendment Status Sync Fix (Apr 16)
+- [x] Fix updateAmendmentPipeline to sync legacy status field when pipelineStage changes to/from Actioned
+- [x] When pipelineStage = "Actioned": also set status = "actioned", actionedAt = now(), actionedById = ctx.user.id
+- [x] When pipelineStage = "To Do" or "In Progress": also reset status = "pending", actionedAt = null, actionedById = null
+- [x] All 49 tests passing

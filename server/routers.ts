@@ -1461,7 +1461,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const { amendmentId, bookingId: bId, ...data } = input;
-        const updated = await updateAmendmentPipeline(amendmentId, data as any);
+        const updated = await updateAmendmentPipeline(amendmentId, { ...data, actionedById: ctx.user.id } as any);
         // Notify agent when assigned or actioned
         const resolvedBookingId = bId ?? updated?.bookingId;
         if (resolvedBookingId) {
