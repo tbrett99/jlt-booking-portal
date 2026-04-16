@@ -928,3 +928,9 @@
 - [x] UI: show Add button on PTS Ref card whenever ptsRef is not set (not just in Creating own PTS file stage)
 - [x] Server: relax updatePtsDetails stage guard to allow update when ptsRef is currently empty (historic imports)
 - [x] All 49 tests passing
+
+## Refund Admin View — Full Form Data (Apr 16)
+- [x] Audited: AdminRefunds list/detail already shows all fields; gap was in RefundPipelineCard on booking detail
+- [x] Expanded RefundPipelineCard to show: reason, steps taken, amount to client, per-supplier breakdown, and bank details (account name, sort code, account number) in a green-bordered section
+- [x] Bank details are only visible to admins (decrypted server-side, not exposed to agents)
+- [x] All 49 tests passing

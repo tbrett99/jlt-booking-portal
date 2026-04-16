@@ -177,15 +177,14 @@ function RefundPipelineCard({
         {refunds.map((r: any) => {
           const stage: RefundStage = (r.pipelineStage ?? "New Refund Request") as RefundStage;
           return (
-            <div key={r.id} className="border rounded-lg p-3 space-y-2">
+            <div key={r.id} className="border rounded-lg p-3 space-y-3">
+              {/* Header row: type + pipeline controls */}
               <div className="flex items-start justify-between gap-2 flex-wrap">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{r.refundType ?? "Refund"}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{r.refundReason ?? ""}</p>
+                  <p className="text-sm font-semibold capitalize">{r.refundType ? r.refundType.replace(/_/g, ' ') : 'Refund'}</p>
                   <p className="text-xs text-muted-foreground">{r.createdAt ? format(new Date(r.createdAt), "d MMM yyyy") : ""}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                  {/* Stage selector */}
                   <Select
                     value={stage}
                     onValueChange={(v) => onUpdatePipeline(r.id, { pipelineStage: v as RefundStage })}
@@ -200,7 +199,6 @@ function RefundPipelineCard({
                       ))}
                     </SelectContent>
                   </Select>
-                  {/* Assignee selector */}
                   <Select
                     value={r.assignedToId ? String(r.assignedToId) : "__unassigned__"}
                     onValueChange={(v) => onUpdatePipeline(r.id, { assignedToId: v === "__unassigned__" ? null : Number(v) })}
@@ -218,6 +216,66 @@ function RefundPipelineCard({
                   </Select>
                 </div>
               </div>
+
+              {/* Refund reason */}
+              {r.refundReason && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-0.5">Reason</p>
+                  <p className="text-sm">{r.refundReason}</p>
+                </div>
+              )}
+
+              {/* Steps taken */}
+              {r.stepsTaken && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-0.5">Steps Taken</p>
+                  <p className="text-sm whitespace-pre-wrap">{r.stepsTaken}</p>
+                </div>
+              )}
+
+              {/* Amount to client */}
+              {r.amountToClient != null && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-0.5">Amount to Client</p>
+                  <p className="text-sm font-semibold">£{Number(r.amountToClient).toFixed(2)}</p>
+                </div>
+              )}
+
+              {/* Per-supplier breakdown */}
+              {r.suppliers?.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Supplier Breakdown</p>
+                  <div className="space-y-1">
+                    {r.suppliers.map((s: any, i: number) => (
+                      <div key={i} className="flex justify-between text-xs bg-muted rounded px-2 py-1">
+                        <span>{s.supplierName}</span>
+                        <span className="font-medium">£{Number(s.amountDue).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Bank details (admin only — already decrypted by the API) */}
+              {r.clientBankName && (
+                <div className="border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 rounded p-2 space-y-1">
+                  <p className="text-xs font-semibold text-green-700 dark:text-green-400">Client Bank Details</p>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <p className="text-muted-foreground">Account Name</p>
+                      <p className="font-medium">{r.clientBankName}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Sort Code</p>
+                      <p className="font-medium">{r.clientSortCode ?? '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Account Number</p>
+                      <p className="font-medium">{r.clientAccountNumber ?? '—'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
