@@ -1333,3 +1333,6 @@
 - [x] Add "Generate Payment Link" button + modal on booking detail (admin only, manual amount entry, order description = PTS ref)
 - [x] Add Payment Links card to booking detail showing link history and status
 - [x] Write vitest tests for pps-signature.ts (9 tests, all passing)
+
+## PPS Payment Link Bug Fix
+- [x] Bug: /pay/:token and /payment/result routes were inside the auth guard — unauthenticated customers got a 404/login page. Fix: render these routes before the auth check so they are fully public.

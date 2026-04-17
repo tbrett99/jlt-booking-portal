@@ -103,6 +103,19 @@ function AuthRouter() {
   const { user, loading } = useAuth();
   const { isAgentView } = useViewMode();
 
+  // Public payment pages — must be accessible to unauthenticated customers.
+  // Check path BEFORE any auth guard or loading spinner so customers never
+  // see the login page or a 404 when following a payment link.
+  const path = window.location.pathname;
+  if (path.startsWith("/pay/") || path === "/payment/result") {
+    return (
+      <Switch>
+        <Route path="/pay/:token" component={PaymentRedirect} />
+        <Route path="/payment/result" component={PaymentResult} />
+      </Switch>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
