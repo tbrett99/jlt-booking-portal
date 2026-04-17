@@ -150,6 +150,25 @@ export const remittanceRouter = router({
               if (claimVat !== null && claimVat !== undefined) {
                 vatFromPortalAmt = parseFloat(String(claimVat));
               }
+            } else {
+              // Fallback: claim may already be 'paid' (e.g. re-upload of a batch).
+              // VAT amount doesn't change after payment, so it's safe to read it.
+              const paidClaims = await db
+                .select({ id: commissionClaims.id, vatAmount: commissionClaims.vatAmount })
+                .from(commissionClaims)
+                .where(
+                  and(
+                    eq(commissionClaims.bookingId, bookingId),
+                    eq(commissionClaims.status, "paid")
+                  )
+                )
+                .limit(1);
+              if (paidClaims.length > 0) {
+                const claimVat = paidClaims[0].vatAmount;
+                if (claimVat !== null && claimVat !== undefined) {
+                  vatFromPortalAmt = parseFloat(String(claimVat));
+                }
+              }
             }
           }
         } else {
