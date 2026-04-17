@@ -1495,8 +1495,8 @@ export const crmRouter = router({
       const { getDb } = await import("./db");
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const { agentCrmProfiles, users } = await import("../drizzle/schema");
-      const { eq, and, isNotNull, sql } = await import("drizzle-orm");
+      const { agentCrmProfiles, users, agentSupplierLogins } = await import("../drizzle/schema");
+      const { eq, and, isNotNull, sql, inArray } = await import("drizzle-orm");
 
       // All profiles with user info
       const allProfiles = await db
@@ -1575,12 +1575,45 @@ export const crmRouter = router({
         .filter(p => {
           if (p.agentStatus !== "cancelled") return false;
           const ticked = Array.isArray(p.cancelChecklist) ? (p.cancelChecklist as string[]) : [];
-          return ticked.length < CANCEL_CHECKLIST_ITEMS.length;
+          // We'll check completeness after we know the full item list (fixed + suppliers)
+          return true;
         })
         .sort((a, b) => {
           if (!a.cancelledAt) return 1;
           if (!b.cancelledAt) return -1;
           return new Date(b.cancelledAt).getTime() - new Date(a.cancelledAt).getTime();
+        });
+
+      // Fetch supplier logins for all cancelled agents
+      const cancelledUserIds = cancelledPendingOffboarding.map(p => p.userId);
+      const supplierLoginRows = cancelledUserIds.length > 0
+        ? await db
+            .select({
+              userId: agentSupplierLogins.userId,
+              id: agentSupplierLogins.id,
+              supplierName: agentSupplierLogins.supplierName,
+            })
+            .from(agentSupplierLogins)
+            .where(inArray(agentSupplierLogins.userId, cancelledUserIds))
+        : [];
+
+      // Group supplier logins by userId
+      const suppliersByUser: Record<number, { id: number; supplierName: string }[]> = {};
+      for (const row of supplierLoginRows) {
+        if (!suppliersByUser[row.userId]) suppliersByUser[row.userId] = [];
+        suppliersByUser[row.userId].push({ id: row.id, supplierName: row.supplierName });
+      }
+
+      // Attach suppliers and filter out fully-offboarded agents
+      const cancelledWithSuppliers = cancelledPendingOffboarding
+        .map(p => ({
+          ...p,
+          supplierLogins: suppliersByUser[p.userId] ?? [],
+        }))
+        .filter(p => {
+          const ticked = Array.isArray(p.cancelChecklist) ? (p.cancelChecklist as string[]) : [];
+          const totalItems = CANCEL_CHECKLIST_ITEMS.length + p.supplierLogins.length;
+          return ticked.length < totalItems;
         });
 
       return {
@@ -1589,7 +1622,7 @@ export const crmRouter = router({
         inNotice,
         paused,
         suspended,
-        cancelledPendingOffboarding,
+        cancelledPendingOffboarding: cancelledWithSuppliers,
         checklistItems: CANCEL_CHECKLIST_ITEMS,
       };
     }),

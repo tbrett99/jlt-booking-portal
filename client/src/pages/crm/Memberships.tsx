@@ -96,8 +96,8 @@ function StatCard({
 
 // ── Offboarding Checklist Row ─────────────────────────────────────────────────
 
+// Fixed system items (no generic "Supplier logins revoked" — suppliers are listed individually)
 const CANCEL_CHECKLIST_ITEMS = [
-  "Supplier logins revoked",
   "Topdog login removed",
   "WhatsApp access removed",
   "Learnworlds access removed",
@@ -116,9 +116,15 @@ function OffboardingRow({
     cancelledAt: Date | null;
     cancelChecklist: unknown;
     uniqueAgentId?: string | null;
+    supplierLogins?: { id: number; supplierName: string }[];
   };
   onUpdate: () => void;
 }) {
+  const suppliers = agent.supplierLogins ?? [];
+  // Build the full item list: per-supplier items first, then fixed system items
+  const supplierItems = suppliers.map(s => `Revoke: ${s.supplierName}`);
+  const allItems = [...supplierItems, ...CANCEL_CHECKLIST_ITEMS];
+
   const ticked = Array.isArray(agent.cancelChecklist) ? (agent.cancelChecklist as string[]) : [];
   const [localTicked, setLocalTicked] = useState<string[]>(ticked);
   const [expanded, setExpanded] = useState(false);
@@ -137,8 +143,8 @@ function OffboardingRow({
   }
 
   const progress = localTicked.length;
-  const total = CANCEL_CHECKLIST_ITEMS.length;
-  const pct = Math.round((progress / total) * 100);
+  const total = allItems.length;
+  const pct = total === 0 ? 100 : Math.round((progress / total) * 100);
 
   return (
     <div className="border rounded-xl overflow-hidden">
@@ -155,6 +161,22 @@ function OffboardingRow({
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">{agent.email}</p>
+          {suppliers.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {suppliers.map(s => (
+                <span
+                  key={s.id}
+                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                    localTicked.includes(`Revoke: ${s.supplierName}`)
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-400 line-through opacity-60"
+                      : "bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-950 dark:border-orange-800 dark:text-orange-400"
+                  }`}
+                >
+                  {s.supplierName}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="text-right shrink-0">
           <p className="text-xs text-muted-foreground">Final date</p>
@@ -177,23 +199,57 @@ function OffboardingRow({
 
       {/* Checklist */}
       {expanded && (
-        <div className="border-t bg-muted/20 p-4 grid grid-cols-2 gap-3">
-          {CANCEL_CHECKLIST_ITEMS.map((item) => (
-            <div key={item} className="flex items-center gap-2.5">
-              <Checkbox
-                id={`${agent.userId}-${item}`}
-                checked={localTicked.includes(item)}
-                onCheckedChange={() => toggle(item)}
-                disabled={updateChecklist.isPending}
-              />
-              <label
-                htmlFor={`${agent.userId}-${item}`}
-                className={`text-sm cursor-pointer ${localTicked.includes(item) ? "line-through text-muted-foreground" : ""}`}
-              >
-                {item}
-              </label>
+        <div className="border-t bg-muted/20 p-4 space-y-4">
+          {/* Per-supplier items */}
+          {supplierItems.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Supplier Logins</p>
+              <div className="grid grid-cols-2 gap-3">
+                {supplierItems.map((item) => (
+                  <div key={item} className="flex items-center gap-2.5">
+                    <Checkbox
+                      id={`${agent.userId}-${item}`}
+                      checked={localTicked.includes(item)}
+                      onCheckedChange={() => toggle(item)}
+                      disabled={updateChecklist.isPending}
+                    />
+                    <label
+                      htmlFor={`${agent.userId}-${item}`}
+                      className={`text-sm cursor-pointer ${localTicked.includes(item) ? "line-through text-muted-foreground" : ""}`}
+                    >
+                      {/* Show just the supplier name, not the "Revoke: " prefix */}
+                      {item.replace(/^Revoke: /, "")}
+                    </label>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
+          )}
+
+          {/* Fixed system items */}
+          <div>
+            {supplierItems.length > 0 && (
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Systems &amp; Access</p>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              {CANCEL_CHECKLIST_ITEMS.map((item) => (
+                <div key={item} className="flex items-center gap-2.5">
+                  <Checkbox
+                    id={`${agent.userId}-${item}`}
+                    checked={localTicked.includes(item)}
+                    onCheckedChange={() => toggle(item)}
+                    disabled={updateChecklist.isPending}
+                  />
+                  <label
+                    htmlFor={`${agent.userId}-${item}`}
+                    className={`text-sm cursor-pointer ${localTicked.includes(item) ? "line-through text-muted-foreground" : ""}`}
+                  >
+                    {item}
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>

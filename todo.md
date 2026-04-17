@@ -1144,3 +1144,8 @@
 - [x] Sidebar: overdue CRM badge — count badge on CRM nav group when any agent notice/pause period is overdue
 - [x] Backend: agentCrm.getStatusHistory — returns all agent_status_events for a given userId, ordered by date desc
 - [x] AgentCrm sheet: Status History tab — timeline of all status changes (from/to, date, admin name, notes)
+
+## Offboarding Supplier Visibility (Apr 2026)
+- [x] Backend: getMembershipsOverview — include supplierLogins array per cancelled agent (name + id)
+- [x] Frontend: Offboarding panel — replace generic "Supplier logins" item with individual per-supplier tick items pulled from agent's CRM supplier logins
+- [x] Frontend: Offboarding panel — persist per-supplier tick state in cancelChecklist using supplier name as key
