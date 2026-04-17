@@ -1489,5 +1489,126 @@ export const crmRouter = router({
         await db.delete(agentTeams).where(eq(agentTeams.id, input.teamId));
         return { success: true };
       }),
+
+    // ─── Memberships Dashboard ───────────────────────────────────────────────
+    getMembershipsOverview: adminProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { agentCrmProfiles, users } = await import("../drizzle/schema");
+      const { eq, and, isNotNull, sql } = await import("drizzle-orm");
+
+      // All profiles with user info
+      const allProfiles = await db
+        .select({
+          userId: agentCrmProfiles.userId,
+          name: users.name,
+          email: users.email,
+          agentStatus: agentCrmProfiles.agentStatus,
+          membershipTier: agentCrmProfiles.membershipTier,
+          pauseEndsAt: agentCrmProfiles.pauseEndsAt,
+          noticeEndsAt: agentCrmProfiles.noticeEndsAt,
+          cancelledAt: agentCrmProfiles.cancelledAt,
+          suspendedAt: agentCrmProfiles.suspendedAt,
+          cancelChecklist: agentCrmProfiles.cancelChecklist,
+          uniqueAgentId: agentCrmProfiles.uniqueAgentId,
+          ukRegion: agentCrmProfiles.ukRegion,
+        })
+        .from(agentCrmProfiles)
+        .innerJoin(users, eq(users.id, agentCrmProfiles.userId));
+
+      // Stats by status
+      const stats = {
+        total: allProfiles.length,
+        active: allProfiles.filter(p => (p.agentStatus ?? "active") === "active").length,
+        paused: allProfiles.filter(p => p.agentStatus === "paused").length,
+        in_notice: allProfiles.filter(p => p.agentStatus === "in_notice").length,
+        cancelled: allProfiles.filter(p => p.agentStatus === "cancelled").length,
+        suspended: allProfiles.filter(p => p.agentStatus === "suspended").length,
+      };
+
+      // Stats by tier (active agents only)
+      const tierCounts: Record<string, number> = {};
+      for (const p of allProfiles.filter(p => (p.agentStatus ?? "active") === "active")) {
+        const tier = p.membershipTier ?? "Unassigned";
+        tierCounts[tier] = (tierCounts[tier] ?? 0) + 1;
+      }
+
+      const CANCEL_CHECKLIST_ITEMS = [
+        "Supplier logins revoked",
+        "Topdog login removed",
+        "WhatsApp access removed",
+        "Learnworlds access removed",
+        "JLT email deactivated",
+        "Portal access removed",
+      ];
+
+      // In notice — sorted by soonest final date
+      const inNotice = allProfiles
+        .filter(p => p.agentStatus === "in_notice")
+        .sort((a, b) => {
+          if (!a.noticeEndsAt) return 1;
+          if (!b.noticeEndsAt) return -1;
+          return new Date(a.noticeEndsAt).getTime() - new Date(b.noticeEndsAt).getTime();
+        });
+
+      // Paused — sorted by soonest pause end
+      const paused = allProfiles
+        .filter(p => p.agentStatus === "paused")
+        .sort((a, b) => {
+          if (!a.pauseEndsAt) return 1;
+          if (!b.pauseEndsAt) return -1;
+          return new Date(a.pauseEndsAt).getTime() - new Date(b.pauseEndsAt).getTime();
+        });
+
+      // Suspended
+      const suspended = allProfiles
+        .filter(p => p.agentStatus === "suspended")
+        .sort((a, b) => {
+          if (!a.suspendedAt) return 1;
+          if (!b.suspendedAt) return -1;
+          return new Date(b.suspendedAt).getTime() - new Date(a.suspendedAt).getTime();
+        });
+
+      // Cancelled — only those with incomplete offboarding checklist
+      const cancelledPendingOffboarding = allProfiles
+        .filter(p => {
+          if (p.agentStatus !== "cancelled") return false;
+          const ticked = Array.isArray(p.cancelChecklist) ? (p.cancelChecklist as string[]) : [];
+          return ticked.length < CANCEL_CHECKLIST_ITEMS.length;
+        })
+        .sort((a, b) => {
+          if (!a.cancelledAt) return 1;
+          if (!b.cancelledAt) return -1;
+          return new Date(b.cancelledAt).getTime() - new Date(a.cancelledAt).getTime();
+        });
+
+      return {
+        stats,
+        tierCounts,
+        inNotice,
+        paused,
+        suspended,
+        cancelledPendingOffboarding,
+        checklistItems: CANCEL_CHECKLIST_ITEMS,
+      };
+    }),
+
+    updateCancelChecklist: adminProcedure
+      .input(z.object({
+        userId: z.number().int(),
+        checklist: z.array(z.string()),
+      }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { agentCrmProfiles } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(agentCrmProfiles)
+          .set({ cancelChecklist: input.checklist })
+          .where(eq(agentCrmProfiles.userId, input.userId));
+        return { success: true };
+      }),
   }),
 });

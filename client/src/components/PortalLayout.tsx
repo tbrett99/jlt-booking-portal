@@ -7,7 +7,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -293,6 +293,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       items: [
         { label: "Agent CRM", href: "/crm/agents", icon: <UserCheck size={16} /> },
         { label: "Change Requests", href: "/crm/change-requests", icon: <ClipboardList size={16} /> },
+        { label: "Memberships", href: "/crm/memberships", icon: <CreditCard size={16} /> },
       ],
     },
     {

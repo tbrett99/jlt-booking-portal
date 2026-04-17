@@ -713,6 +713,7 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   noticeEndsAt: timestamp("noticeEndsAt"),                                  // Agent's final date at JLT (in_notice)
   cancelledAt: timestamp("cancelledAt"),                                    // Date agent was cancelled / final date recorded
   suspendedAt: timestamp("suspendedAt"),                                    // Date agent was suspended
+  cancelChecklist: json("cancelChecklist"),                                 // JSON array of ticked offboarding items
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

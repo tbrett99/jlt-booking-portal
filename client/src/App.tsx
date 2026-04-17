@@ -56,6 +56,7 @@ import MembershipSelection from "./pages/crm/MembershipSelection";
 import WonAgentPortal from "./pages/crm/WonAgentPortal";
 import AgentCrm from "./pages/crm/AgentCrm";
 import CrmChangeRequests from "./pages/crm/CrmChangeRequests";
+import Memberships from "./pages/crm/Memberships";
 import MyProfile from "./pages/MyProfile";
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
@@ -225,6 +226,7 @@ function AuthRouter() {
         <Route path="/crm/payment-config" component={CrmPaymentConfig} />
         <Route path="/crm/agents" component={AgentCrm} />
         <Route path="/crm/change-requests" component={CrmChangeRequests} />
+        <Route path="/crm/memberships" component={Memberships} />
         <Route path="/profile" component={ProfilePage} />
         <Route component={NotFound} />
       </Switch>

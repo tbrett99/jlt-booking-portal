@@ -1,0 +1,1 @@
+ALTER TABLE `agent_crm_profiles` ADD `cancelChecklist` json;

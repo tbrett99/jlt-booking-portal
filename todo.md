@@ -1112,14 +1112,28 @@
 - [x] Admin CRM: team name and shared monthly sub visible on profile
 
 ## Agent Status-Change Workflows (Apr 2026)
-- [ ] DB: add pauseEndsAt, noticeEndsAt columns to agent_crm_profiles
-- [ ] DB: add agent_status_events table (userId, fromStatus, toStatus, date, adminId, notes, pauseEndsAt, noticeEndsAt)
-- [ ] Backend: updateAgentStatus procedure — accepts new status + date fields, sends email to memberships@thejltgroup.co.uk, creates in-app notification, logs event
-- [ ] Backend: scheduled job to check pauseEndsAt daily — send unpause reminder email + notification when date is reached
-- [ ] Backend: scheduled job to check noticeEndsAt daily — send cancellation reminder email + notification when date is reached
-- [ ] Backend: suspended guard — protectedProcedure checks agentStatus, returns FORBIDDEN with suspension message if suspended
-- [ ] Frontend: Paused dialog — date picker for pause end date, confirm button, sends email + notification
-- [ ] Frontend: In Notice dialog — date picker for final date at JLT, confirm button, sends email + notification
-- [ ] Frontend: Cancelled checklist dialog — lists all systems to restrict (Topdog login, each supplier login, WhatsApp access, Learnworlds access), final date field, admin must tick each one before confirming
-- [ ] Frontend: Suspended confirmation dialog — warns admin that agent portal access will be blocked immediately
-- [ ] Frontend: Suspended portal guard — agent-facing blocked screen with message and memberships@thejltgroup.co.uk contact
+- [x] DB: add pauseEndsAt, noticeEndsAt columns to agent_crm_profiles
+- [x] DB: add agent_status_events table (userId, fromStatus, toStatus, date, adminId, notes, pauseEndsAt, noticeEndsAt)
+- [x] Backend: updateAgentStatus procedure — accepts new status + date fields, sends email to memberships@thejltgroup.co.uk, creates in-app notification, logs event
+- [x] Backend: scheduled job to check pauseEndsAt daily — send unpause reminder email + notification when date is reached
+- [x] Backend: scheduled job to check noticeEndsAt daily — send cancellation reminder email + notification when date is reached
+- [x] Backend: suspended guard — protectedProcedure checks agentStatus, returns FORBIDDEN with suspension message if suspended
+- [x] Frontend: Paused dialog — date picker for pause end date, confirm button, sends email + notification
+- [x] Frontend: In Notice dialog — date picker for final date at JLT, confirm button, sends email + notification
+- [x] Frontend: Cancelled checklist dialog — lists all systems to restrict (Topdog login, each supplier login, WhatsApp access, Learnworlds access), final date field, admin must tick each one before confirming
+- [x] Frontend: Suspended confirmation dialog — warns admin that agent portal access will be blocked immediately
+- [x] Frontend: Suspended portal guard — agent-facing blocked screen with message and memberships@thejltgroup.co.uk contact
+
+## Memberships Dashboard & Cancellation Fix (Apr 2026)
+- [x] Fix: cancelled dialog should default finalDate to today's date
+- [x] DB: add cancelChecklist JSONB column to agent_crm_profiles to persist per-agent offboarding checklist state
+- [x] Backend: agentCrm.getMembershipsOverview — stats (total by status, by tier), in-notice list, paused list, suspended list, cancelled-pending-offboarding list
+- [x] Backend: agentCrm.updateCancelChecklist — admin ticks off offboarding items; when all ticked, agent moves off the action-required list
+- [x] Frontend: /crm/memberships — new admin page with Memberships tab in sidebar under CRM
+- [x] Frontend: Overview panel — stat cards (Active, Paused, In Notice, Cancelled, Suspended, by tier breakdown)
+- [x] Frontend: In Notice panel — table of agents in notice with final date + days remaining countdown
+- [x] Frontend: Paused panel — table of paused agents with pause end date + days remaining
+- [x] Frontend: Suspended panel — list of suspended agents
+- [x] Frontend: Cancelled (Action Required) panel — per-agent offboarding checklist; agent disappears when all items ticked
+- [x] Sidebar: add Memberships link under CRM nav group (admin/super_admin only)
+- [x] Route: wire /crm/memberships in App.tsx

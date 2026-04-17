@@ -389,7 +389,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
     if (newStatus === prev) return;
     if (newStatus === "paused") { setPauseEndsAt(""); setStatusNotes(""); setStatusDialog("paused"); return; }
     if (newStatus === "in_notice") { setNoticeEndsAt(""); setStatusNotes(""); setStatusDialog("in_notice"); return; }
-    if (newStatus === "cancelled") { setCancelledAt(""); setCancelChecklist([]); setStatusNotes(""); setStatusDialog("cancelled"); return; }
+    if (newStatus === "cancelled") { setCancelledAt(new Date().toISOString().split("T")[0]); setCancelChecklist([]); setStatusNotes(""); setStatusDialog("cancelled"); return; }
     if (newStatus === "suspended") { setStatusNotes(""); setStatusDialog("suspended"); return; }
     // active — no dialog needed, update directly
     updateAgentStatus.mutate({ userId, newStatus: newStatus as any });
