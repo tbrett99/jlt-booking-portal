@@ -7,7 +7,8 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { startScheduler } from "../scheduler";
+import { startScheduler, runNightlyExport, getLastExportRun } from "../scheduler";
+import { ENV } from "./env";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -36,6 +37,33 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+
+  // ── Secure nightly export trigger endpoint ──────────────────────────────────
+  // Called by the external Manus scheduled task. Requires Bearer token auth.
+  app.post("/api/export/nightly", async (req, res) => {
+    const auth = req.headers.authorization ?? "";
+    const token = ENV.exportTriggerToken;
+    if (!token || auth !== `Bearer ${token}`) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    console.log("[ExportEndpoint] Triggered via external scheduler");
+    const result = await runNightlyExport("external");
+    res.json(result);
+  });
+
+  // ── Last export run status (for admin dashboard) ────────────────────────────
+  app.get("/api/export/status", async (req, res) => {
+    const auth = req.headers.authorization ?? "";
+    const token = ENV.exportTriggerToken;
+    if (!token || auth !== `Bearer ${token}`) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const last = await getLastExportRun();
+    res.json(last ?? { ranAt: null, success: null, rowCount: null });
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",

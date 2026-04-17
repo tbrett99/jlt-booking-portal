@@ -845,3 +845,14 @@ export const remittanceLines = mysqlTable("remittance_lines", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type RemittanceLine = typeof remittanceLines.$inferSelect;
+
+// ─── Nightly Export Run Log ───────────────────────────────────────────────────
+export const exportRuns = mysqlTable("export_runs", {
+  id: int("id").primaryKey().autoincrement(),
+  ranAt: timestamp("ranAt").defaultNow().notNull(),
+  success: boolean("success").notNull(),
+  rowCount: int("rowCount"),
+  errorMessage: text("errorMessage"),
+  triggeredBy: varchar("triggeredBy", { length: 50 }).default("cron"), // "cron" | "external" | "manual"
+});
+export type ExportRun = typeof exportRuns.$inferSelect;

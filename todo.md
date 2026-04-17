@@ -1247,14 +1247,23 @@
 - [x] Frontend: make Destination/Country dropdown mandatory (required validation + toast)
 
 ## Booking Detail — Passengers & Nights Display
-- [ ] Admin BookingDetail: show passengers and numberOfNights in the booking info panel
-- [ ] Agent BookingDetail: show passengers and numberOfNights in the booking summary
-- [ ] Reports CSV export: add Passengers and Nights columns
+- [x] Admin BookingDetail: show passengers and numberOfNights in the booking info panel
+- [x] Agent BookingDetail: show passengers and numberOfNights in the booking summary
+- [x] Reports CSV export: add Passengers and Nights columns
 
 ## Agent Remittance Dashboard — Full Column Breakdown
-- [ ] Agent remittance view: ensure Return Date, PAX, Currency, Total IN, Total OUT, SFI, SAFI, PTRC, PTS, VAT columns are all visible
+- [x] Agent remittance view: ensure Return Date, PAX, Currency, Total IN, Total OUT, SFI, SAFI, PTRC, PTS, VAT columns are all visible
 
 ## Suggested Next Steps (from booking form additions)
-- [ ] Admin BookingDetail: add passengers and numberOfNights to admin editable fields panel (alongside PTS ref, payment date)
-- [ ] Reports CSV: add Passengers and Nights columns to the export
-- [ ] Agent BookingDetail: show passengers and numberOfNights in booking summary card
+- [x] Admin BookingDetail: add passengers and numberOfNights to admin editable fields panel (alongside PTS ref, payment date)
+- [x] Reports CSV: add Passengers and Nights columns to the export
+- [x] Agent BookingDetail: show passengers and numberOfNights in booking summary card
+
+## Nightly Export Reliability
+- [x] Expose secure POST /api/export/nightly endpoint (bearer token auth) that triggers runNightlyExport()
+- [x] Add export_runs table to DB (id, ranAt, success, rowCount, errorMessage, triggeredBy)
+- [x] Log every export run (success or failure) to export_runs table
+- [x] Send owner in-app + email alert when export fails
+- [x] Surface last-run status (time, success, row count) via /api/export/status endpoint
+- [x] Register external Manus scheduled task to POST to /api/export/nightly daily at 05:00 UTC (06:00 BST)
+- [x] Keep in-process node-cron as secondary fallback (already in place at 04:00 UTC)

@@ -6,10 +6,11 @@
 import cron from "node-cron";
 import nodemailer from "nodemailer";
 import { getDb, getTasksDueForReminder, markCalendarReminderSent, getImapConfig } from "./db";
-import { bookings, users, inAppNotifications } from "../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { bookings, users, inAppNotifications, exportRuns } from "../drizzle/schema";
+import { eq, desc } from "drizzle-orm";
 import { format } from "date-fns";
 import { importInbox, decryptPassword } from "./imap";
+import { notifyOwner } from "./_core/notification";
 
 // ─── Inbox auto-import state ──────────────────────────────────────────────────
 
@@ -99,7 +100,7 @@ function formatDate(d: Date | null | undefined): string {
 
 // ─── Export logic ─────────────────────────────────────────────────────────────
 
-export async function runNightlyExport(): Promise<{ success: boolean; rowCount?: number; error?: string }> {
+export async function runNightlyExport(triggeredBy: string = "cron"): Promise<{ success: boolean; rowCount?: number; error?: string }> {
   try {
     const db = await getDb();
     if (!db) return { success: false, error: "Database unavailable" };
@@ -216,10 +217,41 @@ export async function runNightlyExport(): Promise<{ success: boolean; rowCount?:
     });
 
     console.log(`[Scheduler] Nightly export sent: ${rows.length} bookings → ${EXPORT_RECIPIENT}`);
+    // Log success to DB
+    try {
+      await db.insert(exportRuns).values({ success: true, rowCount: rows.length, triggeredBy });
+    } catch (logErr) {
+      console.error("[Scheduler] Failed to log export run:", logErr);
+    }
     return { success: true, rowCount: rows.length };
   } catch (err: any) {
     console.error("[Scheduler] Nightly export failed:", err?.message);
+    // Log failure to DB
+    try {
+      const db2 = await getDb();
+      if (db2) await db2.insert(exportRuns).values({ success: false, errorMessage: err?.message ?? "Unknown error", triggeredBy });
+    } catch { /* ignore */ }
+    // Notify owner of failure
+    try {
+      await notifyOwner({
+        title: "⚠️ Nightly Export Failed",
+        content: `The nightly booking export failed at ${new Date().toISOString()}. Error: ${err?.message ?? "Unknown error"}. Please check the server logs.`,
+      });
+    } catch { /* ignore */ }
     return { success: false, error: err?.message };
+  }
+}
+
+// ─── Get last export run status ───────────────────────────────────────────────
+
+export async function getLastExportRun() {
+  try {
+    const db = await getDb();
+    if (!db) return null;
+    const rows = await db.select().from(exportRuns).orderBy(desc(exportRuns.ranAt)).limit(1);
+    return rows[0] ?? null;
+  } catch {
+    return null;
   }
 }
 
