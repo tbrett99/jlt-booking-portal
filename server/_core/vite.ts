@@ -24,6 +24,11 @@ export async function setupVite(app: Express, server: Server) {
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
 
+    // Let Express handle server-side routes — don't serve the React SPA for these paths
+    if (url.startsWith("/pay/") || url.startsWith("/api/")) {
+      return next();
+    }
+
     try {
       const clientTemplate = path.resolve(
         import.meta.dirname,
@@ -61,7 +66,11 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  // but let Express handle server-side routes like /pay/:token
+  app.use("*", (req, res, next) => {
+    if (req.originalUrl.startsWith("/pay/") || req.originalUrl.startsWith("/api/")) {
+      return next();
+    }
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
