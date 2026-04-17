@@ -613,6 +613,8 @@ export const appRouter = router({
           expectedCommission: z.number().min(0).optional(),
           grossCost: z.number().min(0).optional(),
           destination: z.string().optional(),
+          passengers: z.number().int().min(1).optional(),
+          numberOfNights: z.number().int().min(0).optional(),
           isPersonalBooking: z.boolean().optional(),
           isHistoricBooking: z.boolean().optional(),
           reimbursementItems: z.array(z.object({

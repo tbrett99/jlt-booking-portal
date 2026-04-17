@@ -288,6 +288,13 @@
       "when": 1776433172092,
       "tag": "0040_pale_raza",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "5",
+      "when": 1776436245856,
+      "tag": "0041_wakeful_steel_serpent",
+      "breakpoints": true
     }
   ]
 }

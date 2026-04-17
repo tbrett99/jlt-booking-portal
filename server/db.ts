@@ -210,6 +210,8 @@ export async function createBooking(data: {
   expectedCommission?: number;
   grossCost?: number;
   destination?: string;
+  passengers?: number;
+  numberOfNights?: number;
   isPersonalBooking?: boolean;
 }) {
   const db = await getDb();
@@ -228,6 +230,8 @@ export async function createBooking(data: {
     expectedCommission: data.expectedCommission != null ? String(data.expectedCommission) : undefined,
     grossCost: data.grossCost != null ? String(data.grossCost) : undefined,
     destination: data.destination,
+    passengers: data.passengers,
+    numberOfNights: data.numberOfNights,
     isPersonalBooking: data.isPersonalBooking ?? false,
     finalSupplierPaymentDate,
     currentStage: "New Booking",

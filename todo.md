@@ -1236,3 +1236,12 @@
 - [x] Frontend: Janine's View — show vatFromPortal (portal VAT) as the primary VAT column; show vatFromPts (PTS CSV VAT) as a secondary column; prefer portal value when both present
 - [x] Frontend: Agent View — same VAT display update
 - [x] Frontend: CSV exports — include both VAT columns clearly labelled
+
+## Booking Registration Form — New Fields
+- [x] DB: add passengers (int, nullable) and numberOfNights (int, nullable) columns to bookings table
+- [x] DB: migrate schema (ALTER TABLE bookings ADD passengers int, numberOfNights int)
+- [x] Backend: include passengers and numberOfNights in bookings.create procedure input
+- [x] Backend: createBooking db helper updated to insert passengers and numberOfNights
+- [x] Frontend: add Passengers (excl. infants) number input to booking form — mandatory
+- [x] Frontend: add Number of Nights number input to booking form — mandatory
+- [x] Frontend: make Destination/Country dropdown mandatory (required validation + toast)

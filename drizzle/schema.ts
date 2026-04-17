@@ -51,6 +51,8 @@ export const bookings = mysqlTable("bookings", {
   // Admin-managed fields
   ptsRef: varchar("ptsRef", { length: 100 }),
   destination: varchar("destination", { length: 255 }), // Country/destination from PTS
+  passengers: int("passengers"), // Number of passengers (excluding infants)
+  numberOfNights: int("numberOfNights"), // Duration of trip in nights
   finalSupplierPaymentDate: timestamp("finalSupplierPaymentDate"),
   finalSupplierPaymentNotified: boolean("finalSupplierPaymentNotified").default(false).notNull(),
   paymentDateDismissed: boolean("paymentDateDismissed").default(false).notNull(), // Suppress from missing-payment-date dashboard alert

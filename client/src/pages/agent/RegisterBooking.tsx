@@ -27,6 +27,8 @@ export default function RegisterBooking() {
   const [expectedCommission, setExpectedCommission] = useState("");
   const [grossCost, setGrossCost] = useState("");
   const [destination, setDestination] = useState("");
+  const [passengers, setPassengers] = useState("");
+  const [numberOfNights, setNumberOfNights] = useState("");
   const [isPersonalBooking, setIsPersonalBooking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successBooking, setSuccessBooking] = useState<{ id: number; clientName: string; departureDate: Date } | null>(null);
@@ -66,6 +68,18 @@ export default function RegisterBooking() {
       toast.error("Please fill in all required fields");
       return;
     }
+    if (!destination) {
+      toast.error("Please select a destination country");
+      return;
+    }
+    if (!passengers || parseInt(passengers) < 1) {
+      toast.error("Please enter the number of passengers (excluding infants)");
+      return;
+    }
+    if (!numberOfNights || parseInt(numberOfNights) < 0) {
+      toast.error("Please enter the number of nights");
+      return;
+    }
     setIsSubmitting(true);
     try {
       const validReimbItems = reimbursementsRequired
@@ -81,6 +95,8 @@ export default function RegisterBooking() {
         expectedCommission: !isPersonalBooking && commNum > 0 ? commNum : undefined,
         grossCost: grossNum > 0 ? grossNum : undefined,
         destination: destination || undefined,
+        passengers: passengers ? parseInt(passengers) : undefined,
+        numberOfNights: numberOfNights ? parseInt(numberOfNights) : undefined,
         isPersonalBooking,
         isHistoricBooking,
       });
@@ -234,12 +250,47 @@ export default function RegisterBooking() {
 
             {/* Destination Country */}
             <div className="space-y-2">
-              <Label>Destination Country</Label>
+              <Label>Destination Country <span className="text-destructive">*</span></Label>
               <CountrySelect
                 value={destination}
                 onChange={setDestination}
                 placeholder="Select destination country..."
               />
+              {!destination && <p className="text-xs text-muted-foreground">Required — please select the destination country.</p>}
+            </div>
+
+            {/* Passengers & Nights */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="passengers">
+                  Passengers (excl. infants) <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="passengers"
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="e.g. 2"
+                  value={passengers}
+                  onChange={(e) => setPassengers(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="numberOfNights">
+                  Number of Nights <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="numberOfNights"
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="e.g. 7"
+                  value={numberOfNights}
+                  onChange={(e) => setNumberOfNights(e.target.value)}
+                  required
+                />
+              </div>
             </div>
 
             {/* Topdog Ref */}
