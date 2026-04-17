@@ -878,3 +878,24 @@ export const flightRequests = mysqlTable("flight_requests", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type FlightRequest = typeof flightRequests.$inferSelect;
+
+// ─── PPS Payment Links ────────────────────────────────────────────────────────
+export const paymentLinks = mysqlTable("payment_links", {
+  id: varchar("id", { length: 36 }).primaryKey(), // UUID token
+  bookingId: int("bookingId").notNull().references(() => bookings.id, { onDelete: "cascade" }),
+  createdById: int("createdById").notNull().references(() => users.id),
+  merchantId: varchar("merchantId", { length: 20 }).notNull(),
+  transactionUnique: varchar("transactionUnique", { length: 50 }).notNull(),
+  amountPence: int("amountPence").notNull(),
+  orderRef: varchar("orderRef", { length: 255 }).notNull(), // PTS reference
+  description: varchar("description", { length: 255 }),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // "pending" | "paid" | "failed" | "cancelled"
+  redirectUrl: varchar("redirectUrl", { length: 500 }),
+  callbackUrl: varchar("callbackUrl", { length: 500 }),
+  ppsTransactionId: varchar("ppsTransactionId", { length: 100 }),
+  ppsResponseCode: varchar("ppsResponseCode", { length: 10 }),
+  ppsResponseMessage: varchar("ppsResponseMessage", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  paidAt: timestamp("paidAt"),
+});
+export type PaymentLink = typeof paymentLinks.$inferSelect;

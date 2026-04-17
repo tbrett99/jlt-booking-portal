@@ -316,6 +316,20 @@
       "when": 1776445804038,
       "tag": "0044_odd_red_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "5",
+      "when": 1776453173714,
+      "tag": "0045_lumpy_micromacro",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "5",
+      "when": 1776453754231,
+      "tag": "0046_fearless_mentor",
+      "breakpoints": true
     }
   ]
 }

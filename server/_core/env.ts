@@ -8,4 +8,9 @@ export const ENV = {
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   exportTriggerToken: process.env.EXPORT_TRIGGER_TOKEN ?? "",
+  ppsMerchantIdTest: process.env.PPS_MERCHANT_ID_TEST ?? "258137",
+  ppsMerchantIdLive: process.env.PPS_MERCHANT_ID_LIVE ?? "258136",
+  ppsSigningSecret: process.env.PPS_SIGNING_SECRET ?? "",
+  ppsGatewayUrl: process.env.PPS_GATEWAY_URL ?? "https://sales.protectedpaymentservices.com/paymentform/",
+  ppsLiveMode: process.env.PPS_LIVE_MODE === "true",
 };

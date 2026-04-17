@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X, History, ArrowRight, RefreshCw, XCircle, DollarSign, Edit3, Clock, Mail, Paperclip, Download, Link2, Unlink, ChevronDown } from "lucide-react";
+import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X, History, ArrowRight, RefreshCw, XCircle, DollarSign, Edit3, Clock, Mail, Paperclip, Download, Link2, Unlink, ChevronDown, CreditCard, Copy, CheckCircle2, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
 import CopyableRef from "@/components/CopyableRef";
@@ -47,6 +47,207 @@ function NoteContent({ content }: { content: string }) {
         )
       )}
     </p>
+  );
+}
+
+// ─── Payments Card ───────────────────────────────────────────────────────────
+
+function PaymentsCard({ bookingId }: { bookingId: number }) {
+  const utils = trpc.useUtils();
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [amountError, setAmountError] = useState("");
+  const [createdLink, setCreatedLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const { data: links = [], isLoading } = trpc.payments.listForBooking.useQuery({ bookingId });
+
+  const createLink = trpc.payments.createLink.useMutation({
+    onSuccess: (data) => {
+      setCreatedLink(data.payUrl);
+      setAmount("");
+      utils.payments.listForBooking.invalidate({ bookingId });
+    },
+    onError: (err) => toast.error(err.message || "Failed to create payment link"),
+  });
+
+  const cancelLink = trpc.payments.cancelLink.useMutation({
+    onSuccess: () => {
+      toast.success("Payment link cancelled");
+      utils.payments.listForBooking.invalidate({ bookingId });
+    },
+    onError: (err) => toast.error(err.message || "Failed to cancel link"),
+  });
+
+  function validateAmount(val: string) {
+    if (!val) { setAmountError("Amount is required"); return false; }
+    if (!/^\d+(\.\d{1,2})?$/.test(val)) { setAmountError("Enter a valid amount e.g. 150.00"); return false; }
+    if (parseFloat(val) <= 0) { setAmountError("Amount must be greater than 0"); return false; }
+    setAmountError("");
+    return true;
+  }
+
+  function handleCreate() {
+    if (!validateAmount(amount)) return;
+    createLink.mutate({ bookingId, amountPounds: amount, origin: window.location.origin });
+  }
+
+  function copyLink(url: string) {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function statusBadge(status: string) {
+    const map: Record<string, { label: string; color: string; bg: string }> = {
+      pending: { label: "Pending", color: "#92400e", bg: "#fef3c7" },
+      paid: { label: "Paid", color: "#065f46", bg: "#d1fae5" },
+      failed: { label: "Failed", color: "#991b1b", bg: "#fee2e2" },
+      cancelled: { label: "Cancelled", color: "#374151", bg: "#f3f4f6" },
+    };
+    const s = map[status] ?? { label: status, color: "#374151", bg: "#f3f4f6" };
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style={{ color: s.color, background: s.bg }}>
+        {s.label}
+      </span>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <CreditCard size={16} className="text-[#02E6D2]" />
+            Payment Links
+          </span>
+          <Button size="sm" onClick={() => { setShowCreateModal(true); setCreatedLink(null); }} className="h-7 text-xs">
+            + Generate Link
+          </Button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {!isLoading && links.length === 0 && (
+          <p className="text-sm text-muted-foreground italic">No payment links yet.</p>
+        )}
+        {links.map((link) => (
+          <div key={link.id} className="border rounded-lg p-3 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-sm">£{(link.amountPence / 100).toFixed(2)}</span>
+              {statusBadge(link.status)}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>Ref: {link.orderRef}</span>
+              {link.createdByName && <span>· by {link.createdByName}</span>}
+              <span>· {new Date(link.createdAt).toLocaleDateString()}</span>
+            </div>
+            {link.paidAt && (
+              <p className="text-xs text-emerald-600">Paid: {new Date(link.paidAt).toLocaleString()}</p>
+            )}
+            {link.ppsTransactionId && (
+              <p className="text-xs text-muted-foreground font-mono">Txn: {link.ppsTransactionId}</p>
+            )}
+            {link.status === "pending" && (
+              <div className="flex gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-xs gap-1"
+                  onClick={() => copyLink(`${window.location.origin}/pay/${link.id}`)}
+                >
+                  <Copy size={11} /> Copy Link
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-xs gap-1 text-red-600 hover:text-red-700"
+                  onClick={() => cancelLink.mutate({ linkId: link.id })}
+                  disabled={cancelLink.isPending}
+                >
+                  <XCircle size={11} /> Cancel
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+      </CardContent>
+
+      {/* Create Payment Link Modal */}
+      <Dialog open={showCreateModal} onOpenChange={(open) => { if (!open) { setShowCreateModal(false); setCreatedLink(null); setAmount(""); setAmountError(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard size={18} className="text-[#02E6D2]" />
+              Generate Payment Link
+            </DialogTitle>
+            <DialogDescription>
+              Enter the amount to charge. The PTS reference will be used as the order description.
+            </DialogDescription>
+          </DialogHeader>
+
+          {createdLink ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+                <p className="text-sm text-emerald-800 font-medium">Payment link created successfully</p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Payment URL (share with client)</Label>
+                <div className="flex gap-2">
+                  <Input value={createdLink} readOnly className="text-xs font-mono" />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => copyLink(createdLink)}
+                    className="shrink-0"
+                  >
+                    {copied ? <CheckCircle2 size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(createdLink, "_blank")}
+                    className="shrink-0"
+                  >
+                    <ExternalLink size={14} />
+                  </Button>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={() => { setShowCreateModal(false); setCreatedLink(null); }}>Done</Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="pay-amount">Amount (£)</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                  <Input
+                    id="pay-amount"
+                    className="pl-7"
+                    placeholder="e.g. 1500.00"
+                    value={amount}
+                    onChange={(e) => { setAmount(e.target.value); if (amountError) validateAmount(e.target.value); }}
+                    onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                  />
+                </div>
+                {amountError && <p className="text-xs text-red-500">{amountError}</p>}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowCreateModal(false)}>Cancel</Button>
+                <Button onClick={handleCreate} disabled={createLink.isPending}>
+                  {createLink.isPending ? <Loader2 size={14} className="animate-spin mr-2" /> : <CreditCard size={14} className="mr-2" />}
+                  Generate Link
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
 
@@ -1370,6 +1571,9 @@ export default function AdminBookingDetail() {
 
       {/* Linked Emails */}
       <LinkedEmailsCard bookingId={bookingId} />
+
+      {/* Payment Links */}
+      <PaymentsCard bookingId={bookingId} />
 
       {/* Query Message Dialog */}
       <Dialog open={showQueryDialog} onOpenChange={(open) => { if (!open) { setShowQueryDialog(false); setPendingStage(null); setQueryMessage(""); } }}>

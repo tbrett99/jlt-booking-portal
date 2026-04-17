@@ -123,6 +123,7 @@ import { ENV } from "./_core/env";
 import { crmRouter } from "./crm-router";
 import { remittanceRouter } from "./remittance-router";
 import { flightRequestsRouter } from "./flight-requests-router";
+import { paymentsRouter } from "./payments-router";
 
 // ─── Role middleware ──────────────────────────────────────────────────────────
 
@@ -2452,6 +2453,7 @@ export const appRouter = router({
   crm: crmRouter,
   remittance: remittanceRouter,
   flightRequests: flightRequestsRouter,
+  payments: paymentsRouter,
 
   inbox: router({
     // Admin: get IMAP config (password masked)

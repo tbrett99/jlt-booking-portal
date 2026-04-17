@@ -1320,3 +1320,16 @@
 - [x] AdminFlightsPipeline: highlight rows where ticketingDeadline is within 48h (amber) or overdue (red)
 - [x] Apply same logic to cancellationTicketingDeadline when requestType=both
 - [x] Bug: adminProcedure only allowed role='admin' but super_admin users were getting FORBIDDEN — admin flights pipeline showed no requests and pending count was 0 on dashboard. Fixed by allowing both 'admin' and 'super_admin' in adminProcedure middleware.
+
+## PPS Payment Link Integration
+- [x] Store PPS_MERCHANT_ID_TEST, PPS_MERCHANT_ID_LIVE, PPS_SIGNING_SECRET, PPS_GATEWAY_URL, PPS_LIVE_MODE as environment secrets
+- [x] Create payment_links table in drizzle/schema.ts and run migration
+- [x] Build server/pps-signature.ts helper (SHA-512 signing)
+- [x] Build tRPC payments.createLink procedure (admin only) — generates signed form fields, creates DB record, returns /pay/:token URL
+- [x] Build tRPC payments.listForBooking procedure (admin only) — returns all payment links for a booking
+- [x] Add POST /api/pps/callback Express route — verifies signature, updates payment_links status, sends agent in-app notification + email
+- [x] Build /pay/:token public page — auto-submits signed PPS form
+- [x] Build /payment/result public page — shows success/failure after PPS redirect
+- [x] Add "Generate Payment Link" button + modal on booking detail (admin only, manual amount entry, order description = PTS ref)
+- [x] Add Payment Links card to booking detail showing link history and status
+- [x] Write vitest tests for pps-signature.ts (9 tests, all passing)
