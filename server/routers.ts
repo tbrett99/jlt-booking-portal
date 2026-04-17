@@ -863,6 +863,8 @@ export const appRouter = router({
           finalSupplierPaymentDate: z.date().nullable().optional(),
           expectedCommission: z.number().optional(),
           grossCost: z.number().optional(),
+          passengers: z.number().int().min(1).optional(),
+          numberOfNights: z.number().int().min(0).optional(),
           clientName: z.string().min(1).optional(),
           departureDate: z.date().optional(),
           bookedDate: z.date().nullable().optional(),

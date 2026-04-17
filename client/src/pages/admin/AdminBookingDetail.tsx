@@ -446,6 +446,8 @@ export default function AdminBookingDetail() {
   const [editPaymentDate, setEditPaymentDate] = useState("");
   const [editCommission, setEditCommission] = useState("");
   const [editGrossCost, setEditGrossCost] = useState("");
+  const [editPassengers, setEditPassengers] = useState("");
+  const [editNights, setEditNights] = useState("");
   const [editClientName, setEditClientName] = useState("");
   const [editDepartureDate, setEditDepartureDate] = useState("");
   const [editBookedDate, setEditBookedDate] = useState("");
@@ -497,6 +499,8 @@ export default function AdminBookingDetail() {
     setEditPaymentDate(booking.finalSupplierPaymentDate ? format(new Date(booking.finalSupplierPaymentDate), "yyyy-MM-dd") : "");
     setEditCommission(booking.expectedCommission ? String(booking.expectedCommission) : "");
     setEditGrossCost((booking as any).grossCost ? String((booking as any).grossCost) : "");
+    setEditPassengers((booking as any).passengers != null ? String((booking as any).passengers) : "");
+    setEditNights((booking as any).numberOfNights != null ? String((booking as any).numberOfNights) : "");
     setEditClientName(booking.clientName ?? "");
     setEditDepartureDate(booking.departureDate ? format(new Date(booking.departureDate), "yyyy-MM-dd") : "");
     setEditBookedDate((booking as any).bookedDate ? format(new Date((booking as any).bookedDate), "yyyy-MM-dd") : "");
@@ -679,6 +683,8 @@ export default function AdminBookingDetail() {
         finalSupplierPaymentDate: editPaymentDate ? new Date(editPaymentDate) : null,
         expectedCommission: editCommission ? Number(editCommission) : undefined,
         grossCost: editGrossCost ? Number(editGrossCost) : undefined,
+        passengers: editPassengers ? parseInt(editPassengers) : undefined,
+        numberOfNights: editNights ? parseInt(editNights) : undefined,
         clientName: editClientName.trim() || undefined,
         departureDate: editDepartureDate ? new Date(editDepartureDate) : undefined,
         bookedDate: editBookedDate ? new Date(editBookedDate) : null,
@@ -792,6 +798,18 @@ export default function AdminBookingDetail() {
                 <dt className="text-muted-foreground">Reimbursements</dt>
                 <dd className="font-medium mt-0.5">{booking.reimbursementsRequired ? "Yes" : "No"}</dd>
               </div>
+              {(booking as any).passengers != null && (
+                <div>
+                  <dt className="text-muted-foreground">Passengers (excl. infants)</dt>
+                  <dd className="font-medium mt-0.5">{(booking as any).passengers}</dd>
+                </div>
+              )}
+              {(booking as any).numberOfNights != null && (
+                <div>
+                  <dt className="text-muted-foreground">Number of Nights</dt>
+                  <dd className="font-medium mt-0.5">{(booking as any).numberOfNights}</dd>
+                </div>
+              )}
             </dl>
 
             {(reimbDocs as any[]).length > 0 && (
@@ -941,6 +959,16 @@ export default function AdminBookingDetail() {
                 <div className="space-y-1">
                   <Label className="text-xs">Expected Commission (£)</Label>
                   <Input type="number" value={editCommission} onChange={(e) => setEditCommission(e.target.value)} placeholder="0.00" className="h-8 text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Passengers (excl. infants)</Label>
+                  <Input type="number" min="1" step="1" value={editPassengers} onChange={(e) => setEditPassengers(e.target.value)} placeholder="e.g. 2" className="h-8 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Number of Nights</Label>
+                  <Input type="number" min="0" step="1" value={editNights} onChange={(e) => setEditNights(e.target.value)} placeholder="e.g. 7" className="h-8 text-sm" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">

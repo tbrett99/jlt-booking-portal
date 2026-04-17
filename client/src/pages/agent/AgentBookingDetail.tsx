@@ -430,6 +430,20 @@ export default function AgentBookingDetail() {
           </div>
         )}
 
+        {(booking as any).passengers != null && (
+          <div className="rounded-xl p-3 border" style={{ background: '#f9fafb' }}>
+            <p className="text-xs text-muted-foreground mb-1">Passengers (excl. infants)</p>
+            <p className="font-semibold text-sm">{(booking as any).passengers}</p>
+          </div>
+        )}
+
+        {(booking as any).numberOfNights != null && (
+          <div className="rounded-xl p-3 border" style={{ background: '#f9fafb' }}>
+            <p className="text-xs text-muted-foreground mb-1">Number of Nights</p>
+            <p className="font-semibold text-sm">{(booking as any).numberOfNights}</p>
+          </div>
+        )}
+
         <div className="rounded-xl p-3 border col-span-2 sm:col-span-1" style={{ background: booking.expectedCommission ? '#ecfdf5' : '#fffbeb' }}>
           <p className="text-xs text-muted-foreground mb-1 flex items-center justify-between gap-1">
             <span className="flex items-center gap-1"><TrendingUp size={11} /> My Commission</span>

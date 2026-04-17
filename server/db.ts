@@ -331,6 +331,8 @@ export async function updateBookingAdminFields(
     finalSupplierPaymentDate?: Date | null;
     expectedCommission?: number;
     grossCost?: number;
+    passengers?: number;
+    numberOfNights?: number;
     clientName?: string;
     departureDate?: Date;
     bookedDate?: Date | null;

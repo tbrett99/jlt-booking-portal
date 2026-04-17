@@ -1245,3 +1245,16 @@
 - [x] Frontend: add Passengers (excl. infants) number input to booking form — mandatory
 - [x] Frontend: add Number of Nights number input to booking form — mandatory
 - [x] Frontend: make Destination/Country dropdown mandatory (required validation + toast)
+
+## Booking Detail — Passengers & Nights Display
+- [ ] Admin BookingDetail: show passengers and numberOfNights in the booking info panel
+- [ ] Agent BookingDetail: show passengers and numberOfNights in the booking summary
+- [ ] Reports CSV export: add Passengers and Nights columns
+
+## Agent Remittance Dashboard — Full Column Breakdown
+- [ ] Agent remittance view: ensure Return Date, PAX, Currency, Total IN, Total OUT, SFI, SAFI, PTRC, PTS, VAT columns are all visible
+
+## Suggested Next Steps (from booking form additions)
+- [ ] Admin BookingDetail: add passengers and numberOfNights to admin editable fields panel (alongside PTS ref, payment date)
+- [ ] Reports CSV: add Passengers and Nights columns to the export
+- [ ] Agent BookingDetail: show passengers and numberOfNights in booking summary card

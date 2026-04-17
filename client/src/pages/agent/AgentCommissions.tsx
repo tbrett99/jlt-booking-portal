@@ -510,7 +510,7 @@ export default function AgentCommissions() {
               <Button variant="outline" size="sm" className="text-xs gap-1 flex-shrink-0 ml-3"
                 onClick={() => {
                   const lines = remittanceLines ?? [];
-                  const headers = ["Batch", "Week Of", "Client", "PTS Ref", "Return Date", "PAX", "Total IN (£)", "Remittance (£)", "Your 80% (£)"];
+                  const headers = ["Batch", "Week Of", "Client", "PTS Ref", "Return Date", "PAX", "Currency", "Total IN", "Total OUT", "SFI", "SAFI", "PTRC", "PTS", "VAT", "Remittance (£)", "Your 80% (£)"];
                   const rows = lines.map((l) => [
                     l.batchName,
                     l.weekOf ? fmt(l.weekOf) : "",
@@ -518,7 +518,14 @@ export default function AgentCommissions() {
                     l.ptsRef,
                     l.returnDate ?? "",
                     l.pax ?? "",
+                    (l as any).currency ?? "GBP",
                     l.totalIn ?? "",
+                    (l as any).totalOut ?? "",
+                    (l as any).sfi ?? "",
+                    (l as any).safi ?? "",
+                    (l as any).ptrc ?? "",
+                    (l as any).pts ?? "",
+                    (l as any).vatFromPortal ?? (l as any).vatFromPts ?? "",
                     l.remittance ?? "",
                     l.remit80 ?? "",
                   ]);
@@ -569,7 +576,14 @@ export default function AgentCommissions() {
                               <th className="py-2 px-4 text-left font-medium">PTS Ref</th>
                               <th className="py-2 px-4 text-left font-medium">Return Date</th>
                               <th className="py-2 px-4 text-left font-medium">PAX</th>
+                              <th className="py-2 px-4 text-left font-medium">Currency</th>
                               <th className="py-2 px-4 text-right font-medium">Total IN</th>
+                              <th className="py-2 px-4 text-right font-medium">Total OUT</th>
+                              <th className="py-2 px-4 text-right font-medium">SFI</th>
+                              <th className="py-2 px-4 text-right font-medium">SAFI</th>
+                              <th className="py-2 px-4 text-right font-medium">PTRC</th>
+                              <th className="py-2 px-4 text-right font-medium">PTS</th>
+                              <th className="py-2 px-4 text-right font-medium">VAT</th>
                               <th className="py-2 px-4 text-right font-medium">Remittance</th>
                               <th className="py-2 px-4 text-right font-medium text-purple-600">Your 80%</th>
                             </tr>
@@ -581,7 +595,14 @@ export default function AgentCommissions() {
                                 <td className="py-2 px-4 font-mono text-xs">{l.ptsRef}</td>
                                 <td className="py-2 px-4">{l.returnDate ?? "—"}</td>
                                 <td className="py-2 px-4">{l.pax ?? "—"}</td>
+                                <td className="py-2 px-4">{(l as any).currency ?? "GBP"}</td>
                                 <td className="py-2 px-4 text-right">{l.totalIn ? `£${Number(l.totalIn).toFixed(2)}` : "—"}</td>
+                                <td className="py-2 px-4 text-right">{(l as any).totalOut ? `£${Number((l as any).totalOut).toFixed(2)}` : "—"}</td>
+                                <td className="py-2 px-4 text-right">{(l as any).sfi ? `£${Number((l as any).sfi).toFixed(2)}` : "—"}</td>
+                                <td className="py-2 px-4 text-right">{(l as any).safi ? `£${Number((l as any).safi).toFixed(2)}` : "—"}</td>
+                                <td className="py-2 px-4 text-right">{(l as any).ptrc ? `£${Number((l as any).ptrc).toFixed(2)}` : "—"}</td>
+                                <td className="py-2 px-4 text-right">{(l as any).pts ? `£${Number((l as any).pts).toFixed(2)}` : "—"}</td>
+                                <td className="py-2 px-4 text-right">{((l as any).vatFromPortal ?? (l as any).vatFromPts) ? `£${Number((l as any).vatFromPortal ?? (l as any).vatFromPts).toFixed(2)}` : "—"}</td>
                                 <td className="py-2 px-4 text-right">{l.remittance ? `£${Number(l.remittance).toFixed(2)}` : "—"}</td>
                                 <td className="py-2 px-4 text-right font-semibold text-purple-600">{l.remit80 ? `£${Number(l.remit80).toFixed(2)}` : "—"}</td>
                               </tr>
