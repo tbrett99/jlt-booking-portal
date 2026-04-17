@@ -1,0 +1,1 @@
+ALTER TABLE `remittance_lines` ADD `processingClaimId` int;

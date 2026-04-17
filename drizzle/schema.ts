@@ -836,6 +836,8 @@ export const remittanceLines = mysqlTable("remittance_lines", {
   // Push state
   pushedToAgent: boolean("pushedToAgent").default(false).notNull(),
   pushedAt: timestamp("pushedAt"),
+  // Processing flag — set when matched booking has a commission claim still in 'processing' status
+  processingClaimId: int("processingClaimId"),               // FK → commission_claims.id (null once resolved)
   // Admin notes
   adminNotes: text("adminNotes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

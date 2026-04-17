@@ -1217,3 +1217,15 @@
 - [x] Fix: Push to Agents button not visible on the Remittance Management page
 - [x] Fix: PAX column was reading 'Passengers' instead of 'PAX' from CSV
 - [x] Fix: Remove stray 'Total IN_orig' key from Janine's View CSV export
+
+## Remittance Processing Flag & Review Workflow (Apr 2026)
+- [x] DB: add processingClaimId nullable FK column to remittance_lines (points to a commission_claims.id that was in 'processing' when matched)
+- [x] Backend: uploadBatch — when a matched booking has a commission claim in 'processing' (not 'awaiting_payment'), do NOT auto-advance it; instead store the claim id in processingClaimId and leave claim status as 'processing'
+- [x] Backend: matchLine (manual match) — same logic: if matched booking has a processing claim, store processingClaimId instead of advancing
+- [x] Backend: getJaninesView — return processingClaimId flag so UI can highlight these rows
+- [x] Backend: getAgentView — return processingClaimId flag per line
+- [x] Backend: new procedure remittance.approveProcessingClaim — admin approves a flagged line: advances claim processing → awaiting_payment → paid, clears processingClaimId
+- [x] Frontend: Janine's View — highlight rows with processingClaimId in orange with a 'Needs Review' badge
+- [x] Frontend: new 'Needs Review' tab on Remittance Management page — shows all lines where processingClaimId is set, with agent name, booking, claim status, and an Approve button
+- [x] Frontend: Approve button — calls approveProcessingClaim, advances the commission claim to Paid, removes from Needs Review panel
+- [x] Frontend: Needs Review tab badge — shows count of pending review items in the tab label

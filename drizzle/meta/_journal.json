@@ -281,6 +281,13 @@
       "when": 1776429693228,
       "tag": "0039_married_killer_shrike",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1776433172092,
+      "tag": "0040_pale_raza",
+      "breakpoints": true
     }
   ]
 }

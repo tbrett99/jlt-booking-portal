@@ -9,7 +9,7 @@ import {
   users,
   commissionClaims,
 } from "../drizzle/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import { sendDirectEmail } from "./email";
 import { createInAppNotification } from "./db";
 
@@ -70,7 +70,8 @@ export const remittanceRouter = router({
       let totalRemittance = 0;
       let matchedCount = 0;
       let unmatchedCount = 0;
-      const lineValues: (typeof remittanceLines.$inferInsert)[] = [];
+      let processingFlagCount = 0;
+      const lineValues: (typeof remittanceLines.$inferInsert & { _processingClaimId?: number })[] = [];
 
       for (const rawRow of dataRows) {
         const ptsRef = (rawRow["Booking Reference"] ?? "").trim();
@@ -89,6 +90,7 @@ export const remittanceRouter = router({
         let agentName: string | null = null;
         let agentEmail: string | null = null;
         let isMatched = false;
+        let processingClaimId: number | null = null;
 
         if (matchedBookingRows.length > 0) {
           const booking = matchedBookingRows[0];
@@ -108,10 +110,9 @@ export const remittanceRouter = router({
             agentEmail = agentRows[0].email ?? null;
           }
 
-          // If this booking has an awaiting_payment commission claim, advance it to "paid"
-          // and link the remittance line (we'll update the lineId after insert)
-          const claimRows = await db
-            .select({ id: commissionClaims.id, vatAmount: commissionClaims.vatAmount })
+          // Check for awaiting_payment claim → auto-advance to paid (normal flow)
+          const awaitingClaims = await db
+            .select({ id: commissionClaims.id })
             .from(commissionClaims)
             .where(
               and(
@@ -121,9 +122,23 @@ export const remittanceRouter = router({
             )
             .limit(1);
 
-          if (claimRows.length > 0) {
-            // We'll update the claim after inserting the line to get the lineId
-            // Store a flag in the lineValues to handle post-insert
+          if (awaitingClaims.length === 0) {
+            // Check if there's a processing claim — flag for admin review
+            const processingClaims = await db
+              .select({ id: commissionClaims.id })
+              .from(commissionClaims)
+              .where(
+                and(
+                  eq(commissionClaims.bookingId, bookingId),
+                  eq(commissionClaims.status, "processing")
+                )
+              )
+              .limit(1);
+
+            if (processingClaims.length > 0) {
+              processingClaimId = processingClaims[0].id;
+              processingFlagCount++;
+            }
           }
         } else {
           unmatchedCount++;
@@ -158,6 +173,7 @@ export const remittanceRouter = router({
           agentEmail,
           isMatched,
           pushedToAgent: false,
+          processingClaimId,
         });
       }
 
@@ -167,8 +183,8 @@ export const remittanceRouter = router({
         const [lineResult] = await db.insert(remittanceLines).values(lineVal);
         const lineId = (lineResult as any).insertId as number;
 
-        // If matched, advance any awaiting_payment commission claim to "paid"
-        if (lineVal.bookingId && lineVal.isMatched) {
+        // If matched and has awaiting_payment claim → advance to "paid"
+        if (lineVal.bookingId && lineVal.isMatched && !lineVal.processingClaimId) {
           await db
             .update(commissionClaims)
             .set({
@@ -196,7 +212,7 @@ export const remittanceRouter = router({
         })
         .where(eq(remittanceBatches.id, batchId));
 
-      return { batchId, totalLines: dataRows.length, matchedCount, unmatchedCount };
+      return { batchId, totalLines: dataRows.length, matchedCount, unmatchedCount, processingFlagCount };
     }),
 
   // ── List all batches ────────────────────────────────────────────────────────
@@ -246,18 +262,19 @@ export const remittanceRouter = router({
       const matchedBookingIds = sortedLines.filter((l) => l.bookingId).map((l) => l.bookingId as number);
       const claimRows = matchedBookingIds.length > 0
         ? await db
-            .select({ bookingId: commissionClaims.bookingId, bookingType: commissionClaims.bookingType })
+            .select({ bookingId: commissionClaims.bookingId, bookingType: commissionClaims.bookingType, status: commissionClaims.status })
             .from(commissionClaims)
             .where(inArray(commissionClaims.bookingId, matchedBookingIds))
         : [];
-      const claimMap: Record<number, string> = {};
-      for (const c of claimRows) claimMap[c.bookingId] = c.bookingType;
+      const claimMap: Record<number, { bookingType: string; status: string }> = {};
+      for (const c of claimRows) claimMap[c.bookingId] = { bookingType: c.bookingType, status: c.status };
 
       return sortedLines.map((l) => ({
         ...l,
         batchName: batchMap[l.batchId]?.name ?? "",
         weekOf: batchMap[l.batchId]?.weekOf ?? null,
-        bookingType: l.bookingId ? (claimMap[l.bookingId] ?? null) : null,
+        bookingType: l.bookingId ? (claimMap[l.bookingId]?.bookingType ?? null) : null,
+        claimStatus: l.bookingId ? (claimMap[l.bookingId]?.status ?? null) : null,
       }));
     }),
 
@@ -320,6 +337,106 @@ export const remittanceRouter = router({
       return Object.values(agentMap).sort((a, b) => a.agentName.localeCompare(b.agentName));
     }),
 
+  // ── Get lines flagged as 'Needs Review' (processing claim) ─────────────────
+  getNeedsReview: protectedProcedure
+    .input(z.object({ batchId: z.number().optional() }))
+    .query(async ({ ctx, input }) => {
+      if (!["admin", "super_admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const db = await getDb();
+      if (!db) return [];
+
+      const lines = input.batchId
+        ? await db.select().from(remittanceLines).where(
+            and(
+              eq(remittanceLines.batchId, input.batchId),
+              isNotNull(remittanceLines.processingClaimId)
+            )
+          )
+        : await db.select().from(remittanceLines).where(
+            isNotNull(remittanceLines.processingClaimId)
+          );
+
+      if (lines.length === 0) return [];
+
+      // Attach batch names
+      const batchIds = Array.from(new Set(lines.map((l) => l.batchId)));
+      const batches = batchIds.length > 0
+        ? await db.select({ id: remittanceBatches.id, name: remittanceBatches.name, weekOf: remittanceBatches.weekOf })
+            .from(remittanceBatches)
+            .where(inArray(remittanceBatches.id, batchIds))
+        : [];
+      const batchMap: Record<number, { name: string; weekOf: Date | null }> = {};
+      for (const b of batches) batchMap[b.id] = { name: b.name, weekOf: b.weekOf };
+
+      // Attach claim details
+      const claimIds = lines.map((l) => l.processingClaimId as number);
+      const claims = claimIds.length > 0
+        ? await db
+            .select({
+              id: commissionClaims.id,
+              bookingId: commissionClaims.bookingId,
+              status: commissionClaims.status,
+              bookingType: commissionClaims.bookingType,
+              claimedAt: commissionClaims.claimedAt,
+            })
+            .from(commissionClaims)
+            .where(inArray(commissionClaims.id, claimIds))
+        : [];
+      const claimMap: Record<number, typeof claims[0]> = {};
+      for (const c of claims) claimMap[c.id] = c;
+
+      return lines.map((l) => ({
+        ...l,
+        batchName: batchMap[l.batchId]?.name ?? "",
+        weekOf: batchMap[l.batchId]?.weekOf ?? null,
+        claim: l.processingClaimId ? (claimMap[l.processingClaimId] ?? null) : null,
+      }));
+    }),
+
+  // ── Approve a processing-flagged line: advance claim processing → paid ──────
+  approveProcessingClaim: protectedProcedure
+    .input(z.object({ lineId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!["admin", "super_admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      // Get the line
+      const lineRows = await db
+        .select()
+        .from(remittanceLines)
+        .where(eq(remittanceLines.id, input.lineId))
+        .limit(1);
+      if (lineRows.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Line not found" });
+      const line = lineRows[0];
+
+      if (!line.processingClaimId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This line has no processing claim to approve" });
+      }
+
+      // Advance claim: processing → awaiting_payment → paid (in one step, since admin is approving)
+      await db
+        .update(commissionClaims)
+        .set({
+          status: "paid",
+          remittanceLineId: input.lineId,
+          paidAt: new Date(),
+        })
+        .where(eq(commissionClaims.id, line.processingClaimId));
+
+      // Clear the flag on the line
+      await db
+        .update(remittanceLines)
+        .set({ processingClaimId: null })
+        .where(eq(remittanceLines.id, input.lineId));
+
+      return { ok: true };
+    }),
+
   // ── Update admin notes on a line ────────────────────────────────────────────
   updateLineNotes: protectedProcedure
     .input(z.object({ lineId: z.number(), notes: z.string() }))
@@ -362,6 +479,28 @@ export const remittanceRouter = router({
         .limit(1);
       const agent = agentRows[0] ?? { name: null, email: null };
 
+      // Check claim status on this booking
+      let processingClaimId: number | null = null;
+
+      // Try awaiting_payment first
+      const awaitingClaims = await db
+        .select({ id: commissionClaims.id })
+        .from(commissionClaims)
+        .where(and(eq(commissionClaims.bookingId, booking.id), eq(commissionClaims.status, "awaiting_payment")))
+        .limit(1);
+
+      if (awaitingClaims.length === 0) {
+        // Check for processing claim
+        const processingClaims = await db
+          .select({ id: commissionClaims.id })
+          .from(commissionClaims)
+          .where(and(eq(commissionClaims.bookingId, booking.id), eq(commissionClaims.status, "processing")))
+          .limit(1);
+        if (processingClaims.length > 0) {
+          processingClaimId = processingClaims[0].id;
+        }
+      }
+
       await db
         .update(remittanceLines)
         .set({
@@ -370,19 +509,22 @@ export const remittanceRouter = router({
           agentName: agent.name ?? null,
           agentEmail: agent.email ?? null,
           isMatched: true,
+          processingClaimId,
         })
         .where(eq(remittanceLines.id, input.lineId));
 
-      // Advance any awaiting_payment claim for this booking to "paid"
-      await db
-        .update(commissionClaims)
-        .set({ status: "paid", remittanceLineId: input.lineId, paidAt: new Date() })
-        .where(
-          and(
-            eq(commissionClaims.bookingId, booking.id),
-            eq(commissionClaims.status, "awaiting_payment")
-          )
-        );
+      // Advance awaiting_payment claim to "paid" (only if no processing flag)
+      if (!processingClaimId) {
+        await db
+          .update(commissionClaims)
+          .set({ status: "paid", remittanceLineId: input.lineId, paidAt: new Date() })
+          .where(
+            and(
+              eq(commissionClaims.bookingId, booking.id),
+              eq(commissionClaims.status, "awaiting_payment")
+            )
+          );
+      }
 
       // Update batch counts
       const lineRows = await db
@@ -403,7 +545,7 @@ export const remittanceRouter = router({
           .where(eq(remittanceBatches.id, batchId));
       }
 
-      return { ok: true };
+      return { ok: true, needsReview: processingClaimId !== null };
     }),
 
   // ── Push remittances to agents ──────────────────────────────────────────────

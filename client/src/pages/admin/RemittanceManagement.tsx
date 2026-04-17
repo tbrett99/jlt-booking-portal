@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,7 @@ import {
   Send,
   Trash2,
   Search,
+  ClipboardCheck,
 } from "lucide-react";
 
 // ─── CSV Helpers ──────────────────────────────────────────────────────────────
@@ -502,6 +503,99 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
   );
 }
 
+// ─── Needs Review Panel ──────────────────────────────────────────────────────
+
+function NeedsReviewPanel({ batchId }: { batchId?: number }) {
+  const { data: lines = [], isLoading } = trpc.remittance.getNeedsReview.useQuery({ batchId });
+  const utils = trpc.useUtils();
+
+  const approveMutation = trpc.remittance.approveProcessingClaim.useMutation({
+    onSuccess: () => {
+      toast.success("Commission claim approved and marked as Paid");
+      utils.remittance.getNeedsReview.invalidate();
+      utils.remittance.getJaninesView.invalidate();
+      utils.remittance.getAgentView.invalidate();
+    },
+    onError: (e) => toast.error(`Approval failed: ${e.message}`),
+  });
+
+  if (isLoading) return <div className="py-8 text-center text-muted-foreground">Loading…</div>;
+
+  if (lines.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <CheckCircle2 className="h-12 w-12 text-green-500 mb-3" />
+        <p className="font-medium">No items need review</p>
+        <p className="text-sm text-muted-foreground">
+          All matched bookings had commission claims in the correct state.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg flex items-start gap-2">
+        <AlertTriangle className="h-4 w-4 text-orange-600 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-medium text-orange-700 dark:text-orange-400">
+            {lines.length} booking{lines.length !== 1 ? "s" : ""} matched on PTS remittance but commission is still in Processing
+          </p>
+          <p className="text-xs text-orange-600 dark:text-orange-500 mt-1">
+            This usually means an admin claimed the booking in PTS but hasn’t yet clicked “Claimed in PTS” in the portal.
+            Review each booking and click Approve to advance the commission claim to Paid.
+          </p>
+        </div>
+      </div>
+      <div className="rounded-md border overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Client</TableHead>
+              <TableHead>PTS Ref</TableHead>
+              <TableHead>Agent</TableHead>
+              <TableHead>Batch</TableHead>
+              <TableHead>Remittance</TableHead>
+              <TableHead>80%</TableHead>
+              <TableHead>Claim Type</TableHead>
+              <TableHead>Claim Status</TableHead>
+              <TableHead>Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {lines.map((l) => (
+              <TableRow key={l.id} className="bg-orange-50/50 dark:bg-orange-950/10">
+                <TableCell className="font-medium">{l.clientName}</TableCell>
+                <TableCell className="font-mono text-xs text-orange-700">{l.ptsRef}</TableCell>
+                <TableCell className="text-xs">{l.agentName ?? "—"}</TableCell>
+                <TableCell className="text-xs">{l.batchName}</TableCell>
+                <TableCell>{fmt(l.remittance)}</TableCell>
+                <TableCell className="text-green-700 dark:text-green-400 font-semibold">{fmt(l.remit80)}</TableCell>
+                <TableCell className="text-xs capitalize">{(l as any).claim?.bookingType ?? "—"}</TableCell>
+                <TableCell>
+                  <Badge variant="outline" className="text-orange-600 border-orange-300">
+                    Processing
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Button
+                    size="sm"
+                    onClick={() => approveMutation.mutate({ lineId: l.id })}
+                    disabled={approveMutation.isPending}
+                  >
+                    <ClipboardCheck className="h-3 w-3 mr-1" />
+                    Approve
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 // ─── Unmatched Panel ──────────────────────────────────────────────────────────
 
 function UnmatchedPanel({ batchId }: { batchId?: number }) {
@@ -622,6 +716,19 @@ function UnmatchedPanel({ batchId }: { batchId?: number }) {
   );
 }
 
+// ─── Needs Review Badge wrapper ──────────────────────────────────────────────
+
+function NeedsReviewBadge({
+  batchId,
+  children,
+}: {
+  batchId?: number;
+  children: (count: number) => React.ReactNode;
+}) {
+  const { data: lines = [] } = trpc.remittance.getNeedsReview.useQuery({ batchId });
+  return <>{children(lines.length)}</>;
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function RemittanceManagement() {
@@ -735,29 +842,44 @@ export default function RemittanceManagement() {
       </Card>
 
       {/* Views */}
-      <Tabs defaultValue="janines">
-        <TabsList>
-          <TabsTrigger value="janines">Janine's View</TabsTrigger>
-          <TabsTrigger value="agents">Agent View</TabsTrigger>
-          <TabsTrigger value="unmatched">
-            Unmatched
-            {selectedBatch?.unmatchedLines ? (
-              <Badge className="ml-2 bg-amber-500 text-white text-xs">
-                {selectedBatch.unmatchedLines}
-              </Badge>
-            ) : null}
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="janines" className="mt-4">
-          <JaninesView batchId={selectedBatchId} />
-        </TabsContent>
-        <TabsContent value="agents" className="mt-4">
-          <AgentView batchId={selectedBatchId} batchName={selectedBatch?.name} />
-        </TabsContent>
-        <TabsContent value="unmatched" className="mt-4">
-          <UnmatchedPanel batchId={selectedBatchId} />
-        </TabsContent>
-      </Tabs>
+      <NeedsReviewBadge batchId={selectedBatchId}>
+        {(reviewCount) => (
+          <Tabs defaultValue="janines">
+            <TabsList>
+              <TabsTrigger value="janines">Janine's View</TabsTrigger>
+              <TabsTrigger value="agents">Agent View</TabsTrigger>
+              <TabsTrigger value="review" className="relative">
+                Needs Review
+                {reviewCount > 0 && (
+                  <Badge className="ml-2 bg-orange-500 text-white text-xs">
+                    {reviewCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="unmatched">
+                Unmatched
+                {selectedBatch?.unmatchedLines ? (
+                  <Badge className="ml-2 bg-amber-500 text-white text-xs">
+                    {selectedBatch.unmatchedLines}
+                  </Badge>
+                ) : null}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="janines" className="mt-4">
+              <JaninesView batchId={selectedBatchId} />
+            </TabsContent>
+            <TabsContent value="agents" className="mt-4">
+              <AgentView batchId={selectedBatchId} batchName={selectedBatch?.name} />
+            </TabsContent>
+            <TabsContent value="review" className="mt-4">
+              <NeedsReviewPanel batchId={selectedBatchId} />
+            </TabsContent>
+            <TabsContent value="unmatched" className="mt-4">
+              <UnmatchedPanel batchId={selectedBatchId} />
+            </TabsContent>
+          </Tabs>
+        )}
+      </NeedsReviewBadge>
 
       <UploadDialog
         open={uploadOpen}
