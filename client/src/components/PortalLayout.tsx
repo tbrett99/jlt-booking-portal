@@ -242,20 +242,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
-      label: "Reimbursements",
-      icon: <PoundSterling size={16} />,
-      defaultOpen: false,
-      items: [
-        { label: "Reimbursements", href: "/admin/reimbursements", icon: <PoundSterling size={16} /> },
-      ],
-    },
-    {
       label: "Commissions",
       icon: <Banknote size={16} />,
       defaultOpen: false,
       items: [
         { label: "Commission Due", href: "/commission-due", icon: <AlertCircle size={16} /> },
         { label: "Commission Management", href: "/commissions-admin", icon: <Sparkles size={16} /> },
+        { label: "Reimbursements", href: "/admin/reimbursements", icon: <PoundSterling size={16} /> },
+        { label: "Remittances", href: "/crm/remittances", icon: <Receipt size={16} /> },
       ],
     },
     {
@@ -293,17 +287,22 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
-      label: "CRM & Recruitment",
+      label: "CRM",
       icon: <UserSearch size={16} />,
       defaultOpen: false,
       items: [
-        { label: "Recruitment Pipeline", href: "/crm/pipeline", icon: <UserSearch size={16} /> },
-        { label: "All Prospects", href: "/crm/prospects", icon: <Users size={16} /> },
-        { label: "Email Campaigns", href: "/crm/campaigns", icon: <Megaphone size={16} /> },
-        { label: "Remittances", href: "/crm/remittances", icon: <Receipt size={16} /> },
-        { label: "Payment Config", href: "/crm/payment-config", icon: <PoundSterling size={16} /> },
         { label: "Agent CRM", href: "/crm/agents", icon: <UserCheck size={16} /> },
         { label: "Change Requests", href: "/crm/change-requests", icon: <ClipboardList size={16} /> },
+      ],
+    },
+    {
+      label: "Marketing",
+      icon: <Megaphone size={16} />,
+      defaultOpen: false,
+      items: [
+        { label: "Recruitment Pipeline", href: "/crm/pipeline", icon: <UserSearch size={16} /> },
+        { label: "Prospects", href: "/crm/prospects", icon: <Users size={16} /> },
+        { label: "Email Campaigns", href: "/crm/campaigns", icon: <Megaphone size={16} /> },
       ],
     },
     {
@@ -313,6 +312,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       items: [
         { label: "Users", href: "/users", icon: <Users size={16} /> },
         { label: "Import CSV", href: "/import", icon: <FileUp size={16} /> },
+        { label: "Payment Config", href: "/crm/payment-config", icon: <PoundSterling size={16} /> },
         ...(user?.role === "super_admin"
           ? [{ label: "Notification Templates", href: "/notification-templates", icon: <Bell size={16} /> }]
           : []),

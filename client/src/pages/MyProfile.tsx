@@ -79,6 +79,8 @@ export default function MyProfile() {
           <ProfileField label="JLT Email" value={profile?.jltEmail} icon={<Mail className="h-3.5 w-3.5" />} />
           <ProfileField label="Personal Email" value={profile?.personalEmail} icon={<Mail className="h-3.5 w-3.5" />}
             onRequest={() => openRequest("personalEmail", "Personal Email", profile?.personalEmail ?? "")} />
+          <ProfileField label="Business Email" value={profile?.businessEmail} icon={<Mail className="h-3.5 w-3.5" />}
+            onRequest={() => openRequest("businessEmail", "Business Email", profile?.businessEmail ?? "")} />
           <ProfileField label="Mobile" value={profile?.mobile} icon={<Phone className="h-3.5 w-3.5" />}
             onRequest={() => openRequest("mobile", "Mobile Number", profile?.mobile ?? "")} />
           <ProfileField label="UK Region" value={profile?.ukRegion} icon={<MapPin className="h-3.5 w-3.5" />}

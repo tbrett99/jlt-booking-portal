@@ -1080,17 +1080,25 @@
 - [x] Frontend: full side sheet redesign — wider, cleaner layout with clear section headers
 
 ## CRM–Portal Integration (Apr 2026)
-- [ ] DB: add agent_change_requests table (userId, field, currentValue, requestedValue, status, adminNote, createdAt, reviewedAt, reviewedById)
-- [ ] Backend: agentCrm.getActivity procedure — bookings summary, commission summary, refunds, reimbursements for a given userId
-- [ ] Backend: agentCrm.listChangeRequests (admin) and agentCrm.submitChangeRequest (agent) procedures
-- [ ] Backend: agentCrm.reviewChangeRequest (admin approve/reject + apply) procedure
-- [ ] Admin CRM: Activity tab on agent profile sheet — booking stats, commission stats, refund/reimbursement counts, recent activity feed
-- [ ] Agent portal: My Profile page — read-only view of own CRM data (status, tier, address, bank, suppliers, docs)
-- [ ] Agent portal: Change Request form — agent selects field, enters new value, submits for admin review
-- [ ] Admin: Change Requests page — list of pending/reviewed requests with approve/reject actions
-- [ ] Auto-link: when prospect moved to Won, auto-create/link agent_crm_profile to their portal userId
-- [ ] Sidebar: add My Profile link to agent sidebar nav
+- [x] DB: add agent_change_requests table (userId, field, currentValue, requestedValue, status, adminNote, createdAt, reviewedAt, reviewedById)
+- [x] Backend: agentCrm.getActivity procedure — bookings summary, commission summary, refunds, reimbursements for a given userId
+- [x] Backend: agentCrm.listChangeRequests (admin) and agentCrm.submitChangeRequest (agent) procedures
+- [x] Backend: agentCrm.reviewChangeRequest (admin approve/reject + apply) procedure
+- [x] Admin CRM: Activity tab on agent profile sheet — booking stats, commission stats, refund/reimbursement counts, recent activity feed
+- [x] Agent portal: My Profile page — read-only view of own CRM data (status, tier, address, bank, suppliers, docs)
+- [x] Agent portal: Change Request form — agent selects field, enters new value, submits for admin review
+- [x] Admin: Change Requests page — list of pending/reviewed requests with approve/reject actions
+- [x] Auto-link: when prospect moved to Won, auto-create/link agent_crm_profile to their portal userId
+- [x] Sidebar: add My Profile link to agent sidebar nav
 
 ## Address Fix (Apr 2026)
-- [ ] Restore address fields (addressLine1, addressLine2, city, postcode) in AgentCrm profile sheet
-- [ ] Auto-populate ukRegion from postcode/city using UK region lookup for all 432 imported agents
+- [ ] Restore address fields (addressLine1, addressLine2, city, postcode) in AgentCrm profile sheet [deferred — no address data available yet]
+- [ ] Auto-populate ukRegion from postcode/city using UK region lookup for all 432 imported agents [deferred — no address data available yet]
+
+## Sidebar Reorganisation & Profile Update (Apr 2026)
+- [x] Admin sidebar: move Remittances from CRM to Commission tab
+- [x] Admin sidebar: move Payment Config from CRM to Admin tab
+- [x] Admin sidebar: make CRM its own top-level nav group (Agent CRM + Change Requests)
+- [x] Admin sidebar: rename Recruitment section to Marketing (Recruitment Pipeline, Prospects, Email Campaigns)
+- [x] Agent My Profile: add address fields (addressLine1, addressLine2, city, postcode)
+- [x] Agent My Profile: add business email field
