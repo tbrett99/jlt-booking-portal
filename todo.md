@@ -1092,8 +1092,8 @@
 - [x] Sidebar: add My Profile link to agent sidebar nav
 
 ## Address Fix (Apr 2026)
-- [ ] Restore address fields (addressLine1, addressLine2, city, postcode) in AgentCrm profile sheet [deferred — no address data available yet]
-- [ ] Auto-populate ukRegion from postcode/city using UK region lookup for all 432 imported agents [deferred — no address data available yet]
+- [x] Restore address fields (addressLine1, addressLine2, city, postcode) in AgentCrm profile sheet
+- [x] Auto-populate ukRegion from postcode/city using UK region lookup for all 432 imported agents
 
 ## Sidebar Reorganisation & Profile Update (Apr 2026)
 - [x] Admin sidebar: move Remittances from CRM to Commission tab
