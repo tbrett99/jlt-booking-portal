@@ -1336,3 +1336,6 @@
 
 ## PPS Payment Link Bug Fix
 - [x] Bug: /pay/:token and /payment/result routes were inside the auth guard — unauthenticated customers got a 404/login page. Fix: render these routes before the auth check so they are fully public.
+
+## PPS Signature / Form Error Fix
+- [x] Bug: PPS returns error #00065539 — root cause was callbackURL and merchantData fields not pre-registered in PPS merchant account. Fixed by removing both fields from the signed form. Also removed 1200ms intermediate page delay so customer goes directly to PPS on link click.

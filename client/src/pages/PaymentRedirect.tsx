@@ -24,10 +24,8 @@ export default function PaymentRedirect() {
   useEffect(() => {
     if (data && formRef.current && !submitted) {
       setSubmitted(true);
-      // Small delay so the user sees the "Redirecting to secure payment" message
-      setTimeout(() => {
-        formRef.current?.submit();
-      }, 1200);
+      // Submit immediately — customer goes straight to PPS with no intermediate page
+      formRef.current.submit();
     }
   }, [data, submitted]);
 
