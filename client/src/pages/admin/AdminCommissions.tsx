@@ -57,7 +57,7 @@ export default function AdminCommissions() {
 
   const markPaidMutation = trpc.commissionClaims.markPaid.useMutation({
     onSuccess: () => {
-      toast.success(`${selectedIds.size} commission(s) marked as paid.`);
+      toast.success(`${selectedIds.size} commission(s) claimed in PTS.`);
       setSelectedIds(new Set());
       utils.commissionClaims.all.invalidate();
     },
@@ -65,7 +65,9 @@ export default function AdminCommissions() {
   });
 
   const allClaims = (claims ?? []) as ClaimRow[];
-  const pending = allClaims.filter((c) => c.status === "claimed_not_paid");
+  const processing = allClaims.filter((c) => c.status === "processing");
+  const awaitingPayment = allClaims.filter((c) => c.status === "awaiting_payment");
+  const pending = [...processing, ...awaitingPayment]; // combined for backward compat
   const paid = allClaims.filter((c) => c.status === "paid");
 
   const toggleSelect = (id: number) => {
@@ -126,7 +128,7 @@ export default function AdminCommissions() {
       formatDate(c.claimedAt),
       formatDate(c.paidAt),
       c.paidByName ?? "",
-      c.status === "paid" ? "Processed" : "Awaiting Payment",
+      c.status === "paid" ? "Paid" : c.status === "awaiting_payment" ? "Awaiting Payment" : "Processing",
     ]);
     const csv = [headers, ...csvRows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -230,10 +232,12 @@ export default function AdminCommissions() {
                     className={
                       c.status === "paid"
                         ? "border-emerald-500 text-emerald-600"
-                        : "border-amber-500 text-amber-600"
+                        : c.status === "awaiting_payment"
+                        ? "border-amber-500 text-amber-600"
+                        : "border-orange-500 text-orange-600"
                     }
                   >
-                    {c.status === "paid" ? "Paid" : "Claimed – Awaiting Payment"}
+                    {c.status === "paid" ? "Paid" : c.status === "awaiting_payment" ? "Awaiting Payment" : "Processing"}
                   </Badge>
                 </td>
                 <td className="py-3 px-4">
@@ -246,7 +250,7 @@ export default function AdminCommissions() {
                     >
                       View
                     </Button>
-                    {showSelect && c.status === "claimed_not_paid" && (
+                    {showSelect && (c.status === "processing") && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -254,7 +258,7 @@ export default function AdminCommissions() {
                         disabled={markPaidMutation.isPending}
                         className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 text-xs"
                       >
-                        Pay
+                        Claimed in PTS
                       </Button>
                     )}
                     <Button
@@ -293,7 +297,7 @@ export default function AdminCommissions() {
             ) : (
               <Banknote className="h-4 w-4 mr-2" />
             )}
-            Mark {selectedIds.size} as Paid
+            Claimed in PTS ({selectedIds.size})
           </Button>
         )}
       </div>
@@ -305,8 +309,8 @@ export default function AdminCommissions() {
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-amber-500" />
               <div>
-                <p className="text-2xl font-bold text-amber-500">{pending.length}</p>
-                <p className="text-xs text-muted-foreground">Awaiting Payment</p>
+                <p className="text-2xl font-bold text-orange-500">{processing.length}</p>
+                <p className="text-xs text-muted-foreground">Processing</p>
               </div>
             </div>
           </CardContent>
@@ -338,7 +342,7 @@ export default function AdminCommissions() {
       <Tabs defaultValue="pending">
         <TabsList className="mb-4">
           <TabsTrigger value="pending">
-            Awaiting Payment
+            Action Required
             {pending.length > 0 && (
               <span className="ml-2 bg-amber-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
                 {pending.length}
@@ -352,7 +356,7 @@ export default function AdminCommissions() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center justify-between">
-                <span>Claims Awaiting Payment</span>
+                <span>Claims Requiring Action</span>
                 <div className="flex items-center gap-2">
                   {pending.length > 0 && selectedIds.size === 0 && (
                     <Button variant="outline" size="sm" onClick={() => toggleSelectAll(pending)} className="text-xs">

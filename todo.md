@@ -1162,3 +1162,13 @@
 - [x] Fix: ShortFundsDialog pre-populated message is empty — useEffect to reset message state when booking prop changes
 - [x] CRM: add deleteAgentCrmRecord procedure (super_admin only) — deletes agent_crm_profiles row and all related data
 - [x] CRM: add Delete Record button in AgentCrmSheet (super_admin only) with confirmation dialog warning about permanent deletion
+
+## Commission Workflow Update (Apr 2026)
+- [x] DB/schema: rename commission status "awaiting_payment" → "processing", "paid" → "awaiting_payment"; add new "paid" status for agent self-serve
+- [x] Backend: update claim procedure — change confirmation message to "You have requested to claim commission on these bookings. We'll process this for you shortly." and set status to "processing"
+- [x] Backend: rename/update admin pay procedure to "claimedInPts" — change agent notification message to the Wednesday payment run message and set status to "awaiting_payment"
+- [x] Backend: add markAsPaid procedure (agent-only) — agent marks their own awaiting_payment commission as "paid"
+- [x] Frontend: update agent claim confirmation toast/message text
+- [x] Frontend: rename admin "Pay" button to "Claimed in PTS"
+- [x] Frontend: update commission status labels in agent dashboard (Processing, Awaiting Payment, Paid)
+- [x] Frontend: add "Mark as Paid" button on agent commission dashboard for awaiting_payment items

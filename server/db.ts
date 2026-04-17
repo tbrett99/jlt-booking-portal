@@ -989,7 +989,18 @@ export async function markCommissionPaid(claimIds: number[], paidById: number) {
   for (const id of claimIds) {
     await db
       .update(commissionClaims)
-      .set({ status: "paid", paidAt: now, paidById })
+      .set({ status: "awaiting_payment", paidAt: now, paidById })
+      .where(eq(commissionClaims.id, id));
+  }
+}
+
+export async function markCommissionAgentPaid(claimIds: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  for (const id of claimIds) {
+    await db
+      .update(commissionClaims)
+      .set({ status: "paid" })
       .where(eq(commissionClaims.id, id));
   }
 }

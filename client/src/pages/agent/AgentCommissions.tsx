@@ -53,6 +53,16 @@ export default function AgentCommissions() {
   const [claimTarget, setClaimTarget] = useState<BookingWithClaim | null>(null);
   const [selectedType, setSelectedType] = useState<BookingType>("other");
   const [grossAmount, setGrossAmount] = useState<string>("");
+  const [markPaidIds, setMarkPaidIds] = useState<number[]>([]);
+
+  const markAgentPaidMutation = trpc.commissionClaims.markAgentPaid.useMutation({
+    onSuccess: () => {
+      toast.success("Marked as paid!");
+      setMarkPaidIds([]);
+      utils.commissionClaims.myCommissions.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   const claimMutation = trpc.commissionClaims.claim.useMutation({
     onSuccess: () => {
@@ -81,7 +91,8 @@ export default function AgentCommissions() {
       b.currentStage !== "Cancelled"
   );
   const claimable = all.filter((b) => !b.claim && b.currentStage === "Commission Claimable");
-  const claimedNotPaid = all.filter((b) => b.claim && b.claim.status === "claimed_not_paid");
+  const processing = all.filter((b) => b.claim && b.claim.status === "processing");
+  const awaitingPayment = all.filter((b) => b.claim && b.claim.status === "awaiting_payment");
   const paid = all.filter((b) => b.claim && b.claim.status === "paid");
 
   // Bookings missing a commission amount (active, not cancelled)
@@ -90,7 +101,8 @@ export default function AgentCommissions() {
   // Monetary totals
   const pendingTotal = sumCommission(notReady);
   const claimableTotal = sumCommission(claimable);
-  const awaitingTotal = sumCommission(claimedNotPaid);
+  const processingTotal = sumCommission(processing);
+  const awaitingTotal = sumCommission(awaitingPayment);
   const paidTotal = sumCommission(paid);
 
   const openClaimDialog = (booking: BookingWithClaim) => {
@@ -163,8 +175,10 @@ export default function AgentCommissions() {
             className={
               booking.claim?.status === "paid"
                 ? "border-emerald-500 text-emerald-600"
-                : booking.claim?.status === "claimed_not_paid"
+                : booking.claim?.status === "awaiting_payment"
                 ? "border-amber-500 text-amber-600"
+                : booking.claim?.status === "processing"
+                ? "border-orange-500 text-orange-600"
                 : booking.currentStage === "Commission Claimable"
                 ? "border-[#02E6D2] text-[#02E6D2]"
                 : "border-muted text-muted-foreground"
@@ -172,8 +186,10 @@ export default function AgentCommissions() {
           >
             {booking.claim?.status === "paid"
               ? "Paid"
-              : booking.claim?.status === "claimed_not_paid"
-              ? "Claimed – Awaiting Payment"
+              : booking.claim?.status === "awaiting_payment"
+              ? "Awaiting Payment"
+              : booking.claim?.status === "processing"
+              ? "Processing"
               : booking.currentStage}
           </Badge>
         )}
@@ -262,7 +278,7 @@ export default function AgentCommissions() {
                 <p className="text-xl font-bold text-amber-500 truncate">
                   {awaitingTotal > 0 ? `£${awaitingTotal.toFixed(2)}` : <span className="text-muted-foreground text-base">—</span>}
                 </p>
-                <p className="text-xs text-muted-foreground">{claimedNotPaid.length} booking{claimedNotPaid.length !== 1 ? "s" : ""}</p>
+                <p className="text-xs text-muted-foreground">{awaitingPayment.length} booking{awaitingPayment.length !== 1 ? "s" : ""}</p>
               </div>
             </div>
           </CardContent>
@@ -294,7 +310,7 @@ export default function AgentCommissions() {
               You've earned £{(paidTotal + awaitingTotal).toFixed(2)} in total commissions
             </p>
             <p className="text-xs mt-0.5" style={{ color: '#065f46', opacity: 0.75 }}>
-              £{paidTotal.toFixed(2)} paid · £{awaitingTotal.toFixed(2)} awaiting payment
+              £{paidTotal.toFixed(2)} paid · £{awaitingTotal.toFixed(2)} awaiting · £{processingTotal.toFixed(2)} processing
             </p>
           </div>
         </div>
@@ -310,11 +326,19 @@ export default function AgentCommissions() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="processing">
+            Processing
+            {processing.length > 0 && (
+              <span className="ml-2 bg-orange-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                {processing.length}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="awaiting">
             Awaiting Payment
-            {claimedNotPaid.length > 0 && (
+            {awaitingPayment.length > 0 && (
               <span className="ml-2 bg-amber-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
-                {claimedNotPaid.length}
+                {awaitingPayment.length}
               </span>
             )}
           </TabsTrigger>
@@ -355,9 +379,34 @@ export default function AgentCommissions() {
           )}
         </TabsContent>
 
+        <TabsContent value="processing">
+          <p className="text-sm text-muted-foreground mb-4">You have requested to claim commission on these bookings. We'll process this for you shortly.</p>
+          {processing.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <Clock className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                <p>No commissions currently being processed.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {processing.length > 1 && (
+                <div className="rounded-lg p-3 text-sm flex items-center gap-2"
+                  style={{ background: '#fff7ed', color: '#9a3412' }}>
+                  <Clock size={14} />
+                  <span><strong>£{processingTotal.toFixed(2)}</strong> across {processing.length} bookings is being processed by JLT.</span>
+                </div>
+              )}
+              {processing.map((b) => (
+                <BookingRow key={b.id} booking={b} showStatus />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
         <TabsContent value="awaiting">
-          <p className="text-sm text-muted-foreground mb-4">You have claimed commission on these bookings and we're processing payment for you.</p>
-          {claimedNotPaid.length === 0 ? (
+          <p className="text-sm text-muted-foreground mb-4">Your commission has been claimed and will be paid to you in the next payment run. Please note, claims processed after Wednesday may fall into next week's payment run.</p>
+          {awaitingPayment.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
                 <Clock className="h-10 w-10 mx-auto mb-3 opacity-30" />
@@ -366,15 +415,30 @@ export default function AgentCommissions() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {claimedNotPaid.length > 1 && (
+              {awaitingPayment.length > 1 && (
                 <div className="rounded-lg p-3 text-sm flex items-center gap-2"
                   style={{ background: '#fffbeb', color: '#92400e' }}>
                   <Clock size={14} />
-                  <span><strong>£{awaitingTotal.toFixed(2)}</strong> is awaiting payment from JLT across {claimedNotPaid.length} bookings.</span>
+                  <span><strong>£{awaitingTotal.toFixed(2)}</strong> is awaiting payment across {awaitingPayment.length} bookings.</span>
                 </div>
               )}
-              {claimedNotPaid.map((b) => (
-                <BookingRow key={b.id} booking={b} showStatus />
+              {awaitingPayment.map((b) => (
+                <div key={b.id} className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <BookingRow booking={b} showStatus />
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 flex-shrink-0"
+                    disabled={markAgentPaidMutation.isPending}
+                    onClick={() => {
+                      if (b.claim) markAgentPaidMutation.mutate({ claimIds: [b.claim.id] });
+                    }}
+                  >
+                    Mark as Paid
+                  </Button>
+                </div>
               ))}
             </div>
           )}

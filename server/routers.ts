@@ -1937,7 +1937,7 @@ export const appRouter = router({
           await createInAppNotification({
             userId: claim.agentId,
             bookingId: claim.bookingId,
-            message: `Your commission for booking "${booking.clientName}" has been marked as paid.`,
+            message: `Your commission for booking "${booking.clientName}" has been claimed and will be paid to you in the next payment run. Please note, claims processed after Wednesday may fall into next week's payment run.`,
             linkUrl: `/commissions`,
           });
           // Email notification
@@ -1954,10 +1954,31 @@ export const appRouter = router({
           await createNote({
             bookingId: claim.bookingId,
             authorId: ctx.user.id,
-            content: `[System] Commission marked as paid by ${ctx.user.name ?? "Admin"}.`,
+            content: `[System] Commission claimed in PTS by ${ctx.user.name ?? "Admin"}.`,
             isInternal: false,
           });
         }
+        return { success: true };
+      }),
+
+    // Agent: self-serve mark their own awaiting_payment commission as paid
+    markAgentPaid: protectedProcedure
+      .input(z.object({ claimIds: z.array(z.number()).min(1) }))
+      .mutation(async ({ input, ctx }) => {
+        const { markCommissionAgentPaid } = await import("./db");
+        const allClaims = await getAllCommissionClaims();
+        for (const claimId of input.claimIds) {
+          const claim = allClaims.find((c) => c.id === claimId);
+          if (!claim) continue;
+          // Agents can only mark their own claims
+          if (ctx.user.role === "agent" && claim.agentId !== ctx.user.id) {
+            throw new TRPCError({ code: "FORBIDDEN" });
+          }
+          if (claim.status !== "awaiting_payment") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Claim is not in awaiting payment status" });
+          }
+        }
+        await markCommissionAgentPaid(input.claimIds);
         return { success: true };
       }),
   }),

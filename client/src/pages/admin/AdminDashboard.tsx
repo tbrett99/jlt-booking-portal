@@ -168,7 +168,7 @@ export default function AdminDashboard() {
   const commissionClaimableMissingDate = activeBookings.filter(
     (b) => !b.finalSupplierPaymentDate && !(b as any).paymentDateDismissed && b.currentStage === "Commission Claimable"
   );
-  const pendingClaims = (claims as any[]).filter((c) => c.status === "claimed_not_paid");
+  const pendingClaims = (claims as any[]).filter((c) => c.status === "processing");
   const lateUnactioned = (allReimbs as any[]).filter((r) => r.isLate && !r.actionedAt && r.status !== "scheduled" && r.status !== "paid");
   const outstandingReimbs = (allReimbs as any[]).filter((r) => r.status === "pending");
 

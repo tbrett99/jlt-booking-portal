@@ -226,7 +226,7 @@ export const commissionClaims = mysqlTable("commission_claims", {
   agentId: int("agentId").notNull(), // FK → users.id
   bookingType: mysqlEnum("bookingType", ["lapland", "cruise", "disney", "other"]).notNull().default("other"),
   claimedAt: timestamp("claimedAt").defaultNow().notNull(),
-  status: mysqlEnum("status", ["claimed_not_paid", "paid"]).default("claimed_not_paid").notNull(),
+  status: mysqlEnum("status", ["processing", "awaiting_payment", "paid"]).default("processing").notNull(),
   grossAmount: decimal("grossAmount", { precision: 10, scale: 2 }), // Agent's declared gross commission before fees
   vatAmount: decimal("vatAmount", { precision: 10, scale: 2 }), // VAT on the commission
   paidAt: timestamp("paidAt"),

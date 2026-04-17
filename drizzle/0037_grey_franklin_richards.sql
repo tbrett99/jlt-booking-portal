@@ -1,0 +1,1 @@
+ALTER TABLE `commission_claims` MODIFY COLUMN `status` enum('processing','awaiting_payment','paid') NOT NULL DEFAULT 'processing';
