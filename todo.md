@@ -1149,3 +1149,11 @@
 - [x] Backend: getMembershipsOverview — include supplierLogins array per cancelled agent (name + id)
 - [x] Frontend: Offboarding panel — replace generic "Supplier logins" item with individual per-supplier tick items pulled from agent's CRM supplier logins
 - [x] Frontend: Offboarding panel — persist per-supplier tick state in cancelChecklist using supplier name as key
+
+## Four Improvements (Apr 2026)
+- [x] Team: when team membership/tier/sub is updated, sync the same contact fields to all team members' CRM profiles
+- [x] CRM: add trainingStage dropdown to agent profile (Training, Agent Accelerator, Accredited)
+- [x] DB: add trainingStage column to agent_crm_profiles schema
+- [x] Bookings: auto-move bookings in "Creating Own PTS" stage to "Added to PTS" when a PTS reference is present
+- [x] Commissions Due: add "Minus" tag button per booking row
+- [x] Commissions Due: Minus tag opens a pre-populated message dialog to notify agent their file is short of funds, with ability to add extra info before sending

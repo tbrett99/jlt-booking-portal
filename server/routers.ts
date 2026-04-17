@@ -871,6 +871,10 @@ export const appRouter = router({
         const result = await updateBookingAdminFields(bookingId, data as any);
         const booking = await getBookingById(bookingId);
         if (booking) {
+          // Auto-move from "Creating own PTS file" to "Added to PTS" when ptsRef is set
+          if (input.ptsRef && booking.currentStage === 'Creating own PTS file') {
+            await updateBookingStage(bookingId, 'Added to PTS', ctx.user.id);
+          }
           const changes: string[] = [];
           if (input.ptsRef !== undefined) changes.push(`PTS Ref set to "${input.ptsRef}"`);
           if (input.topdogRef !== undefined) changes.push(`Topdog Ref set to "${input.topdogRef}"`);
@@ -934,6 +938,10 @@ export const appRouter = router({
           ...(input.ptsRef !== undefined ? { ptsRef: input.ptsRef } : {}),
           ...(input.finalSupplierPaymentDate !== undefined ? { finalSupplierPaymentDate: input.finalSupplierPaymentDate } : {}),
         });
+        // Auto-move from "Creating own PTS file" to "Added to PTS" when ptsRef is provided
+        if (input.ptsRef && booking.currentStage === 'Creating own PTS file') {
+          await updateBookingStage(input.bookingId, 'Added to PTS', ctx.user.id);
+        }
         const changes: string[] = [];
         if (input.ptsRef) changes.push(`PTS Ref set to "${input.ptsRef}"`);
         if (input.finalSupplierPaymentDate) changes.push(`Final Supplier Payment Date set to ${input.finalSupplierPaymentDate.toLocaleDateString('en-GB')}`);
@@ -1747,6 +1755,45 @@ export const appRouter = router({
         agentEmail: userMap.get(b.agentId)?.email ?? "",
       }));
     }),
+    sendShortFundsMessage: adminProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        message: z.string().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
+        const allUsers = await getAllUsers();
+        const agent = allUsers.find((u) => u.id === booking.agentId);
+        if (!agent) throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' });
+        // Post as a visible note on the booking (agent can see it)
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: input.message,
+          isInternal: false,
+        });
+        // Send in-app notification to the agent
+        await createInAppNotification({
+          userId: agent.id,
+          bookingId: input.bookingId,
+          message: `Action required on booking #${input.bookingId} (${booking.clientName}): ${input.message.slice(0, 120)}${input.message.length > 120 ? '...' : ''}`,
+          linkUrl: `/bookings/${input.bookingId}`,
+        });
+        // Send email to agent
+        if (agent.email) {
+          await sendDirectEmail({
+            toEmail: agent.email,
+            toName: agent.name ?? 'Agent',
+            subject: `Action required — Booking #${input.bookingId} (${booking.clientName})`,
+            html: `<p>Hi ${agent.name ?? 'there'},</p>
+<p>${input.message.replace(/\n/g, '<br/>')}</p>
+<p>If you have any questions, please contact us at <a href="mailto:memberships@thejltgroup.co.uk">memberships@thejltgroup.co.uk</a>.</p>
+<p>The JLT Group Team</p>`,
+          });
+        }
+        return { success: true };
+      }),
   }),
 
   // ── Notifications ─────────────────────────────────────────────────────────

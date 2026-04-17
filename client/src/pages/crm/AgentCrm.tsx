@@ -73,6 +73,7 @@ type CrmProfile = {
   dateJoined: string | null;
   monthlySub: string | null;
   internalNotes: string | null;
+  trainingStage: string | null;
   topdogRetailerName: string | null;
   topdogRetailerCode: string | null;
   teamId?: number | null;
@@ -360,6 +361,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
     dateJoined: profile?.dateJoined ?? "",
     monthlySub: profile?.monthlySub ?? "",
     internalNotes: profile?.internalNotes ?? "",
+    trainingStage: profile?.trainingStage ?? "",
   });
 
   // ── Status-change dialog state ──────────────────────────────────────────────
@@ -427,6 +429,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
       dateJoined: profile?.dateJoined ?? "",
       monthlySub: profile?.monthlySub ?? "",
       internalNotes: profile?.internalNotes ?? "",
+      trainingStage: profile?.trainingStage ?? "",
     });
     setEditing(true);
   }
@@ -622,6 +625,11 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
                   : <span className="text-muted-foreground text-sm">Not set</span>}
               </Field>
               <Field label="Monthly Subscription" value={profile?.monthlySub} />
+              <Field label="Training Stage">
+                {profile?.trainingStage
+                  ? <Badge variant="outline" className="text-xs">{profile.trainingStage}</Badge>
+                  : <span className="text-muted-foreground text-sm">Not set</span>}
+              </Field>
               <Field label="Date Joined" value={profile?.dateJoined} />
             </div>
           </Section>
@@ -703,6 +711,18 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Monthly Subscription</Label>
               <Input value={form.monthlySub} onChange={(e) => setForm({ ...form, monthlySub: e.target.value })} placeholder="e.g. £87" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Training Stage</Label>
+              <Select value={form.trainingStage || "_none"} onValueChange={(v) => setForm({ ...form, trainingStage: v === "_none" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Select stage" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— Not set —</SelectItem>
+                  <SelectItem value="Training">Training</SelectItem>
+                  <SelectItem value="Agent Accelerator">Agent Accelerator</SelectItem>
+                  <SelectItem value="Accredited">Accredited</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Date Joined</Label>
@@ -810,6 +830,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
             dateJoined: form.dateJoined || null,
             monthlySub: form.monthlySub || null,
             internalNotes: form.internalNotes || null,
+            trainingStage: form.trainingStage || null,
           })} disabled={updateProfile.isPending}>
             {updateProfile.isPending ? "Saving..." : "Save Changes"}
           </Button>

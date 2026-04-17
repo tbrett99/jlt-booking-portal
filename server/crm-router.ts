@@ -916,6 +916,7 @@ export const crmRouter = router({
           dateJoined: z.string().optional().nullable(),
           monthlySub: z.string().optional().nullable(),
           internalNotes: z.string().optional().nullable(),
+          trainingStage: z.string().optional().nullable(),
         })
       )
       .mutation(async ({ input }) => {
@@ -1420,10 +1421,18 @@ export const crmRouter = router({
         const { getDb } = await import("./db");
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-        const { agentTeams } = await import("../drizzle/schema");
+        const { agentTeams, agentCrmProfiles } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
         const { teamId, ...data } = input;
+        // Update the team record
         await db.update(agentTeams).set(data).where(eq(agentTeams.id, teamId));
+        // Sync membershipTier and monthlySub to all team members' CRM profiles
+        const profileUpdate: Record<string, string | undefined> = {};
+        if (input.membershipTier !== undefined) profileUpdate.membershipTier = input.membershipTier;
+        if (input.monthlySub !== undefined) profileUpdate.monthlySub = input.monthlySub;
+        if (Object.keys(profileUpdate).length > 0) {
+          await db.update(agentCrmProfiles).set(profileUpdate).where(eq(agentCrmProfiles.teamId, teamId));
+        }
         return { success: true };
       }),
 

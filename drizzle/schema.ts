@@ -714,6 +714,7 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   cancelledAt: timestamp("cancelledAt"),                                    // Date agent was cancelled / final date recorded
   suspendedAt: timestamp("suspendedAt"),                                    // Date agent was suspended
   cancelChecklist: json("cancelChecklist"),                                 // JSON array of ticked offboarding items
+  trainingStage: varchar("trainingStage", { length: 50 }),                   // Training | Agent Accelerator | Accredited
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

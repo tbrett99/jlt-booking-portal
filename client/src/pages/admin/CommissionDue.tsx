@@ -5,9 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { AlertCircle, Calendar, CheckCircle2, User, Square, CheckSquare, CalendarClock } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, User, Square, CheckSquare, CalendarClock, Minus } from "lucide-react";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import CopyableRef from "@/components/CopyableRef";
 
@@ -94,11 +97,63 @@ function MoveDatePopover({ bookingId, currentDate, onSuccess }: {
   );
 }
 
+function ShortFundsDialog({ booking, onClose }: {
+  booking: { id: number; clientName: string; agentName?: string; ptsRef?: string | null; topdogRef?: string | null } | null;
+  onClose: () => void;
+}) {
+  const defaultMessage = booking
+    ? `Hi ${booking.agentName ?? 'there'},\n\nWe are reviewing the commission for your booking for ${booking.clientName}${booking.ptsRef ? ` (PTS Ref: ${booking.ptsRef})` : booking.topdogRef ? ` (Topdog Ref: ${booking.topdogRef})` : ` (#${booking.id})`} and it appears the file is currently short of funds.\n\nCould you please review the booking and ensure all client payments are up to date? If you have any questions, please do not hesitate to get in touch.\n\nThe JLT Group Team`
+    : "";
+  const [message, setMessage] = useState(defaultMessage);
+  const sendShortFunds = trpc.commissionDue.sendShortFundsMessage.useMutation({
+    onSuccess: () => { toast.success("Message sent to agent"); onClose(); },
+    onError: (e) => toast.error(e.message),
+  });
+  if (!booking) return null;
+  return (
+    <Dialog open={!!booking} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Short of Funds</span>
+            Notify Agent
+          </DialogTitle>
+          <DialogDescription>
+            This message will be sent to the agent by email and in-app notification, and posted as a note on the booking.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Message to agent</Label>
+            <Textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={9}
+              className="text-sm font-mono"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            className="bg-red-600 hover:bg-red-700 text-white"
+            disabled={!message.trim() || sendShortFunds.isPending}
+            onClick={() => sendShortFunds.mutate({ bookingId: booking.id, message })}
+          >
+            {sendShortFunds.isPending ? "Sending..." : "Send Message"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function CommissionDue() {
   const { data: bookings, isLoading, refetch } = trpc.commissionDue.list.useQuery();
   const [search, setSearch] = useState("");
   const [pastDepartureOnly, setPastDepartureOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [shortFundsBooking, setShortFundsBooking] = useState<{ id: number; clientName: string; agentName?: string; ptsRef?: string | null; topdogRef?: string | null } | null>(null);
 
   const moveStage = trpc.bookings.moveStage.useMutation({
     onSuccess: () => { refetch(); toast.success("Booking moved"); },
@@ -333,6 +388,16 @@ export default function CommissionDue() {
 
                     {/* Action buttons */}
                     <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 gap-1.5 text-xs border-red-300 text-red-700 hover:bg-red-50"
+                        title="File is short of funds — notify agent"
+                        onClick={() => setShortFundsBooking({ id: booking.id, clientName: booking.clientName, agentName: (booking as any).agentName, ptsRef: booking.ptsRef, topdogRef: booking.topdogRef })}
+                      >
+                        <Minus size={13} />
+                        Minus
+                      </Button>
                       <MoveDatePopover
                         bookingId={booking.id}
                         currentDate={booking.finalSupplierPaymentDate}
@@ -357,6 +422,7 @@ export default function CommissionDue() {
           })}
         </div>
       )}
+      <ShortFundsDialog booking={shortFundsBooking} onClose={() => setShortFundsBooking(null)} />
     </div>
   );
 }
