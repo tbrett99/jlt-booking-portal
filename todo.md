@@ -1267,3 +1267,6 @@
 - [x] Surface last-run status (time, success, row count) via /api/export/status endpoint
 - [x] Register external Manus scheduled task to POST to /api/export/nightly daily at 05:00 UTC (06:00 BST)
 - [x] Keep in-process node-cron as secondary fallback (already in place at 04:00 UTC)
+
+## Bug Fix — bookedDate overwritten on stage move
+- [x] Fix: bookedDate must not be modified when a booking is moved between pipeline stages

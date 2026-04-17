@@ -687,7 +687,8 @@ export default function AdminBookingDetail() {
         numberOfNights: editNights ? parseInt(editNights) : undefined,
         clientName: editClientName.trim() || undefined,
         departureDate: editDepartureDate ? new Date(editDepartureDate) : undefined,
-        bookedDate: editBookedDate ? new Date(editBookedDate) : null,
+        // Only send bookedDate if it was explicitly set by the admin — never overwrite with null
+        ...(editBookedDate ? { bookedDate: new Date(editBookedDate) } : {}),
       });
       await utils.bookings.byId.invalidate({ id: bookingId });
       toast.success("Details saved");

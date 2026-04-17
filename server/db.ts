@@ -341,7 +341,14 @@ export async function updateBookingAdminFields(
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(bookings).set(data as any).where(eq(bookings.id, bookingId));
+  // Only include fields that were explicitly provided (not undefined).
+  // This prevents unintended overwrites when only a subset of fields are being saved.
+  const safeData: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) safeData[key] = value;
+  }
+  if (Object.keys(safeData).length === 0) return getBookingById(bookingId);
+  await db.update(bookings).set(safeData as any).where(eq(bookings.id, bookingId));
   return getBookingById(bookingId);
 }
 
