@@ -139,7 +139,7 @@ export const remittanceRouter = router({
           clientName: rawRow["Client"] ?? "",
           ptsRef,
           returnDate: rawRow["Return Date"] ?? null,
-          pax: rawRow["Passengers"] ? parseInt(rawRow["Passengers"]) || null : null,
+          pax: rawRow["PAX"] ? parseInt(rawRow["PAX"]) || null : null,
           currency: rawRow["Currency"] ?? "GBP",
           totalIn: rawRow["Total IN"] ? toDecimalStr(parseNum(rawRow["Total IN"])) : null,
           totalOut: rawRow["Total OUT"] ? toDecimalStr(parseNum(rawRow["Total OUT"])) : null,
@@ -242,10 +242,22 @@ export const remittanceRouter = router({
       const batchMap: Record<number, { name: string; weekOf: Date | null }> = {};
       for (const b of batches) batchMap[b.id] = { name: b.name, weekOf: b.weekOf };
 
+      // Attach bookingType from commission_claims for matched lines
+      const matchedBookingIds = sortedLines.filter((l) => l.bookingId).map((l) => l.bookingId as number);
+      const claimRows = matchedBookingIds.length > 0
+        ? await db
+            .select({ bookingId: commissionClaims.bookingId, bookingType: commissionClaims.bookingType })
+            .from(commissionClaims)
+            .where(inArray(commissionClaims.bookingId, matchedBookingIds))
+        : [];
+      const claimMap: Record<number, string> = {};
+      for (const c of claimRows) claimMap[c.bookingId] = c.bookingType;
+
       return sortedLines.map((l) => ({
         ...l,
         batchName: batchMap[l.batchId]?.name ?? "",
         weekOf: batchMap[l.batchId]?.weekOf ?? null,
+        bookingType: l.bookingId ? (claimMap[l.bookingId] ?? null) : null,
       }));
     }),
 

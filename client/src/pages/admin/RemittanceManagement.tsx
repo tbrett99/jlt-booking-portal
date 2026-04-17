@@ -190,13 +190,14 @@ function JaninesView({ batchId }: { batchId?: number }) {
       "Return Date": l.returnDate ?? "",
       "PAX": String(l.pax ?? ""),
       "Currency": l.currency ?? "GBP",
-      "Total IN": l.totalIn ?? "",
-      "Total OUT": l.totalOut ?? "",
-      "SFI": l.sfi ?? "",
-      "SAFI": l.safi ?? "",
-      "PTRC": l.ptrc ?? "",
-      "PTS": l.pts ?? "",
-      "VAT (PTS)": l.vatFromPts ?? "",
+      "Total IN": fmt(l.totalIn),
+      "Total OUT": fmt(l.totalOut),
+      "SFI": fmt(l.sfi),
+      "SAFI": fmt(l.safi),
+      "PTRC": fmt(l.ptrc),
+      "PTS Fee": fmt(l.pts),
+      "VAT": fmt(l.vatFromPts),
+      "Booking Type": (l as any).bookingType ?? "",
       "Remittance": l.remittance,
       "0.80": l.remit80 ?? "",
       "0.20": l.jlt20 ?? "",
@@ -228,9 +229,18 @@ function JaninesView({ batchId }: { batchId?: number }) {
               <TableHead>PTS Ref</TableHead>
               <TableHead>Return</TableHead>
               <TableHead>PAX</TableHead>
+              <TableHead>Currency</TableHead>
+              <TableHead>Total IN</TableHead>
+              <TableHead>Total OUT</TableHead>
+              <TableHead>SFI</TableHead>
+              <TableHead>SAFI</TableHead>
+              <TableHead>PTRC</TableHead>
+              <TableHead>PTS</TableHead>
+              <TableHead>VAT</TableHead>
               <TableHead>Remittance</TableHead>
               <TableHead>80%</TableHead>
               <TableHead>20%</TableHead>
+              <TableHead>Booking Type</TableHead>
               <TableHead>Agent</TableHead>
             </TableRow>
           </TableHeader>
@@ -243,7 +253,7 @@ function JaninesView({ batchId }: { batchId?: number }) {
               </TableRow>
             )}
             {lines.map((l) => (
-              <TableRow key={l.id} className={!l.isMatched ? "bg-amber-50 dark:bg-amber-950/20" : ""}>
+                <TableRow key={l.id} className={!l.isMatched ? "bg-amber-50 dark:bg-amber-950/20" : ""}>
                 <TableCell>
                   {l.isMatched ? (
                     <Badge variant="outline" className="text-green-600 border-green-300">Matched</Badge>
@@ -258,9 +268,18 @@ function JaninesView({ batchId }: { batchId?: number }) {
                 <TableCell className="font-mono text-xs">{l.ptsRef}</TableCell>
                 <TableCell className="text-xs">{l.returnDate ?? "—"}</TableCell>
                 <TableCell className="text-xs">{l.pax ?? "—"}</TableCell>
+                <TableCell className="text-xs">{l.currency ?? "GBP"}</TableCell>
+                <TableCell className="text-xs">{fmt(l.totalIn)}</TableCell>
+                <TableCell className="text-xs">{fmt(l.totalOut)}</TableCell>
+                <TableCell className="text-xs">{fmt(l.sfi)}</TableCell>
+                <TableCell className="text-xs">{fmt(l.safi)}</TableCell>
+                <TableCell className="text-xs">{fmt(l.ptrc)}</TableCell>
+                <TableCell className="text-xs">{fmt(l.pts)}</TableCell>
+                <TableCell className="text-xs">{fmt(l.vatFromPts)}</TableCell>
                 <TableCell className="font-medium">{fmt(l.remittance)}</TableCell>
                 <TableCell className="text-green-700 dark:text-green-400">{fmt(l.remit80)}</TableCell>
                 <TableCell className="text-blue-700 dark:text-blue-400">{fmt(l.jlt20)}</TableCell>
+                <TableCell className="text-xs capitalize">{(l as any).bookingType ?? "—"}</TableCell>
                 <TableCell className="text-xs">{l.agentName ?? "—"}</TableCell>
               </TableRow>
             ))}
@@ -306,11 +325,31 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
         "PTS Ref": l.ptsRef,
         "Return Date": l.returnDate ?? "",
         "PAX": String(l.pax ?? ""),
+        "Currency": l.currency ?? "GBP",
+        "Total IN": fmt(l.totalIn),
+        "Total OUT": fmt(l.totalOut),
+        "SFI": fmt(l.sfi),
+        "SAFI": fmt(l.safi),
+        "PTRC": fmt(l.ptrc),
+        "PTS Fee": fmt(l.pts),
+        "VAT": fmt(l.vatFromPts),
         "Remittance": l.remittance,
         "Agent 80%": l.remit80 ?? "",
+        "Pushed": l.pushedToAgent ? "Yes" : "No",
       }))
     );
     exportToCsv(`agent-view${batchName ? `-${batchName}` : ""}.csv`, rows);
+  };
+
+  const [confirmPush, setConfirmPush] = useState(false);
+
+  const handlePush = () => {
+    setConfirmPush(true);
+  };
+
+  const confirmAndPush = () => {
+    pushMutation.mutate({ batchId: batchId as number });
+    setConfirmPush(false);
   };
 
   if (isLoading) return <div className="py-8 text-center text-muted-foreground">Loading…</div>;
@@ -322,18 +361,44 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
 
   return (
     <div>
+      {/* Push confirmation dialog */}
+      <Dialog open={confirmPush} onOpenChange={setConfirmPush}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Push to Agents?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will send {unpushedCount} remittance line{unpushedCount !== 1 ? "s" : ""} to{" "}
+            {agents.filter((a) => a.lines.some((l: any) => !l.pushedToAgent)).length} agent{agents.filter((a) => a.lines.some((l: any) => !l.pushedToAgent)).length !== 1 ? "s" : ""}.
+            Each agent will see their remittance breakdown in their portal dashboard.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmPush(false)}>Cancel</Button>
+            <Button onClick={confirmAndPush} disabled={pushMutation.isPending}>
+              <Send className="h-4 w-4 mr-2" />
+              {pushMutation.isPending ? "Pushing…" : "Confirm Push"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex justify-between items-center mb-4">
         <p className="text-sm text-muted-foreground">{agents.length} agents</p>
         <div className="flex gap-2">
-          {batchId && unpushedCount > 0 && (
+          {unpushedCount > 0 && (
             <Button
               size="sm"
-              onClick={() => pushMutation.mutate({ batchId })}
+              onClick={handlePush}
               disabled={pushMutation.isPending}
             >
               <Send className="h-4 w-4 mr-2" />
               {pushMutation.isPending ? "Pushing…" : `Push to Agents (${unpushedCount})`}
             </Button>
+          )}
+          {unpushedCount === 0 && agents.length > 0 && (
+            <Badge variant="outline" className="text-green-600 border-green-300 flex items-center gap-1">
+              <CheckCircle2 className="h-3 w-3" />All pushed
+            </Badge>
           )}
           <Button size="sm" variant="outline" onClick={exportAgentView}>
             <Download className="h-4 w-4 mr-2" />Export CSV
@@ -382,6 +447,14 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
                         <TableHead>PTS Ref</TableHead>
                         <TableHead>Return</TableHead>
                         <TableHead>Batch</TableHead>
+                        <TableHead>Currency</TableHead>
+                        <TableHead>Total IN</TableHead>
+                        <TableHead>Total OUT</TableHead>
+                        <TableHead>SFI</TableHead>
+                        <TableHead>SAFI</TableHead>
+                        <TableHead>PTRC</TableHead>
+                        <TableHead>PTS</TableHead>
+                        <TableHead>VAT</TableHead>
                         <TableHead>Remittance</TableHead>
                         <TableHead>Agent 80%</TableHead>
                         <TableHead>Status</TableHead>
@@ -394,6 +467,14 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
                           <TableCell className="font-mono text-xs">{l.ptsRef}</TableCell>
                           <TableCell className="text-xs">{l.returnDate ?? "—"}</TableCell>
                           <TableCell className="text-xs">{l.batchName}</TableCell>
+                          <TableCell className="text-xs">{l.currency ?? "GBP"}</TableCell>
+                          <TableCell className="text-xs">{fmt(l.totalIn)}</TableCell>
+                          <TableCell className="text-xs">{fmt(l.totalOut)}</TableCell>
+                          <TableCell className="text-xs">{fmt(l.sfi)}</TableCell>
+                          <TableCell className="text-xs">{fmt(l.safi)}</TableCell>
+                          <TableCell className="text-xs">{fmt(l.ptrc)}</TableCell>
+                          <TableCell className="text-xs">{fmt(l.pts)}</TableCell>
+                          <TableCell className="text-xs">{fmt(l.vatFromPts)}</TableCell>
                           <TableCell>{fmt(l.remittance)}</TableCell>
                           <TableCell className="text-green-700 dark:text-green-400 font-semibold">
                             {fmt(l.remit80)}

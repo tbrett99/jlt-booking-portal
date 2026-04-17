@@ -1206,3 +1206,14 @@
 - [x] DB/backend: when a remittance line is matched to a booking that has an awaiting_payment commission claim, link the claim to the remittance line (remittanceLineId on commissionClaims)
 - [x] Backend: when remittance line is matched/uploaded and booking has a commission claim in awaiting_payment, auto-advance claim status to "paid"
 - [x] Schema: add remittanceLineId nullable FK column to commissionClaims table
+
+## Data Fix (Apr 2026)
+- [x] Reset all commission claims with status "paid" (agent-confirmed) back to "awaiting_payment" so they appear in the Claimed tab
+
+## Remittance View Fixes (Apr 2026)
+- [x] Janine's View: show all PTS financial columns (Total IN, Total OUT, SFI, SAFI, PTRC, PTS, VAT)
+- [x] Janine's View: pull booking type from commission claim (Cruise, Disney, Other etc.)
+- [x] Agent View: show all PTS financial columns (Total IN, Total OUT, SFI, SAFI, PTRC, PTS, VAT)
+- [x] Fix: Push to Agents button not visible on the Remittance Management page
+- [x] Fix: PAX column was reading 'Passengers' instead of 'PAX' from CSV
+- [x] Fix: Remove stray 'Total IN_orig' key from Janine's View CSV export
