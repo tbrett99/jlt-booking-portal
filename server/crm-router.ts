@@ -1177,5 +1177,115 @@ export const crmRouter = router({
         suppliers: supplierLogins.map(s => s.supplierName),
       };
     }),
+
+    // ─── Team Management (Duo / Trio groupings) ──────────────────────────────
+    createTeam: adminProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        membershipTier: z.string().optional(),
+        monthlySub: z.string().optional(),
+        notes: z.string().optional(),
+        memberUserIds: z.array(z.number()).min(1),
+      }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { agentTeams, agentCrmProfiles } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const [result] = await db.insert(agentTeams).values({
+          name: input.name,
+          membershipTier: input.membershipTier ?? null,
+          monthlySub: input.monthlySub ?? null,
+          notes: input.notes ?? null,
+        });
+        const teamId = (result as any).insertId as number;
+        for (const userId of input.memberUserIds) {
+          await db.update(agentCrmProfiles).set({ teamId }).where(eq(agentCrmProfiles.userId, userId));
+        }
+        return { teamId };
+      }),
+
+    updateTeam: adminProcedure
+      .input(z.object({
+        teamId: z.number(),
+        name: z.string().min(1).optional(),
+        membershipTier: z.string().optional(),
+        monthlySub: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { agentTeams } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const { teamId, ...data } = input;
+        await db.update(agentTeams).set(data).where(eq(agentTeams.id, teamId));
+        return { success: true };
+      }),
+
+    addTeamMember: adminProcedure
+      .input(z.object({ teamId: z.number(), userId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { agentCrmProfiles } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(agentCrmProfiles).set({ teamId: input.teamId }).where(eq(agentCrmProfiles.userId, input.userId));
+        return { success: true };
+      }),
+
+    removeTeamMember: adminProcedure
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { agentCrmProfiles } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(agentCrmProfiles).set({ teamId: null }).where(eq(agentCrmProfiles.userId, input.userId));
+        return { success: true };
+      }),
+
+    getTeam: adminProcedure
+      .input(z.object({ teamId: z.number() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) return null;
+        const { agentTeams, agentCrmProfiles, users } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const teams = await db.select().from(agentTeams).where(eq(agentTeams.id, input.teamId));
+        if (!teams[0]) return null;
+        const members = await db
+          .select({ userId: agentCrmProfiles.userId, name: users.name, email: users.email })
+          .from(agentCrmProfiles)
+          .innerJoin(users, eq(users.id, agentCrmProfiles.userId))
+          .where(eq(agentCrmProfiles.teamId, input.teamId));
+        return { ...teams[0], members };
+      }),
+
+    listTeams: adminProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return [];
+      const { agentTeams } = await import("../drizzle/schema");
+      return db.select().from(agentTeams).orderBy(agentTeams.name);
+    }),
+
+    deleteTeam: adminProcedure
+      .input(z.object({ teamId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { agentTeams, agentCrmProfiles } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(agentCrmProfiles).set({ teamId: null }).where(eq(agentCrmProfiles.teamId, input.teamId));
+        await db.delete(agentTeams).where(eq(agentTeams.id, input.teamId));
+        return { success: true };
+      }),
   }),
 });

@@ -1102,3 +1102,11 @@
 - [x] Admin sidebar: rename Recruitment section to Marketing (Recruitment Pipeline, Prospects, Email Campaigns)
 - [x] Agent My Profile: add address fields (addressLine1, addressLine2, city, postcode)
 - [x] Agent My Profile: add business email field
+
+## Agent Teams / Duo & Trio Linking (Apr 2026)
+- [x] Clear monthlySub from Business Duo, Business Trio, First Class Duo agents
+- [x] DB: add agent_teams table (id, name, membershipTier, monthlySub, createdAt)
+- [x] DB: add teamId FK to agent_crm_profiles
+- [x] Backend: agentCrm.createTeam, addTeamMember, removeTeamMember, updateTeam procedures
+- [x] Admin CRM: Team tab in agent profile — create/join team, show all team members with links
+- [x] Admin CRM: team name and shared monthly sub visible on profile

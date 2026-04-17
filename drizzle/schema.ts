@@ -707,6 +707,7 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   monthlySub: varchar("monthlySub", { length: 50 }),                      // e.g. £87 / £127
   internalNotes: text("internalNotes"),                                   // replaces adminNotes
   adminNotes: text("adminNotes"),                                         // kept for legacy data
+  teamId: int("teamId"),                                                    // FK → agent_teams.id (for Duo/Trio groupings)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -752,3 +753,15 @@ export const agentChangeRequests = mysqlTable("agent_change_requests", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type AgentChangeRequest = typeof agentChangeRequests.$inferSelect;
+
+// ─── Agent Teams (Duo / Trio groupings) ──────────────────────────────────────
+export const agentTeams = mysqlTable("agent_teams", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),                       // e.g. "Smith Travel Duo"
+  membershipTier: varchar("membershipTier", { length: 50 }),              // Business Duo / Business Trio / First Class Duo
+  monthlySub: varchar("monthlySub", { length: 20 }),                     // shared monthly price e.g. "174"
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AgentTeam = typeof agentTeams.$inferSelect;

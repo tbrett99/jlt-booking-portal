@@ -73,6 +73,7 @@ type CrmProfile = {
   internalNotes: string | null;
   topdogRetailerName: string | null;
   topdogRetailerCode: string | null;
+  teamId?: number | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   city?: string | null;
@@ -93,6 +94,7 @@ type AgentRow = {
   createdAt: Date;
   tags: string[];
   crmProfile: CrmProfile | null;
+  teamId?: number | null;
 };
 
 function StatusBadge({ status }: { status: string | null | undefined }) {
@@ -285,9 +287,10 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
         {/* Tabs */}
         <div className="px-6 pt-4">
           <Tabs defaultValue="profile">
-            <TabsList className="grid grid-cols-6 w-full">
+            <TabsList className="grid grid-cols-7 w-full">
               <TabsTrigger value="profile" className="text-xs">Profile</TabsTrigger>
               <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
+              <TabsTrigger value="team" className="text-xs">Team</TabsTrigger>
               <TabsTrigger value="suppliers" className="text-xs">Suppliers</TabsTrigger>
               <TabsTrigger value="bank" className="text-xs">Bank</TabsTrigger>
               <TabsTrigger value="docs" className="text-xs">Docs</TabsTrigger>
@@ -308,6 +311,9 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             </TabsContent>
             <TabsContent value="docs" className="mt-5 pb-8">
               <DocsTab userId={agent.id} profile={profile} onRefresh={refresh} />
+            </TabsContent>
+            <TabsContent value="team" className="mt-5 pb-8">
+              <TeamTab userId={agent.id} profile={profile} onRefresh={refresh} />
             </TabsContent>
             <TabsContent value="tags" className="mt-5 pb-8">
               <TagsTab userId={agent.id} tags={agent.tags} onRefresh={refresh} />
@@ -1009,6 +1015,195 @@ function ActivityTab({ userId }: { userId: number }) {
 
       {data.bookings.total === 0 && data.commissions.totalClaimed === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">No portal activity recorded for this agent yet.</p>
+      )}
+    </div>
+  );
+}
+
+// ─── Team Tab ─────────────────────────────────────────────────────────────────
+
+function TeamTab({ userId, profile, onRefresh }: { userId: number; profile: CrmProfile | null; onRefresh: () => void; }) {
+  const utils = trpc.useUtils();
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [teamName, setTeamName] = useState("");
+  const [teamTier, setTeamTier] = useState("");
+  const [teamSub, setTeamSub] = useState("");
+  const [teamNotes, setTeamNotes] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const teamId = profile?.teamId ?? null;
+
+  // Load team data if agent is in a team
+  const { data: teamData, isLoading: teamLoading } = trpc.crm.agentCrm.getTeam.useQuery(
+    { teamId: teamId! },
+    { enabled: !!teamId }
+  );
+
+  // Load all agents for the add-member search
+  const { data: allAgents } = trpc.crm.agentCrm.list.useQuery(undefined, { enabled: showAddDialog });
+
+  const createTeam = trpc.crm.agentCrm.createTeam.useMutation({
+    onSuccess: () => { utils.crm.agentCrm.list.invalidate(); onRefresh(); setShowCreateDialog(false); },
+  });
+
+  const addMember = trpc.crm.agentCrm.addTeamMember.useMutation({
+    onSuccess: () => { utils.crm.agentCrm.getTeam.invalidate(); utils.crm.agentCrm.list.invalidate(); onRefresh(); setShowAddDialog(false); },
+  });
+
+  const removeMember = trpc.crm.agentCrm.removeTeamMember.useMutation({
+    onSuccess: () => { utils.crm.agentCrm.getTeam.invalidate(); utils.crm.agentCrm.list.invalidate(); onRefresh(); },
+  });
+
+  const deleteTeam = trpc.crm.agentCrm.deleteTeam.useMutation({
+    onSuccess: () => { utils.crm.agentCrm.list.invalidate(); onRefresh(); },
+  });
+
+  const filteredAgents = (allAgents ?? []).filter(a =>
+    a.id !== userId &&
+    !a.crmProfile?.teamId &&
+    (a.name?.toLowerCase().includes(searchQuery.toLowerCase()) || a.email?.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  if (teamLoading && teamId) {
+    return <div className="text-sm text-muted-foreground py-6 text-center">Loading team...</div>;
+  }
+
+  // Agent is in a team
+  if (teamData) {
+    return (
+      <div className="space-y-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="font-semibold text-base">{teamData.name}</h3>
+            <div className="flex gap-2 mt-1 flex-wrap">
+              {teamData.membershipTier && <Badge variant="secondary">{teamData.membershipTier}</Badge>}
+              {teamData.monthlySub && <Badge variant="outline">£{teamData.monthlySub}/mo</Badge>}
+            </div>
+            {teamData.notes && <p className="text-sm text-muted-foreground mt-2">{teamData.notes}</p>}
+          </div>
+          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => {
+            if (confirm("Remove this agent from the team?")) removeMember.mutate({ userId });
+          }}>Leave Team</Button>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Team Members ({teamData.members.length})</p>
+            <Button size="sm" variant="outline" onClick={() => setShowAddDialog(true)}>
+              <Plus className="h-3 w-3 mr-1" /> Add Member
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {teamData.members.map(m => (
+              <div key={m.userId} className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                <div>
+                  <p className="text-sm font-medium">{m.name}</p>
+                  <p className="text-xs text-muted-foreground">{m.email}</p>
+                </div>
+                {m.userId !== userId && (
+                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive h-7 text-xs"
+                    onClick={() => { if (confirm(`Remove ${m.name} from this team?`)) removeMember.mutate({ userId: m.userId }); }}>
+                    Remove
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="pt-2 border-t">
+          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive text-xs"
+            onClick={() => { if (confirm("Delete this entire team? All members will be unlinked.")) deleteTeam.mutate({ teamId: teamData.id }); }}>
+            Delete Team
+          </Button>
+        </div>
+
+        {/* Add member dialog */}
+        {showAddDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-background rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+              <h3 className="font-semibold mb-4">Add Team Member</h3>
+              <input
+                className="w-full border rounded-lg px-3 py-2 text-sm mb-3 bg-background"
+                placeholder="Search agents..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-60 overflow-y-auto space-y-1">
+                {filteredAgents.slice(0, 20).map(a => (
+                  <button key={a.id} className="w-full text-left px-3 py-2 rounded-lg hover:bg-accent text-sm"
+                    onClick={() => addMember.mutate({ teamId: teamData.id, userId: a.id })}>
+                    <span className="font-medium">{a.name}</span>
+                    <span className="text-muted-foreground ml-2 text-xs">{a.email}</span>
+                  </button>
+                ))}
+                {filteredAgents.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No unassigned agents found</p>}
+              </div>
+              <div className="flex justify-end mt-4">
+                <Button variant="outline" size="sm" onClick={() => { setShowAddDialog(false); setSearchQuery(""); }}>Cancel</Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Agent is not in a team
+  return (
+    <div className="space-y-5">
+      <div className="text-center py-6 border-2 border-dashed rounded-xl">
+        <User className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+        <p className="text-sm font-medium">Not part of a team</p>
+        <p className="text-xs text-muted-foreground mt-1 mb-4">Create a new team or add this agent to an existing one</p>
+        <Button size="sm" onClick={() => setShowCreateDialog(true)}>
+          <Plus className="h-3 w-3 mr-1" /> Create Team
+        </Button>
+      </div>
+
+      {/* Create team dialog */}
+      {showCreateDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <h3 className="font-semibold mb-4">Create New Team</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Team Name *</label>
+                <input className="w-full border rounded-lg px-3 py-2 text-sm mt-1 bg-background" placeholder="e.g. Smith Travel Duo"
+                  value={teamName} onChange={e => setTeamName(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Membership Tier</label>
+                <select className="w-full border rounded-lg px-3 py-2 text-sm mt-1 bg-background"
+                  value={teamTier} onChange={e => setTeamTier(e.target.value)}>
+                  <option value="">Select tier...</option>
+                  <option>Business Duo</option>
+                  <option>Business Trio</option>
+                  <option>First Class Duo</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Monthly Subscription (£)</label>
+                <input className="w-full border rounded-lg px-3 py-2 text-sm mt-1 bg-background" placeholder="e.g. 174"
+                  value={teamSub} onChange={e => setTeamSub(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Notes</label>
+                <textarea className="w-full border rounded-lg px-3 py-2 text-sm mt-1 bg-background resize-none" rows={2}
+                  value={teamNotes} onChange={e => setTeamNotes(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="outline" size="sm" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
+              <Button size="sm" disabled={!teamName.trim() || createTeam.isPending}
+                onClick={() => createTeam.mutate({ name: teamName, membershipTier: teamTier || undefined, monthlySub: teamSub || undefined, notes: teamNotes || undefined, memberUserIds: [userId] })}>
+                {createTeam.isPending ? "Creating..." : "Create Team"}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

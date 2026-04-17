@@ -232,6 +232,13 @@
       "when": 1776371034501,
       "tag": "0032_stormy_zaran",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1776415085204,
+      "tag": "0033_supreme_pandemic",
+      "breakpoints": true
     }
   ]
 }
