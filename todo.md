@@ -1229,3 +1229,10 @@
 - [x] Frontend: new 'Needs Review' tab on Remittance Management page — shows all lines where processingClaimId is set, with agent name, booking, claim status, and an Approve button
 - [x] Frontend: Approve button — calls approveProcessingClaim, advances the commission claim to Paid, removes from Needs Review panel
 - [x] Frontend: Needs Review tab badge — shows count of pending review items in the tab label
+
+## VAT Fix — Remittance Lines (Apr 2026)
+- [x] Backend: uploadBatch — when matching a booking, fetch vatAmount from commission claim and populate vatFromPortal on the remittance line
+- [x] Backend: matchLine (manual match) — same: populate vatFromPortal from commission claim vatAmount
+- [x] Frontend: Janine's View — show vatFromPortal (portal VAT) as the primary VAT column; show vatFromPts (PTS CSV VAT) as a secondary column; prefer portal value when both present
+- [x] Frontend: Agent View — same VAT display update
+- [x] Frontend: CSV exports — include both VAT columns clearly labelled

@@ -91,6 +91,7 @@ export const remittanceRouter = router({
         let agentEmail: string | null = null;
         let isMatched = false;
         let processingClaimId: number | null = null;
+        let vatFromPortalAmt: number | null = null;
 
         if (matchedBookingRows.length > 0) {
           const booking = matchedBookingRows[0];
@@ -112,7 +113,7 @@ export const remittanceRouter = router({
 
           // Check for awaiting_payment claim → auto-advance to paid (normal flow)
           const awaitingClaims = await db
-            .select({ id: commissionClaims.id })
+            .select({ id: commissionClaims.id, vatAmount: commissionClaims.vatAmount })
             .from(commissionClaims)
             .where(
               and(
@@ -122,10 +123,16 @@ export const remittanceRouter = router({
             )
             .limit(1);
 
-          if (awaitingClaims.length === 0) {
+          if (awaitingClaims.length > 0) {
+            // Capture portal VAT from the claim
+            const claimVat = awaitingClaims[0].vatAmount;
+            if (claimVat !== null && claimVat !== undefined) {
+              vatFromPortalAmt = parseFloat(String(claimVat));
+            }
+          } else {
             // Check if there's a processing claim — flag for admin review
             const processingClaims = await db
-              .select({ id: commissionClaims.id })
+              .select({ id: commissionClaims.id, vatAmount: commissionClaims.vatAmount })
               .from(commissionClaims)
               .where(
                 and(
@@ -138,6 +145,11 @@ export const remittanceRouter = router({
             if (processingClaims.length > 0) {
               processingClaimId = processingClaims[0].id;
               processingFlagCount++;
+              // Still capture VAT from processing claim
+              const claimVat = processingClaims[0].vatAmount;
+              if (claimVat !== null && claimVat !== undefined) {
+                vatFromPortalAmt = parseFloat(String(claimVat));
+              }
             }
           }
         } else {
@@ -164,7 +176,7 @@ export const remittanceRouter = router({
           pts: rawRow["PTS"] ? toDecimalStr(parseNum(rawRow["PTS"])) : null,
           vatFromPts: vatAmt > 0 ? toDecimalStr(vatAmt) : null,
           remittance: toDecimalStr(remittanceAmt),
-          vatFromPortal: null,
+          vatFromPortal: vatFromPortalAmt !== null ? toDecimalStr(vatFromPortalAmt) : null,
           remit80: toDecimalStr(remit80),
           jlt20: toDecimalStr(jlt20),
           bookingId,
@@ -481,23 +493,29 @@ export const remittanceRouter = router({
 
       // Check claim status on this booking
       let processingClaimId: number | null = null;
+      let vatFromPortal: string | null = null;
 
       // Try awaiting_payment first
       const awaitingClaims = await db
-        .select({ id: commissionClaims.id })
+        .select({ id: commissionClaims.id, vatAmount: commissionClaims.vatAmount })
         .from(commissionClaims)
         .where(and(eq(commissionClaims.bookingId, booking.id), eq(commissionClaims.status, "awaiting_payment")))
         .limit(1);
 
-      if (awaitingClaims.length === 0) {
+      if (awaitingClaims.length > 0) {
+        const v = awaitingClaims[0].vatAmount;
+        if (v !== null && v !== undefined) vatFromPortal = parseFloat(String(v)).toFixed(2);
+      } else {
         // Check for processing claim
         const processingClaims = await db
-          .select({ id: commissionClaims.id })
+          .select({ id: commissionClaims.id, vatAmount: commissionClaims.vatAmount })
           .from(commissionClaims)
           .where(and(eq(commissionClaims.bookingId, booking.id), eq(commissionClaims.status, "processing")))
           .limit(1);
         if (processingClaims.length > 0) {
           processingClaimId = processingClaims[0].id;
+          const v = processingClaims[0].vatAmount;
+          if (v !== null && v !== undefined) vatFromPortal = parseFloat(String(v)).toFixed(2);
         }
       }
 
@@ -510,6 +528,7 @@ export const remittanceRouter = router({
           agentEmail: agent.email ?? null,
           isMatched: true,
           processingClaimId,
+          vatFromPortal,
         })
         .where(eq(remittanceLines.id, input.lineId));
 
