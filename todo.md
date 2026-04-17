@@ -1172,3 +1172,37 @@
 - [x] Frontend: rename admin "Pay" button to "Claimed in PTS"
 - [x] Frontend: update commission status labels in agent dashboard (Processing, Awaiting Payment, Paid)
 - [x] Frontend: add "Mark as Paid" button on agent commission dashboard for awaiting_payment items
+
+## PTS Remittance Automation (Apr 2026)
+
+### Database
+- [x] DB: remittance_batches table (id, name, weekOf, uploadedAt, uploadedBy, totalRemittance, totalLines, matchedLines)
+- [x] DB: remittance_lines table (id, batchId, ptsRef, clientName, returnDate, pax, currency, totalIn, totalOut, sfi, safi, ptrc, pts, vatFromPortal, remittance, remit80, jlt20, bookingId nullable, agentId nullable, agentName, agentEmail, isMatched, isUnmatched)
+- [x] DB: migration generated and applied
+
+### Backend
+- [x] Backend: remittance.uploadBatch — parse CSV, match each row to booking by ptsRef, compute 80/20 split, apply VAT from portal booking, save batch + lines
+- [x] Backend: remittance.getBatches — list all batches with summary stats
+- [x] Backend: remittance.getBatchLines — get all lines for a batch (or all batches), with matched/unmatched flag
+- [x] Backend: remittance.getJaninesView — all matched lines with agent info, 80/20 split, VAT
+- [x] Backend: remittance.getAgentView — matched lines grouped by agent, 80% column only
+- [x] Backend: remittance.pushToAgents — send each agent their remittance lines as in-app notification + email
+- [x] Backend: remittance.getMyRemittances — agent-facing: returns remittance lines for the logged-in agent
+
+### Frontend: Admin Remittance Page
+- [x] Frontend: /commissions/remittance admin page with Upload, Janine's View, Agent View, Unmatched tabs
+- [x] Frontend: Upload tab — drag-and-drop CSV upload, batch name auto-filled (week of date), parse preview before confirming
+- [x] Frontend: Janine's View tab — full table with all PTS columns + agent + 80/20 + VAT, unmatched rows amber-highlighted, export CSV button
+- [x] Frontend: Agent View tab — grouped by agent, 80% column, unmatched excluded, export CSV button, Push to Agents button
+- [x] Frontend: Unmatched tab — rows that didn't match a portal booking, with link to search/fix the PTS ref on the booking
+- [x] Frontend: Sidebar nav — add Remittance link under Commissions group
+
+### Frontend: Agent Dashboard
+- [x] Frontend: Remittances tab in agent commission dashboard — shows lines pushed to them (client, booking ref, return date, remit amount, batch week)
+
+## Commission Management Tab Update (Apr 2026)
+- [x] AdminCommissions: rename "Paid History" tab to "Claimed"
+- [x] AdminCommissions: add "Paid" tab — shows commission claims that have been matched to a remittance line
+- [x] DB/backend: when a remittance line is matched to a booking that has an awaiting_payment commission claim, link the claim to the remittance line (remittanceLineId on commissionClaims)
+- [x] Backend: when remittance line is matched/uploaded and booking has a commission claim in awaiting_payment, auto-advance claim status to "paid"
+- [x] Schema: add remittanceLineId nullable FK column to commissionClaims table

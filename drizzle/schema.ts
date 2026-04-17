@@ -231,6 +231,7 @@ export const commissionClaims = mysqlTable("commission_claims", {
   vatAmount: decimal("vatAmount", { precision: 10, scale: 2 }), // VAT on the commission
   paidAt: timestamp("paidAt"),
   paidById: int("paidById"), // FK → users.id (admin who marked as paid)
+  remittanceLineId: int("remittanceLineId"), // FK → remittance_lines.id (set when matched to a PTS remittance)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -788,3 +789,55 @@ export const agentTeams = mysqlTable("agent_teams", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type AgentTeam = typeof agentTeams.$inferSelect;
+
+// ─── PTS Remittance Batches ───────────────────────────────────────────────────
+export const remittanceBatches = mysqlTable("remittance_batches", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),          // e.g. "Week of 14 Apr 2026"
+  weekOf: timestamp("weekOf").notNull(),                      // start of the week this remittance covers
+  uploadedById: int("uploadedById").notNull(),                // FK → users.id (admin who uploaded)
+  totalRemittance: decimal("totalRemittance", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalLines: int("totalLines").notNull().default(0),
+  matchedLines: int("matchedLines").notNull().default(0),
+  unmatchedLines: int("unmatchedLines").notNull().default(0),
+  pushedToAgentsAt: timestamp("pushedToAgentsAt"),            // when Push to Agents was last run
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type RemittanceBatch = typeof remittanceBatches.$inferSelect;
+
+// ─── PTS Remittance Lines ─────────────────────────────────────────────────────
+export const remittanceLines = mysqlTable("remittance_lines", {
+  id: int("id").autoincrement().primaryKey(),
+  batchId: int("batchId").notNull(),                          // FK → remittance_batches.id
+  // Raw PTS columns
+  clientName: varchar("clientName", { length: 255 }).notNull(),
+  ptsRef: varchar("ptsRef", { length: 100 }).notNull(),       // Booking Reference from PTS
+  returnDate: varchar("returnDate", { length: 50 }),
+  pax: int("pax"),
+  currency: varchar("currency", { length: 10 }).default("GBP"),
+  totalIn: decimal("totalIn", { precision: 12, scale: 2 }),
+  totalOut: decimal("totalOut", { precision: 12, scale: 2 }),
+  sfi: decimal("sfi", { precision: 10, scale: 2 }),
+  safi: decimal("safi", { precision: 10, scale: 2 }),
+  ptrc: decimal("ptrc", { precision: 10, scale: 2 }),
+  pts: decimal("pts", { precision: 10, scale: 2 }),
+  vatFromPts: decimal("vatFromPts", { precision: 10, scale: 2 }),  // VAT column from PTS CSV
+  remittance: decimal("remittance", { precision: 12, scale: 2 }).notNull(),
+  // Calculated fields
+  vatFromPortal: decimal("vatFromPortal", { precision: 10, scale: 2 }),   // VAT from portal booking record
+  remit80: decimal("remit80", { precision: 12, scale: 2 }),               // 80% agent share
+  jlt20: decimal("jlt20", { precision: 12, scale: 2 }),                   // 20% JLT share
+  // Matched booking / agent
+  bookingId: int("bookingId"),                                // FK → bookings.id (null if unmatched)
+  agentId: int("agentId"),                                    // FK → users.id (null if unmatched)
+  agentName: varchar("agentName", { length: 255 }),
+  agentEmail: varchar("agentEmail", { length: 320 }),
+  isMatched: boolean("isMatched").default(false).notNull(),
+  // Push state
+  pushedToAgent: boolean("pushedToAgent").default(false).notNull(),
+  pushedAt: timestamp("pushedAt"),
+  // Admin notes
+  adminNotes: text("adminNotes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type RemittanceLine = typeof remittanceLines.$inferSelect;

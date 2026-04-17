@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
-import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight, Download } from "lucide-react";
+import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight, Download, FileSpreadsheet } from "lucide-react";
 import { Link } from "wouter";
 
 type BookingType = "lapland" | "cruise" | "disney" | "other";
@@ -54,6 +54,8 @@ export default function AgentCommissions() {
   const [selectedType, setSelectedType] = useState<BookingType>("other");
   const [grossAmount, setGrossAmount] = useState<string>("");
   const [markPaidIds, setMarkPaidIds] = useState<number[]>([]);
+
+  const { data: remittanceLines } = trpc.remittance.getMyRemittances.useQuery();
 
   const markAgentPaidMutation = trpc.commissionClaims.markAgentPaid.useMutation({
     onSuccess: () => {
@@ -343,6 +345,14 @@ export default function AgentCommissions() {
             )}
           </TabsTrigger>
           <TabsTrigger value="paid">Paid</TabsTrigger>
+          <TabsTrigger value="remittances">
+            Remittances
+            {((remittanceLines?.length ?? 0) > 0) && (
+              <span className="ml-2 bg-purple-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                {remittanceLines!.length}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="not-ready">
             Pending
             {notReady.length > 0 && (
@@ -489,6 +499,100 @@ export default function AgentCommissions() {
               {paid.map((b) => (
                 <BookingRow key={b.id} booking={b} showStatus />
               ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="remittances">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-muted-foreground">Remittances paid to JLT by PTS on your behalf. Your 80% share is shown below.</p>
+            {(remittanceLines?.length ?? 0) > 0 && (
+              <Button variant="outline" size="sm" className="text-xs gap-1 flex-shrink-0 ml-3"
+                onClick={() => {
+                  const lines = remittanceLines ?? [];
+                  const headers = ["Batch", "Week Of", "Client", "PTS Ref", "Return Date", "PAX", "Total IN (£)", "Remittance (£)", "Your 80% (£)"];
+                  const rows = lines.map((l) => [
+                    l.batchName,
+                    l.weekOf ? fmt(l.weekOf) : "",
+                    l.clientName,
+                    l.ptsRef,
+                    l.returnDate ?? "",
+                    l.pax ?? "",
+                    l.totalIn ?? "",
+                    l.remittance ?? "",
+                    l.remit80 ?? "",
+                  ]);
+                  const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+                  const blob = new Blob([csv], { type: "text/csv" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a"); a.href = url; a.download = `my-remittances-${format(new Date(), 'yyyy-MM-dd')}.csv`; a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                <Download size={13} /> Export CSV
+              </Button>
+            )}
+          </div>
+          {(remittanceLines?.length ?? 0) === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <FileSpreadsheet className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                <p>No remittances have been pushed to you yet.</p>
+                <p className="text-sm mt-1">Remittances appear here once JLT uploads and processes the weekly PTS remittance file.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {/* Group by batch */}
+              {Array.from(new Set((remittanceLines ?? []).map((l) => l.batchName))).map((batchName) => {
+                const batchLines = (remittanceLines ?? []).filter((l) => l.batchName === batchName);
+                const batchTotal = batchLines.reduce((acc, l) => acc + Number(l.remit80 ?? 0), 0);
+                const weekOf = batchLines[0]?.weekOf;
+                return (
+                  <Card key={batchName}>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileSpreadsheet size={14} className="text-purple-500" />
+                          <span>{batchName}</span>
+                          {weekOf && <span className="text-xs text-muted-foreground font-normal">Week of {fmt(weekOf)}</span>}
+                        </div>
+                        <span className="text-purple-600 font-bold">£{batchTotal.toFixed(2)}</span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border text-muted-foreground">
+                              <th className="py-2 px-4 text-left font-medium">Client</th>
+                              <th className="py-2 px-4 text-left font-medium">PTS Ref</th>
+                              <th className="py-2 px-4 text-left font-medium">Return Date</th>
+                              <th className="py-2 px-4 text-left font-medium">PAX</th>
+                              <th className="py-2 px-4 text-right font-medium">Total IN</th>
+                              <th className="py-2 px-4 text-right font-medium">Remittance</th>
+                              <th className="py-2 px-4 text-right font-medium text-purple-600">Your 80%</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {batchLines.map((l) => (
+                              <tr key={l.id} className="border-b border-border hover:bg-accent/20">
+                                <td className="py-2 px-4 font-medium">{l.clientName}</td>
+                                <td className="py-2 px-4 font-mono text-xs">{l.ptsRef}</td>
+                                <td className="py-2 px-4">{l.returnDate ?? "—"}</td>
+                                <td className="py-2 px-4">{l.pax ?? "—"}</td>
+                                <td className="py-2 px-4 text-right">{l.totalIn ? `£${Number(l.totalIn).toFixed(2)}` : "—"}</td>
+                                <td className="py-2 px-4 text-right">{l.remittance ? `£${Number(l.remittance).toFixed(2)}` : "—"}</td>
+                                <td className="py-2 px-4 text-right font-semibold text-purple-600">{l.remit80 ? `£${Number(l.remit80).toFixed(2)}` : "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </TabsContent>

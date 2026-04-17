@@ -27,6 +27,7 @@ import AgentCommissions from "./pages/agent/AgentCommissions";
 import AgentCancelBooking from "./pages/agent/AgentCancelBooking";
 import AgentRequestAmendment from "./pages/agent/AgentRequestAmendment";
 import AdminCommissions from "./pages/admin/AdminCommissions";
+import RemittanceManagement from "./pages/admin/RemittanceManagement";
 import AdminImport from "./pages/admin/AdminImport";
 import AdminAgentPerformance from "./pages/admin/AdminAgentPerformance";
 import AdminMessages from "./pages/admin/AdminMessages";
@@ -203,6 +204,7 @@ function AuthRouter() {
         <Route path="/refunds/pipeline" component={AdminRefundKanban} />
         <Route path="/commission-due" component={CommissionDue} />
         <Route path="/commissions-admin" component={AdminCommissions} />
+        <Route path="/remittance" component={RemittanceManagement} />
         <Route path="/reports" component={AdminReports} />
         <Route path="/agent-performance" component={AdminAgentPerformance} />
         <Route path="/notification-templates" component={NotificationTemplates} />

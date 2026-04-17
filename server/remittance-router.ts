@@ -1,0 +1,539 @@
+import { TRPCError } from "@trpc/server";
+import { protectedProcedure, router } from "./_core/trpc";
+import { z } from "zod";
+import { getDb } from "./db";
+import {
+  remittanceBatches,
+  remittanceLines,
+  bookings,
+  users,
+  commissionClaims,
+} from "../drizzle/schema";
+import { eq, and, inArray } from "drizzle-orm";
+import { sendDirectEmail } from "./email";
+import { createInAppNotification } from "./db";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function parseNum(v: string | undefined | null): number {
+  if (!v) return 0;
+  const n = parseFloat(String(v).replace(/,/g, "").trim());
+  return isNaN(n) ? 0 : n;
+}
+
+function toDecimalStr(n: number): string {
+  return n.toFixed(2);
+}
+
+type CsvRow = Record<string, string>;
+
+// ─── Router ───────────────────────────────────────────────────────────────────
+
+export const remittanceRouter = router({
+
+  // ── Upload a new batch ──────────────────────────────────────────────────────
+  uploadBatch: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      weekOf: z.string(), // ISO date string
+      rows: z.array(z.record(z.string(), z.string())), // raw CSV rows as key-value objects
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!["admin", "super_admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // Filter out the Totals row and empty rows
+      const dataRows = (input.rows as CsvRow[]).filter(
+        (r) => r["Client"]?.toLowerCase() !== "totals" && r["Booking Reference"]?.trim()
+      );
+
+      if (dataRows.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No valid rows found in CSV" });
+      }
+
+      // Create the batch record first
+      const [batchResult] = await db.insert(remittanceBatches).values({
+        name: input.name,
+        weekOf: new Date(input.weekOf),
+        uploadedById: ctx.user.id,
+        totalRemittance: "0",
+        totalLines: 0,
+        matchedLines: 0,
+        unmatchedLines: 0,
+      });
+      const batchId = (batchResult as any).insertId as number;
+
+      // Process each row: match to booking, look up agent, calculate splits
+      let totalRemittance = 0;
+      let matchedCount = 0;
+      let unmatchedCount = 0;
+      const lineValues: (typeof remittanceLines.$inferInsert)[] = [];
+
+      for (const rawRow of dataRows) {
+        const ptsRef = (rawRow["Booking Reference"] ?? "").trim();
+        const remittanceAmt = parseNum(rawRow["Remittance"]);
+        totalRemittance += remittanceAmt;
+
+        // Try to match booking by ptsRef
+        const matchedBookingRows = await db
+          .select({ id: bookings.id, agentId: bookings.agentId })
+          .from(bookings)
+          .where(eq(bookings.ptsRef, ptsRef))
+          .limit(1);
+
+        let bookingId: number | null = null;
+        let agentId: number | null = null;
+        let agentName: string | null = null;
+        let agentEmail: string | null = null;
+        let isMatched = false;
+
+        if (matchedBookingRows.length > 0) {
+          const booking = matchedBookingRows[0];
+          bookingId = booking.id;
+          agentId = booking.agentId;
+          isMatched = true;
+          matchedCount++;
+
+          // Look up agent details
+          const agentRows = await db
+            .select({ name: users.name, email: users.email })
+            .from(users)
+            .where(eq(users.id, agentId))
+            .limit(1);
+          if (agentRows.length > 0) {
+            agentName = agentRows[0].name ?? null;
+            agentEmail = agentRows[0].email ?? null;
+          }
+
+          // If this booking has an awaiting_payment commission claim, advance it to "paid"
+          // and link the remittance line (we'll update the lineId after insert)
+          const claimRows = await db
+            .select({ id: commissionClaims.id, vatAmount: commissionClaims.vatAmount })
+            .from(commissionClaims)
+            .where(
+              and(
+                eq(commissionClaims.bookingId, bookingId),
+                eq(commissionClaims.status, "awaiting_payment")
+              )
+            )
+            .limit(1);
+
+          if (claimRows.length > 0) {
+            // We'll update the claim after inserting the line to get the lineId
+            // Store a flag in the lineValues to handle post-insert
+          }
+        } else {
+          unmatchedCount++;
+        }
+
+        // Calculate 80/20 split
+        const remit80 = parseFloat((remittanceAmt * 0.8).toFixed(2));
+        const jlt20 = parseFloat((remittanceAmt * 0.2).toFixed(2));
+        const vatAmt = parseNum(rawRow["VAT"]);
+
+        lineValues.push({
+          batchId,
+          clientName: rawRow["Client"] ?? "",
+          ptsRef,
+          returnDate: rawRow["Return Date"] ?? null,
+          pax: rawRow["Passengers"] ? parseInt(rawRow["Passengers"]) || null : null,
+          currency: rawRow["Currency"] ?? "GBP",
+          totalIn: rawRow["Total IN"] ? toDecimalStr(parseNum(rawRow["Total IN"])) : null,
+          totalOut: rawRow["Total OUT"] ? toDecimalStr(parseNum(rawRow["Total OUT"])) : null,
+          sfi: rawRow["SFI"] ? toDecimalStr(parseNum(rawRow["SFI"])) : null,
+          safi: rawRow["SAFI"] ? toDecimalStr(parseNum(rawRow["SAFI"])) : null,
+          ptrc: rawRow["PTRC"] ? toDecimalStr(parseNum(rawRow["PTRC"])) : null,
+          pts: rawRow["PTS"] ? toDecimalStr(parseNum(rawRow["PTS"])) : null,
+          vatFromPts: vatAmt > 0 ? toDecimalStr(vatAmt) : null,
+          remittance: toDecimalStr(remittanceAmt),
+          vatFromPortal: null,
+          remit80: toDecimalStr(remit80),
+          jlt20: toDecimalStr(jlt20),
+          bookingId,
+          agentId,
+          agentName,
+          agentEmail,
+          isMatched,
+          pushedToAgent: false,
+        });
+      }
+
+      // Insert all lines one by one to capture insertIds for claim linking
+      for (let i = 0; i < lineValues.length; i++) {
+        const lineVal = lineValues[i];
+        const [lineResult] = await db.insert(remittanceLines).values(lineVal);
+        const lineId = (lineResult as any).insertId as number;
+
+        // If matched, advance any awaiting_payment commission claim to "paid"
+        if (lineVal.bookingId && lineVal.isMatched) {
+          await db
+            .update(commissionClaims)
+            .set({
+              status: "paid",
+              remittanceLineId: lineId,
+              paidAt: new Date(),
+            })
+            .where(
+              and(
+                eq(commissionClaims.bookingId, lineVal.bookingId),
+                eq(commissionClaims.status, "awaiting_payment")
+              )
+            );
+        }
+      }
+
+      // Update batch summary
+      await db
+        .update(remittanceBatches)
+        .set({
+          totalRemittance: toDecimalStr(totalRemittance),
+          totalLines: dataRows.length,
+          matchedLines: matchedCount,
+          unmatchedLines: unmatchedCount,
+        })
+        .where(eq(remittanceBatches.id, batchId));
+
+      return { batchId, totalLines: dataRows.length, matchedCount, unmatchedCount };
+    }),
+
+  // ── List all batches ────────────────────────────────────────────────────────
+  getBatches: protectedProcedure.query(async ({ ctx }) => {
+    if (!["admin", "super_admin"].includes(ctx.user.role)) {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
+    const db = await getDb();
+    if (!db) return [];
+    const batches = await db
+      .select()
+      .from(remittanceBatches)
+      .orderBy(remittanceBatches.weekOf);
+    return batches.reverse();
+  }),
+
+  // ── Get lines for Janine's View ─────────────────────────────────────────────
+  getJaninesView: protectedProcedure
+    .input(z.object({ batchId: z.number().optional() }))
+    .query(async ({ ctx, input }) => {
+      if (!["admin", "super_admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const db = await getDb();
+      if (!db) return [];
+
+      const lines = input.batchId
+        ? await db.select().from(remittanceLines).where(eq(remittanceLines.batchId, input.batchId))
+        : await db.select().from(remittanceLines);
+
+      const sortedLines = [...lines].sort((a, b) =>
+        (a.agentName ?? "").localeCompare(b.agentName ?? "") ||
+        (a.clientName ?? "").localeCompare(b.clientName ?? "")
+      );
+
+      // Attach batch names
+      const batchIds = Array.from(new Set(sortedLines.map((l) => l.batchId)));
+      const batches = batchIds.length > 0
+        ? await db.select({ id: remittanceBatches.id, name: remittanceBatches.name, weekOf: remittanceBatches.weekOf })
+            .from(remittanceBatches)
+            .where(inArray(remittanceBatches.id, batchIds))
+        : [];
+      const batchMap: Record<number, { name: string; weekOf: Date | null }> = {};
+      for (const b of batches) batchMap[b.id] = { name: b.name, weekOf: b.weekOf };
+
+      return sortedLines.map((l) => ({
+        ...l,
+        batchName: batchMap[l.batchId]?.name ?? "",
+        weekOf: batchMap[l.batchId]?.weekOf ?? null,
+      }));
+    }),
+
+  // ── Get Agent View (matched lines grouped by agent) ─────────────────────────
+  getAgentView: protectedProcedure
+    .input(z.object({ batchId: z.number().optional() }))
+    .query(async ({ ctx, input }) => {
+      if (!["admin", "super_admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const db = await getDb();
+      if (!db) return [];
+
+      const lines = input.batchId
+        ? await db.select().from(remittanceLines).where(
+            and(eq(remittanceLines.batchId, input.batchId), eq(remittanceLines.isMatched, true))
+          )
+        : await db.select().from(remittanceLines).where(eq(remittanceLines.isMatched, true));
+
+      // Attach batch names
+      const batchIds = Array.from(new Set(lines.map((l) => l.batchId)));
+      const batches = batchIds.length > 0
+        ? await db.select({ id: remittanceBatches.id, name: remittanceBatches.name, weekOf: remittanceBatches.weekOf })
+            .from(remittanceBatches)
+            .where(inArray(remittanceBatches.id, batchIds))
+        : [];
+      const batchMap: Record<number, { name: string; weekOf: Date | null }> = {};
+      for (const b of batches) batchMap[b.id] = { name: b.name, weekOf: b.weekOf };
+
+      // Group by agent
+      const agentMap: Record<string, {
+        agentId: number | null;
+        agentName: string;
+        agentEmail: string;
+        totalRemit80: number;
+        lines: Array<typeof lines[0] & { batchName: string; weekOf: Date | null }>;
+      }> = {};
+
+      for (const line of lines) {
+        const key = line.agentEmail ?? line.agentName ?? "unknown";
+        if (!agentMap[key]) {
+          agentMap[key] = {
+            agentId: line.agentId,
+            agentName: line.agentName ?? "Unknown Agent",
+            agentEmail: line.agentEmail ?? "",
+            totalRemit80: 0,
+            lines: [],
+          };
+        }
+        agentMap[key].totalRemit80 = parseFloat(
+          (agentMap[key].totalRemit80 + parseFloat(line.remit80 ?? "0")).toFixed(2)
+        );
+        agentMap[key].lines.push({
+          ...line,
+          batchName: batchMap[line.batchId]?.name ?? "",
+          weekOf: batchMap[line.batchId]?.weekOf ?? null,
+        });
+      }
+
+      return Object.values(agentMap).sort((a, b) => a.agentName.localeCompare(b.agentName));
+    }),
+
+  // ── Update admin notes on a line ────────────────────────────────────────────
+  updateLineNotes: protectedProcedure
+    .input(z.object({ lineId: z.number(), notes: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!["admin", "super_admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db
+        .update(remittanceLines)
+        .set({ adminNotes: input.notes })
+        .where(eq(remittanceLines.id, input.lineId));
+      return { ok: true };
+    }),
+
+  // ── Manually match an unmatched line to a booking ───────────────────────────
+  matchLine: protectedProcedure
+    .input(z.object({ lineId: z.number(), bookingId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!["admin", "super_admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const bookingRows = await db
+        .select({ id: bookings.id, agentId: bookings.agentId })
+        .from(bookings)
+        .where(eq(bookings.id, input.bookingId))
+        .limit(1);
+      if (bookingRows.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Booking not found" });
+      }
+      const booking = bookingRows[0];
+      const agentRows = await db
+        .select({ name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.id, booking.agentId))
+        .limit(1);
+      const agent = agentRows[0] ?? { name: null, email: null };
+
+      await db
+        .update(remittanceLines)
+        .set({
+          bookingId: booking.id,
+          agentId: booking.agentId,
+          agentName: agent.name ?? null,
+          agentEmail: agent.email ?? null,
+          isMatched: true,
+        })
+        .where(eq(remittanceLines.id, input.lineId));
+
+      // Advance any awaiting_payment claim for this booking to "paid"
+      await db
+        .update(commissionClaims)
+        .set({ status: "paid", remittanceLineId: input.lineId, paidAt: new Date() })
+        .where(
+          and(
+            eq(commissionClaims.bookingId, booking.id),
+            eq(commissionClaims.status, "awaiting_payment")
+          )
+        );
+
+      // Update batch counts
+      const lineRows = await db
+        .select({ batchId: remittanceLines.batchId })
+        .from(remittanceLines)
+        .where(eq(remittanceLines.id, input.lineId))
+        .limit(1);
+      if (lineRows.length > 0) {
+        const batchId = lineRows[0].batchId;
+        const allLines = await db
+          .select({ isMatched: remittanceLines.isMatched })
+          .from(remittanceLines)
+          .where(eq(remittanceLines.batchId, batchId));
+        const matched = allLines.filter((l) => l.isMatched).length;
+        await db
+          .update(remittanceBatches)
+          .set({ matchedLines: matched, unmatchedLines: allLines.length - matched })
+          .where(eq(remittanceBatches.id, batchId));
+      }
+
+      return { ok: true };
+    }),
+
+  // ── Push remittances to agents ──────────────────────────────────────────────
+  pushToAgents: protectedProcedure
+    .input(z.object({ batchId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!["admin", "super_admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const lines = await db
+        .select()
+        .from(remittanceLines)
+        .where(
+          and(
+            eq(remittanceLines.batchId, input.batchId),
+            eq(remittanceLines.isMatched, true),
+            eq(remittanceLines.pushedToAgent, false)
+          )
+        );
+
+      if (lines.length === 0) {
+        return { pushed: 0, message: "No unpushed matched lines found" };
+      }
+
+      const batchRows = await db
+        .select()
+        .from(remittanceBatches)
+        .where(eq(remittanceBatches.id, input.batchId))
+        .limit(1);
+      const batch = batchRows[0];
+
+      // Group by agent
+      const agentGroups: Record<number, typeof lines> = {};
+      for (const line of lines) {
+        if (!line.agentId) continue;
+        if (!agentGroups[line.agentId]) agentGroups[line.agentId] = [];
+        agentGroups[line.agentId].push(line);
+      }
+
+      let pushedCount = 0;
+      for (const [agentIdStr, agentLines] of Object.entries(agentGroups)) {
+        const agentId = parseInt(agentIdStr);
+        const totalRemit80 = agentLines.reduce(
+          (sum, l) => sum + parseFloat(l.remit80 ?? "0"),
+          0
+        );
+        const agentName = agentLines[0].agentName ?? "Agent";
+        const agentEmail = agentLines[0].agentEmail ?? "";
+
+        const bookingList = agentLines
+          .map((l) => `• ${l.clientName} (${l.ptsRef}) — £${parseFloat(l.remit80 ?? "0").toFixed(2)}`)
+          .join("\n");
+
+        const notifContent = `Your commission remittance for ${batch?.name ?? "this week"} has been processed.\n\nTotal: £${totalRemit80.toFixed(2)}\n\n${bookingList}\n\nThis will be included in your next payment run.`;
+
+        try {
+          await createInAppNotification({
+            userId: agentId,
+            message: notifContent,
+          });
+        } catch (_) {}
+
+        if (agentEmail) {
+          try {
+            await sendDirectEmail({
+              toEmail: agentEmail,
+              toName: agentName,
+              subject: `JLT Group — Commission Remittance ${batch?.name ?? ""}`,
+              html: `<p>Hi ${agentName},</p><p>${notifContent.replace(/\n/g, "<br>")}</p><p>If you have any questions, please contact <a href="mailto:memberships@thejltgroup.co.uk">memberships@thejltgroup.co.uk</a></p><p>The JLT Group Team</p>`,
+            });
+          } catch (_) {}
+        }
+
+        pushedCount += agentLines.length;
+      }
+
+      // Mark lines as pushed
+      const lineIds = lines.filter((l) => l.agentId).map((l) => l.id);
+      if (lineIds.length > 0) {
+        await db
+          .update(remittanceLines)
+          .set({ pushedToAgent: true, pushedAt: new Date() })
+          .where(inArray(remittanceLines.id, lineIds));
+      }
+
+      await db
+        .update(remittanceBatches)
+        .set({ pushedToAgentsAt: new Date() })
+        .where(eq(remittanceBatches.id, input.batchId));
+
+      return { pushed: pushedCount };
+    }),
+
+  // ── Agent: get my remittances ───────────────────────────────────────────────
+  getMyRemittances: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return [];
+
+    const lines = await db
+      .select()
+      .from(remittanceLines)
+      .where(
+        and(
+          eq(remittanceLines.agentId, ctx.user.id),
+          eq(remittanceLines.pushedToAgent, true)
+        )
+      );
+
+    const sortedLines = [...lines].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    const batchIds = Array.from(new Set(sortedLines.map((l) => l.batchId)));
+    const batches = batchIds.length > 0
+      ? await db.select({ id: remittanceBatches.id, name: remittanceBatches.name, weekOf: remittanceBatches.weekOf })
+          .from(remittanceBatches)
+          .where(inArray(remittanceBatches.id, batchIds))
+      : [];
+    const batchMap: Record<number, { name: string; weekOf: Date | null }> = {};
+    for (const b of batches) batchMap[b.id] = { name: b.name, weekOf: b.weekOf };
+
+    return sortedLines.map((l) => ({
+      ...l,
+      batchName: batchMap[l.batchId]?.name ?? "",
+      weekOf: batchMap[l.batchId]?.weekOf ?? null,
+    }));
+  }),
+
+  // ── Delete a batch (super_admin only) ───────────────────────────────────────
+  deleteBatch: protectedProcedure
+    .input(z.object({ batchId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "super_admin") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.delete(remittanceLines).where(eq(remittanceLines.batchId, input.batchId));
+      await db.delete(remittanceBatches).where(eq(remittanceBatches.id, input.batchId));
+      return { ok: true };
+    }),
+});

@@ -7,7 +7,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -261,6 +261,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       items: [
         { label: "Commission Due", href: "/commission-due", icon: <AlertCircle size={16} /> },
         { label: "Commission Management", href: "/commissions-admin", icon: <Sparkles size={16} /> },
+        { label: "PTS Remittance", href: "/remittance", icon: <FileSpreadsheet size={16} /> },
         { label: "Reimbursements", href: "/admin/reimbursements", icon: <PoundSterling size={16} /> },
         { label: "Remittances", href: "/crm/remittances", icon: <Receipt size={16} /> },
       ],

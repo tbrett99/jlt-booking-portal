@@ -68,6 +68,7 @@ export default function AdminCommissions() {
   const processing = allClaims.filter((c) => c.status === "processing");
   const awaitingPayment = allClaims.filter((c) => c.status === "awaiting_payment");
   const pending = [...processing, ...awaitingPayment]; // combined for backward compat
+  const claimed = awaitingPayment; // "Claimed" tab = awaiting_payment (claimed in PTS, awaiting payment run)
   const paid = allClaims.filter((c) => c.status === "paid");
 
   const toggleSelect = (id: number) => {
@@ -315,6 +316,17 @@ export default function AdminCommissions() {
             </div>
           </CardContent>
         </Card>
+        <Card className="border-blue-400">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-blue-500" />
+              <div>
+                <p className="text-2xl font-bold text-blue-500">{claimed.length}</p>
+                <p className="text-xs text-muted-foreground">Claimed in PTS</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
         <Card className="border-emerald-400">
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
@@ -342,29 +354,37 @@ export default function AdminCommissions() {
       <Tabs defaultValue="pending">
         <TabsList className="mb-4">
           <TabsTrigger value="pending">
-            Action Required
-            {pending.length > 0 && (
-              <span className="ml-2 bg-amber-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
-                {pending.length}
+            Processing
+            {processing.length > 0 && (
+              <span className="ml-2 bg-orange-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                {processing.length}
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="paid">Paid History</TabsTrigger>
+          <TabsTrigger value="claimed">
+            Claimed
+            {claimed.length > 0 && (
+              <span className="ml-2 bg-blue-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                {claimed.length}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="paid">Paid</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pending">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center justify-between">
-                <span>Claims Requiring Action</span>
+                <span>Processing — Awaiting Admin Action</span>
                 <div className="flex items-center gap-2">
-                  {pending.length > 0 && selectedIds.size === 0 && (
-                    <Button variant="outline" size="sm" onClick={() => toggleSelectAll(pending)} className="text-xs">
+                  {processing.length > 0 && selectedIds.size === 0 && (
+                    <Button variant="outline" size="sm" onClick={() => toggleSelectAll(processing)} className="text-xs">
                       Select All
                     </Button>
                   )}
-                  {pending.length > 0 && (
-                    <Button variant="outline" size="sm" onClick={() => exportCSV(pending, `commissions-pending-${format(new Date(), 'yyyy-MM-dd')}.csv`)} className="text-xs gap-1">
+                  {processing.length > 0 && (
+                    <Button variant="outline" size="sm" onClick={() => exportCSV(processing, `commissions-processing-${format(new Date(), 'yyyy-MM-dd')}.csv`)} className="text-xs gap-1">
                       <Download size={13} /> Export CSV
                     </Button>
                   )}
@@ -372,7 +392,25 @@ export default function AdminCommissions() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <ClaimTable rows={pending} showSelect />
+              <ClaimTable rows={processing} showSelect />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="claimed">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center justify-between">
+                <span>Claimed in PTS — Awaiting Payment Run</span>
+                {claimed.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={() => exportCSV(claimed, `commissions-claimed-${format(new Date(), 'yyyy-MM-dd')}.csv`)} className="text-xs gap-1">
+                    <Download size={13} /> Export CSV
+                  </Button>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ClaimTable rows={claimed} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -381,13 +419,13 @@ export default function AdminCommissions() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center justify-between">
-              <span>Payment History</span>
-              {paid.length > 0 && (
-                <Button variant="outline" size="sm" onClick={() => exportCSV(paid, `commissions-paid-${format(new Date(), 'yyyy-MM-dd')}.csv`)} className="text-xs gap-1">
-                  <Download size={13} /> Export CSV
-                </Button>
-              )}
-            </CardTitle>
+                <span>Paid — Confirmed by Agent</span>
+                {paid.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={() => exportCSV(paid, `commissions-paid-${format(new Date(), 'yyyy-MM-dd')}.csv`)} className="text-xs gap-1">
+                    <Download size={13} /> Export CSV
+                  </Button>
+                )}
+              </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <ClaimTable rows={paid} />
