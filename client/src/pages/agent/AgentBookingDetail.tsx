@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import CopyableRef from "@/components/CopyableRef";
+import { FlightRequestForm } from "@/components/FlightRequestForm";
 import { trpc } from "@/lib/trpc";
 import { useParams, Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import {
   ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
   CheckCircle2, Circle, AlertCircle, Sparkles, TrendingUp, Clock,
-  RefreshCw, Pencil, User, Check, X, Trash2
+  RefreshCw, Pencil, User, Check, X, Trash2, Plane
 } from "lucide-react";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -71,6 +72,7 @@ export default function AgentBookingDetail() {
   const addReimbFileRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // PTS details editing (only in Creating own PTS file stage)
+  const [flightFormOpen, setFlightFormOpen] = useState(false);
   const [editingPts, setEditingPts] = useState(false);
   const [ptsRefInput, setPtsRefInput] = useState("");
   const [paymentDateInput, setPaymentDateInput] = useState("");
@@ -841,6 +843,12 @@ export default function AgentBookingDetail() {
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
             {!isCancelled && (
+              <Button size="sm" variant="outline" style={{ fontWeight: 600 }} onClick={() => setFlightFormOpen(true)}>
+                <Plane className="h-3.5 w-3.5 mr-1.5" />
+                Flight Ticketing / Cancellation
+              </Button>
+            )}
+            {!isCancelled && (
               <Link href={`/bookings/${bookingId}/amend`}>
                 <Button size="sm" style={{ background: '#70FFE8', color: '#414141', fontWeight: 600 }}>Request Amendment</Button>
               </Link>
@@ -941,6 +949,78 @@ export default function AgentBookingDetail() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Flight Requests Section */}
+      <FlightRequestsSection bookingId={bookingId} />
+
+      {/* Flight Request Form Dialog */}
+      {booking && (
+        <FlightRequestForm
+          open={flightFormOpen}
+          onOpenChange={setFlightFormOpen}
+          bookingId={bookingId}
+          clientName={booking.clientName}
+        />
+      )}
     </div>
+  );
+}
+
+function FlightRequestsSection({ bookingId }: { bookingId: number }) {
+  const { data: requests, isLoading } = trpc.flightRequests.byBooking.useQuery(
+    { bookingId },
+    { staleTime: 0 }
+  );
+
+  if (isLoading || !requests || requests.length === 0) return null;
+
+  const statusBadge = (status: string) => {
+    const map: Record<string, { label: string; color: string; bg: string }> = {
+      pending:   { label: "Pending",   color: "#92400e", bg: "#fef3c7" },
+      ticketed:  { label: "Ticketed",  color: "#065f46", bg: "#d1fae5" },
+      cancelled: { label: "Cancelled", color: "#991b1b", bg: "#fee2e2" },
+      query:     { label: "Query",     color: "#1e40af", bg: "#dbeafe" },
+    };
+    const s = map[status] ?? { label: status, color: "#414141", bg: "#f3f4f6" };
+    return (
+      <span style={{ background: s.bg, color: s.color, borderRadius: "4px", padding: "2px 8px", fontSize: "11px", fontWeight: 700, textTransform: "uppercase" }}>
+        {s.label}
+      </span>
+    );
+  };
+
+  const typeLabel = (t: string) =>
+    t === "both" ? "Ticketing & Cancellation" : t.charAt(0).toUpperCase() + t.slice(1);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Plane className="h-4 w-4 text-primary" />
+          Flight Requests
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {requests.map((r) => (
+          <div key={r.id} className="rounded-md border p-3 text-sm space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold">{typeLabel(r.requestType)} — {r.supplier}</span>
+              {statusBadge(r.status)}
+            </div>
+            <div className="text-muted-foreground text-xs flex flex-wrap gap-x-4 gap-y-0.5">
+              <span>PNR: <strong className="text-foreground">{r.pnr}</strong></span>
+              <span>Departure: <strong className="text-foreground">{format(new Date(r.departureDate), "dd MMM yyyy")}</strong></span>
+              <span>Deadline: <strong className="text-foreground">{format(new Date(r.ticketingDeadline), "dd MMM yyyy")}</strong></span>
+              <span>Submitted: {format(new Date(r.createdAt), "dd MMM yyyy")}</span>
+            </div>
+            {r.status === "query" && r.queryMessage && (
+              <div className="mt-1.5 rounded bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+                <strong>Query from JLT:</strong> {r.queryMessage}
+              </div>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }

@@ -26,6 +26,8 @@ import NotificationTemplates from "./pages/admin/NotificationTemplates";
 import AgentCommissions from "./pages/agent/AgentCommissions";
 import AgentCancelBooking from "./pages/agent/AgentCancelBooking";
 import AgentRequestAmendment from "./pages/agent/AgentRequestAmendment";
+import AgentFlightRequests from "./pages/agent/AgentFlightRequests";
+import AdminFlightsPipeline from "./pages/admin/AdminFlightsPipeline";
 import AdminCommissions from "./pages/admin/AdminCommissions";
 import RemittanceManagement from "./pages/admin/RemittanceManagement";
 import AdminImport from "./pages/admin/AdminImport";
@@ -154,6 +156,7 @@ function AuthRouter() {
           <Route path="/commissions" component={AgentCommissions} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
+          <Route path="/flight-requests" component={AgentFlightRequests} />
           <Route path="/booking-documents" component={BookingDocuments} />
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
@@ -180,6 +183,7 @@ function AuthRouter() {
           <Route path="/commissions" component={AgentCommissions} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
+          <Route path="/flight-requests" component={AgentFlightRequests} />
           <Route path="/booking-documents" component={BookingDocuments} />
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
@@ -205,6 +209,7 @@ function AuthRouter() {
         <Route path="/commission-due" component={CommissionDue} />
         <Route path="/commissions-admin" component={AdminCommissions} />
         <Route path="/remittance" component={RemittanceManagement} />
+        <Route path="/flights" component={AdminFlightsPipeline} />
         <Route path="/reports" component={AdminReports} />
         <Route path="/agent-performance" component={AdminAgentPerformance} />
         <Route path="/notification-templates" component={NotificationTemplates} />

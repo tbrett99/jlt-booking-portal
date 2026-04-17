@@ -122,6 +122,7 @@ import { nanoid } from "nanoid";
 import { ENV } from "./_core/env";
 import { crmRouter } from "./crm-router";
 import { remittanceRouter } from "./remittance-router";
+import { flightRequestsRouter } from "./flight-requests-router";
 
 // ─── Role middleware ──────────────────────────────────────────────────────────
 
@@ -2450,6 +2451,7 @@ export const appRouter = router({
   // ─── Inbox / Booking Documents ───────────────────────────────────────────────
   crm: crmRouter,
   remittance: remittanceRouter,
+  flightRequests: flightRequestsRouter,
 
   inbox: router({
     // Admin: get IMAP config (password masked)

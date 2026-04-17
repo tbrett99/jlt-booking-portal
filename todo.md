@@ -1270,3 +1270,32 @@
 
 ## Bug Fix — bookedDate overwritten on stage move
 - [x] Fix: bookedDate must not be modified when a booking is moved between pipeline stages
+
+## Flight Ticketing/Cancellation Pipeline
+
+### DB
+- [x] Create flight_requests table: id, bookingId, agentId, requestType (ticketing|cancellation|both), supplier (Aviate|Lime|VA Flight Store), pnr, departureDate, ticketingDeadline, status (pending|ticketed|cancelled|query), invoiceAddedToPts (bool), createdAt, updatedAt
+
+### Backend (tRPC — flightRequests router)
+- [x] flightRequests.create — agent creates a new flight request for a booking
+- [x] flightRequests.myRequests — agent lists their own flight requests (with booking info)
+- [x] flightRequests.adminList — admin lists all requests, ordered oldest first, with agent/booking info
+- [x] flightRequests.updateStatus — admin updates status (ticketed|cancelled|query); if query, send message to agent; if ticketed/cancelled, notify agent
+- [x] flightRequests.toggleInvoice — admin toggles invoiceAddedToPts checkbox
+
+### Agent Side
+- [x] FlightRequestForm component — modal/dialog with requestType, supplier, PNR, departureDate, ticketingDeadline fields
+- [x] AgentBookingDetail: add "Request Flight Ticketing/Cancellation" button that opens FlightRequestForm pre-filled with bookingId
+- [x] AgentBookingDetail: show existing flight requests for the booking with current status
+- [x] Sidebar: add "Flight Requests" entry under agent nav
+- [x] FlightRequestsPage (agent): list all their flight requests; if no booking pre-selected, show booking picker first
+- [x] Agent can see status updates (Pending / Ticketed / Cancelled / Query) on their requests
+
+### Admin Side
+- [x] AdminFlightsPipeline page: list all flight requests ordered oldest first
+- [x] Columns: submitted date, agent name, client name, TD ref, PTS ref, request type, supplier, PNR, departure date, ticketing deadline, status dropdown, invoice checkbox
+- [x] Status dropdown: Pending → Ticketed | Cancelled | Query
+- [x] If Query selected: pop up to type a message, sends to agent via in-app notification + email
+- [x] If Ticketed or Cancelled: auto-notify agent via in-app notification + email
+- [x] Invoice checkbox: admin confirms invoice added to PTS file
+- [x] Add "Flights" entry to admin Pipelines nav section

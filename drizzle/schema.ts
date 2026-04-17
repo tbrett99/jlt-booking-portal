@@ -856,3 +856,21 @@ export const exportRuns = mysqlTable("export_runs", {
   triggeredBy: varchar("triggeredBy", { length: 50 }).default("cron"), // "cron" | "external" | "manual"
 });
 export type ExportRun = typeof exportRuns.$inferSelect;
+
+// ─── Flight Requests ──────────────────────────────────────────────────────────
+export const flightRequests = mysqlTable("flight_requests", {
+  id: int("id").primaryKey().autoincrement(),
+  bookingId: int("bookingId").notNull().references(() => bookings.id, { onDelete: "cascade" }),
+  agentId: int("agentId").notNull().references(() => users.id),
+  requestType: varchar("requestType", { length: 20 }).notNull(), // "ticketing" | "cancellation" | "both"
+  supplier: varchar("supplier", { length: 50 }).notNull(), // "Aviate" | "Lime" | "VA Flight Store"
+  pnr: varchar("pnr", { length: 50 }).notNull(),
+  departureDate: timestamp("departureDate").notNull(),
+  ticketingDeadline: timestamp("ticketingDeadline").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // "pending" | "ticketed" | "cancelled" | "query"
+  invoiceAddedToPts: boolean("invoiceAddedToPts").notNull().default(false),
+  queryMessage: text("queryMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type FlightRequest = typeof flightRequests.$inferSelect;

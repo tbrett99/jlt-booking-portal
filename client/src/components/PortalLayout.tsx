@@ -7,7 +7,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -206,6 +206,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Register Booking", href: "/bookings/new", icon: <BookOpen size={16} /> },
         { label: "Request Amendment", href: "/request-amendment", icon: <PenLine size={16} /> },
         { label: "Cancel a Booking", href: "/cancel-booking", icon: <XCircle size={16} /> },
+        { label: "Flight Requests", href: "/flight-requests", icon: <Plane size={16} /> },
       ],
     },
     {
@@ -252,6 +253,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Bookings Pipeline", href: "/pipeline", icon: <ClipboardList size={16} /> },
         { label: "Amendments Pipeline", href: "/amendments/pipeline", icon: <FileText size={16} /> },
         { label: "Refund Pipeline", href: "/refunds/pipeline", icon: <RefreshCw size={16} /> },
+        { label: "Flight Requests", href: "/flights", icon: <Plane size={16} /> },
       ],
     },
     {
