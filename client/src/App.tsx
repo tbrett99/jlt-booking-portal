@@ -58,7 +58,40 @@ import AgentCrm from "./pages/crm/AgentCrm";
 import CrmChangeRequests from "./pages/crm/CrmChangeRequests";
 import MyProfile from "./pages/MyProfile";
 import { useAuth } from "./_core/hooks/useAuth";
+import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
+
+// ── Suspended portal guard ──────────────────────────────────────────────────
+function SuspendedGuard({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const { data } = trpc.crm.agentCrm.getMyProfile.useQuery(undefined, {
+    enabled: !!user && user.role === "agent",
+    staleTime: 60_000,
+  });
+  if (data?.profile?.agentStatus === "suspended") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <div className="max-w-md w-full text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mx-auto">
+            <svg className="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">Account Suspended</h1>
+          <p className="text-muted-foreground">Your portal access has been temporarily suspended. Please contact the JLT Memberships team to resolve this.</p>
+          <a
+            href="mailto:memberships@thejltgroup.co.uk"
+            className="inline-flex items-center justify-center px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 transition-opacity"
+          >
+            Contact Memberships
+          </a>
+          <p className="text-xs text-muted-foreground">memberships@thejltgroup.co.uk</p>
+        </div>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
 
 function AuthRouter() {
   const { user, loading } = useAuth();
@@ -106,6 +139,7 @@ function AuthRouter() {
   // Pure agent — always agent routes
   if (user.role === "agent") {
     return (
+      <SuspendedGuard>
       <PortalLayout>
         <Switch>
           <Route path="/" component={AgentDashboard} />
@@ -124,6 +158,7 @@ function AuthRouter() {
           <Route component={NotFound} />
         </Switch>
       </PortalLayout>
+      </SuspendedGuard>
     );
   }
 

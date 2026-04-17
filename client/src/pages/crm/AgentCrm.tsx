@@ -12,6 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Search, UserCheck, Banknote, Eye, EyeOff, Plus, Trash2,
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
@@ -298,7 +300,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             </TabsList>
 
             <TabsContent value="profile" className="mt-5 pb-8">
-              <ProfileTab userId={agent.id} profile={profile} onRefresh={refresh} />
+              <ProfileTab userId={agent.id} profile={profile} supplierLogins={crmData?.supplierLogins ?? []} onRefresh={refresh} />
             </TabsContent>
             <TabsContent value="activity" className="mt-5 pb-8">
               <ActivityTab userId={agent.id} />
@@ -325,9 +327,16 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   );
 }
 
-// ─── Profile Tab ──────────────────────────────────────────────────────────────
+// ─── Profile Tab ────────────────────────────────────────────────────────────────────────────────
 
-function ProfileTab({ userId, profile, onRefresh }: { userId: number; profile: CrmProfile | null; onRefresh: () => void; }) {
+type SupplierLoginRow = { id: number; supplierName: string; notes?: string | null };
+
+function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
+  userId: number;
+  profile: CrmProfile | null;
+  supplierLogins?: SupplierLoginRow[];
+  onRefresh: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     jltEmail: profile?.jltEmail ?? "",
@@ -348,6 +357,43 @@ function ProfileTab({ userId, profile, onRefresh }: { userId: number; profile: C
     monthlySub: profile?.monthlySub ?? "",
     internalNotes: profile?.internalNotes ?? "",
   });
+
+  // ── Status-change dialog state ──────────────────────────────────────────────
+  const [statusDialog, setStatusDialog] = useState<null | "paused" | "in_notice" | "cancelled" | "suspended">(null);
+  const [pauseEndsAt, setPauseEndsAt] = useState("");
+  const [noticeEndsAt, setNoticeEndsAt] = useState("");
+  const [cancelledAt, setCancelledAt] = useState("");
+  const [statusNotes, setStatusNotes] = useState("");
+  const CANCEL_CHECKLIST_ITEMS = [
+    "Supplier logins revoked",
+    "Topdog login removed",
+    "WhatsApp access removed",
+    "Learnworlds access removed",
+    "JLT email deactivated",
+    "Portal access removed",
+  ];
+  const [cancelChecklist, setCancelChecklist] = useState<string[]>([]);
+
+  const updateAgentStatus = trpc.crm.agentCrm.updateAgentStatus.useMutation({
+    onSuccess: () => {
+      toast.success("Agent status updated");
+      setStatusDialog(null);
+      setEditing(false);
+      onRefresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleStatusChange(newStatus: string) {
+    const prev = profile?.agentStatus ?? "active";
+    if (newStatus === prev) return;
+    if (newStatus === "paused") { setPauseEndsAt(""); setStatusNotes(""); setStatusDialog("paused"); return; }
+    if (newStatus === "in_notice") { setNoticeEndsAt(""); setStatusNotes(""); setStatusDialog("in_notice"); return; }
+    if (newStatus === "cancelled") { setCancelledAt(""); setCancelChecklist([]); setStatusNotes(""); setStatusDialog("cancelled"); return; }
+    if (newStatus === "suspended") { setStatusNotes(""); setStatusDialog("suspended"); return; }
+    // active — no dialog needed, update directly
+    updateAgentStatus.mutate({ userId, newStatus: newStatus as any });
+  }
 
   const updateProfile = trpc.crm.agentCrm.updateProfile.useMutation({
     onSuccess: () => { toast.success("Profile updated"); setEditing(false); onRefresh(); },
@@ -381,225 +427,395 @@ function ProfileTab({ userId, profile, onRefresh }: { userId: number; profile: C
     setEditing(true);
   }
 
+  const dialogs = (
+    <>
+      {/* ── Paused Dialog ── */}
+      <Dialog open={statusDialog === "paused"} onOpenChange={(v) => !v && setStatusDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Paused</span>
+              Set Pause End Date
+            </DialogTitle>
+            <DialogDescription>Enter the date when the agent's pause period ends. An email will be sent to memberships to pause their direct debit.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Pause Ends On <span className="text-destructive">*</span></Label>
+              <Input type="date" value={pauseEndsAt} onChange={(e) => setPauseEndsAt(e.target.value)} min={new Date().toISOString().split("T")[0]} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Admin Notes (optional)</Label>
+              <Textarea value={statusNotes} onChange={(e) => setStatusNotes(e.target.value)} rows={2} placeholder="Reason for pause..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusDialog(null)}>Cancel</Button>
+            <Button
+              disabled={!pauseEndsAt || updateAgentStatus.isPending}
+              onClick={() => updateAgentStatus.mutate({ userId, newStatus: "paused", pauseEndsAt, notes: statusNotes || null })}
+            >
+              {updateAgentStatus.isPending ? "Saving..." : "Confirm Pause"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── In Notice Dialog ── */}
+      <Dialog open={statusDialog === "in_notice"} onOpenChange={(v) => !v && setStatusDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">In Notice</span>
+              Set Final Date at JLT
+            </DialogTitle>
+            <DialogDescription>Enter the agent's final date at JLT. An email will be sent to memberships to cancel their direct debit at the end of the notice period.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Final Date at JLT <span className="text-destructive">*</span></Label>
+              <Input type="date" value={noticeEndsAt} onChange={(e) => setNoticeEndsAt(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Admin Notes (optional)</Label>
+              <Textarea value={statusNotes} onChange={(e) => setStatusNotes(e.target.value)} rows={2} placeholder="Reason for notice..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusDialog(null)}>Cancel</Button>
+            <Button
+              disabled={!noticeEndsAt || updateAgentStatus.isPending}
+              onClick={() => updateAgentStatus.mutate({ userId, newStatus: "in_notice", noticeEndsAt, notes: statusNotes || null })}
+            >
+              {updateAgentStatus.isPending ? "Saving..." : "Confirm In Notice"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Cancelled Dialog ── */}
+      <Dialog open={statusDialog === "cancelled"} onOpenChange={(v) => !v && setStatusDialog(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Cancelled</span>
+              Confirm Cancellation
+            </DialogTitle>
+            <DialogDescription>Record the agent's final date and confirm which systems have been restricted. An email will be sent to memberships.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Final Date <span className="text-destructive">*</span></Label>
+              <Input type="date" value={cancelledAt} onChange={(e) => setCancelledAt(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block font-medium">Systems to Restrict — tick all that apply</Label>
+              <div className="space-y-2 mt-1">
+                {CANCEL_CHECKLIST_ITEMS.map((item) => (
+                  <div key={item} className="flex items-center gap-2.5">
+                    <Checkbox
+                      id={`cancel-${item}`}
+                      checked={cancelChecklist.includes(item)}
+                      onCheckedChange={(checked) =>
+                        setCancelChecklist(checked
+                          ? [...cancelChecklist, item]
+                          : cancelChecklist.filter((i) => i !== item)
+                        )
+                      }
+                    />
+                    <label htmlFor={`cancel-${item}`} className="text-sm cursor-pointer">{item}</label>
+                  </div>
+                ))}
+              </div>
+              {supplierLogins.length > 0 && (
+                <div className="mt-3 p-3 bg-muted/40 rounded-lg">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Active Supplier Logins to revoke:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {supplierLogins.map((s) => (
+                      <Badge key={s.id} variant="outline" className="text-xs">{s.supplierName}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Admin Notes (optional)</Label>
+              <Textarea value={statusNotes} onChange={(e) => setStatusNotes(e.target.value)} rows={2} placeholder="Reason for cancellation..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusDialog(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!cancelledAt || updateAgentStatus.isPending}
+              onClick={() => updateAgentStatus.mutate({ userId, newStatus: "cancelled", cancelledAt, cancelChecklist, notes: statusNotes || null })}
+            >
+              {updateAgentStatus.isPending ? "Saving..." : "Confirm Cancellation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Suspended Dialog ── */}
+      <Dialog open={statusDialog === "suspended"} onOpenChange={(v) => !v && setStatusDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">Suspended</span>
+              Suspend Agent Portal Access
+            </DialogTitle>
+            <DialogDescription>The agent's portal access will be immediately restricted. They will see a message advising them to contact memberships@thejltgroup.co.uk.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="p-3 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg">
+              <p className="text-sm text-purple-800 dark:text-purple-300 font-medium">Portal access will be blocked immediately upon confirmation.</p>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Admin Notes (optional)</Label>
+              <Textarea value={statusNotes} onChange={(e) => setStatusNotes(e.target.value)} rows={2} placeholder="Reason for suspension..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusDialog(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={updateAgentStatus.isPending}
+              onClick={() => updateAgentStatus.mutate({ userId, newStatus: "suspended", notes: statusNotes || null })}
+            >
+              {updateAgentStatus.isPending ? "Saving..." : "Confirm Suspension"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+
   if (!editing) {
     return (
-      <div className="space-y-6">
-        {/* Actions */}
-        <div className="flex gap-2 justify-end">
-          {!profile?.uniqueAgentId && (
-            <Button size="sm" variant="outline" onClick={() => assignId.mutate({ userId })} disabled={assignId.isPending}>
-              <BadgeCheck className="h-3.5 w-3.5 mr-1.5" />Assign Agent ID
+      <>
+        <div className="space-y-6">
+          {/* Actions */}
+          <div className="flex gap-2 justify-end">
+            {!profile?.uniqueAgentId && (
+              <Button size="sm" variant="outline" onClick={() => assignId.mutate({ userId })} disabled={assignId.isPending}>
+                <BadgeCheck className="h-3.5 w-3.5 mr-1.5" />Assign Agent ID
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={startEdit}>
+              <Pencil className="h-3.5 w-3.5 mr-1.5" />Edit Profile
             </Button>
-          )}
-          <Button size="sm" variant="outline" onClick={startEdit}>
-            <Pencil className="h-3.5 w-3.5 mr-1.5" />Edit Profile
-          </Button>
-        </div>
+          </div>
 
+          {/* Status & Membership */}
+          <Section title="Status & Membership">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Agent Status">
+                <StatusBadge status={profile?.agentStatus} />
+              </Field>
+              <Field label="Membership Tier">
+                {profile?.membershipTier
+                  ? <Badge variant="secondary">{profile.membershipTier}</Badge>
+                  : <span className="text-muted-foreground text-sm">Not set</span>}
+              </Field>
+              <Field label="Monthly Subscription" value={profile?.monthlySub} />
+              <Field label="Date Joined" value={profile?.dateJoined} />
+            </div>
+          </Section>
+
+          {/* Contact Details */}
+          <Section title="Contact Details">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="JLT Email" value={profile?.jltEmail} icon={<Mail className="h-3.5 w-3.5" />} />
+              <Field label="Personal Email" value={profile?.personalEmail} icon={<Mail className="h-3.5 w-3.5" />} />
+              <Field label="Business Email" value={profile?.businessEmail} icon={<Mail className="h-3.5 w-3.5" />} />
+              <Field label="Mobile" value={profile?.mobile} icon={<Phone className="h-3.5 w-3.5" />} />
+              <Field label="UK Region" value={profile?.ukRegion} icon={<MapPin className="h-3.5 w-3.5" />} />
+            </div>
+            {(profile?.addressLine1 || profile?.city) && (
+              <div className="mt-3 bg-muted/40 rounded-lg p-3 text-sm">
+                <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Address</p>
+                {profile?.addressLine1 && <p>{profile.addressLine1}</p>}
+                {profile?.addressLine2 && <p>{profile.addressLine2}</p>}
+                {(profile?.city || profile?.postcode) && <p>{[profile?.city, profile?.postcode].filter(Boolean).join(", ")}</p>}
+              </div>
+            )}
+          </Section>
+
+          {/* Business Details */}
+          <Section title="Business Details">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Business Name" value={profile?.businessName} icon={<Building2 className="h-3.5 w-3.5" />} />
+              <Field label="Retailer Code" value={profile?.retailerCode} />
+              <Field label="Introduced By" value={profile?.introducedBy} icon={<User className="h-3.5 w-3.5" />} />
+            </div>
+          </Section>
+
+          {/* Internal Notes */}
+          {profile?.internalNotes && (
+            <Section title="Internal Notes">
+              <p className="text-sm whitespace-pre-wrap text-foreground/80">{profile.internalNotes}</p>
+            </Section>
+          )}
+
+          {!profile && (
+            <div className="text-center py-10 text-muted-foreground border-2 border-dashed rounded-xl">
+              <UserCheck className="h-10 w-10 mx-auto mb-2 opacity-20" />
+              <p className="text-sm font-medium">No CRM profile yet</p>
+              <p className="text-xs mt-1">Click Edit Profile to add details</p>
+            </div>
+          )}
+        </div>
+        {dialogs}
+      </>
+    );
+  }
+
+  // Edit mode
+  return (
+    <>
+      <div className="space-y-6">
         {/* Status & Membership */}
         <Section title="Status & Membership">
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Agent Status">
-              <StatusBadge status={profile?.agentStatus} />
-            </Field>
-            <Field label="Membership Tier">
-              {profile?.membershipTier
-                ? <Badge variant="secondary">{profile.membershipTier}</Badge>
-                : <span className="text-muted-foreground text-sm">Not set</span>}
-            </Field>
-            <Field label="Monthly Subscription" value={profile?.monthlySub} />
-            <Field label="Date Joined" value={profile?.dateJoined} />
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Agent Status</Label>
+              <Select value={form.agentStatus} onValueChange={(v) => { setForm({ ...form, agentStatus: v }); handleStatusChange(v); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {AGENT_STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Membership Tier</Label>
+              <Select value={form.membershipTier || "_none"} onValueChange={(v) => setForm({ ...form, membershipTier: v === "_none" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Select tier" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— Not set —</SelectItem>
+                  {MEMBERSHIP_TIERS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Monthly Subscription</Label>
+              <Input value={form.monthlySub} onChange={(e) => setForm({ ...form, monthlySub: e.target.value })} placeholder="e.g. £87" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Date Joined</Label>
+              <Input type="date" value={form.dateJoined} onChange={(e) => setForm({ ...form, dateJoined: e.target.value })} />
+            </div>
           </div>
         </Section>
 
         {/* Contact Details */}
         <Section title="Contact Details">
           <div className="grid grid-cols-2 gap-4">
-            <Field label="JLT Email" value={profile?.jltEmail} icon={<Mail className="h-3.5 w-3.5" />} />
-            <Field label="Personal Email" value={profile?.personalEmail} icon={<Mail className="h-3.5 w-3.5" />} />
-            <Field label="Business Email" value={profile?.businessEmail} icon={<Mail className="h-3.5 w-3.5" />} />
-            <Field label="Mobile" value={profile?.mobile} icon={<Phone className="h-3.5 w-3.5" />} />
-            <Field label="UK Region" value={profile?.ukRegion} icon={<MapPin className="h-3.5 w-3.5" />} />
-          </div>
-          {(profile?.addressLine1 || profile?.city) && (
-            <div className="mt-3 bg-muted/40 rounded-lg p-3 text-sm">
-              <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Address</p>
-              {profile?.addressLine1 && <p>{profile.addressLine1}</p>}
-              {profile?.addressLine2 && <p>{profile.addressLine2}</p>}
-              {(profile?.city || profile?.postcode) && <p>{[profile?.city, profile?.postcode].filter(Boolean).join(", ")}</p>}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">JLT Email</Label>
+              <Input value={form.jltEmail} onChange={(e) => setForm({ ...form, jltEmail: e.target.value })} placeholder="agent@thejltgroup.co.uk" />
             </div>
-          )}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Personal Email</Label>
+              <Input value={form.personalEmail} onChange={(e) => setForm({ ...form, personalEmail: e.target.value })} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Business Email</Label>
+              <Input value={form.businessEmail} onChange={(e) => setForm({ ...form, businessEmail: e.target.value })} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Mobile</Label>
+              <Input value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">UK Region</Label>
+              <Select value={form.ukRegion || "_none"} onValueChange={(v) => setForm({ ...form, ukRegion: v === "_none" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Select region" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— Not set —</SelectItem>
+                  {UK_REGIONS.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <div className="col-span-2">
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Address Line 1</Label>
+              <Input value={form.addressLine1} onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} />
+            </div>
+            <div className="col-span-2">
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Address Line 2</Label>
+              <Input value={form.addressLine2} onChange={(e) => setForm({ ...form, addressLine2: e.target.value })} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">City</Label>
+              <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Postcode</Label>
+              <Input value={form.postcode} onChange={(e) => setForm({ ...form, postcode: e.target.value })} />
+            </div>
+          </div>
         </Section>
 
         {/* Business Details */}
         <Section title="Business Details">
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Business Name" value={profile?.businessName} icon={<Building2 className="h-3.5 w-3.5" />} />
-            <Field label="Retailer Code" value={profile?.retailerCode} />
-            <Field label="Introduced By" value={profile?.introducedBy} icon={<User className="h-3.5 w-3.5" />} />
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Business Name</Label>
+              <Input value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })} placeholder="Trading name" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Retailer Code</Label>
+              <Input value={form.retailerCode} onChange={(e) => setForm({ ...form, retailerCode: e.target.value })} placeholder="e.g. TRAAV" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Introduced By</Label>
+              <Input value={form.introducedBy} onChange={(e) => setForm({ ...form, introducedBy: e.target.value })} placeholder="Referral source" />
+            </div>
           </div>
         </Section>
 
         {/* Internal Notes */}
-        {profile?.internalNotes && (
-          <Section title="Internal Notes">
-            <p className="text-sm whitespace-pre-wrap text-foreground/80">{profile.internalNotes}</p>
-          </Section>
-        )}
+        <Section title="Internal Notes">
+          <Textarea
+            value={form.internalNotes}
+            onChange={(e) => setForm({ ...form, internalNotes: e.target.value })}
+            rows={4}
+            placeholder="Internal notes visible to admin only..."
+          />
+        </Section>
 
-        {!profile && (
-          <div className="text-center py-10 text-muted-foreground border-2 border-dashed rounded-xl">
-            <UserCheck className="h-10 w-10 mx-auto mb-2 opacity-20" />
-            <p className="text-sm font-medium">No CRM profile yet</p>
-            <p className="text-xs mt-1">Click Edit Profile to add details</p>
-          </div>
-        )}
+        <div className="flex gap-2 justify-end pt-2">
+          <Button variant="outline" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
+          <Button size="sm" onClick={() => updateProfile.mutate({
+            userId,
+            jltEmail: form.jltEmail || null,
+            personalEmail: form.personalEmail || null,
+            businessEmail: form.businessEmail || null,
+            mobile: form.mobile || null,
+            addressLine1: form.addressLine1 || null,
+            addressLine2: form.addressLine2 || null,
+            city: form.city || null,
+            postcode: form.postcode || null,
+            ukRegion: form.ukRegion || null,
+            agentStatus: form.agentStatus || "active",
+            membershipTier: form.membershipTier || null,
+            businessName: form.businessName || null,
+            retailerCode: form.retailerCode || null,
+            introducedBy: form.introducedBy || null,
+            dateJoined: form.dateJoined || null,
+            monthlySub: form.monthlySub || null,
+            internalNotes: form.internalNotes || null,
+          })} disabled={updateProfile.isPending}>
+            {updateProfile.isPending ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
       </div>
-    );
-  }
-
-  // Edit mode
-  return (
-    <div className="space-y-6">
-      {/* Status & Membership */}
-      <Section title="Status & Membership">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Agent Status</Label>
-            <Select value={form.agentStatus} onValueChange={(v) => setForm({ ...form, agentStatus: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {AGENT_STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Membership Tier</Label>
-            <Select value={form.membershipTier || "_none"} onValueChange={(v) => setForm({ ...form, membershipTier: v === "_none" ? "" : v })}>
-              <SelectTrigger><SelectValue placeholder="Select tier" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">— Not set —</SelectItem>
-                {MEMBERSHIP_TIERS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Monthly Subscription</Label>
-            <Input value={form.monthlySub} onChange={(e) => setForm({ ...form, monthlySub: e.target.value })} placeholder="e.g. £87" />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Date Joined</Label>
-            <Input type="date" value={form.dateJoined} onChange={(e) => setForm({ ...form, dateJoined: e.target.value })} />
-          </div>
-        </div>
-      </Section>
-
-      {/* Contact Details */}
-      <Section title="Contact Details">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">JLT Email</Label>
-            <Input value={form.jltEmail} onChange={(e) => setForm({ ...form, jltEmail: e.target.value })} placeholder="agent@thejltgroup.co.uk" />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Personal Email</Label>
-            <Input value={form.personalEmail} onChange={(e) => setForm({ ...form, personalEmail: e.target.value })} />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Business Email</Label>
-            <Input value={form.businessEmail} onChange={(e) => setForm({ ...form, businessEmail: e.target.value })} />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Mobile</Label>
-            <Input value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">UK Region</Label>
-            <Select value={form.ukRegion || "_none"} onValueChange={(v) => setForm({ ...form, ukRegion: v === "_none" ? "" : v })}>
-              <SelectTrigger><SelectValue placeholder="Select region" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">— Not set —</SelectItem>
-                {UK_REGIONS.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-4 mt-4">
-          <div className="col-span-2">
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Address Line 1</Label>
-            <Input value={form.addressLine1} onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} />
-          </div>
-          <div className="col-span-2">
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Address Line 2</Label>
-            <Input value={form.addressLine2} onChange={(e) => setForm({ ...form, addressLine2: e.target.value })} />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">City</Label>
-            <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Postcode</Label>
-            <Input value={form.postcode} onChange={(e) => setForm({ ...form, postcode: e.target.value })} />
-          </div>
-        </div>
-      </Section>
-
-      {/* Business Details */}
-      <Section title="Business Details">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Business Name</Label>
-            <Input value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })} placeholder="Trading name" />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Retailer Code</Label>
-            <Input value={form.retailerCode} onChange={(e) => setForm({ ...form, retailerCode: e.target.value })} placeholder="e.g. TRAAV" />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Introduced By</Label>
-            <Input value={form.introducedBy} onChange={(e) => setForm({ ...form, introducedBy: e.target.value })} placeholder="Referral source" />
-          </div>
-        </div>
-      </Section>
-
-      {/* Internal Notes */}
-      <Section title="Internal Notes">
-        <Textarea
-          value={form.internalNotes}
-          onChange={(e) => setForm({ ...form, internalNotes: e.target.value })}
-          rows={4}
-          placeholder="Internal notes visible to admin only..."
-        />
-      </Section>
-
-      <div className="flex gap-2 justify-end pt-2">
-        <Button variant="outline" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
-        <Button size="sm" onClick={() => updateProfile.mutate({
-          userId,
-          jltEmail: form.jltEmail || null,
-          personalEmail: form.personalEmail || null,
-          businessEmail: form.businessEmail || null,
-          mobile: form.mobile || null,
-          addressLine1: form.addressLine1 || null,
-          addressLine2: form.addressLine2 || null,
-          city: form.city || null,
-          postcode: form.postcode || null,
-          ukRegion: form.ukRegion || null,
-          agentStatus: form.agentStatus || "active",
-          membershipTier: form.membershipTier || null,
-          businessName: form.businessName || null,
-          retailerCode: form.retailerCode || null,
-          introducedBy: form.introducedBy || null,
-          dateJoined: form.dateJoined || null,
-          monthlySub: form.monthlySub || null,
-          internalNotes: form.internalNotes || null,
-        })} disabled={updateProfile.isPending}>
-          {updateProfile.isPending ? "Saving..." : "Save Changes"}
-        </Button>
-      </div>
-    </div>
+      {dialogs}
+    </>
   );
 }
+
 
 // ─── Supplier Access Tab ──────────────────────────────────────────────────────
 

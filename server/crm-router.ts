@@ -1178,6 +1178,208 @@ export const crmRouter = router({
       };
     }),
 
+    // ─── Status-Change Workflows ─────────────────────────────────────────────
+    updateAgentStatus: adminProcedure
+      .input(z.object({
+        userId: z.number().int(),
+        newStatus: z.enum(["active", "paused", "in_notice", "cancelled", "suspended"]),
+        pauseEndsAt: z.string().optional().nullable(),      // ISO date string for paused
+        noticeEndsAt: z.string().optional().nullable(),     // ISO date string for in_notice
+        cancelledAt: z.string().optional().nullable(),      // ISO date string for cancelled
+        cancelChecklist: z.array(z.string()).optional(),    // ticked items for cancelled
+        notes: z.string().optional().nullable(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const { agentCrmProfiles, agentStatusEvents, users } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+
+        // Fetch agent name and current status
+        const [agentUser] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, input.userId));
+        const existingProfile = await getAgentCrmProfile(input.userId);
+        const fromStatus = existingProfile?.agentStatus ?? "active";
+        const agentName = agentUser?.name ?? `Agent #${input.userId}`;
+
+        // Build profile update
+        const profileUpdate: Record<string, unknown> = { agentStatus: input.newStatus };
+        if (input.newStatus === "paused") {
+          profileUpdate.pauseEndsAt = input.pauseEndsAt ? new Date(input.pauseEndsAt) : null;
+          profileUpdate.noticeEndsAt = null;
+          profileUpdate.cancelledAt = null;
+          profileUpdate.suspendedAt = null;
+        } else if (input.newStatus === "in_notice") {
+          profileUpdate.noticeEndsAt = input.noticeEndsAt ? new Date(input.noticeEndsAt) : null;
+          profileUpdate.pauseEndsAt = null;
+          profileUpdate.cancelledAt = null;
+          profileUpdate.suspendedAt = null;
+        } else if (input.newStatus === "cancelled") {
+          profileUpdate.cancelledAt = input.cancelledAt ? new Date(input.cancelledAt) : new Date();
+          profileUpdate.pauseEndsAt = null;
+          profileUpdate.noticeEndsAt = null;
+          profileUpdate.suspendedAt = null;
+        } else if (input.newStatus === "suspended") {
+          profileUpdate.suspendedAt = new Date();
+          profileUpdate.pauseEndsAt = null;
+          profileUpdate.noticeEndsAt = null;
+          profileUpdate.cancelledAt = null;
+        } else {
+          // active — clear all date fields
+          profileUpdate.pauseEndsAt = null;
+          profileUpdate.noticeEndsAt = null;
+          profileUpdate.cancelledAt = null;
+          profileUpdate.suspendedAt = null;
+        }
+
+        await upsertAgentCrmProfile(input.userId, profileUpdate as any);
+
+        // Log the status event
+        await db.insert(agentStatusEvents).values({
+          userId: input.userId,
+          fromStatus,
+          toStatus: input.newStatus,
+          adminId: ctx.user.id,
+          notes: input.notes ?? null,
+          pauseEndsAt: input.pauseEndsAt ? new Date(input.pauseEndsAt) : null,
+          noticeEndsAt: input.noticeEndsAt ? new Date(input.noticeEndsAt) : null,
+          cancelledAt: input.cancelledAt ? new Date(input.cancelledAt) : null,
+          cancelChecklist: input.cancelChecklist ?? null,
+        });
+
+        // Send email and notifications based on new status
+        try {
+          if (input.newStatus === "paused") {
+            const endDateStr = input.pauseEndsAt
+              ? new Date(input.pauseEndsAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+              : "TBC";
+            await sendDirectEmail({
+              toEmail: "memberships@thejltgroup.co.uk",
+              toName: "JLT Memberships",
+              subject: `Agent Paused: ${agentName}`,
+              html: `<p>Hi,</p><p><strong>${agentName}</strong> has been set to <strong>Paused</strong> status in the portal.</p><p><strong>Pause ends on:</strong> ${endDateStr}</p><p>Please pause their direct debit until this date. When the pause ends, remember to reinstate the direct debit.</p>${input.notes ? `<p><strong>Admin notes:</strong> ${input.notes}</p>` : ""}<p>This is an automated notification from the JLT Group Booking Portal.</p>`,
+            });
+            await createInAppNotification({
+              userId: ctx.user.id,
+              message: `${agentName} has been set to Paused. Pause ends: ${endDateStr}. Email sent to memberships.`,
+              linkUrl: `/crm/agents`,
+            });
+          } else if (input.newStatus === "in_notice") {
+            const finalDateStr = input.noticeEndsAt
+              ? new Date(input.noticeEndsAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+              : "TBC";
+            await sendDirectEmail({
+              toEmail: "memberships@thejltgroup.co.uk",
+              toName: "JLT Memberships",
+              subject: `Agent In Notice: ${agentName}`,
+              html: `<p>Hi,</p><p><strong>${agentName}</strong> has been placed <strong>In Notice</strong> in the portal.</p><p><strong>Final date at JLT:</strong> ${finalDateStr}</p><p>Please arrange to cancel their direct debit at the end of their notice period.</p>${input.notes ? `<p><strong>Admin notes:</strong> ${input.notes}</p>` : ""}<p>This is an automated notification from the JLT Group Booking Portal.</p>`,
+            });
+            await createInAppNotification({
+              userId: ctx.user.id,
+              message: `${agentName} is In Notice. Final date: ${finalDateStr}. Email sent to memberships.`,
+              linkUrl: `/crm/agents`,
+            });
+          } else if (input.newStatus === "cancelled") {
+            const finalDateStr = input.cancelledAt
+              ? new Date(input.cancelledAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+              : new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+            const checklist = input.cancelChecklist ?? [];
+            const checklistHtml = checklist.length
+              ? `<ul>${checklist.map(item => `<li>&#10003; ${item}</li>`).join("")}</ul>`
+              : "<p>No checklist items recorded.</p>";
+            await sendDirectEmail({
+              toEmail: "memberships@thejltgroup.co.uk",
+              toName: "JLT Memberships",
+              subject: `Agent Cancelled: ${agentName}`,
+              html: `<p>Hi,</p><p><strong>${agentName}</strong> has been <strong>Cancelled</strong> in the portal.</p><p><strong>Final date:</strong> ${finalDateStr}</p><p>The following systems have been acknowledged for restriction:</p>${checklistHtml}${input.notes ? `<p><strong>Admin notes:</strong> ${input.notes}</p>` : ""}<p>Please ensure all access is revoked by the final date.</p><p>This is an automated notification from the JLT Group Booking Portal.</p>`,
+            });
+            await createInAppNotification({
+              userId: ctx.user.id,
+              message: `${agentName} has been Cancelled. Final date: ${finalDateStr}. Checklist acknowledged and email sent to memberships.`,
+              linkUrl: `/crm/agents`,
+            });
+          }
+          // Suspended: no email, just update status — portal access is blocked by the guard
+        } catch (emailErr) {
+          console.error("[updateAgentStatus] Email/notification error:", emailErr);
+          // Don't fail the mutation if email fails
+        }
+
+        return { success: true };
+      }),
+
+    // ── Check for agents whose pause/notice period has ended (run daily) ──────
+    checkStatusDates: adminProcedure.mutation(async ({ ctx }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { agentCrmProfiles, users } = await import("../drizzle/schema");
+      const { eq, and, lte, isNotNull } = await import("drizzle-orm");
+      const now = new Date();
+
+      // Find paused agents whose pause has ended
+      const pausedAgents = await db
+        .select({ profile: agentCrmProfiles, name: users.name })
+        .from(agentCrmProfiles)
+        .innerJoin(users, eq(users.id, agentCrmProfiles.userId))
+        .where(and(
+          eq(agentCrmProfiles.agentStatus, "paused"),
+          isNotNull(agentCrmProfiles.pauseEndsAt),
+          lte(agentCrmProfiles.pauseEndsAt, now),
+        ));
+
+      for (const { profile, name } of pausedAgents) {
+        const endDateStr = profile.pauseEndsAt
+          ? new Date(profile.pauseEndsAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+          : "today";
+        try {
+          await sendDirectEmail({
+            toEmail: "memberships@thejltgroup.co.uk",
+            toName: "JLT Memberships",
+            subject: `Pause Period Ended: ${name}`,
+            html: `<p>Hi,</p><p>The pause period for <strong>${name}</strong> ended on <strong>${endDateStr}</strong>.</p><p>Please reinstate their direct debit now.</p><p>This is an automated reminder from the JLT Group Booking Portal.</p>`,
+          });
+          await createInAppNotification({
+            userId: ctx.user.id,
+            message: `Reminder: ${name}'s pause period ended ${endDateStr}. Please reinstate their direct debit.`,
+            linkUrl: `/crm/agents`,
+          });
+        } catch {}
+      }
+
+      // Find in_notice agents whose notice period has ended
+      const noticeAgents = await db
+        .select({ profile: agentCrmProfiles, name: users.name })
+        .from(agentCrmProfiles)
+        .innerJoin(users, eq(users.id, agentCrmProfiles.userId))
+        .where(and(
+          eq(agentCrmProfiles.agentStatus, "in_notice"),
+          isNotNull(agentCrmProfiles.noticeEndsAt),
+          lte(agentCrmProfiles.noticeEndsAt, now),
+        ));
+
+      for (const { profile, name } of noticeAgents) {
+        const finalDateStr = profile.noticeEndsAt
+          ? new Date(profile.noticeEndsAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+          : "today";
+        try {
+          await sendDirectEmail({
+            toEmail: "memberships@thejltgroup.co.uk",
+            toName: "JLT Memberships",
+            subject: `Notice Period Ended: ${name}`,
+            html: `<p>Hi,</p><p>The notice period for <strong>${name}</strong> ended on <strong>${finalDateStr}</strong>.</p><p>Please cancel their direct debit now.</p><p>This is an automated reminder from the JLT Group Booking Portal.</p>`,
+          });
+          await createInAppNotification({
+            userId: ctx.user.id,
+            message: `Reminder: ${name}'s notice period ended ${finalDateStr}. Please cancel their direct debit.`,
+            linkUrl: `/crm/agents`,
+          });
+        } catch {}
+      }
+
+      return { pausedCount: pausedAgents.length, noticeCount: noticeAgents.length };
+    }),
+
     // ─── Team Management (Duo / Trio groupings) ──────────────────────────────
     createTeam: adminProcedure
       .input(z.object({

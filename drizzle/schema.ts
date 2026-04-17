@@ -708,6 +708,11 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   internalNotes: text("internalNotes"),                                   // replaces adminNotes
   adminNotes: text("adminNotes"),                                         // kept for legacy data
   teamId: int("teamId"),                                                    // FK → agent_teams.id (for Duo/Trio groupings)
+  // Status-change workflow date fields
+  pauseEndsAt: timestamp("pauseEndsAt"),                                    // Date when pause period ends
+  noticeEndsAt: timestamp("noticeEndsAt"),                                  // Agent's final date at JLT (in_notice)
+  cancelledAt: timestamp("cancelledAt"),                                    // Date agent was cancelled / final date recorded
+  suspendedAt: timestamp("suspendedAt"),                                    // Date agent was suspended
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -753,6 +758,22 @@ export const agentChangeRequests = mysqlTable("agent_change_requests", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type AgentChangeRequest = typeof agentChangeRequests.$inferSelect;
+
+// ─── Agent CRM: Status Events (audit log) ───────────────────────────────────
+export const agentStatusEvents = mysqlTable("agent_status_events", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),                                          // FK → users.id (the agent)
+  fromStatus: varchar("fromStatus", { length: 50 }),                       // previous status
+  toStatus: varchar("toStatus", { length: 50 }).notNull(),                 // new status
+  adminId: int("adminId").notNull(),                                        // FK → users.id (admin who made change)
+  notes: text("notes"),                                                     // optional admin notes
+  pauseEndsAt: timestamp("pauseEndsAt"),                                    // for paused events
+  noticeEndsAt: timestamp("noticeEndsAt"),                                  // for in_notice events
+  cancelledAt: timestamp("cancelledAt"),                                    // for cancelled events
+  cancelChecklist: json("cancelChecklist"),                                 // JSON array of ticked checklist items
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AgentStatusEvent = typeof agentStatusEvents.$inferSelect;
 
 // ─── Agent Teams (Duo / Trio groupings) ──────────────────────────────────────
 export const agentTeams = mysqlTable("agent_teams", {

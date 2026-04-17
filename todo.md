@@ -1110,3 +1110,16 @@
 - [x] Backend: agentCrm.createTeam, addTeamMember, removeTeamMember, updateTeam procedures
 - [x] Admin CRM: Team tab in agent profile — create/join team, show all team members with links
 - [x] Admin CRM: team name and shared monthly sub visible on profile
+
+## Agent Status-Change Workflows (Apr 2026)
+- [ ] DB: add pauseEndsAt, noticeEndsAt columns to agent_crm_profiles
+- [ ] DB: add agent_status_events table (userId, fromStatus, toStatus, date, adminId, notes, pauseEndsAt, noticeEndsAt)
+- [ ] Backend: updateAgentStatus procedure — accepts new status + date fields, sends email to memberships@thejltgroup.co.uk, creates in-app notification, logs event
+- [ ] Backend: scheduled job to check pauseEndsAt daily — send unpause reminder email + notification when date is reached
+- [ ] Backend: scheduled job to check noticeEndsAt daily — send cancellation reminder email + notification when date is reached
+- [ ] Backend: suspended guard — protectedProcedure checks agentStatus, returns FORBIDDEN with suspension message if suspended
+- [ ] Frontend: Paused dialog — date picker for pause end date, confirm button, sends email + notification
+- [ ] Frontend: In Notice dialog — date picker for final date at JLT, confirm button, sends email + notification
+- [ ] Frontend: Cancelled checklist dialog — lists all systems to restrict (Topdog login, each supplier login, WhatsApp access, Learnworlds access), final date field, admin must tick each one before confirming
+- [ ] Frontend: Suspended confirmation dialog — warns admin that agent portal access will be blocked immediately
+- [ ] Frontend: Suspended portal guard — agent-facing blocked screen with message and memberships@thejltgroup.co.uk contact
