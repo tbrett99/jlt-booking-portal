@@ -1319,3 +1319,4 @@
 ### Ticketing deadline warning highlights
 - [x] AdminFlightsPipeline: highlight rows where ticketingDeadline is within 48h (amber) or overdue (red)
 - [x] Apply same logic to cancellationTicketingDeadline when requestType=both
+- [x] Bug: adminProcedure only allowed role='admin' but super_admin users were getting FORBIDDEN — admin flights pipeline showed no requests and pending count was 0 on dashboard. Fixed by allowing both 'admin' and 'super_admin' in adminProcedure middleware.
