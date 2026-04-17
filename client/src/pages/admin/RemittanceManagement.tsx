@@ -351,7 +351,11 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
   };
 
   const confirmAndPush = () => {
-    pushMutation.mutate({ batchId: batchId as number });
+    if (batchId === undefined) {
+      toast.error("Please select a batch before pushing to agents");
+      return;
+    }
+    pushMutation.mutate({ batchId });
     setConfirmPush(false);
   };
 
@@ -392,7 +396,8 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
             <Button
               size="sm"
               onClick={handlePush}
-              disabled={pushMutation.isPending}
+              disabled={pushMutation.isPending || batchId === undefined}
+              title={batchId === undefined ? "Select a batch to push" : undefined}
             >
               <Send className="h-4 w-4 mr-2" />
               {pushMutation.isPending ? "Pushing…" : `Push to Agents (${unpushedCount})`}
