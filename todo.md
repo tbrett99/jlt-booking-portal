@@ -1299,3 +1299,23 @@
 - [x] If Ticketed or Cancelled: auto-notify agent via in-app notification + email
 - [x] Invoice checkbox: admin confirms invoice added to PTS file
 - [x] Add "Flights" entry to admin Pipelines nav section
+
+## Flight Pipeline Improvements (Round 2)
+
+### Dual PNR for 'Both' request type
+- [x] DB: add cancellationPnr, cancellationDepartureDate, cancellationTicketingDeadline columns to flight_requests (nullable, used only when requestType=both)
+- [x] Backend: update create/list procedures to handle the new fields
+- [x] Frontend: FlightRequestForm — when 'Both' selected, show two sections: Ticketing (existing pnr/departureDate/ticketingDeadline) and Cancellation (separate fields)
+- [x] Admin: AdminFlightsPipeline — show both sets of fields when requestType=both
+
+### Pending flight requests count in admin urgent banner
+- [x] Backend: include pendingFlightRequests count in the admin dashboard stats query
+- [x] Frontend: AdminDashboard — add "Flight Requests Pending" counter to urgent banner alongside amendments/refunds
+
+### Notification templates for flight status updates
+- [x] Add flight_request_update template key to the notification templates system
+- [x] Wire flightRequests.updateStatus to use this template when notifying agents
+
+### Ticketing deadline warning highlights
+- [x] AdminFlightsPipeline: highlight rows where ticketingDeadline is within 48h (amber) or overdue (red)
+- [x] Apply same logic to cancellationTicketingDeadline when requestType=both

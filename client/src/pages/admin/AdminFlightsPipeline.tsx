@@ -22,8 +22,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Plane, Loader2, Search, CheckSquare, Square } from "lucide-react";
-import { format } from "date-fns";
+import { Plane, Loader2, Search, AlertTriangle, Clock } from "lucide-react";
+import { format, differenceInHours } from "date-fns";
 import { toast } from "sonner";
 import { Link } from "wouter";
 
@@ -178,7 +178,14 @@ export default function AdminFlightsPipeline() {
           {filtered.map((r) => {
             const badge = STATUS_BADGE[r.status as FlightStatus] ?? STATUS_BADGE.pending;
             return (
-              <Card key={r.id} className="overflow-hidden">
+              <Card key={r.id} className={`overflow-hidden ${
+              r.status === 'pending' && (() => {
+                const hoursLeft = differenceInHours(new Date(r.ticketingDeadline), new Date());
+                if (hoursLeft < 0) return 'border-red-400 bg-red-50/30';
+                if (hoursLeft <= 48) return 'border-amber-400 bg-amber-50/30';
+                return '';
+              })()
+            }`}>
                 <CardContent className="pt-4 pb-4">
                   <div className="flex flex-col sm:flex-row sm:items-start gap-4">
                     {/* Left: booking info */}
@@ -213,7 +220,28 @@ export default function AdminFlightsPipeline() {
                       </div>
                       <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-0.5">
                         <span>Departure: <strong className="text-foreground">{format(new Date(r.departureDate), "dd MMM yyyy")}</strong></span>
-                        <span>Deadline: <strong className="text-foreground">{format(new Date(r.ticketingDeadline), "dd MMM yyyy")}</strong></span>
+                        <span className={(() => {
+                          if (r.status !== 'pending') return '';
+                          const hoursLeft = differenceInHours(new Date(r.ticketingDeadline), new Date());
+                          if (hoursLeft < 0) return 'text-red-700 font-semibold';
+                          if (hoursLeft <= 48) return 'text-amber-700 font-semibold';
+                          return '';
+                        })()}>
+                          Deadline:
+                          {r.status === 'pending' && (() => {
+                            const hoursLeft = differenceInHours(new Date(r.ticketingDeadline), new Date());
+                            if (hoursLeft < 0) return <AlertTriangle className="inline h-3 w-3 ml-1 mr-0.5 text-red-600" />;
+                            if (hoursLeft <= 48) return <Clock className="inline h-3 w-3 ml-1 mr-0.5 text-amber-600" />;
+                            return null;
+                          })()}
+                          {' '}<strong className="text-foreground">{format(new Date(r.ticketingDeadline), "dd MMM yyyy")}</strong>
+                          {r.status === 'pending' && (() => {
+                            const hoursLeft = differenceInHours(new Date(r.ticketingDeadline), new Date());
+                            if (hoursLeft < 0) return <span className="ml-1 text-red-600">(OVERDUE)</span>;
+                            if (hoursLeft <= 48) return <span className="ml-1 text-amber-600">({hoursLeft}h left)</span>;
+                            return null;
+                          })()}
+                        </span>
                         <span>Submitted: {format(new Date(r.createdAt), "dd MMM yyyy HH:mm")}</span>
                       </div>
                       {r.status === "query" && r.queryMessage && (

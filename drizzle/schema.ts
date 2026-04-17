@@ -867,6 +867,10 @@ export const flightRequests = mysqlTable("flight_requests", {
   pnr: varchar("pnr", { length: 50 }).notNull(),
   departureDate: timestamp("departureDate").notNull(),
   ticketingDeadline: timestamp("ticketingDeadline").notNull(),
+  // Cancellation-specific fields (used when requestType = 'both')
+  cancellationPnr: varchar("cancellationPnr", { length: 50 }),
+  cancellationDepartureDate: timestamp("cancellationDepartureDate"),
+  cancellationTicketingDeadline: timestamp("cancellationTicketingDeadline"),
   status: varchar("status", { length: 20 }).notNull().default("pending"), // "pending" | "ticketed" | "cancelled" | "query"
   invoiceAddedToPts: boolean("invoiceAddedToPts").notNull().default(false),
   queryMessage: text("queryMessage"),

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { eq, desc, asc } from "drizzle-orm";
+import { eq, desc, asc, count } from "drizzle-orm";
 import { router, protectedProcedure, adminProcedure } from "./_core/trpc";
 import { getDb } from "./db";
 import { flightRequests, bookings, users } from "../drizzle/schema";
@@ -15,9 +15,14 @@ export const flightRequestsRouter = router({
         bookingId: z.number(),
         requestType: z.enum(["ticketing", "cancellation", "both"]),
         supplier: z.enum(["Aviate", "Lime", "VA Flight Store"]),
+        // Ticketing fields (also used as the primary set for single-type requests)
         pnr: z.string().min(1).max(50),
         departureDate: z.date(),
         ticketingDeadline: z.date(),
+        // Cancellation-specific fields (required when requestType = 'both')
+        cancellationPnr: z.string().max(50).optional(),
+        cancellationDepartureDate: z.date().optional(),
+        cancellationTicketingDeadline: z.date().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -32,6 +37,11 @@ export const flightRequestsRouter = router({
       if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
+      if (input.requestType === "both") {
+        if (!input.cancellationPnr || !input.cancellationDepartureDate || !input.cancellationTicketingDeadline) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Cancellation PNR, departure date and ticketing deadline are required when request type is Both." });
+        }
+      }
       const result = await db.insert(flightRequests).values({
         bookingId: input.bookingId,
         agentId: ctx.user.id,
@@ -40,6 +50,9 @@ export const flightRequestsRouter = router({
         pnr: input.pnr,
         departureDate: input.departureDate,
         ticketingDeadline: input.ticketingDeadline,
+        cancellationPnr: input.cancellationPnr ?? null,
+        cancellationDepartureDate: input.cancellationDepartureDate ?? null,
+        cancellationTicketingDeadline: input.cancellationTicketingDeadline ?? null,
         status: "pending",
         invoiceAddedToPts: false,
       });
@@ -64,6 +77,9 @@ export const flightRequestsRouter = router({
         pnr: flightRequests.pnr,
         departureDate: flightRequests.departureDate,
         ticketingDeadline: flightRequests.ticketingDeadline,
+        cancellationPnr: flightRequests.cancellationPnr,
+        cancellationDepartureDate: flightRequests.cancellationDepartureDate,
+        cancellationTicketingDeadline: flightRequests.cancellationTicketingDeadline,
         status: flightRequests.status,
         invoiceAddedToPts: flightRequests.invoiceAddedToPts,
         queryMessage: flightRequests.queryMessage,
@@ -116,6 +132,9 @@ export const flightRequestsRouter = router({
         pnr: flightRequests.pnr,
         departureDate: flightRequests.departureDate,
         ticketingDeadline: flightRequests.ticketingDeadline,
+        cancellationPnr: flightRequests.cancellationPnr,
+        cancellationDepartureDate: flightRequests.cancellationDepartureDate,
+        cancellationTicketingDeadline: flightRequests.cancellationTicketingDeadline,
         status: flightRequests.status,
         invoiceAddedToPts: flightRequests.invoiceAddedToPts,
         queryMessage: flightRequests.queryMessage,
@@ -134,6 +153,17 @@ export const flightRequestsRouter = router({
       .innerJoin(agentAlias, eq(flightRequests.agentId, agentAlias.id))
       .orderBy(asc(flightRequests.createdAt)); // oldest first
     return rows;
+  }),
+
+  // ─── Admin: count pending flight requests (for dashboard) ───────────────
+  pendingCount: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    const [row] = await db
+      .select({ count: count() })
+      .from(flightRequests)
+      .where(eq(flightRequests.status, "pending"));
+    return (row?.count as number) ?? 0;
   }),
 
   // ─── Admin: update status ────────────────────────────────────────────────

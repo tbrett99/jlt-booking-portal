@@ -17,7 +17,7 @@ import {
   AlertTriangle, Sparkles, AlertCircle, Calendar, Clock,
   CheckCircle2, Banknote, RefreshCw, ChevronRight, Upload, BellOff,
   XCircle, ChevronDown, ChevronUp, PoundSterling, ClipboardList,
-  Flame, TriangleAlert
+  Flame, TriangleAlert, Plane
 } from "lucide-react";
 import { format, differenceInDays, addDays } from "date-fns";
 
@@ -126,6 +126,7 @@ export default function AdminDashboard() {
   const { data: allReimbs = [] } = trpc.reimbursements.list.useQuery({});
   const { data: adminUsersForAssign = [] } = trpc.reimbursements.listAdminsForAssign.useQuery();
   const { data: commissionDueList = [] } = trpc.commissionDue.list.useQuery();
+  const { data: pendingFlightCount = 0 } = trpc.flightRequests.pendingCount.useQuery();
   const assignReimb = trpc.reimbursements.assign.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
   const scheduleReimb = trpc.reimbursements.updateStatus.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
   const notificationsPaused = notifSettings?.paused ?? false;
@@ -308,6 +309,17 @@ export default function AdminDashboard() {
                 </span>
               </div>
               <Link href="/commissions-admin"><Button size="sm" variant="ghost" className="text-xs text-emerald-700 h-7 px-2 flex-shrink-0">Process</Button></Link>
+            </div>
+          )}
+          {(pendingFlightCount as number) > 0 && (
+            <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 border border-sky-200 bg-white">
+              <Plane size={14} style={{ color: '#0284c7' }} className="flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-xs" style={{ color: '#0c4a6e' }}>
+                  {pendingFlightCount as number} flight request{(pendingFlightCount as number) > 1 ? 's' : ''} pending
+                </span>
+              </div>
+              <Link href="/flights"><Button size="sm" variant="ghost" className="text-xs text-sky-700 h-7 px-2 flex-shrink-0">Review</Button></Link>
             </div>
           )}
           {lowMarginBookings.length > 0 && (

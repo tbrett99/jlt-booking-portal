@@ -309,6 +309,13 @@
       "when": 1776442930868,
       "tag": "0043_fair_squirrel_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "5",
+      "when": 1776445804038,
+      "tag": "0044_odd_red_hulk",
+      "breakpoints": true
     }
   ]
 }
