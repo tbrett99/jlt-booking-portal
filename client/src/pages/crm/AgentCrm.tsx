@@ -18,7 +18,7 @@ import {
   Search, UserCheck, Banknote, Eye, EyeOff, Plus, Trash2,
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
-  ChevronDown, X, Pencil
+  ChevronDown, X, Pencil, Clock, ArrowRight
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -289,7 +289,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
         {/* Tabs */}
         <div className="px-6 pt-4">
           <Tabs defaultValue="profile">
-            <TabsList className="grid grid-cols-7 w-full">
+            <TabsList className="grid grid-cols-8 w-full">
               <TabsTrigger value="profile" className="text-xs">Profile</TabsTrigger>
               <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
               <TabsTrigger value="team" className="text-xs">Team</TabsTrigger>
@@ -297,6 +297,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <TabsTrigger value="bank" className="text-xs">Bank</TabsTrigger>
               <TabsTrigger value="docs" className="text-xs">Docs</TabsTrigger>
               <TabsTrigger value="tags" className="text-xs">Tags</TabsTrigger>
+              <TabsTrigger value="history" className="text-xs">History</TabsTrigger>
             </TabsList>
 
             <TabsContent value="profile" className="mt-5 pb-8">
@@ -319,6 +320,9 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             </TabsContent>
             <TabsContent value="tags" className="mt-5 pb-8">
               <TagsTab userId={agent.id} tags={agent.tags} onRefresh={refresh} />
+            </TabsContent>
+            <TabsContent value="history" className="mt-5 pb-8">
+              <StatusHistoryTab userId={agent.id} />
             </TabsContent>
           </Tabs>
         </div>
@@ -1421,6 +1425,142 @@ function TeamTab({ userId, profile, onRefresh }: { userId: number; profile: CrmP
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Status History Tab ───────────────────────────────────────────────────────
+
+const STATUS_LABELS: Record<string, string> = {
+  active: "Active",
+  paused: "Paused",
+  in_notice: "In Notice",
+  cancelled: "Cancelled",
+  suspended: "Suspended",
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  active: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400",
+  paused: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
+  in_notice: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
+  cancelled: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+  suspended: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
+};
+
+function StatusPill({ status }: { status: string | null | undefined }) {
+  const s = status ?? "unknown";
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[s] ?? "bg-muted text-muted-foreground"}`}>
+      {STATUS_LABELS[s] ?? s}
+    </span>
+  );
+}
+
+function StatusHistoryTab({ userId }: { userId: number }) {
+  const { data: events = [], isLoading } = trpc.crm.agentCrm.getStatusHistory.useQuery({ userId });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (events.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <Clock className="h-8 w-8 mx-auto mb-2 opacity-20" />
+        <p className="text-sm">No status changes recorded yet</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {events.map((event, idx) => {
+        const date = event.createdAt ? new Date(event.createdAt) : null;
+        const checklist = Array.isArray(event.cancelChecklist) ? event.cancelChecklist as string[] : [];
+        return (
+          <div
+            key={event.id ?? idx}
+            className="relative flex gap-4 pb-3"
+          >
+            {/* Timeline line */}
+            {idx < events.length - 1 && (
+              <div className="absolute left-4 top-8 bottom-0 w-px bg-border" />
+            )}
+
+            {/* Timeline dot */}
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted border-2 border-border flex items-center justify-center z-10">
+              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 min-w-0 bg-card border border-border rounded-lg p-3 shadow-sm">
+              {/* Header row */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <StatusPill status={event.fromStatus} />
+                <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                <StatusPill status={event.toStatus} />
+                <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">
+                  {date ? date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                </span>
+              </div>
+
+              {/* Admin */}
+              {event.adminName && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Changed by <span className="font-medium text-foreground">{event.adminName}</span>
+                </p>
+              )}
+
+              {/* Date fields */}
+              <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5">
+                {event.pauseEndsAt && (
+                  <p className="text-xs text-muted-foreground">
+                    Pause ends: <span className="font-medium text-foreground">
+                      {new Date(event.pauseEndsAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    </span>
+                  </p>
+                )}
+                {event.noticeEndsAt && (
+                  <p className="text-xs text-muted-foreground">
+                    Final date: <span className="font-medium text-foreground">
+                      {new Date(event.noticeEndsAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    </span>
+                  </p>
+                )}
+                {event.cancelledAt && (
+                  <p className="text-xs text-muted-foreground">
+                    Departed: <span className="font-medium text-foreground">
+                      {new Date(event.cancelledAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              {/* Checklist (for cancellations) */}
+              {checklist.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {checklist.map((item) => (
+                    <span key={item} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                      <CheckSquare className="h-2.5 w-2.5 text-emerald-500" /> {item}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Notes */}
+              {event.notes && (
+                <p className="text-xs text-muted-foreground mt-1.5 italic">"{event.notes}"</p>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

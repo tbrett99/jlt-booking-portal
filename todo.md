@@ -1137,3 +1137,10 @@
 - [x] Frontend: Cancelled (Action Required) panel — per-agent offboarding checklist; agent disappears when all items ticked
 - [x] Sidebar: add Memberships link under CRM nav group (admin/super_admin only)
 - [x] Route: wire /crm/memberships in App.tsx
+
+## Memberships Enhancements (Apr 2026)
+- [x] Memberships: Reinstate button on Paused panel — quick "Set Active" without navigating to agent profile
+- [x] Memberships: Reinstate button on Suspended panel — quick "Set Active" without navigating to agent profile
+- [x] Sidebar: overdue CRM badge — count badge on CRM nav group when any agent notice/pause period is overdue
+- [x] Backend: agentCrm.getStatusHistory — returns all agent_status_events for a given userId, ordered by date desc
+- [x] AgentCrm sheet: Status History tab — timeline of all status changes (from/to, date, admin name, notes)

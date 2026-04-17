@@ -1,5 +1,15 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import {
   Users, PauseCircle, AlertTriangle, XCircle, ShieldOff,
-  CheckCircle2, Clock, CalendarDays, ChevronRight,
+  CheckCircle2, Clock, CalendarDays, ChevronRight, RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -194,6 +204,17 @@ function OffboardingRow({
 
 export default function Memberships() {
   const { data, refetch, isLoading } = trpc.crm.agentCrm.getMembershipsOverview.useQuery();
+
+  // Reinstate dialog state
+  const [reinstateTarget, setReinstateTarget] = useState<{ userId: number; name: string | null } | null>(null);
+  const reinstateAgent = trpc.crm.agentCrm.updateAgentStatus.useMutation({
+    onSuccess: () => {
+      toast.success(`${reinstateTarget?.name ?? "Agent"} reinstated to Active`);
+      setReinstateTarget(null);
+      refetch();
+    },
+    onError: (e) => { toast.error(e.message); setReinstateTarget(null); },
+  });
 
   if (isLoading) {
     return (
@@ -385,7 +406,7 @@ export default function Memberships() {
                       <TableHead>Tier</TableHead>
                       <TableHead>Pause Ends</TableHead>
                       <TableHead>Time Remaining</TableHead>
-                      <TableHead className="w-16"></TableHead>
+                      <TableHead className="w-32"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -414,9 +435,19 @@ export default function Memberships() {
                             <DaysChip days={days} />
                           </TableCell>
                           <TableCell>
-                            <Link href="/crm/agents">
-                              <Button size="sm" variant="ghost" className="text-xs">View</Button>
-                            </Link>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs gap-1 text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950"
+                                onClick={() => setReinstateTarget({ userId: agent.userId, name: agent.name })}
+                              >
+                                <RotateCcw className="h-3 w-3" /> Reinstate
+                              </Button>
+                              <Link href="/crm/agents">
+                                <Button size="sm" variant="ghost" className="text-xs">View</Button>
+                              </Link>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -451,7 +482,7 @@ export default function Memberships() {
                       <TableHead>Agent ID</TableHead>
                       <TableHead>Tier</TableHead>
                       <TableHead>Suspended Since</TableHead>
-                      <TableHead className="w-16"></TableHead>
+                      <TableHead className="w-32"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -475,9 +506,19 @@ export default function Memberships() {
                           {formatDate(agent.suspendedAt)}
                         </TableCell>
                         <TableCell>
-                          <Link href="/crm/agents">
-                            <Button size="sm" variant="ghost" className="text-xs">View</Button>
-                          </Link>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs gap-1 text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950"
+                              onClick={() => setReinstateTarget({ userId: agent.userId, name: agent.name })}
+                            >
+                              <RotateCcw className="h-3 w-3" /> Reinstate
+                            </Button>
+                            <Link href="/crm/agents">
+                              <Button size="sm" variant="ghost" className="text-xs">View</Button>
+                            </Link>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -520,6 +561,33 @@ export default function Memberships() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Reinstate Confirmation Dialog */}
+      <AlertDialog open={!!reinstateTarget} onOpenChange={(open) => { if (!open) setReinstateTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reinstate Agent</AlertDialogTitle>
+            <AlertDialogDescription>
+              Set <strong>{reinstateTarget?.name ?? "this agent"}</strong> back to <strong>Active</strong> status?
+              Their portal access will be restored immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={() => {
+                if (reinstateTarget) {
+                  reinstateAgent.mutate({ userId: reinstateTarget.userId, newStatus: "active" });
+                }
+              }}
+              disabled={reinstateAgent.isPending}
+            >
+              {reinstateAgent.isPending ? "Reinstating..." : "Confirm Reinstate"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

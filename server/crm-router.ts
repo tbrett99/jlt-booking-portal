@@ -1610,5 +1610,65 @@ export const crmRouter = router({
           .where(eq(agentCrmProfiles.userId, input.userId));
         return { success: true };
       }),
+
+    // ─── Overdue count for sidebar badge ─────────────────────────────────────────────
+    getOverdueCount: adminProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return { count: 0 };
+      const { agentCrmProfiles } = await import("../drizzle/schema");
+      const { eq, and, isNotNull, lte, or } = await import("drizzle-orm");
+      const now = new Date();
+
+      // Count agents whose pause or notice period has passed (still in that status)
+      const overdue = await db
+        .select({ userId: agentCrmProfiles.userId })
+        .from(agentCrmProfiles)
+        .where(
+          or(
+            and(
+              eq(agentCrmProfiles.agentStatus, "paused"),
+              isNotNull(agentCrmProfiles.pauseEndsAt),
+              lte(agentCrmProfiles.pauseEndsAt, now),
+            ),
+            and(
+              eq(agentCrmProfiles.agentStatus, "in_notice"),
+              isNotNull(agentCrmProfiles.noticeEndsAt),
+              lte(agentCrmProfiles.noticeEndsAt, now),
+            ),
+          )
+        );
+
+      return { count: overdue.length };
+    }),
+
+    // ─── Status History for agent sheet timeline ───────────────────────────────────────
+    getStatusHistory: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) return [];
+        const { agentStatusEvents, users } = await import("../drizzle/schema");
+        const { eq, desc } = await import("drizzle-orm");
+        const events = await db
+          .select({
+            id: agentStatusEvents.id,
+            fromStatus: agentStatusEvents.fromStatus,
+            toStatus: agentStatusEvents.toStatus,
+            createdAt: agentStatusEvents.createdAt,
+            notes: agentStatusEvents.notes,
+            pauseEndsAt: agentStatusEvents.pauseEndsAt,
+            noticeEndsAt: agentStatusEvents.noticeEndsAt,
+            cancelledAt: agentStatusEvents.cancelledAt,
+            cancelChecklist: agentStatusEvents.cancelChecklist,
+            adminName: users.name,
+          })
+          .from(agentStatusEvents)
+          .leftJoin(users, eq(users.id, agentStatusEvents.adminId))
+          .where(eq(agentStatusEvents.userId, input.userId))
+          .orderBy(desc(agentStatusEvents.createdAt));
+        return events;
+      }),
   }),
 });

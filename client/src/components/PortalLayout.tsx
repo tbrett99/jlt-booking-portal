@@ -37,12 +37,14 @@ function SidebarGroup({
   collapsed,
   onNavigate,
   unreadMessageCount,
+  overdueCount,
 }: {
   group: NavGroup;
   location: string;
   collapsed: boolean;
   onNavigate: () => void;
   unreadMessageCount?: number;
+  overdueCount?: number;
 }) {
   const isAnyActive = group.items.some(
     (i) => location === i.href || (i.href !== "/" && location.startsWith(i.href))
@@ -92,6 +94,11 @@ function SidebarGroup({
         {group.label === "Communication" && (unreadMessageCount ?? 0) > 0 && (
           <span className="min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center" style={{ background: '#ef4444', color: 'white' }}>
             {(unreadMessageCount ?? 0) > 99 ? '99+' : unreadMessageCount}
+          </span>
+        )}
+        {group.label === "CRM" && (overdueCount ?? 0) > 0 && (
+          <span className="min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center" style={{ background: '#f59e0b', color: 'white' }}>
+            {(overdueCount ?? 0) > 99 ? '99+' : (overdueCount ?? 0)}
           </span>
         )}
         <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
@@ -152,6 +159,12 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     enabled: isAdminUser && !isAgentView,
     refetchInterval: 30000,
   });
+
+  const { data: overdueData } = trpc.crm.agentCrm.getOverdueCount.useQuery(undefined, {
+    enabled: isAdminUser && !isAgentView,
+    refetchInterval: 120000,
+  });
+  const overdueCount = overdueData?.count ?? 0;
 
   const { data: notifications, refetch: refetchNotifs } = trpc.notifications.myNotifications.useQuery(undefined, {
     enabled: notifOpen,
@@ -425,6 +438,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               collapsed={collapsed}
               onNavigate={() => setSidebarOpen(false)}
               unreadMessageCount={unreadMessageCount}
+              overdueCount={overdueCount}
             />
           ))}
         </nav>
