@@ -1339,3 +1339,7 @@
 
 ## PPS Signature / Form Error Fix
 - [x] Bug: PPS returns error #00065539 — root cause was callbackURL and merchantData fields not pre-registered in PPS merchant account. Fixed by removing both fields from the signed form. Also removed 1200ms intermediate page delay so customer goes directly to PPS on link click.
+
+## PPS Direct Server-Side Payment Route
+- [x] Replace React /pay/:token page with server-side Express GET /pay/:token that returns self-submitting HTML form directly to PPS
+- [x] Remove PaymentRedirect React page from App.tsx router

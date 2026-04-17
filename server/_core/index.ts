@@ -10,10 +10,57 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { startScheduler, runNightlyExport, getLastExportRun } from "../scheduler";
 import { ENV } from "./env";
-import { verifyPpsSignature } from "../pps-signature";
+import { verifyPpsSignature, buildPpsSignature } from "../pps-signature";
 import { getDb, createInAppNotification } from "../db";
 import { paymentLinks, bookings, users } from "../../drizzle/schema";
 import { sendNotificationEmail } from "../email";
+
+// HTML escape helper to prevent XSS in server-rendered payment page
+function escHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// Simple error page for payment link issues
+function errorHtml(title: string, message: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escHtml(title)} — The JLT Group</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: #f0fffb; display: flex; align-items: center; justify-content: center;
+           min-height: 100vh; }
+    .card { background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,.08);
+            padding: 2.5rem 2rem; max-width: 380px; width: 100%; text-align: center; }
+    .icon { width: 56px; height: 56px; border-radius: 50%; background: #ffc3bc;
+            display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; }
+    h1 { font-size: 1.1rem; color: #414141; margin: 0 0 .5rem; }
+    p { font-size: .85rem; color: #6b7280; margin: 0 0 .5rem; }
+    .contact { font-size: .75rem; color: #d1d5db; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+    </div>
+    <h1>${escHtml(title)}</h1>
+    <p>${escHtml(message)}</p>
+    <p class="contact">Contact us: <a href="mailto:info@thejltgroup.co.uk">info@thejltgroup.co.uk</a></p>
+  </div>
+</body>
+</html>`;
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -67,6 +114,124 @@ async function startServer() {
     }
     const last = await getLastExportRun();
     res.json(last ?? { ranAt: null, success: null, rowCount: null });
+  });
+
+  // ── PPS Direct Payment Page ─────────────────────────────────────────────────
+  // Server-side GET /pay/:token — returns a self-submitting HTML form that goes
+  // straight to PPS. No React app, no portal login required. Customer opens the
+  // link and is immediately redirected to the PPS hosted payment page.
+  app.get("/pay/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const db = await getDb();
+      if (!db) { res.status(500).send("Server error"); return; }
+
+      const [link] = await db
+        .select()
+        .from(paymentLinks)
+        .where(eq(paymentLinks.id, token));
+
+      if (!link) {
+        res.status(404).send(errorHtml("Payment link not found", "This payment link does not exist or has expired. Please contact The JLT Group."));
+        return;
+      }
+      if (link.status === "cancelled") {
+        res.status(410).send(errorHtml("Link Cancelled", "This payment link has been cancelled. Please contact The JLT Group."));
+        return;
+      }
+      if (link.status === "paid") {
+        res.status(410).send(errorHtml("Already Paid", "This payment has already been completed. Thank you!"));
+        return;
+      }
+
+      const signingSecret = ENV.ppsSigningSecret;
+      const gatewayUrl = ENV.ppsGatewayUrl;
+
+      if (!signingSecret || !gatewayUrl) {
+        res.status(500).send(errorHtml("Configuration Error", "Payment gateway is not configured. Please contact The JLT Group."));
+        return;
+      }
+
+      const formFields: Record<string, string> = {
+        merchantID: link.merchantId,
+        action: "SALE",
+        type: "1",
+        currencyCode: "826",
+        countryCode: "826",
+        amount: String(link.amountPence),
+        transactionUnique: link.transactionUnique,
+        orderRef: link.orderRef,
+        redirectURL: link.redirectUrl ?? "",
+      };
+
+      const signature = buildPpsSignature(formFields, signingSecret);
+      formFields.signature = signature;
+
+      const hiddenInputs = Object.entries(formFields)
+        .map(([name, value]) => `<input type="hidden" name="${escHtml(name)}" value="${escHtml(value)}">`)
+        .join("\n        ");
+
+      const amountFormatted = `£${(link.amountPence / 100).toFixed(2)}`;
+
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secure Payment — The JLT Group</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: #f0fffb; display: flex; align-items: center; justify-content: center;
+           min-height: 100vh; }
+    .card { background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,.08);
+            padding: 2.5rem 2rem; max-width: 380px; width: 100%; text-align: center; }
+    .logo { width: 56px; height: 56px; border-radius: 50%; background: #70ffe8;
+            display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; }
+    h1 { font-size: 1.1rem; color: #414141; margin: 0 0 .25rem; }
+    .sub { font-size: .8rem; color: #9ca3af; margin: 0 0 1.5rem; }
+    .detail { background: #f9fafb; border-radius: 10px; padding: .9rem 1rem;
+              text-align: left; margin-bottom: 1.5rem; }
+    .row { display: flex; justify-content: space-between; font-size: .85rem; margin-bottom: .4rem; }
+    .row:last-child { margin-bottom: 0; }
+    .label { color: #6b7280; }
+    .value { font-weight: 600; color: #414141; }
+    .amount { font-size: 1.2rem; }
+    .spinner { width: 28px; height: 28px; border: 3px solid #e5e7eb;
+               border-top-color: #02e6d2; border-radius: 50%;
+               animation: spin .7s linear infinite; margin: 0 auto .75rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .msg { font-size: .85rem; color: #6b7280; }
+    .powered { font-size: .7rem; color: #d1d5db; margin-top: .5rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#414141" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    </div>
+    <h1>The JLT Group</h1>
+    <p class="sub">Secure Payment</p>
+    <div class="detail">
+      <div class="row"><span class="label">Reference</span><span class="value">${escHtml(link.orderRef)}</span></div>
+      <div class="row"><span class="label">Amount</span><span class="value amount">${escHtml(amountFormatted)}</span></div>
+    </div>
+    <div class="spinner"></div>
+    <p class="msg">Redirecting to secure payment&hellip;</p>
+    <p class="powered">Powered by Protected Payment Services</p>
+  </div>
+  <form id="ppsForm" method="POST" action="${escHtml(gatewayUrl)}">
+        ${hiddenInputs}
+  </form>
+  <script>document.getElementById('ppsForm').submit();</script>
+</body>
+</html>`);
+    } catch (err) {
+      console.error("[PayRoute] Error:", err);
+      res.status(500).send(errorHtml("Error", "An unexpected error occurred. Please contact The JLT Group."));
+    }
   });
 
   // ── PPS Payment Callback ────────────────────────────────────────────────────

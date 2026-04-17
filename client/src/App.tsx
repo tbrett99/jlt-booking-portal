@@ -58,7 +58,6 @@ import SignContract from "./pages/crm/SignContract";
 import MembershipSelection from "./pages/crm/MembershipSelection";
 import WonAgentPortal from "./pages/crm/WonAgentPortal";
 import AgentCrm from "./pages/crm/AgentCrm";
-import PaymentRedirect from "./pages/PaymentRedirect";
 import PaymentResult from "./pages/PaymentResult";
 import CrmChangeRequests from "./pages/crm/CrmChangeRequests";
 import Memberships from "./pages/crm/Memberships";
@@ -103,19 +102,6 @@ function AuthRouter() {
   const { user, loading } = useAuth();
   const { isAgentView } = useViewMode();
 
-  // Public payment pages — must be accessible to unauthenticated customers.
-  // Check path BEFORE any auth guard or loading spinner so customers never
-  // see the login page or a 404 when following a payment link.
-  const path = window.location.pathname;
-  if (path.startsWith("/pay/") || path === "/payment/result") {
-    return (
-      <Switch>
-        <Route path="/pay/:token" component={PaymentRedirect} />
-        <Route path="/payment/result" component={PaymentResult} />
-      </Switch>
-    );
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -135,8 +121,7 @@ function AuthRouter() {
         <Route path="/" component={LoginPage} />
         <Route path="/login" component={LoginPage} />
         <Route path="/reset-password" component={ResetPasswordPage} />
-        {/* Public payment pages — no auth required */}
-        <Route path="/pay/:token" component={PaymentRedirect} />
+        {/* Public payment result page — no auth required */}
         <Route path="/payment/result" component={PaymentResult} />
         {/* Public CRM pages — no auth required */}
         <Route path="/enquiry" component={EnquiryForm} />
