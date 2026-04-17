@@ -281,13 +281,14 @@ export const remittanceRouter = router({
       const claimMap: Record<number, { bookingType: string; status: string }> = {};
       for (const c of claimRows) claimMap[c.bookingId] = { bookingType: c.bookingType, status: c.status };
 
-      return sortedLines.map((l) => ({
+      const result = sortedLines.map((l) => ({
         ...l,
         batchName: batchMap[l.batchId]?.name ?? "",
         weekOf: batchMap[l.batchId]?.weekOf ?? null,
         bookingType: l.bookingId ? (claimMap[l.bookingId]?.bookingType ?? null) : null,
         claimStatus: l.bookingId ? (claimMap[l.bookingId]?.status ?? null) : null,
       }));
+      return result;
     }),
 
   // ── Get Agent View (matched lines grouped by agent) ─────────────────────────

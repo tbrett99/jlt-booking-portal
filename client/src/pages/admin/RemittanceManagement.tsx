@@ -180,7 +180,7 @@ function UploadDialog({
 // ─── Janine's View ────────────────────────────────────────────────────────────
 
 function JaninesView({ batchId }: { batchId?: number }) {
-  const { data: lines = [], isLoading } = trpc.remittance.getJaninesView.useQuery({ batchId });
+  const { data: lines = [], isLoading } = trpc.remittance.getJaninesView.useQuery({ batchId }, { staleTime: 0 });
 
   const exportJanines = () => {
     const rows = lines.map((l) => ({
@@ -197,8 +197,7 @@ function JaninesView({ batchId }: { batchId?: number }) {
       "SAFI": fmt(l.safi),
       "PTRC": fmt(l.ptrc),
       "PTS Fee": fmt(l.pts),
-      "VAT (Portal)": fmt((l as any).vatFromPortal ?? l.vatFromPts),
-      "VAT (PTS)": fmt(l.vatFromPts),
+      "VAT": fmt((l as any).vatFromPortal ?? l.vatFromPts),
       "Booking Type": (l as any).bookingType ?? "",
       "Remittance": l.remittance,
       "0.80": l.remit80 ?? "",
@@ -238,8 +237,7 @@ function JaninesView({ batchId }: { batchId?: number }) {
               <TableHead>SAFI</TableHead>
               <TableHead>PTRC</TableHead>
               <TableHead>PTS</TableHead>
-              <TableHead>VAT (Portal)</TableHead>
-              <TableHead>VAT (PTS)</TableHead>
+              <TableHead>VAT</TableHead>
               <TableHead>Remittance</TableHead>
               <TableHead>80%</TableHead>
               <TableHead>20%</TableHead>
@@ -281,7 +279,6 @@ function JaninesView({ batchId }: { batchId?: number }) {
                 <TableCell className="text-xs font-medium">
                   {(l as any).vatFromPortal ? fmt((l as any).vatFromPortal) : <span className="text-muted-foreground text-xs">—</span>}
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground">{fmt(l.vatFromPts)}</TableCell>
                 <TableCell className="font-medium">{fmt(l.remittance)}</TableCell>
                 <TableCell className="text-green-700 dark:text-green-400">{fmt(l.remit80)}</TableCell>
                 <TableCell className="text-blue-700 dark:text-blue-400">{fmt(l.jlt20)}</TableCell>
@@ -299,7 +296,7 @@ function JaninesView({ batchId }: { batchId?: number }) {
 // ─── Agent View ───────────────────────────────────────────────────────────────
 
 function AgentView({ batchId, batchName }: { batchId?: number; batchName?: string }) {
-  const { data: agents = [], isLoading } = trpc.remittance.getAgentView.useQuery({ batchId });
+  const { data: agents = [], isLoading } = trpc.remittance.getAgentView.useQuery({ batchId }, { staleTime: 0 });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const utils = trpc.useUtils();
 
@@ -338,8 +335,7 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
         "SAFI": fmt(l.safi),
         "PTRC": fmt(l.ptrc),
         "PTS Fee": fmt(l.pts),
-        "VAT (Portal)": fmt((l as any).vatFromPortal ?? l.vatFromPts),
-        "VAT (PTS)": fmt(l.vatFromPts),
+        "VAT": fmt((l as any).vatFromPortal ?? l.vatFromPts),
         "Remittance": l.remittance,
         "Agent 80%": l.remit80 ?? "",
         "Pushed": l.pushedToAgent ? "Yes" : "No",
@@ -461,8 +457,7 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
                         <TableHead>SAFI</TableHead>
                         <TableHead>PTRC</TableHead>
                         <TableHead>PTS</TableHead>
-                        <TableHead>VAT (Portal)</TableHead>
-                        <TableHead>VAT (PTS)</TableHead>
+                        <TableHead>VAT</TableHead>
                         <TableHead>Remittance</TableHead>
                         <TableHead>Agent 80%</TableHead>
                         <TableHead>Status</TableHead>
@@ -485,7 +480,6 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
                           <TableCell className="text-xs font-medium">
                             {l.vatFromPortal ? fmt(l.vatFromPortal) : <span className="text-muted-foreground text-xs">—</span>}
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{fmt(l.vatFromPts)}</TableCell>
                           <TableCell>{fmt(l.remittance)}</TableCell>
                           <TableCell className="text-green-700 dark:text-green-400 font-semibold">
                             {fmt(l.remit80)}
