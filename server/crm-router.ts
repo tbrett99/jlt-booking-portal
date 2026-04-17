@@ -80,6 +80,13 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== "super_admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Super admin access required" });
+  }
+  return next({ ctx });
+});
+
 // ─── Prospect stage enum ──────────────────────────────────────────────────────
 
 const PROSPECT_STAGES = [
@@ -1685,6 +1692,29 @@ export const crmRouter = router({
     }),
 
     // ─── Status History for agent sheet timeline ───────────────────────────────────────
+    deleteRecord: superAdminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const {
+          agentCrmProfiles,
+          agentSupplierLogins,
+          agentStatusEvents,
+          agentTags,
+          agentChangeRequests,
+        } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        // Delete all related rows first, then the profile
+        await db.delete(agentSupplierLogins).where(eq(agentSupplierLogins.userId, input.userId));
+        await db.delete(agentStatusEvents).where(eq(agentStatusEvents.userId, input.userId));
+        await db.delete(agentTags).where(eq(agentTags.userId, input.userId));
+        await db.delete(agentChangeRequests).where(eq(agentChangeRequests.userId, input.userId));
+        await db.delete(agentCrmProfiles).where(eq(agentCrmProfiles.userId, input.userId));
+        return { success: true };
+      }),
+
     getStatusHistory: adminProcedure
       .input(z.object({ userId: z.number().int() }))
       .query(async ({ input }) => {

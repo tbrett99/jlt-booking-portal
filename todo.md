@@ -1157,3 +1157,8 @@
 - [x] Bookings: auto-move bookings in "Creating Own PTS" stage to "Added to PTS" when a PTS reference is present
 - [x] Commissions Due: add "Minus" tag button per booking row
 - [x] Commissions Due: Minus tag opens a pre-populated message dialog to notify agent their file is short of funds, with ability to add extra info before sending
+
+## Bug Fix & CRM Delete (Apr 2026)
+- [x] Fix: ShortFundsDialog pre-populated message is empty — useEffect to reset message state when booking prop changes
+- [x] CRM: add deleteAgentCrmRecord procedure (super_admin only) — deletes agent_crm_profiles row and all related data
+- [x] CRM: add Delete Record button in AgentCrmSheet (super_admin only) with confirmation dialog warning about permanent deletion

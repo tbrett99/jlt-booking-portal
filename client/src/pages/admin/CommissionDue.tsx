@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -97,14 +97,26 @@ function MoveDatePopover({ bookingId, currentDate, onSuccess }: {
   );
 }
 
+function buildShortFundsMessage(booking: { id: number; clientName: string; agentName?: string; ptsRef?: string | null; topdogRef?: string | null } | null) {
+  if (!booking) return "";
+  const ref = booking.ptsRef
+    ? ` (PTS Ref: ${booking.ptsRef})`
+    : booking.topdogRef
+    ? ` (Topdog Ref: ${booking.topdogRef})`
+    : ` (#${booking.id})`;
+  return `Hi ${booking.agentName ?? 'there'},\n\nWe are reviewing the commission for your booking for ${booking.clientName}${ref} and it appears the file is currently short of funds.\n\nCould you please review the booking and ensure all client payments are up to date? If you have any questions, please do not hesitate to get in touch.\n\nThe JLT Group Team`;
+}
+
 function ShortFundsDialog({ booking, onClose }: {
   booking: { id: number; clientName: string; agentName?: string; ptsRef?: string | null; topdogRef?: string | null } | null;
   onClose: () => void;
 }) {
-  const defaultMessage = booking
-    ? `Hi ${booking.agentName ?? 'there'},\n\nWe are reviewing the commission for your booking for ${booking.clientName}${booking.ptsRef ? ` (PTS Ref: ${booking.ptsRef})` : booking.topdogRef ? ` (Topdog Ref: ${booking.topdogRef})` : ` (#${booking.id})`} and it appears the file is currently short of funds.\n\nCould you please review the booking and ensure all client payments are up to date? If you have any questions, please do not hesitate to get in touch.\n\nThe JLT Group Team`
-    : "";
-  const [message, setMessage] = useState(defaultMessage);
+  const [message, setMessage] = useState(() => buildShortFundsMessage(booking));
+
+  // Reset message whenever a new booking is opened
+  useEffect(() => {
+    if (booking) setMessage(buildShortFundsMessage(booking));
+  }, [booking?.id]);
   const sendShortFunds = trpc.commissionDue.sendShortFundsMessage.useMutation({
     onSuccess: () => { toast.success("Message sent to agent"); onClose(); },
     onError: (e) => toast.error(e.message),

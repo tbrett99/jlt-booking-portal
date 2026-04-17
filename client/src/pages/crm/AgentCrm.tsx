@@ -21,6 +21,7 @@ import {
   ChevronDown, X, Pencil, Clock, ArrowRight
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 const UK_REGIONS = [
   "North West", "North East", "Yorkshire and the Humber", "East Midlands",
@@ -257,15 +258,29 @@ export default function AgentCrm() {
 function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   agent: AgentRow; open: boolean; onClose: () => void; onRefresh: () => void;
 }) {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const { data: crmData, refetch: refetchCrm } = trpc.crm.agentCrm.get.useQuery(
     { userId: agent.id },
     { enabled: open }
   );
   function refresh() { refetchCrm(); onRefresh(); }
 
+  const deleteRecord = trpc.crm.agentCrm.deleteRecord.useMutation({
+    onSuccess: () => {
+      toast.success(`CRM record for ${agent.name} deleted`);
+      setConfirmDelete(false);
+      onClose();
+      onRefresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const profile = crmData?.profile as CrmProfile | null ?? null;
 
   return (
+    <>
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent side="right" className="w-full sm:max-w-3xl overflow-y-auto p-0">
         {/* Header */}
@@ -289,6 +304,20 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
 
         {/* Tabs */}
         <div className="px-6 pt-4">
+          {/* Delete record — super_admin only */}
+          {isSuperAdmin && (
+            <div className="flex justify-end mb-3">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-red-300 text-red-600 hover:bg-red-50 gap-1.5"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 size={12} />
+                Delete CRM Record
+              </Button>
+            </div>
+          )}
           <Tabs defaultValue="profile">
             <TabsList className="grid grid-cols-8 w-full">
               <TabsTrigger value="profile" className="text-xs">Profile</TabsTrigger>
@@ -329,6 +358,32 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
         </div>
       </SheetContent>
     </Sheet>
+
+    {/* Delete confirmation dialog */}
+    <Dialog open={confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(false)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-600">
+            <Trash2 size={18} />
+            Delete CRM Record
+          </DialogTitle>
+          <DialogDescription>
+            This will permanently delete the CRM profile, supplier logins, status history, tags, and change requests for <strong>{agent.name}</strong>. This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+          <Button
+            className="bg-red-600 hover:bg-red-700 text-white"
+            disabled={deleteRecord.isPending}
+            onClick={() => deleteRecord.mutate({ userId: agent.id })}
+          >
+            {deleteRecord.isPending ? "Deleting..." : "Delete Permanently"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 
