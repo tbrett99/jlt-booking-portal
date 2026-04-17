@@ -86,7 +86,7 @@ export const paymentsRouter = router({
 
       return {
         linkId,
-        payUrl: `${input.origin}/pay/${linkId}`,
+        payUrl: `${input.origin}/api/pay/${linkId}`,
         gatewayUrl,
         formFields,
         amountPence,

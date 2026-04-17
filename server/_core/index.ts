@@ -117,10 +117,10 @@ async function startServer() {
   });
 
   // ── PPS Direct Payment Page ─────────────────────────────────────────────────
-  // Server-side GET /pay/:token — returns a self-submitting HTML form that goes
-  // straight to PPS. No React app, no portal login required. Customer opens the
-  // link and is immediately redirected to the PPS hosted payment page.
-  app.get("/pay/:token", async (req, res) => {
+  // Server-side GET /api/pay/:token — returns a self-submitting HTML form that
+  // goes straight to PPS. Uses /api/ prefix so it's never intercepted by the
+  // static file server or CDN. No React app, no portal login required.
+  app.get("/api/pay/:token", async (req, res) => {
     try {
       const { token } = req.params;
       const db = await getDb();
