@@ -1364,22 +1364,22 @@
 
 ## Commission Pre-Authorisation
 - [x] Add commissionPreAuthorised boolean to bookings schema + migration
-- [ ] Add bookings.togglePreAuth tRPC procedure (agent can toggle on/off)
-- [ ] Update admin moveStage: when marking claimable with pre-auth=true, show VAT prompt and auto-create claim
-- [ ] Add pre-auth tag/badge on Commission Due admin page
-- [ ] Add pre-auth toggle to agent booking detail page
-- [ ] Add pre-auth toggle to AgentCommissions page
-- [ ] Send agent notification when commission is auto-processed via pre-auth
+- [x] Add bookings.togglePreAuth tRPC procedure (agent can toggle on/off)
+- [x] Update admin moveStage: when marking claimable with pre-auth=true, show VAT prompt and auto-create claim
+- [x] Add pre-auth tag/badge on Commission Due admin page
+- [x] Add pre-auth toggle to agent booking detail page
+- [x] Add pre-auth toggle to AgentCommissions page
+- [x] Send agent notification when commission is auto-processed via pre-auth
 
 ## Agent Dashboard Revamp
-- [ ] Two-column layout (actions left, bookings right)
-- [ ] Stats bar: Active Bookings, Needs Action, Commission Ready, Unread Notifications
-- [ ] Actions Required panel: Query bookings, missing docs, unread notifications
-- [ ] Commission Pre-Auth banner/explainer with per-booking toggles
-- [ ] Activity feed: recent updates across all bookings (last 5, with View All)
-- [ ] Earnings summary: £X earned this year / £Y pending
-- [ ] Upcoming departures strip (next 30 days)
-- [ ] Quick actions: Register Booking + Submit Flight Request buttons
+- [x] Two-column layout (actions left, bookings right)
+- [x] Stats bar: Active Bookings, Needs Action, Commission Ready, Unread Notifications
+- [x] Actions Required panel: Query bookings, missing docs, unread notifications
+- [x] Commission Pre-Auth banner/explainer with per-booking toggles
+- [x] Activity feed: recent updates across all bookings (last 5, with View All)
+- [x] Earnings summary: £X earned this year / £Y pending
+- [x] Upcoming departures strip (next 30 days)
+- [x] Quick actions: Register Booking + Submit Flight Request buttons
 
 ## Commission Pre-Auth + Dashboard Revamp (Apr 18)
 - [x] Add pre-auth tag/badge on Commission Due admin page (Zap icon + "Pre-Auth" badge already present)

@@ -27,6 +27,7 @@ import AgentCommissions from "./pages/agent/AgentCommissions";
 import AgentCancelBooking from "./pages/agent/AgentCancelBooking";
 import AgentRequestAmendment from "./pages/agent/AgentRequestAmendment";
 import AgentFlightRequests from "./pages/agent/AgentFlightRequests";
+import AgentNotifications from "./pages/agent/AgentNotifications";
 import AdminFlightsPipeline from "./pages/admin/AdminFlightsPipeline";
 import AdminCommissions from "./pages/admin/AdminCommissions";
 import RemittanceManagement from "./pages/admin/RemittanceManagement";
@@ -161,6 +162,7 @@ function AuthRouter() {
           <Route path="/request-amendment" component={AgentRequestAmendment} />
           <Route path="/flight-requests" component={AgentFlightRequests} />
           <Route path="/booking-documents" component={BookingDocuments} />
+          <Route path="/notifications" component={AgentNotifications} />
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route component={NotFound} />
@@ -186,8 +188,9 @@ function AuthRouter() {
           <Route path="/commissions" component={AgentCommissions} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
-          <Route path="/flight-requests" component={AgentFlightRequests} />
+           <Route path="/flight-requests" component={AgentFlightRequests} />
           <Route path="/booking-documents" component={BookingDocuments} />
+          <Route path="/notifications" component={AgentNotifications} />
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route component={NotFound} />
@@ -195,7 +198,6 @@ function AuthRouter() {
       </PortalLayout>
     );
   }
-
   // Admin / Super Admin — default admin view
   return (
     <PortalLayout>

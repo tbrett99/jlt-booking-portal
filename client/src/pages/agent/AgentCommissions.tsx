@@ -55,6 +55,7 @@ export default function AgentCommissions() {
   const [selectedType, setSelectedType] = useState<BookingType>("other");
   const [grossAmount, setGrossAmount] = useState<string>("");
   const [markPaidIds, setMarkPaidIds] = useState<number[]>([]);
+  const [activeTab, setActiveTab] = useState<string>("claimable");
 
   const { data: remittanceLines } = trpc.remittance.getMyRemittances.useQuery();
 
@@ -221,6 +222,52 @@ export default function AgentCommissions() {
         <p className="text-muted-foreground mt-1">Track and claim your commission for completed bookings.</p>
       </div>
 
+      {/* Pre-Auth Explainer Banner */}
+      <div className="rounded-2xl overflow-hidden" style={{ border: '2px solid #02E6D2', background: 'linear-gradient(135deg, #f0fffe 0%, #e0fdfb 100%)' }}>
+        <div className="px-5 py-4">
+          <div className="flex items-start gap-4">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#02E6D2' }}>
+              <Zap size={22} className="text-[#414141]" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-base" style={{ color: '#0f4c4a' }}>Commission Pre-Authorisation — get paid faster, automatically</p>
+              <p className="text-sm mt-1 leading-relaxed" style={{ color: '#0f4c4a', opacity: 0.85 }}>
+                Pre-authorisation allows JLT to automatically process your commission the moment a booking becomes claimable — no need to log in and claim it manually. Once enabled, your claim is submitted instantly and you'll receive your payment sooner.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="flex items-start gap-2 rounded-lg p-3" style={{ background: 'rgba(2,230,210,0.18)' }}>
+              <span className="text-lg mt-0.5">⚡</span>
+              <div>
+                <p className="text-xs font-bold" style={{ color: '#0f4c4a' }}>Instant processing</p>
+                <p className="text-xs mt-0.5" style={{ color: '#0f4c4a', opacity: 0.75 }}>Your claim is submitted the moment the file is ready — no delays, no manual steps.</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 rounded-lg p-3" style={{ background: 'rgba(2,230,210,0.18)' }}>
+              <span className="text-lg mt-0.5">🔒</span>
+              <div>
+                <p className="text-xs font-bold" style={{ color: '#0f4c4a' }}>You stay in control</p>
+                <p className="text-xs mt-0.5" style={{ color: '#0f4c4a', opacity: 0.75 }}>Toggle on or off per booking at any time before it becomes claimable.</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 rounded-lg p-3" style={{ background: 'rgba(2,230,210,0.18)' }}>
+              <span className="text-lg mt-0.5">💸</span>
+              <div>
+                <p className="text-xs font-bold" style={{ color: '#0f4c4a' }}>Get paid faster</p>
+                <p className="text-xs mt-0.5" style={{ color: '#0f4c4a', opacity: 0.75 }}>Faster claims mean faster payment — especially useful during busy booking periods.</p>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-2 rounded-lg px-4 py-3" style={{ background: '#02E6D2', color: '#414141' }}>
+            <Zap size={16} className="flex-shrink-0" />
+            <p className="text-sm font-bold">
+              To enable pre-auth on a booking: go to the{" "}<button className="underline font-bold cursor-pointer" style={{ color: '#414141' }} onClick={() => setActiveTab("not-ready")}>Pending</button>{" "}tab below and toggle it on for each booking you'd like to pre-authorise.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Missing commission prompt */}
       {missingCommission.length > 0 && (
         <div className="rounded-xl border-l-4 p-4 flex items-start gap-3"
@@ -319,7 +366,7 @@ export default function AgentCommissions() {
         </div>
       )}
 
-      <Tabs defaultValue="claimable">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4 flex-wrap h-auto gap-1">
           <TabsTrigger value="claimable">
             Ready to Claim
