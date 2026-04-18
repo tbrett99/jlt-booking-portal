@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
-import { adminProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
 import { paymentLinks, bookings, users } from "../drizzle/schema";
 import { buildPpsSignature } from "./pps-signature";
@@ -11,8 +11,8 @@ import { randomUUID } from "crypto";
 // ─── Payments Router ──────────────────────────────────────────────────────────
 
 export const paymentsRouter = router({
-  // ─── Admin: create a payment link ──────────────────────────────────────────
-  createLink: adminProcedure
+  // ─── Protected: create a payment link (admin/agent — agents restricted to own bookings) ──
+  createLink: protectedProcedure
     .input(
       z.object({
         bookingId: z.number(),
@@ -24,13 +24,19 @@ export const paymentsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-      // Fetch booking to get PTS ref
+      // Fetch booking to verify ownership and get PTS ref
       const [booking] = await db
         .select({ id: bookings.id, ptsRef: bookings.ptsRef, clientName: bookings.clientName, agentId: bookings.agentId })
         .from(bookings)
         .where(eq(bookings.id, input.bookingId));
 
       if (!booking) throw new TRPCError({ code: "NOT_FOUND", message: "Booking not found" });
+
+      // Agents can only create links for their own bookings; admins/super_admins can create for any
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
+      if (!isAdmin && booking.agentId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "You can only create payment links for your own bookings" });
+      }
 
       const ptsRef = booking.ptsRef ?? `JLT-${booking.id}`;
       const amountPence = Math.round(parseFloat(input.amountPounds) * 100);
@@ -45,32 +51,8 @@ export const paymentsRouter = router({
       const linkId = randomUUID();
       const transactionUnique = `JLT-${Date.now()}-${linkId.slice(0, 8)}`;
 
-      // Build the redirect and callback URLs.
-      // redirectURL: server-rendered page that checks DB status — avoids relying on PPS query params.
       const redirectUrl = `${input.origin}/api/pay/${linkId}/result`;
       const callbackUrl = `${input.origin}/api/pps/callback`;
-
-      // Build PPS form fields per CardStream hosted integration spec.
-      // callbackURL = server-to-server webhook (authoritative payment confirmation).
-      // merchantData = pass-through field echoed back in callback — used to look up our linkId.
-      const formFields: Record<string, string> = {
-        merchantID: merchantId,
-        action: "SALE",
-        type: "1",
-        currencyCode: "826",
-        countryCode: "826",
-        amount: String(amountPence),
-        transactionUnique,
-        orderRef: ptsRef,
-        orderDescription: ptsRef,
-        redirectURL: redirectUrl,
-        callbackURL: callbackUrl,
-        merchantData: linkId,
-      };
-
-      // Generate signature
-      const signature = buildPpsSignature(formFields, signingSecret);
-      formFields.signature = signature;
 
       // Persist the payment link record (expires 24 hours from now)
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -83,8 +65,8 @@ export const paymentsRouter = router({
         amountPence,
         orderRef: ptsRef,
         description: ptsRef,
-        redirectUrl: redirectUrl,
-        callbackUrl: callbackUrl,
+        redirectUrl,
+        callbackUrl,
         status: "pending",
         expiresAt,
       });
@@ -93,7 +75,6 @@ export const paymentsRouter = router({
         linkId,
         payUrl: `${input.origin}/api/pay/${linkId}`,
         gatewayUrl,
-        formFields,
         amountPence,
         ptsRef,
         clientName: booking.clientName,
@@ -129,7 +110,6 @@ export const paymentsRouter = router({
       if (!signingSecret) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "PPS not configured" });
 
       // Rebuild the exact same form fields that were signed at creation time.
-      // callbackURL and merchantData must match what was signed originally.
       const formFields: Record<string, string> = {
         merchantID: link.merchantId,
         action: "SALE",
@@ -139,10 +119,9 @@ export const paymentsRouter = router({
         amount: String(link.amountPence),
         transactionUnique: link.transactionUnique,
         orderRef: link.orderRef,
-        orderDescription: link.orderRef,
+        orderDetails: link.orderRef,
         redirectURL: link.redirectUrl ?? "",
         callbackURL: link.callbackUrl ?? "",
-        merchantData: link.id,
       };
 
       const signature = buildPpsSignature(formFields, signingSecret);
@@ -157,12 +136,24 @@ export const paymentsRouter = router({
       };
     }),
 
-  // ─── Admin: list payment links for a booking ───────────────────────────────
-  listForBooking: adminProcedure
+  // ─── Protected: list payment links for a booking (agents see own bookings only) ──
+  listForBooking: protectedProcedure
     .input(z.object({ bookingId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      // Verify ownership for agents
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
+      if (!isAdmin) {
+        const [booking] = await db
+          .select({ agentId: bookings.agentId })
+          .from(bookings)
+          .where(eq(bookings.id, input.bookingId));
+        if (!booking || booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "You can only view payment links for your own bookings" });
+        }
+      }
 
       const links = await db
         .select({
@@ -190,7 +181,7 @@ export const paymentsRouter = router({
   manualMarkPaid: adminProcedure
     .input(z.object({
       linkId: z.string(),
-      transactionRef: z.string().optional(), // optional manual transaction reference
+      transactionRef: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
