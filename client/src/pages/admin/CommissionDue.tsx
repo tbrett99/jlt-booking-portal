@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { AlertCircle, Calendar, CheckCircle2, User, Square, CheckSquare, CalendarClock, Minus } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, User, Square, CheckSquare, CalendarClock, Minus, Zap } from "lucide-react";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import CopyableRef from "@/components/CopyableRef";
 
@@ -166,6 +166,9 @@ export default function CommissionDue() {
   const [pastDepartureOnly, setPastDepartureOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [shortFundsBooking, setShortFundsBooking] = useState<{ id: number; clientName: string; agentName?: string; ptsRef?: string | null; topdogRef?: string | null } | null>(null);
+  // Pre-auth VAT dialog state
+  const [preAuthBooking, setPreAuthBooking] = useState<{ id: number; clientName: string } | null>(null);
+  const [vatInput, setVatInput] = useState("");
 
   const moveStage = trpc.bookings.moveStage.useMutation({
     onSuccess: () => { refetch(); toast.success("Booking moved"); },
@@ -363,6 +366,12 @@ export default function CommissionDue() {
                         </Link>
                         <Badge variant="outline" className="text-xs">#{booking.id}</Badge>
                         <Badge className="text-xs bg-[#414141] text-white">{booking.currentStage}</Badge>
+                        {(booking as any).commissionPreAuthorised && (
+                          <Badge className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 gap-1 flex items-center">
+                            <Zap size={10} />
+                            Pre-Auth
+                          </Badge>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -414,17 +423,22 @@ export default function CommissionDue() {
                         bookingId={booking.id}
                         currentDate={booking.finalSupplierPaymentDate}
                         onSuccess={refetch}
-                      />
-                      <Button
+                      />                      <Button
                         size="sm"
                         className="bg-[#70FFE8] text-[#414141] hover:bg-[#02E6D2] h-8"
-                        onClick={() =>
-                          moveStage.mutate({ bookingId: booking.id, toStage: "Commission Claimable" })
-                        }
+                        onClick={() => {
+                          if ((booking as any).commissionPreAuthorised) {
+                            // Pre-auth: prompt for VAT before auto-claiming
+                            setPreAuthBooking({ id: booking.id, clientName: booking.clientName });
+                            setVatInput("");
+                          } else {
+                            moveStage.mutate({ bookingId: booking.id, toStage: "Commission Claimable" });
+                          }
+                        }}
                         disabled={moveStage.isPending || bulkMoveStage.isPending}
                       >
                         <CheckCircle2 className="w-4 h-4 mr-1.5" />
-                        Mark Claimable
+                        {(booking as any).commissionPreAuthorised ? "Auto-Claim" : "Mark Claimable"}
                       </Button>
                     </div>
                   </div>
@@ -435,6 +449,55 @@ export default function CommissionDue() {
         </div>
       )}
       <ShortFundsDialog booking={shortFundsBooking} onClose={() => setShortFundsBooking(null)} />
+
+      {/* Pre-Auth VAT Dialog */}
+      <Dialog open={!!preAuthBooking} onOpenChange={(v) => !v && setPreAuthBooking(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Zap size={16} className="text-emerald-600" />
+              Auto-Claim Commission
+            </DialogTitle>
+            <DialogDescription>
+              This booking has pre-authorisation enabled. The commission will be automatically claimed and moved directly to <strong>Commission Claimed</strong> — the agent will not need to do anything.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm font-medium text-foreground">
+              Booking: <span className="text-muted-foreground">{preAuthBooking?.clientName}</span>
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-sm">VAT Amount (£) — leave blank if not applicable</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="e.g. 12.50"
+                value={vatInput}
+                onChange={(e) => setVatInput(e.target.value)}
+                className="h-9"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreAuthBooking(null)}>Cancel</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={moveStage.isPending}
+              onClick={() => {
+                if (!preAuthBooking) return;
+                const vat = vatInput.trim() !== "" ? parseFloat(vatInput) : null;
+                moveStage.mutate(
+                  { bookingId: preAuthBooking.id, toStage: "Commission Claimable", vatAmount: vat },
+                  { onSuccess: () => setPreAuthBooking(null) }
+                );
+              }}
+            >
+              {moveStage.isPending ? "Processing..." : "Confirm & Auto-Claim"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

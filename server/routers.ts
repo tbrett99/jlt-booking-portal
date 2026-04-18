@@ -762,7 +762,7 @@ export const appRouter = router({
         return getReimbursementDocs(input.bookingId);
       }),
     moveStage: adminProcedure
-      .input(z.object({ bookingId: z.number(), toStage: z.string(), queryMessage: z.string().optional() }))
+      .input(z.object({ bookingId: z.number(), toStage: z.string(), queryMessage: z.string().optional(), vatAmount: z.number().nullable().optional() }))
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
@@ -779,6 +779,43 @@ export const appRouter = router({
             code: "BAD_REQUEST",
             message: "A Final Supplier Payment Date must be set on this booking before it can be moved to \"" + input.toStage + "\". Please open the booking, add the date, then try again.",
           });
+        }
+
+        // Pre-auth auto-claim: if moving to Commission Claimable and agent has pre-authorised,
+        // skip the claimable stage and auto-create the commission claim, then move straight to Commission Claimed
+        if (input.toStage === "Commission Claimable" && (booking as any).commissionPreAuthorised) {
+          // Auto-create the commission claim with optional VAT
+          const grossAmount = (booking as any).expectedCommission ? parseFloat((booking as any).expectedCommission) : undefined;
+          const claim = await createCommissionClaim(booking.id, booking.agentId, "other", grossAmount);
+          if (claim && input.vatAmount !== undefined && input.vatAmount !== null) {
+            await updateCommissionVat(claim.id, input.vatAmount);
+          }
+          // Move directly to Commission Claimed
+          const updated = await updateBookingStage(input.bookingId, "Commission Claimed", ctx.user.id);
+          // Notify agent that commission was auto-processed
+          const agent = await getUserById(booking.agentId);
+          if (agent?.email) {
+            await sendNotificationEmail({
+              triggerKey: "commission_claimed",
+              toEmail: agent.email,
+              toName: agent.name ?? "Agent",
+              variables: { clientName: booking.clientName, ptsRef: (booking as any).ptsRef ?? "", bookingId: String(booking.id) },
+              bookingId: booking.id,
+            });
+            await createInAppNotification({
+              userId: booking.agentId,
+              bookingId: booking.id,
+              message: `Your commission for "${booking.clientName}" has been automatically processed via pre-authorisation.`,
+              linkUrl: `/bookings/${booking.id}`,
+            });
+          }
+          await createNote({
+            bookingId: booking.id,
+            authorId: ctx.user.id,
+            content: `[System] Commission auto-processed via pre-authorisation by ${ctx.user.name ?? "Admin"}. Booking moved directly to Commission Claimed.`,
+            isInternal: true,
+          });
+          return updated;
         }
 
         const updated = await updateBookingStage(input.bookingId, input.toStage, ctx.user.id);
@@ -837,6 +874,27 @@ export const appRouter = router({
           isInternal: true,
         });
         return updated;
+      }),
+    togglePreAuth: protectedProcedure
+      .input(z.object({ bookingId: z.number(), preAuthorised: z.boolean() }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        const db = await import("./db").then((m) => m.getDb());
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { bookings: bookingsTable } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(bookingsTable).set({ commissionPreAuthorised: input.preAuthorised }).where(eq(bookingsTable.id, input.bookingId));
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Commission pre-authorisation ${input.preAuthorised ? 'enabled' : 'disabled'} by ${ctx.user.name ?? 'Agent'}.`,
+          isInternal: false,
+        });
+        return { success: true };
       }),
     updateCommission: protectedProcedure
       .input(z.object({ bookingId: z.number(), expectedCommission: z.number().min(0) }))
@@ -1887,6 +1945,36 @@ export const appRouter = router({
         ...b,
         claim: claimMap.get(b.id) ?? null,
       }));
+    }),
+    // Agent: earnings summary for dashboard
+    myEarningsSummary: protectedProcedure.query(async ({ ctx }) => {
+      const claims = await getCommissionClaimsByAgent(ctx.user.id);
+      const currentYear = new Date().getFullYear();
+      const agentBookings = await getBookingsByAgent(ctx.user.id);
+      const bookingMap = new Map(agentBookings.map((b) => [b.id, b]));
+      let earnedThisYear = 0;
+      let pendingTotal = 0;
+      let awaitingPaymentTotal = 0;
+      for (const claim of claims) {
+        const booking = bookingMap.get(claim.bookingId);
+        const amount = Number(booking?.expectedCommission ?? 0);
+        if (claim.status === 'paid') {
+          const paidYear = claim.paidAt ? new Date(claim.paidAt).getFullYear() : null;
+          if (paidYear === currentYear) earnedThisYear += amount;
+        } else if (claim.status === 'awaiting_payment') {
+          awaitingPaymentTotal += amount;
+        } else if (claim.status === 'processing') {
+          pendingTotal += amount;
+        }
+      }
+      // Bookings with expected commission but no claim yet
+      const claimedBookingIds = new Set(claims.map((c) => c.bookingId));
+      for (const b of agentBookings) {
+        if (!claimedBookingIds.has(b.id) && b.expectedCommission && b.currentStage !== 'Cancelled') {
+          pendingTotal += Number(b.expectedCommission);
+        }
+      }
+      return { earnedThisYear, pendingTotal, awaitingPaymentTotal };
     }),
 
     // Admin: get all commission claims with booking and agent info

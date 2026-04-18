@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
-import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight, Download, FileSpreadsheet } from "lucide-react";
+import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight, Download, FileSpreadsheet, Zap } from "lucide-react";
 import { Link } from "wouter";
 
 type BookingType = "lapland" | "cruise" | "disney" | "other";
@@ -28,6 +28,7 @@ type BookingWithClaim = {
   departureDate: Date | string;
   currentStage: string;
   expectedCommission: number | null;
+  commissionPreAuthorised?: boolean;
   claim: {
     id: number;
     status: string;
@@ -619,6 +620,16 @@ export default function AgentCommissions() {
         </TabsContent>
 
         <TabsContent value="not-ready">
+          <div className="rounded-xl border p-4 mb-4 flex items-start gap-3" style={{ background: '#fffbeb', borderColor: '#fcd34d' }}>
+            <Zap size={16} className="shrink-0 mt-0.5" style={{ color: '#92400e' }} />
+            <div>
+              <p className="font-semibold text-sm" style={{ color: '#92400e' }}>Commission Pre-Authorisation</p>
+              <p className="text-xs mt-0.5" style={{ color: '#92400e', opacity: 0.85 }}>
+                Enable pre-authorisation on individual bookings to let JLT automatically process your commission claim as soon as the file is ready — no manual claim needed.
+                Open any booking below and toggle the pre-authorisation switch.
+              </p>
+            </div>
+          </div>
           <p className="text-sm text-muted-foreground mb-4">These bookings have commission due but aren't ready to claim yet — we'll notify you as each one moves to Ready to Claim.</p>
           {notReady.length === 0 ? (
             <Card>

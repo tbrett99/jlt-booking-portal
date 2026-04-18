@@ -337,6 +337,13 @@
       "when": 1776511083637,
       "tag": "0047_great_satana",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "5",
+      "when": 1776515214490,
+      "tag": "0048_outgoing_lester",
+      "breakpoints": true
     }
   ]
 }

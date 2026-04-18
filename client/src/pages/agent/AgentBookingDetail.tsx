@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import {
   ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
   CheckCircle2, Circle, AlertCircle, Sparkles, TrendingUp, Clock,
-  RefreshCw, Pencil, User, Check, X, Trash2, Plane
+  RefreshCw, Pencil, User, Check, X, Trash2, Plane, Zap
 } from "lucide-react";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -102,6 +102,14 @@ export default function AgentBookingDetail() {
       finalSupplierPaymentDate: paymentDateInput ? new Date(paymentDateInput) : undefined,
     });
   };
+
+  const togglePreAuth = trpc.bookings.togglePreAuth.useMutation({
+    onSuccess: () => {
+      utils.bookings.byId.invalidate({ id: bookingId });
+      toast.success("Pre-authorisation updated");
+    },
+    onError: (e: any) => toast.error(e.message || "Failed to update pre-authorisation"),
+  });
 
   const updateCommission = trpc.bookings.updateCommission.useMutation({
     onSuccess: () => {
@@ -487,6 +495,53 @@ export default function AgentBookingDetail() {
           )}
         </div>
       </div>
+
+      {/* Commission Pre-Authorisation Toggle */}
+      {booking.expectedCommission && !['Commission Claimed', 'Cancelled'].includes(booking.currentStage) && (
+        <div
+          className="rounded-xl border p-4 flex items-start gap-3"
+          style={{
+            background: (booking as any).commissionPreAuthorised ? '#ecfdf5' : '#fffbeb',
+            borderColor: (booking as any).commissionPreAuthorised ? '#6ee7b7' : '#fcd34d',
+          }}
+        >
+          <Zap
+            size={18}
+            className="shrink-0 mt-0.5"
+            style={{ color: (booking as any).commissionPreAuthorised ? '#065f46' : '#92400e' }}
+          />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm" style={{ color: (booking as any).commissionPreAuthorised ? '#065f46' : '#92400e' }}>
+              Commission Pre-Authorisation
+            </p>
+            <p className="text-xs mt-0.5 opacity-80" style={{ color: (booking as any).commissionPreAuthorised ? '#065f46' : '#92400e' }}>
+              {(booking as any).commissionPreAuthorised
+                ? "Pre-authorisation is ON. JLT will automatically process your commission claim as soon as your file is ready — you don't need to do anything."
+                : "Turn on pre-authorisation and JLT will automatically process your commission claim as soon as your file is ready. No manual claim needed."}
+            </p>
+          </div>
+          <button
+            onClick={() =>
+              togglePreAuth.mutate({
+                bookingId: booking.id,
+                preAuthorised: !(booking as any).commissionPreAuthorised,
+              })
+            }
+            disabled={togglePreAuth.isPending}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+              (booking as any).commissionPreAuthorised ? 'bg-emerald-500' : 'bg-gray-300'
+            }`}
+            role="switch"
+            aria-checked={(booking as any).commissionPreAuthorised}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                (booking as any).commissionPreAuthorised ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+      )}
 
       {/* PTS Ref bank transfer guidance banner */}
       {booking.ptsRef && (

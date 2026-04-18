@@ -81,6 +81,7 @@ export const flightRequestsRouter = router({
         cancellationDepartureDate: flightRequests.cancellationDepartureDate,
         cancellationTicketingDeadline: flightRequests.cancellationTicketingDeadline,
         status: flightRequests.status,
+        cancellationStatus: flightRequests.cancellationStatus,
         invoiceAddedToPts: flightRequests.invoiceAddedToPts,
         queryMessage: flightRequests.queryMessage,
         createdAt: flightRequests.createdAt,
