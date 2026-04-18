@@ -161,6 +161,12 @@ async function startServer() {
         return;
       }
 
+      // Fetch booking to get customer email/name for 3DS2 (required for manual card entry)
+      const [bookingForForm] = await db
+        .select({ clientEmail: bookings.clientEmail, clientName: bookings.clientName })
+        .from(bookings)
+        .where(eq(bookings.id, link.bookingId));
+
       const formFields: Record<string, string> = {
         merchantID: link.merchantId,
         action: "SALE",
@@ -176,6 +182,9 @@ async function startServer() {
       // Optional fields — only include if present (matches Tom's reference implementation)
       // v2: removed merchantData, using orderDetails (CardStream spec)
       if (link.description) formFields.orderDetails = link.description;
+      // Pass customer details for 3DS2 risk assessment (required for manual card entry on live accounts)
+      if (bookingForForm?.clientName) formFields.customerName = bookingForForm.clientName;
+      if (bookingForForm?.clientEmail) formFields.customerEmail = bookingForForm.clientEmail;
 
       const signature = buildPpsSignature(formFields, signingSecret);
       formFields.signature = signature;
