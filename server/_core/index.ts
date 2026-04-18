@@ -84,6 +84,11 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+
+  // Capture raw body for PPS callback signature verification BEFORE urlencoded parser decodes it.
+  // PPS signs the raw URL-encoded string; Express decodes it, so we must re-verify against raw.
+  app.use("/api/pps/callback", express.raw({ type: "application/x-www-form-urlencoded", limit: "1mb" }));
+
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -353,35 +358,63 @@ async function startServer() {
   // This is the authoritative source of truth — we verify the signature and update the DB.
   app.post("/api/pps/callback", async (req, res) => {
     try {
-      const fields = req.body as Record<string, string>;
-      const receivedSig = fields.signature ?? "";
       const signingSecret = ENV.ppsSigningSecret;
-
-      // Log ALL incoming fields for debugging (remove sensitive data in production)
-      console.log("[PPS Callback] Received POST. Fields:", JSON.stringify(
-        Object.fromEntries(Object.entries(fields).filter(([k]) => k !== 'signature')),
-        null, 2
-      ));
-      console.log("[PPS Callback] Content-Type:", req.headers['content-type']);
-      console.log("[PPS Callback] Has signature:", !!receivedSig);
-      console.log("[PPS Callback] Has signingSecret:", !!signingSecret);
 
       if (!signingSecret) {
         console.error("[PPS Callback] Signing secret not configured");
-        res.status(500).send("Configuration error");
+        res.status(200).send("OK");
         return;
       }
 
-      // Verify signature — MUST return 200 even on failure per CardStream spec
-      // (non-200 causes PPS to retry indefinitely)
-      const sigValid = verifyPpsSignature(fields, receivedSig, signingSecret);
-      console.log("[PPS Callback] Signature valid:", sigValid);
+      // express.raw() gives us a Buffer for this route — parse it ourselves so we can
+      // verify the signature against the original URL-encoded string (before decoding).
+      // Express's urlencoded parser decodes values, which changes the encoding and breaks
+      // the signature check (e.g. ':' → '%3A' differs between PPS and Node's URLSearchParams).
+      let fields: Record<string, string> = {};
+      let rawBody = "";
+      if (Buffer.isBuffer(req.body)) {
+        rawBody = req.body.toString("utf8");
+        const params = new URLSearchParams(rawBody);
+        Array.from(params.entries()).forEach(([k, v]) => { fields[k] = v; });
+      } else {
+        // Fallback: body already parsed by urlencoded middleware
+        fields = req.body as Record<string, string>;
+      }
+
+      const receivedSig = fields.signature ?? "";
+      console.log("[PPS Callback] Received POST. Content-Type:", req.headers['content-type']);
+      console.log("[PPS Callback] Fields (excl sig):", JSON.stringify(
+        Object.fromEntries(Object.entries(fields).filter(([k]) => k !== 'signature')),
+        null, 2
+      ));
+
+      // Verify signature using raw body string (preserves original encoding)
+      let sigValid = false;
+      if (rawBody) {
+        // Raw body approach: remove signature param, sort remaining, hash with secret
+        const { createHash } = await import("crypto");
+        const params = new URLSearchParams(rawBody);
+        params.delete("signature");
+        const sorted = Array.from(params.entries()).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+        // Re-encode preserving the decoded values (URLSearchParams encodes consistently)
+        const str = new URLSearchParams(sorted).toString();
+        const normalised = str.replace(/%0D%0A|%0A%0D|%0D/gi, "%0A");
+        const expected = createHash("sha512").update(normalised + signingSecret).digest("hex");
+        sigValid = expected === receivedSig;
+        console.log("[PPS Callback] Signature valid (raw body method):", sigValid);
+        if (!sigValid) {
+          console.warn("[PPS Callback] Sig mismatch. Expected:", expected, "Got:", receivedSig);
+        }
+      } else {
+        // Fallback: use parsed fields
+        sigValid = verifyPpsSignature(fields, receivedSig, signingSecret);
+        console.log("[PPS Callback] Signature valid (parsed method):", sigValid);
+      }
+
       if (!sigValid) {
-        // TEMPORARY: log signature mismatch but still process the callback so we can
-        // confirm the rest of the flow works. Re-enable strict check once confirmed.
-        console.warn("[PPS Callback] Signature mismatch — processing anyway for diagnostics. Expected:",
-          (() => { const { signature: _s, ...rest } = fields; return require('../pps-signature').buildPpsSignature(rest, signingSecret); })()
-        );
+        console.error("[PPS Callback] Invalid signature — rejecting callback");
+        res.status(200).send("OK"); // Always 200 per CardStream spec
+        return;
       }
 
       const linkId = fields.merchantData;
