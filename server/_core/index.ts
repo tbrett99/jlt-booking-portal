@@ -492,42 +492,28 @@ async function startServer() {
         null, 2
       ));
 
-      // Log raw body for signature debugging
-      console.log("[PPS Callback] Raw body (first 500 chars):", rawBody.slice(0, 500));
-      console.log("[PPS Callback] Received signature:", receivedSig);
-
-      // Compute expected signature multiple ways to find which one PPS uses
+      // Verify signature: sort fields (excl. signature), re-encode with URLSearchParams, SHA-512 + secret.
+      // This is the same algorithm used successfully on the redirectURL fields.
       const { createHash } = await import("crypto");
-
-      // Method A: parse raw body, delete sig, re-sort, re-encode with URLSearchParams
-      const paramsA = new URLSearchParams(rawBody);
-      paramsA.delete("signature");
-      const sortedA = Array.from(paramsA.entries()).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
-      const strA = new URLSearchParams(sortedA).toString();
-      const normA = strA.replace(/%0D%0A|%0A%0D|%0D/gi, "%0A");
-      const sigA = createHash("sha512").update(normA + signingSecret).digest("hex");
-      console.log("[PPS Callback] Method A (re-encoded):", sigA === receivedSig ? "MATCH" : "mismatch");
-
-      // Method B: use raw body string directly (remove sig param manually, keep rest as-is)
-      const rawNoSig = rawBody
-        .split("&")
-        .filter(p => !p.startsWith("signature="))
-        .sort()
-        .join("&");
-      const normB = rawNoSig.replace(/%0D%0A|%0A%0D|%0D/gi, "%0A");
-      const sigB = createHash("sha512").update(normB + signingSecret).digest("hex");
-      console.log("[PPS Callback] Method B (raw sorted):", sigB === receivedSig ? "MATCH" : "mismatch");
-
-      // Method C: use parsed fields object (original verifyPpsSignature)
-      const sigC = verifyPpsSignature(fields, receivedSig, signingSecret);
-      console.log("[PPS Callback] Method C (parsed fields):", sigC ? "MATCH" : "mismatch");
-
-      // DIAGNOSTIC: always process regardless of signature to confirm flow works
-      // TODO: re-enable strict check once we identify the correct method
-      const sigValid = sigA || sigB || sigC;
-      if (!sigValid) {
-        console.warn("[PPS Callback] All signature methods failed — processing anyway for diagnostics");
+      let sigValid = false;
+      if (receivedSig) {
+        const { signature: _s, ...restFields } = fields;
+        const sortedFields = Object.keys(restFields).sort().reduce((acc, k) => { acc[k] = restFields[k]; return acc; }, {} as Record<string, string>);
+        const str = new URLSearchParams(sortedFields).toString();
+        const norm = str.replace(/%0D%0A|%0A%0D|%0D/gi, "%0A");
+        const expected = createHash("sha512").update(norm + signingSecret).digest("hex");
+        sigValid = expected === receivedSig;
+        if (!sigValid) {
+          console.warn("[PPS Callback] Signature mismatch — rejecting. Expected:", expected, "Got:", receivedSig);
+        }
       }
+
+      if (!sigValid) {
+        console.error("[PPS Callback] Invalid or missing signature — rejecting");
+        res.status(200).send("OK"); // Always 200 per CardStream spec
+        return;
+      }
+      console.log("[PPS Callback] Signature valid");
 
       const linkId = fields.merchantData;
       const responseCode = fields.responseCode ?? "";
