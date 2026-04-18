@@ -66,9 +66,21 @@ export async function sendNotificationEmail(params: {
     // Replace template variables like {{clientName}}, {{bookingId}}, etc.
     const vars: Record<string, string> = {
       agentName: params.toName,
+      toName: params.toName,   // alias so templates can use either
       bookingId: String(params.bookingId ?? ""),
       ...params.variables,
     };
+
+    // Process {{#if key}}...{{/if}} conditional blocks before simple substitution
+    body = body.replace(/\{\{#if (\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_match, key, inner) => {
+      const val = vars[key];
+      return val && val.trim() ? inner : "";
+    });
+    subject = subject.replace(/\{\{#if (\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_match, key, inner) => {
+      const val = vars[key];
+      return val && val.trim() ? inner : "";
+    });
+
     for (const [key, value] of Object.entries(vars)) {
       subject = subject.replace(new RegExp(`{{${key}}}`, "g"), value);
       body = body.replace(new RegExp(`{{${key}}}`, "g"), value);

@@ -1358,3 +1358,6 @@
 - [x] Show two separate status dropdowns in AdminFlightsPipeline for 'both' requests (Ticketing + Cancellation)
 - [x] Update AdminFlightsPipeline to show two dropdowns for 'both' requests (Ticketing status + Cancellation status)
 - [x] Update agent notification to reflect which part was updated
+
+## Email Template Placeholder Bug
+- [x] Fix flight_request_update email template: {{toName}}, {{#if message}} block not being rendered — raw placeholders appearing in sent emails. Fixed by: (1) adding toName alias to variable map, (2) adding {{#if key}}...{{/if}} conditional block processor before simple substitution. Fix applies to ALL notification templates globally.
