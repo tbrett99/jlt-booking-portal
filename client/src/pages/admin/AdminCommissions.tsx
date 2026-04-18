@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle } from "lucide-react";
 import CopyableRef from "@/components/CopyableRef";
 import { useLocation } from "wouter";
 
@@ -33,17 +34,83 @@ type ClaimRow = {
   } | null;
 };
 
+type VatPreviewRow = {
+  ref: string;
+  csvClient: string;
+  vat: number;
+  status: "matched" | "no_booking" | "no_claim";
+  claimId: number | null;
+  claimStatus: string | null;
+  currentVat: number | null;
+  bookingClient: string | null;
+};
+
+// Parse CSV text into array of objects keyed by header
+function parseCsvToObjects(text: string): Record<string, string>[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map((h) => h.trim());
+  const results: Record<string, string>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",");
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => { row[h] = (cols[idx] ?? "").trim(); });
+    // Skip blank rows (no booking ref)
+    const ref = row["Booking Ref"] ?? row["Booking Reference"] ?? "";
+    if (!ref) continue;
+    results.push(row);
+  }
+  return results;
+}
+
 export default function AdminCommissions() {
   const [, navigate] = useLocation();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<ClaimRow | null>(null);
   const [vatEditing, setVatEditing] = useState<Record<number, string>>({});
+
+  // VAT import state
+  const [vatImportOpen, setVatImportOpen] = useState(false);
+  const [vatPreviewRows, setVatPreviewRows] = useState<VatPreviewRow[]>([]);
+  const [vatCsvRows, setVatCsvRows] = useState<{ ref: string; clientName: string; vat: number }[]>([]);
+  const [vatPreviewing, setVatPreviewing] = useState(false);
+  const [vatApplying, setVatApplying] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const utils = trpc.useUtils();
 
   const updateVatMutation = trpc.commissionClaims.updateVat.useMutation({
     onSuccess: () => utils.commissionClaims.all.invalidate(),
     onError: (err) => toast.error(err.message),
   });
+
+  const applyVatMutation = trpc.commissionClaims.applyVatFromCsv.useMutation({
+    onSuccess: (data) => {
+      toast.success(`VAT updated on ${data.updated} commission claim(s).`);
+      setVatImportOpen(false);
+      setVatPreviewRows([]);
+      setVatCsvRows([]);
+      utils.commissionClaims.all.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const previewVatQuery = trpc.commissionClaims.previewVatFromCsv.useQuery(
+    { rows: vatCsvRows },
+    { enabled: vatCsvRows.length > 0 && vatImportOpen }
+  );
+
+  // Sync preview results into state
+  const prevPreviewData = useRef<VatPreviewRow[] | null>(null);
+  if (previewVatQuery.data && previewVatQuery.data !== prevPreviewData.current) {
+    prevPreviewData.current = previewVatQuery.data as VatPreviewRow[];
+    setVatPreviewRows(previewVatQuery.data as VatPreviewRow[]);
+    setVatPreviewing(false);
+  }
+  if (previewVatQuery.error && vatPreviewing) {
+    toast.error(previewVatQuery.error.message);
+    setVatPreviewing(false);
+  }
 
   const { data: claims, isLoading } = trpc.commissionClaims.all.useQuery();
   const deleteClaimMutation = trpc.commissionClaims.deleteClaim.useMutation({
@@ -67,8 +134,7 @@ export default function AdminCommissions() {
   const allClaims = (claims ?? []) as ClaimRow[];
   const processing = allClaims.filter((c) => c.status === "processing");
   const awaitingPayment = allClaims.filter((c) => c.status === "awaiting_payment");
-  const pending = [...processing, ...awaitingPayment]; // combined for backward compat
-  const claimed = awaitingPayment; // "Claimed" tab = awaiting_payment (claimed in PTS, awaiting payment run)
+  const claimed = awaitingPayment;
   const paid = allClaims.filter((c) => c.status === "paid");
 
   const toggleSelect = (id: number) => {
@@ -138,6 +204,48 @@ export default function AdminCommissions() {
     a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
   };
+
+  const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const rows = parseCsvToObjects(text);
+      const mapped = rows
+        .map((r) => ({
+          ref: (r["Booking Ref"] ?? r["Booking Reference"] ?? "").trim(),
+          clientName: (r["Client Name"] ?? r["Client"] ?? "").trim(),
+          vat: parseFloat(r["VAT"] ?? "0") || 0,
+        }))
+        .filter((r) => r.ref);
+      if (mapped.length === 0) {
+        toast.error("No valid rows found in CSV. Check the Booking Ref and VAT columns.");
+        return;
+      }
+      setVatPreviewing(true);
+      setVatCsvRows(mapped);
+    };
+    reader.readAsText(file);
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+  };
+
+  const handleApplyVat = () => {
+    const updates = vatPreviewRows
+      .filter((r) => r.status === "matched" && r.claimId !== null)
+      .map((r) => ({ claimId: r.claimId!, vat: r.vat }));
+    if (updates.length === 0) {
+      toast.error("No matched claims to update.");
+      return;
+    }
+    setVatApplying(true);
+    applyVatMutation.mutate({ updates });
+  };
+
+  const matchedRows = vatPreviewRows.filter((r) => r.status === "matched");
+  const noBookingRows = vatPreviewRows.filter((r) => r.status === "no_booking");
+  const noClaimRows = vatPreviewRows.filter((r) => r.status === "no_claim");
 
   if (isLoading) {
     return (
@@ -247,7 +355,7 @@ export default function AdminCommissions() {
                       variant="ghost"
                       size="sm"
                       onClick={() => navigate(`/bookings/${c.bookingId}`)}
-                      className="text-[#02E6D2] hover:text-[#02E6D2] hover:bg-[#02E6D2]/10 text-xs"
+                      className="text-xs"
                     >
                       View
                     </Button>
@@ -287,20 +395,32 @@ export default function AdminCommissions() {
           <h1 className="text-2xl font-bold text-foreground">Commission Management</h1>
           <p className="text-muted-foreground mt-1">Review and process agent commission claims.</p>
         </div>
-        {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Import VAT from CSV button */}
           <Button
-            onClick={handleMarkPaid}
-            disabled={markPaidMutation.isPending}
-            className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold"
+            variant="outline"
+            size="sm"
+            onClick={() => { setVatImportOpen(true); setVatPreviewRows([]); setVatCsvRows([]); }}
+            className="gap-2 border-[#02E6D2] text-[#02E6D2] hover:bg-[#02E6D2]/10"
           >
-            {markPaidMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            ) : (
-              <Banknote className="h-4 w-4 mr-2" />
-            )}
-            Claimed in PTS ({selectedIds.size})
+            <FileSpreadsheet className="h-4 w-4" />
+            Import VAT from CSV
           </Button>
-        )}
+          {selectedIds.size > 0 && (
+            <Button
+              onClick={handleMarkPaid}
+              disabled={markPaidMutation.isPending}
+              className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold"
+            >
+              {markPaidMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Banknote className="h-4 w-4 mr-2" />
+              )}
+              Claimed in PTS ({selectedIds.size})
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Summary */}
@@ -433,6 +553,7 @@ export default function AdminCommissions() {
           </Card>
         </TabsContent>
       </Tabs>
+
       {/* Delete confirmation dialog */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <AlertDialogContent>
@@ -457,6 +578,170 @@ export default function AdminCommissions() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Import VAT from CSV dialog */}
+      <Dialog open={vatImportOpen} onOpenChange={(open) => { if (!open) { setVatImportOpen(false); setVatPreviewRows([]); setVatCsvRows([]); } }}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5 text-[#02E6D2]" />
+              Import VAT from CSV
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Upload your commissions spreadsheet. The portal will match each row to an existing commission claim
+              using the <strong>Booking Ref</strong> (Topdog ref) column and fill in the <strong>VAT</strong> figure.
+              Only rows with a matched claim will be updated — unmatched rows are shown for your review.
+            </p>
+
+            {/* File picker */}
+            <div
+              className="border-2 border-dashed border-[#02E6D2]/40 rounded-lg p-6 text-center cursor-pointer hover:border-[#02E6D2] transition-colors"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <FileSpreadsheet className="h-8 w-8 mx-auto mb-2 text-[#02E6D2]" />
+              <p className="text-sm font-medium">Click to select CSV file</p>
+              <p className="text-xs text-muted-foreground mt-1">Expects columns: Booking Ref, Client Name, VAT</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={handleCsvFileChange}
+              />
+            </div>
+
+            {/* Loading state */}
+            {(vatPreviewing || previewVatQuery.isFetching) && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Matching {vatCsvRows.length} rows against commission claims…
+              </div>
+            )}
+
+            {/* Preview results */}
+            {vatPreviewRows.length > 0 && (
+              <div className="space-y-3">
+                {/* Summary badges */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600">
+                    <CheckCheck className="h-4 w-4" />
+                    {matchedRows.length} matched
+                  </span>
+                  {noBookingRows.length > 0 && (
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-red-500">
+                      <XCircle className="h-4 w-4" />
+                      {noBookingRows.length} booking not found
+                    </span>
+                  )}
+                  {noClaimRows.length > 0 && (
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-amber-500">
+                      <AlertCircle className="h-4 w-4" />
+                      {noClaimRows.length} no claim on file
+                    </span>
+                  )}
+                </div>
+
+                {/* Matched rows table */}
+                {matchedRows.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Matched — will be updated</p>
+                    <div className="rounded-md border border-border overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/40">
+                          <tr>
+                            <th className="py-2 px-3 text-left font-medium text-muted-foreground">Booking Ref</th>
+                            <th className="py-2 px-3 text-left font-medium text-muted-foreground">CSV Client</th>
+                            <th className="py-2 px-3 text-left font-medium text-muted-foreground">Portal Client</th>
+                            <th className="py-2 px-3 text-left font-medium text-muted-foreground">Claim Status</th>
+                            <th className="py-2 px-3 text-left font-medium text-muted-foreground">Current VAT</th>
+                            <th className="py-2 px-3 text-left font-medium text-muted-foreground">New VAT</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {matchedRows.map((r) => (
+                            <tr key={r.ref} className="border-t border-border">
+                              <td className="py-2 px-3 font-mono text-xs">{r.ref}</td>
+                              <td className="py-2 px-3">{r.csvClient}</td>
+                              <td className="py-2 px-3">{r.bookingClient ?? "—"}</td>
+                              <td className="py-2 px-3 capitalize">
+                                <Badge variant="outline" className="text-xs">
+                                  {r.claimStatus ?? "—"}
+                                </Badge>
+                              </td>
+                              <td className="py-2 px-3 text-muted-foreground">
+                                {r.currentVat !== null ? `£${r.currentVat.toFixed(2)}` : "—"}
+                              </td>
+                              <td className="py-2 px-3 font-semibold text-emerald-600">
+                                £{r.vat.toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Unmatched rows */}
+                {(noBookingRows.length > 0 || noClaimRows.length > 0) && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Unmatched — will be skipped</p>
+                    <div className="rounded-md border border-border overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/40">
+                          <tr>
+                            <th className="py-2 px-3 text-left font-medium text-muted-foreground">Booking Ref</th>
+                            <th className="py-2 px-3 text-left font-medium text-muted-foreground">CSV Client</th>
+                            <th className="py-2 px-3 text-left font-medium text-muted-foreground">VAT</th>
+                            <th className="py-2 px-3 text-left font-medium text-muted-foreground">Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...noBookingRows, ...noClaimRows].map((r) => (
+                            <tr key={r.ref} className="border-t border-border">
+                              <td className="py-2 px-3 font-mono text-xs">{r.ref}</td>
+                              <td className="py-2 px-3">{r.csvClient}</td>
+                              <td className="py-2 px-3">£{r.vat.toFixed(2)}</td>
+                              <td className="py-2 px-3">
+                                <span className={`text-xs font-medium ${r.status === 'no_booking' ? 'text-red-500' : 'text-amber-500'}`}>
+                                  {r.status === 'no_booking' ? 'Booking not found in portal' : 'No commission claim on this booking'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" onClick={() => { setVatImportOpen(false); setVatPreviewRows([]); setVatCsvRows([]); }}>
+              Cancel
+            </Button>
+            {matchedRows.length > 0 && (
+              <Button
+                onClick={handleApplyVat}
+                disabled={applyVatMutation.isPending || vatApplying}
+                className="bg-[#02E6D2] hover:bg-[#02E6D2]/90 text-black font-semibold gap-2"
+              >
+                {applyVatMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCheck className="h-4 w-4" />
+                )}
+                Apply VAT to {matchedRows.length} claim{matchedRows.length !== 1 ? "s" : ""}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

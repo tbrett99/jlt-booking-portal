@@ -2056,6 +2056,94 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // Admin: preview VAT backfill from a CSV (match by topdogRef/ptsRef → booking → claim)
+    previewVatFromCsv: adminProcedure
+      .input(z.object({
+        rows: z.array(z.object({
+          ref: z.string(),
+          clientName: z.string(),
+          vat: z.number(),
+        })),
+      }))
+      .query(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { bookings: bookingsTable, commissionClaims: claimsTable } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) return [];
+        const results: Array<{
+          ref: string;
+          csvClient: string;
+          vat: number;
+          status: 'matched' | 'no_booking' | 'no_claim';
+          claimId: number | null;
+          claimStatus: string | null;
+          currentVat: number | null;
+          bookingClient: string | null;
+        }> = [];
+        for (const row of input.rows) {
+          const ref = row.ref.trim();
+          if (!ref) continue;
+          // Match booking by topdogRef first, then ptsRef
+          let bookingRows = await db
+            .select({ id: bookingsTable.id, clientName: bookingsTable.clientName })
+            .from(bookingsTable)
+            .where(eq(bookingsTable.topdogRef, ref))
+            .limit(1);
+          if (bookingRows.length === 0) {
+            bookingRows = await db
+              .select({ id: bookingsTable.id, clientName: bookingsTable.clientName })
+              .from(bookingsTable)
+              .where(eq(bookingsTable.ptsRef, ref))
+              .limit(1);
+          }
+          if (bookingRows.length === 0) {
+            results.push({ ref, csvClient: row.clientName, vat: row.vat, status: 'no_booking', claimId: null, claimStatus: null, currentVat: null, bookingClient: null });
+            continue;
+          }
+          const booking = bookingRows[0];
+          const claimRows = await db
+            .select({ id: claimsTable.id, vatAmount: claimsTable.vatAmount, status: claimsTable.status })
+            .from(claimsTable)
+            .where(eq(claimsTable.bookingId, booking.id))
+            .orderBy(claimsTable.createdAt)
+            .limit(1);
+          if (claimRows.length === 0) {
+            results.push({ ref, csvClient: row.clientName, vat: row.vat, status: 'no_claim', claimId: null, claimStatus: null, currentVat: null, bookingClient: booking.clientName });
+            continue;
+          }
+          const claim = claimRows[0];
+          const currentVat = claim.vatAmount !== null ? parseFloat(String(claim.vatAmount)) : null;
+          results.push({ ref, csvClient: row.clientName, vat: row.vat, status: 'matched', claimId: claim.id, claimStatus: claim.status, currentVat, bookingClient: booking.clientName });
+        }
+        return results;
+      }),
+
+    // Admin: apply VAT figures from CSV to matched commission claims
+    applyVatFromCsv: adminProcedure
+      .input(z.object({
+        updates: z.array(z.object({
+          claimId: z.number(),
+          vat: z.number(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { commissionClaims: claimsTable } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        let updated = 0;
+        for (const u of input.updates) {
+          await db
+            .update(claimsTable)
+            .set({ vatAmount: u.vat.toFixed(2) })
+            .where(eq(claimsTable.id, u.claimId));
+          updated++;
+        }
+        return { updated };
+      }),
+
     // Agent: self-serve mark their own awaiting_payment commission as paid
     markAgentPaid: protectedProcedure
       .input(z.object({ claimIds: z.array(z.number()).min(1) }))
