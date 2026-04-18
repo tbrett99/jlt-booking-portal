@@ -40,6 +40,7 @@ import {
   Trash2,
   Search,
   ClipboardCheck,
+  BadgeCheck,
 } from "lucide-react";
 
 // ─── CSV Helpers ──────────────────────────────────────────────────────────────
@@ -129,7 +130,7 @@ function UploadDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Upload PTS Remittance CSV</DialogTitle>
+          <DialogTitle>Upload Remittance CSV</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div>
@@ -154,7 +155,7 @@ function UploadDialog({
               {fileName ? (
                 <p className="text-sm font-medium">{fileName}</p>
               ) : (
-                <p className="text-sm text-muted-foreground">Click to select PTS remittance CSV</p>
+                <p className="text-sm text-muted-foreground">Click to select CSV (PTS or JLT Commissions format)</p>
               )}
               {rows.length > 0 && (
                 <p className="text-xs text-green-600 mt-1">{rows.length} rows parsed</p>
@@ -747,6 +748,18 @@ export default function RemittanceManagement() {
 
   const { data: batches = [], isLoading: batchesLoading } = trpc.remittance.getBatches.useQuery();
 
+  const [markPaidConfirmOpen, setMarkPaidConfirmOpen] = useState(false);
+  const markBatchPaidMutation = trpc.remittance.markBatchPaid.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Marked ${data.paidCount} claims as paid and notified ${data.pushedCount} agents`);
+      setMarkPaidConfirmOpen(false);
+      utils.remittance.getBatches.invalidate();
+      utils.remittance.getJaninesView.invalidate();
+      utils.remittance.getAgentView.invalidate();
+      utils.remittance.getNeedsReview.invalidate();
+    },
+    onError: (e) => toast.error(`Mark paid failed: ${e.message}`),
+  });
   const deleteMutation = trpc.remittance.deleteBatch.useMutation({
     onSuccess: () => {
       toast.success("Batch deleted");
@@ -806,18 +819,29 @@ export default function RemittanceManagement() {
                   </SelectContent>
                 </Select>
                 {selectedBatch && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => {
-                      if (confirm(`Delete batch "${selectedBatch.name}"? This cannot be undone.`)) {
-                        deleteMutation.mutate({ batchId: selectedBatch.id });
-                      }
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                      onClick={() => setMarkPaidConfirmOpen(true)}
+                      disabled={markBatchPaidMutation.isPending}
+                    >
+                      <BadgeCheck className="h-4 w-4 mr-1.5" />
+                      Mark All Paid
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => {
+                        if (confirm(`Delete batch "${selectedBatch.name}"? This cannot be undone.`)) {
+                          deleteMutation.mutate({ batchId: selectedBatch.id });
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </>
                 )}
               </div>
               {selectedBatch && (
@@ -899,6 +923,46 @@ export default function RemittanceManagement() {
           utils.remittance.getAgentView.invalidate();
         }}
       />
+
+      {/* Mark All Paid confirm dialog */}
+      <Dialog open={markPaidConfirmOpen} onOpenChange={setMarkPaidConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BadgeCheck className="h-5 w-5 text-emerald-600" />
+              Mark All Paid — {selectedBatch?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              This will:
+            </p>
+            <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+              <li>Mark all matched commission claims in this batch as <strong className="text-foreground">Paid</strong></li>
+              <li>Set the VAT amount on each claim from the CSV data</li>
+              <li>Send a payment notification to each agent via email and in-app message</li>
+            </ul>
+            <div className="rounded-lg p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+              <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                {selectedBatch?.matchedLines ?? 0} matched bookings · £{parseFloat(String(selectedBatch?.totalRemittance ?? "0")).toFixed(2)} total
+              </p>
+            </div>
+            <p className="text-xs text-amber-600 font-medium">
+              ⚠ This action cannot be undone. Only proceed once you have confirmed payment has been made.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMarkPaidConfirmOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={markBatchPaidMutation.isPending || !selectedBatchId}
+              onClick={() => selectedBatchId && markBatchPaidMutation.mutate({ batchId: selectedBatchId })}
+            >
+              {markBatchPaidMutation.isPending ? "Processing…" : "Confirm — Mark All Paid"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

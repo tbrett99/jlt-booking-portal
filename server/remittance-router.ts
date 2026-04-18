@@ -45,10 +45,29 @@ export const remittanceRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
+      // Normalise column names — support both old PTS format and new JLT commissions format
+      // Old: Client, Booking Reference, Return Date, Total IN, Total OUT, VAT, Remittance
+      // New: Client Name, Booking Ref, Return Date, Total IN, Total OUT, VAT, Remit 80%
+      const normaliseRow = (r: CsvRow): CsvRow => ({
+        ...r,
+        "Client": r["Client"] ?? r["Client Name"] ?? "",
+        "Booking Reference": r["Booking Reference"] ?? r["Booking Ref"] ?? "",
+        "Return Date": r["Return Date"] ?? "",
+        "Total IN": r["Total IN"] ?? "",
+        "Total OUT": r["Total OUT"] ?? "",
+        "VAT": r["VAT"] ?? "",
+        // New CSV has Remit 80% as the agent payout; old CSV has Remittance as total
+        "Remittance": r["Remittance"] ?? r["Remit 80%"] ?? "",
+        "Agent": r["Agent"] ?? "",
+        "Email": r["Email"] ?? "",
+      });
+
       // Filter out the Totals row and empty rows
-      const dataRows = (input.rows as CsvRow[]).filter(
-        (r) => r["Client"]?.toLowerCase() !== "totals" && r["Booking Reference"]?.trim()
-      );
+      const dataRows = (input.rows as CsvRow[])
+        .map(normaliseRow)
+        .filter(
+          (r) => r["Client"]?.toLowerCase() !== "totals" && r["Booking Reference"]?.trim()
+        );
 
       if (dataRows.length === 0) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "No valid rows found in CSV" });
@@ -74,16 +93,26 @@ export const remittanceRouter = router({
       const lineValues: (typeof remittanceLines.$inferInsert & { _processingClaimId?: number })[] = [];
 
       for (const rawRow of dataRows) {
-        const ptsRef = (rawRow["Booking Reference"] ?? "").trim();
+        const ref = (rawRow["Booking Reference"] ?? "").trim();
         const remittanceAmt = parseNum(rawRow["Remittance"]);
         totalRemittance += remittanceAmt;
 
-        // Try to match booking by ptsRef
-        const matchedBookingRows = await db
+        // Try to match booking: first by ptsRef, then by topdogRef (for JLT commissions CSV)
+        let matchedBookingRows = await db
           .select({ id: bookings.id, agentId: bookings.agentId })
           .from(bookings)
-          .where(eq(bookings.ptsRef, ptsRef))
+          .where(eq(bookings.ptsRef, ref))
           .limit(1);
+
+        if (matchedBookingRows.length === 0) {
+          matchedBookingRows = await db
+            .select({ id: bookings.id, agentId: bookings.agentId })
+            .from(bookings)
+            .where(eq(bookings.topdogRef, ref))
+            .limit(1);
+        }
+
+        const ptsRef = ref;
 
         let bookingId: number | null = null;
         let agentId: number | null = null;
@@ -183,7 +212,7 @@ export const remittanceRouter = router({
         lineValues.push({
           batchId,
           clientName: rawRow["Client"] ?? "",
-          ptsRef,
+          ptsRef: ref,
           returnDate: rawRow["Return Date"] ?? null,
           pax: rawRow["PAX"] ? parseInt(rawRow["PAX"]) || null : null,
           currency: rawRow["Currency"] ?? "GBP",
@@ -200,8 +229,8 @@ export const remittanceRouter = router({
           jlt20: toDecimalStr(jlt20),
           bookingId,
           agentId,
-          agentName,
-          agentEmail,
+          agentName: agentName ?? (rawRow["Agent"]?.trim() || null),
+          agentEmail: agentEmail ?? (rawRow["Email"]?.trim() || null),
           isMatched,
           pushedToAgent: false,
           processingClaimId,
@@ -715,6 +744,113 @@ export const remittanceRouter = router({
       weekOf: batchMap[l.batchId]?.weekOf ?? null,
     }));
   }),
+
+  // ── Mark all claims in a batch as paid + push remittances to agents ──────────
+  markBatchPaid: protectedProcedure
+    .input(z.object({ batchId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      // Fetch all matched lines in this batch
+      const lines = await db
+        .select()
+        .from(remittanceLines)
+        .where(
+          and(
+            eq(remittanceLines.batchId, input.batchId),
+            eq(remittanceLines.isMatched, true)
+          )
+        );
+
+      const batchRows = await db
+        .select()
+        .from(remittanceBatches)
+        .where(eq(remittanceBatches.id, input.batchId))
+        .limit(1);
+      const batch = batchRows[0];
+
+      let paidCount = 0;
+      let pushedCount = 0;
+      const now = new Date();
+
+      // For each matched line: advance commission claim to paid, set VAT from CSV
+      for (const line of lines) {
+        if (!line.bookingId) continue;
+
+        // Update VAT on commission claim from CSV value if present
+        const vatFromCsv = line.vatFromPts ? parseFloat(String(line.vatFromPts)) : null;
+
+        // Advance processing or awaiting_payment claim to paid, and set VAT from CSV
+        await db
+          .update(commissionClaims)
+          .set({
+            status: 'paid',
+            paidAt: now,
+            remittanceLineId: line.id,
+            ...(vatFromCsv !== null ? { vatAmount: toDecimalStr(vatFromCsv) } : {}),
+          })
+          .where(
+            and(
+              eq(commissionClaims.bookingId, line.bookingId),
+              inArray(commissionClaims.status, ['processing', 'awaiting_payment'])
+            )
+          );
+        paidCount++;
+      }
+
+      // Push remittances to agents (send notifications + emails)
+      const unpushedLines = lines.filter((l) => !l.pushedToAgent && l.agentId);
+      const agentGroups: Record<number, typeof lines> = {};
+      for (const line of unpushedLines) {
+        if (!line.agentId) continue;
+        if (!agentGroups[line.agentId]) agentGroups[line.agentId] = [];
+        agentGroups[line.agentId].push(line);
+      }
+
+      for (const [agentIdStr, agentLines] of Object.entries(agentGroups)) {
+        const agentId = parseInt(agentIdStr);
+        const totalRemit80 = agentLines.reduce((sum, l) => sum + parseFloat(l.remit80 ?? '0'), 0);
+        const agentName = agentLines[0].agentName ?? 'Agent';
+        const agentEmail = agentLines[0].agentEmail ?? '';
+        const bookingList = agentLines
+          .map((l) => `• ${l.clientName} (${l.ptsRef}) — £${parseFloat(l.remit80 ?? '0').toFixed(2)}`)
+          .join('\n');
+        const notifContent = `Your commission payment for ${batch?.name ?? 'this week'} has been processed and marked as paid.\n\nTotal: £${totalRemit80.toFixed(2)}\n\n${bookingList}\n\nPlease contact memberships@thejltgroup.co.uk if you have any questions.`;
+        try {
+          await createInAppNotification({ userId: agentId, message: notifContent });
+        } catch (_) {}
+        if (agentEmail) {
+          try {
+            await sendDirectEmail({
+              toEmail: agentEmail,
+              toName: agentName,
+              subject: `JLT Group — Commission Payment ${batch?.name ?? ''}`,
+              html: `<p>Hi ${agentName},</p><p>${notifContent.replace(/\n/g, '<br>')}</p><p>The JLT Group Team</p>`,
+            });
+          } catch (_) {}
+        }
+        pushedCount += agentLines.length;
+      }
+
+      // Mark all matched lines as pushed
+      const lineIds = unpushedLines.map((l) => l.id);
+      if (lineIds.length > 0) {
+        await db
+          .update(remittanceLines)
+          .set({ pushedToAgent: true, pushedAt: now })
+          .where(inArray(remittanceLines.id, lineIds));
+      }
+      await db
+        .update(remittanceBatches)
+        .set({ pushedToAgentsAt: now })
+        .where(eq(remittanceBatches.id, input.batchId));
+
+      return { paidCount, pushedCount };
+    }),
 
   // ── Delete a batch (super_admin only) ───────────────────────────────────────
   deleteBatch: protectedProcedure

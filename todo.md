@@ -1388,3 +1388,11 @@
 - [x] Agent Dashboard revamp: two-column layout, stats bar, actions required panel, pre-auth banner, earnings summary, upcoming departures, flight requests panel, notifications panel
 - [x] Add myEarningsSummary tRPC procedure to commissionClaims router
 - [x] Add cancellationStatus to flightRequests.myRequests response
+
+## CSV Commission Matching & Bulk Pay (Apr 18)
+- [x] uploadBatch normalises both old PTS and new JLT Commissions CSV column names (Client Name, Booking Ref, Remit 80%)
+- [x] uploadBatch falls back to topdogRef match when ptsRef not found
+- [x] uploadBatch uses Agent/Email columns from CSV as fallback agent info when booking not matched
+- [x] markBatchPaid procedure: advances processing/awaiting_payment claims to paid, sets VAT from CSV, pushes remittances + notifies agents
+- [x] RemittanceManagement: Mark All Paid button with confirm dialog (shows matched count + total, warning)
+- [x] Upload dialog updated to accept both PTS and JLT Commissions CSV formats
