@@ -143,6 +143,10 @@ async function startServer() {
         res.status(410).send(errorHtml("Already Paid", "This payment has already been completed. Thank you!"));
         return;
       }
+      if (link.expiresAt && new Date() > link.expiresAt) {
+        res.status(410).send(errorHtml("Link Expired", "This payment link has expired. Please contact The JLT Group to request a new link."));
+        return;
+      }
 
       const signingSecret = ENV.ppsSigningSecret;
       const gatewayUrl = ENV.ppsGatewayUrl;

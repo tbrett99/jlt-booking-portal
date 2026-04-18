@@ -351,6 +351,13 @@
       "when": 1776522854359,
       "tag": "0049_typical_lethal_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "5",
+      "when": 1776523701867,
+      "tag": "0050_strange_zarek",
+      "breakpoints": true
     }
   ]
 }

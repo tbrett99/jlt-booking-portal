@@ -182,6 +182,11 @@ function PaymentsCard({ bookingId, booking }: { bookingId: number; booking: any 
             {link.paidAt && (
               <p className="text-xs text-emerald-600">Paid: {new Date(link.paidAt).toLocaleString()}</p>
             )}
+            {link.status === "pending" && link.expiresAt && (
+              <p className={`text-xs ${new Date() > new Date(link.expiresAt) ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
+                {new Date() > new Date(link.expiresAt) ? "Expired" : `Expires: ${new Date(link.expiresAt).toLocaleString()}`}
+              </p>
+            )}
             {link.ppsTransactionId && (
               <p className="text-xs text-muted-foreground font-mono">Txn: {link.ppsTransactionId}</p>
             )}

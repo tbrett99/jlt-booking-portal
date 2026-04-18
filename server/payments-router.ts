@@ -70,7 +70,8 @@ export const paymentsRouter = router({
       const signature = buildPpsSignature(formFields, signingSecret);
       formFields.signature = signature;
 
-      // Persist the payment link record
+      // Persist the payment link record (expires 24 hours from now)
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       await db.insert(paymentLinks).values({
         id: linkId,
         bookingId: input.bookingId,
@@ -83,6 +84,7 @@ export const paymentsRouter = router({
         redirectUrl: redirectUrl,
         callbackUrl: callbackUrl,
         status: "pending",
+        expiresAt,
       });
 
       return {
@@ -170,6 +172,7 @@ export const paymentsRouter = router({
           ppsResponseMessage: paymentLinks.ppsResponseMessage,
           createdAt: paymentLinks.createdAt,
           paidAt: paymentLinks.paidAt,
+          expiresAt: paymentLinks.expiresAt,
           createdByName: users.name,
         })
         .from(paymentLinks)

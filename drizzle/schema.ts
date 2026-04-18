@@ -900,5 +900,6 @@ export const paymentLinks = mysqlTable("payment_links", {
   ppsResponseMessage: varchar("ppsResponseMessage", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   paidAt: timestamp("paidAt"),
+  expiresAt: timestamp("expiresAt"),
 });
 export type PaymentLink = typeof paymentLinks.$inferSelect;
