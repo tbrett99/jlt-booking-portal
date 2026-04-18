@@ -43,7 +43,7 @@ export const paymentsRouter = router({
       if (!signingSecret) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "PPS signing secret not configured" });
 
       const linkId = randomUUID();
-      const transactionUnique = `${ptsRef}-${linkId.slice(0, 8)}`;
+      const transactionUnique = `JLT-${Date.now()}-${linkId.slice(0, 8)}`;
 
       // Build the redirect and callback URLs
       const redirectUrl = `${input.origin}/payment/result`;
