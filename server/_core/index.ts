@@ -174,6 +174,7 @@ async function startServer() {
         callbackURL: link.callbackUrl ?? "",
       };
       // Optional fields — only include if present (matches Tom's reference implementation)
+      // v2: removed merchantData, using orderDetails (CardStream spec)
       if (link.description) formFields.orderDetails = link.description;
 
       const signature = buildPpsSignature(formFields, signingSecret);
