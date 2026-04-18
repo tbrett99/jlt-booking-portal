@@ -1398,6 +1398,6 @@
 - [x] Upload dialog updated to accept both PTS and JLT Commissions CSV formats
 
 ## Agent Payment Features
-- [ ] Allow agents to create payment links for their own bookings (backend: relax permission check)
-- [ ] Show payment history tab to agents for their own bookings (frontend: unhide on agent role)
-- [ ] Send payment confirmation email to the booking's assigned agent when payment is received
+- [x] Allow agents to create payment links for their own bookings (backend: relax permission check)
+- [x] Show payment history tab to agents for their own bookings (frontend: unhide on agent role)
+- [x] Send payment confirmation email to the booking's assigned agent when payment is received

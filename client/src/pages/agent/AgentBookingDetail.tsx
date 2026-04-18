@@ -18,7 +18,7 @@ import { ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
 
-// ─── Agent Payments Card ─────────────────────────────────────────────────────
+// ─── Agent Payments Card ──────────────────────────────────────────────────────
 function AgentPaymentsCard({ bookingId, booking }: { bookingId: number; booking: any }) {
   const utils = trpc.useUtils();
   const [showCreateModal, setShowCreateModal] = useState(false);
