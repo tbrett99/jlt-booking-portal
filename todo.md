@@ -1343,3 +1343,6 @@
 ## PPS Direct Server-Side Payment Route
 - [x] Replace React /pay/:token page with server-side Express GET /pay/:token that returns self-submitting HTML form directly to PPS
 - [x] Remove PaymentRedirect React page from App.tsx router
+
+## CRM Supplier Tag Update
+- [x] Add "Etihad Holidays" to the supplier tag list in the agent CRM (also sorted list alphabetically)

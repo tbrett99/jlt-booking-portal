@@ -48,14 +48,15 @@ const MEMBERSHIP_TIERS = [
 ];
 
 const SUPPLIERS = [
+  "Ace Rooms",
   "Easyjet",
+  "Etihad Holidays",
+  "Every Holiday",
+  "Holiday Best",
+  "Koveli",
   "Major Travel",
   "MSC",
   "NCL",
-  "Every Holiday",
-  "Holiday Best",
-  "Ace Rooms",
-  "Koveli",
 ];
 
 type CrmProfile = {
