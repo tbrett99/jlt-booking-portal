@@ -1346,3 +1346,8 @@
 
 ## CRM Supplier Tag Update
 - [x] Add "Etihad Holidays" to the supplier tag list in the agent CRM (also sorted list alphabetically)
+
+## CSV Agent CRM Matching
+- [x] Parse Members-AllAgents.csv and match agents to CRM by email (personal + JLT email)
+- [x] Update dateJoined in CRM from CSV Date Joined column for matched agents
+- [x] Set trainingStage = 'Training' for matched agents without a 'Signed Off' value in CSV
