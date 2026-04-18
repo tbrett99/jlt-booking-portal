@@ -245,7 +245,8 @@ async function startServer() {
   // PPS redirects the customer here after payment. We check the DB for the authoritative
   // status rather than trusting PPS query params (which can be missing or tampered).
   // Polls up to 10 seconds for the callback to arrive before showing a "pending" state.
-  app.get("/api/pay/:token/result", async (req, res) => {
+  // PPS may redirect via GET or POST depending on configuration
+  const handlePayResult = async (req: express.Request, res: express.Response) => {
     try {
       const { token } = req.params;
       const db = await getDb();
@@ -337,7 +338,9 @@ async function startServer() {
       console.error("[PayResult] Error:", err);
       res.status(500).send(errorHtml("Error", "An unexpected error occurred."));
     }
-  });
+  };
+  app.get("/api/pay/:token/result", handlePayResult);
+  app.post("/api/pay/:token/result", handlePayResult);
 
   // ── PPS Payment Callback ────────────────────────────────────────────────────
   // PPS POSTs the payment result here server-to-server after the customer pays.
