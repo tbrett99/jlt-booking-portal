@@ -45,8 +45,9 @@ export const paymentsRouter = router({
       const linkId = randomUUID();
       const transactionUnique = `JLT-${Date.now()}-${linkId.slice(0, 8)}`;
 
-      // Build the redirect and callback URLs
-      const redirectUrl = `${input.origin}/payment/result`;
+      // Build the redirect and callback URLs.
+      // redirectURL: server-rendered page that checks DB status — avoids relying on PPS query params.
+      const redirectUrl = `${input.origin}/api/pay/${linkId}/result`;
       const callbackUrl = `${input.origin}/api/pps/callback`;
 
       // Build PPS form fields per CardStream hosted integration spec.
@@ -61,6 +62,7 @@ export const paymentsRouter = router({
         amount: String(amountPence),
         transactionUnique,
         orderRef: ptsRef,
+        orderDescription: ptsRef,
         redirectURL: redirectUrl,
         callbackURL: callbackUrl,
         merchantData: linkId,
@@ -137,6 +139,7 @@ export const paymentsRouter = router({
         amount: String(link.amountPence),
         transactionUnique: link.transactionUnique,
         orderRef: link.orderRef,
+        orderDescription: link.orderRef,
         redirectURL: link.redirectUrl ?? "",
         callbackURL: link.callbackUrl ?? "",
         merchantData: link.id,

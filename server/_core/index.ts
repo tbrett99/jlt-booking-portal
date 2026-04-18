@@ -165,6 +165,7 @@ async function startServer() {
         amount: String(link.amountPence),
         transactionUnique: link.transactionUnique,
         orderRef: link.orderRef,
+        orderDescription: link.orderRef,
         redirectURL: link.redirectUrl ?? "",
         callbackURL: link.callbackUrl ?? "",
         merchantData: link.id,
@@ -237,6 +238,104 @@ async function startServer() {
     } catch (err) {
       console.error("[PayRoute] Error:", err);
       res.status(500).send(errorHtml("Error", "An unexpected error occurred. Please contact The JLT Group."));
+    }
+  });
+
+  // ── PPS Result Page ─────────────────────────────────────────────────────────
+  // PPS redirects the customer here after payment. We check the DB for the authoritative
+  // status rather than trusting PPS query params (which can be missing or tampered).
+  // Polls up to 10 seconds for the callback to arrive before showing a "pending" state.
+  app.get("/api/pay/:token/result", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const db = await getDb();
+      if (!db) { res.status(500).send(errorHtml("Server error", "Please contact The JLT Group.")); return; }
+
+      // Poll up to 10s for the callback to arrive (callback is server-to-server, may be slightly delayed)
+      let link: typeof import("../../drizzle/schema").paymentLinks.$inferSelect | undefined;
+      for (let i = 0; i < 10; i++) {
+        const [row] = await db.select().from(paymentLinks).where(eq(paymentLinks.id, token));
+        link = row;
+        if (link?.status === "paid" || link?.status === "failed") break;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+
+      if (!link) {
+        res.status(404).send(errorHtml("Not Found", "Payment link not found."));
+        return;
+      }
+
+      const amountFormatted = `£${(link.amountPence / 100).toFixed(2)}`;
+      const ptsRef = escHtml(link.orderRef);
+      const txId = escHtml(link.ppsTransactionId ?? "");
+
+      const isPaid = link.status === "paid";
+      const isFailed = link.status === "failed";
+
+      const iconSvg = isPaid
+        ? `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
+        : isFailed
+        ? `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`
+        : `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+
+      const title = isPaid ? "Payment Successful" : isFailed ? "Payment Failed" : "Payment Pending";
+      const subtitle = isPaid
+        ? "Your payment has been received. A confirmation has been sent to your travel agent."
+        : isFailed
+        ? "Your payment could not be processed. Please contact The JLT Group."
+        : "We are confirming your payment. Please check your email for confirmation.";
+      const bgColor = isPaid ? "#d1fae5" : isFailed ? "#fee2e2" : "#fef3c7";
+      const textColor = isPaid ? "#065f46" : isFailed ? "#991b1b" : "#92400e";
+
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escHtml(title)} — The JLT Group</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: #f0fffb; display: flex; align-items: center; justify-content: center;
+           min-height: 100vh; }
+    .card { background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,.08);
+            padding: 2.5rem 2rem; max-width: 420px; width: 100%; text-align: center; }
+    .logo { width: 56px; height: 56px; border-radius: 50%; background: #70ffe8;
+            display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; }
+    h1 { font-size: 1.3rem; color: #414141; margin: .75rem 0 .5rem; }
+    .sub { font-size: .85rem; color: #6b7280; margin: 0 0 1.5rem; }
+    .detail { background: #f9fafb; border-radius: 10px; padding: .9rem 1rem;
+              text-align: left; margin-bottom: 1.5rem; }
+    .row { display: flex; justify-content: space-between; font-size: .85rem; margin-bottom: .4rem; }
+    .row:last-child { margin-bottom: 0; }
+    .label { color: #6b7280; }
+    .value { font-weight: 600; color: #414141; }
+    .notice { border-radius: 10px; padding: .75rem 1rem; font-size: .8rem; margin-bottom: 1rem;
+              background: ${bgColor}; color: ${textColor}; }
+    .powered { font-size: .7rem; color: #d1d5db; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <span style="font-weight:700;color:#414141;font-size:1rem">JLT</span>
+    </div>
+    ${iconSvg}
+    <h1>${escHtml(title)}</h1>
+    <p class="sub">${escHtml(subtitle)}</p>
+    <div class="detail">
+      <div class="row"><span class="label">Reference</span><span class="value">${ptsRef}</span></div>
+      <div class="row"><span class="label">Amount</span><span class="value">${escHtml(amountFormatted)}</span></div>
+      ${txId ? `<div class="row"><span class="label">Transaction ID</span><span class="value" style="font-size:.75rem;font-family:monospace">${txId}</span></div>` : ""}
+    </div>
+    <div class="notice">${escHtml(subtitle)}</div>
+    <p class="powered">Powered by Protected Payment Services</p>
+  </div>
+</body>
+</html>`);
+    } catch (err) {
+      console.error("[PayResult] Error:", err);
+      res.status(500).send(errorHtml("Error", "An unexpected error occurred."));
     }
   });
 
