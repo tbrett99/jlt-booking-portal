@@ -49,10 +49,9 @@ export const paymentsRouter = router({
       const redirectUrl = `${input.origin}/payment/result`;
       const callbackUrl = `${input.origin}/api/pps/callback`;
 
-      // Build PPS form fields — only include fields that PPS accepts.
-      // callbackURL requires pre-registration in the PPS merchant account;
-      // omit it until whitelisted to avoid error #00065539.
-      // merchantData is a custom field not supported by default.
+      // Build PPS form fields per CardStream hosted integration spec.
+      // callbackURL = server-to-server webhook (authoritative payment confirmation).
+      // merchantData = pass-through field echoed back in callback — used to look up our linkId.
       const formFields: Record<string, string> = {
         merchantID: merchantId,
         action: "SALE",
@@ -63,6 +62,8 @@ export const paymentsRouter = router({
         transactionUnique,
         orderRef: ptsRef,
         redirectURL: redirectUrl,
+        callbackURL: callbackUrl,
+        merchantData: linkId,
       };
 
       // Generate signature
@@ -124,7 +125,7 @@ export const paymentsRouter = router({
       if (!signingSecret) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "PPS not configured" });
 
       // Rebuild the exact same form fields that were signed at creation time.
-      // callbackURL and merchantData are omitted (not pre-registered with PPS).
+      // callbackURL and merchantData must match what was signed originally.
       const formFields: Record<string, string> = {
         merchantID: link.merchantId,
         action: "SALE",
@@ -135,6 +136,8 @@ export const paymentsRouter = router({
         transactionUnique: link.transactionUnique,
         orderRef: link.orderRef,
         redirectURL: link.redirectUrl ?? "",
+        callbackURL: link.callbackUrl ?? "",
+        merchantData: link.id,
       };
 
       const signature = buildPpsSignature(formFields, signingSecret);

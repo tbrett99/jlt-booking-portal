@@ -162,6 +162,8 @@ async function startServer() {
         transactionUnique: link.transactionUnique,
         orderRef: link.orderRef,
         redirectURL: link.redirectUrl ?? "",
+        callbackURL: link.callbackUrl ?? "",
+        merchantData: link.id,
       };
 
       const signature = buildPpsSignature(formFields, signingSecret);
@@ -249,10 +251,11 @@ async function startServer() {
         return;
       }
 
-      // Verify signature
+      // Verify signature — MUST return 200 even on failure per CardStream spec
+      // (non-200 causes PPS to retry indefinitely)
       if (!verifyPpsSignature(fields, receivedSig, signingSecret)) {
-        console.error("[PPS Callback] Invalid signature — possible tampering");
-        res.status(400).send("Invalid signature");
+        console.error("[PPS Callback] Invalid signature — possible tampering, logging and returning 200");
+        res.status(200).send("OK");
         return;
       }
 
@@ -263,7 +266,7 @@ async function startServer() {
 
       if (!linkId) {
         console.error("[PPS Callback] No merchantData (linkId) in callback");
-        res.status(400).send("Missing merchantData");
+        res.status(200).send("OK");
         return;
       }
 
@@ -278,7 +281,7 @@ async function startServer() {
 
       if (!link) {
         console.error(`[PPS Callback] Payment link not found: ${linkId}`);
-        res.status(404).send("Not found");
+        res.status(200).send("OK");
         return;
       }
 
@@ -347,7 +350,8 @@ async function startServer() {
       res.status(200).send("OK");
     } catch (err) {
       console.error("[PPS Callback] Error:", err);
-      res.status(500).send("Internal error");
+      // Always return 200 to prevent PPS retry storms
+      res.status(200).send("OK");
     }
   });
 

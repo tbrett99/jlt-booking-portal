@@ -60,6 +60,7 @@ import MembershipSelection from "./pages/crm/MembershipSelection";
 import WonAgentPortal from "./pages/crm/WonAgentPortal";
 import AgentCrm from "./pages/crm/AgentCrm";
 import PaymentResult from "./pages/PaymentResult";
+import PaymentRedirect from "./pages/PaymentRedirect";
 import CrmChangeRequests from "./pages/crm/CrmChangeRequests";
 import Memberships from "./pages/crm/Memberships";
 import MyProfile from "./pages/MyProfile";
@@ -122,8 +123,9 @@ function AuthRouter() {
         <Route path="/" component={LoginPage} />
         <Route path="/login" component={LoginPage} />
         <Route path="/reset-password" component={ResetPasswordPage} />
-        {/* Public payment result page — no auth required */}
+        {/* Public payment pages — no auth required */}
         <Route path="/payment/result" component={PaymentResult} />
+        <Route path="/pay/:token" component={PaymentRedirect} />
         {/* Public CRM pages — no auth required */}
         <Route path="/enquiry" component={EnquiryForm} />
         <Route path="/apply/:prospectId" component={AgentApplicationForm} />
