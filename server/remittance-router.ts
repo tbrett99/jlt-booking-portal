@@ -243,14 +243,16 @@ export const remittanceRouter = router({
         const [lineResult] = await db.insert(remittanceLines).values(lineVal);
         const lineId = (lineResult as any).insertId as number;
 
-        // If matched and has awaiting_payment claim → advance to "paid"
+        // If matched and has awaiting_payment claim → advance to "paid" and write VAT from CSV
         if (lineVal.bookingId && lineVal.isMatched && !lineVal.processingClaimId) {
+          const vatFromCsvStr = lineVal.vatFromPts ?? null;
           await db
             .update(commissionClaims)
             .set({
               status: "paid",
               remittanceLineId: lineId,
               paidAt: new Date(),
+              ...(vatFromCsvStr !== null ? { vatAmount: vatFromCsvStr } : {}),
             })
             .where(
               and(
