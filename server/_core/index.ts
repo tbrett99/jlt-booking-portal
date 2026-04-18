@@ -370,6 +370,114 @@ async function startServer() {
         }
       }
 
+      // Final fallback: if still pending, query PPS directly via the QUERY action.
+      // This handles Apple Pay where PPS redirects without any result fields.
+      if (link && link.status === "pending" && link.transactionUnique) {
+        console.log("[PayResult] Still pending — querying PPS directly for transactionUnique:", link.transactionUnique);
+        try {
+          const signingSecret = ENV.ppsSigningSecret;
+          const merchantId = link.merchantId;
+          const gatewayUrl = ENV.ppsGatewayUrl;
+
+          if (signingSecret && merchantId && gatewayUrl) {
+            const queryFields: Record<string, string> = {
+              merchantID: merchantId,
+              action: "QUERY",
+              transactionUnique: link.transactionUnique,
+            };
+            queryFields.signature = buildPpsSignature(queryFields, signingSecret);
+
+            const qRes = await fetch(gatewayUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams(queryFields).toString(),
+            });
+            const qText = await qRes.text();
+            console.log("[PayResult] PPS QUERY response:", qText.slice(0, 500));
+
+            // Parse URL-encoded response
+            const qParams = new URLSearchParams(qText);
+            const qResponseCode = qParams.get("responseCode") ?? "";
+            const qTransactionId = qParams.get("transactionID") ?? qParams.get("xref") ?? "";
+            const qResponseMessage = qParams.get("responseMessage") ?? "";
+
+            if (qResponseCode !== "") {
+              const isPaid = qResponseCode === "0";
+              const newStatus = isPaid ? "paid" : "failed";
+
+              // Idempotency: only update if still pending
+              const [currentLink] = await db.select({ status: paymentLinks.status }).from(paymentLinks).where(eq(paymentLinks.id, token));
+              if (currentLink?.status === "pending") {
+                await db.update(paymentLinks).set({
+                  status: newStatus,
+                  ppsTransactionId: qTransactionId,
+                  ppsResponseCode: qResponseCode,
+                  ppsResponseMessage: qResponseMessage,
+                  ...(isPaid ? { paidAt: new Date() } : {}),
+                }).where(eq(paymentLinks.id, token));
+
+                console.log(`[PayResult] PPS QUERY fallback: link ${token} → ${newStatus}`);
+
+                // Re-fetch updated link
+                const [updatedLink] = await db.select().from(paymentLinks).where(eq(paymentLinks.id, token));
+                if (updatedLink) link = updatedLink;
+
+                if (isPaid) {
+                  const [bookingRow] = await db
+                    .select({ id: bookings.id, clientName: bookings.clientName, ptsRef: bookings.ptsRef, agentId: bookings.agentId, clientEmail: bookings.clientEmail })
+                    .from(bookings).where(eq(bookings.id, link!.bookingId));
+
+                  if (bookingRow) {
+                    const [agentRow] = await db
+                      .select({ id: users.id, name: users.name, email: users.email })
+                      .from(users).where(eq(users.id, bookingRow.agentId));
+
+                    const amountFormatted = `£${(link!.amountPence / 100).toFixed(2)}`;
+
+                    await createInAppNotification({
+                      userId: bookingRow.agentId,
+                      bookingId: bookingRow.id,
+                      message: `Payment of ${amountFormatted} received for “${bookingRow.clientName}” (PTS: ${bookingRow.ptsRef ?? link!.orderRef}).`,
+                      linkUrl: `/bookings/${bookingRow.id}`,
+                    });
+
+                    if (agentRow?.email) {
+                      await sendNotificationEmail({
+                        triggerKey: "payment_received",
+                        toEmail: agentRow.email,
+                        toName: agentRow.name ?? "Agent",
+                        variables: {
+                          clientName: bookingRow.clientName,
+                          ptsRef: bookingRow.ptsRef ?? link!.orderRef,
+                          amount: amountFormatted,
+                          transactionId: qTransactionId,
+                        },
+                        bookingId: bookingRow.id,
+                      });
+                    }
+
+                    if (bookingRow.clientEmail) {
+                      const ptsRef = bookingRow.ptsRef ?? link!.orderRef;
+                      await sendDirectEmail({
+                        toEmail: bookingRow.clientEmail,
+                        toName: bookingRow.clientName ?? "Customer",
+                        subject: `Payment Confirmed – ${ptsRef}`,
+                        html: `<p>Dear ${bookingRow.clientName ?? "Customer"},</p><p>Thank you for your payment of <strong>${amountFormatted}</strong>. Your payment has been received and processed successfully.</p><p><strong>Booking Reference:</strong> ${ptsRef}<br/><strong>Transaction ID:</strong> ${qTransactionId}</p><p>If you have any questions, please contact your travel agent.</p><p>The JLT Group Team</p>`,
+                      });
+                    }
+                  }
+                }
+              }
+            } else {
+              console.warn("[PayResult] PPS QUERY returned no responseCode — transaction may not exist yet");
+            }
+          }
+        } catch (qErr) {
+          console.error("[PayResult] PPS QUERY error:", qErr);
+          // Non-fatal: fall through to show pending page
+        }
+      }
+
       if (!link) {
         res.status(404).send(errorHtml("Not Found", "Payment link not found."));
         return;
