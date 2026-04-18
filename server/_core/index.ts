@@ -342,6 +342,12 @@ async function startServer() {
   app.get("/api/pay/:token/result", handlePayResult);
   app.post("/api/pay/:token/result", handlePayResult);
 
+  // ── PPS Callback Reachability Test ────────────────────────────────────────
+  // GET /api/pps/callback — simple 200 OK so we can verify the URL is publicly reachable
+  app.get("/api/pps/callback", (_req, res) => {
+    res.status(200).send("PPS callback endpoint is reachable");
+  });
+
   // ── PPS Payment Callback ────────────────────────────────────────────────────
   // PPS POSTs the payment result here server-to-server after the customer pays.
   // This is the authoritative source of truth — we verify the signature and update the DB.
@@ -351,6 +357,15 @@ async function startServer() {
       const receivedSig = fields.signature ?? "";
       const signingSecret = ENV.ppsSigningSecret;
 
+      // Log ALL incoming fields for debugging (remove sensitive data in production)
+      console.log("[PPS Callback] Received POST. Fields:", JSON.stringify(
+        Object.fromEntries(Object.entries(fields).filter(([k]) => k !== 'signature')),
+        null, 2
+      ));
+      console.log("[PPS Callback] Content-Type:", req.headers['content-type']);
+      console.log("[PPS Callback] Has signature:", !!receivedSig);
+      console.log("[PPS Callback] Has signingSecret:", !!signingSecret);
+
       if (!signingSecret) {
         console.error("[PPS Callback] Signing secret not configured");
         res.status(500).send("Configuration error");
@@ -359,7 +374,9 @@ async function startServer() {
 
       // Verify signature — MUST return 200 even on failure per CardStream spec
       // (non-200 causes PPS to retry indefinitely)
-      if (!verifyPpsSignature(fields, receivedSig, signingSecret)) {
+      const sigValid = verifyPpsSignature(fields, receivedSig, signingSecret);
+      console.log("[PPS Callback] Signature valid:", sigValid);
+      if (!sigValid) {
         console.error("[PPS Callback] Invalid signature — possible tampering, logging and returning 200");
         res.status(200).send("OK");
         return;
