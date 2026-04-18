@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -100,17 +100,20 @@ export default function AdminCommissions() {
     { enabled: vatCsvRows.length > 0 && vatImportOpen }
   );
 
-  // Sync preview results into state
-  const prevPreviewData = useRef<VatPreviewRow[] | null>(null);
-  if (previewVatQuery.data && previewVatQuery.data !== prevPreviewData.current) {
-    prevPreviewData.current = previewVatQuery.data as VatPreviewRow[];
-    setVatPreviewRows(previewVatQuery.data as VatPreviewRow[]);
-    setVatPreviewing(false);
-  }
-  if (previewVatQuery.error && vatPreviewing) {
-    toast.error(previewVatQuery.error.message);
-    setVatPreviewing(false);
-  }
+  // Sync preview results into state via useEffect (not render phase)
+  useEffect(() => {
+    if (previewVatQuery.data) {
+      setVatPreviewRows(previewVatQuery.data as VatPreviewRow[]);
+      setVatPreviewing(false);
+    }
+  }, [previewVatQuery.data]);
+
+  useEffect(() => {
+    if (previewVatQuery.error) {
+      toast.error(previewVatQuery.error.message);
+      setVatPreviewing(false);
+    }
+  }, [previewVatQuery.error]);
 
   const { data: claims, isLoading } = trpc.commissionClaims.all.useQuery();
   const deleteClaimMutation = trpc.commissionClaims.deleteClaim.useMutation({
