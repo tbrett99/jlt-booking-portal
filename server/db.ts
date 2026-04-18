@@ -334,6 +334,7 @@ export async function updateBookingAdminFields(
     passengers?: number;
     numberOfNights?: number;
     clientName?: string;
+    clientEmail?: string | null;
     departureDate?: Date;
     bookedDate?: Date | null;
     isPersonalBooking?: boolean;

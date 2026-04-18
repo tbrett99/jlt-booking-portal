@@ -344,6 +344,13 @@
       "when": 1776515214490,
       "tag": "0048_outgoing_lester",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "5",
+      "when": 1776522854359,
+      "tag": "0049_typical_lethal_legion",
+      "breakpoints": true
     }
   ]
 }

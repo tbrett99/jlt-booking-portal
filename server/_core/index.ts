@@ -13,7 +13,7 @@ import { ENV } from "./env";
 import { verifyPpsSignature, buildPpsSignature } from "../pps-signature";
 import { getDb, createInAppNotification } from "../db";
 import { paymentLinks, bookings, users } from "../../drizzle/schema";
-import { sendNotificationEmail } from "../email";
+import { sendNotificationEmail, sendDirectEmail } from "../email";
 
 // HTML escape helper to prevent XSS in server-rendered payment page
 function escHtml(str: string): string {
@@ -308,7 +308,7 @@ async function startServer() {
       if (isPaid) {
         // Look up booking + agent for notifications
         const [bookingRow] = await db
-          .select({ id: bookings.id, clientName: bookings.clientName, ptsRef: bookings.ptsRef, agentId: bookings.agentId })
+          .select({ id: bookings.id, clientName: bookings.clientName, ptsRef: bookings.ptsRef, agentId: bookings.agentId, clientEmail: bookings.clientEmail })
           .from(bookings)
           .where(eq(bookings.id, link.bookingId));
 
@@ -341,6 +341,17 @@ async function startServer() {
                 transactionId: ppsTransactionId,
               },
               bookingId: bookingRow.id,
+            });
+          }
+
+          // Email confirmation to client
+          if (bookingRow.clientEmail) {
+            const ptsRef = bookingRow.ptsRef ?? link.orderRef;
+            await sendDirectEmail({
+              toEmail: bookingRow.clientEmail,
+              toName: bookingRow.clientName ?? "Customer",
+              subject: `Payment Confirmed – ${ptsRef}`,
+              html: `<p>Dear ${bookingRow.clientName ?? "Customer"},</p><p>Thank you for your payment of <strong>${amountFormatted}</strong>. Your payment has been received and processed successfully.</p><p><strong>Booking Reference:</strong> ${ptsRef}<br/><strong>Transaction ID:</strong> ${ppsTransactionId}</p><p>If you have any questions, please contact your travel agent.</p><p>The JLT Group Team</p>`,
             });
           }
         }

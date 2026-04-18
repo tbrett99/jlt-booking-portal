@@ -39,6 +39,7 @@ export const bookings = mysqlTable("bookings", {
   id: int("id").autoincrement().primaryKey(),
   agentId: int("agentId").notNull(), // FK → users.id
   clientName: varchar("clientName", { length: 255 }).notNull(),
+  clientEmail: varchar("clientEmail", { length: 320 }), // Customer email for payment confirmations
   departureDate: timestamp("departureDate").notNull(),
   bookedDate: timestamp("bookedDate"), // Date the booking was made (agent-entered)
   topdogRef: varchar("topdogRef", { length: 100 }),

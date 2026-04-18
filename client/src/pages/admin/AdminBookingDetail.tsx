@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X, History, ArrowRight, RefreshCw, XCircle, DollarSign, Edit3, Clock, Mail, Paperclip, Download, Link2, Unlink, ChevronDown, CreditCard, Copy, CheckCircle2, ExternalLink } from "lucide-react";
+import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X, History, ArrowRight, RefreshCw, XCircle, DollarSign, Edit3, Clock, Mail, Paperclip, Download, Link2, Unlink, ChevronDown, CreditCard, Copy, CheckCircle2, ExternalLink, CheckCircle } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
 import CopyableRef from "@/components/CopyableRef";
@@ -52,13 +52,16 @@ function NoteContent({ content }: { content: string }) {
 
 // ─── Payments Card ───────────────────────────────────────────────────────────
 
-function PaymentsCard({ bookingId }: { bookingId: number }) {
+function PaymentsCard({ bookingId, booking }: { bookingId: number; booking: any }) {
   const utils = trpc.useUtils();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [amount, setAmount] = useState("");
   const [amountError, setAmountError] = useState("");
   const [createdLink, setCreatedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [pendingEmailCapture, setPendingEmailCapture] = useState(false);
+  const [capturedEmail, setCapturedEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
 
   const { data: links = [], isLoading } = trpc.payments.listForBooking.useQuery({ bookingId });
 
@@ -79,6 +82,14 @@ function PaymentsCard({ bookingId }: { bookingId: number }) {
     onError: (err) => toast.error(err.message || "Failed to cancel link"),
   });
 
+  const manualMarkPaid = trpc.payments.manualMarkPaid.useMutation({
+    onSuccess: () => {
+      toast.success("Payment marked as paid");
+      utils.payments.listForBooking.invalidate({ bookingId });
+    },
+    onError: (err) => toast.error(err.message || "Failed to mark as paid"),
+  });
+
   function validateAmount(val: string) {
     if (!val) { setAmountError("Amount is required"); return false; }
     if (!/^\d+(\.\d{1,2})?$/.test(val)) { setAmountError("Enter a valid amount e.g. 150.00"); return false; }
@@ -89,8 +100,33 @@ function PaymentsCard({ bookingId }: { bookingId: number }) {
 
   function handleCreate() {
     if (!validateAmount(amount)) return;
+    const clientEmail = booking?.clientEmail;
+    if (!clientEmail) {
+      setPendingEmailCapture(true);
+      return;
+    }
     createLink.mutate({ bookingId, amountPounds: amount, origin: window.location.origin });
   }
+
+  function handleEmailCaptureAndCreate() {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!capturedEmail || !emailRegex.test(capturedEmail)) {
+      setEmailError("Please enter a valid email address");
+      return;
+    }
+    setEmailError("");
+    // Save email to booking then create link
+    saveEmailMutation.mutate({ bookingId, clientEmail: capturedEmail });
+  }
+
+  const saveEmailMutation = trpc.bookings.updateAdminFields.useMutation({
+    onSuccess: () => {
+      utils.bookings.byId.invalidate({ id: bookingId });
+      setPendingEmailCapture(false);
+      createLink.mutate({ bookingId, amountPounds: amount, origin: window.location.origin });
+    },
+    onError: (err) => toast.error(err.message || "Failed to save email"),
+  });
 
   function copyLink(url: string) {
     navigator.clipboard.writeText(url).then(() => {
@@ -155,7 +191,7 @@ function PaymentsCard({ bookingId }: { bookingId: number }) {
                   size="sm"
                   variant="outline"
                   className="h-6 text-xs gap-1"
-                  onClick={() => copyLink(`${window.location.origin}/pay/${link.id}`)}
+                  onClick={() => copyLink(`${window.location.origin}/api/pay/${link.id}`)}
                 >
                   <Copy size={11} /> Copy Link
                 </Button>
@@ -167,6 +203,19 @@ function PaymentsCard({ bookingId }: { bookingId: number }) {
                   disabled={cancelLink.isPending}
                 >
                   <XCircle size={11} /> Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-xs gap-1 text-emerald-600 hover:text-emerald-700"
+                  onClick={() => {
+                    if (confirm("Mark this payment as paid?\n\nOnly use this if PPS confirmed the payment was successful but the portal wasn't updated automatically.")) {
+                      manualMarkPaid.mutate({ linkId: link.id });
+                    }
+                  }}
+                  disabled={manualMarkPaid.isPending}
+                >
+                  <CheckCircle size={11} /> Mark Paid
                 </Button>
               </div>
             )}
@@ -191,7 +240,7 @@ function PaymentsCard({ bookingId }: { bookingId: number }) {
             <div className="space-y-4">
               <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
                 <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
-                <p className="text-sm text-emerald-800 font-medium">Payment link created successfully</p>
+                <p className="text-sm text-emerald-800 font-medium">Payment link created successfully. A confirmation email will be sent to {booking?.clientEmail}.</p>
               </div>
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Payment URL (share with client)</Label>
@@ -219,8 +268,43 @@ function PaymentsCard({ bookingId }: { bookingId: number }) {
                 <Button onClick={() => { setShowCreateModal(false); setCreatedLink(null); }}>Done</Button>
               </DialogFooter>
             </div>
+          ) : pendingEmailCapture ? (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <span className="text-amber-600 mt-0.5">⚠</span>
+                <div>
+                  <p className="text-sm font-medium text-amber-900">Client email required</p>
+                  <p className="text-xs text-amber-700 mt-0.5">A confirmation email will be sent to this address when payment is received. It will be saved to the booking for future links.</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="client-email">Client Email Address</Label>
+                <Input
+                  id="client-email"
+                  type="email"
+                  placeholder="client@example.com"
+                  value={capturedEmail}
+                  onChange={(e) => { setCapturedEmail(e.target.value); if (emailError) setEmailError(""); }}
+                  onKeyDown={(e) => e.key === "Enter" && handleEmailCaptureAndCreate()}
+                />
+                {emailError && <p className="text-xs text-red-500">{emailError}</p>}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => { setPendingEmailCapture(false); setCapturedEmail(""); setEmailError(""); }}>Back</Button>
+                <Button onClick={handleEmailCaptureAndCreate} disabled={saveEmailMutation.isPending || createLink.isPending}>
+                  {(saveEmailMutation.isPending || createLink.isPending) ? <Loader2 size={14} className="animate-spin mr-2" /> : <CreditCard size={14} className="mr-2" />}
+                  Save & Generate Link
+                </Button>
+              </DialogFooter>
+            </div>
           ) : (
             <div className="space-y-4">
+              {booking?.clientEmail && (
+                <div className="flex items-center gap-2 p-2.5 bg-muted/50 rounded-lg text-xs text-muted-foreground">
+                  <span className="text-emerald-600">✓</span>
+                  Confirmation email will be sent to <strong className="text-foreground">{booking.clientEmail}</strong>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="pay-amount">Amount (£)</Label>
                 <div className="relative">
@@ -650,6 +734,7 @@ export default function AdminBookingDetail() {
   const [editPassengers, setEditPassengers] = useState("");
   const [editNights, setEditNights] = useState("");
   const [editClientName, setEditClientName] = useState("");
+  const [editClientEmail, setEditClientEmail] = useState("");
   const [editDepartureDate, setEditDepartureDate] = useState("");
   const [editBookedDate, setEditBookedDate] = useState("");
   const [isSavingDetails, setIsSavingDetails] = useState(false);
@@ -703,6 +788,7 @@ export default function AdminBookingDetail() {
     setEditPassengers((booking as any).passengers != null ? String((booking as any).passengers) : "");
     setEditNights((booking as any).numberOfNights != null ? String((booking as any).numberOfNights) : "");
     setEditClientName(booking.clientName ?? "");
+    setEditClientEmail((booking as any).clientEmail ?? "");
     setEditDepartureDate(booking.departureDate ? format(new Date(booking.departureDate), "yyyy-MM-dd") : "");
     setEditBookedDate((booking as any).bookedDate ? format(new Date((booking as any).bookedDate), "yyyy-MM-dd") : "");
     setDetailsInitialised(true);
@@ -887,6 +973,7 @@ export default function AdminBookingDetail() {
         passengers: editPassengers ? parseInt(editPassengers) : undefined,
         numberOfNights: editNights ? parseInt(editNights) : undefined,
         clientName: editClientName.trim() || undefined,
+        clientEmail: editClientEmail.trim() || null,
         departureDate: editDepartureDate ? new Date(editDepartureDate) : undefined,
         // Only send bookedDate if it was explicitly set by the admin — never overwrite with null
         ...(editBookedDate ? { bookedDate: new Date(editBookedDate) } : {}),
@@ -1111,6 +1198,10 @@ export default function AdminBookingDetail() {
                 <div className="space-y-1 col-span-2">
                   <Label className="text-xs flex items-center gap-1"><User size={11} />Client Name</Label>
                   <Input value={editClientName} onChange={(e) => setEditClientName(e.target.value)} placeholder="Client full name" className="h-8 text-sm" />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>Client Email</Label>
+                  <Input type="email" value={editClientEmail} onChange={(e) => setEditClientEmail(e.target.value)} placeholder="client@example.com" className="h-8 text-sm" />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs flex items-center gap-1"><Calendar size={11} />Departure Date</Label>
@@ -1573,7 +1664,7 @@ export default function AdminBookingDetail() {
       <LinkedEmailsCard bookingId={bookingId} />
 
       {/* Payment Links */}
-      <PaymentsCard bookingId={bookingId} />
+      <PaymentsCard bookingId={bookingId} booking={booking} />
 
       {/* Query Message Dialog */}
       <Dialog open={showQueryDialog} onOpenChange={(open) => { if (!open) { setShowQueryDialog(false); setPendingStage(null); setQueryMessage(""); } }}>

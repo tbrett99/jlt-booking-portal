@@ -926,6 +926,7 @@ export const appRouter = router({
           passengers: z.number().int().min(1).optional(),
           numberOfNights: z.number().int().min(0).optional(),
           clientName: z.string().min(1).optional(),
+          clientEmail: z.string().email().nullable().optional(),
           departureDate: z.date().optional(),
           bookedDate: z.date().nullable().optional(),
           isPersonalBooking: z.boolean().optional(),

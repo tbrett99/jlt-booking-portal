@@ -1,0 +1,1 @@
+ALTER TABLE `bookings` ADD `clientEmail` varchar(320);

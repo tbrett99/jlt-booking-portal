@@ -43,7 +43,7 @@ export const paymentsRouter = router({
       if (!signingSecret) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "PPS signing secret not configured" });
 
       const linkId = randomUUID();
-      const transactionUnique = `JLT-${Date.now()}-${linkId.slice(0, 8)}`;
+      const transactionUnique = `${ptsRef}-${linkId.slice(0, 8)}`;
 
       // Build the redirect and callback URLs
       const redirectUrl = `${input.origin}/payment/result`;
@@ -178,6 +178,38 @@ export const paymentsRouter = router({
         .orderBy(desc(paymentLinks.createdAt));
 
       return links;
+    }),
+
+  // ─── Admin: manually mark a payment link as paid (for callback failures) ────
+  manualMarkPaid: adminProcedure
+    .input(z.object({
+      linkId: z.string(),
+      transactionRef: z.string().optional(), // optional manual transaction reference
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const [link] = await db
+        .select()
+        .from(paymentLinks)
+        .where(eq(paymentLinks.id, input.linkId));
+
+      if (!link) throw new TRPCError({ code: "NOT_FOUND" });
+      if (link.status === "paid") throw new TRPCError({ code: "BAD_REQUEST", message: "Already marked as paid" });
+
+      await db
+        .update(paymentLinks)
+        .set({
+          status: "paid",
+          paidAt: new Date(),
+          ppsTransactionId: input.transactionRef ?? "MANUAL",
+          ppsResponseCode: "0",
+          ppsResponseMessage: `Manually marked paid by admin (${ctx.user.name ?? ctx.user.email})`,
+        })
+        .where(eq(paymentLinks.id, input.linkId));
+
+      return { success: true };
     }),
 
   // ─── Admin: cancel a pending payment link ─────────────────────────────────
