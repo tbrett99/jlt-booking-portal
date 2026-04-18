@@ -1351,3 +1351,10 @@
 - [x] Parse Members-AllAgents.csv and match agents to CRM by email (personal + JLT email)
 - [x] Update dateJoined in CRM from CSV Date Joined column for matched agents
 - [x] Set trainingStage = 'Training' for matched agents without a 'Signed Off' value in CSV
+
+## Flight Request Dual Status (Both)
+- [x] Add cancellationStatus column to flight_requests table in drizzle schema + migration
+- [x] Update flightRequests.updateStatus tRPC procedure to accept cancellationStatus separately
+- [x] Show two separate status dropdowns in AdminFlightsPipeline for 'both' requests (Ticketing + Cancellation)
+- [x] Update AdminFlightsPipeline to show two dropdowns for 'both' requests (Ticketing status + Cancellation status)
+- [x] Update agent notification to reflect which part was updated

@@ -330,6 +330,13 @@
       "when": 1776453754231,
       "tag": "0046_fearless_mentor",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "5",
+      "when": 1776511083637,
+      "tag": "0047_great_satana",
+      "breakpoints": true
     }
   ]
 }

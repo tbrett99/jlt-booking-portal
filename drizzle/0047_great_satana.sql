@@ -1,0 +1,1 @@
+ALTER TABLE `flight_requests` ADD `cancellationStatus` varchar(20) DEFAULT 'pending';

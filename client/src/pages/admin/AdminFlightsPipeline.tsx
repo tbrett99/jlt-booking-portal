@@ -28,12 +28,18 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 
 type FlightStatus = "pending" | "ticketed" | "cancelled" | "query";
+type CancellationStatus = "pending" | "cancelled";
 
 const STATUS_OPTIONS: { value: FlightStatus; label: string }[] = [
   { value: "pending", label: "Pending" },
   { value: "ticketed", label: "Ticketed" },
   { value: "cancelled", label: "Cancelled" },
   { value: "query", label: "Query" },
+];
+
+const CANCELLATION_STATUS_OPTIONS: { value: CancellationStatus; label: string }[] = [
+  { value: "pending", label: "Pending" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 
 const STATUS_BADGE: Record<FlightStatus, { label: string; color: string; bg: string }> = {
@@ -84,6 +90,10 @@ export default function AdminFlightsPipeline() {
     } else {
       updateStatus.mutate({ id, status: newStatus });
     }
+  }
+
+  function handleCancellationStatusChange(id: number, newStatus: CancellationStatus) {
+    updateStatus.mutate({ id, cancellationStatus: newStatus });
   }
 
   function submitQuery() {
@@ -253,23 +263,51 @@ export default function AdminFlightsPipeline() {
 
                     {/* Right: controls */}
                     <div className="flex flex-col gap-2 sm:items-end shrink-0">
-                      {/* Status dropdown */}
-                      <Select
-                        value={r.status}
-                        onValueChange={(v) => handleStatusChange(r.id, v as FlightStatus)}
-                        disabled={updateStatus.isPending}
-                      >
-                        <SelectTrigger className="w-36 h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STATUS_OPTIONS.map((s) => (
-                            <SelectItem key={s.value} value={s.value} className="text-xs">
-                              {s.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {/* Ticketing status dropdown */}
+                      <div className="flex flex-col gap-1 sm:items-end">
+                        {r.requestType === "both" && (
+                          <span className="text-xs text-muted-foreground font-medium">Ticketing</span>
+                        )}
+                        <Select
+                          value={r.status}
+                          onValueChange={(v) => handleStatusChange(r.id, v as FlightStatus)}
+                          disabled={updateStatus.isPending}
+                        >
+                          <SelectTrigger className="w-40 h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STATUS_OPTIONS.map((s) => (
+                              <SelectItem key={s.value} value={s.value} className="text-xs">
+                                {s.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Cancellation status dropdown — only for 'both' requests */}
+                      {r.requestType === "both" && (
+                        <div className="flex flex-col gap-1 sm:items-end">
+                          <span className="text-xs text-muted-foreground font-medium">Cancellation</span>
+                          <Select
+                            value={(r.cancellationStatus as CancellationStatus) ?? "pending"}
+                            onValueChange={(v) => handleCancellationStatusChange(r.id, v as CancellationStatus)}
+                            disabled={updateStatus.isPending}
+                          >
+                            <SelectTrigger className="w-40 h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {CANCELLATION_STATUS_OPTIONS.map((s) => (
+                                <SelectItem key={s.value} value={s.value} className="text-xs">
+                                  {s.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
 
                       {/* Invoice checkbox */}
                       <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground select-none">

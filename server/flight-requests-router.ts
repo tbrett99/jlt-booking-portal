@@ -136,6 +136,7 @@ export const flightRequestsRouter = router({
         cancellationDepartureDate: flightRequests.cancellationDepartureDate,
         cancellationTicketingDeadline: flightRequests.cancellationTicketingDeadline,
         status: flightRequests.status,
+        cancellationStatus: flightRequests.cancellationStatus,
         invoiceAddedToPts: flightRequests.invoiceAddedToPts,
         queryMessage: flightRequests.queryMessage,
         createdAt: flightRequests.createdAt,
@@ -171,7 +172,9 @@ export const flightRequestsRouter = router({
     .input(
       z.object({
         id: z.number(),
-        status: z.enum(["pending", "ticketed", "cancelled", "query"]),
+        // For 'both' requests, 'status' = ticketing status, 'cancellationStatus' = cancellation status
+        status: z.enum(["pending", "ticketed", "cancelled", "query"]).optional(),
+        cancellationStatus: z.enum(["pending", "cancelled"]).optional(),
         queryMessage: z.string().optional(),
       })
     )
@@ -184,6 +187,7 @@ export const flightRequestsRouter = router({
           agentId: flightRequests.agentId,
           bookingId: flightRequests.bookingId,
           pnr: flightRequests.pnr,
+          cancellationPnr: flightRequests.cancellationPnr,
           requestType: flightRequests.requestType,
           clientName: bookings.clientName,
           agentName: users.name,
@@ -199,26 +203,42 @@ export const flightRequestsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "A message is required when setting status to Query." });
       }
 
-      await db
-        .update(flightRequests)
-        .set({
-          status: input.status,
-          ...(input.status === "query" ? { queryMessage: input.queryMessage } : { queryMessage: null }),
-        })
-        .where(eq(flightRequests.id, input.id));
-
-      // Notify agent
-      const typeLabel = req.requestType === "both" ? "Ticketing & Cancellation" : req.requestType.charAt(0).toUpperCase() + req.requestType.slice(1);
-      let notifMessage = "";
-      if (input.status === "ticketed") {
-        notifMessage = `Your flight ${typeLabel} request for "${req.clientName}" (PNR: ${req.pnr}) has been ticketed.`;
-      } else if (input.status === "cancelled") {
-        notifMessage = `Your flight ${typeLabel} request for "${req.clientName}" (PNR: ${req.pnr}) has been cancelled.`;
-      } else if (input.status === "query") {
-        notifMessage = `Admin has a query on your flight ${typeLabel} request for "${req.clientName}" (PNR: ${req.pnr}): ${input.queryMessage}`;
+      // Build the update object — only update fields that were provided
+      const updateFields: Record<string, unknown> = {};
+      if (input.status !== undefined) {
+        updateFields.status = input.status;
+        if (input.status === "query") {
+          updateFields.queryMessage = input.queryMessage;
+        } else {
+          updateFields.queryMessage = null;
+        }
+      }
+      if (input.cancellationStatus !== undefined) {
+        updateFields.cancellationStatus = input.cancellationStatus;
       }
 
-      if (notifMessage) {
+      if (Object.keys(updateFields).length > 0) {
+        await db
+          .update(flightRequests)
+          .set(updateFields)
+          .where(eq(flightRequests.id, input.id));
+      }
+
+      // Notify agent based on what changed
+      const notifications: string[] = [];
+      if (input.status === "ticketed") {
+        notifications.push(`Your ticketing request for "${req.clientName}" (PNR: ${req.pnr}) has been ticketed.`);
+      } else if (input.status === "cancelled" && req.requestType !== "both") {
+        notifications.push(`Your cancellation request for "${req.clientName}" (PNR: ${req.pnr}) has been cancelled.`);
+      } else if (input.status === "query") {
+        notifications.push(`Admin has a query on your flight request for "${req.clientName}" (PNR: ${req.pnr}): ${input.queryMessage}`);
+      }
+      if (input.cancellationStatus === "cancelled" && req.requestType === "both") {
+        const cancelPnr = req.cancellationPnr ?? req.pnr;
+        notifications.push(`Your cancellation request for "${req.clientName}" (PNR: ${cancelPnr}) has been cancelled.`);
+      }
+
+      for (const notifMessage of notifications) {
         await createInAppNotification({
           userId: req.agentId,
           bookingId: req.bookingId,
@@ -233,8 +253,8 @@ export const flightRequestsRouter = router({
             variables: {
               clientName: req.clientName,
               pnr: req.pnr,
-              requestType: typeLabel,
-              status: input.status,
+              requestType: req.requestType === "both" ? "Ticketing & Cancellation" : req.requestType,
+              status: input.status ?? input.cancellationStatus ?? "",
               message: input.queryMessage ?? "",
             },
             bookingId: req.bookingId,

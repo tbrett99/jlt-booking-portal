@@ -872,6 +872,7 @@ export const flightRequests = mysqlTable("flight_requests", {
   cancellationDepartureDate: timestamp("cancellationDepartureDate"),
   cancellationTicketingDeadline: timestamp("cancellationTicketingDeadline"),
   status: varchar("status", { length: 20 }).notNull().default("pending"), // "pending" | "ticketed" | "cancelled" | "query"
+  cancellationStatus: varchar("cancellationStatus", { length: 20 }).default("pending"), // only used when requestType = 'both': "pending" | "cancelled"
   invoiceAddedToPts: boolean("invoiceAddedToPts").notNull().default(false),
   queryMessage: text("queryMessage"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
