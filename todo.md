@@ -1396,3 +1396,8 @@
 - [x] markBatchPaid procedure: advances processing/awaiting_payment claims to paid, sets VAT from CSV, pushes remittances + notifies agents
 - [x] RemittanceManagement: Mark All Paid button with confirm dialog (shows matched count + total, warning)
 - [x] Upload dialog updated to accept both PTS and JLT Commissions CSV formats
+
+## Agent Payment Features
+- [ ] Allow agents to create payment links for their own bookings (backend: relax permission check)
+- [ ] Show payment history tab to agents for their own bookings (frontend: unhide on agent role)
+- [ ] Send payment confirmation email to the booking's assigned agent when payment is received
