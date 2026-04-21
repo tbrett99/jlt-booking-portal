@@ -2603,6 +2603,8 @@ export const appRouter = router({
           fileName: input.fileName,
           uploadedById: ctx.user.id,
         });
+        // Keep the legacy reimbursementDocUrl field in sync so Kanban badges stay accurate
+        await uploadReimbursementDoc(input.bookingId, finalUrl, false);
         // Notify admins when an agent uploads a doc
         if (ctx.user.role === "agent") {
           const admins = (await getAllUsers()).filter((u) => u.role === "admin" || u.role === "super_admin");

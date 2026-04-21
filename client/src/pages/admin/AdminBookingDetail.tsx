@@ -1151,7 +1151,7 @@ export default function AdminBookingDetail() {
                 ))}
               </div>
             )}
-            {booking.reimbursementsRequired && (reimbDocs as any[]).length === 0 && (
+            {booking.reimbursementsRequired && (reimbDocs as any[]).length === 0 && (reimbItems as any[]).every((item: any) => (item.docs ?? []).length === 0) && (
               <div className="pt-2 border-t">
                 <p className="text-xs text-amber-600 flex items-center gap-1">
                   <FileText size={12} /> No documents uploaded yet

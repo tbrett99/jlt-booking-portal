@@ -1414,3 +1414,8 @@
 - [x] Frontend: show prominent unread message banner/alert on AdminBookingDetail when there are unread agent messages
 - [x] Frontend: add "Mark as Read" button on AdminBookingDetail that calls notes.markBookingNotesRead
 - [x] Frontend: after marking as read, invalidate messages query so booking disappears from Messages tab
+
+## Bug Fix: Reimbursement Docs "No documents uploaded yet" False Warning
+- [x] Fix: "No documents uploaded yet" warning on AdminBookingDetail was ignoring reimbursement item docs — now suppressed when any item has docs uploaded
+- [x] Fix: Kanban "Docs missing" badge was checking legacy reimbursementDocUrl field only — uploadItemDoc now also updates the legacy field so Kanban stays accurate
+- [x] Fix: Future uploads via the per-item doc system will correctly mark the booking as having docs
