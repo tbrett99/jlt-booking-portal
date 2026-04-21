@@ -144,7 +144,7 @@ export const refunds = mysqlTable("refunds", {
   clientSortCode: text("clientSortCode"), // encrypted
   clientAccountNumber: text("clientAccountNumber"), // encrypted
   stepsTaken: text("stepsTaken").notNull(),
-  pipelineStage: mysqlEnum("pipelineStage", ["New Refund Request", "Acknowledged by Supplier", "Refund Sent to PTS", "Refund Received in JLT", "Refund Processed"]).default("New Refund Request").notNull(),
+  pipelineStage: mysqlEnum("pipelineStage", ["New Refund Request", "Query", "Acknowledged by Supplier", "Refund Sent to PTS", "Refund Received in JLT", "Refund Processed"]).default("New Refund Request").notNull(),
   assignedToId: int("assignedToId"), // FK → users.id
   status: mysqlEnum("status", ["pending", "processing", "completed"]).default("pending").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

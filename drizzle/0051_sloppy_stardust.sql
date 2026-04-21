@@ -1,0 +1,1 @@
+ALTER TABLE `refunds` MODIFY COLUMN `pipelineStage` enum('New Refund Request','Query','Acknowledged by Supplier','Refund Sent to PTS','Refund Received in JLT','Refund Processed') NOT NULL DEFAULT 'New Refund Request';

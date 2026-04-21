@@ -852,7 +852,7 @@ export async function getAllRefunds() {
 }
 
 export async function updateRefundPipeline(refundId: number, data: {
-  pipelineStage?: "New Refund Request" | "Acknowledged by Supplier" | "Refund Sent to PTS" | "Refund Received in JLT" | "Refund Processed";
+  pipelineStage?: "New Refund Request" | "Query" | "Acknowledged by Supplier" | "Refund Sent to PTS" | "Refund Received in JLT" | "Refund Processed";
   assignedToId?: number | null;
 }) {
   const db = await getDb();

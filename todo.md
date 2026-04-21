@@ -1419,3 +1419,8 @@
 - [x] Fix: "No documents uploaded yet" warning on AdminBookingDetail was ignoring reimbursement item docs — now suppressed when any item has docs uploaded
 - [x] Fix: Kanban "Docs missing" badge was checking legacy reimbursementDocUrl field only — uploadItemDoc now also updates the legacy field so Kanban stays accurate
 - [x] Fix: Future uploads via the per-item doc system will correctly mark the booking as having docs
+
+## Bug Fix: Refund Pipeline "Query" Stage Not Moving
+- [x] Fix: "Query" was missing from the refunds.pipelineStage MySQL ENUM — DB silently rejected the value so the stage never changed
+- [x] Fix: Added "Query" to the ENUM in drizzle/schema.ts and applied ALTER TABLE migration
+- [x] Fix: Updated updateRefundPipeline helper in db.ts to include "Query" in the TypeScript union type
