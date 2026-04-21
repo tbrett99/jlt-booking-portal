@@ -1440,3 +1440,11 @@
 - [x] Fix: include "Commission Claimed" bookings with no claim record in the commissions page total
 - [x] Fix: update myEarningsSummary server procedure to return all 5 buckets (paid, awaitingPayment, processing, claimable, pending) plus a grand total
 - [x] Feature: redesign AgentDashboard "My Earnings" card to show grand total + breakdown rows (paid, awaiting payment, processing, claimable, pending)
+
+## Feature: Agent Dashboard Completed Tab & Filters
+- [x] Define "completed" bookings: commission claimed (stage = Commission Claimed) AND departure date in the past
+- [x] Add "Active" / "Completed" tab switcher to the dashboard booking list card
+- [x] Active tab: exclude completed bookings (currently they show mixed in)
+- [x] Completed tab: show only completed bookings, sorted by departure date desc
+- [x] Add filter controls to the booking list: by year, sort by departure/booked date/commission
+- [x] Ensure stat cards (Active count) also exclude completed bookings

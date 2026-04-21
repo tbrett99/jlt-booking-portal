@@ -54,6 +54,9 @@ export default function AgentDashboard() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [bookedFrom, setBookedFrom] = useState("");
   const [bookedTo, setBookedTo] = useState("");
+  const [bookingTab, setBookingTab] = useState<"active" | "completed">("active");
+  const [sortBy, setSortBy] = useState<"departure" | "booked" | "commission">("departure");
+  const [filterYear, setFilterYear] = useState<string>("");
 
   const { data: bookings = [], isLoading } = trpc.bookings.myBookings.useQuery();
   const { data: notifications = [] } = trpc.notifications.myNotifications.useQuery();
@@ -64,7 +67,12 @@ export default function AgentDashboard() {
   const now = new Date();
   const next30Days = addDays(now, 30);
 
-  const activeBookings = bookings.filter((b) => b.currentStage !== "Cancelled");
+  // A booking is "completed" when commission has been claimed AND departure is in the past
+  const isCompleted = (b: typeof bookings[0]) =>
+    b.currentStage === "Commission Claimed" && isPast(new Date(b.departureDate));
+
+  const activeBookings = bookings.filter((b) => b.currentStage !== "Cancelled" && !isCompleted(b));
+  const completedBookings = bookings.filter(isCompleted);
   const cancelledBookings = bookings.filter((b) => b.currentStage === "Cancelled");
   const commissionClaimable = bookings.filter((b) => b.currentStage === "Commission Claimable");
   const needsAttention = bookings.filter((b) => ATTENTION_STAGES.has(b.currentStage));
@@ -103,12 +111,24 @@ export default function AgentDashboard() {
     missingDocItems.length +
     flightQueries.length;
 
+  // Derive available years from completed bookings for the year filter
+  const completedYears = useMemo(() => {
+    const years = new Set(completedBookings.map((b) => new Date(b.departureDate).getFullYear()));
+    return Array.from(years).sort((a, b) => b - a);
+  }, [completedBookings]);
+
   const filteredBookings = useMemo(() => {
-    let list = bookings;
-    if (statusFilter === "active") list = list.filter((b) => b.currentStage !== "Cancelled");
-    else if (statusFilter === "attention") list = list.filter((b) => ATTENTION_STAGES.has(b.currentStage));
-    else if (statusFilter === "commission") list = list.filter((b) => b.currentStage === "Commission Claimable");
-    else if (statusFilter === "cancelled") list = list.filter((b) => b.currentStage === "Cancelled");
+    let list = bookingTab === "completed" ? completedBookings : activeBookings;
+
+    if (bookingTab === "active") {
+      if (statusFilter === "attention") list = list.filter((b) => ATTENTION_STAGES.has(b.currentStage));
+      else if (statusFilter === "commission") list = list.filter((b) => b.currentStage === "Commission Claimable");
+      else if (statusFilter === "cancelled") list = list.filter((b) => b.currentStage === "Cancelled");
+    }
+
+    if (filterYear) {
+      list = list.filter((b) => new Date(b.departureDate).getFullYear() === Number(filterYear));
+    }
     if (bookedFrom) {
       const from = new Date(bookedFrom);
       list = list.filter((b) => b.bookedDate && new Date(b.bookedDate) >= from);
@@ -127,9 +147,15 @@ export default function AgentDashboard() {
           (b.ptsRef ?? "").toLowerCase().includes(q)
       );
     }
-    // Sort by departure date ascending (soonest first)
-    return [...list].sort((a, b) => new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime());
-  }, [bookings, statusFilter, search, bookedFrom, bookedTo]);
+    // Sort
+    return [...list].sort((a, b) => {
+      if (sortBy === "commission") return Number(b.expectedCommission ?? 0) - Number(a.expectedCommission ?? 0);
+      if (sortBy === "booked") return new Date(b.bookedDate ?? 0).getTime() - new Date(a.bookedDate ?? 0).getTime();
+      // Default: departure — active = soonest first, completed = most recent first
+      const dir = bookingTab === "completed" ? -1 : 1;
+      return dir * (new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime());
+    });
+  }, [bookings, bookingTab, activeBookings, completedBookings, statusFilter, search, bookedFrom, bookedTo, sortBy, filterYear]);
 
   return (
     <div className="space-y-6">
@@ -220,55 +246,90 @@ export default function AgentDashboard() {
           {/* Bookings list */}
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <CardTitle className="text-base">Your Bookings</CardTitle>
-                <div className="sm:ml-auto flex flex-col sm:flex-row gap-2">
-                  <div className="relative">
-                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      placeholder="Search bookings..."
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="pl-8 h-8 text-sm w-full sm:w-48"
-                    />
-                  </div>
-                  {/* Booked date range filter */}
-                  <div className="flex items-center gap-1.5">
-                    <Filter size={12} className="text-muted-foreground flex-shrink-0" />
-                    <span className="text-xs text-muted-foreground">Booked:</span>
-                    <Input
-                      type="date"
-                      value={bookedFrom}
-                      onChange={(e) => setBookedFrom(e.target.value)}
-                      className="h-8 text-xs w-28"
-                      title="Booked from"
-                    />
-                    <span className="text-xs text-muted-foreground">–</span>
-                    <Input
-                      type="date"
-                      value={bookedTo}
-                      onChange={(e) => setBookedTo(e.target.value)}
-                      className="h-8 text-xs w-28"
-                      title="Booked to"
-                    />
-                    {(bookedFrom || bookedTo) && (
-                      <button
-                        onClick={() => { setBookedFrom(""); setBookedTo(""); }}
-                        className="text-xs underline text-muted-foreground hover:text-foreground"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
+              {/* Tab switcher */}
+              <div className="flex items-center gap-1 mb-3">
+                <button
+                  onClick={() => { setBookingTab("active"); setStatusFilter("all"); setFilterYear(""); }}
+                  className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${
+                    bookingTab === "active" ? "text-[#414141]" : "text-muted-foreground hover:bg-muted"
+                  }`}
+                  style={bookingTab === "active" ? { background: '#70FFE8' } : {}}
+                >
+                  Active
+                  <span className="ml-1.5 text-xs font-bold opacity-70">({activeBookings.length})</span>
+                </button>
+                <button
+                  onClick={() => { setBookingTab("completed"); setStatusFilter("all"); }}
+                  className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${
+                    bookingTab === "completed" ? "text-[#414141]" : "text-muted-foreground hover:bg-muted"
+                  }`}
+                  style={bookingTab === "completed" ? { background: '#a7f3d0', color: '#064e3b' } : {}}
+                >
+                  Completed
+                  <span className="ml-1.5 text-xs font-bold opacity-70">({completedBookings.length})</span>
+                </button>
+              </div>
+
+              {/* Filter row */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap">
+                {/* Search */}
+                <div className="relative">
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search bookings..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="pl-8 h-8 text-sm w-full sm:w-44"
+                  />
+                </div>
+
+                {/* Departure year filter */}
+                <div className="flex items-center gap-1.5">
+                  <Filter size={12} className="text-muted-foreground flex-shrink-0" />
+                  <span className="text-xs text-muted-foreground">Year:</span>
+                  <select
+                    value={filterYear}
+                    onChange={(e) => setFilterYear(e.target.value)}
+                    className="h-8 text-xs border border-input rounded-md px-2 bg-background text-foreground"
+                  >
+                    <option value="">All</option>
+                    {(bookingTab === "completed" ? completedYears : Array.from(new Set(activeBookings.map((b) => new Date(b.departureDate).getFullYear()))).sort((a, b) => a - b)).map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Sort */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">Sort:</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                    className="h-8 text-xs border border-input rounded-md px-2 bg-background text-foreground"
+                  >
+                    <option value="departure">Departure</option>
+                    <option value="booked">Booked date</option>
+                    <option value="commission">Commission ↓</option>
+                  </select>
+                </div>
+
+                {/* Booked date range */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">Booked:</span>
+                  <Input type="date" value={bookedFrom} onChange={(e) => setBookedFrom(e.target.value)} className="h-8 text-xs w-28" title="Booked from" />
+                  <span className="text-xs text-muted-foreground">–</span>
+                  <Input type="date" value={bookedTo} onChange={(e) => setBookedTo(e.target.value)} className="h-8 text-xs w-28" title="Booked to" />
+                </div>
+
+                {/* Active-only status pills */}
+                {bookingTab === "active" && (
                   <div className="flex gap-1 flex-wrap">
-                    {STATUS_FILTERS.map((f) => (
+                    {STATUS_FILTERS.filter((f) => f.value !== "all" && f.value !== "active").map((f) => (
                       <button
                         key={f.value}
-                        onClick={() => setStatusFilter(f.value)}
+                        onClick={() => setStatusFilter(statusFilter === f.value ? "all" : f.value)}
                         className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-                          statusFilter === f.value
-                            ? "text-[#414141]"
-                            : "text-muted-foreground hover:bg-muted"
+                          statusFilter === f.value ? "text-[#414141]" : "text-muted-foreground hover:bg-muted"
                         }`}
                         style={statusFilter === f.value ? { background: '#70FFE8' } : {}}
                       >
@@ -276,7 +337,17 @@ export default function AgentDashboard() {
                       </button>
                     ))}
                   </div>
-                </div>
+                )}
+
+                {/* Clear all filters */}
+                {(search || bookedFrom || bookedTo || filterYear || statusFilter !== "all") && (
+                  <button
+                    onClick={() => { setSearch(""); setBookedFrom(""); setBookedTo(""); setFilterYear(""); setStatusFilter("all"); }}
+                    className="text-xs underline text-muted-foreground hover:text-foreground ml-auto"
+                  >
+                    Clear all
+                  </button>
+                )}
               </div>
             </CardHeader>
             <CardContent className="pt-0">
@@ -300,7 +371,7 @@ export default function AgentDashboard() {
                   ) : (
                     <>
                       <p className="font-medium text-foreground">No bookings match your filter</p>
-                      <button onClick={() => { setStatusFilter("all"); setSearch(""); }}
+                      <button onClick={() => { setStatusFilter("all"); setSearch(""); setFilterYear(""); setBookedFrom(""); setBookedTo(""); }}
                         className="text-sm underline mt-2" style={{ color: '#02E6D2' }}>
                         Clear filters
                       </button>
