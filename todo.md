@@ -1396,3 +1396,9 @@
 - [x] markBatchPaid procedure: advances processing/awaiting_payment claims to paid, sets VAT from CSV, pushes remittances + notifies agents
 - [x] RemittanceManagement: Mark All Paid button with confirm dialog (shows matched count + total, warning)
 - [x] Upload dialog updated to accept both PTS and JLT Commissions CSV formats
+
+## Refund Pipeline - Query Stage
+- [ ] Add 'query' to refund stage enum in drizzle/schema.ts and migrate DB
+- [ ] Insert 'query' stage between 'new' and next stage in pipeline column order
+- [ ] Add popup dialog when moving refund to 'query' stage with message input
+- [ ] Send message to assigned agent via in-app notification + email when moved to 'query'

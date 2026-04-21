@@ -1759,11 +1759,12 @@ export const appRouter = router({
     updatePipeline: adminProcedure
       .input(z.object({
         refundId: z.number(),
-        pipelineStage: z.enum(["New Refund Request", "Acknowledged by Supplier", "Refund Sent to PTS", "Refund Received in JLT", "Refund Processed"]).optional(),
+        pipelineStage: z.enum(["New Refund Request", "Query", "Acknowledged by Supplier", "Refund Sent to PTS", "Refund Received in JLT", "Refund Processed"]).optional(),
         assignedToId: z.number().nullable().optional(),
+        queryMessage: z.string().optional(), // message to send to agent when moving to Query
       }))
       .mutation(async ({ input, ctx }) => {
-        const { refundId, ...data } = input;
+        const { refundId, queryMessage, ...data } = input;
         const updated = await updateRefundPipeline(refundId, data as any);
         // System audit note if stage changed
         if (data.pipelineStage && updated?.bookingId) {
@@ -1776,20 +1777,53 @@ export const appRouter = router({
           // Notify agent
           const booking = await getBookingById(updated.bookingId);
           if (booking) {
-            const stageMessages: Record<string, string> = {
-              "Acknowledged by Supplier": `Your refund request for "${booking.clientName}" has been acknowledged by the supplier`,
-              "Refund Sent to PTS": `Your refund for "${booking.clientName}" has been sent to PTS`,
-              "Refund Received in JLT": `Your refund for "${booking.clientName}" has been received by JLT`,
-              "Refund Processed": `Your refund for "${booking.clientName}" has been fully processed`,
-            };
-            const msg = stageMessages[data.pipelineStage];
-            if (msg) {
+            if (data.pipelineStage === "Query" && queryMessage) {
+              // Send query message to agent via in-app notification and email
               await createInAppNotification({
                 userId: booking.agentId,
                 bookingId: booking.id,
-                message: msg,
+                message: `Query on your refund for "${booking.clientName}": ${queryMessage}`,
                 linkUrl: `/bookings/${booking.id}`,
               });
+              // Also send email to agent
+              const agent = await getUserById(booking.agentId);
+              if (agent?.email) {
+                await sendNotificationEmail({
+                  triggerKey: "refund_query",
+                  toEmail: agent.email,
+                  toName: agent.name ?? "Agent",
+                  variables: {
+                    clientName: booking.clientName ?? "your client",
+                    ptsRef: booking.ptsRef ?? "",
+                    queryMessage,
+                    adminName: ctx.user.name ?? "Admin",
+                    bookingUrl: `/bookings/${booking.id}`,
+                  },
+                });
+              }
+              // Add the query message as an internal note on the booking
+              await createNote({
+                bookingId: booking.id,
+                authorId: ctx.user.id,
+                content: `[Refund Query to Agent] ${queryMessage}`,
+                isInternal: true,
+              });
+            } else {
+              const stageMessages: Record<string, string> = {
+                "Acknowledged by Supplier": `Your refund request for "${booking.clientName}" has been acknowledged by the supplier`,
+                "Refund Sent to PTS": `Your refund for "${booking.clientName}" has been sent to PTS`,
+                "Refund Received in JLT": `Your refund for "${booking.clientName}" has been received by JLT`,
+                "Refund Processed": `Your refund for "${booking.clientName}" has been fully processed`,
+              };
+              const msg = stageMessages[data.pipelineStage];
+              if (msg) {
+                await createInAppNotification({
+                  userId: booking.agentId,
+                  bookingId: booking.id,
+                  message: msg,
+                  linkUrl: `/bookings/${booking.id}`,
+                });
+              }
             }
           }
         }
