@@ -87,7 +87,11 @@ export default function OnboardingDashboard() {
 
   const handleSaveProfile = () => {
     if (!name.trim()) { toast.error("Full name is required"); return; }
-    saveProfile.mutate({ name, personalEmail: personalEmail || null, mobile: mobile || null, addressLine1: addressLine1 || null, addressLine2: addressLine2 || null, city: city || null, postcode: postcode || null });
+    // Check if all fields will be complete after this save
+    const willHaveContact = !!(personalEmail.trim() || mobile.trim());
+    const willHaveAddress = !!(addressLine1.trim() && city.trim() && postcode.trim());
+    const notifyOnComplete = !!name.trim() && willHaveContact && willHaveAddress && hasIdDoc && hasPoaDoc;
+    saveProfile.mutate({ name, personalEmail: personalEmail || null, mobile: mobile || null, addressLine1: addressLine1 || null, addressLine2: addressLine2 || null, city: city || null, postcode: postcode || null, notifyOnComplete });
   };
 
   const handleUploadDoc = async (file: File, docType: "id" | "proofOfAddress") => {

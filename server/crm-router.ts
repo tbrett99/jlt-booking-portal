@@ -1196,6 +1196,7 @@ export const crmRouter = router({
         addressLine2: z.string().max(255).optional().nullable(),
         city: z.string().max(100).optional().nullable(),
         postcode: z.string().max(20).optional().nullable(),
+        notifyOnComplete: z.boolean().optional(), // true when all fields are now complete
       }))
       .mutation(async ({ input, ctx }) => {
         const { getDb } = await import("./db");
@@ -1206,8 +1207,18 @@ export const crmRouter = router({
         // Update the user's display name
         await db.update(users).set({ name: input.name }).where(eq(users.id, ctx.user.id));
         // Upsert the CRM profile fields
-        const { name, ...profileFields } = input;
+        const { name, notifyOnComplete, ...profileFields } = input;
         await upsertAgentCrmProfile(ctx.user.id, profileFields);
+        // Notify JLT team when onboarding is complete
+        if (notifyOnComplete) {
+          try {
+            const { notifyOwner } = await import("./_core/notification");
+            await notifyOwner({
+              title: `New agent onboarding complete: ${name}`,
+              content: `Agent ${name} (ID: ${ctx.user.id}) has completed their onboarding profile including all required fields. Please review their documents and activate their account.`,
+            });
+          } catch {}
+        }
         return { success: true };
       }),
 

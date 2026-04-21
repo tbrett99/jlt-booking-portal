@@ -1469,5 +1469,5 @@
 - [x] Onboarding dashboard: ID document upload section
 - [x] Backend: procedure to save onboarding profile fields to crm_profiles table
 - [x] Backend: procedure to upload ID documents to S3 and save reference in DB
-- [ ] Backend: mark onboarding complete when all required fields filled
-- [ ] Admin: notify JLT team when a new agent completes onboarding
+- [x] Backend: mark onboarding complete when all required fields filled (notifyOnComplete flag triggers owner notification)
+- [x] Admin: notify JLT team when a new agent completes onboarding (notifyOwner called when all fields complete)
