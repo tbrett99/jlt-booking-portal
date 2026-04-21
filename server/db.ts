@@ -407,7 +407,21 @@ export async function getNotesByBooking(bookingId: number, includeInternal: bool
   const condition = includeInternal
     ? eq(notes.bookingId, bookingId)
     : and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false));
-  return db.select().from(notes).where(condition).orderBy(notes.createdAt);
+  // Single JOIN query — fetch notes with author name/role in one round-trip
+  const rows = await db
+    .select({
+      id: notes.id,
+      bookingId: notes.bookingId,
+      authorId: notes.authorId,
+      content: notes.content,
+      isInternal: notes.isInternal,
+      isReadByAdmin: notes.isReadByAdmin,
+      createdAt: notes.createdAt,
+    })
+    .from(notes)
+    .where(condition)
+    .orderBy(notes.createdAt);
+  return rows;
 }
 
 // Mark all agent notes on a booking as read by admin
@@ -424,43 +438,38 @@ export async function markNotesReadByAdmin(bookingId: number) {
 export async function getBookingsWithUnreadAgentNotes() {
   const db = await getDb();
   if (!db) return [];
-  // Find distinct bookingIds where there's an agent note not yet read by admin
-  // Note: orderBy(createdAt) is intentionally omitted here — MySQL strict mode rejects
-  // ordering by a non-aggregated column that isn't in GROUP BY. We sort per-booking below.
-  const unreadNotes = await db
-    .select({ bookingId: notes.bookingId })
+  // Single query: join notes → users (author) → bookings, filter to unread agent notes
+  const rows = await db
+    .select({
+      bookingId: notes.bookingId,
+      noteId: notes.id,
+      content: notes.content,
+      createdAt: notes.createdAt,
+      authorRole: users.role,
+      authorName: users.name,
+      clientName: bookings.clientName,
+      agentId: bookings.agentId,
+    })
     .from(notes)
+    .innerJoin(users, eq(notes.authorId, users.id))
+    .innerJoin(bookings, eq(notes.bookingId, bookings.id))
     .where(and(eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)))
-    .groupBy(notes.bookingId);
-  if (unreadNotes.length === 0) return [];
-  // Filter to only notes authored by agents
-  const bookingIds = unreadNotes.map((n) => n.bookingId);
-  // Get the bookings + latest unread note content
-  const result = [];
-  for (const { bookingId } of unreadNotes) {
-    const booking = await getBookingById(bookingId);
-    if (!booking) continue;
-    // Get the latest unread note for this booking
-    const latestUnread = await db
-      .select()
-      .from(notes)
-      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)))
-      .orderBy(desc(notes.createdAt))
-      .limit(1);
-    if (!latestUnread[0]) continue;
-    // Only include if the latest unread note was written by an agent
-    const author = await getUserById(latestUnread[0].authorId);
-    if (!author || (author.role !== 'agent')) continue;
-    result.push({
-      bookingId,
-      clientName: booking.clientName,
-      agentId: booking.agentId,
-      latestMessage: latestUnread[0].content,
-      latestMessageAt: latestUnread[0].createdAt,
-      authorName: author.name ?? 'Agent',
-    });
+    .orderBy(desc(notes.createdAt));
+
+  // Keep only agent-authored notes; deduplicate to latest per booking
+  const seen = new Map<number, typeof rows[0]>();
+  for (const row of rows) {
+    if (row.authorRole !== 'agent') continue;
+    if (!seen.has(row.bookingId)) seen.set(row.bookingId, row);
   }
-  return result;
+  return Array.from(seen.values()).map((r) => ({
+    bookingId: r.bookingId,
+    clientName: r.clientName,
+    agentId: r.agentId,
+    latestMessage: r.content,
+    latestMessageAt: r.createdAt,
+    authorName: r.authorName ?? 'Agent',
+  }));
 }
 
 // Get ALL bookings that have at least one shared note — for the Messages page
@@ -468,55 +477,75 @@ export async function getBookingsWithUnreadAgentNotes() {
 export async function getAllMessageThreads() {
   const db = await getDb();
   if (!db) return [];
-  // Get all distinct bookingIds that have shared notes
-  const threadRows = await db
-    .select({ bookingId: notes.bookingId })
-    .from(notes)
-    .where(and(eq(notes.isInternal, false), not(like(notes.content, '[System]%'))))
-    .groupBy(notes.bookingId);
-  if (threadRows.length === 0) return [];
 
-  const result = [];
-  for (const { bookingId } of threadRows) {
-    const booking = await getBookingById(bookingId);
-    if (!booking) continue;
-    // Latest shared note
-    const latestNote = await db
-      .select()
-      .from(notes)
-      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false), not(like(notes.content, '[System]%'))))
-      .orderBy(desc(notes.createdAt))
-      .limit(1);
-    if (!latestNote[0]) continue;
-    const latestAuthor = await getUserById(latestNote[0].authorId);
-    // Unread count (agent notes not yet read by admin)
-    const unreadRows = await db
-      .select({ id: notes.id })
-      .from(notes)
-      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false), eq(notes.isReadByAdmin, false), not(like(notes.content, '[System]%'))));
-    // Count only unread notes authored by agents
-    let unreadCount = 0;
-    for (const row of unreadRows) {
-      const noteRow = await db.select().from(notes).where(eq(notes.id, row.id)).limit(1);
-      if (!noteRow[0]) continue;
-      const noteAuthor = await getUserById(noteRow[0].authorId);
-      if (noteAuthor?.role === 'agent') unreadCount++;
+  // Query 1: all shared non-system notes joined with author and booking in one shot
+  const allRows = await db
+    .select({
+      noteId: notes.id,
+      bookingId: notes.bookingId,
+      content: notes.content,
+      createdAt: notes.createdAt,
+      isReadByAdmin: notes.isReadByAdmin,
+      authorId: notes.authorId,
+      authorName: users.name,
+      authorRole: users.role,
+      clientName: bookings.clientName,
+      agentId: bookings.agentId,
+      ptsRef: bookings.ptsRef,
+      topdogRef: bookings.topdogRef,
+    })
+    .from(notes)
+    .innerJoin(users, eq(notes.authorId, users.id))
+    .innerJoin(bookings, eq(notes.bookingId, bookings.id))
+    .where(and(eq(notes.isInternal, false), not(like(notes.content, '[System]%'))))
+    .orderBy(desc(notes.createdAt));
+
+  if (allRows.length === 0) return [];
+
+  // Query 2: get agent names for bookings (agentId → user name)
+  const agentIds = Array.from(new Set(allRows.map((r) => r.agentId)));
+  const agentRows = await db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(inArray(users.id, agentIds));
+  const agentMap = new Map(agentRows.map((u) => [u.id, u.name ?? 'Agent']));
+
+  // Group by bookingId in memory
+  const threadMap = new Map<number, {
+    bookingId: number; clientName: string; agentId: number;
+    ptsRef: string | null; topdogRef: string | null;
+    latestNote: typeof allRows[0] | null; unreadCount: number;
+  }>();
+
+  for (const row of allRows) {
+    let thread = threadMap.get(row.bookingId);
+    if (!thread) {
+      thread = { bookingId: row.bookingId, clientName: row.clientName, agentId: row.agentId,
+        ptsRef: row.ptsRef ?? null, topdogRef: row.topdogRef ?? null, latestNote: null, unreadCount: 0 };
+      threadMap.set(row.bookingId, thread);
     }
-    const agentUser = await getUserById(booking.agentId);
-    result.push({
-      bookingId,
-      clientName: booking.clientName,
-      agentId: booking.agentId,
-      agentName: agentUser?.name ?? 'Agent',
-      ptsRef: booking.ptsRef ?? null,
-      topdogRef: booking.topdogRef ?? null,
-      latestMessage: latestNote[0].content,
-      latestMessageAt: latestNote[0].createdAt,
-      latestAuthorName: latestAuthor?.name ?? 'Unknown',
-      latestAuthorRole: latestAuthor?.role ?? 'agent',
-      unreadCount,
-    });
+    // First row per booking (ordered desc) = latest note
+    if (!thread.latestNote) thread.latestNote = row;
+    // Count unread agent notes
+    if (!row.isReadByAdmin && row.authorRole === 'agent') thread.unreadCount++;
   }
+
+  const result = Array.from(threadMap.values())
+    .filter((t) => t.latestNote !== null)
+    .map((t) => ({
+      bookingId: t.bookingId,
+      clientName: t.clientName,
+      agentId: t.agentId,
+      agentName: agentMap.get(t.agentId) ?? 'Agent',
+      ptsRef: t.ptsRef,
+      topdogRef: t.topdogRef,
+      latestMessage: t.latestNote!.content,
+      latestMessageAt: t.latestNote!.createdAt,
+      latestAuthorName: t.latestNote!.authorName ?? 'Unknown',
+      latestAuthorRole: t.latestNote!.authorRole ?? 'agent',
+      unreadCount: t.unreadCount,
+    }));
+
   // Sort by latest message date descending
   result.sort((a, b) => new Date(b.latestMessageAt).getTime() - new Date(a.latestMessageAt).getTime());
   return result;
@@ -526,25 +555,19 @@ export async function getAllMessageThreads() {
 export async function getTotalUnreadMessageCount(): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
+  // Single JOIN query: count distinct bookings with at least one unread agent note
   const rows = await db
     .select({ bookingId: notes.bookingId })
     .from(notes)
-    .where(and(eq(notes.isInternal, false), eq(notes.isReadByAdmin, false), not(like(notes.content, '[System]%'))))
+    .innerJoin(users, eq(notes.authorId, users.id))
+    .where(and(
+      eq(notes.isInternal, false),
+      eq(notes.isReadByAdmin, false),
+      not(like(notes.content, '[System]%')),
+      eq(users.role, 'agent'),
+    ))
     .groupBy(notes.bookingId);
-  // Filter to only those with at least one agent-authored unread note
-  let count = 0;
-  for (const { bookingId } of rows) {
-    const latestUnread = await db
-      .select()
-      .from(notes)
-      .where(and(eq(notes.bookingId, bookingId), eq(notes.isInternal, false), eq(notes.isReadByAdmin, false)))
-      .orderBy(desc(notes.createdAt))
-      .limit(1);
-    if (!latestUnread[0]) continue;
-    const author = await getUserById(latestUnread[0].authorId);
-    if (author?.role === 'agent') count++;
-  }
-  return count;
+  return rows.length;
 }
 
 // Mark all unread agent notes as read by admin (for "Mark all as read" button)

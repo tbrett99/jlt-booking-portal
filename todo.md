@@ -1404,6 +1404,6 @@
 - [x] Send message to assigned agent via in-app notification + email when moved to 'query'
 
 ## Flight Requests - Completed Status
-- [ ] Add "completed" status to flight requests (DB + backend)
-- [ ] Add "Mark as Complete" button on admin flight request view
-- [ ] Separate completed flights into a Completed tab/section out of the pending view
+- [x] Add "completed" status to flight requests (DB + backend)
+- [x] Add "Mark as Complete" button on admin flight request view
+- [x] Separate completed flights into a Completed tab/section out of the pending view
