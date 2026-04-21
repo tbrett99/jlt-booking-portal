@@ -1455,3 +1455,8 @@
 - [x] Bundle all CSVs into a single ZIP attachment using the archiver npm package
 - [x] Update email subject and body to reflect the multi-table export
 - [x] Update rowCount in exportRuns log to reflect total rows across all tables
+
+## Feature: Delete Reimbursement Items
+- [x] Backend: add deleteReimbursementItem tRPC mutation (admin only) — deletes item and its associated docs
+- [x] Frontend: add delete button (with confirmation dialog) on each reimbursement item row on the admin reimbursement screen
+- [x] Frontend: also add delete button on the booking detail page reimbursement items section

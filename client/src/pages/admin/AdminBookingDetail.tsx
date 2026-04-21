@@ -782,6 +782,10 @@ export default function AdminBookingDetail() {
     onSuccess: () => { refetchReimbItems(); toast.success('Reimbursement status updated'); },
     onError: (e) => toast.error(e.message),
   });
+  const deleteReimbItem = trpc.reimbursements.deleteItem.useMutation({
+    onSuccess: () => { refetchReimbItems(); toast.success('Reimbursement item deleted'); },
+    onError: (e) => toast.error(e.message),
+  });
   const toggleSuppliersAndDocs = trpc.bookings.toggleSuppliersAndDocs.useMutation({
     onSuccess: () => {
       utils.bookings.byId.invalidate({ id: bookingId });
@@ -1229,6 +1233,17 @@ export default function AdminBookingDetail() {
                             {item.status === 'pending' ? 'Mark Scheduled' : 'Mark Paid'}
                           </Button>
                         )}
+                        <button
+                          onClick={() => {
+                            if (!window.confirm(`Delete "${item.supplierName}"? This cannot be undone.`)) return;
+                            deleteReimbItem.mutate({ id: item.id });
+                          }}
+                          disabled={deleteReimbItem.isPending}
+                          title="Delete this reimbursement item"
+                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium hover:bg-red-50 text-red-500 border border-red-200"
+                        >
+                          <Trash2 size={10} /> Delete
+                        </button>
                       </div>
                       {/* Documents for this item */}
                       <div className="border-t px-3 py-2 space-y-1" style={{ background: '#f8fafc' }}>

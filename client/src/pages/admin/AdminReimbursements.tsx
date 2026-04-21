@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import {
-  PoundSterling, Clock, CheckCircle2, AlertCircle, RefreshCw, Download
+  PoundSterling, Clock, CheckCircle2, AlertCircle, RefreshCw, Download, Trash2
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -32,6 +32,15 @@ export default function AdminReimbursements() {
   });
   const assignReimb = trpc.reimbursements.assign.useMutation({ onSuccess: () => refetch() });
   const markActioned = trpc.reimbursements.markActioned.useMutation({ onSuccess: () => refetch() });
+  const deleteItem = trpc.reimbursements.deleteItem.useMutation({
+    onSuccess: () => { toast.success("Reimbursement item deleted"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleDelete = (id: number, supplierName: string) => {
+    if (!window.confirm(`Delete reimbursement item "${supplierName}"? This cannot be undone.`)) return;
+    deleteItem.mutate({ id });
+  };
 
   const items = statusFilter === "all" ? allItems
     : statusFilter === "late" ? allItems.filter((r) => r.isLate)
@@ -259,6 +268,14 @@ export default function AdminReimbursements() {
                           {r.isLate && (r as any).actionedAt && (
                             <span className="text-[10px] text-green-600 font-medium">✓ Actioned</span>
                           )}
+                          <button
+                            onClick={() => handleDelete(r.id, r.supplierName)}
+                            disabled={deleteItem.isPending}
+                            title="Delete this reimbursement item"
+                            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium hover:bg-red-50 text-red-500 border border-red-200 ml-1"
+                          >
+                            <Trash2 size={10} /> Delete
+                          </button>
                         </div>
                       </td>
                     </tr>

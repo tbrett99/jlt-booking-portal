@@ -16,6 +16,7 @@ import {
   refundSuppliers,
   refunds,
   reimbursementDocs,
+  reimbursementItemDocs,
   reimbursementItems,
   users,
   systemSettings,
@@ -1627,6 +1628,15 @@ export async function markReimbursementActioned(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(reimbursementItems).set({ actionedAt: new Date() } as any).where(eq(reimbursementItems.id, id));
+}
+
+export async function deleteReimbursementItem(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  // Delete associated docs first (FK constraint)
+  await db.delete(reimbursementItemDocs).where(eq(reimbursementItemDocs.reimbursementItemId, id));
+  // Delete the item itself
+  await db.delete(reimbursementItems).where(eq(reimbursementItems.id, id));
 }
 
 export async function getReimbursementsAdmin(filters?: {

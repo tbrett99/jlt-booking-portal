@@ -2695,6 +2695,15 @@ export const appRouter = router({
       const { getOutstandingReimbursementsCount } = await import("./db");
       return getOutstandingReimbursementsCount();
     }),
+
+    // Admin: delete a reimbursement item and all its associated docs
+    deleteItem: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const { deleteReimbursementItem } = await import("./db");
+        await deleteReimbursementItem(input.id);
+        return { success: true };
+      }),
   }),
 
   // ─── Inbox / Booking Documents ───────────────────────────────────────────────
