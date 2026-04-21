@@ -1,12 +1,22 @@
 /**
  * Scheduled jobs for the JLT Group Booking Portal.
  * Currently runs:
- *   - Nightly full booking CSV export at 04:00 UTC → max@thejltgroup.co.uk
+ *   - Nightly full data ZIP export at 04:00 UTC → max@thejltgroup.co.uk
+ *   - Task reminders
+ *   - Inbox auto-import every 15 minutes
  */
 import cron from "node-cron";
 import nodemailer from "nodemailer";
+import archiver from "archiver";
+import { PassThrough } from "stream";
 import { getDb, getTasksDueForReminder, markCalendarReminderSent, getImapConfig } from "./db";
-import { bookings, users, inAppNotifications, exportRuns } from "../drizzle/schema";
+import {
+  bookings, users, commissionClaims, amendments, amendmentLineItems,
+  cancellations, refunds, refundSuppliers, notes, reimbursementItems,
+  reimbursementItemDocs, reimbursementDocs, paymentLinks, flightRequests,
+  remittanceBatches, remittanceLines, commissionRemittances, commissionRemittanceItems,
+  pipelineHistory, inAppNotifications, exportRuns,
+} from "../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { format } from "date-fns";
 import { importInbox, decryptPassword } from "./imap";
@@ -40,13 +50,11 @@ async function runInboxImport(fullImport = false) {
     return;
   }
   inboxImportRunning = true;
-  // For incremental runs use a sinceDate of (lastRunAt - 5 min buffer) so we don't miss emails
-  // that arrived just before the previous run. For a full import, pass no sinceDate.
   const sinceDate = fullImport
     ? undefined
     : inboxLastRunAt
       ? new Date(inboxLastRunAt.getTime() - 5 * 60 * 1000)
-      : undefined; // first run ever — fetch everything
+      : undefined;
   console.log(
     `[InboxScheduler] Auto-import started at ${new Date().toISOString()} (${fullImport ? "full" : sinceDate ? `since ${sinceDate.toISOString()}` : "full — first run"})`
   );
@@ -70,7 +78,6 @@ async function runInboxImport(fullImport = false) {
   }
 }
 
-// Exported so the tRPC triggerImport procedure can request a full re-import
 export async function runFullInboxImport() {
   return runInboxImport(true);
 }
@@ -80,7 +87,7 @@ const EXPORT_RECIPIENT_NAME = "Max";
 
 // ─── CSV helpers ──────────────────────────────────────────────────────────────
 
-function escapeCsv(value: string | null | undefined): string {
+function escapeCsv(value: unknown): string {
   if (value == null) return "";
   const str = String(value);
   if (str.includes(",") || str.includes('"') || str.includes("\n")) {
@@ -92,10 +99,191 @@ function escapeCsv(value: string | null | undefined): string {
 function formatDate(d: Date | null | undefined): string {
   if (!d) return "";
   try {
-    return format(new Date(d), "dd/MM/yyyy");
+    return format(new Date(d), "dd/MM/yyyy HH:mm");
   } catch {
     return "";
   }
+}
+
+function rowsToCsv(rows: Record<string, unknown>[]): string {
+  if (rows.length === 0) return "";
+  const headers = Object.keys(rows[0]);
+  const lines: string[] = [headers.join(",")];
+  for (const row of rows) {
+    lines.push(
+      headers.map((h) => {
+        const v = row[h];
+        if (v instanceof Date) return escapeCsv(formatDate(v));
+        return escapeCsv(v);
+      }).join(",")
+    );
+  }
+  return lines.join("\n");
+}
+
+// ─── Build a ZIP buffer containing one CSV per table ─────────────────────────
+
+async function buildExportZip(db: Awaited<ReturnType<typeof getDb>>): Promise<{ buffer: Buffer; summary: Record<string, number> }> {
+  if (!db) throw new Error("Database unavailable");
+
+  // ── Fetch all tables ──────────────────────────────────────────────────────
+
+  const [
+    bookingRows,
+    userRows,
+    claimRows,
+    amendmentRows,
+    amendmentLineRows,
+    cancellationRows,
+    refundRows,
+    refundSupplierRows,
+    noteRows,
+    reimbItemRows,
+    reimbItemDocRows,
+    reimbDocRows,
+    paymentLinkRows,
+    flightRequestRows,
+    remittanceBatchRows,
+    remittanceLineRows,
+    commRemittanceRows,
+    commRemittanceItemRows,
+    pipelineHistoryRows,
+  ] = await Promise.all([
+    // Bookings — join agent name
+    db.select({
+      id: bookings.id,
+      clientName: bookings.clientName,
+      clientEmail: bookings.clientEmail,
+      agentId: bookings.agentId,
+      agentName: users.name,
+      agentEmail: users.email,
+      currentStage: bookings.currentStage,
+      departureDate: bookings.departureDate,
+      bookedDate: bookings.bookedDate,
+      topdogRef: bookings.topdogRef,
+      ptsRef: bookings.ptsRef,
+      destination: bookings.destination,
+      passengers: bookings.passengers,
+      numberOfNights: bookings.numberOfNights,
+      grossCost: bookings.grossCost,
+      expectedCommission: bookings.expectedCommission,
+      finalSupplierPaymentDate: bookings.finalSupplierPaymentDate,
+      reimbursementsRequired: bookings.reimbursementsRequired,
+      suppliersAndDocsAddedToPts: bookings.suppliersAndDocsAddedToPts,
+      isPersonalBooking: bookings.isPersonalBooking,
+      commissionPreAuthorised: bookings.commissionPreAuthorised,
+      createdAt: bookings.createdAt,
+      updatedAt: bookings.updatedAt,
+    }).from(bookings).leftJoin(users, eq(bookings.agentId, users.id)).orderBy(bookings.id),
+
+    // Users (agents & admins) — exclude password hashes
+    db.select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: users.role,
+      createdAt: users.createdAt,
+    }).from(users).orderBy(users.id),
+
+    // Commission claims
+    db.select().from(commissionClaims).orderBy(commissionClaims.id),
+
+    // Amendments
+    db.select().from(amendments).orderBy(amendments.id),
+
+    // Amendment line items
+    db.select().from(amendmentLineItems).orderBy(amendmentLineItems.id),
+
+    // Cancellations
+    db.select().from(cancellations).orderBy(cancellations.id),
+
+    // Refunds (bank details are already AES-256 encrypted in DB — safe to export as-is)
+    db.select().from(refunds).orderBy(refunds.id),
+
+    // Refund suppliers
+    db.select().from(refundSuppliers).orderBy(refundSuppliers.id),
+
+    // Notes
+    db.select().from(notes).orderBy(notes.id),
+
+    // Reimbursement items
+    db.select().from(reimbursementItems).orderBy(reimbursementItems.id),
+
+    // Reimbursement item docs
+    db.select().from(reimbursementItemDocs).orderBy(reimbursementItemDocs.id),
+
+    // Reimbursement docs (legacy booking-level)
+    db.select().from(reimbursementDocs).orderBy(reimbursementDocs.id),
+
+    // Payment links
+    db.select().from(paymentLinks).orderBy(paymentLinks.createdAt),
+
+    // Flight requests
+    db.select().from(flightRequests).orderBy(flightRequests.id),
+
+    // Remittance batches
+    db.select().from(remittanceBatches).orderBy(remittanceBatches.id),
+
+    // Remittance lines
+    db.select().from(remittanceLines).orderBy(remittanceLines.id),
+
+    // Commission remittances (PTS CSV uploads)
+    db.select().from(commissionRemittances).orderBy(commissionRemittances.id),
+
+    // Commission remittance items
+    db.select().from(commissionRemittanceItems).orderBy(commissionRemittanceItems.id),
+
+    // Pipeline history
+    db.select().from(pipelineHistory).orderBy(pipelineHistory.id),
+  ]);
+
+  const tables: Array<{ filename: string; rows: Record<string, unknown>[] }> = [
+    { filename: "bookings.csv",                    rows: bookingRows as Record<string, unknown>[] },
+    { filename: "users.csv",                       rows: userRows as Record<string, unknown>[] },
+    { filename: "commission_claims.csv",           rows: claimRows as Record<string, unknown>[] },
+    { filename: "amendments.csv",                  rows: amendmentRows as Record<string, unknown>[] },
+    { filename: "amendment_line_items.csv",        rows: amendmentLineRows as Record<string, unknown>[] },
+    { filename: "cancellations.csv",               rows: cancellationRows as Record<string, unknown>[] },
+    { filename: "refunds.csv",                     rows: refundRows as Record<string, unknown>[] },
+    { filename: "refund_suppliers.csv",            rows: refundSupplierRows as Record<string, unknown>[] },
+    { filename: "notes.csv",                       rows: noteRows as Record<string, unknown>[] },
+    { filename: "reimbursement_items.csv",         rows: reimbItemRows as Record<string, unknown>[] },
+    { filename: "reimbursement_item_docs.csv",     rows: reimbItemDocRows as Record<string, unknown>[] },
+    { filename: "reimbursement_docs.csv",          rows: reimbDocRows as Record<string, unknown>[] },
+    { filename: "payment_links.csv",               rows: paymentLinkRows as Record<string, unknown>[] },
+    { filename: "flight_requests.csv",             rows: flightRequestRows as Record<string, unknown>[] },
+    { filename: "remittance_batches.csv",          rows: remittanceBatchRows as Record<string, unknown>[] },
+    { filename: "remittance_lines.csv",            rows: remittanceLineRows as Record<string, unknown>[] },
+    { filename: "commission_remittances.csv",      rows: commRemittanceRows as Record<string, unknown>[] },
+    { filename: "commission_remittance_items.csv", rows: commRemittanceItemRows as Record<string, unknown>[] },
+    { filename: "pipeline_history.csv",            rows: pipelineHistoryRows as Record<string, unknown>[] },
+  ];
+
+  // ── Build ZIP in memory ───────────────────────────────────────────────────
+  const summary: Record<string, number> = {};
+  const bufferChunks: Buffer[] = [];
+
+  await new Promise<void>((resolve, reject) => {
+    const archive = archiver("zip", { zlib: { level: 6 } });
+    const passthrough = new PassThrough();
+
+    passthrough.on("data", (chunk: Buffer) => bufferChunks.push(chunk));
+    passthrough.on("end", resolve);
+    passthrough.on("error", reject);
+    archive.on("error", reject);
+
+    archive.pipe(passthrough);
+
+    for (const { filename, rows } of tables) {
+      summary[filename] = rows.length;
+      const csvContent = rowsToCsv(rows);
+      archive.append(csvContent, { name: filename });
+    }
+
+    archive.finalize();
+  });
+
+  return { buffer: Buffer.concat(bufferChunks), summary };
 }
 
 // ─── Export logic ─────────────────────────────────────────────────────────────
@@ -105,75 +293,18 @@ export async function runNightlyExport(triggeredBy: string = "cron"): Promise<{ 
     const db = await getDb();
     if (!db) return { success: false, error: "Database unavailable" };
 
-    // Fetch all bookings joined with agent name
-    const rows = await db
-      .select({
-        id: bookings.id,
-        clientName: bookings.clientName,
-        agentId: bookings.agentId,
-        agentName: users.name,
-        agentEmail: users.email,
-        currentStage: bookings.currentStage,
-        departureDate: bookings.departureDate,
-        topdogRef: bookings.topdogRef,
-        ptsRef: bookings.ptsRef,
-        finalSupplierPaymentDate: bookings.finalSupplierPaymentDate,
-        expectedCommission: bookings.expectedCommission,
-        grossCost: bookings.grossCost,
-        reimbursementsRequired: bookings.reimbursementsRequired,
-        createdAt: bookings.createdAt,
-        updatedAt: bookings.updatedAt,
-      })
-      .from(bookings)
-      .leftJoin(users, eq(bookings.agentId, users.id))
-      .orderBy(bookings.id);
-
-    // Build CSV
-    const headers = [
-      "Booking ID",
-      "Client Name",
-      "Agent Name",
-      "Agent Email",
-      "Stage",
-      "Departure Date",
-      "Topdog Ref",
-      "PTS Ref",
-      "Final Supplier Payment Date",
-      "Expected Commission (£)",
-      "Gross Cost (£)",
-      "Reimbursements Required",
-      "Created At",
-      "Last Updated",
-    ];
-
-    const lines: string[] = [headers.join(",")];
-
-    for (const row of rows) {
-      lines.push(
-        [
-          escapeCsv(String(row.id)),
-          escapeCsv(row.clientName),
-          escapeCsv(row.agentName),
-          escapeCsv(row.agentEmail),
-          escapeCsv(row.currentStage),
-          escapeCsv(formatDate(row.departureDate)),
-          escapeCsv(row.topdogRef),
-          escapeCsv(row.ptsRef),
-          escapeCsv(formatDate(row.finalSupplierPaymentDate)),
-          escapeCsv(row.expectedCommission != null ? String(Number(row.expectedCommission).toFixed(2)) : ""),
-          escapeCsv(row.grossCost != null ? String(Number(row.grossCost).toFixed(2)) : ""),
-          escapeCsv(row.reimbursementsRequired ? "Yes" : "No"),
-          escapeCsv(formatDate(row.createdAt)),
-          escapeCsv(formatDate(row.updatedAt)),
-        ].join(",")
-      );
-    }
-
-    const csvContent = lines.join("\n");
     const exportDate = format(new Date(), "yyyy-MM-dd");
-    const filename = `jlt-bookings-export-${exportDate}.csv`;
+    const zipFilename = `jlt-portal-export-${exportDate}.zip`;
 
-    // Send email with attachment
+    console.log(`[Scheduler] Building full data export ZIP for ${exportDate}…`);
+    const { buffer, summary } = await buildExportZip(db);
+
+    const totalRows = Object.values(summary).reduce((a, b) => a + b, 0);
+    const summaryLines = Object.entries(summary)
+      .map(([file, count]) => `<tr><td style="padding:4px 12px 4px 0;color:#414141;">${file.replace(".csv", "")}</td><td style="padding:4px 0;color:#414141;font-weight:600;">${count.toLocaleString()}</td></tr>`)
+      .join("");
+
+    // Send email with ZIP attachment
     const port = Number(process.env.SMTP_PORT ?? 465);
     const secure = port === 465 || process.env.SMTP_SECURE === "true";
     const transporter = nodemailer.createTransport({
@@ -189,53 +320,57 @@ export async function runNightlyExport(triggeredBy: string = "cron"): Promise<{ 
     await transporter.sendMail({
       from: `"JLT Group Booking Portal" <support@thejltgroup.co.uk>`,
       to: `"${EXPORT_RECIPIENT_NAME}" <${EXPORT_RECIPIENT}>`,
-      subject: `Nightly Booking Export — ${exportDate} (${rows.length} bookings)`,
+      subject: `Nightly Full Data Export — ${exportDate} (${totalRows.toLocaleString()} total rows)`,
       html: `
-        <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #FFF6ED; padding: 32px; border-radius: 12px;">
+        <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 620px; margin: 0 auto; background: #FFF6ED; padding: 32px; border-radius: 12px;">
           <div style="text-align: center; margin-bottom: 24px;">
             <h1 style="color: #414141; font-size: 24px; margin: 0;">JLT Group Booking Portal</h1>
             <div style="width: 60px; height: 4px; background: #70FFE8; margin: 12px auto 0;"></div>
           </div>
           <p style="color: #414141;">Hi ${EXPORT_RECIPIENT_NAME},</p>
-          <p style="color: #414141;">Please find attached the nightly booking export for <strong>${exportDate}</strong>.</p>
+          <p style="color: #414141;">Please find attached the nightly full data export for <strong>${exportDate}</strong>. The ZIP contains one CSV file per table, covering all bookings, commissions, amendments, refunds, reimbursements, notes, payment links, flight requests, and remittance data.</p>
           <div style="background: #fff; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #02E6D2;">
-            <p style="margin: 0; color: #414141;"><strong>Total bookings exported:</strong> ${rows.length}</p>
-            <p style="margin: 8px 0 0; color: #414141;"><strong>Export date:</strong> ${exportDate}</p>
-            <p style="margin: 8px 0 0; color: #414141;"><strong>File:</strong> ${filename}</p>
+            <p style="margin: 0 0 12px; color: #414141; font-weight: 600;">Export summary — ${exportDate}</p>
+            <table style="border-collapse: collapse; width: 100%;">
+              ${summaryLines}
+              <tr style="border-top: 2px solid #e5e7eb;">
+                <td style="padding:8px 12px 4px 0;color:#414141;font-weight:700;">Total rows</td>
+                <td style="padding:8px 0 4px;color:#02E6D2;font-weight:700;">${totalRows.toLocaleString()}</td>
+              </tr>
+            </table>
           </div>
-          <p style="color: #888; font-size: 13px;">This is an automated nightly export. All booking data is included regardless of stage.</p>
+          <p style="color: #888; font-size: 13px;">This is an automated nightly export. All portal data is included regardless of stage or status.</p>
           <p style="color: #414141; margin-top: 32px;">The JLT Group Booking Portal</p>
         </div>
       `,
       attachments: [
         {
-          filename,
-          content: csvContent,
-          contentType: "text/csv",
+          filename: zipFilename,
+          content: buffer,
+          contentType: "application/zip",
         },
       ],
     });
 
-    console.log(`[Scheduler] Nightly export sent: ${rows.length} bookings → ${EXPORT_RECIPIENT}`);
+    console.log(`[Scheduler] Nightly export sent: ${totalRows} total rows across ${Object.keys(summary).length} tables → ${EXPORT_RECIPIENT}`);
+
     // Log success to DB
     try {
-      await db.insert(exportRuns).values({ success: true, rowCount: rows.length, triggeredBy });
+      await db.insert(exportRuns).values({ success: true, rowCount: totalRows, triggeredBy });
     } catch (logErr) {
       console.error("[Scheduler] Failed to log export run:", logErr);
     }
-    return { success: true, rowCount: rows.length };
+    return { success: true, rowCount: totalRows };
   } catch (err: any) {
     console.error("[Scheduler] Nightly export failed:", err?.message);
-    // Log failure to DB
     try {
       const db2 = await getDb();
       if (db2) await db2.insert(exportRuns).values({ success: false, errorMessage: err?.message ?? "Unknown error", triggeredBy });
     } catch { /* ignore */ }
-    // Notify owner of failure
     try {
       await notifyOwner({
         title: "⚠️ Nightly Export Failed",
-        content: `The nightly booking export failed at ${new Date().toISOString()}. Error: ${err?.message ?? "Unknown error"}. Please check the server logs.`,
+        content: `The nightly full data export failed at ${new Date().toISOString()}. Error: ${err?.message ?? "Unknown error"}. Please check the server logs.`,
       });
     } catch { /* ignore */ }
     return { success: false, error: err?.message };
@@ -258,71 +393,80 @@ export async function getLastExportRun() {
 // ─── Task reminder logic ──────────────────────────────────────────────────────
 
 export async function runTaskReminders(): Promise<{ sent: number; errors: number }> {
+  const db = await getDb();
+  if (!db) return { sent: 0, errors: 0 };
+
+  const tasks = await getTasksDueForReminder();
   let sent = 0;
   let errors = 0;
-  try {
-    const db = await getDb();
-    if (!db) return { sent: 0, errors: 1 };
-    const tasks = await getTasksDueForReminder();
-    for (const task of tasks) {
-      if (!task.assigneeId) continue;
-      try {
-        const dueDateStr = task.dueDate
-          ? format(new Date(task.dueDate), "d MMM yyyy")
-          : "tomorrow";
-        await db.insert(inAppNotifications).values({
-          userId: task.assigneeId,
-          message: `Reminder: Task "${task.title}" is due ${dueDateStr}.`,
-          linkUrl: `/admin/calendar`,
-          isRead: false,
-        });
-        await markCalendarReminderSent(task.id);
-        sent++;
-        console.log(`[Scheduler] Task reminder sent for task #${task.id} to user #${task.assigneeId}`);
-      } catch (err: any) {
-        console.error(`[Scheduler] Failed to send reminder for task #${task.id}:`, err?.message);
-        errors++;
-      }
+
+  for (const task of tasks) {
+    try {
+      const port = Number(process.env.SMTP_PORT ?? 465);
+      const secure = port === 465 || process.env.SMTP_SECURE === "true";
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST ?? "mail.thejltgroup.co.uk",
+        port,
+        secure,
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      });
+
+      // task.assigneeName is the name; we send to the portal owner as fallback
+      // since getTasksDueForReminder doesn't return an email address
+      await transporter.sendMail({
+        from: `"JLT Group Booking Portal" <support@thejltgroup.co.uk>`,
+        to: EXPORT_RECIPIENT,
+        subject: `Task Reminder: ${task.title}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+            <h2 style="color: #414141;">Task Reminder</h2>
+            <p style="color: #414141;">A task is due tomorrow${task.assigneeName ? ` (assigned to <strong>${task.assigneeName}</strong>)` : ""}:</p>
+            <div style="background: #f9fafb; border-left: 4px solid #02E6D2; padding: 16px; border-radius: 4px; margin: 16px 0;">
+              <p style="margin: 0; font-weight: 600; color: #414141;">${task.title}</p>
+              ${task.dueDate ? `<p style="margin: 8px 0 0; color: #414141;"><strong>Due:</strong> ${format(new Date(task.dueDate), "dd MMM yyyy")}</p>` : ""}
+            </div>
+            <p style="color: #888; font-size: 13px;">Log in to the portal to view and manage this task.</p>
+          </div>
+        `,
+      });
+
+      await markCalendarReminderSent(task.id);
+      sent++;
+    } catch (err) {
+      console.error(`[Scheduler] Failed to send reminder for task ${task.id}:`, err);
+      errors++;
     }
-  } catch (err: any) {
-    console.error("[Scheduler] Task reminders job failed:", err?.message);
-    errors++;
   }
+
   return { sent, errors };
 }
 
-// ─── Register cron jobs ───────────────────────────────────────────────────────
+// ─── Cron wiring ──────────────────────────────────────────────────────────────
 
 export function startScheduler() {
-  // Run at 04:00 UTC every day — nightly booking export
+  // Run at 04:00 UTC every day — nightly full data export
   cron.schedule("0 4 * * *", async () => {
-    console.log("[Scheduler] Starting nightly booking export…");
-    const result = await runNightlyExport();
+    console.log("[Scheduler] Starting nightly full data export…");
+    const result = await runNightlyExport("cron");
     if (result.success) {
-      console.log(`[Scheduler] Export complete — ${result.rowCount} bookings sent to ${EXPORT_RECIPIENT}`);
+      console.log(`[Scheduler] Export complete — ${result.rowCount} total rows`);
     } else {
       console.error(`[Scheduler] Export failed — ${result.error}`);
     }
   }, { timezone: "UTC" });
 
-  // Run at 08:00 UTC every day — task due-date reminders
-  cron.schedule("0 8 * * *", async () => {
-    console.log("[Scheduler] Running task due-date reminders…");
+  // Run task reminders every hour
+  cron.schedule("0 * * * *", async () => {
     const result = await runTaskReminders();
-    console.log(`[Scheduler] Task reminders: ${result.sent} sent, ${result.errors} errors`);
+    if (result.sent > 0 || result.errors > 0) {
+      console.log(`[Scheduler] Task reminders: ${result.sent} sent, ${result.errors} errors`);
+    }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Nightly export scheduled at 04:00 UTC → " + EXPORT_RECIPIENT);
-  console.log("[Scheduler] Task reminders scheduled at 08:00 UTC");
-
-  // Inbox auto-import every 15 minutes
-  inboxNextRunAt = new Date(Date.now() + 15 * 60 * 1000);
-  // Run once on startup after a short delay to let DB connect
-  setTimeout(() => {
-    runInboxImport().catch(console.error);
-  }, 30_000); // 30 second startup delay
-  cron.schedule("*/15 * * * *", () => {
-    runInboxImport().catch(console.error);
+  // Run inbox auto-import every 15 minutes
+  cron.schedule("*/15 * * * *", async () => {
+    await runInboxImport(false);
   }, { timezone: "UTC" });
-  console.log("[Scheduler] Inbox auto-import scheduled every 15 minutes");
+
+  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly), inbox import (every 15 min)");
 }

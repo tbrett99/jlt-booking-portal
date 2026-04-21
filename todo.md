@@ -1448,3 +1448,10 @@
 - [x] Completed tab: show only completed bookings, sorted by departure date desc
 - [x] Add filter controls to the booking list: by year, sort by departure/booked date/commission
 - [x] Ensure stat cards (Active count) also exclude completed bookings
+
+## Feature: Full Nightly Export (ZIP with all tables)
+- [x] Expand runNightlyExport to query all core business tables: bookings, users, commission_claims, amendments, amendment_line_items, cancellations, refunds, refund_suppliers, reimbursement_items, reimbursement_item_docs, reimbursement_docs, notes, payment_links, flight_requests, commission_remittances, commission_remittance_items, remittance_batches, remittance_lines
+- [x] Generate one CSV per table with all columns
+- [x] Bundle all CSVs into a single ZIP attachment using the archiver npm package
+- [x] Update email subject and body to reflect the multi-table export
+- [x] Update rowCount in exportRuns log to reflect total rows across all tables
