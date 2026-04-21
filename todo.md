@@ -1398,7 +1398,12 @@
 - [x] Upload dialog updated to accept both PTS and JLT Commissions CSV formats
 
 ## Refund Pipeline - Query Stage
-- [ ] Add 'query' to refund stage enum in drizzle/schema.ts and migrate DB
-- [ ] Insert 'query' stage between 'new' and next stage in pipeline column order
-- [ ] Add popup dialog when moving refund to 'query' stage with message input
-- [ ] Send message to assigned agent via in-app notification + email when moved to 'query'
+- [x] Add 'query' to refund stage enum in drizzle/schema.ts and migrate DB
+- [x] Insert 'query' stage between 'new' and next stage in pipeline column order
+- [x] Add popup dialog when moving refund to 'query' stage with message input
+- [x] Send message to assigned agent via in-app notification + email when moved to 'query'
+
+## Flight Requests - Completed Status
+- [ ] Add "completed" status to flight requests (DB + backend)
+- [ ] Add "Mark as Complete" button on admin flight request view
+- [ ] Separate completed flights into a Completed tab/section out of the pending view

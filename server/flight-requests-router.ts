@@ -174,7 +174,7 @@ export const flightRequestsRouter = router({
       z.object({
         id: z.number(),
         // For 'both' requests, 'status' = ticketing status, 'cancellationStatus' = cancellation status
-        status: z.enum(["pending", "ticketed", "cancelled", "query"]).optional(),
+        status: z.enum(["pending", "ticketed", "cancelled", "query", "completed"]).optional(),
         cancellationStatus: z.enum(["pending", "cancelled"]).optional(),
         queryMessage: z.string().optional(),
       })
