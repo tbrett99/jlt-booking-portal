@@ -1186,6 +1186,53 @@ export const crmRouter = router({
       };
     }),
 
+    // ─── Agent self-onboarding ───────────────────────────────────────────────
+    saveOnboardingProfile: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1).max(255),
+        personalEmail: z.string().email().optional().nullable(),
+        mobile: z.string().min(1).max(30).optional().nullable(),
+        addressLine1: z.string().min(1).max(255).optional().nullable(),
+        addressLine2: z.string().max(255).optional().nullable(),
+        city: z.string().max(100).optional().nullable(),
+        postcode: z.string().max(20).optional().nullable(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const { users } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        // Update the user's display name
+        await db.update(users).set({ name: input.name }).where(eq(users.id, ctx.user.id));
+        // Upsert the CRM profile fields
+        const { name, ...profileFields } = input;
+        await upsertAgentCrmProfile(ctx.user.id, profileFields);
+        return { success: true };
+      }),
+
+    uploadOnboardingDoc: protectedProcedure
+      .input(z.object({
+        docType: z.enum(["id", "proofOfAddress"]),
+        fileBase64: z.string(),
+        fileName: z.string(),
+        mimeType: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { storagePut } = await import("./storage");
+        const { nanoid } = await import("nanoid");
+        const buf = Buffer.from(input.fileBase64, "base64");
+        const ext = input.fileName.split(".").pop() ?? "bin";
+        const key = `onboarding/${ctx.user.id}/${input.docType}-${nanoid(8)}.${ext}`;
+        const { url } = await storagePut(key, buf, input.mimeType);
+        const updateData =
+          input.docType === "id"
+            ? { idDocUrl: url, idDocKey: key }
+            : { proofOfAddressUrl: url, proofOfAddressKey: key };
+        await upsertAgentCrmProfile(ctx.user.id, updateData);
+        return { url, key };
+      }),
+
     // ─── Status-Change Workflows ─────────────────────────────────────────────
     updateAgentStatus: adminProcedure
       .input(z.object({

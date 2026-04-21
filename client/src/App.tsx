@@ -58,6 +58,8 @@ import AgentApplicationForm from "./pages/crm/AgentApplicationForm";
 import SignContract from "./pages/crm/SignContract";
 import MembershipSelection from "./pages/crm/MembershipSelection";
 import WonAgentPortal from "./pages/crm/WonAgentPortal";
+import MembershipSuccess from "./pages/crm/MembershipSuccess";
+import OnboardingDashboard from "./pages/agent/OnboardingDashboard";
 import AgentCrm from "./pages/crm/AgentCrm";
 import PaymentResult from "./pages/PaymentResult";
 import PaymentRedirect from "./pages/PaymentRedirect";
@@ -131,6 +133,7 @@ function AuthRouter() {
         <Route path="/apply/:prospectId" component={AgentApplicationForm} />
         <Route path="/sign-contract/:token" component={SignContract} />
         <Route path="/membership" component={MembershipSelection} />
+        <Route path="/membership/success" component={MembershipSuccess} />
         <Route component={LoginPage} />
       </Switch>
     );
@@ -152,6 +155,7 @@ function AuthRouter() {
       <SuspendedGuard>
       <PortalLayout>
         <Switch>
+          <Route path="/onboarding" component={OnboardingDashboard} />
           <Route path="/" component={AgentDashboard} />
           <Route path="/dashboard" component={AgentDashboard} />
           <Route path="/bookings/new" component={RegisterBooking} />

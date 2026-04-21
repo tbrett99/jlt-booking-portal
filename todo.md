@@ -1460,3 +1460,14 @@
 - [x] Backend: add deleteReimbursementItem tRPC mutation (admin only) — deletes item and its associated docs
 - [x] Frontend: add delete button (with confirmation dialog) on each reimbursement item row on the admin reimbursement screen
 - [x] Frontend: also add delete button on the booking detail page reimbursement items section
+
+## Feature: Post-GoCardless Onboarding Flow
+- [x] Build /membership/success page — shown after GoCardless redirect, prompts agent to create portal login (Manus OAuth)
+- [x] Build limited onboarding dashboard (/onboarding) — accessible to all logged-in agents
+- [x] Onboarding dashboard: show "Training portal login coming soon" banner
+- [x] Onboarding dashboard: form to complete CRM profile fields (full name, email, phone, address)
+- [x] Onboarding dashboard: ID document upload section
+- [x] Backend: procedure to save onboarding profile fields to crm_profiles table
+- [x] Backend: procedure to upload ID documents to S3 and save reference in DB
+- [ ] Backend: mark onboarding complete when all required fields filled
+- [ ] Admin: notify JLT team when a new agent completes onboarding
