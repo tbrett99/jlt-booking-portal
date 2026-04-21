@@ -1431,3 +1431,7 @@
 - [x] Backend: add toggleSuppliersAndDocs tRPC mutation (admin only) to flip the flag
 - [x] Frontend: add prominent toggle on AdminBookingDetail (booking details section)
 - [x] Frontend: show a checkmark/badge icon on AdminKanban card when suppliersAndDocsAddedToPts is true
+
+## Bug Fix: Agent Commission Figure Discrepancy
+- [x] Investigate: agent dashboard "pending comms" vs "all commissions" total use different queries/filters
+- [x] Fix: align both figures to use the same commission calculation logic

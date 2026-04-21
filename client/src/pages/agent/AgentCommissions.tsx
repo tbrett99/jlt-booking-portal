@@ -351,16 +351,20 @@ export default function AgentCommissions() {
       </div>
 
       {/* Lifetime earnings callout */}
-      {paidTotal > 0 && (
+      {(paidTotal + awaitingTotal + processingTotal + claimableTotal + pendingTotal) > 0 && (
         <div className="rounded-xl p-4 flex items-center gap-3"
           style={{ background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)', border: '1px solid #6ee7b7' }}>
           <TrendingUp size={20} style={{ color: '#059669' }} className="flex-shrink-0" />
           <div>
             <p className="font-semibold text-sm" style={{ color: '#065f46' }}>
-              You've earned £{(paidTotal + awaitingTotal).toFixed(2)} in total commissions
+              Total commissions across all bookings: £{(paidTotal + awaitingTotal + processingTotal + claimableTotal + pendingTotal).toFixed(2)}
             </p>
             <p className="text-xs mt-0.5" style={{ color: '#065f46', opacity: 0.75 }}>
-              £{paidTotal.toFixed(2)} paid · £{awaitingTotal.toFixed(2)} awaiting · £{processingTotal.toFixed(2)} processing
+              {paidTotal > 0 && `£${paidTotal.toFixed(2)} paid`}{paidTotal > 0 && (awaitingTotal + processingTotal + claimableTotal + pendingTotal) > 0 ? ' · ' : ''}
+              {awaitingTotal > 0 && `£${awaitingTotal.toFixed(2)} awaiting payment`}{awaitingTotal > 0 && (processingTotal + claimableTotal + pendingTotal) > 0 ? ' · ' : ''}
+              {processingTotal > 0 && `£${processingTotal.toFixed(2)} processing`}{processingTotal > 0 && (claimableTotal + pendingTotal) > 0 ? ' · ' : ''}
+              {claimableTotal > 0 && `£${claimableTotal.toFixed(2)} ready to claim`}{claimableTotal > 0 && pendingTotal > 0 ? ' · ' : ''}
+              {pendingTotal > 0 && `£${pendingTotal.toFixed(2)} pending`}
             </p>
           </div>
         </div>

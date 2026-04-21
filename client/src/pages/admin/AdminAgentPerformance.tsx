@@ -67,7 +67,8 @@ export default function AdminAgentPerformance() {
       stat.totalCommission += commission;
       if (b.currentStage === "Commission Claimed") {
         stat.paidCommission += commission;
-      } else if (b.currentStage === "Commission Claimable") {
+      } else if (b.currentStage !== "Cancelled") {
+        // Count all non-cancelled, non-paid bookings as pending commission
         stat.pendingCommission += commission;
       }
       if (!stat.lastBookingDate || created > stat.lastBookingDate) {
