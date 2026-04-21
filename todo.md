@@ -1471,3 +1471,16 @@
 - [x] Backend: procedure to upload ID documents to S3 and save reference in DB
 - [x] Backend: mark onboarding complete when all required fields filled (notifyOnComplete flag triggers owner notification)
 - [x] Admin: notify JLT team when a new agent completes onboarding (notifyOwner called when all fields complete)
+
+## Feature: JLT-Branded Account Creation (Remove Manus Branding)
+- [x] Investigate where Manus branding appears in the sign-up/login flow
+- [x] Build a JLT-branded account creation page (email + password, no Manus mention) — /register
+- [x] Build a JLT-branded login page (email + password, no Manus mention) — existing LoginPage already JLT-branded
+- [x] Wire /membership/success "Create Account" CTA to the new JLT-branded page (/register)
+- [x] Ensure the new pages use JLT colours, Poppins font, and JLT logo
+
+## Feature: Contract Signing → Joining Fee Payment
+- [x] Review the existing /sign-contract/:token page
+- [x] After successful contract signature, redirect agent to the joining fee payment page (auto-redirect after 3s)
+- [x] Wire to configured Stripe joining fee URL from paymentConfig
+- [x] After payment, redirect to /membership/success (handled by Stripe success URL config)

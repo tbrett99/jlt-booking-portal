@@ -587,7 +587,14 @@ export const crmRouter = router({
           }
         }
 
-        return { success: true, redirectUrl: `${input.origin}/payment-complete` };
+        // Return the Stripe joining fee URL so the frontend can redirect directly to payment
+        const paymentConfigForRedirect = await getPaymentConfig();
+        const joiningFeeUrl = paymentConfigForRedirect?.stripeJoiningFeeUrl;
+        return {
+          success: true,
+          redirectUrl: joiningFeeUrl ?? `${input.origin}/payment-complete`,
+          hasPaymentUrl: !!joiningFeeUrl,
+        };
       }),
 
     // Admin: list contracts for a prospect

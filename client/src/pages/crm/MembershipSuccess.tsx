@@ -1,6 +1,5 @@
 import { useEffect } from "react";
-import { useLocation } from "wouter";
-import { getLoginUrl } from "@/const";
+import { useLocation, Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, ArrowRight, Shield, Clock } from "lucide-react";
@@ -15,16 +14,6 @@ export default function MembershipSuccess() {
       navigate("/onboarding");
     }
   }, [user, loading, navigate]);
-
-  const loginUrl = getLoginUrl();
-  // After OAuth, redirect back to /onboarding
-  const onboardingLoginUrl = (() => {
-    const url = new URL(loginUrl);
-    // encode returnPath so the OAuth callback redirects to /onboarding
-    const state = btoa(`${window.location.origin}/onboarding`);
-    url.searchParams.set("state", state);
-    return url.toString();
-  })();
 
   if (loading) return null;
 
@@ -51,7 +40,7 @@ export default function MembershipSuccess() {
 
         <div className="p-6 space-y-5">
           <p className="text-gray-700 text-sm leading-relaxed">
-            Welcome to JLT Group! Your Direct Debit mandate has been set up successfully. The next step is to create your portal login and complete your onboarding profile.
+            Welcome to JLT Group! Your Direct Debit mandate has been set up successfully. The next step is to create your portal account and complete your onboarding profile.
           </p>
 
           {/* What happens next */}
@@ -59,7 +48,7 @@ export default function MembershipSuccess() {
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">What happens next</p>
             <div className="space-y-2">
               {[
-                { icon: <ArrowRight size={14} className="text-[#70FFE8]" />, text: "Create your portal login below", active: true },
+                { icon: <ArrowRight size={14} className="text-[#70FFE8]" />, text: "Create your portal account below", active: true },
                 { icon: <Clock size={14} className="text-gray-400" />, text: "Complete your onboarding profile (takes ~5 minutes)", active: false },
                 { icon: <Shield size={14} className="text-gray-400" />, text: "Receive your training portal login shortly", active: false },
               ].map((step, i) => (
@@ -71,17 +60,17 @@ export default function MembershipSuccess() {
             </div>
           </div>
 
-          {/* CTA */}
-          <a href={onboardingLoginUrl} className="block">
+          {/* CTA — goes to JLT-branded register page */}
+          <Link href="/register">
             <Button className="w-full h-11 font-semibold text-sm" style={{ background: "#70FFE8", color: "#0d1a26" }}>
-              Create My Portal Login
+              Create My Portal Account
               <ArrowRight size={16} className="ml-2" />
             </Button>
-          </a>
+          </Link>
 
           <p className="text-center text-xs text-gray-400">
-            Already have a login?{" "}
-            <a href={loginUrl} className="underline text-gray-500 hover:text-gray-700">Sign in here</a>
+            Already have an account?{" "}
+            <Link href="/" className="underline text-gray-500 hover:text-gray-700">Sign in here</Link>
           </p>
         </div>
       </div>

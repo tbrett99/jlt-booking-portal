@@ -60,6 +60,7 @@ import MembershipSelection from "./pages/crm/MembershipSelection";
 import WonAgentPortal from "./pages/crm/WonAgentPortal";
 import MembershipSuccess from "./pages/crm/MembershipSuccess";
 import OnboardingDashboard from "./pages/agent/OnboardingDashboard";
+import RegisterPage from "./pages/RegisterPage";
 import AgentCrm from "./pages/crm/AgentCrm";
 import PaymentResult from "./pages/PaymentResult";
 import PaymentRedirect from "./pages/PaymentRedirect";
@@ -134,6 +135,7 @@ function AuthRouter() {
         <Route path="/sign-contract/:token" component={SignContract} />
         <Route path="/membership" component={MembershipSelection} />
         <Route path="/membership/success" component={MembershipSuccess} />
+        <Route path="/register" component={RegisterPage} />
         <Route component={LoginPage} />
       </Switch>
     );

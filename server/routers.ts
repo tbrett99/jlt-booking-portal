@@ -251,6 +251,28 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+    // Self-registration for new agents (post-GoCardless onboarding flow)
+    selfRegister: publicProcedure
+      .input(z.object({
+        name: z.string().min(1).max(255),
+        email: z.string().email(),
+        password: z.string().min(8, "Password must be at least 8 characters"),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        // Check if email already exists
+        const existing = await getUserByEmail(input.email);
+        if (existing) {
+          throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists. Please sign in instead." });
+        }
+        const hashed = await bcrypt.hash(input.password, 12);
+        const newUser = await createAgentUser({ name: input.name, email: input.email, hashedPassword: hashed });
+        // Immediately log them in
+        const token = await sdk.createSessionToken(newUser.openId, { name: newUser.name ?? newUser.email ?? "" });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+        return { success: true };
+      }),
+
     // Password login for agents (created by admin, no OAuth)
     loginWithPassword: publicProcedure
       .input(z.object({ email: z.string().email(), password: z.string() }))
