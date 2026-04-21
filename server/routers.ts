@@ -73,6 +73,7 @@ import {
   getTotalUnreadMessageCount,
   markAllAgentNotesAsRead,
   getUnreadBookingIds,
+  getUnreadAgentNoteCountForBooking,
   getAdminNotifPrefs,
   upsertAdminNotifPref,
   isAdminEmailEnabledForTrigger,
@@ -1228,6 +1229,13 @@ export const appRouter = router({
       await markAllAgentNotesAsRead();
       return { success: true };
     }),
+    // Admin: get unread agent note count for a specific booking (for booking detail page indicator)
+    getUnreadCountForBooking: adminProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .query(async ({ input }) => {
+        const count = await getUnreadAgentNoteCountForBooking(input.bookingId);
+        return { count };
+      }),
     // Admin: mark all notes on a booking as read
     markBookingNotesRead: adminProcedure
       .input(z.object({ bookingId: z.number() }))

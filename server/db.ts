@@ -551,6 +551,24 @@ export async function getAllMessageThreads() {
   return result;
 }
 
+// Count of unread agent notes for a specific booking (for booking detail page indicator)
+export async function getUnreadAgentNoteCountForBooking(bookingId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db
+    .select({ noteId: notes.id })
+    .from(notes)
+    .innerJoin(users, eq(notes.authorId, users.id))
+    .where(and(
+      eq(notes.bookingId, bookingId),
+      eq(notes.isInternal, false),
+      eq(notes.isReadByAdmin, false),
+      not(like(notes.content, '[System]%')),
+      eq(users.role, 'agent'),
+    ));
+  return rows.length;
+}
+
 // Count of bookings with unread agent notes (for sidebar badge)
 export async function getTotalUnreadMessageCount(): Promise<number> {
   const db = await getDb();

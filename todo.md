@@ -1407,3 +1407,10 @@
 - [x] Add "completed" status to flight requests (DB + backend)
 - [x] Add "Mark as Complete" button on admin flight request view
 - [x] Separate completed flights into a Completed tab/section out of the pending view
+
+## Unread Message Indicator on Booking File Page
+- [x] Backend: add getUnreadNoteCountForBooking query helper in server/db.ts
+- [x] Backend: expose notes.getUnreadCountForBooking tRPC query (admin only)
+- [x] Frontend: show prominent unread message banner/alert on AdminBookingDetail when there are unread agent messages
+- [x] Frontend: add "Mark as Read" button on AdminBookingDetail that calls notes.markBookingNotesRead
+- [x] Frontend: after marking as read, invalidate messages query so booking disappears from Messages tab

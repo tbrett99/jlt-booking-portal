@@ -800,6 +800,11 @@ export default function AdminBookingDetail() {
   }
 
   const { data: allNotes = [], refetch: refetchNotes } = trpc.notes.list.useQuery({ bookingId });
+  const { data: unreadData, refetch: refetchUnread } = trpc.notes.getUnreadCountForBooking.useQuery(
+    { bookingId },
+    { enabled: !!bookingId }
+  );
+  const unreadAgentCount = unreadData?.count ?? 0;
   const { data: quickSearchResults = [] } = trpc.bookings.quickSearch.useQuery(
     { query: mergeSearchQuery },
     { enabled: mergeSearchQuery.length >= 2 }
@@ -841,7 +846,18 @@ export default function AdminBookingDetail() {
       utils.notes.list.invalidate({ bookingId });
     },
   });
-  const markNotesRead = trpc.notes.markBookingNotesRead.useMutation();
+  const markNotesRead = trpc.notes.markBookingNotesRead.useMutation({
+    onSuccess: () => {
+      // Refresh unread count on this booking
+      refetchUnread();
+      // Invalidate sidebar badge
+      utils.notes.totalUnreadCount.invalidate();
+      // Invalidate Messages tab threads
+      utils.notes.allThreads.invalidate();
+      // Invalidate Kanban unread badges
+      utils.notes.unreadBookingIds.invalidate();
+    },
+  });
   const updateDetails = trpc.bookings.updateAdminFields.useMutation();
   const deleteBookingMutation = trpc.bookings.delete.useMutation();
   const mergeBookingMutation = trpc.bookings.merge.useMutation();
@@ -1304,6 +1320,36 @@ export default function AdminBookingDetail() {
         <Card>
           <CardHeader><CardTitle className="text-base">Notes</CardTitle></CardHeader>
           <CardContent>
+            {/* Unread message banner */}
+            {unreadAgentCount > 0 && (
+              <div className="flex items-center justify-between gap-3 mb-4 px-4 py-3 rounded-lg border"
+                style={{ background: '#FFF6ED', borderColor: '#FFC3BC', color: '#92400e' }}>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold text-white"
+                    style={{ background: '#f97316' }}>
+                    {unreadAgentCount}
+                  </div>
+                  <span className="text-sm font-medium">
+                    {unreadAgentCount === 1
+                      ? '1 unread message from agent'
+                      : `${unreadAgentCount} unread messages from agent`}
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => markNotesRead.mutate({ bookingId })}
+                  disabled={markNotesRead.isPending}
+                  className="shrink-0 text-xs"
+                  style={{ borderColor: '#FFC3BC', color: '#92400e', background: 'white' }}
+                >
+                  {markNotesRead.isPending
+                    ? <Loader2 size={12} className="animate-spin mr-1" />
+                    : <CheckCircle size={12} className="mr-1" />}
+                  Mark as Read
+                </Button>
+              </div>
+            )}
             <Tabs defaultValue="shared">
               <TabsList className="w-full mb-4">
                 <TabsTrigger value="shared" className="flex-1">Shared ({sharedNotes.length})</TabsTrigger>
