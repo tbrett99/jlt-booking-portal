@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X, History, ArrowRight, RefreshCw, XCircle, DollarSign, Edit3, Clock, Mail, Paperclip, Download, Link2, Unlink, ChevronDown, CreditCard, Copy, CheckCircle2, ExternalLink, CheckCircle } from "lucide-react";
+import { ArrowLeft, Send, Lock, FileText, Loader2, Save, AlertTriangle, Calendar, User, AtSign, CheckSquare, Trash2, GitMerge, Search, X, History, ArrowRight, RefreshCw, XCircle, DollarSign, Edit3, Clock, Mail, Paperclip, Download, Link2, Unlink, ChevronDown, CreditCard, Copy, CheckCircle2, ExternalLink, CheckCircle, PackageCheck } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { format } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
 import CopyableRef from "@/components/CopyableRef";
@@ -781,6 +782,13 @@ export default function AdminBookingDetail() {
     onSuccess: () => { refetchReimbItems(); toast.success('Reimbursement status updated'); },
     onError: (e) => toast.error(e.message),
   });
+  const toggleSuppliersAndDocs = trpc.bookings.toggleSuppliersAndDocs.useMutation({
+    onSuccess: () => {
+      utils.bookings.byId.invalidate({ id: bookingId });
+      utils.bookings.all.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   // Populate editable fields once booking loads
   if (booking && !detailsInitialised) {
@@ -1121,6 +1129,37 @@ export default function AdminBookingDetail() {
                 </div>
               )}
             </dl>
+
+            {/* Suppliers & Docs Added to PTS toggle */}
+            <div className="pt-3 border-t">
+              <div
+                className="flex items-center justify-between px-4 py-3 rounded-xl border-2 cursor-pointer transition-all select-none"
+                style={{
+                  background: (booking as any).suppliersAndDocsAddedToPts ? '#f0fdf4' : '#fafafa',
+                  borderColor: (booking as any).suppliersAndDocsAddedToPts ? '#16a34a' : '#e2e8f0',
+                }}
+                onClick={() => toggleSuppliersAndDocs.mutate({ bookingId, value: !(booking as any).suppliersAndDocsAddedToPts })}
+              >
+                <div className="flex items-center gap-3">
+                  <PackageCheck size={18} style={{ color: (booking as any).suppliersAndDocsAddedToPts ? '#16a34a' : '#94a3b8' }} />
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: (booking as any).suppliersAndDocsAddedToPts ? '#15803d' : '#374151' }}>
+                      Suppliers &amp; Docs Added to PTS
+                    </p>
+                    <p className="text-xs" style={{ color: (booking as any).suppliersAndDocsAddedToPts ? '#16a34a' : '#94a3b8' }}>
+                      {(booking as any).suppliersAndDocsAddedToPts ? 'Completed — all suppliers and documents submitted' : 'Not yet completed'}
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={!!(booking as any).suppliersAndDocsAddedToPts}
+                  onCheckedChange={(val) => toggleSuppliersAndDocs.mutate({ bookingId, value: val })}
+                  disabled={toggleSuppliersAndDocs.isPending}
+                  onClick={(e) => e.stopPropagation()}
+                  className="data-[state=checked]:bg-green-600"
+                />
+              </div>
+            </div>
 
             {(reimbDocs as any[]).length > 0 && (
               <div className="pt-2 border-t space-y-1.5">

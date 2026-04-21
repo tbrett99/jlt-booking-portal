@@ -1424,3 +1424,10 @@
 - [x] Fix: "Query" was missing from the refunds.pipelineStage MySQL ENUM — DB silently rejected the value so the stage never changed
 - [x] Fix: Added "Query" to the ENUM in drizzle/schema.ts and applied ALTER TABLE migration
 - [x] Fix: Updated updateRefundPipeline helper in db.ts to include "Query" in the TypeScript union type
+
+## Feature: Suppliers & Docs Added to PTS Toggle
+- [x] DB: add suppliersAndDocsAddedToPts boolean column to bookings table, default false
+- [x] DB: generate and apply migration SQL
+- [x] Backend: add toggleSuppliersAndDocs tRPC mutation (admin only) to flip the flag
+- [x] Frontend: add prominent toggle on AdminBookingDetail (booking details section)
+- [x] Frontend: show a checkmark/badge icon on AdminKanban card when suppliersAndDocsAddedToPts is true

@@ -914,6 +914,24 @@ export const appRouter = router({
         });
         return { success: true };
       }),
+    toggleSuppliersAndDocs: adminProcedure
+      .input(z.object({ bookingId: z.number(), value: z.boolean() }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        const db = await import("./db").then((m) => m.getDb());
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { bookings: bookingsTable } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(bookingsTable).set({ suppliersAndDocsAddedToPts: input.value } as any).where(eq(bookingsTable.id, input.bookingId));
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] "Suppliers & Docs Added to PTS" ${input.value ? 'marked complete' : 'unmarked'} by ${ctx.user.name ?? 'Admin'}.`,
+          isInternal: true,
+        });
+        return { success: true };
+      }),
     updateAdminFields: adminProcedure
       .input(
         z.object({

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, ChevronRight, AlertTriangle, Calendar, Loader2, SlidersHorizontal, MessageSquare } from "lucide-react";
+import { Search, ChevronRight, AlertTriangle, Calendar, Loader2, SlidersHorizontal, MessageSquare, PackageCheck } from "lucide-react";
 import { format } from "date-fns";
 
 const STAGES = [
@@ -338,6 +338,14 @@ export default function AdminKanban() {
                                   <span className="text-xs px-1.5 py-0.5 rounded"
                                     style={{ background: '#fee2e2', color: '#991b1b' }}>
                                     Docs missing
+                                  </span>
+                                )}
+                                {(booking as any).suppliersAndDocsAddedToPts && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded flex items-center gap-0.5 font-semibold"
+                                    style={{ background: '#dcfce7', color: '#15803d' }}
+                                    title="Suppliers & Docs Added to PTS">
+                                    <PackageCheck size={10} />
+                                    Suppliers &amp; Docs
                                   </span>
                                 )}
                                 {missingDate && (

@@ -47,6 +47,7 @@ export const bookings = mysqlTable("bookings", {
   reimbursementDocUrl: text("reimbursementDocUrl"), // S3 URL
   reimbursementDocUploadedAt: timestamp("reimbursementDocUploadedAt"),
   reimbursementDocLateUpload: boolean("reimbursementDocLateUpload").default(false).notNull(),
+  suppliersAndDocsAddedToPts: boolean("suppliersAndDocsAddedToPts").default(false).notNull(),
   expectedCommission: decimal("expectedCommission", { precision: 10, scale: 2 }),
   grossCost: decimal("grossCost", { precision: 10, scale: 2 }),
   // Admin-managed fields

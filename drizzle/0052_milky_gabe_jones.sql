@@ -1,0 +1,1 @@
+ALTER TABLE `bookings` ADD `suppliersAndDocsAddedToPts` boolean DEFAULT false NOT NULL;
