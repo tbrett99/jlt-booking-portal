@@ -2010,32 +2010,41 @@ export const appRouter = router({
     // Agent: earnings summary for dashboard
     myEarningsSummary: protectedProcedure.query(async ({ ctx }) => {
       const claims = await getCommissionClaimsByAgent(ctx.user.id);
-      const currentYear = new Date().getFullYear();
       const agentBookings = await getBookingsByAgent(ctx.user.id);
       const bookingMap = new Map(agentBookings.map((b) => [b.id, b]));
-      let earnedThisYear = 0;
-      let pendingTotal = 0;
+      let paidTotal = 0;
       let awaitingPaymentTotal = 0;
+      let processingTotal = 0;
+      let claimableTotal = 0;
+      let pendingTotal = 0;
+      const claimedBookingIds = new Set(claims.map((c) => c.bookingId));
       for (const claim of claims) {
         const booking = bookingMap.get(claim.bookingId);
         const amount = Number(booking?.expectedCommission ?? 0);
         if (claim.status === 'paid') {
-          const paidYear = claim.paidAt ? new Date(claim.paidAt).getFullYear() : null;
-          if (paidYear === currentYear) earnedThisYear += amount;
+          paidTotal += amount;
         } else if (claim.status === 'awaiting_payment') {
           awaitingPaymentTotal += amount;
         } else if (claim.status === 'processing') {
+          processingTotal += amount;
+        }
+      }
+      // Bookings with no claim record
+      for (const b of agentBookings) {
+        if (claimedBookingIds.has(b.id) || b.currentStage === 'Cancelled') continue;
+        const amount = Number(b.expectedCommission ?? 0);
+        if (!amount) continue;
+        if (b.currentStage === 'Commission Claimable') {
+          claimableTotal += amount;
+        } else if (b.currentStage === 'Commission Claimed') {
+          // Claimed stage but no claim record — treat as paid/processed
+          paidTotal += amount;
+        } else {
           pendingTotal += amount;
         }
       }
-      // Bookings with expected commission but no claim yet
-      const claimedBookingIds = new Set(claims.map((c) => c.bookingId));
-      for (const b of agentBookings) {
-        if (!claimedBookingIds.has(b.id) && b.expectedCommission && b.currentStage !== 'Cancelled') {
-          pendingTotal += Number(b.expectedCommission);
-        }
-      }
-      return { earnedThisYear, pendingTotal, awaitingPaymentTotal };
+      const grandTotal = paidTotal + awaitingPaymentTotal + processingTotal + claimableTotal + pendingTotal;
+      return { paidTotal, awaitingPaymentTotal, processingTotal, claimableTotal, pendingTotal, grandTotal };
     }),
 
     // Admin: get all commission claims with booking and agent info

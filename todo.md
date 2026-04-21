@@ -1435,3 +1435,8 @@
 ## Bug Fix: Agent Commission Figure Discrepancy
 - [x] Investigate: agent dashboard "pending comms" vs "all commissions" total use different queries/filters
 - [x] Fix: align both figures to use the same commission calculation logic
+
+## Bug Fix + Feature: Commission Figures & My Earnings Redesign
+- [x] Fix: include "Commission Claimed" bookings with no claim record in the commissions page total
+- [x] Fix: update myEarningsSummary server procedure to return all 5 buckets (paid, awaitingPayment, processing, claimable, pending) plus a grand total
+- [x] Feature: redesign AgentDashboard "My Earnings" card to show grand total + breakdown rows (paid, awaiting payment, processing, claimable, pending)

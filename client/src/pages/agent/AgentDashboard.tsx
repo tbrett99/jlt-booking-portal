@@ -484,7 +484,7 @@ export default function AgentDashboard() {
           )}
 
           {/* Earnings Summary */}
-          {earnings && (earnings.earnedThisYear > 0 || earnings.pendingTotal > 0 || earnings.awaitingPaymentTotal > 0) && (
+          {earnings && earnings.grandTotal > 0 && (
             <Card>
               <CardHeader className="pb-2 pt-4 px-4">
                 <CardTitle className="text-sm font-bold flex items-center gap-2">
@@ -492,33 +492,62 @@ export default function AgentDashboard() {
                   My Earnings
                 </CardTitle>
               </CardHeader>
-              <CardContent className="px-4 pb-4 space-y-3">
-                {earnings.earnedThisYear > 0 && (
+              <CardContent className="px-4 pb-4 space-y-2">
+                {/* Grand total */}
+                <div className="flex items-center justify-between pb-2 border-b border-border">
+                  <span className="text-xs font-semibold text-foreground">Total commissions</span>
+                  <span className="text-base font-bold" style={{ color: '#02E6D2' }}>
+                    £{earnings.grandTotal.toFixed(2)}
+                  </span>
+                </div>
+                {/* Breakdown rows — only show non-zero buckets */}
+                {earnings.paidTotal > 0 && (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Earned {new Date().getFullYear()}</span>
-                    <span className="text-sm font-bold" style={{ color: '#059669' }}>
-                      £{earnings.earnedThisYear.toFixed(2)}
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                      Paid
                     </span>
+                    <span className="text-xs font-semibold text-emerald-600">£{earnings.paidTotal.toFixed(2)}</span>
                   </div>
                 )}
                 {earnings.awaitingPaymentTotal > 0 && (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Awaiting payment</span>
-                    <span className="text-sm font-semibold text-amber-600">
-                      £{earnings.awaitingPaymentTotal.toFixed(2)}
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <span className="inline-block w-2 h-2 rounded-full bg-amber-400"></span>
+                      Awaiting payment
                     </span>
+                    <span className="text-xs font-semibold text-amber-600">£{earnings.awaitingPaymentTotal.toFixed(2)}</span>
+                  </div>
+                )}
+                {earnings.processingTotal > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <span className="inline-block w-2 h-2 rounded-full bg-blue-400"></span>
+                      Processing
+                    </span>
+                    <span className="text-xs font-semibold text-blue-600">£{earnings.processingTotal.toFixed(2)}</span>
+                  </div>
+                )}
+                {earnings.claimableTotal > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <span className="inline-block w-2 h-2 rounded-full" style={{ background: '#02E6D2' }}></span>
+                      Ready to claim
+                    </span>
+                    <span className="text-xs font-semibold" style={{ color: '#02E6D2' }}>£{earnings.claimableTotal.toFixed(2)}</span>
                   </div>
                 )}
                 {earnings.pendingTotal > 0 && (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Pending</span>
-                    <span className="text-sm font-semibold text-muted-foreground">
-                      £{earnings.pendingTotal.toFixed(2)}
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <span className="inline-block w-2 h-2 rounded-full bg-gray-400"></span>
+                      Pending
                     </span>
+                    <span className="text-xs font-semibold text-muted-foreground">£{earnings.pendingTotal.toFixed(2)}</span>
                   </div>
                 )}
                 <Link href="/commissions">
-                  <button className="text-xs font-semibold underline w-full text-left mt-1" style={{ color: '#02E6D2' }}>
+                  <button className="text-xs font-semibold underline w-full text-left pt-1" style={{ color: '#02E6D2' }}>
                     View all commissions →
                   </button>
                 </Link>
