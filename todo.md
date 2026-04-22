@@ -1586,3 +1586,7 @@
 - [x] Enlarge contract PDF viewer from 400px to 700px height, widen to max-w-3xl on contract step
 - [x] Add "Open full screen ↗" link on contract viewer so users can read in a new tab (links in PDF are clickable there)
 - [x] PDF toolbar enabled (#toolbar=1) so users can zoom, navigate pages, and click links within the iframe
+
+## Join Flow Bug Fixes Round 2
+- [x] Fix session resume bug: when existing session has step="payment" but billing request failed, reset to "contract" so user can re-sign
+- [x] Fix GoCardless 400 error: prefilled_customer must go in billing_request_flows (step 2), NOT in billing_requests (step 1)

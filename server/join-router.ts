@@ -93,17 +93,26 @@ export const joinRouter = router({
 
       // If an active (non-expired, non-complete) session exists, return it
       if (existing[0] && existing[0].step !== "complete" && existing[0].expiresAt > new Date()) {
-        // Update tier/type in case they changed their mind
+        // If the session is stuck at "payment" (billing request was never fulfilled),
+        // reset it back to "contract" so the user can re-sign and try again.
+        const resumeStep = existing[0].step === "payment" ? "contract" : existing[0].step;
+        // Update tier/type in case they changed their mind, and reset step if needed
         await db
           .update(joinSessions)
           .set({
             membershipTier: input.membershipTier,
             membershipType: input.membershipType,
+            step: resumeStep,
+            // Clear any stale billing request data so a fresh one is created
+            ...(existing[0].step === "payment" ? {
+              billingRequestId: null,
+              billingRequestFlowUrl: null,
+            } : {}),
           })
           .where(eq(joinSessions.id, existing[0].id));
         return {
           sessionToken: existing[0].sessionToken,
-          step: existing[0].step,
+          step: resumeStep,
           isResumed: true,
         };
       }
@@ -250,16 +259,18 @@ export const joinRouter = router({
       const brq = await createJoinBillingRequest({
         amountPence: joiningFee,
         description: `JLT Group Joining Fee — ${tierLabel} ${typeLabel}`,
-        givenName,
-        familyName,
-        email: session.email,
       });
 
-      // Create the hosted flow
+      // Create the hosted flow — prefilled_customer goes here, not in billing_request
       const flow = await createBillingRequestFlow({
         billingRequestId: brq.id,
         redirectUri: `${input.origin}/join/complete?token=${session.sessionToken}`,
         exitUri: `${input.origin}/join?step=payment&token=${session.sessionToken}`,
+        prefilledCustomer: {
+          givenName,
+          familyName,
+          email: session.email,
+        },
       });
 
       // Store billing request details in session

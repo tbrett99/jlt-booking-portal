@@ -27,10 +27,12 @@ async function gcRequest<T>(
     headers: gcHeaders(),
     body: body ? JSON.stringify(body) : undefined,
   });
-  const json = (await res.json()) as T & { error?: { message: string; type: string } };
+  const json = (await res.json()) as T & { error?: { message: string; type: string; errors?: any[] } };
   if (!res.ok) {
     const err = (json as any).error;
-    throw new Error(`GoCardless API error ${res.status}: ${err?.message ?? JSON.stringify(json)}`);
+    const detail = err?.errors ? JSON.stringify(err.errors) : JSON.stringify(json);
+    console.error(`[GoCardless] ${method} ${path} → ${res.status}`, JSON.stringify(json, null, 2));
+    throw new Error(`GoCardless API error ${res.status}: ${err?.message ?? detail}\n${detail}`);
   }
   return json;
 }
@@ -86,9 +88,6 @@ export interface GcJoinBillingRequest {
 export async function createJoinBillingRequest(opts: {
   amountPence: number;       // joining fee in pence
   description: string;       // e.g. "JLT Group Joining Fee"
-  givenName?: string;
-  familyName?: string;
-  email?: string;
 }): Promise<GcJoinBillingRequest> {
   const body: any = {
     billing_requests: {
@@ -100,17 +99,9 @@ export async function createJoinBillingRequest(opts: {
       },
       mandate_request: {
         scheme: "bacs",
-        description: "JLT Group Monthly Membership",
       },
     },
   };
-  if (opts.givenName || opts.familyName || opts.email) {
-    body.billing_requests.prefilled_customer = {
-      ...(opts.givenName && { given_name: opts.givenName }),
-      ...(opts.familyName && { family_name: opts.familyName }),
-      ...(opts.email && { email: opts.email }),
-    };
-  }
   const res = await gcRequest<{ billing_requests: GcJoinBillingRequest }>(
     "POST",
     "/billing_requests",
@@ -130,17 +121,31 @@ export async function createBillingRequestFlow(opts: {
   billingRequestId: string;
   redirectUri: string;
   exitUri?: string;
+  prefilledCustomer?: {
+    givenName?: string;
+    familyName?: string;
+    email?: string;
+  };
 }): Promise<GcBillingRequestFlow> {
+  const flowBody: any = {
+    redirect_uri: opts.redirectUri,
+    exit_uri: opts.exitUri ?? opts.redirectUri,
+    links: { billing_request: opts.billingRequestId },
+  };
+  if (opts.prefilledCustomer) {
+    const pc = opts.prefilledCustomer;
+    if (pc.givenName || pc.familyName || pc.email) {
+      flowBody.prefilled_customer = {
+        ...(pc.givenName && { given_name: pc.givenName }),
+        ...(pc.familyName && { family_name: pc.familyName }),
+        ...(pc.email && { email: pc.email }),
+      };
+    }
+  }
   const res = await gcRequest<{ billing_request_flows: GcBillingRequestFlow }>(
     "POST",
     "/billing_request_flows",
-    {
-      billing_request_flows: {
-        redirect_uri: opts.redirectUri,
-        exit_uri: opts.exitUri ?? opts.redirectUri,
-        links: { billing_request: opts.billingRequestId },
-      },
-    }
+    { billing_request_flows: flowBody }
   );
   return res.billing_request_flows;
 }
