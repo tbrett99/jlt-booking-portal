@@ -27,8 +27,32 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Users, FileSignature, CreditCard, CheckCircle2, Clock, AlertCircle, RefreshCw } from "lucide-react";
+import { Loader2, Users, FileSignature, CreditCard, CheckCircle2, Clock, AlertCircle, RefreshCw, UserCheck } from "lucide-react";
+import { toast } from "sonner";
 import { TIER_LABELS, TYPE_LABELS } from "../../../../shared/membership";
+
+function ActivateButton({ userId }: { userId: number }) {
+  const utils = trpc.useUtils();
+  const activate = trpc.users.activatePortalAccess.useMutation({
+    onSuccess: () => {
+      toast.success("Portal access activated");
+      utils.join.adminListSessions.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  return (
+    <Button
+      size="sm"
+      className="h-7 text-xs gap-1"
+      style={{ background: "#70FFE8", color: "#0d1a26" }}
+      disabled={activate.isPending}
+      onClick={() => activate.mutate({ userId })}
+    >
+      <UserCheck size={11} />
+      {activate.isPending ? "..." : "Activate"}
+    </Button>
+  );
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -130,6 +154,7 @@ function SessionsTab() {
                 <TableHead>Payment</TableHead>
                 <TableHead>User ID</TableHead>
                 <TableHead>Started</TableHead>
+                <TableHead>Portal</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -191,6 +216,13 @@ function SessionsTab() {
                     <span className="text-xs text-gray-400">
                       {new Date(session.createdAt).toLocaleDateString("en-GB")}
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    {session.userId && session.step === "complete" ? (
+                      <ActivateButton userId={session.userId} />
+                    ) : (
+                      <span className="text-xs text-gray-300">—</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

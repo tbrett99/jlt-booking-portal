@@ -558,20 +558,35 @@ function CompleteStep({ sessionToken }: { sessionToken: string }) {
         </Card>
       )}
 
+      {/* Complete profile CTA */}
+      <div className="rounded-xl p-5 text-white text-left" style={{ background: "linear-gradient(135deg, #0d1a26 0%, #1a3a4a 100%)" }}>
+        <h3 className="font-semibold mb-1">Next step: Complete your profile</h3>
+        <p className="text-sm text-white/70 mb-4">
+          Log in to your portal and complete your profile — including your bank details for commission payments, emergency contact, and preferred payment date. Your portal access will be activated once the JLT team has reviewed your profile.
+        </p>
+        <a
+          href="/"
+          className="inline-flex items-center justify-center w-full rounded-lg py-2.5 text-sm font-semibold transition-all hover:opacity-90"
+          style={{ background: "#70FFE8", color: "#0d1a26" }}
+        >
+          Log in &amp; Complete Profile →
+        </a>
+      </div>
+
       <div className="bg-[#FFF6ED] rounded-xl p-5 text-left space-y-3">
-        <h3 className="font-semibold text-[#414141]">What happens next?</h3>
+        <h3 className="font-semibold text-[#414141]">What happens after that?</h3>
         <div className="space-y-2 text-sm text-gray-600">
           <div className="flex items-start gap-2">
             <Badge className="mt-0.5 shrink-0 text-xs" style={{ background: "#70FFE8", color: "#414141" }}>1</Badge>
-            <span>The JLT team will review your application and activate your portal access within 1–2 business days.</span>
+            <span>Complete your profile in the portal (bank details, ID documents, emergency contact, payment date).</span>
           </div>
           <div className="flex items-start gap-2">
             <Badge className="mt-0.5 shrink-0 text-xs" style={{ background: "#70FFE8", color: "#414141" }}>2</Badge>
-            <span>You'll receive an email with your login credentials once activated.</span>
+            <span>The JLT team will review and activate your full portal access.</span>
           </div>
           <div className="flex items-start gap-2">
             <Badge className="mt-0.5 shrink-0 text-xs" style={{ background: "#70FFE8", color: "#414141" }}>3</Badge>
-            <span>Your first monthly subscription payment will be taken one calendar month after today.</span>
+            <span>You'll receive your training portal login details by email — your journey begins!</span>
           </div>
         </div>
       </div>

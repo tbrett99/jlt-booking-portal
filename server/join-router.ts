@@ -593,6 +593,22 @@ export const joinRouter = router({
       return rows;
     }),
 
+  // ─── Admin: activate portal access for an agent ────────────────────────────
+  adminApproveAgent: protectedProcedure
+    .input(z.object({ userId: z.number().int() }))
+    .mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db
+        .update(users)
+        .set({ portalStatus: "active" })
+        .where(eq(users.id, input.userId));
+      return { success: true };
+    }),
+
   // ─── Admin: list agent teams ───────────────────────────────────────────────
   adminListTeams: protectedProcedure
     .query(async ({ ctx }) => {

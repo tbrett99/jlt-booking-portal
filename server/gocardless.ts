@@ -222,19 +222,32 @@ export async function getBillingRequest(brqId: string): Promise<GcBillingRequest
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
 /**
- * Returns the subscription start_date as a YYYY-MM-DD string:
- * one calendar month after joiningFeeDate, on the requested dayOfMonth.
- * If dayOfMonth is beyond the end of that month, clamps to the last day.
+ * Calculate the first subscription charge date.
+ * Finds the next occurrence of `dayOfMonth` that is at least 28 days after `joiningFeeDate`.
+ * If the chosen day in the next calendar month is still within 28 days, it rolls to the month after.
+ *
+ * Example: join 1 Apr, pick day 15 → earliest = 29 Apr → 15 May ✓
+ * Example: join 28 Apr, pick day 1  → earliest = 26 May → 1 Jun ✓
+ * Example: join 1 Apr, pick day 30  → earliest = 29 Apr → 30 Apr ✓ (same month, >28 days)
  */
 export function calcSubscriptionStartDate(
   joiningFeeDate: Date,
   dayOfMonth: number
 ): string {
-  const d = new Date(joiningFeeDate);
-  d.setMonth(d.getMonth() + 1);
-  const year = d.getFullYear();
-  const month = d.getMonth(); // 0-indexed
-  const lastDay = new Date(year, month + 1, 0).getDate();
-  const day = Math.min(dayOfMonth, lastDay);
-  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  // Clamp dayOfMonth to 1–28 (GoCardless max is 28 to avoid month-end issues)
+  const targetDay = Math.max(1, Math.min(28, dayOfMonth));
+  // Earliest allowed date: 28 days from joining
+  const earliest = new Date(joiningFeeDate);
+  earliest.setDate(earliest.getDate() + 28);
+
+  // Try the target day in the same month as `earliest`
+  let candidate = new Date(earliest.getFullYear(), earliest.getMonth(), targetDay);
+  // If that day has already passed (or is before earliest), move to next month
+  if (candidate < earliest) {
+    candidate = new Date(earliest.getFullYear(), earliest.getMonth() + 1, targetDay);
+  }
+  const year = candidate.getFullYear();
+  const month = candidate.getMonth() + 1;
+  const day = candidate.getDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }

@@ -722,6 +722,11 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   suspendedAt: timestamp("suspendedAt"),                                    // Date agent was suspended
   cancelChecklist: json("cancelChecklist"),                                 // JSON array of ticked offboarding items
   trainingStage: varchar("trainingStage", { length: 50 }),                   // Training | Agent Accelerator | Accredited
+  // Emergency contact (collected during onboarding)
+  emergencyContactName: varchar("emergencyContactName", { length: 255 }),
+  emergencyContactPhone: varchar("emergencyContactPhone", { length: 30 }),
+  // Preferred monthly payment day: 1, 15, or 28
+  preferredPaymentDay: int("preferredPaymentDay"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

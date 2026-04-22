@@ -1203,26 +1203,92 @@ export const crmRouter = router({
         addressLine2: z.string().max(255).optional().nullable(),
         city: z.string().max(100).optional().nullable(),
         postcode: z.string().max(20).optional().nullable(),
-        notifyOnComplete: z.boolean().optional(), // true when all fields are now complete
+        businessName: z.string().max(255).optional().nullable(),
+        // Bank details for commission payouts
+        bankAccountName: z.string().max(255).optional().nullable(),
+        bankSortCode: z.string().max(10).optional().nullable(),
+        bankAccountNumber: z.string().max(20).optional().nullable(),
+        // Emergency contact
+        emergencyContactName: z.string().max(255).optional().nullable(),
+        emergencyContactPhone: z.string().max(30).optional().nullable(),
+        // Preferred monthly payment day: 1, 15, or 28
+        preferredPaymentDay: z.union([z.literal(1), z.literal(15), z.literal(28)]).optional().nullable(),
+        notifyOnComplete: z.boolean().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const { getDb } = await import("./db");
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-        const { users } = await import("../drizzle/schema");
+        const { users, gcMandates, gcSubscriptions } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
         // Update the user's display name
         await db.update(users).set({ name: input.name }).where(eq(users.id, ctx.user.id));
-        // Upsert the CRM profile fields
+        // Upsert the CRM profile fields (strip non-profile fields)
         const { name, notifyOnComplete, ...profileFields } = input;
         await upsertAgentCrmProfile(ctx.user.id, profileFields);
+        // If completing onboarding with a payment day, create the GoCardless subscription
+        if (input.preferredPaymentDay && notifyOnComplete) {
+          try {
+            const mandateRows = await db
+              .select()
+              .from(gcMandates)
+              .where(eq(gcMandates.userId, ctx.user.id))
+              .limit(1);
+            const mandate = mandateRows[0];
+            if (mandate?.mandateId && mandate.status === "active") {
+              const existingSubs = await db
+                .select()
+                .from(gcSubscriptions)
+                .where(eq(gcSubscriptions.userId, ctx.user.id))
+                .limit(1);
+              if (existingSubs.length === 0) {
+                const { createSubscription, calcSubscriptionStartDate } = await import("./gocardless");
+                const { createGcSubscription } = await import("./gocardless-db");
+                const { getAgentCrmProfile } = await import("./agent-crm-db");
+                const profile = await getAgentCrmProfile(ctx.user.id);
+                const tier = profile?.membershipTier ?? "business_class";
+                // Determine amount: Business Class Solo = £87/mo, First Class Solo = £127/mo
+                // Team amounts are handled separately; default to solo rate
+                const amountPence = tier === "first_class" ? 12700 : 8700;
+                const startDate = calcSubscriptionStartDate(
+                  mandate.joiningFeePaidAt ?? new Date(),
+                  input.preferredPaymentDay
+                );
+                const tierLabel = tier === "first_class" ? "First Class" : "Business Class";
+                const sub = await createSubscription({
+                  mandateId: mandate.mandateId,
+                  amountPence,
+                  name: `JLT ${tierLabel} Membership`,
+                  startDate,
+                  dayOfMonth: input.preferredPaymentDay,
+                });
+                await createGcSubscription({
+                  userId: ctx.user.id,
+                  mandateId: mandate.mandateId,
+                  subscriptionId: sub.id,
+                  amount: sub.amount,
+                  startDate,
+                  dayOfMonth: input.preferredPaymentDay,
+                  nextChargeDate: (sub as any).upcoming_payments?.[0]?.charge_date,
+                });
+                await db
+                  .update(gcMandates)
+                  .set({ preferredPaymentDay: input.preferredPaymentDay })
+                  .where(eq(gcMandates.id, mandate.id));
+              }
+            }
+          } catch (subErr: any) {
+            console.error("[Onboarding] Subscription creation failed:", subErr.message);
+            // Don't block onboarding completion — admin can create subscription manually
+          }
+        }
         // Notify JLT team when onboarding is complete
         if (notifyOnComplete) {
           try {
             const { notifyOwner } = await import("./_core/notification");
             await notifyOwner({
               title: `New agent onboarding complete: ${name}`,
-              content: `Agent ${name} (ID: ${ctx.user.id}) has completed their onboarding profile including all required fields. Please review their documents and activate their account.`,
+              content: `Agent ${name} (ID: ${ctx.user.id}) has completed their onboarding profile. Preferred payment day: ${input.preferredPaymentDay ?? "not set"}. Please review and activate their portal access.`,
             });
           } catch {}
         }

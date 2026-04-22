@@ -1590,3 +1590,15 @@
 ## Join Flow Bug Fixes Round 2
 - [x] Fix session resume bug: when existing session has step="payment" but billing request failed, reset to "contract" so user can re-sign
 - [x] Fix GoCardless 400 error: prefilled_customer must go in billing_request_flows (step 2), NOT in billing_requests (step 1)
+
+## Post-Payment Onboarding Flow
+- [x] Schema: added emergencyContactName, emergencyContactPhone, preferredPaymentDay to agentCrmProfiles table
+- [x] DB migration applied via script (ALTER TABLE agent_crm_profiles ADD ...)
+- [x] GoCardless subscription created when agent saves payment day during onboarding (calcSubscriptionStartDate guarantees 28-day minimum, options: 1st/15th/28th only)
+- [x] Backend: saveOnboardingProfile extended with bank details, emergency contact, preferredPaymentDay, subscription creation trigger
+- [x] Backend: adminApproveAgent procedure in join-router.ts (sets portalStatus: active)
+- [x] Frontend: /join/complete page — prominent dark CTA card "Log in & Complete Profile" button added
+- [x] Frontend: /onboarding page — full 5-section accordion form: personal details, bank details, emergency contact, identity documents, payment date (1st/15th/28th)
+- [x] Frontend: portal access gating — App.tsx redirects onboarding agents to /onboarding; PortalLayout shows minimal nav
+- [x] Admin CRM: "Activate Portal Access" button on agent sheet (portalStatus: onboarding only)
+- [x] Admin CRM: "Activate" button in Sign-Up Applications table (complete sessions with userId only)
