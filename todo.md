@@ -1514,3 +1514,6 @@
 
 ## Bug Fix: Owner Notification Email Wrong Address
 - [x] Update Max Kelly's account email from max@loupr.com to max@thejltgroup.co.uk so admin notifications go to the correct address (updated user id 760 in DB)
+
+## UX: Booking Registration Form
+- [x] Move "This is a historic booking" checkbox to the bottom of the booking registration form to prevent agents accidentally selecting it for new bookings

@@ -145,24 +145,6 @@ export default function RegisterBooking() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Historic Booking Toggle */}
-            <div className={`rounded-lg border-2 border-dashed p-4 space-y-2 transition-colors`} style={{ borderColor: isHistoricBooking ? '#FFC3BC' : '#e5e7eb', background: isHistoricBooking ? '#FFF6ED' : undefined }}>
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isHistoricBooking}
-                  onChange={(e) => setIsHistoricBooking(e.target.checked)}
-                  className="w-4 h-4 mt-0.5 accent-pink-400"
-                />
-                <div>
-                  <span className="text-sm font-semibold">This is a historic booking</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Tick this if the booking was made previously and you are registering it now to claim commission. It will be moved directly to <strong>Added to PTS</strong>.
-                  </p>
-                </div>
-              </label>
-            </div>
-
             {/* Personal Booking Toggle */}
             <div className="rounded-lg border-2 border-dashed p-4 space-y-2" style={{ borderColor: isPersonalBooking ? '#70FFE8' : undefined, background: isPersonalBooking ? '#F0FFFB' : undefined }}>
               <label className="flex items-start gap-3 cursor-pointer">
@@ -219,7 +201,7 @@ export default function RegisterBooking() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold" style={{ color: '#92400e' }}>This looks like a historic booking</p>
                     <p className="text-xs mt-0.5" style={{ color: '#78350f' }}>
-                      The booked date is more than 7 days ago. If this booking is already on PTS and you need to claim commission, request a refund, or make an amendment — please enable the <strong>"Historic Booking"</strong> toggle above.
+                      The booked date is more than 7 days ago. If this booking is already on PTS and you need to claim commission, request a refund, or make an amendment — please enable the <strong>"Historic Booking"</strong> toggle at the bottom of this form.
                     </p>
                     <button
                       type="button"
@@ -447,6 +429,24 @@ export default function RegisterBooking() {
                   <p className="text-xs text-muted-foreground">You can upload supporting documents from the booking page after submission.</p>
                 </div>
               )}
+            </div>
+
+            {/* Historic Booking Toggle — kept at the bottom to avoid accidental selection */}
+            <div className={`rounded-lg border-2 border-dashed p-4 space-y-2 transition-colors`} style={{ borderColor: isHistoricBooking ? '#FFC3BC' : '#e5e7eb', background: isHistoricBooking ? '#FFF6ED' : undefined }}>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isHistoricBooking}
+                  onChange={(e) => setIsHistoricBooking(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 accent-pink-400"
+                />
+                <div>
+                  <span className="text-sm font-semibold">This is a historic booking</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Only tick this if the booking was made previously and you are registering it now to claim commission. It will be moved directly to <strong>Added to PTS</strong>. Do not tick this for new bookings.
+                  </p>
+                </div>
+              </label>
             </div>
 
             <div className="flex gap-3 pt-2">
