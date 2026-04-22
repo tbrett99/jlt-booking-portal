@@ -957,3 +957,58 @@ export const gcPaymentEvents = mysqlTable("gc_payment_events", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type GcPaymentEvent = typeof gcPaymentEvents.$inferSelect;
+
+// ─── Join Flow: Contract Signatures ──────────────────────────────────────────
+export const contractSignatures = mysqlTable("contract_signatures", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),                                // FK → users.id
+  contractTemplateId: int("contractTemplateId"),                  // FK → contract_templates.id
+  signedAt: timestamp("signedAt").defaultNow().notNull(),
+  signatureDataUrl: mediumtext("signatureDataUrl"),               // base64 drawn signature image
+  signerName: varchar("signerName", { length: 255 }).notNull(),   // typed full name
+  signerAddress: text("signerAddress"),                           // typed address
+  ipAddress: varchar("ipAddress", { length: 64 }),                // for audit trail
+  membershipTier: varchar("membershipTier", { length: 50 }),      // tier at time of signing
+  membershipType: varchar("membershipType", { length: 20 }),      // solo/duo/trio at time of signing
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ContractSignature = typeof contractSignatures.$inferSelect;
+
+// ─── Join Flow: Team Invites ──────────────────────────────────────────────────
+export const teamInvites = mysqlTable("team_invites", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId").notNull(),                                // FK → agent_teams.id
+  leaderId: int("leaderId").notNull(),                            // FK → users.id (team leader)
+  invitedEmail: varchar("invitedEmail", { length: 320 }).notNull(),
+  token: varchar("token", { length: 128 }).notNull().unique(),    // unique invite token
+  status: mysqlEnum("status", ["pending", "accepted", "expired"]).default("pending").notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  acceptedAt: timestamp("acceptedAt"),
+  acceptedByUserId: int("acceptedByUserId"),                      // FK → users.id (team member)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type TeamInvite = typeof teamInvites.$inferSelect;
+
+// ─── Join Flow: Join Sessions (tracks multi-step sign-up progress) ────────────
+export const joinSessions = mysqlTable("join_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  sessionToken: varchar("sessionToken", { length: 128 }).notNull().unique(),
+  email: varchar("email", { length: 320 }).notNull(),
+  membershipTier: varchar("membershipTier", { length: 50 }),      // business_class / first_class
+  membershipType: varchar("membershipType", { length: 20 }),      // solo / duo / trio
+  step: varchar("step", { length: 30 }).default("plan").notNull(), // plan / contract / payment / complete
+  contractSignedAt: timestamp("contractSignedAt"),
+  signatureDataUrl: mediumtext("signatureDataUrl"),
+  signerName: varchar("signerName", { length: 255 }),
+  signerAddress: text("signerAddress"),
+  billingRequestId: varchar("billingRequestId", { length: 100 }), // GC billing request ID
+  billingRequestFlowUrl: text("billingRequestFlowUrl"),           // GC hosted page URL
+  joiningFeePaidAt: timestamp("joiningFeePaidAt"),
+  mandateId: varchar("mandateId", { length: 100 }),
+  userId: int("userId"),                                           // set once account is created
+  ipAddress: varchar("ipAddress", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),                     // sessions expire after 24h
+});
+export type JoinSession = typeof joinSessions.$inferSelect;

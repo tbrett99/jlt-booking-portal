@@ -26,6 +26,10 @@ import {
   createPaymentEvent,
 } from "../gocardless-db";
 import { notifyOwner } from "./notification";
+import { joinSessions, agentCrmProfiles } from "../../drizzle/schema";
+import { createAgentUser } from "../db";
+import { getMonthlyAmount } from "../../shared/membership";
+import bcrypt from "bcryptjs";
 
 // HTML escape helper to prevent XSS in server-rendered payment page
 function escHtml(str: string): string {
@@ -763,6 +767,112 @@ async function startServer() {
 
       for (const event of events) {
         console.log(`[GC Webhook] ${event.resource_type}.${event.action}`, event.links);
+
+        // ── Join Flow: billing_request fulfilled → create agent account + subscription ──
+        if (event.resource_type === "billing_requests" && event.action === "fulfilled") {
+          const billingRequestId = event.links.billing_request;
+          if (!billingRequestId) continue;
+
+          const db = await getDb();
+          if (!db) continue;
+
+          // Find the join session for this billing request
+          const sessionRows = await db
+            .select()
+            .from(joinSessions)
+            .where(eq(joinSessions.billingRequestId, billingRequestId))
+            .limit(1);
+          const session = sessionRows[0];
+          if (!session) {
+            console.log(`[GC Webhook] billing_request.fulfilled: no join session for ${billingRequestId}`);
+            continue;
+          }
+
+          // Idempotency: if already processed, skip
+          if (session.userId) {
+            console.log(`[GC Webhook] billing_request.fulfilled: already processed for session ${session.id}`);
+            continue;
+          }
+
+          // Create the agent user account
+          let newUser: Awaited<ReturnType<typeof createAgentUser>>;
+          try {
+            const tempPassword = Math.random().toString(36).slice(2, 10) + "!Jlt1";
+            const hashedPassword = await bcrypt.hash(tempPassword, 10);
+            newUser = await createAgentUser({
+              name: session.signerName ?? session.email,
+              email: session.email,
+              hashedPassword,
+            });
+          } catch (err: any) {
+            console.error(`[GC Webhook] Failed to create agent user for ${session.email}:`, err.message);
+            continue;
+          }
+
+          if (!newUser) {
+            console.error(`[GC Webhook] createAgentUser returned null for ${session.email}`);
+            continue;
+          }
+
+          // Link session to new user
+          await db
+            .update(joinSessions)
+            .set({
+              userId: newUser.id,
+              joiningFeePaidAt: new Date(),
+              step: "complete",
+            })
+            .where(eq(joinSessions.id, session.id));
+
+          // Create CRM profile with membership tier
+          await db.insert(agentCrmProfiles).values({
+            userId: newUser.id,
+            membershipTier: session.membershipTier ?? "business_class",
+            dateJoined: new Date().toISOString().slice(0, 10),
+            agentStatus: "active",
+          } as any).onDuplicateKeyUpdate({
+            set: {
+              membershipTier: session.membershipTier ?? "business_class",
+              dateJoined: new Date().toISOString().slice(0, 10),
+            },
+          });
+
+          // Notify admin
+          await notifyOwner({
+            title: "New Agent Joined via Self-Sign-Up",
+            content: `${session.email} (${session.signerName ?? ""}) has completed sign-up. Membership: ${session.membershipTier ?? "business_class"} ${session.membershipType ?? "solo"}. User ID: ${newUser.id}. Please activate their portal access.`,
+          });
+
+          // Send welcome email with credentials
+          try {
+            const { sendDirectEmail: sendEmail } = await import("../email");
+            await sendEmail({
+              toEmail: session.email,
+              toName: session.signerName ?? session.email,
+              subject: "Welcome to JLT Group — Your Application is Under Review",
+              html: `
+                <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
+                  <div style="text-align:center;margin-bottom:24px;">
+                    <div style="background:#70FFE8;border-radius:50%;width:56px;height:56px;display:inline-flex;align-items:center;justify-content:center;">
+                      <span style="font-weight:700;color:#414141;font-size:1rem">JLT</span>
+                    </div>
+                    <h1 style="color:#414141;font-size:1.4rem;margin:16px 0 4px;">Thank you for joining JLT Group!</h1>
+                  </div>
+                  <div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;">
+                    <p style="color:#414141;margin:0 0 12px;">Hi ${session.signerName ?? session.email},</p>
+                    <p style="color:#414141;margin:0 0 12px;">Your application has been received and your payment is confirmed. Our team will review your application and activate your portal access within 1–2 business days.</p>
+                    <p style="color:#414141;margin:0;">Once activated, you'll receive a separate email with your login credentials.</p>
+                  </div>
+                  <p style="color:#9ca3af;font-size:.75rem;text-align:center;margin:0;">Questions? Email <a href="mailto:memberships@thejltgroup.co.uk" style="color:#02E6D2;">memberships@thejltgroup.co.uk</a></p>
+                </div>
+              `,
+            });
+          } catch (emailErr) {
+            console.error("[GC Webhook] Failed to send welcome email:", emailErr);
+          }
+
+          console.log(`[GC Webhook] billing_request.fulfilled: created agent user ${newUser.id} for ${session.email}`);
+        }
 
         // Mandate became active → create the subscription
         if (event.resource_type === "mandates" && event.action === "active") {

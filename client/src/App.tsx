@@ -63,7 +63,10 @@ import OnboardingDashboard from "./pages/agent/OnboardingDashboard";
 import DdSetup from "./pages/agent/DdSetup";
 import DdComplete from "./pages/agent/DdComplete";
 import RegisterPage from "./pages/RegisterPage";
+import JoinFlow from "./pages/JoinFlow";
+import JoinAccept from "./pages/JoinAccept";
 import AgentCrm from "./pages/crm/AgentCrm";
+import JoinSessions from "./pages/crm/JoinSessions";
 import PaymentResult from "./pages/PaymentResult";
 import PaymentRedirect from "./pages/PaymentRedirect";
 import CrmChangeRequests from "./pages/crm/CrmChangeRequests";
@@ -155,6 +158,10 @@ function AuthRouter() {
         <Route path="/membership" component={MembershipSelection} />
         <Route path="/membership/success" component={MembershipSuccess} />
         <Route path="/register" component={RegisterPage} />
+        {/* Public join / sign-up flow */}
+        <Route path="/join" component={JoinFlow} />
+        <Route path="/join/complete" component={JoinFlow} />
+        <Route path="/join/accept" component={JoinAccept} />
         <Route component={LoginPage} />
       </Switch>
     );
@@ -177,6 +184,10 @@ function AuthRouter() {
       <PortalLayout>
         <OnboardingGate>
         <Switch>
+          {/* Public join flow — accessible even when logged in */}
+          <Route path="/join" component={JoinFlow} />
+          <Route path="/join/complete" component={JoinFlow} />
+          <Route path="/join/accept" component={JoinAccept} />
           <Route path="/onboarding" component={OnboardingDashboard} />
           <Route path="/dd-setup" component={DdSetup} />
           <Route path="/dd-complete" component={DdComplete} />
@@ -208,6 +219,10 @@ function AuthRouter() {
     return (
       <PortalLayout>
         <Switch>
+          {/* Public join flow */}
+          <Route path="/join" component={JoinFlow} />
+          <Route path="/join/complete" component={JoinFlow} />
+          <Route path="/join/accept" component={JoinAccept} />
           <Route path="/" component={AgentDashboard} />
           <Route path="/dashboard" component={AgentDashboard} />
           <Route path="/bookings/new" component={RegisterBooking} />
@@ -233,6 +248,10 @@ function AuthRouter() {
   return (
     <PortalLayout>
       <Switch>
+        {/* Public join flow */}
+        <Route path="/join" component={JoinFlow} />
+        <Route path="/join/complete" component={JoinFlow} />
+        <Route path="/join/accept" component={JoinAccept} />
         <Route path="/" component={AdminDashboard} />
         <Route path="/dashboard" component={AdminDashboard} />
         <Route path="/pipeline" component={AdminKanban} />
@@ -268,6 +287,7 @@ function AuthRouter() {
         <Route path="/crm/remittances" component={CrmRemittances} />
         <Route path="/crm/payment-config" component={CrmPaymentConfig} />
         <Route path="/crm/agents" component={AgentCrm} />
+        <Route path="/crm/join-sessions" component={JoinSessions} />
         <Route path="/crm/change-requests" component={CrmChangeRequests} />
         <Route path="/crm/memberships" component={Memberships} />
         <Route path="/profile" component={ProfilePage} />

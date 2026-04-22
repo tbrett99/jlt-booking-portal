@@ -1555,3 +1555,28 @@
 - [x] Match to CRM agents by email address
 - [x] Backfill gc_mandates and gc_subscriptions tables with matched data
 - [x] Report which agents were matched and which had no GoCardless record (118 matched, 4 skipped/no mandates, 322 no GoCardless record)
+
+## Agent Sign-Up Flow (Full Build)
+- [x] Schema: add membershipTier (business_class/first_class), membershipType (solo/duo/trio), teamId to users table
+- [x] Schema: add teams table (id, leaderId, tier, membershipType, createdAt)
+- [x] Schema: add contract_signatures table (id, userId, contractTemplateId, signedAt, signatureDataUrl, signerName, signerAddress, ipAddress)
+- [x] Schema: add team_invites table (id, teamId, invitedEmail, token, status, expiresAt, createdAt)
+- [x] DB migration for all new tables
+- [x] Backend: membership tier config (joining fee £1 test/£297 live, monthly amounts per tier/type)
+- [x] Backend: GoCardless createBillingRequestWithPayment (Instant Bank Pay joining fee + DD mandate in one flow)
+- [x] Backend: tRPC procedures for /join flow (startSession, getSession, getContractTemplate, signContract, initiatePayment)
+- [x] Backend: team invite procedures (sendTeamInvite, getInvite, acceptInvite, adminListSessions, adminListTeams)
+- [x] Backend: send team member invite email with unique token link
+- [x] GoCardless webhook: handle billing_request_fulfilled → create agent user account, mark joining fee paid, notify admin
+- [x] Frontend: /join page — step 1: solo or team selection (duo/trio)
+- [x] Frontend: /join page — step 2: plan selection (Business Class / First Class with full pricing table)
+- [x] Frontend: /join page — step 3: contract signing (PDF viewer + drawn signature pad + typed name + address)
+- [x] Frontend: /join page — step 4: GoCardless redirect (joining fee + DD mandate)
+- [x] Frontend: /join/complete page — confirmation after GoCardless returns
+- [x] Frontend: /join/accept?token= page — team member invite acceptance + own contract signing (no payment)
+- [x] Frontend: onboarding checklist — team leader can invite team members by email (step 4 of join flow)
+- [x] Admin CRM: Sign-Up Applications page with all sessions, status filter, contract/payment status
+- [x] Admin CRM: Teams tab showing team structure, member counts, and invite status
+- [x] Admin CRM: "Sign-Up Applications" link added to CRM sidebar section
+- [x] Tests: 18 vitest tests for membership constants, session tokens, step validation, email validation
+- [x] Checkpoint saved

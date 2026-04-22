@@ -1,0 +1,742 @@
+/**
+ * JoinFlow — Multi-step agent sign-up page
+ *
+ * Steps:
+ *  1. plan     — Solo vs Team, then plan selection (Business / First Class)
+ *  2. contract — PDF viewer + canvas signature + typed name + address
+ *  3. payment  — Redirect to GoCardless hosted page
+ *  4. complete — Confirmation page (shown after GC redirect back)
+ */
+
+import React, { useRef, useState, useEffect, useCallback } from "react";
+import { useLocation, useSearch } from "wouter";
+import SignatureCanvas from "react-signature-canvas";
+import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, CheckCircle2, ChevronRight, Users, User, ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type MembershipTier = "business_class" | "first_class";
+type MembershipType = "solo" | "duo" | "trio";
+type Step = "plan" | "contract" | "payment" | "complete";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const SESSION_KEY = "jlt_join_session_token";
+
+function saveSession(token: string) {
+  localStorage.setItem(SESSION_KEY, token);
+}
+function loadSession(): string | null {
+  return localStorage.getItem(SESSION_KEY);
+}
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function formatPounds(pence: number): string {
+  return `£${(pence / 100).toFixed(0)}`;
+}
+
+// ─── Step 1: Plan Selection ───────────────────────────────────────────────────
+
+function PlanStep({
+  onNext,
+}: {
+  onNext: (tier: MembershipTier, type: MembershipType, email: string) => void;
+}) {
+  const [selectedType, setSelectedType] = useState<MembershipType>("solo");
+  const [selectedTier, setSelectedTier] = useState<MembershipTier>("business_class");
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
+
+  const { data: pricing, isLoading: pricingLoading } = trpc.join.getPricing.useQuery();
+
+  const handleNext = () => {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailError("Please enter a valid email address");
+      return;
+    }
+    setEmailError("");
+    onNext(selectedTier, selectedType, email);
+  };
+
+  if (pricingLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="animate-spin text-[#70FFE8]" size={32} />
+      </div>
+    );
+  }
+
+  const joiningFee = pricing?.joiningFeePence ?? 29700;
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="text-center">
+        <h1 className="text-3xl font-bold text-[#414141] mb-2">Join JLT Group</h1>
+        <p className="text-gray-500 text-sm">Choose your membership type and plan to get started.</p>
+      </div>
+
+      {/* Step 1: Solo or Team */}
+      <div>
+        <h2 className="text-lg font-semibold text-[#414141] mb-3">1. Will you be joining solo or as a team?</h2>
+        <div className="grid grid-cols-3 gap-3">
+          {(["solo", "duo", "trio"] as MembershipType[]).map((type) => {
+            const icons = { solo: <User size={20} />, duo: <Users size={20} />, trio: <Users size={20} /> };
+            const labels = { solo: "Solo", duo: "Duo", trio: "Trio" };
+            const descs = {
+              solo: "Just you",
+              duo: "You + 1 team member",
+              trio: "You + 2 team members",
+            };
+            return (
+              <button
+                key={type}
+                onClick={() => setSelectedType(type)}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${
+                  selectedType === type
+                    ? "border-[#70FFE8] bg-[#70FFE8]/10"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <div className={`mb-2 ${selectedType === type ? "text-[#02E6D2]" : "text-gray-400"}`}>
+                  {icons[type]}
+                </div>
+                <div className="font-semibold text-[#414141] text-sm">{labels[type]}</div>
+                <div className="text-xs text-gray-500">{descs[type]}</div>
+              </button>
+            );
+          })}
+        </div>
+        {selectedType !== "solo" && (
+          <p className="mt-2 text-xs text-[#02E6D2] bg-[#70FFE8]/10 rounded-lg px-3 py-2">
+            As team leader, you pay the joining fee and monthly subscription. Team members will receive an email invite to sign their contract.
+          </p>
+        )}
+      </div>
+
+      {/* Step 2: Plan */}
+      <div>
+        <h2 className="text-lg font-semibold text-[#414141] mb-3">2. Choose your plan</h2>
+        <div className="grid grid-cols-2 gap-4">
+          {(["business_class", "first_class"] as MembershipTier[]).map((tier) => {
+            const tierData = pricing?.tiers.find((t) => t.tier === tier);
+            const typeData = tierData?.types.find((t) => t.type === selectedType);
+            const monthlyPence = typeData?.monthlyPence ?? 0;
+            const isFirst = tier === "first_class";
+            return (
+              <button
+                key={tier}
+                onClick={() => setSelectedTier(tier)}
+                className={`p-5 rounded-xl border-2 text-left transition-all relative ${
+                  selectedTier === tier
+                    ? "border-[#70FFE8] bg-[#70FFE8]/10"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                {isFirst && (
+                  <span className="absolute top-3 right-3 text-xs bg-[#FFC3BC] text-[#414141] px-2 py-0.5 rounded-full font-semibold">
+                    Popular
+                  </span>
+                )}
+                <div className="font-bold text-[#414141] text-base mb-1">{tierData?.label ?? tier}</div>
+                <div className="text-2xl font-bold text-[#414141]">
+                  {formatPounds(monthlyPence)}
+                  <span className="text-sm font-normal text-gray-500">/month</span>
+                </div>
+                {selectedType !== "solo" && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Covers your whole team
+                  </div>
+                )}
+                <div className="mt-3 space-y-1">
+                  {tier === "business_class" ? (
+                    <>
+                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> Full booking management</div>
+                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> Commission tracking</div>
+                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> PTS membership</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> Everything in Business Class</div>
+                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> Priority support</div>
+                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> Enhanced commission rates</div>
+                    </>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Joining fee notice */}
+      <div className="bg-[#FFF6ED] rounded-xl p-4 text-sm text-[#414141]">
+        <div className="font-semibold mb-1">One-time joining fee: {formatPounds(joiningFee)}</div>
+        <div className="text-gray-500 text-xs">Paid securely via Instant Bank Pay. Your Direct Debit mandate will be set up at the same time for your monthly subscription.</div>
+      </div>
+
+      {/* Email */}
+      <div>
+        <h2 className="text-lg font-semibold text-[#414141] mb-3">3. Your email address</h2>
+        <div className="space-y-1">
+          <Label htmlFor="email" className="text-sm text-gray-600">Email address</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={emailError ? "border-red-400" : ""}
+          />
+          {emailError && <p className="text-xs text-red-500">{emailError}</p>}
+          <p className="text-xs text-gray-400">We'll use this to create your portal account.</p>
+        </div>
+      </div>
+
+      <Button
+        onClick={handleNext}
+        className="w-full h-12 text-base font-semibold"
+        style={{ background: "#70FFE8", color: "#414141" }}
+      >
+        Continue to Contract <ChevronRight size={18} className="ml-1" />
+      </Button>
+    </div>
+  );
+}
+
+// ─── Step 2: Contract Signing ─────────────────────────────────────────────────
+
+function ContractStep({
+  sessionToken,
+  onNext,
+  onBack,
+}: {
+  sessionToken: string;
+  onNext: () => void;
+  onBack: () => void;
+}) {
+  const sigRef = useRef<SignatureCanvas>(null);
+  const [signerName, setSignerName] = useState("");
+  const [signerAddress, setSignerAddress] = useState("");
+  const [hasDrawn, setHasDrawn] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const { data: template, isLoading: templateLoading } = trpc.join.getContractTemplate.useQuery();
+  const signMutation = trpc.join.signContract.useMutation();
+
+  const clearSignature = () => {
+    sigRef.current?.clear();
+    setHasDrawn(false);
+  };
+
+  const handleSign = async () => {
+    const newErrors: Record<string, string> = {};
+    if (!hasDrawn || sigRef.current?.isEmpty()) {
+      newErrors.signature = "Please draw your signature";
+    }
+    if (!signerName.trim() || signerName.trim().length < 2) {
+      newErrors.name = "Please enter your full name";
+    }
+    if (!signerAddress.trim() || signerAddress.trim().length < 5) {
+      newErrors.address = "Please enter your full address";
+    }
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+    setErrors({});
+
+    const signatureDataUrl = sigRef.current!.toDataURL("image/png");
+
+    try {
+      await signMutation.mutateAsync({
+        sessionToken,
+        signatureDataUrl,
+        signerName: signerName.trim(),
+        signerAddress: signerAddress.trim(),
+      });
+      onNext();
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to sign contract");
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <ArrowLeft size={20} />
+        </button>
+        <div>
+          <h1 className="text-2xl font-bold text-[#414141]">Sign Your Contract</h1>
+          <p className="text-gray-500 text-sm">Please read the contract and sign below.</p>
+        </div>
+      </div>
+
+      {/* PDF Viewer */}
+      {templateLoading ? (
+        <div className="flex items-center justify-center h-48 bg-gray-50 rounded-xl">
+          <Loader2 className="animate-spin text-[#70FFE8]" size={28} />
+        </div>
+      ) : template ? (
+        <div className="rounded-xl overflow-hidden border border-gray-200">
+          <div className="bg-gray-50 px-4 py-2 text-xs text-gray-500 border-b border-gray-200">
+            {template.name} — scroll to read the full contract
+          </div>
+          <iframe
+            src={template.pdfUrl}
+            className="w-full"
+            style={{ height: "400px" }}
+            title="JLT Group Membership Contract"
+          />
+        </div>
+      ) : (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
+          Contract template not available. Please contact JLT Group.
+        </div>
+      )}
+
+      {/* Signature pad */}
+      <div>
+        <Label className="text-sm font-semibold text-[#414141] mb-2 block">
+          Draw your signature <span className="text-red-500">*</span>
+        </Label>
+        <div
+          className={`border-2 rounded-xl overflow-hidden bg-white ${
+            errors.signature ? "border-red-400" : "border-gray-300"
+          }`}
+        >
+          <SignatureCanvas
+            ref={sigRef}
+            canvasProps={{ width: 600, height: 160, className: "w-full" }}
+            penColor="#414141"
+            onBegin={() => setHasDrawn(true)}
+          />
+        </div>
+        <div className="flex items-center justify-between mt-1">
+          {errors.signature ? (
+            <p className="text-xs text-red-500">{errors.signature}</p>
+          ) : (
+            <p className="text-xs text-gray-400">Draw your signature using your mouse or finger</p>
+          )}
+          <button
+            onClick={clearSignature}
+            className="text-xs text-gray-400 hover:text-gray-600 underline"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
+      {/* Full name */}
+      <div>
+        <Label htmlFor="signerName" className="text-sm font-semibold text-[#414141] mb-1 block">
+          Full legal name <span className="text-red-500">*</span>
+        </Label>
+        <Input
+          id="signerName"
+          placeholder="Your full name as it appears on your ID"
+          value={signerName}
+          onChange={(e) => setSignerName(e.target.value)}
+          className={errors.name ? "border-red-400" : ""}
+        />
+        {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
+      </div>
+
+      {/* Address */}
+      <div>
+        <Label htmlFor="signerAddress" className="text-sm font-semibold text-[#414141] mb-1 block">
+          Home address <span className="text-red-500">*</span>
+        </Label>
+        <Textarea
+          id="signerAddress"
+          placeholder={"123 Example Street\nCity\nPostcode"}
+          value={signerAddress}
+          onChange={(e) => setSignerAddress(e.target.value)}
+          rows={3}
+          className={errors.address ? "border-red-400" : ""}
+        />
+        {errors.address && <p className="text-xs text-red-500 mt-1">{errors.address}</p>}
+      </div>
+
+      <div className="bg-[#FFF6ED] rounded-xl p-4 text-xs text-gray-500">
+        By signing above, you confirm you have read and agree to the JLT Group Membership Agreement. Your signature and details will be stored securely for audit purposes.
+      </div>
+
+      <Button
+        onClick={handleSign}
+        disabled={signMutation.isPending}
+        className="w-full h-12 text-base font-semibold"
+        style={{ background: "#70FFE8", color: "#414141" }}
+      >
+        {signMutation.isPending ? (
+          <><Loader2 className="animate-spin mr-2" size={18} /> Saving...</>
+        ) : (
+          <>Sign & Continue to Payment <ChevronRight size={18} className="ml-1" /></>
+        )}
+      </Button>
+    </div>
+  );
+}
+
+// ─── Step 3: Payment ──────────────────────────────────────────────────────────
+
+function PaymentStep({
+  sessionToken,
+  onBack,
+}: {
+  sessionToken: string;
+  onBack: () => void;
+}) {
+  const [redirecting, setRedirecting] = useState(false);
+  const payMutation = trpc.join.initiatePayment.useMutation();
+
+  const handlePay = useCallback(async () => {
+    if (redirecting) return;
+    setRedirecting(true);
+    try {
+      const { authorisationUrl } = await payMutation.mutateAsync({
+        sessionToken,
+        origin: window.location.origin,
+      });
+      window.location.href = authorisationUrl;
+    } catch (err: any) {
+      setRedirecting(false);
+      toast.error(err.message ?? "Failed to initiate payment");
+    }
+  }, [sessionToken, payMutation, redirecting]);
+
+  // Auto-initiate on mount
+  useEffect(() => {
+    handlePay();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="space-y-6 text-center">
+      <div className="flex items-center gap-3 text-left">
+        <button onClick={onBack} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <ArrowLeft size={20} />
+        </button>
+        <div>
+          <h1 className="text-2xl font-bold text-[#414141]">Payment</h1>
+          <p className="text-gray-500 text-sm">You'll be redirected to GoCardless to complete payment.</p>
+        </div>
+      </div>
+
+      <div className="bg-[#FFF6ED] rounded-xl p-6">
+        <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center" style={{ background: "#70FFE8" }}>
+          <Loader2 className="animate-spin text-[#414141]" size={28} />
+        </div>
+        <h2 className="text-lg font-semibold text-[#414141] mb-2">Redirecting to GoCardless...</h2>
+        <p className="text-sm text-gray-500">
+          You'll complete your joining fee payment and set up your Direct Debit in one secure step.
+        </p>
+      </div>
+
+      {!redirecting && (
+        <Button
+          onClick={handlePay}
+          disabled={payMutation.isPending}
+          className="w-full h-12 text-base font-semibold"
+          style={{ background: "#70FFE8", color: "#414141" }}
+        >
+          {payMutation.isPending ? (
+            <><Loader2 className="animate-spin mr-2" size={18} /> Loading...</>
+          ) : (
+            "Go to Payment"
+          )}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// ─── Step 4: Complete ─────────────────────────────────────────────────────────
+
+function CompleteStep({ sessionToken }: { sessionToken: string }) {
+  const { data: session } = trpc.join.getSession.useQuery({ sessionToken });
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [invitesSent, setInvitesSent] = useState<string[]>([]);
+  const [inviteError, setInviteError] = useState("");
+  const inviteMutation = trpc.join.sendTeamInvite.useMutation();
+
+  const isTeam = session?.membershipType === "duo" || session?.membershipType === "trio";
+  const maxInvites = session?.membershipType === "duo" ? 1 : session?.membershipType === "trio" ? 2 : 0;
+
+  const handleSendInvite = async () => {
+    if (!inviteEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail)) {
+      setInviteError("Please enter a valid email address");
+      return;
+    }
+    if (invitesSent.includes(inviteEmail)) {
+      setInviteError("Already invited this email");
+      return;
+    }
+    setInviteError("");
+    try {
+      await inviteMutation.mutateAsync({
+        sessionToken,
+        invitedEmail: inviteEmail,
+        origin: window.location.origin,
+      });
+      setInvitesSent([...invitesSent, inviteEmail]);
+      setInviteEmail("");
+      toast.success(`Invitation sent to ${inviteEmail}`);
+    } catch (err: any) {
+      setInviteError(err.message ?? "Failed to send invite");
+    }
+  };
+
+  return (
+    <div className="space-y-6 text-center">
+      <div className="w-20 h-20 rounded-full mx-auto flex items-center justify-center" style={{ background: "#70FFE8" }}>
+        <CheckCircle2 size={40} className="text-[#414141]" />
+      </div>
+      <div>
+        <h1 className="text-3xl font-bold text-[#414141] mb-2">Welcome to JLT Group!</h1>
+        <p className="text-gray-500">
+          Your joining fee has been paid and your Direct Debit is being set up. The JLT team will activate your portal access shortly.
+        </p>
+      </div>
+
+      {/* Team invites */}
+      {isTeam && session?.userId && (
+        <Card>
+          <CardContent className="pt-5 space-y-4">
+            <div className="text-left">
+              <h2 className="font-semibold text-[#414141] mb-1">Invite your team members</h2>
+              <p className="text-sm text-gray-500">
+                Send invitations to your team members ({maxInvites - invitesSent.length} remaining).
+                They'll sign their own contract — no payment required.
+              </p>
+            </div>
+            {invitesSent.map((email) => (
+              <div key={email} className="flex items-center gap-2 text-sm text-[#02E6D2]">
+                <CheckCircle2 size={16} /> {email}
+              </div>
+            ))}
+            {invitesSent.length < maxInvites && (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="team.member@example.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSendInvite()}
+                    className={inviteError ? "border-red-400" : ""}
+                  />
+                  <Button
+                    onClick={handleSendInvite}
+                    disabled={inviteMutation.isPending}
+                    style={{ background: "#70FFE8", color: "#414141" }}
+                  >
+                    {inviteMutation.isPending ? <Loader2 className="animate-spin" size={16} /> : "Send"}
+                  </Button>
+                </div>
+                {inviteError && <p className="text-xs text-red-500 text-left">{inviteError}</p>}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="bg-[#FFF6ED] rounded-xl p-5 text-left space-y-3">
+        <h3 className="font-semibold text-[#414141]">What happens next?</h3>
+        <div className="space-y-2 text-sm text-gray-600">
+          <div className="flex items-start gap-2">
+            <Badge className="mt-0.5 shrink-0 text-xs" style={{ background: "#70FFE8", color: "#414141" }}>1</Badge>
+            <span>The JLT team will review your application and activate your portal access within 1–2 business days.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <Badge className="mt-0.5 shrink-0 text-xs" style={{ background: "#70FFE8", color: "#414141" }}>2</Badge>
+            <span>You'll receive an email with your login credentials once activated.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <Badge className="mt-0.5 shrink-0 text-xs" style={{ background: "#70FFE8", color: "#414141" }}>3</Badge>
+            <span>Your first monthly subscription payment will be taken one calendar month after today.</span>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-xs text-gray-400">
+        Questions? Email us at{" "}
+        <a href="mailto:memberships@thejltgroup.co.uk" className="text-[#02E6D2] underline">
+          memberships@thejltgroup.co.uk
+        </a>
+      </p>
+    </div>
+  );
+}
+
+// ─── Main JoinFlow Component ──────────────────────────────────────────────────
+
+export default function JoinFlow() {
+  const search = useSearch();
+  const searchParams = new URLSearchParams(search);
+  const urlToken = searchParams.get("token");
+  const urlStep = searchParams.get("step") as Step | null;
+
+  const [step, setStep] = useState<Step>("plan");
+  const [sessionToken, setSessionToken] = useState<string | null>(() => {
+    return urlToken ?? loadSession();
+  });
+  const [selectedTier, setSelectedTier] = useState<MembershipTier>("business_class");
+  const [selectedType, setSelectedType] = useState<MembershipType>("solo");
+
+  const startSessionMutation = trpc.join.startSession.useMutation();
+
+  // If we have a token from URL (returning from GC), go to complete
+  useEffect(() => {
+    if (urlToken) {
+      setSessionToken(urlToken);
+      setStep("complete");
+    }
+  }, [urlToken]);
+
+  // If we have a stored session, try to recover it
+  const { data: existingSession, error: sessionError } = trpc.join.getSession.useQuery(
+    { sessionToken: sessionToken! },
+    {
+      enabled: !!sessionToken && !urlToken,
+      retry: false,
+    }
+  );
+
+  // Handle session fetch error (expired / not found)
+  useEffect(() => {
+    if (sessionError && !urlToken) {
+      clearSession();
+      setSessionToken(null);
+      setStep("plan");
+    }
+  }, [sessionError, urlToken]);
+
+  useEffect(() => {
+    if (existingSession && !urlToken) {
+      const s = existingSession.step as Step;
+      setStep(s === "complete" ? "plan" : s); // Don't resume to complete without URL token
+      if (existingSession.membershipTier) setSelectedTier(existingSession.membershipTier as MembershipTier);
+      if (existingSession.membershipType) setSelectedType(existingSession.membershipType as MembershipType);
+    }
+  }, [existingSession, urlToken]);
+
+  const handlePlanNext = async (tier: MembershipTier, type: MembershipType, email: string) => {
+    setSelectedTier(tier);
+    setSelectedType(type);
+    try {
+      const result = await startSessionMutation.mutateAsync({ email, membershipTier: tier, membershipType: type });
+      setSessionToken(result.sessionToken);
+      saveSession(result.sessionToken);
+      setStep("contract");
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to start session");
+    }
+  };
+
+  const handleContractNext = () => {
+    setStep("payment");
+  };
+
+  const handleBack = (to: Step) => {
+    setStep(to);
+  };
+
+  // Progress indicator
+  const steps: { key: Step; label: string }[] = [
+    { key: "plan", label: "Plan" },
+    { key: "contract", label: "Contract" },
+    { key: "payment", label: "Payment" },
+    { key: "complete", label: "Complete" },
+  ];
+  const stepIndex = steps.findIndex((s) => s.key === step);
+
+  return (
+    <div className="min-h-screen" style={{ background: "#FFF6ED" }}>
+      {/* Header */}
+      <div className="border-b border-gray-200 bg-white px-6 py-4">
+        <div className="max-w-xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "#70FFE8" }}>
+              <span className="font-bold text-[#414141] text-xs">JLT</span>
+            </div>
+            <span className="font-semibold text-[#414141]">JLT Group</span>
+          </div>
+          <div className="text-xs text-gray-400">Secure sign-up</div>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      {step !== "complete" && (
+        <div className="bg-white border-b border-gray-100 px-6 py-3">
+          <div className="max-w-xl mx-auto">
+            <div className="flex items-center gap-2">
+              {steps.slice(0, 3).map((s, i) => (
+                <React.Fragment key={s.key}>
+                  <div className="flex items-center gap-1.5">
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+                        i < stepIndex
+                          ? "bg-[#02E6D2] text-white"
+                          : i === stepIndex
+                          ? "bg-[#70FFE8] text-[#414141]"
+                          : "bg-gray-100 text-gray-400"
+                      }`}
+                    >
+                      {i < stepIndex ? <CheckCircle2 size={14} /> : i + 1}
+                    </div>
+                    <span
+                      className={`text-xs font-medium ${
+                        i === stepIndex ? "text-[#414141]" : "text-gray-400"
+                      }`}
+                    >
+                      {s.label}
+                    </span>
+                  </div>
+                  {i < 2 && (
+                    <div className={`flex-1 h-0.5 ${i < stepIndex ? "bg-[#02E6D2]" : "bg-gray-200"}`} />
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Content */}
+      <div className="max-w-xl mx-auto px-6 py-8">
+        {startSessionMutation.isPending && step === "plan" ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="animate-spin text-[#70FFE8]" size={32} />
+          </div>
+        ) : step === "plan" ? (
+          <PlanStep onNext={handlePlanNext} />
+        ) : step === "contract" && sessionToken ? (
+          <ContractStep
+            sessionToken={sessionToken}
+            onNext={handleContractNext}
+            onBack={() => handleBack("plan")}
+          />
+        ) : step === "payment" && sessionToken ? (
+          <PaymentStep
+            sessionToken={sessionToken}
+            onBack={() => handleBack("contract")}
+          />
+        ) : step === "complete" && sessionToken ? (
+          <CompleteStep sessionToken={sessionToken} />
+        ) : (
+          <div className="text-center py-20 text-gray-400">Loading...</div>
+        )}
+      </div>
+    </div>
+  );
+}

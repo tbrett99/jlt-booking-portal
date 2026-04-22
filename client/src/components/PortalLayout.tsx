@@ -308,6 +308,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: false,
       items: [
         { label: "Agent CRM", href: "/crm/agents", icon: <UserCheck size={16} /> },
+        { label: "Sign-Up Applications", href: "/crm/join-sessions", icon: <UserSearch size={16} /> },
         { label: "Change Requests", href: "/crm/change-requests", icon: <ClipboardList size={16} /> },
         { label: "Memberships", href: "/crm/memberships", icon: <CreditCard size={16} /> },
       ],
