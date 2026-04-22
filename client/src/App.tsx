@@ -60,6 +60,8 @@ import MembershipSelection from "./pages/crm/MembershipSelection";
 import WonAgentPortal from "./pages/crm/WonAgentPortal";
 import MembershipSuccess from "./pages/crm/MembershipSuccess";
 import OnboardingDashboard from "./pages/agent/OnboardingDashboard";
+import DdSetup from "./pages/agent/DdSetup";
+import DdComplete from "./pages/agent/DdComplete";
 import RegisterPage from "./pages/RegisterPage";
 import AgentCrm from "./pages/crm/AgentCrm";
 import PaymentResult from "./pages/PaymentResult";
@@ -77,7 +79,8 @@ function OnboardingGate({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
 
   // Only gate pure agent accounts (not admins in agent-view)
-  if (user?.role === "agent" && (user as any).portalStatus === "onboarding" && location !== "/onboarding") {
+  const allowedOnboardingPaths = ["/onboarding", "/dd-setup", "/dd-complete"];
+  if (user?.role === "agent" && (user as any).portalStatus === "onboarding" && !allowedOnboardingPaths.includes(location)) {
     // Redirect to onboarding — use replace so back-button doesn't loop
     if (typeof window !== "undefined") {
       navigate("/onboarding", { replace: true });
@@ -175,6 +178,8 @@ function AuthRouter() {
         <OnboardingGate>
         <Switch>
           <Route path="/onboarding" component={OnboardingDashboard} />
+          <Route path="/dd-setup" component={DdSetup} />
+          <Route path="/dd-complete" component={DdComplete} />
           <Route path="/" component={AgentDashboard} />
           <Route path="/dashboard" component={AgentDashboard} />
           <Route path="/bookings/new" component={RegisterBooking} />

@@ -905,3 +905,55 @@ export const paymentLinks = mysqlTable("payment_links", {
   expiresAt: timestamp("expiresAt"),
 });
 export type PaymentLink = typeof paymentLinks.$inferSelect;
+
+// ─── GoCardless Mandates ──────────────────────────────────────────────────────
+
+export const gcMandates = mysqlTable("gc_mandates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK → users.id
+  mandateId: varchar("mandateId", { length: 100 }), // GoCardless mandate ID (MD...)
+  billingRequestId: varchar("billingRequestId", { length: 100 }), // BRQ...
+  billingRequestFlowId: varchar("billingRequestFlowId", { length: 100 }), // BRF...
+  status: mysqlEnum("status", ["pending", "active", "cancelled", "failed", "expired"]).default("pending").notNull(),
+  preferredPaymentDay: int("preferredPaymentDay"), // 1–28, agent's chosen day of month
+  joiningFeePaidAt: timestamp("joiningFeePaidAt"), // When Stripe joining fee was paid
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type GcMandate = typeof gcMandates.$inferSelect;
+
+// ─── GoCardless Subscriptions ─────────────────────────────────────────────────
+
+export const gcSubscriptions = mysqlTable("gc_subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK → users.id
+  mandateId: varchar("mandateId", { length: 100 }).notNull(), // GoCardless mandate ID
+  subscriptionId: varchar("subscriptionId", { length: 100 }), // GoCardless subscription ID (SB...)
+  status: mysqlEnum("status", ["active", "paused", "cancelled", "finished"]).default("active").notNull(),
+  amount: int("amount").notNull(), // in pence
+  currency: varchar("currency", { length: 3 }).default("GBP").notNull(),
+  startDate: varchar("startDate", { length: 10 }).notNull(), // YYYY-MM-DD
+  dayOfMonth: int("dayOfMonth"), // 1–28
+  nextChargeDate: varchar("nextChargeDate", { length: 10 }), // YYYY-MM-DD
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type GcSubscription = typeof gcSubscriptions.$inferSelect;
+
+// ─── GoCardless Payment Events ────────────────────────────────────────────────
+export const gcPaymentEvents = mysqlTable("gc_payment_events", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId"), // FK → users.id (resolved from mandate lookup)
+  mandateId: varchar("mandateId", { length: 100 }), // GoCardless mandate ID
+  paymentId: varchar("paymentId", { length: 100 }), // GoCardless payment ID (PM...)
+  eventType: varchar("eventType", { length: 60 }).notNull(), // e.g. payments_failed, mandates_cancelled
+  status: varchar("status", { length: 40 }), // e.g. failed, charged_back, cancelled
+  amount: int("amount"), // in pence (null for mandate events)
+  currency: varchar("currency", { length: 3 }).default("GBP"),
+  failureReason: varchar("failureReason", { length: 255 }), // GoCardless failure reason code
+  failureDescription: varchar("failureDescription", { length: 512 }), // human-readable
+  occurredAt: timestamp("occurredAt").notNull(),
+  rawPayload: text("rawPayload"), // full JSON for debugging
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type GcPaymentEvent = typeof gcPaymentEvents.$inferSelect;

@@ -116,6 +116,8 @@ export default function AgentCrm() {
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const { data: agents = [], refetch } = trpc.crm.agentCrm.list.useQuery();
+  const { data: recentFailedPayments = [] } = trpc.gocardless.adminGetRecentFailedPayments.useQuery();
+  const failedPaymentUserIds = new Set((recentFailedPayments as any[]).map((e: any) => e.userId));
 
   const filtered = (agents as AgentRow[]).filter((a) => {
     const q = search.toLowerCase();
@@ -203,7 +205,14 @@ export default function AgentCrm() {
                     onClick={() => { setSelectedAgent(agent); setSheetOpen(true); }}
                   >
                     <TableCell>
-                      <div className="font-medium">{agent.name ?? "—"}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{agent.name ?? "—"}</span>
+                        {failedPaymentUserIds.has(agent.id) && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700">
+                            <CreditCard size={9} /> Payment Failed
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-muted-foreground">{agent.email}</div>
                       {agent.crmProfile?.businessName && (
                         <div className="text-xs text-muted-foreground italic">{agent.crmProfile.businessName}</div>
@@ -279,6 +288,9 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
     onError: (e) => toast.error(e.message),
   });
 
+  const { data: agentDdStatus } = trpc.gocardless.adminListMandates.useQuery(undefined, { enabled: open });
+  const agentMandate = agentDdStatus?.find((m: any) => m.userId === agent.id);
+
   const activatePortal = trpc.users.activatePortalAccess.useMutation({
     onSuccess: () => {
       toast.success(`Portal access activated for ${agent.name}`);
@@ -316,6 +328,26 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
                 ) : (
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
                     Portal Active
+                  </span>
+                )}
+                {/* DD mandate status badge */}
+                {agentMandate ? (
+                  agentMandate.status === "active" ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                      <CreditCard size={10} /> DD Active
+                    </span>
+                  ) : agentMandate.status === "pending" ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      <CreditCard size={10} /> DD Pending
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      <CreditCard size={10} /> DD {agentMandate.status}
+                    </span>
+                  )
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                    <CreditCard size={10} /> No DD
                   </span>
                 )}
               </div>
@@ -356,7 +388,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             )}
           </div>
           <Tabs defaultValue="profile">
-            <TabsList className="grid grid-cols-8 w-full">
+            <TabsList className="grid grid-cols-9 w-full">
               <TabsTrigger value="profile" className="text-xs">Profile</TabsTrigger>
               <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
               <TabsTrigger value="team" className="text-xs">Team</TabsTrigger>
@@ -365,6 +397,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <TabsTrigger value="docs" className="text-xs">Docs</TabsTrigger>
               <TabsTrigger value="tags" className="text-xs">Tags</TabsTrigger>
               <TabsTrigger value="history" className="text-xs">History</TabsTrigger>
+              <TabsTrigger value="dd" className="text-xs">Direct Debit</TabsTrigger>
             </TabsList>
 
             <TabsContent value="profile" className="mt-5 pb-8">
@@ -390,6 +423,9 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             </TabsContent>
             <TabsContent value="history" className="mt-5 pb-8">
               <StatusHistoryTab userId={agent.id} />
+            </TabsContent>
+            <TabsContent value="dd" className="mt-5 pb-8">
+              <DirectDebitTab userId={agent.id} mandate={agentMandate} />
             </TabsContent>
           </Tabs>
         </div>
@@ -1674,6 +1710,157 @@ function StatusHistoryTab({ userId }: { userId: number }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ─── Direct Debit Tab ─────────────────────────────────────────────────────────
+
+function DirectDebitTab({ userId, mandate }: { userId: number; mandate: any }) {
+  const { data: paymentEvents, isLoading } = trpc.gocardless.adminGetPaymentEvents.useQuery(
+    { userId },
+    { enabled: true }
+  );
+  const { data: ddStatus } = trpc.gocardless.adminGetDdStatus.useQuery({ userId });
+  const subscription = ddStatus?.subscription;
+
+  const formatEventType = (type: string) => {
+    const map: Record<string, string> = {
+      payments_failed: "Payment Failed",
+      payments_charged_back: "Payment Charged Back",
+      mandates_cancelled: "Mandate Cancelled",
+      mandates_failed: "Mandate Failed",
+      mandates_expired: "Mandate Expired",
+    };
+    return map[type] ?? type;
+  };
+
+  const eventBadgeColor = (type: string) => {
+    if (type.includes("failed") || type.includes("charged_back")) return "bg-red-100 text-red-700";
+    if (type.includes("cancelled") || type.includes("expired")) return "bg-orange-100 text-orange-700";
+    return "bg-gray-100 text-gray-700";
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Mandate Status */}
+      <div>
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+          <CreditCard size={14} />
+          Mandate Status
+        </h3>
+        {mandate ? (
+          <div className="rounded-lg border p-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Status</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                mandate.status === "active" ? "bg-teal-100 text-teal-800" :
+                mandate.status === "pending" ? "bg-blue-100 text-blue-800" :
+                mandate.status === "cancelled" ? "bg-red-100 text-red-800" :
+                "bg-gray-100 text-gray-700"
+              }`}>{mandate.status}</span>
+            </div>
+            {mandate.mandateId && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Mandate ID</span>
+                <span className="font-mono text-xs">{mandate.mandateId}</span>
+              </div>
+            )}
+            {mandate.preferredPaymentDay && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Preferred Payment Day</span>
+                <span>{mandate.preferredPaymentDay}{["st","nd","rd"][mandate.preferredPaymentDay - 1] ?? "th"} of month</span>
+              </div>
+            )}
+            {mandate.joiningFeePaidAt && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Joining Fee Paid</span>
+                <span>{new Date(mandate.joiningFeePaidAt).toLocaleDateString()}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No Direct Debit mandate set up yet.
+          </div>
+        )}
+      </div>
+
+      {/* Subscription */}
+      {subscription && (
+        <div>
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+            <Calendar size={14} />
+            Subscription
+          </h3>
+          <div className="rounded-lg border p-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Amount</span>
+              <span>£{(subscription.amount / 100).toFixed(2)} / month</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Start Date</span>
+              <span>{subscription.startDate}</span>
+            </div>
+            {subscription.nextChargeDate && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Next Charge</span>
+                <span>{subscription.nextChargeDate}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Subscription ID</span>
+              <span className="font-mono text-xs">{subscription.subscriptionId}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Event History */}
+      <div>
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+          <Clock size={14} />
+          Payment Event History
+        </h3>
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        ) : !paymentEvents || paymentEvents.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No payment events recorded.
+          </div>
+        ) : (
+          <div className="rounded-lg border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Date</TableHead>
+                  <TableHead className="text-xs">Event</TableHead>
+                  <TableHead className="text-xs">Amount</TableHead>
+                  <TableHead className="text-xs">Reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paymentEvents.map((ev: any) => (
+                  <TableRow key={ev.id}>
+                    <TableCell className="text-xs">{new Date(ev.occurredAt).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${eventBadgeColor(ev.eventType)}`}>
+                        {formatEventType(ev.eventType)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {ev.amount != null ? `£${(ev.amount / 100).toFixed(2)}` : "—"}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
+                      {ev.failureDescription ?? ev.failureReason ?? "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

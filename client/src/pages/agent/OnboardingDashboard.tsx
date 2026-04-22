@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ function fileToBase64(file: File): Promise<string> {
 
 export default function OnboardingDashboard() {
   const { user, loading: authLoading } = useAuth({ redirectOnUnauthenticated: true });
+  const [, navigate] = useLocation();
   const utils = trpc.useUtils();
 
   const { data: profileData, isLoading: profileLoading } = trpc.crm.agentCrm.getMyProfile.useQuery(undefined, {
@@ -117,7 +119,11 @@ export default function OnboardingDashboard() {
   const hasAddress = !!addressLine1.trim() && !!city.trim() && !!postcode.trim();
   const hasIdDoc = !!profile?.idDocUrl;
   const hasPoaDoc = !!profile?.proofOfAddressUrl;
-  const allComplete = hasName && hasContact && hasAddress && hasIdDoc && hasPoaDoc;
+
+  const { data: ddStatus } = trpc.gocardless.getMyDdStatus.useQuery();
+  const hasDdMandate = ddStatus?.mandate?.status === "active" || ddStatus?.mandate?.status === "pending";
+
+  const allComplete = hasName && hasContact && hasAddress && hasIdDoc && hasPoaDoc && hasDdMandate;
 
   const steps = [
     { label: "Full name", done: hasName },
@@ -125,6 +131,7 @@ export default function OnboardingDashboard() {
     { label: "Home address", done: hasAddress },
     { label: "ID document", done: hasIdDoc },
     { label: "Proof of address", done: hasPoaDoc },
+    { label: "Direct Debit setup", done: hasDdMandate, action: () => navigate("/dd-setup") },
   ];
   const completedCount = steps.filter(s => s.done).length;
 
@@ -188,6 +195,14 @@ export default function OnboardingDashboard() {
                     : <div className="w-[15px] h-[15px] rounded-full border-2 border-gray-300 flex-shrink-0" />
                   }
                   <span className={step.done ? "text-gray-500 line-through" : "text-gray-700"}>{step.label}</span>
+                  {!step.done && (step as any).action && (
+                    <button
+                      onClick={(step as any).action}
+                      className="ml-auto text-xs text-[#02E6D2] hover:underline font-medium flex items-center gap-0.5"
+                    >
+                      Set up <ChevronRight size={12} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

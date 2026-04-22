@@ -1526,3 +1526,26 @@
 
 ## Bug Fix: Commission Management VAT Input Page Jump
 - [x] Fix: page jumps on every keystroke when entering a VAT figure on the commission management screen (root cause: ClaimTable was defined inside AdminCommissions render function, causing full remount on every vatEditing state change; fixed by moving ClaimTable to module scope with explicit props)
+
+## GoCardless Direct Debit Integration
+- [x] Store GOCARDLESS_ACCESS_TOKEN and GOCARDLESS_ENVIRONMENT as secrets
+- [x] DB: add gc_mandates table (userId, billingRequestId, mandateId, status, joiningFeePaidAt, preferredPaymentDay)
+- [x] DB: add gc_subscriptions table (userId, mandateId, subscriptionId, status, startDate, amount, nextChargeDate)
+- [x] Server: GoCardless API helper (createBillingRequest, createBillingRequestFlow, createSubscription, calcSubscriptionStartDate)
+- [x] Server: tRPC procedures: initDdSetup, getMyDdStatus, adminListMandates, adminGetPaymentEvents, adminGetRecentFailedPayments, adminGetDdStatus
+- [x] Server: GoCardless webhook handler at /api/gocardless/webhook — handles mandates_active, payments_failed, payments_charged_back, mandates_cancelled, mandates_failed
+- [x] Server: on mandates_active webhook, auto-create subscription with start_date = joiningFeePaidAt + 1 month
+- [x] Frontend: DD Setup page (/dd-setup) — agent chooses preferred payment day, then redirected to GoCardless hosted page
+- [x] Frontend: DD Complete page (/dd-complete) — confirmation page after GoCardless redirect
+- [x] Frontend: wire DD setup into onboarding checklist as a required step
+- [x] Admin CRM: Direct Debit tab in agent sheet with mandate status, subscription details, and full payment event history
+- [x] Admin notification when a new agent's DD mandate becomes active
+
+## GoCardless Failed Payment Tracking
+- [x] Add gc_payment_events table to schema (paymentId, mandateId, userId, eventType, amount, currency, status, failureReason, occurredAt)
+- [x] Extend GoCardless webhook handler to capture payments_failed, payments_charged_back, mandates_cancelled, mandates_failed events
+- [x] Add DB helpers: createPaymentEvent, getPaymentEventsByUserId, getRecentFailedPayments
+- [x] Add adminGetPaymentEvents and adminGetRecentFailedPayments tRPC procedures
+- [x] Admin CRM: Direct Debit tab shows full payment history with event type badges and failure reasons
+- [x] Admin CRM: red "Payment Failed" badge on agent list row when latest payment failed
+- [x] Admin notification when a payment fails or mandate is cancelled

@@ -14,6 +14,18 @@ import { verifyPpsSignature, buildPpsSignature } from "../pps-signature";
 import { getDb, createInAppNotification } from "../db";
 import { paymentLinks, bookings, users } from "../../drizzle/schema";
 import { sendNotificationEmail, sendDirectEmail } from "../email";
+import {
+  getBillingRequest,
+  createSubscription,
+  calcSubscriptionStartDate,
+} from "../gocardless";
+import {
+  getGcMandateByBillingRequestId,
+  updateGcMandate,
+  createGcSubscription,
+  createPaymentEvent,
+} from "../gocardless-db";
+import { notifyOwner } from "./notification";
 
 // HTML escape helper to prevent XSS in server-rendered payment page
 function escHtml(str: string): string {
@@ -716,6 +728,147 @@ async function startServer() {
       console.error("[PPS Callback] Error:", err);
       // Always return 200 to prevent PPS retry storms
       res.status(200).send("OK");
+    }
+  });
+
+  // ── GoCardless Webhook ────────────────────────────────────────────────────
+  // GoCardless POSTs events here. We handle mandates_active to auto-create subscriptions.
+  app.post("/api/gocardless/webhook", async (req, res) => {
+    try {
+      const events: Array<{ id: string; action: string; resource_type: string; links: Record<string, string> }> =
+        req.body?.events ?? [];
+
+      for (const event of events) {
+        console.log(`[GC Webhook] ${event.resource_type}.${event.action}`, event.links);
+
+        // Mandate became active → create the subscription
+        if (event.resource_type === "mandates" && event.action === "active") {
+          const mandateId = event.links.mandate;
+          if (!mandateId) continue;
+
+          // Find our local record via billing_request link (if present) or mandate ID
+          const billingRequestId = event.links.billing_request ?? null;
+          let localMandate = billingRequestId
+            ? await getGcMandateByBillingRequestId(billingRequestId)
+            : null;
+
+          if (!localMandate) {
+            console.warn(`[GC Webhook] No local mandate found for mandate ${mandateId}`);
+            continue;
+          }
+
+          // Update local mandate status
+          await updateGcMandate(localMandate.id, { mandateId, status: "active" });
+
+          // Calculate subscription start date: 1 month after joining fee payment
+          const joiningFeeDate = localMandate.joiningFeePaidAt ?? new Date();
+          const dayOfMonth = localMandate.preferredPaymentDay ?? 1;
+          const startDate = calcSubscriptionStartDate(joiningFeeDate, dayOfMonth);
+
+          // Create the GoCardless subscription
+          const sub = await createSubscription({
+            mandateId,
+            amountPence: 3000, // £30.00 — update to your actual monthly fee
+            name: "JLT Monthly Membership",
+            startDate,
+            dayOfMonth,
+          });
+
+          // Store subscription locally
+          await createGcSubscription({
+            userId: localMandate.userId,
+            mandateId,
+            subscriptionId: sub.id,
+            amount: sub.amount,
+            startDate,
+            dayOfMonth,
+            nextChargeDate: sub.upcoming_payments?.[0]?.charge_date,
+          });
+
+          // Notify admin
+          await notifyOwner({
+            title: "New DD Mandate Active",
+            content: `Agent (user ID ${localMandate.userId}) has set up their Direct Debit mandate. First payment scheduled for ${startDate}.`,
+          });
+
+          console.log(`[GC Webhook] Subscription ${sub.id} created for mandate ${mandateId}, starts ${startDate}`);
+        }
+
+        // Mandate cancelled/failed/expired
+        if (
+          event.resource_type === "mandates" &&
+          ["cancelled", "failed", "expired"].includes(event.action)
+        ) {
+          const mandateId = event.links.mandate;
+          const billingRequestId = event.links.billing_request ?? null;
+          const localMandate = billingRequestId
+            ? await getGcMandateByBillingRequestId(billingRequestId)
+            : null;
+          if (localMandate) {
+            await updateGcMandate(localMandate.id, {
+              status: event.action as "cancelled" | "failed" | "expired",
+            });
+            // Record the event
+            await createPaymentEvent({
+              userId: localMandate.userId,
+              mandateId,
+              eventType: `mandates_${event.action}`,
+              status: event.action,
+              occurredAt: new Date(),
+              rawPayload: JSON.stringify(event),
+            });
+            // Notify admin
+            await notifyOwner({
+              title: `DD Mandate ${event.action.charAt(0).toUpperCase() + event.action.slice(1)}`,
+              content: `The Direct Debit mandate for agent (user ID ${localMandate.userId}) has been ${event.action}. Please check their account in the CRM.`,
+            });
+            console.log(`[GC Webhook] Mandate ${mandateId} ${event.action} for user ${localMandate.userId}`);
+          }
+        }
+
+        // Payment failed or charged back
+        if (
+          event.resource_type === "payments" &&
+          ["failed", "charged_back"].includes(event.action)
+        ) {
+          const paymentId = event.links.payment;
+          const mandateId = event.links.mandate;
+          const meta = (event as any).details ?? {};
+          // Resolve user from mandate
+          let userId: number | undefined;
+          if (mandateId) {
+            const db = await getDb();
+            if (db) {
+              const { gcMandates } = await import("../../drizzle/schema");
+              const { eq: eqOp } = await import("drizzle-orm");
+              const rows = await db.select().from(gcMandates).where(eqOp(gcMandates.mandateId, mandateId)).limit(1);
+              if (rows[0]) userId = rows[0].userId;
+            }
+          }
+          await createPaymentEvent({
+            userId,
+            mandateId,
+            paymentId,
+            eventType: `payments_${event.action}`,
+            status: event.action,
+            failureReason: meta.cause ?? meta.reason_code ?? undefined,
+            failureDescription: meta.description ?? undefined,
+            occurredAt: new Date(),
+            rawPayload: JSON.stringify(event),
+          });
+          // Notify admin
+          await notifyOwner({
+            title: `DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}`,
+            content: `A Direct Debit payment (${paymentId}) has ${event.action === "charged_back" ? "been charged back" : "failed"}${userId ? ` for agent (user ID ${userId})` : ""}. ${meta.description ? `Reason: ${meta.description}.` : ""} Please check the CRM.`,
+          });
+          console.log(`[GC Webhook] Payment ${paymentId} ${event.action} for user ${userId ?? "unknown"}`);
+        }
+      }
+
+      res.status(200).json({ success: true });
+    } catch (err) {
+      console.error("[GC Webhook] Error:", err);
+      res.status(500).json({ error: "Internal error" });
     }
   });
 

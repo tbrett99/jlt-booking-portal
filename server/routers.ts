@@ -126,6 +126,19 @@ import { crmRouter } from "./crm-router";
 import { remittanceRouter } from "./remittance-router";
 import { flightRequestsRouter } from "./flight-requests-router";
 import { paymentsRouter } from "./payments-router";
+import {
+  createBillingRequest,
+  createBillingRequestFlow,
+  calcSubscriptionStartDate,
+} from "./gocardless";
+import {
+  createGcMandate,
+  getGcMandateByUserId,
+  getGcSubscriptionByUserId,
+  getAllGcMandates,
+  getPaymentEventsByUserId,
+  getRecentFailedPayments,
+} from "./gocardless-db";
 
 // ─── Role middleware ──────────────────────────────────────────────────────────
 
@@ -2742,6 +2755,96 @@ export const appRouter = router({
   remittance: remittanceRouter,
   flightRequests: flightRequestsRouter,
   payments: paymentsRouter,
+
+  // ─── GoCardless Direct Debit ───────────────────────────────────────────────
+  gocardless: router({
+    /**
+     * Initiate DD setup: creates a GoCardless Billing Request + Flow and returns
+     * the authorisation URL to redirect the agent to.
+     */
+    initDdSetup: protectedProcedure
+      .input(
+        z.object({
+          preferredPaymentDay: z.number().int().min(1).max(28),
+          origin: z.string().url(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const user = ctx.user;
+        // Build name parts from full name
+        const nameParts = (user.name ?? "").trim().split(/\s+/);
+        const givenName = nameParts[0] ?? "";
+        const familyName = nameParts.slice(1).join(" ") || undefined;
+
+        // Create GoCardless billing request
+        const brq = await createBillingRequest({
+          givenName,
+          familyName,
+          email: user.email ?? undefined,
+        });
+
+        // Create the hosted flow
+        const flow = await createBillingRequestFlow({
+          billingRequestId: brq.id,
+          redirectUri: `${input.origin}/dd-complete`,
+          exitUri: `${input.origin}/dd-setup`,
+        });
+
+        // Store locally
+        await createGcMandate({
+          userId: user.id,
+          billingRequestId: brq.id,
+          billingRequestFlowId: flow.id,
+          preferredPaymentDay: input.preferredPaymentDay,
+          joiningFeePaidAt: new Date(), // treat now as joining fee date
+        });
+
+        return { authorisationUrl: flow.authorisation_url };
+      }),
+
+    /**
+     * Get the current agent's mandate + subscription status.
+     */
+    getMyDdStatus: protectedProcedure.query(async ({ ctx }) => {
+      const mandate = await getGcMandateByUserId(ctx.user.id);
+      const subscription = await getGcSubscriptionByUserId(ctx.user.id);
+      return { mandate, subscription };
+    }),
+
+    /**
+     * Admin: list all mandates.
+     */
+    adminListMandates: adminProcedure.query(async () => {
+      return getAllGcMandates();
+    }),
+
+    /**
+     * Admin: get payment events for a specific agent.
+     */
+    adminGetPaymentEvents: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .query(async ({ input }) => {
+        return getPaymentEventsByUserId(input.userId);
+      }),
+
+    /**
+     * Admin: get all recent failed payments across all agents.
+     */
+    adminGetRecentFailedPayments: adminProcedure.query(async () => {
+      return getRecentFailedPayments(50);
+    }),
+
+    /**
+     * Admin: get mandate + subscription status for a specific agent.
+     */
+    adminGetDdStatus: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .query(async ({ input }) => {
+        const mandate = await getGcMandateByUserId(input.userId);
+        const subscription = await getGcSubscriptionByUserId(input.userId);
+        return { mandate, subscription };
+      }),
+  }),
 
   inbox: router({
     // Admin: get IMAP config (password masked)
