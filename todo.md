@@ -1549,3 +1549,9 @@
 - [x] Admin CRM: Direct Debit tab shows full payment history with event type badges and failure reasons
 - [x] Admin CRM: red "Payment Failed" badge on agent list row when latest payment failed
 - [x] Admin notification when a payment fails or mandate is cancelled
+
+## GoCardless CRM Backfill
+- [x] Pull all GoCardless customers, mandates, and subscriptions via API
+- [x] Match to CRM agents by email address
+- [x] Backfill gc_mandates and gc_subscriptions tables with matched data
+- [x] Report which agents were matched and which had no GoCardless record (118 matched, 4 skipped/no mandates, 322 no GoCardless record)
