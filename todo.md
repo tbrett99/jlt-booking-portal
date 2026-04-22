@@ -1511,3 +1511,6 @@
 - [x] Add `portalStatus` badge (Onboarding / Portal Active) in AgentCrmSheet header
 - [x] Add "Activate Portal Access" button in AgentCrmSheet (visible when agent is in onboarding state, calls users.activatePortalAccess mutation)
 - [x] Add 4 vitest tests for activatePortalAccess (admin allowed, super_admin allowed, unauthenticated rejected, agent rejected)
+
+## Bug Fix: Owner Notification Email Wrong Address
+- [x] Update Max Kelly's account email from max@loupr.com to max@thejltgroup.co.uk so admin notifications go to the correct address (updated user id 760 in DB)
