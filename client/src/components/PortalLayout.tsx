@@ -340,7 +340,23 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     },
   ];
 
-  const navGroups = (user?.role === "agent" || isAgentView) ? agentNavGroups : adminNavGroups;
+  // When an agent is in onboarding state, show only a minimal nav
+  const isOnboardingAgent = user?.role === "agent" && (user as any).portalStatus === "onboarding";
+
+  const onboardingNavGroups: NavGroup[] = [
+    {
+      label: "Getting Started",
+      icon: <Home size={16} />,
+      defaultOpen: true,
+      items: [
+        { label: "Complete Onboarding", href: "/onboarding", icon: <UserCheck size={16} /> },
+      ],
+    },
+  ];
+
+  const navGroups = isOnboardingAgent
+    ? onboardingNavGroups
+    : (user?.role === "agent" || isAgentView) ? agentNavGroups : adminNavGroups;
 
   const handleBellClick = () => {
     setNotifOpen((prev) => !prev);

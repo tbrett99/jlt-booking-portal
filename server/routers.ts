@@ -109,6 +109,7 @@ import {
   unlinkEmailFromBooking,
   getLinkedEmailsForBooking,
   getCachedEmailByUid,
+  activatePortalAccess,
 } from "./db";
 import { encryptOptional, decryptOptional } from "./encryption";
 import {
@@ -552,6 +553,14 @@ export const appRouter = router({
         // Non-httpOnly flag cookie so the client JS can detect impersonation mode
         ctx.res.cookie("is_impersonating", "1", { ...cookieOpts, httpOnly: false, maxAge: 1000 * 60 * 60 * 4 });
         return { success: true, targetName: target.name ?? target.email };
+      }),
+
+    // Activate portal access for an agent (admin only)
+    activatePortalAccess: adminProcedure
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ input }) => {
+        await activatePortalAccess(input.userId);
+        return { success: true };
       }),
 
     stopImpersonating: protectedProcedure.mutation(async ({ ctx }) => {

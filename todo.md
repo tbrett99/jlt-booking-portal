@@ -1484,3 +1484,30 @@
 - [x] After successful contract signature, redirect agent to the joining fee payment page (auto-redirect after 3s)
 - [x] Wire to configured Stripe joining fee URL from paymentConfig
 - [x] After payment, redirect to /membership/success (handled by Stripe success URL config)
+
+## Bug Fix: CRM Payment Settings Not Saving
+- [ ] Investigate: Stripe joining fee URL not saving in CRM Payment Settings
+- [ ] Investigate: Contract template not saving/uploading in CRM
+- [ ] Fix both save procedures
+
+## Feature: Agent Onboarding Gate
+- [ ] Add portalStatus enum to users table: 'onboarding' | 'active' (default: 'onboarding')
+- [ ] DB migration for the new portalStatus column
+- [ ] Backend: admin procedure to set portalStatus to 'active' for a user (activatePortalAccess)
+- [ ] Agent sidebar: when portalStatus is 'onboarding', only show Onboarding nav item — hide all other agent nav items
+- [ ] Agent routes: redirect all agent routes (/dashboard, /bookings, /register-booking, /flights, /amendments, /refunds, /commissions) to /onboarding when portalStatus is 'onboarding'
+- [ ] Admin CRM agent list: show portalStatus badge and "Activate Portal Access" button per agent
+- [ ] Admin notification when a new agent completes onboarding (verify it fires correctly)
+
+## Agent Onboarding Gate
+- [x] Add `portalStatus` enum column (`onboarding` | `active`) to users table in schema.ts
+- [x] Generate and apply DB migration for portalStatus column
+- [x] Backfill existing admin/agent users to `active` so they are not locked out
+- [x] Add `activatePortalAccess(userId)` helper in db.ts
+- [x] Add `users.activatePortalAccess` admin-only tRPC mutation in routers.ts
+- [x] Add `OnboardingGate` component in App.tsx — redirects agent to /onboarding if portalStatus === 'onboarding'
+- [x] Wrap pure-agent route Switch with OnboardingGate in App.tsx
+- [x] Add onboarding-only minimal nav in PortalLayout (shows only "Complete Onboarding" link when agent is in onboarding state)
+- [x] Add `portalStatus` badge (Onboarding / Portal Active) in AgentCrmSheet header
+- [x] Add "Activate Portal Access" button in AgentCrmSheet (visible when agent is in onboarding state, calls users.activatePortalAccess mutation)
+- [x] Add 4 vitest tests for activatePortalAccess (admin allowed, super_admin allowed, unauthenticated rejected, agent rejected)

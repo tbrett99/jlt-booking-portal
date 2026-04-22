@@ -96,6 +96,7 @@ type AgentRow = {
   email: string | null;
   phone: string | null;
   isActive: boolean;
+  portalStatus: "onboarding" | "active";
   createdAt: Date;
   tags: string[];
   crmProfile: CrmProfile | null;
@@ -278,6 +279,16 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
     onError: (e) => toast.error(e.message),
   });
 
+  const activatePortal = trpc.users.activatePortalAccess.useMutation({
+    onSuccess: () => {
+      toast.success(`Portal access activated for ${agent.name}`);
+      onRefresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const isOnboarding = agent.portalStatus === "onboarding";
+
   const profile = crmData?.profile as CrmProfile | null ?? null;
 
   return (
@@ -298,6 +309,15 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
                 {profile?.membershipTier && (
                   <Badge variant="secondary" className="text-xs">{profile.membershipTier}</Badge>
                 )}
+                {isOnboarding ? (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                    Onboarding
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                    Portal Active
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -305,9 +325,25 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
 
         {/* Tabs */}
         <div className="px-6 pt-4">
-          {/* Delete record — super_admin only */}
-          {isSuperAdmin && (
-            <div className="flex justify-end mb-3">
+          {/* Portal access + delete actions */}
+          <div className="flex justify-between items-center mb-3">
+            {/* Activate Portal Access — shown when agent is still in onboarding */}
+            {isOnboarding ? (
+              <Button
+                size="sm"
+                className="h-7 text-xs gap-1.5"
+                style={{ background: "#70FFE8", color: "#414141" }}
+                disabled={activatePortal.isPending}
+                onClick={() => activatePortal.mutate({ userId: agent.id })}
+              >
+                <UserCheck size={12} />
+                {activatePortal.isPending ? "Activating..." : "Activate Portal Access"}
+              </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground">Portal access is active</span>
+            )}
+            {/* Delete record — super_admin only */}
+            {isSuperAdmin && (
               <Button
                 size="sm"
                 variant="outline"
@@ -317,8 +353,8 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
                 <Trash2 size={12} />
                 Delete CRM Record
               </Button>
-            </div>
-          )}
+            )}
+          </div>
           <Tabs defaultValue="profile">
             <TabsList className="grid grid-cols-8 w-full">
               <TabsTrigger value="profile" className="text-xs">Profile</TabsTrigger>

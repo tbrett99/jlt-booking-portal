@@ -107,6 +107,7 @@ vi.mock("./db", () => ({
   getLineItemsByAmendment: vi.fn().mockResolvedValue([]),
   getLineItemsByAmendments: vi.fn().mockResolvedValue([]),
   updateCommissionVat: vi.fn().mockResolvedValue(undefined),
+  activatePortalAccess: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./email", () => ({
@@ -683,5 +684,40 @@ describe("amendments.submit with line items", () => {
       lineItems: [{ type: "add_supplier", supplierName: "Bedsonline", cost: "420.00", oldCost: null, notes: null }],
     });
     expect(result).toMatchObject({ success: true });
+  });
+});
+
+// ─── users.activatePortalAccess tests ────────────────────────────────────────
+
+describe("users.activatePortalAccess", () => {
+  it("allows admin to activate portal access for an agent", async () => {
+    const { activatePortalAccess } = await import("./db");
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.users.activatePortalAccess({ userId: 42 });
+    expect(result).toMatchObject({ success: true });
+    expect(vi.mocked(activatePortalAccess)).toHaveBeenCalledWith(42);
+  });
+
+  it("allows super_admin to activate portal access", async () => {
+    const { activatePortalAccess } = await import("./db");
+    vi.mocked(activatePortalAccess).mockResolvedValueOnce(undefined);
+    const ctx = makeCtx("super_admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.users.activatePortalAccess({ userId: 7 });
+    expect(result).toMatchObject({ success: true });
+    expect(vi.mocked(activatePortalAccess)).toHaveBeenCalledWith(7);
+  });
+
+  it("rejects unauthenticated callers", async () => {
+    const ctx = makeCtx(null);
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.users.activatePortalAccess({ userId: 1 })).rejects.toThrow();
+  });
+
+  it("rejects agent callers (admin-only procedure)", async () => {
+    const ctx = makeCtx("agent");
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.users.activatePortalAccess({ userId: 1 })).rejects.toThrow();
   });
 });

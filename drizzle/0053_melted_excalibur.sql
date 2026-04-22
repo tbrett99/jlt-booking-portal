@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `portalStatus` enum('onboarding','active') DEFAULT 'onboarding' NOT NULL;

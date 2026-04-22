@@ -25,6 +25,7 @@ export const users = mysqlTable("users", {
   mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
   phone: varchar("phone", { length: 30 }), // optional phone number for future SMS alerts
   credentialsSentAt: timestamp("credentialsSentAt"), // when login credentials were last sent
+  portalStatus: mysqlEnum("portalStatus", ["onboarding", "active"]).default("onboarding").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

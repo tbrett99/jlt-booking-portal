@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ViewModeProvider, useViewMode } from "./contexts/ViewModeContext";
@@ -70,6 +70,22 @@ import MyProfile from "./pages/MyProfile";
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
+
+// ── Onboarding gate — blocks all agent routes until admin activates portal access ──
+function OnboardingGate({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const [location, navigate] = useLocation();
+
+  // Only gate pure agent accounts (not admins in agent-view)
+  if (user?.role === "agent" && (user as any).portalStatus === "onboarding" && location !== "/onboarding") {
+    // Redirect to onboarding — use replace so back-button doesn't loop
+    if (typeof window !== "undefined") {
+      navigate("/onboarding", { replace: true });
+    }
+    return null;
+  }
+  return <>{children}</>;
+}
 
 // ── Suspended portal guard ──────────────────────────────────────────────────
 function SuspendedGuard({ children }: { children: React.ReactNode }) {
@@ -156,6 +172,7 @@ function AuthRouter() {
     return (
       <SuspendedGuard>
       <PortalLayout>
+        <OnboardingGate>
         <Switch>
           <Route path="/onboarding" component={OnboardingDashboard} />
           <Route path="/" component={AgentDashboard} />
@@ -175,6 +192,7 @@ function AuthRouter() {
           <Route path="/profile" component={ProfilePage} />
           <Route component={NotFound} />
         </Switch>
+        </OnboardingGate>
       </PortalLayout>
       </SuspendedGuard>
     );
