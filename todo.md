@@ -1523,3 +1523,6 @@
 
 ## Bug Fix: Stale Data on Booking Detail Page (Search Navigation)
 - [x] Fix: when navigating from one booking detail page to another via the global search bar, the previous booking's data briefly shows before the new data loads — switched /bookings/:id routes to render-function form with key={params.id} so React fully remounts AgentBookingDetail and AdminBookingDetail on every ID change
+
+## Bug Fix: Commission Management VAT Input Page Jump
+- [x] Fix: page jumps on every keystroke when entering a VAT figure on the commission management screen (root cause: ClaimTable was defined inside AdminCommissions render function, causing full remount on every vatEditing state change; fixed by moving ClaimTable to module scope with explicit props)
