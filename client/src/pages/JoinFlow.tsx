@@ -290,13 +290,21 @@ function ContractStep({
         </div>
       ) : template ? (
         <div className="rounded-xl overflow-hidden border border-gray-200">
-          <div className="bg-gray-50 px-4 py-2 text-xs text-gray-500 border-b border-gray-200">
-            {template.name} — scroll to read the full contract
+          <div className="bg-gray-50 px-4 py-2 text-xs text-gray-500 border-b border-gray-200 flex items-center justify-between">
+            <span>{template.name} — scroll to read the full contract</span>
+            <a
+              href={template.pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-[#02E6D2] hover:underline flex items-center gap-1"
+            >
+              Open full screen ↗
+            </a>
           </div>
           <iframe
-            src={template.pdfUrl}
+            src={template.pdfUrl + "#toolbar=1&navpanes=1&scrollbar=1&view=FitH"}
             className="w-full"
-            style={{ height: "400px" }}
+            style={{ height: "700px", minHeight: "600px" }}
             title="JLT Group Membership Contract"
           />
         </div>
@@ -713,7 +721,7 @@ export default function JoinFlow() {
       )}
 
       {/* Content */}
-      <div className="max-w-xl mx-auto px-6 py-8">
+      <div className={`mx-auto px-6 py-8 ${step === "contract" ? "max-w-3xl" : "max-w-xl"}`}>
         {startSessionMutation.isPending && step === "plan" ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="animate-spin text-[#70FFE8]" size={32} />

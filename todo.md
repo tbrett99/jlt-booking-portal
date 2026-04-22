@@ -1580,3 +1580,9 @@
 - [x] Admin CRM: "Sign-Up Applications" link added to CRM sidebar section
 - [x] Tests: 18 vitest tests for membership constants, session tokens, step validation, email validation
 - [x] Checkpoint saved
+
+## Join Flow Bug Fixes
+- [x] Fix GoCardless 400 "Invalid document structure" — add scheme: "faster_payments" to payment_request
+- [x] Enlarge contract PDF viewer from 400px to 700px height, widen to max-w-3xl on contract step
+- [x] Add "Open full screen ↗" link on contract viewer so users can read in a new tab (links in PDF are clickable there)
+- [x] PDF toolbar enabled (#toolbar=1) so users can zoom, navigate pages, and click links within the iframe

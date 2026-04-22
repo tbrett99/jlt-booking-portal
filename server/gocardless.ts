@@ -96,6 +96,7 @@ export async function createJoinBillingRequest(opts: {
         amount: opts.amountPence,
         currency: "GBP",
         description: opts.description,
+        scheme: "faster_payments",
       },
       mandate_request: {
         scheme: "bacs",
