@@ -100,6 +100,9 @@ async function startServer() {
   // Capture raw body for PPS callback signature verification BEFORE urlencoded parser decodes it.
   // PPS signs the raw URL-encoded string; Express decodes it, so we must re-verify against raw.
   app.use("/api/pps/callback", express.raw({ type: "application/x-www-form-urlencoded", limit: "1mb" }));
+  // Capture raw body for GoCardless webhook HMAC-SHA256 signature verification.
+  // Must be registered BEFORE express.json() so the raw Buffer is preserved.
+  app.use("/api/gocardless/webhook", express.raw({ type: "application/json", limit: "1mb" }));
 
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
@@ -735,8 +738,28 @@ async function startServer() {
   // GoCardless POSTs events here. We handle mandates_active to auto-create subscriptions.
   app.post("/api/gocardless/webhook", async (req, res) => {
     try {
+      // ── HMAC-SHA256 signature verification ────────────────────────────────
+      const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? {}));
+      const webhookSecret = process.env.GOCARDLESS_WEBHOOK_SECRET;
+      const incomingSig = req.headers["webhook-signature"] as string | undefined;
+      if (webhookSecret) {
+        if (!incomingSig) {
+          console.warn("[GC Webhook] Missing Webhook-Signature header — request rejected");
+          return res.status(498).send("Missing signature");
+        }
+        const { createHmac } = await import("crypto");
+        const expected = createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
+        if (expected !== incomingSig) {
+          console.warn("[GC Webhook] Invalid signature — request rejected");
+          return res.status(498).send("Invalid signature");
+        }
+      } else {
+        console.warn("[GC Webhook] GOCARDLESS_WEBHOOK_SECRET not set — skipping signature check");
+      }
+      // Parse the raw buffer to JSON
+      const payload = JSON.parse(rawBody.toString());
       const events: Array<{ id: string; action: string; resource_type: string; links: Record<string, string> }> =
-        req.body?.events ?? [];
+        payload?.events ?? [];
 
       for (const event of events) {
         console.log(`[GC Webhook] ${event.resource_type}.${event.action}`, event.links);
