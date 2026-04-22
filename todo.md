@@ -1486,18 +1486,18 @@
 - [x] After payment, redirect to /membership/success (handled by Stripe success URL config)
 
 ## Bug Fix: CRM Payment Settings Not Saving
-- [ ] Investigate: Stripe joining fee URL not saving in CRM Payment Settings
-- [ ] Investigate: Contract template not saving/uploading in CRM
-- [ ] Fix both save procedures
+- [x] Investigate: Stripe joining fee URL not saving in CRM Payment Settings (data is correctly persisting in DB — was a false report or transient issue)
+- [x] Investigate: Contract template not saving/uploading in CRM (upload works; display showed 'Invalid Date' because frontend used t.uploadedAt instead of t.createdAt)
+- [x] Fix: changed t.uploadedAt to t.createdAt in CrmPaymentConfig.tsx template list display
 
 ## Feature: Agent Onboarding Gate
-- [ ] Add portalStatus enum to users table: 'onboarding' | 'active' (default: 'onboarding')
-- [ ] DB migration for the new portalStatus column
-- [ ] Backend: admin procedure to set portalStatus to 'active' for a user (activatePortalAccess)
-- [ ] Agent sidebar: when portalStatus is 'onboarding', only show Onboarding nav item — hide all other agent nav items
-- [ ] Agent routes: redirect all agent routes (/dashboard, /bookings, /register-booking, /flights, /amendments, /refunds, /commissions) to /onboarding when portalStatus is 'onboarding'
-- [ ] Admin CRM agent list: show portalStatus badge and "Activate Portal Access" button per agent
-- [ ] Admin notification when a new agent completes onboarding (verify it fires correctly)
+- [x] Add portalStatus enum to users table: 'onboarding' | 'active' (default: 'onboarding')
+- [x] DB migration for the new portalStatus column
+- [x] Backend: admin procedure to set portalStatus to 'active' for a user (activatePortalAccess)
+- [x] Agent sidebar: when portalStatus is 'onboarding', only show Onboarding nav item — hide all other agent nav items
+- [x] Agent routes: redirect all agent routes (/dashboard, /bookings, /register-booking, /flights, /amendments, /refunds, /commissions) to /onboarding when portalStatus is 'onboarding'
+- [x] Admin CRM agent list: show portalStatus badge and "Activate Portal Access" button per agent
+- [x] Admin notification when a new agent completes onboarding (verify it fires correctly — notifyOwner called in saveOnboardingProfile when notifyOnComplete=true)
 
 ## Agent Onboarding Gate
 - [x] Add `portalStatus` enum column (`onboarding` | `active`) to users table in schema.ts

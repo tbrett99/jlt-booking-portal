@@ -143,7 +143,7 @@ export default function CrmPaymentConfig() {
                 <div key={t.id} className="flex items-center justify-between border rounded-lg p-3">
                   <div>
                     <p className="text-sm font-medium">{t.name}</p>
-                    <p className="text-xs text-muted-foreground">Uploaded {new Date(t.uploadedAt).toLocaleDateString("en-GB")}</p>
+                    <p className="text-xs text-muted-foreground">Uploaded {new Date(t.createdAt).toLocaleDateString("en-GB")}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     {i === 0 && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Active</span>}
