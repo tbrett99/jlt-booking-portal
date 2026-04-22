@@ -1520,3 +1520,6 @@
 
 ## UX: Historic Booking Confirmation Prompt
 - [x] Show a confirmation dialog when agent ticks "This is a historic booking" — requires explicit confirmation before the checkbox is activated
+
+## Bug Fix: Stale Data on Booking Detail Page (Search Navigation)
+- [x] Fix: when navigating from one booking detail page to another via the global search bar, the previous booking's data briefly shows before the new data loads — switched /bookings/:id routes to render-function form with key={params.id} so React fully remounts AgentBookingDetail and AdminBookingDetail on every ID change

@@ -178,10 +178,10 @@ function AuthRouter() {
           <Route path="/" component={AgentDashboard} />
           <Route path="/dashboard" component={AgentDashboard} />
           <Route path="/bookings/new" component={RegisterBooking} />
-          <Route path="/bookings/:id" component={AgentBookingDetail} />
-          <Route path="/bookings/:id/amend" component={AmendmentForm} />
-          <Route path="/bookings/:id/cancel" component={CancellationForm} />
-          <Route path="/bookings/:id/refund" component={RefundForm} />
+          <Route path="/bookings/:id">{(params) => <AgentBookingDetail key={params.id} />}</Route>
+          <Route path="/bookings/:id/amend">{(params) => <AmendmentForm key={params.id} />}</Route>
+          <Route path="/bookings/:id/cancel">{(params) => <CancellationForm key={params.id} />}</Route>
+          <Route path="/bookings/:id/refund">{(params) => <RefundForm key={params.id} />}</Route>
           <Route path="/commissions" component={AgentCommissions} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
@@ -207,10 +207,10 @@ function AuthRouter() {
           <Route path="/dashboard" component={AgentDashboard} />
           <Route path="/bookings/new" component={RegisterBooking} />
           {/* Agent booking detail — but admin still sees admin detail for pipeline management */}
-          <Route path="/bookings/:id" component={AgentBookingDetail} />
-          <Route path="/bookings/:id/amend" component={AmendmentForm} />
-          <Route path="/bookings/:id/cancel" component={CancellationForm} />
-          <Route path="/bookings/:id/refund" component={RefundForm} />
+          <Route path="/bookings/:id">{(params) => <AgentBookingDetail key={params.id} />}</Route>
+          <Route path="/bookings/:id/amend">{(params) => <AmendmentForm key={params.id} />}</Route>
+          <Route path="/bookings/:id/cancel">{(params) => <CancellationForm key={params.id} />}</Route>
+          <Route path="/bookings/:id/refund">{(params) => <RefundForm key={params.id} />}</Route>
           <Route path="/commissions" component={AgentCommissions} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
@@ -231,7 +231,7 @@ function AuthRouter() {
         <Route path="/" component={AdminDashboard} />
         <Route path="/dashboard" component={AdminDashboard} />
         <Route path="/pipeline" component={AdminKanban} />
-        <Route path="/bookings/:id" component={AdminBookingDetail} />
+        <Route path="/bookings/:id">{(params) => <AdminBookingDetail key={params.id} />}</Route>
         <Route path="/users" component={AdminUsers} />
         <Route path="/amendments" component={AdminAmendments} />
         <Route path="/amendments/pipeline" component={AdminAmendmentKanban} />
