@@ -32,6 +32,7 @@ export default function RegisterBooking() {
   const [isPersonalBooking, setIsPersonalBooking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successBooking, setSuccessBooking] = useState<{ id: number; clientName: string; departureDate: Date } | null>(null);
+  const [showHistoricConfirm, setShowHistoricConfirm] = useState(false);
 
   // Warn if booked date is >7 days ago and historic toggle is off
   const bookedDateIsOld = useMemo(() => {
@@ -437,7 +438,13 @@ export default function RegisterBooking() {
                 <input
                   type="checkbox"
                   checked={isHistoricBooking}
-                  onChange={(e) => setIsHistoricBooking(e.target.checked)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setShowHistoricConfirm(true);
+                    } else {
+                      setIsHistoricBooking(false);
+                    }
+                  }}
                   className="w-4 h-4 mt-0.5 accent-pink-400"
                 />
                 <div>
@@ -465,6 +472,42 @@ export default function RegisterBooking() {
           </form>
         </CardContent>
       </Card>
+      {/* Historic Booking Confirmation Dialog */}
+      <Dialog open={showHistoricConfirm} onOpenChange={(open) => { if (!open) setShowHistoricConfirm(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span style={{ color: '#FFC3BC', fontSize: 20 }}>⚠</span>
+              Are you sure this is a historic booking?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Only tick this if the booking was <strong>already made</strong> and you are registering it retrospectively to claim commission. It will skip the normal pipeline and go directly to <strong>Added to PTS</strong>.
+            </p>
+            <p className="text-sm font-semibold" style={{ color: '#92400e' }}>
+              Do not use this for new bookings — it will cause confusion for the admin team.
+            </p>
+            <div className="flex gap-3 pt-1">
+              <Button
+                className="flex-1 font-semibold"
+                style={{ background: '#FFC3BC', color: '#414141' }}
+                onClick={() => { setIsHistoricBooking(true); setShowHistoricConfirm(false); }}
+              >
+                Yes, this is a historic booking
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => { setIsHistoricBooking(false); setShowHistoricConfirm(false); }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Success Modal */}
       {successBooking && (
         <Dialog open onOpenChange={() => setSuccessBooking(null)}>

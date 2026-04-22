@@ -1517,3 +1517,6 @@
 
 ## UX: Booking Registration Form
 - [x] Move "This is a historic booking" checkbox to the bottom of the booking registration form to prevent agents accidentally selecting it for new bookings
+
+## UX: Historic Booking Confirmation Prompt
+- [x] Show a confirmation dialog when agent ticks "This is a historic booking" — requires explicit confirmation before the checkbox is activated
