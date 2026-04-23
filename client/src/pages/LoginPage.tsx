@@ -31,8 +31,10 @@ export default function LoginPage() {
   const utils = trpc.useUtils();
 
   const loginMutation = trpc.auth.loginWithPassword.useMutation({
-    onSuccess: async () => {
-      await utils.auth.me.invalidate();
+    onSuccess: () => {
+      // Hard reload so the new session cookie is sent with the next request
+      // and the auth context is fully re-initialised from scratch.
+      window.location.href = "/";
     },
     onError: (err) => {
       toast.error(err.message || "Invalid email or password");

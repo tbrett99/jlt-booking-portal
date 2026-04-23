@@ -1606,3 +1606,8 @@
 ## Set Password on Join Complete
 - [x] Backend: tRPC procedure join.setPassword — validates join session token, hashes password, saves to user record, creates session cookie (auto-login)
 - [x] Frontend: /join/complete — replaced login button with set-password form (password + confirm password fields), auto-redirect to /onboarding on success
+
+## Auto-Login After Set Password Bug
+- [x] Fix: setPassword now uses window.location.href hard reload so session cookie is properly sent on next request
+- [x] Fix: loginWithPassword also uses window.location.href hard reload for same reason
+- [x] Note: password reset email flow is correct — forgotPassword sends email via SMTP; "wrong credentials" was because webhook hadn't created the user yet when login was attempted

@@ -501,7 +501,8 @@ function CompleteStep({ sessionToken }: { sessionToken: string }) {
       await setPasswordMutation.mutateAsync({ sessionToken, password });
       setPasswordSet(true);
       toast.success("Password set! Redirecting to your onboarding...");
-      setTimeout(() => navigate("/onboarding"), 1200);
+      // Hard redirect so the new session cookie is sent with the next request
+      setTimeout(() => { window.location.href = "/onboarding"; }, 1200);
     } catch (err: any) {
       setPasswordError(err.message ?? "Failed to set password. Please try again.");
     }
