@@ -536,9 +536,12 @@ export const crmRouter = router({
           signerAddress: z.string().min(1),
           signatureDataUrl: z.string().min(1), // base64 canvas image
           origin: z.string().url(),
+          consentConfirmed: z.boolean().optional(),
+          signingUserAgent: z.string().optional(),
+          contractTextSnapshot: z.string().optional(), // full HTML of contract at time of signing
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const contract = await getContractByToken(input.token);
         if (!contract) throw new TRPCError({ code: "NOT_FOUND", message: "Contract not found" });
         if (contract.signedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Already signed" });
@@ -546,10 +549,27 @@ export const crmRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "Signing link expired" });
         }
 
+        // Capture IP address from request
+        const signingIp = (ctx.req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
+          ?? ctx.req.socket?.remoteAddress
+          ?? null;
+
         // Store signature image to S3
         const sigBuf = Buffer.from(input.signatureDataUrl.replace(/^data:image\/\w+;base64,/, ""), "base64");
         const sigKey = `crm/contracts/signatures/${contract.id}-${nanoid(8)}.png`;
         const { url: sigUrl } = await storagePut(sigKey, sigBuf, "image/png");
+
+        // Generate tamper-detection hash: SHA-256 of (contractText + signatureDataUrl + signedAt ISO)
+        const { createHash } = await import("crypto");
+        const signedAtIso = new Date().toISOString();
+        const hashInput = [
+          input.contractTextSnapshot ?? "",
+          input.signatureDataUrl,
+          signedAtIso,
+          input.signerName,
+          signingIp ?? "",
+        ].join("|");
+        const contractHash = createHash("sha256").update(hashInput).digest("hex");
 
         // For now store the signature URL as the "signed PDF" — a proper PDF overlay can be added later
         await signContract(contract.id, {
@@ -558,6 +578,11 @@ export const crmRouter = router({
           signatureDataUrl: sigUrl,
           signedPdfUrl: sigUrl, // placeholder until PDF generation is added
           signedPdfKey: sigKey,
+          signingIp,
+          signingUserAgent: input.signingUserAgent ?? null,
+          consentConfirmed: input.consentConfirmed ?? false,
+          contractTextSnapshot: input.contractTextSnapshot ?? null,
+          contractHash,
         });
 
         // Move prospect to Approved stage
@@ -905,7 +930,17 @@ export const crmRouter = router({
         // Fetch join session contract data
         const { getDb } = await import("./db");
         const db = await getDb();
-        let contractData: { signatureDataUrl?: string | null; signerName?: string | null; signerAddress?: string | null; contractSignedAt?: Date | null; } | null = null;
+        let contractData: {
+          signatureDataUrl?: string | null;
+          signerName?: string | null;
+          signerAddress?: string | null;
+          contractSignedAt?: Date | null;
+          ipAddress?: string | null;
+          signingUserAgent?: string | null;
+          consentConfirmed?: boolean | null;
+          contractTextSnapshot?: string | null;
+          contractHash?: string | null;
+        } | null = null;
         if (db) {
           const { joinSessions } = await import("../drizzle/schema");
           const { eq } = await import("drizzle-orm");
@@ -915,6 +950,11 @@ export const crmRouter = router({
               signerAddress: joinSessions.signerAddress,
               contractSignedAt: joinSessions.contractSignedAt,
               signatureDataUrl: joinSessions.signatureDataUrl,
+              ipAddress: joinSessions.ipAddress,
+              signingUserAgent: joinSessions.signingUserAgent,
+              consentConfirmed: joinSessions.consentConfirmed,
+              contractTextSnapshot: joinSessions.contractTextSnapshot,
+              contractHash: joinSessions.contractHash,
             })
             .from(joinSessions)
             .where(eq(joinSessions.userId, input.userId))
@@ -1894,6 +1934,50 @@ export const crmRouter = router({
           .where(eq(agentStatusEvents.userId, input.userId))
           .orderBy(desc(agentStatusEvents.createdAt));
         return events;
+      }),
+
+    // ─── Contract Evidence Viewer ───────────────────────────────────────────────
+    getContractEvidence: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) return null;
+        const { joinSessions, users } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+
+        // Get the agent's user record
+        const agentRows = await db
+          .select({ name: users.name, email: users.email })
+          .from(users)
+          .where(eq(users.id, input.userId))
+          .limit(1);
+        const agent = agentRows[0] ?? null;
+
+        // Get the join session with all evidence fields
+        const sessions = await db
+          .select()
+          .from(joinSessions)
+          .where(eq(joinSessions.userId, input.userId))
+          .limit(1);
+        const session = sessions[0] ?? null;
+
+        if (!session) return null;
+
+        return {
+          agent,
+          signerName: session.signerName,
+          signerAddress: session.signerAddress,
+          contractSignedAt: session.contractSignedAt,
+          signatureDataUrl: session.signatureDataUrl,
+          ipAddress: session.ipAddress,
+          signingUserAgent: session.signingUserAgent,
+          consentConfirmed: session.consentConfirmed,
+          contractTextSnapshot: session.contractTextSnapshot,
+          contractHash: session.contractHash,
+          membershipTier: session.membershipTier,
+          membershipType: session.membershipType,
+        };
       }),
 
     // ─── Admin Onboarding Checklist ───────────────────────────────────────────

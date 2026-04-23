@@ -1625,3 +1625,14 @@
 - [x] Admin Onboarding Checklist: new Onboarding tab in CRM agent sheet with 6 steps: Create Training Hub Login, Set Up JLT Email, Review ID Docs, Review Contract, Send Welcome Email, Approve Portal Access
 - [x] Schema: add admin_onboarding_checklist table (userId, 6 boolean steps, updatedById, timestamps)
 - [x] DB migration for new fields and table applied
+
+## Contract Evidence & Legal Compliance
+- [x] Audit: reviewed prospectContracts and joinSessions — IP was partially captured, user agent/consent/hash/snapshot were missing
+- [x] Schema: added signingIp, signingUserAgent, consentConfirmed, contractTextSnapshot, contractHash to prospectContracts
+- [x] Schema: added signingUserAgent, consentConfirmed, contractTextSnapshot, contractHash to joinSessions
+- [x] Backend: capture IP address and user agent when agent submits contract signature (both join-router and crm-router)
+- [x] Backend: generate SHA-256 hash of (contractText + signatureDataUrl + timestamp + signerName + IP) for tamper detection
+- [x] Admin: built full-page Contract Evidence Viewer at /crm/agents/:userId/contract-evidence
+- [x] Admin: Print / Save PDF button on Contract Evidence Viewer (window.print)
+- [x] CRM Docs tab: "View Full Legal Evidence Record" button links to evidence viewer
+- [x] DB migration for new fields applied

@@ -66,6 +66,7 @@ import RegisterPage from "./pages/RegisterPage";
 import JoinFlow from "./pages/JoinFlow";
 import JoinAccept from "./pages/JoinAccept";
 import AgentCrm from "./pages/crm/AgentCrm";
+import ContractEvidenceViewer from "./pages/crm/ContractEvidenceViewer";
 import JoinSessions from "./pages/crm/JoinSessions";
 import PaymentResult from "./pages/PaymentResult";
 import PaymentRedirect from "./pages/PaymentRedirect";
@@ -287,6 +288,7 @@ function AuthRouter() {
         <Route path="/crm/remittances" component={CrmRemittances} />
         <Route path="/crm/payment-config" component={CrmPaymentConfig} />
         <Route path="/crm/agents" component={AgentCrm} />
+        <Route path="/crm/agents/:userId/contract-evidence" component={ContractEvidenceViewer} />
         <Route path="/crm/join-sessions" component={JoinSessions} />
         <Route path="/crm/change-requests" component={CrmChangeRequests} />
         <Route path="/crm/memberships" component={Memberships} />

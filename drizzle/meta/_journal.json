@@ -421,6 +421,13 @@
       "when": 1776935793281,
       "tag": "0059_whole_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "5",
+      "when": 1776940522789,
+      "tag": "0060_fair_yellow_claw",
+      "breakpoints": true
     }
   ]
 }

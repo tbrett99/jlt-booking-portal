@@ -194,9 +194,12 @@ export const joinRouter = router({
         signatureDataUrl: z.string().min(1, "Signature is required"),
         signerName: z.string().min(2, "Please enter your full name"),
         signerAddress: z.string().min(5, "Please enter your address"),
+        consentConfirmed: z.boolean().optional(),
+        signingUserAgent: z.string().optional(),
+        contractTextSnapshot: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
@@ -204,6 +207,23 @@ export const joinRouter = router({
       if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
       if (session.expiresAt < new Date()) throw new TRPCError({ code: "FORBIDDEN", message: "Session expired" });
       if (session.step === "complete") throw new TRPCError({ code: "BAD_REQUEST", message: "Sign-up already complete" });
+
+      // Capture IP address
+      const signingIp = (ctx.req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
+        ?? ctx.req.socket?.remoteAddress
+        ?? null;
+
+      // Generate tamper-detection hash
+      const { createHash } = await import("crypto");
+      const signedAtIso = new Date().toISOString();
+      const hashInput = [
+        input.contractTextSnapshot ?? "",
+        input.signatureDataUrl,
+        signedAtIso,
+        input.signerName,
+        signingIp ?? "",
+      ].join("|");
+      const contractHash = createHash("sha256").update(hashInput).digest("hex");
 
       await db
         .update(joinSessions)
@@ -213,6 +233,11 @@ export const joinRouter = router({
           signerAddress: input.signerAddress,
           contractSignedAt: new Date(),
           step: "payment",
+          ipAddress: signingIp,
+          signingUserAgent: input.signingUserAgent ?? null,
+          consentConfirmed: input.consentConfirmed ?? false,
+          contractTextSnapshot: input.contractTextSnapshot ?? null,
+          contractHash,
         })
         .where(eq(joinSessions.id, session.id));
 

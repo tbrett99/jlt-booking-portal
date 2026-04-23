@@ -4,6 +4,7 @@ import {
   mysqlEnum,
   mysqlTable,
   mediumtext,
+  longtext,
   text,
   timestamp,
   varchar,
@@ -598,6 +599,12 @@ export const prospectContracts = mysqlTable("prospect_contracts", {
   signedPdfKey: varchar("signedPdfKey", { length: 500 }),
   sentAt: timestamp("sentAt"),
   signedAt: timestamp("signedAt"),
+  // ─── Legal evidence fields ───────────────────────────────────────────────────
+  signingIp: varchar("signingIp", { length: 64 }),                  // IP address at time of signing
+  signingUserAgent: text("signingUserAgent"),                        // Browser/device at time of signing
+  consentConfirmed: boolean("consentConfirmed").default(false),      // Explicit "I agree" checkbox
+  contractTextSnapshot: longtext("contractTextSnapshot"),            // Full contract HTML at moment of signing
+  contractHash: varchar("contractHash", { length: 128 }),           // SHA-256 of (contractText+signature+timestamp)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type ProspectContract = typeof prospectContracts.$inferSelect;
@@ -1014,6 +1021,11 @@ export const joinSessions = mysqlTable("join_sessions", {
   mandateId: varchar("mandateId", { length: 100 }),
   userId: int("userId"),                                           // set once account is created
   ipAddress: varchar("ipAddress", { length: 64 }),
+  // ─── Legal evidence fields ───────────────────────────────────────────────────
+  signingUserAgent: text("signingUserAgent"),                        // Browser/device at time of signing
+  consentConfirmed: boolean("consentConfirmed").default(false),      // Explicit "I agree" checkbox
+  contractTextSnapshot: longtext("contractTextSnapshot"),            // Full contract HTML at moment of signing
+  contractHash: varchar("contractHash", { length: 128 }),           // SHA-256 of (contractText+signature+timestamp)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   expiresAt: timestamp("expiresAt").notNull(),                     // sessions expire after 24h

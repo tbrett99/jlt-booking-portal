@@ -18,9 +18,11 @@ import {
   Search, UserCheck, Banknote, Eye, EyeOff, Plus, Trash2,
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
-  ChevronDown, X, Pencil, Clock, ArrowRight, CheckCircle2
+  ChevronDown, X, Pencil, Clock, ArrowRight, CheckCircle2,
+  Shield, ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
+import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 
 const UK_REGIONS = [
@@ -1192,6 +1194,19 @@ function DocsTab({ userId, profile, contractData, onRefresh }: { userId: number;
                 />
               </div>
             )}
+            {/* Legal evidence link */}
+            <div className="pt-1 border-t">
+              <Link href={`/crm/agents/${userId}/contract-evidence`}>
+                <Button size="sm" variant="outline" className="w-full gap-2 text-primary border-primary/30 hover:bg-primary/5">
+                  <Shield className="h-3.5 w-3.5" />
+                  View Full Legal Evidence Record
+                  <ExternalLink className="h-3 w-3 ml-auto" />
+                </Button>
+              </Link>
+              <p className="text-xs text-muted-foreground mt-1.5 text-center">
+                Full audit trail: IP address, browser, consent confirmation, contract snapshot &amp; integrity hash
+              </p>
+            </div>
           </div>
         ) : (
           <div className="rounded-lg border border-dashed p-4 text-center">

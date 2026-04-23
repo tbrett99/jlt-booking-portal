@@ -307,6 +307,12 @@ export async function signContract(
     signatureDataUrl: string;
     signedPdfUrl: string;
     signedPdfKey: string;
+    // Legal evidence fields
+    signingIp?: string | null;
+    signingUserAgent?: string | null;
+    consentConfirmed?: boolean;
+    contractTextSnapshot?: string | null;
+    contractHash?: string | null;
   }
 ) {
   const db = await getDb();
