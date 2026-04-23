@@ -386,8 +386,8 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
         "SAFI": fmt(l.safi),
         "PTRC": fmt(l.ptrc),
         "PTS Fee": fmt(l.pts),
-        "VAT": fmt((l as any).vatFromPortal ?? l.vatFromPts),
-        "Remittance": l.remittance,
+        "VAT (deducted)": fmt((l as any).vatFromPortal ?? l.vatFromPts),
+        "Net Remittance": (() => { const gross = parseFloat(String(l.remittance ?? 0).replace(/[^0-9.-]/g, '')); const vat = parseFloat(String((l as any).vatFromPortal ?? l.vatFromPts ?? 0).replace(/[^0-9.-]/g, '')); const net = gross - vat; return net > 0 ? net.toFixed(2) : (gross > 0 ? gross.toFixed(2) : ''); })(),
         "Agent 80%": l.remit80 ?? "",
         "Pushed": l.pushedToAgent ? "Yes" : "No",
       }))
@@ -545,8 +545,8 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
                         <TableHead>SAFI</TableHead>
                         <TableHead>PTRC</TableHead>
                         <TableHead>PTS</TableHead>
-                        <TableHead>VAT</TableHead>
-                        <TableHead>Remittance</TableHead>
+                        <TableHead className="text-amber-600">VAT (deducted)</TableHead>
+                        <TableHead>Net Remittance</TableHead>
                         <TableHead>Agent 80%</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
@@ -565,10 +565,10 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
                           <TableCell className="text-xs">{fmt(l.safi)}</TableCell>
                           <TableCell className="text-xs">{fmt(l.ptrc)}</TableCell>
                           <TableCell className="text-xs">{fmt(l.pts)}</TableCell>
-                          <TableCell className="text-xs font-medium">
-                            {l.vatFromPortal ? fmt(l.vatFromPortal) : <span className="text-muted-foreground text-xs">—</span>}
+                          <TableCell className="text-xs font-medium text-amber-600">
+                            {(l.vatFromPortal ?? l.vatFromPts) ? `−${fmt(l.vatFromPortal ?? l.vatFromPts)}` : <span className="text-muted-foreground text-xs">—</span>}
                           </TableCell>
-                          <TableCell>{fmt(l.remittance)}</TableCell>
+                          <TableCell>{(() => { const gross = parseFloat(String(l.remittance ?? 0).replace(/[^0-9.-]/g, '')); const vat = parseFloat(String(l.vatFromPortal ?? l.vatFromPts ?? 0).replace(/[^0-9.-]/g, '')); const net = gross - vat; return net > 0 ? `£${net.toFixed(2)}` : (gross > 0 ? `£${gross.toFixed(2)}` : '—'); })()}</TableCell>
                           <TableCell className="text-green-700 dark:text-green-400 font-semibold">
                             {fmt(l.remit80)}
                           </TableCell>
