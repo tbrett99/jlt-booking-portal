@@ -1044,6 +1044,7 @@ export const adminOnboardingChecklist = mysqlTable("admin_onboarding_checklist",
   contractReviewed: boolean("contractReviewed").default(false).notNull(),
   welcomeEmailSent: boolean("welcomeEmailSent").default(false).notNull(),
   portalAccessApproved: boolean("portalAccessApproved").default(false).notNull(),
+  ddSubscriptionCreated: boolean("ddSubscriptionCreated").default(false).notNull(),
   updatedById: int("updatedById"),                                  // FK → users.id (the admin)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

@@ -1060,6 +1060,40 @@ async function startServer() {
           console.log(`[GC Webhook] Subscription ${sub.id} created for mandate ${mandateId}, starts ${startDate}`);
         }
 
+        // Mandate submitted / pending_submission — update status badge in CRM
+        if (
+          event.resource_type === "mandates" &&
+          ["submitted", "pending_submission"].includes(event.action)
+        ) {
+          const mandateId = event.links.mandate;
+          const billingRequestId = event.links.billing_request ?? null;
+          // Try to find local mandate by mandate ID first, then by billing request
+          let localMandate = mandateId
+            ? await (async () => {
+                const db2 = await getDb();
+                if (!db2) return null;
+                const { gcMandates: gcMandatesT } = await import("../../drizzle/schema");
+                const { eq: eqOp } = await import("drizzle-orm");
+                const rows = await db2.select().from(gcMandatesT).where(eqOp(gcMandatesT.mandateId, mandateId)).limit(1);
+                return rows[0] ?? null;
+              })()
+            : null;
+          if (!localMandate && billingRequestId) {
+            localMandate = await getGcMandateByBillingRequestId(billingRequestId);
+          }
+          if (localMandate) {
+            const newStatus = event.action as "submitted" | "pending_submission";
+            // Also persist the real mandateId if we didn't have it before
+            await updateGcMandate(localMandate.id, {
+              status: newStatus,
+              ...(mandateId && !localMandate.mandateId ? { mandateId } : {}),
+            });
+            console.log(`[GC Webhook] Mandate ${mandateId} status → ${newStatus} for user ${localMandate.userId}`);
+          } else {
+            console.warn(`[GC Webhook] mandates.${event.action}: no local mandate found for mandateId=${mandateId} billingRequestId=${billingRequestId}`);
+          }
+        }
+
         // Mandate cancelled/failed/expired
         if (
           event.resource_type === "mandates" &&

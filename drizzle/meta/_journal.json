@@ -442,6 +442,13 @@
       "when": 1776960615426,
       "tag": "0062_vengeful_unus",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "5",
+      "when": 1776962302612,
+      "tag": "0063_wide_korvac",
+      "breakpoints": true
     }
   ]
 }

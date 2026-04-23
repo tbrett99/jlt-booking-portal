@@ -2014,6 +2014,7 @@ export const crmRouter = router({
             contractReviewed: adminOnboardingChecklist.contractReviewed,
             welcomeEmailSent: adminOnboardingChecklist.welcomeEmailSent,
             portalAccessApproved: adminOnboardingChecklist.portalAccessApproved,
+            ddSubscriptionCreated: adminOnboardingChecklist.ddSubscriptionCreated,
             updatedAt: adminOnboardingChecklist.updatedAt,
             updatedByName: users.name,
           })
@@ -2033,6 +2034,7 @@ export const crmRouter = router({
         contractReviewed: z.boolean().optional(),
         welcomeEmailSent: z.boolean().optional(),
         portalAccessApproved: z.boolean().optional(),
+        ddSubscriptionCreated: z.boolean().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const { getDb } = await import("./db");
@@ -2060,6 +2062,7 @@ export const crmRouter = router({
             contractReviewed: fields.contractReviewed ?? false,
             welcomeEmailSent: fields.welcomeEmailSent ?? false,
             portalAccessApproved: fields.portalAccessApproved ?? false,
+            ddSubscriptionCreated: fields.ddSubscriptionCreated ?? false,
             updatedById: ctx.user.id,
           });
         }

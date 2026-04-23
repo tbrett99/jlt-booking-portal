@@ -1681,3 +1681,9 @@
 - [x] Removed active-status guard from adminCreateSubscription — now allows subscription creation for any non-cancelled/expired mandate
 - [x] Restricted payment day options to 1st, 15th, 28th only (both CRM and agent onboarding already use these)
 - [x] TypeScript: 0 errors
+
+## Admin Onboarding Workflow — Subscription Setup Step
+- [x] Add ddSubscriptionCreated boolean field to admin_onboarding_checklist table + migration
+- [x] Add subscription setup step to ONBOARDING_STEPS in AgentCrm.tsx with inline mandate status + create subscription action
+- [x] Auto-mark ddSubscriptionCreated when subscription already exists on checklist load
+- [x] Add webhook handlers for mandates.submitted and mandates.pending_submission to auto-update DB status badge

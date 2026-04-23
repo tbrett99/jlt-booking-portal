@@ -1,0 +1,1 @@
+ALTER TABLE `admin_onboarding_checklist` ADD `ddSubscriptionCreated` boolean DEFAULT false NOT NULL;

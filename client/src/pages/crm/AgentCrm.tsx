@@ -2042,6 +2042,7 @@ const ONBOARDING_STEPS = [
   { key: "contractReviewed" as const, label: "Review Contract", description: "Confirm the signed membership contract is complete and all details are correct." },
   { key: "welcomeEmailSent" as const, label: "Send Welcome Email", description: "Send the official JLT Group welcome email with key resources and next steps." },
   { key: "portalAccessApproved" as const, label: "Approve Portal Access", description: "Activate the agent's portal access once all other steps are complete." },
+  { key: "ddSubscriptionCreated" as const, label: "Set Up Direct Debit Subscription", description: "Create the GoCardless subscription for the agent's monthly membership fee." },
 ];
 
 type ChecklistKey = typeof ONBOARDING_STEPS[number]["key"];
@@ -2054,6 +2055,22 @@ function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
     { userId },
     { enabled: open }
   );
+  const { data: ddStatus, refetch: refetchDd } = trpc.gocardless.adminGetDdStatus.useQuery(
+    { userId },
+    { enabled: open }
+  );
+  const [subPaymentDay, setSubPaymentDay] = useState<string>("1");
+  const [showSubForm, setShowSubForm] = useState(false);
+  const createSub = trpc.gocardless.adminCreateSubscription.useMutation({
+    onSuccess: () => {
+      toast.success("Subscription created successfully");
+      refetchDd();
+      // Auto-tick the checklist step
+      handleToggle("ddSubscriptionCreated", true);
+      setShowSubForm(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const [localState, setLocalState] = useState<Record<ChecklistKey, boolean>>({
     trainingHubLogin: false,
@@ -2062,12 +2079,15 @@ function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
     contractReviewed: false,
     welcomeEmailSent: false,
     portalAccessApproved: false,
+    ddSubscriptionCreated: false,
   });
 
   const [initialised, setInitialised] = useState(false);
 
   useEffect(() => {
     if (checklist !== undefined && !initialised) {
+      // Auto-tick ddSubscriptionCreated if a subscription already exists in GC
+      const subExists = !!(ddStatus as any)?.subscription;
       setLocalState({
         trainingHubLogin: checklist?.trainingHubLogin ?? false,
         jltEmailSetup: checklist?.jltEmailSetup ?? false,
@@ -2075,10 +2095,15 @@ function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
         contractReviewed: checklist?.contractReviewed ?? false,
         welcomeEmailSent: checklist?.welcomeEmailSent ?? false,
         portalAccessApproved: checklist?.portalAccessApproved ?? false,
+        ddSubscriptionCreated: subExists || (checklist?.ddSubscriptionCreated ?? false),
       });
+      // Persist the auto-tick to DB if subscription exists but checklist not yet ticked
+      if (subExists && !(checklist?.ddSubscriptionCreated)) {
+        updateChecklist.mutate({ userId, ddSubscriptionCreated: true });
+      }
       setInitialised(true);
     }
-  }, [checklist, initialised]);
+  }, [checklist, ddStatus, initialised]);
 
   const updateChecklist = trpc.crm.agentCrm.updateOnboardingChecklist.useMutation({
     onSuccess: () => {
@@ -2160,6 +2185,18 @@ function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
         {ONBOARDING_STEPS.map((step, idx) => {
           const done = localState[step.key];
           const isPortalStep = step.key === "portalAccessApproved";
+          const isDdStep = step.key === "ddSubscriptionCreated";
+          const mandate = (ddStatus as any)?.mandate;
+          const subscription = (ddStatus as any)?.subscription;
+          const mandateStatusColor = {
+            active: "text-emerald-600 bg-emerald-50",
+            submitted: "text-blue-600 bg-blue-50",
+            pending_submission: "text-amber-600 bg-amber-50",
+            pending: "text-amber-600 bg-amber-50",
+            cancelled: "text-red-600 bg-red-50",
+            failed: "text-red-600 bg-red-50",
+            expired: "text-gray-600 bg-gray-50",
+          } as Record<string, string>;
           return (
             <div
               key={step.key}
@@ -2189,6 +2226,76 @@ function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
                     )}
                   </label>
                   <p className="text-xs text-muted-foreground mt-0.5 ml-7">{step.description}</p>
+
+                  {/* Inline DD subscription panel */}
+                  {isDdStep && !done && (
+                    <div className="ml-7 mt-3 space-y-2">
+                      {/* Mandate status row */}
+                      {mandate ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs text-muted-foreground">Mandate:</span>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${mandateStatusColor[mandate.status] ?? "text-gray-600 bg-gray-50"}`}>
+                            {mandate.status}
+                          </span>
+                          {mandate.preferredPaymentDay && (
+                            <span className="text-xs text-muted-foreground">· Payment day: {mandate.preferredPaymentDay === 1 ? "1st" : mandate.preferredPaymentDay === 15 ? "15th" : "28th"} of month</span>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-amber-600">No mandate found — agent has not completed DD setup.</p>
+                      )}
+
+                      {/* Subscription already exists */}
+                      {subscription ? (
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 size={13} className="text-emerald-500" />
+                          <span className="text-xs text-emerald-700 font-medium">Subscription active — £{(subscription.amount / 100).toFixed(2)}/mo, {subscription.dayOfMonth === 1 ? "1st" : subscription.dayOfMonth === 15 ? "15th" : "28th"} of month</span>
+                        </div>
+                      ) : mandate && !showSubForm ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1.5"
+                          onClick={() => {
+                            setSubPaymentDay(String(mandate.preferredPaymentDay ?? 1));
+                            setShowSubForm(true);
+                          }}
+                        >
+                          <Plus size={12} /> Create Subscription
+                        </Button>
+                      ) : showSubForm ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs text-muted-foreground">Payment day:</span>
+                          <Select value={subPaymentDay} onValueChange={setSubPaymentDay}>
+                            <SelectTrigger className="h-7 w-28 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1">1st of month</SelectItem>
+                              <SelectItem value="15">15th of month</SelectItem>
+                              <SelectItem value="28">28th of month</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={createSub.isPending}
+                            onClick={() => createSub.mutate({ userId, dayOfMonth: parseInt(subPaymentDay) })}
+                          >
+                            {createSub.isPending ? "Creating..." : "Confirm"}
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShowSubForm(false)}>Cancel</Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {/* If DD step is done, show subscription summary */}
+                  {isDdStep && done && subscription && (
+                    <div className="ml-7 mt-1 flex items-center gap-2">
+                      <span className="text-xs text-emerald-600">£{(subscription.amount / 100).toFixed(2)}/mo · {subscription.dayOfMonth === 1 ? "1st" : subscription.dayOfMonth === 15 ? "15th" : "28th"} of month</span>
+                    </div>
+                  )}
                 </div>
                 {done && <CheckCircle2 size={15} className="text-emerald-500 shrink-0 mt-0.5" />}
               </div>
