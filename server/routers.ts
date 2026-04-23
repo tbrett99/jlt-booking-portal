@@ -2857,11 +2857,14 @@ export const appRouter = router({
       .input(z.object({
         userId: z.number().int(),
         dayOfMonth: z.number().int().min(1).max(28),
+        mandateId: z.string().optional(), // optional override when no DB mandate row exists
       }))
       .mutation(async ({ input, ctx }) => {
         const mandate = await getGcMandateByUserId(input.userId);
-        if (!mandate) throw new TRPCError({ code: "NOT_FOUND", message: "No mandate found for this agent" });
-        if (mandate.status !== "active") throw new TRPCError({ code: "BAD_REQUEST", message: `Mandate is not active (status: ${mandate.status})` });
+        // Allow proceeding if admin provides a mandate ID directly (no DB row required)
+        const effectiveMandateId = input.mandateId ?? mandate?.mandateId;
+        if (!effectiveMandateId) throw new TRPCError({ code: "NOT_FOUND", message: "No mandate found — please enter the GoCardless Mandate ID from the GC dashboard" });
+        if (mandate && mandate.status !== "active" && !input.mandateId) throw new TRPCError({ code: "BAD_REQUEST", message: `Mandate is not active (status: ${mandate.status}). Use the manual Mandate ID field to override.` });
         const existingSub = await getGcSubscriptionByUserId(input.userId);
         if (existingSub) throw new TRPCError({ code: "CONFLICT", message: "Agent already has an active subscription" });
 
@@ -2873,12 +2876,12 @@ export const appRouter = router({
         const tierLabel = tier === "first_class" ? "First Class" : "Business Class";
 
         const startDate = calcSubscriptionStartDate(
-          mandate.joiningFeePaidAt ?? new Date(),
+          mandate?.joiningFeePaidAt ?? new Date(),
           input.dayOfMonth
         );
 
         const sub = await createSubscription({
-          mandateId: mandate.mandateId ?? "",
+          mandateId: effectiveMandateId,
           amountPence,
           name: `JLT ${tierLabel} Membership`,
           startDate,
@@ -2887,7 +2890,7 @@ export const appRouter = router({
 
         await createGcSubscription({
           userId: input.userId,
-          mandateId: mandate.mandateId ?? "",
+          mandateId: effectiveMandateId,
           subscriptionId: sub.id,
           amount: sub.amount,
           startDate,

@@ -1664,3 +1664,7 @@
 - [x] Fix billing_request.fulfilled webhook matching — idempotency check now only skips if mandate row already exists; if user exists but mandate is missing, creates it on re-fire
 - [x] Fix mandates.active webhook — if no local mandate row found, recovers by looking up join session via billingRequestId and creating the row
 - [x] CRM Create Subscription button now visible even when no mandate row exists (shows as "Set Up Direct Debit Manually")
+
+## GC Webhook Re-trigger & Mandate ID Input
+- [x] Re-triggered billing_request.fulfilled for test account — fetched billing request from GC API, extracted mandate ID MD01KPX8R2PQW7N72BED0KHQ38ZT, created gc_mandates row for userId 3020571 (status: submitted, awaiting BACS activation)
+- [x] Added Mandate ID input field to CRM manual subscription form — shown when no mandate DB row exists; admin pastes GC mandate ID and it's used directly to create the subscription

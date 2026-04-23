@@ -1800,6 +1800,7 @@ function DirectDebitTab({ userId, mandate }: { userId: number; mandate: any }) {
 
   const [showCreateSub, setShowCreateSub] = useState(false);
   const [createSubDay, setCreateSubDay] = useState<number>(mandate?.preferredPaymentDay ?? 1);
+  const [manualMandateId, setManualMandateId] = useState<string>(mandate?.mandateId ?? "");
   const createSubMutation = trpc.gocardless.adminCreateSubscription.useMutation({
     onSuccess: () => {
       setShowCreateSub(false);
@@ -1882,6 +1883,19 @@ function DirectDebitTab({ userId, mandate }: { userId: number; mandate: any }) {
             ) : (
               <div className="rounded-lg border p-4 space-y-3 text-sm bg-muted/30">
                 <p className="font-medium">Create GoCardless Subscription</p>
+                {!mandate && (
+                  <div className="space-y-1">
+                    <label className="text-muted-foreground text-xs block">GoCardless Mandate ID <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={manualMandateId}
+                      onChange={(e) => setManualMandateId(e.target.value)}
+                      placeholder="MD01XXXXXXXXXXXXXXXX"
+                      className="w-full border rounded px-2 py-1 text-sm bg-background font-mono"
+                    />
+                    <p className="text-xs text-muted-foreground">Paste the mandate ID from the GoCardless dashboard</p>
+                  </div>
+                )}
                 <div className="flex items-center gap-3">
                   <label className="text-muted-foreground whitespace-nowrap">Payment day:</label>
                   <select
@@ -1899,8 +1913,8 @@ function DirectDebitTab({ userId, mandate }: { userId: number; mandate: any }) {
                 )}
                 <div className="flex gap-2">
                   <button
-                    onClick={() => createSubMutation.mutate({ userId, dayOfMonth: createSubDay })}
-                    disabled={createSubMutation.isPending}
+                    onClick={() => createSubMutation.mutate({ userId, dayOfMonth: createSubDay, mandateId: mandate ? undefined : (manualMandateId || undefined) })}
+                    disabled={createSubMutation.isPending || (!mandate && !manualMandateId.trim())}
                     className="px-3 py-1.5 rounded bg-teal-600 text-white text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
                   >
                     {createSubMutation.isPending ? "Creating..." : "Confirm & Create"}
