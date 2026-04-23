@@ -844,18 +844,20 @@ async function startServer() {
             })
             .where(eq(joinSessions.id, session.id));
 
-          // Create CRM profile with membership tier
+          // Create CRM profile with membership tier and personal email from sign-up
           await db.insert(agentCrmProfiles).values({
             userId: newUser.id,
             membershipTier: session.membershipTier ?? "business_class",
             dateJoined: new Date().toISOString().slice(0, 10),
             agentStatus: "active",
             trainingStage: "Training",
+            personalEmail: session.email ?? null,
           } as any).onDuplicateKeyUpdate({
             set: {
               membershipTier: session.membershipTier ?? "business_class",
               dateJoined: new Date().toISOString().slice(0, 10),
               trainingStage: "Training",
+              personalEmail: session.email ?? null,
             },
           });
 

@@ -22,7 +22,7 @@ import {
 import {
   Users, PauseCircle, AlertTriangle, XCircle, ShieldOff,
   CheckCircle2, Clock, CalendarDays, ChevronRight, RotateCcw,
-  UserPlus, ArrowRight,
+  UserPlus, ArrowRight, Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -432,6 +432,13 @@ export default function Memberships() {
                             )}
                             <span className="text-xs text-muted-foreground">{agent.email}</span>
                           </div>
+                          {agent.jltEmailPreference && (
+                            <div className="mt-1 flex items-center gap-1.5">
+                              <Mail size={11} className="text-muted-foreground shrink-0" />
+                              <span className="text-xs text-muted-foreground">Requested JLT email:</span>
+                              <span className="text-xs font-semibold font-mono text-foreground">{agent.jltEmailPreference}</span>
+                            </div>
+                          )}
                           <div className="mt-2 space-y-1.5">
                             <div className="flex items-center gap-2">
                               <Progress value={pct} className="h-1.5 flex-1" />

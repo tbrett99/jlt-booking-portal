@@ -2201,6 +2201,7 @@ function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
           const done = localState[step.key];
           const isPortalStep = step.key === "portalAccessApproved";
           const isDdStep = step.key === "ddSubscriptionCreated";
+          const isEmailStep = step.key === "jltEmailSetup";
           const mandate = (ddStatus as any)?.mandate;
           const subscription = (ddStatus as any)?.subscription;
           const mandateStatusColor = {
@@ -2241,6 +2242,15 @@ function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
                     )}
                   </label>
                   <p className="text-xs text-muted-foreground mt-0.5 ml-7">{step.description}</p>
+
+                  {/* Inline JLT email preference display */}
+                  {isEmailStep && (checklist as any)?.jltEmailPreference && (
+                    <div className="ml-7 mt-2 flex items-center gap-2">
+                      <Mail size={12} className="text-muted-foreground shrink-0" />
+                      <span className="text-xs text-muted-foreground">Requested email:</span>
+                      <span className="text-xs font-semibold text-foreground font-mono">{(checklist as any).jltEmailPreference}</span>
+                    </div>
+                  )}
 
                   {/* Inline DD subscription panel */}
                   {isDdStep && !done && (

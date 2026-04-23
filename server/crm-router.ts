@@ -2003,7 +2003,7 @@ export const crmRouter = router({
         const { getDb } = await import("./db");
         const db = await getDb();
         if (!db) return null;
-        const { adminOnboardingChecklist, users } = await import("../drizzle/schema");
+        const { adminOnboardingChecklist, users, agentCrmProfiles } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
         const rows = await db
           .select({
@@ -2017,9 +2017,11 @@ export const crmRouter = router({
             ddSubscriptionCreated: adminOnboardingChecklist.ddSubscriptionCreated,
             updatedAt: adminOnboardingChecklist.updatedAt,
             updatedByName: users.name,
+            jltEmailPreference: agentCrmProfiles.jltEmailPreference,
           })
           .from(adminOnboardingChecklist)
           .leftJoin(users, eq(users.id, adminOnboardingChecklist.updatedById))
+          .leftJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, input.userId))
           .where(eq(adminOnboardingChecklist.userId, input.userId))
           .limit(1);
         return rows[0] ?? null;
@@ -2152,6 +2154,7 @@ export const crmRouter = router({
           membershipTier: agentCrmProfiles.membershipTier,
           dateJoined: agentCrmProfiles.dateJoined,
           uniqueAgentId: agentCrmProfiles.uniqueAgentId,
+          jltEmailPreference: agentCrmProfiles.jltEmailPreference,
           trainingHubLogin: adminOnboardingChecklist.trainingHubLogin,
           jltEmailSetup: adminOnboardingChecklist.jltEmailSetup,
           idDocsReviewed: adminOnboardingChecklist.idDocsReviewed,
