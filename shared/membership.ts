@@ -11,8 +11,7 @@ export const PAYMENT_DAYS = [1, 15, 28] as const;
 export type PaymentDay = (typeof PAYMENT_DAYS)[number];
 
 // Joining fee — same for all tiers and types
-// Set to 100 (£1) for testing; change to 29700 (£297) for live
-export const JOINING_FEE_PENCE = 100; // £1 test — change to 29700 for live
+export const JOINING_FEE_PENCE = 29700; // £297
 
 // Monthly subscription amounts in pence
 export const MONTHLY_AMOUNTS: Record<MembershipTier, Record<MembershipType, number>> = {

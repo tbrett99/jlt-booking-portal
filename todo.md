@@ -1698,3 +1698,12 @@
 ## Post-Signup Welcome Email Copy Update
 - [x] Find the welcome email template in the codebase
 - [x] Replace "application received" copy with: thank them for joining, advise to complete onboarding, look out for training hub access email, note team will be in touch but may be slower evenings/weekends
+
+## Membership Pricing Update
+- [x] Update Business Duo to £127/m (12700p) — already correct in shared/membership.ts
+- [x] Update Business Trio to £167/m (16700p) — already correct
+- [x] Update First Class Duo to £167/m (16700p) — already correct
+- [x] Update First Class Trio to £207/m (20700p) — already correct
+- [x] Update joining fee from £1 test to £297 live in shared/membership.ts
+- [x] Fix adminCreateSubscription to use getMonthlyAmount(tier, membershipType) instead of hardcoded solo amounts
+- [x] Look up membershipType from joinSessions table for correct duo/trio pricing

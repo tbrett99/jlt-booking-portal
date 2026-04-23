@@ -2881,9 +2881,18 @@ export const appRouter = router({
         // Get agent profile for tier/amount
         const { getAgentCrmProfile } = await import("./agent-crm-db");
         const profile = await getAgentCrmProfile(input.userId);
-        const tier = profile?.membershipTier ?? "business_class";
-        const amountPence = tier === "first_class" ? 12700 : 8700;
-        const tierLabel = tier === "first_class" ? "First Class" : "Business Class";
+        const { getMonthlyAmount: getAmt, TIER_LABELS } = await import("../shared/membership");
+        const tier = (profile?.membershipTier ?? "business_class") as import("../shared/membership").MembershipTier;
+        // Look up membership type (solo/duo/trio) from join session
+        const { joinSessions: jsSessions } = await import("../drizzle/schema");
+        const { eq: eqJs } = await import("drizzle-orm");
+        const { getDb: getDbJs } = await import("./db");
+        const dbJs = await getDbJs();
+        const [jsRow] = dbJs ? await dbJs.select({ membershipType: jsSessions.membershipType })
+          .from(jsSessions).where(eqJs(jsSessions.userId, input.userId)).limit(1) : [];
+        const membershipType = ((jsRow?.membershipType ?? "solo") as import("../shared/membership").MembershipType);
+        const amountPence = getAmt(tier, membershipType);
+        const tierLabel = TIER_LABELS[tier] ?? tier;
 
         const startDate = calcSubscriptionStartDate(
           mandate?.joiningFeePaidAt ?? new Date(),
