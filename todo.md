@@ -1636,3 +1636,9 @@
 - [x] Admin: Print / Save PDF button on Contract Evidence Viewer (window.print)
 - [x] CRM Docs tab: "View Full Legal Evidence Record" button links to evidence viewer
 - [x] DB migration for new fields applied
+
+## Notification Routing — support@thejltgroup.co.uk
+- [x] Audit all new joiner notification triggers (webhook, join-router, admin approval)
+- [x] Audit all direct debit notification triggers (GoCardless webhook, DD setup, mandate events)
+- [x] Route all new joiner notifications to support@thejltgroup.co.uk
+- [x] Route all direct debit notifications to support@thejltgroup.co.uk

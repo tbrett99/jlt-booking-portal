@@ -13,7 +13,7 @@ import { ENV } from "./env";
 import { verifyPpsSignature, buildPpsSignature } from "../pps-signature";
 import { getDb, createInAppNotification } from "../db";
 import { paymentLinks, bookings, users } from "../../drizzle/schema";
-import { sendNotificationEmail, sendDirectEmail } from "../email";
+import { sendNotificationEmail, sendDirectEmail, sendSupportEmail } from "../email";
 import {
   getBillingRequest,
   createSubscription,
@@ -854,11 +854,32 @@ async function startServer() {
             }
           }
 
-          // Notify admin
+          // Notify admin — in-app + email to support@
           await notifyOwner({
             title: "New Agent Joined via Self-Sign-Up",
             content: `${session.email} (${session.signerName ?? ""}) has completed sign-up. Membership: ${session.membershipTier ?? "business_class"} ${session.membershipType ?? "solo"}. User ID: ${newUser.id}. Please activate their portal access.`,
           });
+          try {
+            await sendSupportEmail({
+              subject: `New Agent Joined: ${session.signerName ?? session.email}`,
+              html: `
+                <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
+                  <h2 style="color:#414141;margin:0 0 16px;">New Agent Joined via Self-Sign-Up</h2>
+                  <table style="width:100%;border-collapse:collapse;">
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Name</td><td style="padding:6px 0;color:#414141;font-weight:600;">${session.signerName ?? "—"}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Email</td><td style="padding:6px 0;color:#414141;">${session.email}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Membership</td><td style="padding:6px 0;color:#414141;">${session.membershipTier ?? "business_class"} — ${session.membershipType ?? "solo"}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">User ID</td><td style="padding:6px 0;color:#414141;">${newUser.id}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Signed up</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
+                  </table>
+                  <p style="margin:20px 0 0;color:#414141;">Please <strong>activate their portal access</strong> in the CRM once onboarding is complete.</p>
+                  <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
+                </div>
+              `,
+            });
+          } catch (supportEmailErr) {
+            console.error("[GC Webhook] Failed to send support new-joiner email:", supportEmailErr);
+          }
 
           // Send welcome email with credentials
           try {
@@ -956,11 +977,30 @@ async function startServer() {
             nextChargeDate: sub.upcoming_payments?.[0]?.charge_date,
           });
 
-          // Notify admin
+          // Notify admin — in-app + email to support@
           await notifyOwner({
             title: "New DD Mandate Active",
             content: `Agent (user ID ${localMandate.userId}) has set up their Direct Debit mandate. First payment scheduled for ${startDate}.`,
           });
+          try {
+            await sendSupportEmail({
+              subject: `Direct Debit Mandate Active — Agent ID ${localMandate.userId}`,
+              html: `
+                <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
+                  <h2 style="color:#414141;margin:0 0 16px;">New Direct Debit Mandate Active</h2>
+                  <table style="width:100%;border-collapse:collapse;">
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent User ID</td><td style="padding:6px 0;color:#414141;font-weight:600;">${localMandate.userId}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Mandate ID</td><td style="padding:6px 0;color:#414141;">${mandateId}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">First payment date</td><td style="padding:6px 0;color:#414141;">${startDate}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Monthly amount</td><td style="padding:6px 0;color:#414141;">£${(monthlyAmountPence / 100).toFixed(2)}</td></tr>
+                  </table>
+                  <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
+                </div>
+              `,
+            });
+          } catch (supportEmailErr) {
+            console.error("[GC Webhook] Failed to send support DD mandate email:", supportEmailErr);
+          }
 
           console.log(`[GC Webhook] Subscription ${sub.id} created for mandate ${mandateId}, starts ${startDate}`);
         }
@@ -988,11 +1028,31 @@ async function startServer() {
               occurredAt: new Date(),
               rawPayload: JSON.stringify(event),
             });
-            // Notify admin
+            // Notify admin — in-app + email to support@
             await notifyOwner({
               title: `DD Mandate ${event.action.charAt(0).toUpperCase() + event.action.slice(1)}`,
               content: `The Direct Debit mandate for agent (user ID ${localMandate.userId}) has been ${event.action}. Please check their account in the CRM.`,
             });
+            try {
+              await sendSupportEmail({
+                subject: `DD Mandate ${event.action.charAt(0).toUpperCase() + event.action.slice(1)} — Agent ID ${localMandate.userId}`,
+                html: `
+                  <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
+                    <h2 style="color:#414141;margin:0 0 16px;">DD Mandate ${event.action.charAt(0).toUpperCase() + event.action.slice(1)}</h2>
+                    <table style="width:100%;border-collapse:collapse;">
+                      <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent User ID</td><td style="padding:6px 0;color:#414141;font-weight:600;">${localMandate.userId}</td></tr>
+                      <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Mandate ID</td><td style="padding:6px 0;color:#414141;">${mandateId}</td></tr>
+                      <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Status</td><td style="padding:6px 0;color:#dc2626;font-weight:600;">${event.action}</td></tr>
+                      <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Time</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
+                    </table>
+                    <p style="margin:20px 0 0;color:#414141;">Please check the agent's account in the CRM and take appropriate action.</p>
+                    <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
+                  </div>
+                `,
+              });
+            } catch (supportEmailErr) {
+              console.error("[GC Webhook] Failed to send support mandate status email:", supportEmailErr);
+            }
             console.log(`[GC Webhook] Mandate ${mandateId} ${event.action} for user ${localMandate.userId}`);
           }
         }
@@ -1027,11 +1087,32 @@ async function startServer() {
             occurredAt: new Date(),
             rawPayload: JSON.stringify(event),
           });
-          // Notify admin
+          // Notify admin — in-app + email to support@
           await notifyOwner({
             title: `DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}`,
             content: `A Direct Debit payment (${paymentId}) has ${event.action === "charged_back" ? "been charged back" : "failed"}${userId ? ` for agent (user ID ${userId})` : ""}. ${meta.description ? `Reason: ${meta.description}.` : ""} Please check the CRM.`,
           });
+          try {
+            await sendSupportEmail({
+              subject: `DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}${userId ? ` — Agent ID ${userId}` : ""}`,
+              html: `
+                <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
+                  <h2 style="color:#414141;margin:0 0 16px;">DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}</h2>
+                  <table style="width:100%;border-collapse:collapse;">
+                    ${userId ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent User ID</td><td style="padding:6px 0;color:#414141;font-weight:600;">${userId}</td></tr>` : ""}
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Payment ID</td><td style="padding:6px 0;color:#414141;">${paymentId ?? "—"}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Event</td><td style="padding:6px 0;color:#dc2626;font-weight:600;">${event.action}</td></tr>
+                    ${meta.description ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Reason</td><td style="padding:6px 0;color:#414141;">${meta.description}</td></tr>` : ""}
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Time</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
+                  </table>
+                  <p style="margin:20px 0 0;color:#414141;">Please check the agent's account in the CRM and contact them if necessary.</p>
+                  <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
+                </div>
+              `,
+            });
+          } catch (supportEmailErr) {
+            console.error("[GC Webhook] Failed to send support payment failed email:", supportEmailErr);
+          }
           console.log(`[GC Webhook] Payment ${paymentId} ${event.action} for user ${userId ?? "unknown"}`);
         }
       }

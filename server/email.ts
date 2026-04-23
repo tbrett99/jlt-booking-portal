@@ -16,6 +16,26 @@ function getTransporter() {
   });
 }
 
+// Support team notification email — sends to support@thejltgroup.co.uk
+export async function sendSupportEmail(params: {
+  subject: string;
+  html: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const t = getTransporter();
+    await t.sendMail({
+      from: `"JLT Group Portal" <support@thejltgroup.co.uk>`,
+      to: `"JLT Support" <support@thejltgroup.co.uk>`,
+      subject: params.subject,
+      html: params.html,
+    });
+    return { success: true };
+  } catch (err: any) {
+    console.error("[Email] Failed to send support notification:", err?.message);
+    return { success: false, error: err?.message };
+  }
+}
+
 // Direct email — bypasses template system, used for message notifications
 export async function sendDirectEmail(params: {
   toEmail: string;

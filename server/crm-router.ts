@@ -1353,6 +1353,25 @@ export const crmRouter = router({
               content: `Agent ${name} (ID: ${ctx.user.id}) has completed their onboarding profile. Preferred payment day: ${input.preferredPaymentDay ?? "not set"}. Please review and activate their portal access.`,
             });
           } catch {}
+          try {
+            const { sendSupportEmail } = await import("./email");
+            await sendSupportEmail({
+              subject: `Agent Onboarding Complete: ${name}`,
+              html: `
+                <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
+                  <h2 style="color:#414141;margin:0 0 16px;">Agent Onboarding Complete</h2>
+                  <table style="width:100%;border-collapse:collapse;">
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent Name</td><td style="padding:6px 0;color:#414141;font-weight:600;">${name}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent User ID</td><td style="padding:6px 0;color:#414141;">${ctx.user.id}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Preferred payment day</td><td style="padding:6px 0;color:#414141;">${input.preferredPaymentDay ?? "not set"}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Completed at</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
+                  </table>
+                  <p style="margin:20px 0 0;color:#414141;">Please <strong>review their onboarding documents and activate their portal access</strong> in the CRM.</p>
+                  <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
+                </div>
+              `,
+            });
+          } catch {}
         }
         return { success: true };
       }),
