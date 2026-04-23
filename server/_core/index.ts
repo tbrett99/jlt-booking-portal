@@ -917,19 +917,25 @@ async function startServer() {
             await sendEmail({
               toEmail: session.email,
               toName: session.signerName ?? session.email,
-              subject: "Welcome to JLT Group — Your Application is Under Review",
+              subject: "Welcome to JLT Group — You're officially one of us! 🎉",
               html: `
                 <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
                   <div style="text-align:center;margin-bottom:24px;">
                     <div style="background:#70FFE8;border-radius:50%;width:56px;height:56px;display:inline-flex;align-items:center;justify-content:center;">
                       <span style="font-weight:700;color:#414141;font-size:1rem">JLT</span>
                     </div>
-                    <h1 style="color:#414141;font-size:1.4rem;margin:16px 0 4px;">Thank you for joining JLT Group!</h1>
+                    <h1 style="color:#414141;font-size:1.4rem;margin:16px 0 4px;">Welcome to JLT Group, ${(session.signerName ?? '').split(' ')[0] || 'there'}!</h1>
                   </div>
                   <div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;">
-                    <p style="color:#414141;margin:0 0 12px;">Hi ${session.signerName ?? session.email},</p>
-                    <p style="color:#414141;margin:0 0 12px;">Your application has been received and your payment is confirmed. Our team will review your application and activate your portal access within 1–2 business days.</p>
-                    <p style="color:#414141;margin:0;">Once activated, you'll receive a separate email with your login credentials.</p>
+                    <p style="color:#414141;margin:0 0 14px;">Hi ${session.signerName ?? session.email},</p>
+                    <p style="color:#414141;margin:0 0 14px;">Thank you so much for joining JLT Group &mdash; we&rsquo;re really excited to have you on board! Your payment has been confirmed and you&rsquo;re now officially part of the team.</p>
+                    <p style="color:#414141;font-weight:600;margin:0 0 10px;">Here&rsquo;s what happens next:</p>
+                    <table style="width:100%;border-collapse:collapse;margin:0 0 14px;">
+                      <tr><td style="padding:8px 0;vertical-align:top;width:28px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#70FFE8;color:#414141;font-size:.7rem;font-weight:700;">1</span></td><td style="padding:8px 0;color:#414141;font-size:.9rem;"><strong>Complete your onboarding</strong> &mdash; log in to your portal and work through the onboarding steps so we have everything we need to get you fully set up.</td></tr>
+                      <tr><td style="padding:8px 0;vertical-align:top;"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#70FFE8;color:#414141;font-size:.7rem;font-weight:700;">2</span></td><td style="padding:8px 0;color:#414141;font-size:.9rem;"><strong>Look out for your Training Hub email</strong> &mdash; our team will send you a separate email with your Training Hub login details as soon as your account is ready.</td></tr>
+                      <tr><td style="padding:8px 0;vertical-align:top;"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#70FFE8;color:#414141;font-size:.7rem;font-weight:700;">3</span></td><td style="padding:8px 0;color:#414141;font-size:.9rem;"><strong>We&rsquo;ll be in touch</strong> &mdash; a member of the team will reach out to welcome you personally and walk you through your next steps. Please note that responses may be a little slower during evenings and weekends, but we&rsquo;ll always get back to you as quickly as we can.</td></tr>
+                    </table>
+                    <p style="color:#414141;margin:0;">If you have any questions in the meantime, don&rsquo;t hesitate to get in touch &mdash; we&rsquo;re here to help.</p>
                   </div>
                   <p style="color:#9ca3af;font-size:.75rem;text-align:center;margin:0;">Questions? Email <a href="mailto:memberships@thejltgroup.co.uk" style="color:#02E6D2;">memberships@thejltgroup.co.uk</a></p>
                 </div>

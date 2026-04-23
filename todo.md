@@ -1694,3 +1694,7 @@
 - [x] First Class: Everything in BC + BRAVE framework coaching (weekly group + monthly 1:1), Private WhatsApp group
 - [x] Add expandable "See everything that's included" detail section to each tier card
 - [x] Ensure design looks polished and on-brand
+
+## Post-Signup Welcome Email Copy Update
+- [x] Find the welcome email template in the codebase
+- [x] Replace "application received" copy with: thank them for joining, advise to complete onboarding, look out for training hub access email, note team will be in touch but may be slower evenings/weekends
