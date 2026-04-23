@@ -307,7 +307,7 @@ export const joinRouter = router({
       // and create the subscription with the correct amount.
       // The mandateId will be filled in by the webhook once GoCardless confirms.
       await createGcMandate({
-        userId: 0, // placeholder — will be updated in billing_request.fulfilled webhook
+        userId: null, // placeholder — will be updated in billing_request.fulfilled webhook
         billingRequestId: brq.id,
         billingRequestFlowId: flow.id,
         preferredPaymentDay: 1, // default — agent will update during onboarding

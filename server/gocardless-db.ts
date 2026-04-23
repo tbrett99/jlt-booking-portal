@@ -5,7 +5,7 @@ import { eq, desc } from "drizzle-orm";
 // ─── Mandate helpers ──────────────────────────────────────────────────────────
 
 export async function createGcMandate(data: {
-  userId: number;
+  userId: number | null;
   billingRequestId: string;
   billingRequestFlowId: string;
   preferredPaymentDay: number;

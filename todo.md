@@ -1644,7 +1644,7 @@
 - [x] Route all direct debit notifications to support@thejltgroup.co.uk
 
 ## Bug Fix — GC Mandate Insert userId=0
-- [ ] Fix GoCardless webhook: gc_mandates insert fails with userId=0 (user lookup returning null/0 at billing_request.fulfilled time)
+- [x] Fix GoCardless webhook: gc_mandates insert fails with userId=0 (user lookup returning null/0 at billing_request.fulfilled time) — resolved in section below
 
 ## Bug Fix — GC Mandate Insert userId=0 + Subscription Creation
 - [x] Fix GoCardless webhook: gc_mandates insert fails with userId=0 — made userId nullable in schema so placeholder row can be inserted before user account exists; webhook updates it with real userId on billing_request.fulfilled
