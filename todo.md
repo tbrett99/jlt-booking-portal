@@ -1668,3 +1668,9 @@
 ## GC Webhook Re-trigger & Mandate ID Input
 - [x] Re-triggered billing_request.fulfilled for test account — fetched billing request from GC API, extracted mandate ID MD01KPX8R2PQW7N72BED0KHQ38ZT, created gc_mandates row for userId 3020571 (status: submitted, awaiting BACS activation)
 - [x] Added Mandate ID input field to CRM manual subscription form — shown when no mandate DB row exists; admin pastes GC mandate ID and it's used directly to create the subscription
+
+## CRM Direct Debit Tab — Subscription Button & Refresh (Apr 23)
+- [x] Relaxed Create Subscription button condition — now visible for any mandate status (not just 'active'); hidden only for cancelled/expired mandates
+- [x] Added "↻ Refresh status from GoCardless" link — shown when mandate exists but is not yet active; calls GC API, updates DB row, shows toast
+- [x] Added adminRefreshMandateStatus backend procedure to gocardless router
+- [x] TypeScript: 0 errors

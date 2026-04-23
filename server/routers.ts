@@ -2919,6 +2919,34 @@ export const appRouter = router({
 
         return { success: true, subscriptionId: sub.id, startDate, amount: amountPence };
       }),
+
+    /**
+     * Admin: refresh mandate status from GoCardless API and update DB row.
+     * Useful when the mandates.active webhook was delayed or missed.
+     */
+    adminRefreshMandateStatus: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const mandate = await getGcMandateByUserId(input.userId);
+        if (!mandate?.mandateId) throw new TRPCError({ code: "NOT_FOUND", message: "No mandate row found for this agent" });
+        const { getMandate } = await import("./gocardless");
+        const gcMandate = await getMandate(mandate.mandateId);
+        const { getDb } = await import("./db");
+        const { gcMandates: gcMandatesTable } = await import("../drizzle/schema");
+        const { eq: eqFn } = await import("drizzle-orm");
+        const dbInst = await getDb();
+        if (!dbInst) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const validStatuses = ["pending", "active", "cancelled", "failed", "expired"] as const;
+        type MandateStatus = typeof validStatuses[number];
+        const newStatus: MandateStatus = validStatuses.includes(gcMandate.status as MandateStatus)
+          ? (gcMandate.status as MandateStatus)
+          : "pending";
+        await dbInst
+          .update(gcMandatesTable)
+          .set({ status: newStatus, updatedAt: new Date() })
+          .where(eqFn(gcMandatesTable.userId, input.userId));
+        return { status: gcMandate.status, mandateId: mandate.mandateId };
+      }),
   }),
 
   inbox: router({

@@ -1789,8 +1789,10 @@ function StatusHistoryTab({ userId }: { userId: number }) {
 
 // ─── Direct Debit Tab ─────────────────────────────────────────────────────────
 
-function DirectDebitTab({ userId, mandate }: { userId: number; mandate: any }) {
+function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; mandate: any }) {
   const utils = trpc.useUtils();
+  const [localMandate, setLocalMandate] = useState<any>(initialMandate);
+  const mandate = localMandate;
   const { data: paymentEvents, isLoading } = trpc.gocardless.adminGetPaymentEvents.useQuery(
     { userId },
     { enabled: true }
@@ -1807,6 +1809,14 @@ function DirectDebitTab({ userId, mandate }: { userId: number; mandate: any }) {
       refetchDdStatus();
       utils.gocardless.adminListMandates.invalidate();
     },
+  });
+  const refreshMutation = trpc.gocardless.adminRefreshMandateStatus.useMutation({
+    onSuccess: (data) => {
+      setLocalMandate((prev: any) => prev ? { ...prev, status: data.status } : { mandateId: data.mandateId, status: data.status });
+      refetchDdStatus();
+      toast.success(`Mandate status updated: ${data.status}`);
+    },
+    onError: (err) => toast.error(err.message),
   });
 
   const formatEventType = (type: string) => {
@@ -1870,8 +1880,20 @@ function DirectDebitTab({ userId, mandate }: { userId: number; mandate: any }) {
           </div>
         )}
 
-        {/* Manual subscription creation — shown when mandate is active OR no mandate exists at all (admin can enter mandate ID) */}
-        {(!mandate || (mandate?.status === "active" && !subscription)) && (
+        {/* Refresh status button — shown when mandate exists but is not yet active */}
+        {mandate && mandate.status !== "active" && mandate.status !== "cancelled" && mandate.status !== "expired" && (
+          <div className="mt-2">
+            <button
+              onClick={() => refreshMutation.mutate({ userId })}
+              disabled={refreshMutation.isPending}
+              className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50"
+            >
+              {refreshMutation.isPending ? "Refreshing..." : "↻ Refresh status from GoCardless"}
+            </button>
+          </div>
+        )}
+        {/* Manual subscription creation — shown when mandate exists (any non-cancelled/expired status) OR no mandate at all */}
+        {(!mandate || (!subscription && mandate?.status !== "cancelled" && mandate?.status !== "expired")) && (
           <div className="mt-3">
             {!showCreateSub ? (
               <button
