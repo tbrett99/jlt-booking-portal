@@ -1790,12 +1790,23 @@ function StatusHistoryTab({ userId }: { userId: number }) {
 // ─── Direct Debit Tab ─────────────────────────────────────────────────────────
 
 function DirectDebitTab({ userId, mandate }: { userId: number; mandate: any }) {
+  const utils = trpc.useUtils();
   const { data: paymentEvents, isLoading } = trpc.gocardless.adminGetPaymentEvents.useQuery(
     { userId },
     { enabled: true }
   );
-  const { data: ddStatus } = trpc.gocardless.adminGetDdStatus.useQuery({ userId });
+  const { data: ddStatus, refetch: refetchDdStatus } = trpc.gocardless.adminGetDdStatus.useQuery({ userId });
   const subscription = ddStatus?.subscription;
+
+  const [showCreateSub, setShowCreateSub] = useState(false);
+  const [createSubDay, setCreateSubDay] = useState<number>(mandate?.preferredPaymentDay ?? 1);
+  const createSubMutation = trpc.gocardless.adminCreateSubscription.useMutation({
+    onSuccess: () => {
+      setShowCreateSub(false);
+      refetchDdStatus();
+      utils.gocardless.adminListMandates.invalidate();
+    },
+  });
 
   const formatEventType = (type: string) => {
     const map: Record<string, string> = {
@@ -1855,6 +1866,54 @@ function DirectDebitTab({ userId, mandate }: { userId: number; mandate: any }) {
         ) : (
           <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
             No Direct Debit mandate set up yet.
+          </div>
+        )}
+
+        {/* Manual subscription creation — shown when mandate is active but no subscription exists */}
+        {mandate?.status === "active" && !subscription && (
+          <div className="mt-3">
+            {!showCreateSub ? (
+              <button
+                onClick={() => setShowCreateSub(true)}
+                className="w-full text-sm border border-dashed rounded-lg px-4 py-2 text-teal-700 hover:bg-teal-50 transition-colors"
+              >
+                + Create Subscription Manually
+              </button>
+            ) : (
+              <div className="rounded-lg border p-4 space-y-3 text-sm bg-muted/30">
+                <p className="font-medium">Create GoCardless Subscription</p>
+                <div className="flex items-center gap-3">
+                  <label className="text-muted-foreground whitespace-nowrap">Payment day:</label>
+                  <select
+                    value={createSubDay}
+                    onChange={(e) => setCreateSubDay(Number(e.target.value))}
+                    className="border rounded px-2 py-1 text-sm bg-background"
+                  >
+                    {[1, 5, 10, 15, 20, 25, 28].map((d) => (
+                      <option key={d} value={d}>{d}{["st","nd","rd"][d-1] ?? "th"} of month</option>
+                    ))}
+                  </select>
+                </div>
+                {createSubMutation.error && (
+                  <p className="text-red-600 text-xs">{createSubMutation.error.message}</p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => createSubMutation.mutate({ userId, dayOfMonth: createSubDay })}
+                    disabled={createSubMutation.isPending}
+                    className="px-3 py-1.5 rounded bg-teal-600 text-white text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
+                  >
+                    {createSubMutation.isPending ? "Creating..." : "Confirm & Create"}
+                  </button>
+                  <button
+                    onClick={() => setShowCreateSub(false)}
+                    className="px-3 py-1.5 rounded border text-xs hover:bg-muted"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

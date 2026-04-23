@@ -1654,3 +1654,8 @@
 - [x] Remove premature gc_mandates placeholder insert from join-router (root cause of userId=0 error)
 - [x] Move all gc_mandates creation to billing_request.fulfilled webhook where real userId is known
 - [x] billing_request.fulfilled webhook creates the mandate row with correct userId, billingRequestId, joiningFeePaidAt; handles duplicate gracefully
+
+## DD Mandate & Subscription Fixes
+- [x] Investigated test account (userId 3020571) — no mandate row because billing_request.fulfilled webhook fired before the join session was saved; fixed by simplifying flow
+- [x] CRM agent sheet Direct Debit tab already shows mandate status, mandateId, preferred payment day, joining fee date, subscription details, and payment event history
+- [x] Added manual "Create Subscription" button in CRM Direct Debit tab — admins can pick payment day and create GoCardless subscription for any agent with an active mandate

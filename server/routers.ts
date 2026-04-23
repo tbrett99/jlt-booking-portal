@@ -131,9 +131,11 @@ import {
   createBillingRequest,
   createBillingRequestFlow,
   calcSubscriptionStartDate,
+  createSubscription,
 } from "./gocardless";
 import {
   createGcMandate,
+  createGcSubscription,
   getGcMandateByUserId,
   getGcSubscriptionByUserId,
   getAllGcMandates,
@@ -2845,6 +2847,74 @@ export const appRouter = router({
         const mandate = await getGcMandateByUserId(input.userId);
         const subscription = await getGcSubscriptionByUserId(input.userId);
         return { mandate, subscription };
+      }),
+
+    /**
+     * Admin: manually create a GoCardless subscription for an agent.
+     * Used when the automatic subscription creation failed or was skipped.
+     */
+    adminCreateSubscription: adminProcedure
+      .input(z.object({
+        userId: z.number().int(),
+        dayOfMonth: z.number().int().min(1).max(28),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const mandate = await getGcMandateByUserId(input.userId);
+        if (!mandate) throw new TRPCError({ code: "NOT_FOUND", message: "No mandate found for this agent" });
+        if (mandate.status !== "active") throw new TRPCError({ code: "BAD_REQUEST", message: `Mandate is not active (status: ${mandate.status})` });
+        const existingSub = await getGcSubscriptionByUserId(input.userId);
+        if (existingSub) throw new TRPCError({ code: "CONFLICT", message: "Agent already has an active subscription" });
+
+        // Get agent profile for tier/amount
+        const { getAgentCrmProfile } = await import("./agent-crm-db");
+        const profile = await getAgentCrmProfile(input.userId);
+        const tier = profile?.membershipTier ?? "business_class";
+        const amountPence = tier === "first_class" ? 12700 : 8700;
+        const tierLabel = tier === "first_class" ? "First Class" : "Business Class";
+
+        const startDate = calcSubscriptionStartDate(
+          mandate.joiningFeePaidAt ?? new Date(),
+          input.dayOfMonth
+        );
+
+        const sub = await createSubscription({
+          mandateId: mandate.mandateId ?? "",
+          amountPence,
+          name: `JLT ${tierLabel} Membership`,
+          startDate,
+          dayOfMonth: input.dayOfMonth,
+        });
+
+        await createGcSubscription({
+          userId: input.userId,
+          mandateId: mandate.mandateId ?? "",
+          subscriptionId: sub.id,
+          amount: sub.amount,
+          startDate,
+          dayOfMonth: input.dayOfMonth,
+          nextChargeDate: (sub as any).upcoming_payments?.[0]?.charge_date,
+        });
+
+        // Update preferred payment day on mandate row
+        const { getDb } = await import("./db");
+        const { gcMandates: gcMandatesTable, users: usersTable } = await import("../drizzle/schema");
+        const { eq: eqFn } = await import("drizzle-orm");
+        const dbInst = await getDb();
+        if (!dbInst) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        await dbInst
+          .update(gcMandatesTable)
+          .set({ preferredPaymentDay: input.dayOfMonth, updatedAt: new Date() })
+          .where(eqFn(gcMandatesTable.userId, input.userId));
+
+        // Notify support@
+        const { sendSupportEmail } = await import("./email");
+        const [agent] = await dbInst.select({ name: usersTable.name, email: usersTable.email }).from(usersTable).where(eqFn(usersTable.id, input.userId)).limit(1);
+        await sendSupportEmail({
+          subject: `DD Subscription Created — ${agent?.name ?? input.userId}`,
+          html: `<p>Admin <strong>${ctx.user.name}</strong> manually created a GoCardless subscription for agent <strong>${agent?.name}</strong> (${agent?.email}).</p><p>Subscription ID: <code>${sub.id}</code> | Amount: £${(amountPence / 100).toFixed(2)}/mo | Start: ${startDate} | Day: ${input.dayOfMonth}</p>`,
+        });
+
+        return { success: true, subscriptionId: sub.id, startDate, amount: amountPence };
       }),
   }),
 
