@@ -727,6 +727,8 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   emergencyContactPhone: varchar("emergencyContactPhone", { length: 30 }),
   // Preferred monthly payment day: 1, 15, or 28
   preferredPaymentDay: int("preferredPaymentDay"),
+  // JLT email address preference (collected during onboarding)
+  jltEmailPreference: varchar("jltEmailPreference", { length: 320 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -1017,3 +1019,21 @@ export const joinSessions = mysqlTable("join_sessions", {
   expiresAt: timestamp("expiresAt").notNull(),                     // sessions expire after 24h
 });
 export type JoinSession = typeof joinSessions.$inferSelect;
+
+// ─── Admin Onboarding Checklist ───────────────────────────────────────────────
+// Tracks admin tasks for each new agent during onboarding
+
+export const adminOnboardingChecklist = mysqlTable("admin_onboarding_checklist", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),                                  // FK → users.id (the agent)
+  trainingHubLogin: boolean("trainingHubLogin").default(false).notNull(),
+  jltEmailSetup: boolean("jltEmailSetup").default(false).notNull(),
+  idDocsReviewed: boolean("idDocsReviewed").default(false).notNull(),
+  contractReviewed: boolean("contractReviewed").default(false).notNull(),
+  welcomeEmailSent: boolean("welcomeEmailSent").default(false).notNull(),
+  portalAccessApproved: boolean("portalAccessApproved").default(false).notNull(),
+  updatedById: int("updatedById"),                                  // FK → users.id (the admin)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AdminOnboardingChecklist = typeof adminOnboardingChecklist.$inferSelect;

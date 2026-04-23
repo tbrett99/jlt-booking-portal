@@ -407,6 +407,20 @@
       "when": 1776893327378,
       "tag": "0057_tidy_living_mummy",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "5",
+      "when": 1776934907680,
+      "tag": "0058_military_multiple_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "5",
+      "when": 1776935793281,
+      "tag": "0059_whole_miracleman",
+      "breakpoints": true
     }
   ]
 }

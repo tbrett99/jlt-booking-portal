@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import {
   Search, UserCheck, Banknote, Eye, EyeOff, Plus, Trash2,
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
-  ChevronDown, X, Pencil, Clock, ArrowRight
+  ChevronDown, X, Pencil, Clock, ArrowRight, CheckCircle2
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -388,7 +388,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             )}
           </div>
           <Tabs defaultValue="profile">
-            <TabsList className="grid grid-cols-9 w-full">
+            <TabsList className="grid grid-cols-10 w-full">
               <TabsTrigger value="profile" className="text-xs">Profile</TabsTrigger>
               <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
               <TabsTrigger value="team" className="text-xs">Team</TabsTrigger>
@@ -398,6 +398,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <TabsTrigger value="tags" className="text-xs">Tags</TabsTrigger>
               <TabsTrigger value="history" className="text-xs">History</TabsTrigger>
               <TabsTrigger value="dd" className="text-xs">Direct Debit</TabsTrigger>
+              <TabsTrigger value="onboarding" className="text-xs">Onboarding</TabsTrigger>
             </TabsList>
 
             <TabsContent value="profile" className="mt-5 pb-8">
@@ -413,7 +414,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <BankDetailsTab userId={agent.id} profile={profile} onRefresh={refresh} />
             </TabsContent>
             <TabsContent value="docs" className="mt-5 pb-8">
-              <DocsTab userId={agent.id} profile={profile} onRefresh={refresh} />
+              <DocsTab userId={agent.id} profile={profile} contractData={crmData?.contractData ?? null} onRefresh={refresh} />
             </TabsContent>
             <TabsContent value="team" className="mt-5 pb-8">
               <TeamTab userId={agent.id} profile={profile} onRefresh={refresh} />
@@ -426,6 +427,9 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             </TabsContent>
             <TabsContent value="dd" className="mt-5 pb-8">
               <DirectDebitTab userId={agent.id} mandate={agentMandate} />
+            </TabsContent>
+            <TabsContent value="onboarding" className="mt-5 pb-8">
+              <AdminOnboardingChecklistTab userId={agent.id} agentName={agent.name ?? ""} open={open} onRefresh={refresh} />
             </TabsContent>
           </Tabs>
         </div>
@@ -1131,9 +1135,12 @@ function BankDetailsTab({ userId, profile, onRefresh }: { userId: number; profil
 
 // ─── Docs Tab ─────────────────────────────────────────────────────────────────
 
-function DocsTab({ userId, profile, onRefresh }: { userId: number; profile: CrmProfile | null; onRefresh: () => void; }) {
+type ContractData = { signatureDataUrl?: string | null; signerName?: string | null; signerAddress?: string | null; contractSignedAt?: Date | null; } | null;
+
+function DocsTab({ userId, profile, contractData, onRefresh }: { userId: number; profile: CrmProfile | null; contractData: ContractData; onRefresh: () => void; }) {
   const idRef = useRef<HTMLInputElement>(null);
   const poaRef = useRef<HTMLInputElement>(null);
+  const [showSignature, setShowSignature] = useState(false);
   const uploadDoc = trpc.crm.agentCrm.uploadIdDoc.useMutation({
     onSuccess: () => { toast.success("Document uploaded"); onRefresh(); },
     onError: (e) => toast.error(e.message),
@@ -1149,24 +1156,75 @@ function DocsTab({ userId, profile, onRefresh }: { userId: number; profile: CrmP
   }
 
   return (
-    <div className="space-y-5">
-      <DocUploadRow
-        label="ID Document"
-        description="Passport, driving licence, or national ID"
-        url={profile?.idDocUrl}
-        inputRef={idRef}
-        onUpload={(f) => handleUpload("id", f)}
-        loading={uploadDoc.isPending}
-      />
+    <div className="space-y-6">
+      {/* Contract documents section */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Signed Contract</h3>
+        {contractData ? (
+          <div className="rounded-lg border p-4 space-y-3">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Membership Contract</p>
+                {contractData.contractSignedAt && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Signed {new Date(contractData.contractSignedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+                    {contractData.signerName ? ` by ${contractData.signerName}` : ""}
+                  </p>
+                )}
+                {contractData.signerAddress && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{contractData.signerAddress}</p>
+                )}
+              </div>
+              {contractData.signatureDataUrl && (
+                <Button size="sm" variant="outline" onClick={() => setShowSignature(!showSignature)} className="shrink-0">
+                  <Eye className="h-3.5 w-3.5 mr-1.5" />{showSignature ? "Hide" : "View"} Signature
+                </Button>
+              )}
+            </div>
+            {showSignature && contractData.signatureDataUrl && (
+              <div className="border rounded-md p-3 bg-white">
+                <p className="text-xs text-muted-foreground mb-2">Drawn signature:</p>
+                <img
+                  src={contractData.signatureDataUrl}
+                  alt="Contract signature"
+                  className="max-h-24 border rounded"
+                  style={{ background: "white" }}
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed p-4 text-center">
+            <FileText className="h-6 w-6 mx-auto mb-1.5 text-muted-foreground opacity-40" />
+            <p className="text-sm text-muted-foreground">No signed contract found</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Agent may have joined before the self-sign-up flow was introduced.</p>
+          </div>
+        )}
+      </div>
+
       <Separator />
-      <DocUploadRow
-        label="Proof of Address"
-        description="Utility bill or bank statement (within 3 months)"
-        url={profile?.proofOfAddressUrl}
-        inputRef={poaRef}
-        onUpload={(f) => handleUpload("proof_of_address", f)}
-        loading={uploadDoc.isPending}
-      />
+
+      {/* Identity documents section */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Identity Documents</h3>
+        <DocUploadRow
+          label="ID Document"
+          description="Passport, driving licence, or national ID"
+          url={profile?.idDocUrl}
+          inputRef={idRef}
+          onUpload={(f) => handleUpload("id", f)}
+          loading={uploadDoc.isPending}
+        />
+        <Separator />
+        <DocUploadRow
+          label="Proof of Address"
+          description="Utility bill or bank statement (within 3 months)"
+          url={profile?.proofOfAddressUrl}
+          inputRef={poaRef}
+          onUpload={(f) => handleUpload("proof_of_address", f)}
+          loading={uploadDoc.isPending}
+        />
+      </div>
     </div>
   );
 }
@@ -1861,6 +1919,177 @@ function DirectDebitTab({ userId, mandate }: { userId: number; mandate: any }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Admin Onboarding Checklist Tab ──────────────────────────────────────────
+
+const ONBOARDING_STEPS = [
+  { key: "trainingHubLogin" as const, label: "Create Training Hub Login", description: "Set up the agent's account on the training platform and send them their login credentials." },
+  { key: "jltEmailSetup" as const, label: "Set Up JLT Email", description: "Create the @thejltgroup.co.uk email address based on the agent's preference and configure forwarding." },
+  { key: "idDocsReviewed" as const, label: "Review ID Documents", description: "Verify the agent's photo ID and proof of address uploaded during onboarding." },
+  { key: "contractReviewed" as const, label: "Review Contract", description: "Confirm the signed membership contract is complete and all details are correct." },
+  { key: "welcomeEmailSent" as const, label: "Send Welcome Email", description: "Send the official JLT Group welcome email with key resources and next steps." },
+  { key: "portalAccessApproved" as const, label: "Approve Portal Access", description: "Activate the agent's portal access once all other steps are complete." },
+];
+
+type ChecklistKey = typeof ONBOARDING_STEPS[number]["key"];
+
+function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
+  userId: number; agentName: string; open: boolean; onRefresh: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const { data: checklist, isLoading } = trpc.crm.agentCrm.getOnboardingChecklist.useQuery(
+    { userId },
+    { enabled: open }
+  );
+
+  const [localState, setLocalState] = useState<Record<ChecklistKey, boolean>>({
+    trainingHubLogin: false,
+    jltEmailSetup: false,
+    idDocsReviewed: false,
+    contractReviewed: false,
+    welcomeEmailSent: false,
+    portalAccessApproved: false,
+  });
+
+  const [initialised, setInitialised] = useState(false);
+
+  useEffect(() => {
+    if (checklist !== undefined && !initialised) {
+      setLocalState({
+        trainingHubLogin: checklist?.trainingHubLogin ?? false,
+        jltEmailSetup: checklist?.jltEmailSetup ?? false,
+        idDocsReviewed: checklist?.idDocsReviewed ?? false,
+        contractReviewed: checklist?.contractReviewed ?? false,
+        welcomeEmailSent: checklist?.welcomeEmailSent ?? false,
+        portalAccessApproved: checklist?.portalAccessApproved ?? false,
+      });
+      setInitialised(true);
+    }
+  }, [checklist, initialised]);
+
+  const updateChecklist = trpc.crm.agentCrm.updateOnboardingChecklist.useMutation({
+    onSuccess: () => {
+      utils.crm.agentCrm.getOnboardingChecklist.invalidate({ userId });
+      onRefresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const activatePortal = trpc.users.activatePortalAccess.useMutation({
+    onSuccess: () => {
+      toast.success(`Portal access activated for ${agentName}`);
+      onRefresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleToggle(key: ChecklistKey, value: boolean) {
+    const newState = { ...localState, [key]: value };
+    setLocalState(newState);
+    updateChecklist.mutate({ userId, [key]: value });
+
+    // Auto-activate portal access when that step is ticked
+    if (key === "portalAccessApproved" && value) {
+      activatePortal.mutate({ userId });
+    }
+  }
+
+  const completedCount = Object.values(localState).filter(Boolean).length;
+  const totalCount = ONBOARDING_STEPS.length;
+  const allComplete = completedCount === totalCount;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[1,2,3,4,5,6].map(i => <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Progress header */}
+      <div className={`rounded-xl p-4 ${allComplete ? "bg-emerald-50 border border-emerald-200" : "bg-muted/50 border border-border"}`}>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            {allComplete
+              ? <CheckCircle2 size={15} className="text-emerald-600" />
+              : <Clock size={15} className="text-amber-500" />}
+            Admin Onboarding Checklist
+          </h3>
+          <span className={`text-xs font-medium ${allComplete ? "text-emerald-700" : "text-muted-foreground"}`}>
+            {completedCount}/{totalCount} complete
+          </span>
+        </div>
+        <div className="w-full bg-white/60 rounded-full h-1.5 border border-border/40">
+          <div
+            className="h-1.5 rounded-full transition-all duration-500"
+            style={{
+              width: `${(completedCount / totalCount) * 100}%`,
+              background: allComplete ? "#10b981" : "#70FFE8",
+            }}
+          />
+        </div>
+        {allComplete && (
+          <p className="text-xs text-emerald-700 mt-2 font-medium">
+            All onboarding steps complete for {agentName}.
+          </p>
+        )}
+        {checklist?.updatedAt && checklist?.updatedByName && (
+          <p className="text-xs text-muted-foreground mt-1.5">
+            Last updated {new Date(checklist.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} by {checklist.updatedByName}
+          </p>
+        )}
+      </div>
+
+      {/* Checklist items */}
+      <div className="space-y-2">
+        {ONBOARDING_STEPS.map((step, idx) => {
+          const done = localState[step.key];
+          const isPortalStep = step.key === "portalAccessApproved";
+          return (
+            <div
+              key={step.key}
+              className={`rounded-lg border p-4 transition-all ${done ? "border-emerald-200 bg-emerald-50/50" : "border-border bg-card"}`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5">
+                  <Checkbox
+                    id={`checklist-${step.key}`}
+                    checked={done}
+                    onCheckedChange={(v) => handleToggle(step.key, !!v)}
+                    className={done ? "border-emerald-500 data-[state=checked]:bg-emerald-500" : ""}
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <label
+                    htmlFor={`checklist-${step.key}`}
+                    className={`text-sm font-medium cursor-pointer flex items-center gap-2 ${done ? "line-through text-muted-foreground" : ""}`}
+                  >
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold shrink-0"
+                      style={{ background: done ? "#10b981" : "#e5e7eb", color: done ? "white" : "#6b7280" }}>
+                      {idx + 1}
+                    </span>
+                    {step.label}
+                    {isPortalStep && !done && (
+                      <span className="text-xs text-amber-600 font-normal">(activates portal)</span>
+                    )}
+                  </label>
+                  <p className="text-xs text-muted-foreground mt-0.5 ml-7">{step.description}</p>
+                </div>
+                {done && <CheckCircle2 size={15} className="text-emerald-500 shrink-0 mt-0.5" />}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-xs text-muted-foreground text-center">
+        Ticking "Approve Portal Access" will automatically activate the agent's portal login.
+      </p>
     </div>
   );
 }

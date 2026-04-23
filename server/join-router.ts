@@ -25,6 +25,7 @@ import {
 } from "../drizzle/schema";
 import { getActiveContractTemplate } from "./crm-db";
 import { createJoinBillingRequest, createBillingRequestFlow } from "./gocardless";
+import { createGcMandate } from "./gocardless-db";
 import {
   MEMBERSHIP_TIERS,
   MEMBERSHIP_TYPES,
@@ -275,6 +276,17 @@ export const joinRouter = router({
           familyName,
           email: session.email,
         },
+      });
+
+      // Create a gc_mandates record so the mandate.active webhook can find it
+      // and create the subscription with the correct amount.
+      // The mandateId will be filled in by the webhook once GoCardless confirms.
+      await createGcMandate({
+        userId: 0, // placeholder — will be updated in billing_request.fulfilled webhook
+        billingRequestId: brq.id,
+        billingRequestFlowId: flow.id,
+        preferredPaymentDay: 1, // default — agent will update during onboarding
+        joiningFeePaidAt: null as any,
       });
 
       // Store billing request details in session

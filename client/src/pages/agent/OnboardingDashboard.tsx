@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import {
   CheckCircle2, Upload, Clock, User,
   FileText, AlertCircle, Loader2, CreditCard,
-  Heart, CalendarDays, ChevronDown, ChevronUp, Lock,
+  Heart, CalendarDays, ChevronDown, ChevronUp, Lock, Mail,
 } from "lucide-react";
 
 const PAYMENT_DAYS = [
@@ -28,7 +28,7 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-type SectionKey = "personal" | "bank" | "emergency" | "documents" | "payment";
+type SectionKey = "personal" | "bank" | "emergency" | "documents" | "payment" | "jltemail";
 
 function Section({
   title, icon, complete, open, onToggle, children,
@@ -88,6 +88,12 @@ export default function OnboardingDashboard() {
 
   const [preferredPaymentDay, setPreferredPaymentDay] = useState<1 | 15 | 28 | null>(null);
 
+  // JLT email preference
+  const [jltEmailFormat, setJltEmailFormat] = useState<"personal" | "business" | null>(null);
+  const [jltFirstName, setJltFirstName] = useState("");
+  const [jltLastName, setJltLastName] = useState("");
+  const [jltBusinessSlug, setJltBusinessSlug] = useState("");
+
   const [idUploading, setIdUploading] = useState(false);
   const [poaUploading, setPoaUploading] = useState(false);
   const idRef = useRef<HTMLInputElement>(null);
@@ -113,9 +119,40 @@ export default function OnboardingDashboard() {
       setEmergencyContactPhone((profile as any)?.emergencyContactPhone ?? "");
       const d = (profile as any)?.preferredPaymentDay;
       if (d === 1 || d === 15 || d === 28) setPreferredPaymentDay(d);
+      // Restore JLT email preference
+      const savedJltEmail = (profile as any)?.jltEmailPreference ?? "";
+      if (savedJltEmail) {
+        const localPart = savedJltEmail.replace("@thejltgroup.co.uk", "");
+        if (localPart.includes(".")) {
+          // Could be first.last or business — try to detect
+          const parts = localPart.split(".");
+          if (parts.length === 2 && /^[a-z]+$/.test(parts[0]) && /^[a-z]+$/.test(parts[1])) {
+            setJltEmailFormat("personal");
+            setJltFirstName(parts[0]);
+            setJltLastName(parts[1]);
+          } else {
+            setJltEmailFormat("business");
+            setJltBusinessSlug(localPart);
+          }
+        } else {
+          setJltEmailFormat("business");
+          setJltBusinessSlug(localPart);
+        }
+      }
       setInitialised(true);
     }
   }, [profile, user, initialised]);
+
+  // Pre-fill JLT name fields from the user's name
+  useEffect(() => {
+    if (name && !jltFirstName && !jltLastName) {
+      const parts = name.trim().split(" ");
+      if (parts.length >= 2) {
+        setJltFirstName(parts[0].toLowerCase().replace(/[^a-z]/g, ""));
+        setJltLastName(parts[parts.length - 1].toLowerCase().replace(/[^a-z]/g, ""));
+      }
+    }
+  }, [name]);
 
   const saveProfile = trpc.crm.agentCrm.saveOnboardingProfile.useMutation({
     onSuccess: () => utils.crm.agentCrm.getMyProfile.invalidate(),
@@ -127,15 +164,29 @@ export default function OnboardingDashboard() {
     onError: (e) => toast.error(e.message),
   });
 
-  const personalComplete = !!(name.trim() && mobile.trim() && addressLine1.trim() && city.trim() && postcode.trim());
+  // Computed JLT email preview
+  const jltEmailPreview = (() => {
+    if (jltEmailFormat === "personal" && jltFirstName && jltLastName) {
+      return `${jltFirstName.toLowerCase().replace(/[^a-z]/g, "")}.${jltLastName.toLowerCase().replace(/[^a-z]/g, "")}@thejltgroup.co.uk`;
+    }
+    if (jltEmailFormat === "business" && jltBusinessSlug) {
+      return `${jltBusinessSlug.toLowerCase().replace(/[^a-z0-9._-]/g, "")}@thejltgroup.co.uk`;
+    }
+    return null;
+  })();
+
+  const personalComplete = !!(name.trim() && personalEmail.trim() && mobile.trim() && addressLine1.trim() && city.trim() && postcode.trim());
   const bankComplete = !!((profile as any)?.bankAccountName && (profile as any)?.bankSortCode && (profile as any)?.bankAccountNumber);
   const emergencyComplete = !!((profile as any)?.emergencyContactName && (profile as any)?.emergencyContactPhone);
   const docsComplete = !!(profile?.idDocUrl && profile?.proofOfAddressUrl);
   const paymentComplete = !!((profile as any)?.preferredPaymentDay);
-  const allComplete = personalComplete && bankComplete && emergencyComplete && docsComplete && paymentComplete;
+  const jltEmailComplete = !!((profile as any)?.jltEmailPreference);
+  const allComplete = personalComplete && bankComplete && emergencyComplete && docsComplete && paymentComplete && jltEmailComplete;
 
   const handleSavePersonal = async () => {
     if (!name.trim()) { toast.error("Full name is required"); return; }
+    if (!personalEmail.trim()) { toast.error("Personal email is required"); return; }
+    if (!personalEmail.includes("@")) { toast.error("Please enter a valid email address"); return; }
     if (!mobile.trim()) { toast.error("Mobile number is required"); return; }
     if (!addressLine1.trim() || !city.trim() || !postcode.trim()) { toast.error("Full address is required"); return; }
     setSaving("personal");
@@ -193,14 +244,29 @@ export default function OnboardingDashboard() {
     if (!preferredPaymentDay) { toast.error("Please select a payment date"); return; }
     setSaving("payment");
     try {
-      const isLastStep = personalComplete && bankComplete && emergencyComplete && docsComplete;
       await saveProfile.mutateAsync({
-        name, preferredPaymentDay, notifyOnComplete: isLastStep,
+        name, preferredPaymentDay, notifyOnComplete: false,
+      });
+      toast.success("Payment date saved");
+      setOpenSection("jltemail");
+      utils.crm.agentCrm.getMyProfile.invalidate();
+    } finally { setSaving(null); }
+  };
+
+  const handleSaveJltEmail = async () => {
+    if (!jltEmailPreview) { toast.error("Please complete your JLT email address"); return; }
+    setSaving("jltemail");
+    try {
+      const isLastStep = personalComplete && bankComplete && emergencyComplete && docsComplete && paymentComplete;
+      await saveProfile.mutateAsync({
+        name,
+        jltEmailPreference: jltEmailPreview,
+        notifyOnComplete: isLastStep,
       });
       if (isLastStep) {
-        toast.success("Onboarding complete! Your subscription has been set up. The JLT team will activate your portal access shortly.");
+        toast.success("Onboarding complete! The JLT team will set up your email and activate your portal access shortly.");
       } else {
-        toast.success("Payment date saved");
+        toast.success("JLT email preference saved");
       }
       utils.crm.agentCrm.getMyProfile.invalidate();
     } finally { setSaving(null); }
@@ -227,7 +293,8 @@ export default function OnboardingDashboard() {
     );
   }
 
-  const completedCount = [personalComplete, bankComplete, emergencyComplete, docsComplete, paymentComplete].filter(Boolean).length;
+  const completedCount = [personalComplete, bankComplete, emergencyComplete, docsComplete, paymentComplete, jltEmailComplete].filter(Boolean).length;
+  const totalSections = 6;
 
   return (
     <div className="min-h-screen bg-[#f5f3ef]">
@@ -249,10 +316,10 @@ export default function OnboardingDashboard() {
             <div className="flex-1 bg-white/20 rounded-full h-1.5">
               <div
                 className="h-1.5 rounded-full transition-all duration-500"
-                style={{ width: `${(completedCount / 5) * 100}%`, background: "#70FFE8" }}
+                style={{ width: `${(completedCount / totalSections) * 100}%`, background: "#70FFE8" }}
               />
             </div>
-            <span className="text-xs text-white/70">{completedCount}/5 complete</span>
+            <span className="text-xs text-white/70">{completedCount}/{totalSections} complete</span>
           </div>
           {allComplete && (
             <div className="mt-3 flex items-center gap-2 text-sm font-medium" style={{ color: "#70FFE8" }}>
@@ -286,8 +353,8 @@ export default function OnboardingDashboard() {
               <Input value={mobile} onChange={e => setMobile(e.target.value)} placeholder="+44 7700 900000" className="h-9 text-sm" type="tel" />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Personal Email <span className="text-muted-foreground">(optional)</span></Label>
-              <Input value={personalEmail} onChange={e => setPersonalEmail(e.target.value)} placeholder="personal@email.com" className="h-9 text-sm" type="email" />
+              <Label className="text-xs">Personal Email *</Label>
+              <Input value={personalEmail} onChange={e => setPersonalEmail(e.target.value)} placeholder="personal@email.com" className="h-9 text-sm" type="email" required />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Address Line 1 *</Label>
@@ -461,7 +528,110 @@ export default function OnboardingDashboard() {
               style={{ background: "#70FFE8", color: "#0d1a26" }}
             >
               {saving === "payment" ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
-              {allComplete ? "Complete Onboarding" : "Save Payment Date"}
+              Save & Continue
+            </Button>
+          </div>
+        </Section>
+
+        <Section title="JLT Email Address" icon={<Mail size={13} />} complete={jltEmailComplete}
+          open={openSection === "jltemail"} onToggle={() => setOpenSection(openSection === "jltemail" ? "personal" : "jltemail")}>
+          <div className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              As a JLT Group member, you'll receive a <strong>@thejltgroup.co.uk</strong> email address. Choose the format you'd prefer.
+            </p>
+
+            {/* Format selector */}
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                onClick={() => setJltEmailFormat("personal")}
+                className={`rounded-lg border p-3 text-left transition-all ${
+                  jltEmailFormat === "personal"
+                    ? "border-[#70FFE8] bg-[#70FFE8]/10"
+                    : "border-border hover:border-[#70FFE8]/50"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${jltEmailFormat === "personal" ? "border-[#02E6D2]" : "border-muted-foreground"}`}>
+                    {jltEmailFormat === "personal" && <div className="w-1.5 h-1.5 rounded-full bg-[#02E6D2]" />}
+                  </div>
+                  <span className="text-sm font-medium">Personal format</span>
+                </div>
+                <p className="text-xs text-muted-foreground ml-5.5">firstname.lastname@thejltgroup.co.uk</p>
+              </button>
+
+              <button
+                onClick={() => setJltEmailFormat("business")}
+                className={`rounded-lg border p-3 text-left transition-all ${
+                  jltEmailFormat === "business"
+                    ? "border-[#70FFE8] bg-[#70FFE8]/10"
+                    : "border-border hover:border-[#70FFE8]/50"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${jltEmailFormat === "business" ? "border-[#02E6D2]" : "border-muted-foreground"}`}>
+                    {jltEmailFormat === "business" && <div className="w-1.5 h-1.5 rounded-full bg-[#02E6D2]" />}
+                  </div>
+                  <span className="text-sm font-medium">Business format</span>
+                </div>
+                <p className="text-xs text-muted-foreground ml-5.5">yourbusiness@thejltgroup.co.uk</p>
+              </button>
+            </div>
+
+            {/* Personal format fields */}
+            {jltEmailFormat === "personal" && (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">First Name *</Label>
+                  <Input
+                    value={jltFirstName}
+                    onChange={e => setJltFirstName(e.target.value.toLowerCase().replace(/[^a-z]/g, ""))}
+                    placeholder="firstname"
+                    className="h-9 text-sm font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Last Name *</Label>
+                  <Input
+                    value={jltLastName}
+                    onChange={e => setJltLastName(e.target.value.toLowerCase().replace(/[^a-z]/g, ""))}
+                    placeholder="lastname"
+                    className="h-9 text-sm font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Business format field */}
+            {jltEmailFormat === "business" && (
+              <div className="space-y-1">
+                <Label className="text-xs">Business Name / Slug *</Label>
+                <Input
+                  value={jltBusinessSlug}
+                  onChange={e => setJltBusinessSlug(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))}
+                  placeholder="yourbusiness"
+                  className="h-9 text-sm font-mono"
+                />
+                <p className="text-xs text-muted-foreground">Lowercase letters, numbers, dots, hyphens only.</p>
+              </div>
+            )}
+
+            {/* Email preview */}
+            {jltEmailPreview && (
+              <div className="rounded-lg border border-[#70FFE8]/40 bg-[#70FFE8]/5 p-3">
+                <p className="text-xs text-muted-foreground mb-1">Your JLT email address will be:</p>
+                <p className="text-sm font-mono font-semibold text-[#0d1a26]">{jltEmailPreview}</p>
+                <p className="text-xs text-muted-foreground mt-1.5">The JLT team will set this up for you after your onboarding is complete.</p>
+              </div>
+            )}
+
+            <Button
+              onClick={handleSaveJltEmail}
+              disabled={!jltEmailPreview || saving === "jltemail"}
+              className="w-full h-9 text-sm font-semibold"
+              style={{ background: "#70FFE8", color: "#0d1a26" }}
+            >
+              {saving === "jltemail" ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
+              {allComplete ? "Complete Onboarding" : "Save Email Preference"}
             </Button>
           </div>
         </Section>

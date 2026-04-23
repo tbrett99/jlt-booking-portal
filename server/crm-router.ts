@@ -902,7 +902,26 @@ export const crmRouter = router({
           ...l,
           password: decryptSupplierPassword(l),
         }));
-        return { profile: decryptedProfile, tags, supplierLogins: decryptedLogins };
+        // Fetch join session contract data
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        let contractData: { signatureDataUrl?: string | null; signerName?: string | null; signerAddress?: string | null; contractSignedAt?: Date | null; } | null = null;
+        if (db) {
+          const { joinSessions } = await import("../drizzle/schema");
+          const { eq } = await import("drizzle-orm");
+          const sessions = await db
+            .select({
+              signerName: joinSessions.signerName,
+              signerAddress: joinSessions.signerAddress,
+              contractSignedAt: joinSessions.contractSignedAt,
+              signatureDataUrl: joinSessions.signatureDataUrl,
+            })
+            .from(joinSessions)
+            .where(eq(joinSessions.userId, input.userId))
+            .limit(1);
+          if (sessions[0]) contractData = sessions[0];
+        }
+        return { profile: decryptedProfile, tags, supplierLogins: decryptedLogins, contractData };
       }),
 
     updateProfile: adminProcedure
@@ -1213,6 +1232,8 @@ export const crmRouter = router({
         emergencyContactPhone: z.string().max(30).optional().nullable(),
         // Preferred monthly payment day: 1, 15, or 28
         preferredPaymentDay: z.union([z.literal(1), z.literal(15), z.literal(28)]).optional().nullable(),
+        // JLT email address preference
+        jltEmailPreference: z.string().max(320).optional().nullable(),
         notifyOnComplete: z.boolean().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
@@ -1225,6 +1246,7 @@ export const crmRouter = router({
         await db.update(users).set({ name: input.name }).where(eq(users.id, ctx.user.id));
         // Upsert the CRM profile fields (strip non-profile fields)
         const { name, notifyOnComplete, ...profileFields } = input;
+        // jltEmailPreference is included in profileFields automatically
         await upsertAgentCrmProfile(ctx.user.id, profileFields);
         // If completing onboarding with a payment day, create the GoCardless subscription
         if (input.preferredPaymentDay && notifyOnComplete) {
@@ -1872,6 +1894,76 @@ export const crmRouter = router({
           .where(eq(agentStatusEvents.userId, input.userId))
           .orderBy(desc(agentStatusEvents.createdAt));
         return events;
+      }),
+
+    // ─── Admin Onboarding Checklist ───────────────────────────────────────────
+    getOnboardingChecklist: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) return null;
+        const { adminOnboardingChecklist, users } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const rows = await db
+          .select({
+            id: adminOnboardingChecklist.id,
+            trainingHubLogin: adminOnboardingChecklist.trainingHubLogin,
+            jltEmailSetup: adminOnboardingChecklist.jltEmailSetup,
+            idDocsReviewed: adminOnboardingChecklist.idDocsReviewed,
+            contractReviewed: adminOnboardingChecklist.contractReviewed,
+            welcomeEmailSent: adminOnboardingChecklist.welcomeEmailSent,
+            portalAccessApproved: adminOnboardingChecklist.portalAccessApproved,
+            updatedAt: adminOnboardingChecklist.updatedAt,
+            updatedByName: users.name,
+          })
+          .from(adminOnboardingChecklist)
+          .leftJoin(users, eq(users.id, adminOnboardingChecklist.updatedById))
+          .where(eq(adminOnboardingChecklist.userId, input.userId))
+          .limit(1);
+        return rows[0] ?? null;
+      }),
+
+    updateOnboardingChecklist: adminProcedure
+      .input(z.object({
+        userId: z.number().int(),
+        trainingHubLogin: z.boolean().optional(),
+        jltEmailSetup: z.boolean().optional(),
+        idDocsReviewed: z.boolean().optional(),
+        contractReviewed: z.boolean().optional(),
+        welcomeEmailSent: z.boolean().optional(),
+        portalAccessApproved: z.boolean().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { adminOnboardingChecklist } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const { userId, ...fields } = input;
+        // Upsert: try update first, then insert
+        const existing = await db
+          .select({ id: adminOnboardingChecklist.id })
+          .from(adminOnboardingChecklist)
+          .where(eq(adminOnboardingChecklist.userId, userId))
+          .limit(1);
+        if (existing[0]) {
+          await db.update(adminOnboardingChecklist)
+            .set({ ...fields, updatedById: ctx.user.id })
+            .where(eq(adminOnboardingChecklist.userId, userId));
+        } else {
+          await db.insert(adminOnboardingChecklist).values({
+            userId,
+            trainingHubLogin: fields.trainingHubLogin ?? false,
+            jltEmailSetup: fields.jltEmailSetup ?? false,
+            idDocsReviewed: fields.idDocsReviewed ?? false,
+            contractReviewed: fields.contractReviewed ?? false,
+            welcomeEmailSent: fields.welcomeEmailSent ?? false,
+            portalAccessApproved: fields.portalAccessApproved ?? false,
+            updatedById: ctx.user.id,
+          });
+        }
+        return { success: true };
       }),
   }),
 });

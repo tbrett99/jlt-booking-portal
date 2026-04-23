@@ -1614,3 +1614,14 @@
 
 ## Redirect After Set Password (Smoothness Fix)
 - [x] Fix: removed setTimeout delay, now uses window.location.replace('/') immediately after setPassword so auth router handles the /onboarding redirect cleanly
+
+## Onboarding & CRM Improvements (Round 2)
+- [x] Onboarding: make personal email field required (not optional)
+- [x] Onboarding: add JLT email preference step — agent picks first.lastname@thejltgroup.co.uk or business@thejltgroup.co.uk
+- [x] Schema: add jltEmailPreference field to agentCrmProfiles
+- [x] Schema/backend: default trainingStage to 'training' for new agents created by webhook
+- [x] CRM: mandate display — GoCardless mandate status shown on agent sheet header badge (No DD = no mandate row in DB, expected for agents who haven't completed GC flow)
+- [x] CRM: add Contract Documents section to agent sidebar (Docs tab now shows signed contract with signature, signer name, date)
+- [x] Admin Onboarding Checklist: new Onboarding tab in CRM agent sheet with 6 steps: Create Training Hub Login, Set Up JLT Email, Review ID Docs, Review Contract, Send Welcome Email, Approve Portal Access
+- [x] Schema: add admin_onboarding_checklist table (userId, 6 boolean steps, updatedById, timestamps)
+- [x] DB migration for new fields and table applied

@@ -830,12 +830,29 @@ async function startServer() {
             membershipTier: session.membershipTier ?? "business_class",
             dateJoined: new Date().toISOString().slice(0, 10),
             agentStatus: "active",
+            trainingStage: "Training",
           } as any).onDuplicateKeyUpdate({
             set: {
               membershipTier: session.membershipTier ?? "business_class",
               dateJoined: new Date().toISOString().slice(0, 10),
+              trainingStage: "Training",
             },
           });
+
+          // Update the gc_mandates placeholder record with the real userId and joiningFeePaidAt
+          if (session.billingRequestId) {
+            try {
+              const localMandate = await getGcMandateByBillingRequestId(session.billingRequestId);
+              if (localMandate) {
+                await updateGcMandate(localMandate.id, {
+                  userId: newUser.id,
+                  joiningFeePaidAt: new Date(),
+                });
+              }
+            } catch (mandateErr) {
+              console.error(`[GC Webhook] Failed to update gc_mandate for billing request ${session.billingRequestId}:`, mandateErr);
+            }
+          }
 
           // Notify admin
           await notifyOwner({
@@ -898,10 +915,31 @@ async function startServer() {
           const dayOfMonth = localMandate.preferredPaymentDay ?? 1;
           const startDate = calcSubscriptionStartDate(joiningFeeDate, dayOfMonth);
 
+          // Look up the agent's membership tier/type to get the correct monthly amount
+          let monthlyAmountPence = 3000; // fallback £30
+          try {
+            const db2 = await getDb();
+            if (db2) {
+              const { agentCrmProfiles: crmProfiles } = await import("../../drizzle/schema");
+              const { eq: eqOp } = await import("drizzle-orm");
+              const crmRows = await db2.select().from(crmProfiles).where(eqOp(crmProfiles.userId, localMandate.userId)).limit(1);
+              if (crmRows[0]) {
+                const tier = (crmRows[0].membershipTier ?? "business_class") as any;
+                // Look up the join session to get membershipType
+                const { joinSessions: jSessions } = await import("../../drizzle/schema");
+                const sessionRows = await db2.select().from(jSessions).where(eqOp(jSessions.userId, localMandate.userId)).limit(1);
+                const membershipType = (sessionRows[0]?.membershipType ?? "solo") as any;
+                monthlyAmountPence = getMonthlyAmount(tier, membershipType);
+              }
+            }
+          } catch (amtErr) {
+            console.error("[GC Webhook] Could not resolve monthly amount, using fallback:", amtErr);
+          }
+
           // Create the GoCardless subscription
           const sub = await createSubscription({
             mandateId,
-            amountPence: 3000, // £30.00 — update to your actual monthly fee
+            amountPence: monthlyAmountPence,
             name: "JLT Monthly Membership",
             startDate,
             dayOfMonth,
