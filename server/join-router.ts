@@ -38,6 +38,10 @@ import {
 import { sendDirectEmail } from "./email";
 import { nanoid } from "nanoid";
 import { notifyOwner } from "./_core/notification";
+import bcrypt from "bcryptjs";
+import { sdk } from "./_core/sdk";
+import { getSessionCookieOptions } from "./_core/cookies";
+import { COOKIE_NAME } from "@shared/const";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -606,6 +610,40 @@ export const joinRouter = router({
         .update(users)
         .set({ portalStatus: "active" })
         .where(eq(users.id, input.userId));
+      return { success: true };
+    }),
+
+  // ─── Set password after payment (auto-login) ────────────────────────────────
+  setPassword: publicProcedure
+    .input(z.object({
+      sessionToken: z.string(),
+      password: z.string().min(8, "Password must be at least 8 characters"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const session = await getSessionByToken(input.sessionToken);
+      if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Session not found or expired" });
+      if (session.step !== "complete") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Payment not yet confirmed. Please wait a moment and refresh." });
+      }
+      if (!session.userId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Account not yet created — please wait a moment and try again." });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // Hash and save the chosen password, clear mustChangePassword flag
+      const hashed = await bcrypt.hash(input.password, 12);
+      await db
+        .update(users)
+        .set({ tempPassword: hashed, mustChangePassword: false })
+        .where(eq(users.id, session.userId));
+      // Fetch user for openId
+      const userRows = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
+      const user = userRows[0];
+      if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "User not found" });
+      // Issue session cookie (auto-login)
+      const token = await sdk.createSessionToken(user.openId, { name: user.name ?? user.email ?? "" });
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
       return { success: true };
     }),
 

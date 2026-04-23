@@ -1602,3 +1602,7 @@
 - [x] Frontend: portal access gating — App.tsx redirects onboarding agents to /onboarding; PortalLayout shows minimal nav
 - [x] Admin CRM: "Activate Portal Access" button on agent sheet (portalStatus: onboarding only)
 - [x] Admin CRM: "Activate" button in Sign-Up Applications table (complete sessions with userId only)
+
+## Set Password on Join Complete
+- [x] Backend: tRPC procedure join.setPassword — validates join session token, hashes password, saves to user record, creates session cookie (auto-login)
+- [x] Frontend: /join/complete — replaced login button with set-password form (password + confirm password fields), auto-redirect to /onboarding on success

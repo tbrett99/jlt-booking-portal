@@ -472,14 +472,40 @@ function PaymentStep({
 // ─── Step 4: Complete ─────────────────────────────────────────────────────────
 
 function CompleteStep({ sessionToken }: { sessionToken: string }) {
+  const [, navigate] = useLocation();
   const { data: session } = trpc.join.getSession.useQuery({ sessionToken });
   const [inviteEmail, setInviteEmail] = useState("");
   const [invitesSent, setInvitesSent] = useState<string[]>([]);
   const [inviteError, setInviteError] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSet, setPasswordSet] = useState(false);
   const inviteMutation = trpc.join.sendTeamInvite.useMutation();
+  const setPasswordMutation = trpc.join.setPassword.useMutation();
 
   const isTeam = session?.membershipType === "duo" || session?.membershipType === "trio";
   const maxInvites = session?.membershipType === "duo" ? 1 : session?.membershipType === "trio" ? 2 : 0;
+
+  const handleSetPassword = async () => {
+    setPasswordError("");
+    if (password.length < 8) {
+      setPasswordError("Password must be at least 8 characters");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setPasswordError("Passwords do not match");
+      return;
+    }
+    try {
+      await setPasswordMutation.mutateAsync({ sessionToken, password });
+      setPasswordSet(true);
+      toast.success("Password set! Redirecting to your onboarding...");
+      setTimeout(() => navigate("/onboarding"), 1200);
+    } catch (err: any) {
+      setPasswordError(err.message ?? "Failed to set password. Please try again.");
+    }
+  };
 
   const handleSendInvite = async () => {
     if (!inviteEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail)) {
@@ -558,19 +584,59 @@ function CompleteStep({ sessionToken }: { sessionToken: string }) {
         </Card>
       )}
 
-      {/* Complete profile CTA */}
-      <div className="rounded-xl p-5 text-white text-left" style={{ background: "linear-gradient(135deg, #0d1a26 0%, #1a3a4a 100%)" }}>
-        <h3 className="font-semibold mb-1">Next step: Complete your profile</h3>
-        <p className="text-sm text-white/70 mb-4">
-          Log in to your portal and complete your profile — including your bank details for commission payments, emergency contact, and preferred payment date. Your portal access will be activated once the JLT team has reviewed your profile.
-        </p>
-        <a
-          href="/"
-          className="inline-flex items-center justify-center w-full rounded-lg py-2.5 text-sm font-semibold transition-all hover:opacity-90"
-          style={{ background: "#70FFE8", color: "#0d1a26" }}
-        >
-          Log in &amp; Complete Profile →
-        </a>
+      {/* Set password + complete profile */}
+      <div className="rounded-xl p-5 text-white text-left space-y-4" style={{ background: "linear-gradient(135deg, #0d1a26 0%, #1a3a4a 100%)" }}>
+        <div>
+          <h3 className="font-semibold mb-1">Set your portal password</h3>
+          <p className="text-sm text-white/70">
+            Create a password to access your portal and complete your profile — bank details, emergency contact, and preferred payment date.
+          </p>
+        </div>
+        {passwordSet ? (
+          <div className="flex items-center gap-2 text-[#70FFE8] text-sm font-medium">
+            <CheckCircle2 size={18} /> Password set! Redirecting to onboarding...
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-white/80 text-xs">Password</Label>
+              <Input
+                type="password"
+                placeholder="At least 8 characters"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-white/10 border-white/20 text-white placeholder:text-white/40"
+                onKeyDown={(e) => e.key === "Enter" && handleSetPassword()}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-white/80 text-xs">Confirm password</Label>
+              <Input
+                type="password"
+                placeholder="Repeat your password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="bg-white/10 border-white/20 text-white placeholder:text-white/40"
+                onKeyDown={(e) => e.key === "Enter" && handleSetPassword()}
+              />
+            </div>
+            {passwordError && (
+              <p className="text-red-400 text-xs">{passwordError}</p>
+            )}
+            <Button
+              onClick={handleSetPassword}
+              disabled={setPasswordMutation.isPending || !password || !confirmPassword}
+              className="w-full font-semibold"
+              style={{ background: "#70FFE8", color: "#0d1a26" }}
+            >
+              {setPasswordMutation.isPending ? (
+                <><Loader2 className="animate-spin mr-2" size={16} /> Setting password...</>
+              ) : (
+                "Set Password & Go to Onboarding →"
+              )}
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="bg-[#FFF6ED] rounded-xl p-5 text-left space-y-3">
