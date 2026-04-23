@@ -204,10 +204,13 @@ export const remittanceRouter = router({
           unmatchedCount++;
         }
 
-        // Calculate 80/20 split
-        const remit80 = parseFloat((remittanceAmt * 0.8).toFixed(2));
-        const jlt20 = parseFloat((remittanceAmt * 0.2).toFixed(2));
+        // Calculate 80/20 split — deduct VAT from remittance first
         const vatAmt = parseNum(rawRow["VAT"]);
+        // Use vatFromPortal (from claim) if available, otherwise use VAT from PTS CSV
+        const effectiveVat = vatFromPortalAmt !== null ? vatFromPortalAmt : (vatAmt > 0 ? vatAmt : 0);
+        const netRemittance = Math.max(0, remittanceAmt - effectiveVat);
+        const remit80 = parseFloat((netRemittance * 0.8).toFixed(2));
+        const jlt20 = parseFloat((netRemittance * 0.2).toFixed(2));
 
         lineValues.push({
           batchId,
@@ -516,6 +519,42 @@ export const remittanceRouter = router({
       return { ok: true };
     }),
 
+  // ── Update VAT on a line and recalculate 80/20 split ─────────────────────────
+  updateLineVat: protectedProcedure
+    .input(z.object({ lineId: z.number(), vat: z.number().nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const lineRows = await db
+        .select({ remittance: remittanceLines.remittance, vatFromPts: remittanceLines.vatFromPts })
+        .from(remittanceLines)
+        .where(eq(remittanceLines.id, input.lineId))
+        .limit(1);
+      if (lineRows.length === 0) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      const remittanceAmt = parseNum(lineRows[0].remittance);
+      const vatPts = lineRows[0].vatFromPts ? parseNum(lineRows[0].vatFromPts) : 0;
+      const effectiveVat = input.vat !== null ? input.vat : vatPts;
+      const netRemittance = Math.max(0, remittanceAmt - effectiveVat);
+      const remit80 = (netRemittance * 0.8).toFixed(2);
+      const jlt20 = (netRemittance * 0.2).toFixed(2);
+
+      await db
+        .update(remittanceLines)
+        .set({
+          vatFromPortal: input.vat !== null ? input.vat.toFixed(2) : null,
+          remit80,
+          jlt20,
+        })
+        .where(eq(remittanceLines.id, input.lineId));
+
+      return { ok: true, remit80: parseFloat(remit80), jlt20: parseFloat(jlt20) };
+    }),
+
   // ── Manually match an unmatched line to a booking ───────────────────────────
   matchLine: protectedProcedure
     .input(z.object({ lineId: z.number(), bookingId: z.number() }))
@@ -570,6 +609,24 @@ export const remittanceRouter = router({
         }
       }
 
+      // Recalculate remit80/jlt20 using vatFromPortal if available
+      const lineForCalc = await db
+        .select({ remittance: remittanceLines.remittance, vatFromPts: remittanceLines.vatFromPts })
+        .from(remittanceLines)
+        .where(eq(remittanceLines.id, input.lineId))
+        .limit(1);
+      let recalcRemit80: string | undefined;
+      let recalcJlt20: string | undefined;
+      if (lineForCalc.length > 0) {
+        const remittanceAmt = parseNum(lineForCalc[0].remittance);
+        const vatPortal = vatFromPortal !== null ? parseFloat(vatFromPortal) : null;
+        const vatPts = lineForCalc[0].vatFromPts ? parseNum(lineForCalc[0].vatFromPts) : 0;
+        const effectiveVat = vatPortal !== null ? vatPortal : vatPts;
+        const netRemittance = Math.max(0, remittanceAmt - effectiveVat);
+        recalcRemit80 = netRemittance > 0 ? (netRemittance * 0.8).toFixed(2) : undefined;
+        recalcJlt20 = netRemittance > 0 ? (netRemittance * 0.2).toFixed(2) : undefined;
+      }
+
       await db
         .update(remittanceLines)
         .set({
@@ -580,6 +637,7 @@ export const remittanceRouter = router({
           isMatched: true,
           processingClaimId,
           vatFromPortal,
+          ...(recalcRemit80 !== undefined ? { remit80: recalcRemit80, jlt20: recalcJlt20 } : {}),
         })
         .where(eq(remittanceLines.id, input.lineId));
 

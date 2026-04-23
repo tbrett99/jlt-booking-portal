@@ -182,6 +182,19 @@ function UploadDialog({
 
 function JaninesView({ batchId }: { batchId?: number }) {
   const { data: lines = [], isLoading } = trpc.remittance.getJaninesView.useQuery({ batchId }, { staleTime: 0 });
+  const utils = trpc.useUtils();
+  const [vatEditing, setVatEditing] = useState<Record<number, string>>({});
+  const updateVatMutation = trpc.remittance.updateLineVat.useMutation({
+    onSuccess: () => utils.remittance.getJaninesView.invalidate(),
+    onError: (e) => toast.error(`VAT update failed: ${e.message}`),
+  });
+  const handleVatBlur = (lineId: number) => {
+    const val = vatEditing[lineId];
+    if (val === undefined) return;
+    const parsed = val === '' ? null : parseFloat(val);
+    if (val !== '' && isNaN(parsed as number)) return;
+    updateVatMutation.mutate({ lineId, vat: parsed });
+  };
 
   const exportJanines = () => {
     const rows = lines.map((l) => ({
@@ -305,7 +318,17 @@ function JaninesView({ batchId }: { batchId?: number }) {
                 <TableCell className="text-xs">{fmt(l.ptrc)}</TableCell>
                 <TableCell className="text-xs">{fmt(l.pts)}</TableCell>
                 <TableCell className="text-xs font-medium">
-                  {(l as any).vatFromPortal ? fmt((l as any).vatFromPortal) : <span className="text-muted-foreground text-xs">—</span>}
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={vatEditing[l.id] !== undefined ? vatEditing[l.id] : ((l as any).vatFromPortal != null ? Number((l as any).vatFromPortal).toFixed(2) : (l.vatFromPts != null ? Number(l.vatFromPts).toFixed(2) : ''))}
+                    onChange={(e) => setVatEditing((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                    onBlur={() => handleVatBlur(l.id)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    className="w-24 h-7 px-2 text-sm border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
                 </TableCell>
                 <TableCell className="font-medium">{fmt(l.remittance)}</TableCell>
                 <TableCell className="text-green-700 dark:text-green-400">{fmt(l.remit80)}</TableCell>
