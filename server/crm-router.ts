@@ -2068,5 +2068,116 @@ export const crmRouter = router({
         }
         return { success: true };
       }),
+
+    sendWelcomeEmail: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { users, adminOnboardingChecklist } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const agent = await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(eq(users.id, input.userId))
+          .limit(1)
+          .then(r => r[0]);
+        if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+        const firstName = (agent.name ?? "").split(" ")[0] || "there";
+        const { sendDirectEmail } = await import("./email");
+        const result = await sendDirectEmail({
+          toEmail: agent.email ?? "",
+          toName: agent.name ?? "",
+          subject: "Welcome to the JLT Group! \uD83C\uDF89",
+          html: `
+            <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #FFF6ED; padding: 32px; border-radius: 12px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <h1 style="color: #414141; font-size: 24px; margin: 0;">JLT Group</h1>
+                <div style="width: 60px; height: 4px; background: #70FFE8; margin: 12px auto 0;"></div>
+              </div>
+              <p style="color: #414141;">Hi ${firstName},</p>
+              <p style="color: #414141;">A warm welcome to the JLT Group! We're thrilled to have you on board.</p>
+              <p style="color: #414141;">You will receive an email shortly with details for setting up your training hub login. Once you receive this, please set yourself a password and navigate to the JLT Academy in the 'courses' area. You can start working through your training right away!</p>
+              <p style="color: #414141;">In the first module, you'll find a link to our onboarding WhatsApp group &mdash; please make sure you join this to keep up to date with our regular announcements.</p>
+              <p style="color: #414141;">The JLT email address you requested will be with you within 7 days; we'll email it over as soon as it's been created.</p>
+              <p style="color: #414141;">As you dive into the training, please take it step by step. The modules are time locked to prevent you from racing through and missing anything important.</p>
+              <p style="color: #414141;">We'll be here to provide feedback on your progress, along with any tips or advice to help you succeed.</p>
+              <p style="color: #414141;">Remember, our WhatsApp groups are a valuable resource &mdash; whether you need support, have questions, or just want to chat, our agents and core team are here to help.</p>
+              <p style="color: #414141;">We have a weekly induction call every Thursday, rotating between 12pm &amp; 6pm so hopefully we'll see you on the next one! You'll receive the time and Zoom link in the WhatsApp group so don't forget to join!</p>
+              <p style="color: #414141; margin-top: 32px;">See you there!</p>
+              <p style="color: #414141;"><strong>The JLT Team</strong></p>
+            </div>
+          `,
+        });
+        if (!result.success) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.error ?? "Failed to send email" });
+        // Mark welcomeEmailSent in checklist
+        const existing = await db
+          .select({ id: adminOnboardingChecklist.id })
+          .from(adminOnboardingChecklist)
+          .where(eq(adminOnboardingChecklist.userId, input.userId))
+          .limit(1);
+        if (existing[0]) {
+          await db.update(adminOnboardingChecklist)
+            .set({ welcomeEmailSent: true })
+            .where(eq(adminOnboardingChecklist.userId, input.userId));
+        } else {
+          await db.insert(adminOnboardingChecklist).values({
+            userId: input.userId,
+            welcomeEmailSent: true,
+            trainingHubLogin: false,
+            jltEmailSetup: false,
+            idDocsReviewed: false,
+            contractReviewed: false,
+            portalAccessApproved: false,
+            ddSubscriptionCreated: false,
+          });
+        }
+        return { success: true };
+      }),
+
+    getNewSignUps: adminProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { users, agentCrmProfiles, adminOnboardingChecklist } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const rows = await db
+        .select({
+          userId: users.id,
+          name: users.name,
+          email: users.email,
+          portalStatus: users.portalStatus,
+          createdAt: users.createdAt,
+          membershipTier: agentCrmProfiles.membershipTier,
+          dateJoined: agentCrmProfiles.dateJoined,
+          uniqueAgentId: agentCrmProfiles.uniqueAgentId,
+          trainingHubLogin: adminOnboardingChecklist.trainingHubLogin,
+          jltEmailSetup: adminOnboardingChecklist.jltEmailSetup,
+          idDocsReviewed: adminOnboardingChecklist.idDocsReviewed,
+          contractReviewed: adminOnboardingChecklist.contractReviewed,
+          welcomeEmailSent: adminOnboardingChecklist.welcomeEmailSent,
+          portalAccessApproved: adminOnboardingChecklist.portalAccessApproved,
+          ddSubscriptionCreated: adminOnboardingChecklist.ddSubscriptionCreated,
+        })
+        .from(users)
+        .leftJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, users.id))
+        .leftJoin(adminOnboardingChecklist, eq(adminOnboardingChecklist.userId, users.id))
+        .where(eq(users.portalStatus, "onboarding"))
+        .orderBy(users.createdAt);
+      return rows.map(r => {
+        const steps = [
+          r.trainingHubLogin ?? false,
+          r.jltEmailSetup ?? false,
+          r.idDocsReviewed ?? false,
+          r.contractReviewed ?? false,
+          r.welcomeEmailSent ?? false,
+          r.portalAccessApproved ?? false,
+          r.ddSubscriptionCreated ?? false,
+        ];
+        const completedSteps = steps.filter(Boolean).length;
+        return { ...r, completedSteps, totalSteps: steps.length };
+      });
+    }),
   }),
 });

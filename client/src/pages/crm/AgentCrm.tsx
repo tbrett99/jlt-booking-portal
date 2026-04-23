@@ -2121,7 +2121,22 @@ function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
     onError: (e) => toast.error(e.message),
   });
 
+  const sendWelcomeEmailMutation = trpc.crm.agentCrm.sendWelcomeEmail.useMutation({
+    onSuccess: () => {
+      toast.success("Welcome email sent to agent!");
+      setLocalState(prev => ({ ...prev, welcomeEmailSent: true }));
+      utils.crm.agentCrm.getOnboardingChecklist.invalidate({ userId });
+      onRefresh();
+    },
+    onError: (e) => toast.error(`Failed to send welcome email: ${e.message}`),
+  });
+
   function handleToggle(key: ChecklistKey, value: boolean) {
+    // Welcome email step: send the actual email (which also marks the checklist)
+    if (key === "welcomeEmailSent" && value) {
+      sendWelcomeEmailMutation.mutate({ userId });
+      return;
+    }
     const newState = { ...localState, [key]: value };
     setLocalState(newState);
     updateChecklist.mutate({ userId, [key]: value });

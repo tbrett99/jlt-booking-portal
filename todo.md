@@ -1707,3 +1707,15 @@
 - [x] Update joining fee from £1 test to £297 live in shared/membership.ts
 - [x] Fix adminCreateSubscription to use getMonthlyAmount(tier, membershipType) instead of hardcoded solo amounts
 - [x] Look up membershipType from joinSessions table for correct duo/trio pricing
+
+## Commission Spreadsheet Matching (Apr 23)
+- [ ] Match AprilComms.csv, FebComms.csv, MarchComms.csv, Commissions-April26-17.csv against pending commission claims in DB by booking ref
+- [ ] Amount to mark as paid = 0.80 column + VAT column from spreadsheet
+- [ ] Mark matched claims as paid in DB (status=paid, paidAt=now, amountPaid=correct amount)
+- [ ] Report matched/unmatched results to user
+
+## CRM Memberships — New Sign-Ups Section & Welcome Email Automation
+- [ ] Add "New Sign-Ups" section to CRM memberships page showing agents with Onboarding status who haven't completed onboarding checklist
+- [ ] Show agent name, tier, join date, onboarding checklist progress, and a quick link to their CRM profile
+- [ ] Automate "Send Welcome Email" button with the correct JLT welcome email template
+- [ ] Welcome email: personalised greeting, training hub setup instructions, WhatsApp group, JLT email 7-day timeline, weekly Thursday induction call info

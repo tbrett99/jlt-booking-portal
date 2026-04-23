@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { Progress } from "@/components/ui/progress";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +22,7 @@ import {
 import {
   Users, PauseCircle, AlertTriangle, XCircle, ShieldOff,
   CheckCircle2, Clock, CalendarDays, ChevronRight, RotateCcw,
+  UserPlus, ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -260,6 +262,7 @@ function OffboardingRow({
 
 export default function Memberships() {
   const { data, refetch, isLoading } = trpc.crm.agentCrm.getMembershipsOverview.useQuery();
+  const { data: newSignUps = [], refetch: refetchSignUps } = trpc.crm.agentCrm.getNewSignUps.useQuery();
 
   // Reinstate dialog state
   const [reinstateTarget, setReinstateTarget] = useState<{ userId: number; name: string | null } | null>(null);
@@ -331,8 +334,17 @@ export default function Memberships() {
       )}
 
       {/* Status Panels */}
-      <Tabs defaultValue="in_notice" className="space-y-4">
+      <Tabs defaultValue={newSignUps.length > 0 ? "new_signups" : "in_notice"} className="space-y-4">
         <TabsList className="flex-wrap h-auto gap-1">
+          <TabsTrigger value="new_signups" className="gap-1.5">
+            <UserPlus className="h-3.5 w-3.5" />
+            New Sign-Ups
+            {newSignUps.length > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400 text-xs font-bold">
+                {newSignUps.length}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="in_notice" className="gap-1.5">
             <AlertTriangle className="h-3.5 w-3.5" />
             In Notice
@@ -370,6 +382,91 @@ export default function Memberships() {
             )}
           </TabsTrigger>
         </TabsList>
+
+        {/* New Sign-Ups Panel */}
+        <TabsContent value="new_signups">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">New Sign-Ups Awaiting Onboarding</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Agents who have joined but haven't been fully onboarded yet. Open their CRM profile to begin or continue the onboarding checklist.
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => refetchSignUps()}>Refresh</Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {newSignUps.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  <UserPlus className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No new sign-ups awaiting onboarding</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {(newSignUps as any[]).map((agent: any) => {
+                    const pct = Math.round((agent.completedSteps / agent.totalSteps) * 100);
+                    const tierLabel = agent.membershipTier
+                      ? agent.membershipTier.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())
+                      : null;
+                    const stepLabels = [
+                      { key: "trainingHubLogin", label: "Training Hub" },
+                      { key: "jltEmailSetup", label: "JLT Email" },
+                      { key: "idDocsReviewed", label: "ID Docs" },
+                      { key: "contractReviewed", label: "Contract" },
+                      { key: "welcomeEmailSent", label: "Welcome Email" },
+                      { key: "portalAccessApproved", label: "Portal Access" },
+                      { key: "ddSubscriptionCreated", label: "DD Setup" },
+                    ];
+                    return (
+                      <div key={agent.userId} className="flex items-center gap-4 p-4 rounded-xl border bg-card hover:bg-muted/40 transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-sm">{agent.name ?? "—"}</span>
+                            {agent.uniqueAgentId && (
+                              <Badge variant="outline" className="font-mono text-xs">{agent.uniqueAgentId}</Badge>
+                            )}
+                            {tierLabel && (
+                              <Badge variant="secondary" className="text-xs">{tierLabel}</Badge>
+                            )}
+                            <span className="text-xs text-muted-foreground">{agent.email}</span>
+                          </div>
+                          <div className="mt-2 space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <Progress value={pct} className="h-1.5 flex-1" />
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">{agent.completedSteps}/{agent.totalSteps} steps</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {stepLabels.map(({ key, label }) => (
+                                <span
+                                  key={key}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                                    agent[key]
+                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                      : "bg-muted text-muted-foreground"
+                                  }`}
+                                >
+                                  {agent[key] ? <CheckCircle2 size={9} /> : <Clock size={9} />}
+                                  {label}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <Link href={`/crm/agents?agent=${agent.userId}&tab=onboarding`}>
+                          <Button size="sm" variant="outline" className="gap-1.5 shrink-0">
+                            Open Checklist <ArrowRight className="h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* In Notice Panel */}
         <TabsContent value="in_notice">
