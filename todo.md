@@ -1687,3 +1687,10 @@
 - [x] Add subscription setup step to ONBOARDING_STEPS in AgentCrm.tsx with inline mandate status + create subscription action
 - [x] Auto-mark ddSubscriptionCreated when subscription already exists on checklist load
 - [x] Add webhook handlers for mandates.submitted and mandates.pending_submission to auto-update DB status badge
+
+## Join Page — Membership Tier Content Update
+- [x] Replace generic feature bullets in PlanStep with accurate content from hub.thejltgroup.co.uk/joinus
+- [x] Business Class: Full list of features including IRS details and Social Media Academy (now included)
+- [x] First Class: Everything in BC + BRAVE framework coaching (weekly group + monthly 1:1), Private WhatsApp group
+- [x] Add expandable "See everything that's included" detail section to each tier card
+- [x] Ensure design looks polished and on-brand

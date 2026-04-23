@@ -18,8 +18,84 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CheckCircle2, ChevronRight, Users, User, ArrowLeft } from "lucide-react";
+import { Loader2, CheckCircle2, ChevronRight, Users, User, ArrowLeft, ChevronDown, ChevronUp, Star } from "lucide-react";
 import { toast } from "sonner";
+
+// ─── Membership feature data ──────────────────────────────────────────────────
+
+const BC_HIGHLIGHTS = [
+  "Full Training & Ongoing Mentorship",
+  "200+ Suppliers · 80/20 Commission Split",
+  "ATOL, IATA & PTS Protected",
+  "Interactive Reservation System (IRS)",
+  "Social Media & Business Academy",
+  "Professional Indemnity Insurance",
+];
+
+const BC_FULL = [
+  { section: "Core Membership", items: [
+    "Full Training & Ongoing Mentorship",
+    "ATOL Licensed, IATA Certified & PTS Protected",
+    "Professional Indemnity & Public Liability Insurance",
+    "Operate Under Your Own Brand",
+    "JLT Group Email Address",
+    "Industry Leading 80/20 Commission Split",
+    "200+ Suppliers You Can Book Travel With",
+    "Many NET Rate Suppliers (choose your own commission)",
+    "Access to Travel Agent Rates for Personal Travel",
+    "Weekly Co-working & Q&A Sessions",
+    "Active WhatsApp Community",
+  ]},
+  { section: "Interactive Reservation System (IRS)", items: [
+    "Search many suppliers from one login",
+    "Create branded quotes & proposals from your search",
+    "Book all elements in one click",
+    "Dynamically package holidays in minutes",
+    "Automated documents (confirmations, vouchers, ATOL certs)",
+    "All branded to your business",
+    "Manage your full customer journey in one platform",
+    "Automatic payment reminders",
+    "Integrated payment processor",
+  ]},
+  { section: "Social Media & Business Academy", items: [
+    "Your Niche & Target Audience",
+    "Your Brand & Sales Funnel",
+    "Business Automation",
+    "Driving Traffic — Instagram, Facebook, TikTok, Pinterest",
+    "Blogging & Email Marketing",
+    "Canva, Customer Service & Mindset",
+  ]},
+];
+
+const FC_HIGHLIGHTS = [
+  "Everything in Business Class",
+  "Weekly Group Coaching Sessions",
+  "Monthly 1:1 Coaching & Mentorship",
+  "BRAVE Business Growth Framework",
+  "Private WhatsApp Support Group",
+];
+
+const FC_FULL = [
+  { section: "Everything in Business Class", items: [
+    "All features from Business Class included",
+  ]},
+  { section: "BRAVE Coaching Programme", items: [
+    "Weekly group coaching sessions",
+    "Monthly private 1:1 coaching & mentorship",
+    "Structured around the BRAVE framework:",
+    "  Build — lay strong foundations for your business",
+    "  Reach — grow your audience and online presence",
+    "  Advance — sharpen your systems and sales process",
+    "  Validate — win better clients with confidence",
+    "  Evolve — scale, refine, and sustain long-term growth",
+    "Covers online marketing, networking, Facebook Ads & more",
+    "Helps you gain clarity, win better clients & follow smoother systems",
+  ]},
+  { section: "Private Support", items: [
+    "Private WhatsApp support group",
+    "Direct access to coaches between sessions",
+  ]},
+];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +119,119 @@ function clearSession() {
 
 function formatPounds(pence: number): string {
   return `£${(pence / 100).toFixed(0)}`;
+}
+
+// ─── PlanCards sub-component ────────────────────────────────────────────────
+
+function PlanCards({
+  pricing,
+  selectedTier,
+  selectedType,
+  onSelect,
+}: {
+  pricing: any;
+  selectedTier: MembershipTier;
+  selectedType: MembershipType;
+  onSelect: (t: MembershipTier) => void;
+}) {
+  const [expanded, setExpanded] = useState<MembershipTier | null>(null);
+
+  const tiers: MembershipTier[] = ["business_class", "first_class"];
+
+  return (
+    <div className="space-y-4">
+      {tiers.map((tier) => {
+        const tierData = pricing?.tiers.find((t: any) => t.tier === tier);
+        const typeData = tierData?.types.find((t: any) => t.type === selectedType);
+        const monthlyPence = typeData?.monthlyPence ?? 0;
+        const isFirst = tier === "first_class";
+        const isSelected = selectedTier === tier;
+        const isExpanded = expanded === tier;
+        const highlights = tier === "business_class" ? BC_HIGHLIGHTS : FC_HIGHLIGHTS;
+        const fullDetails = tier === "business_class" ? BC_FULL : FC_FULL;
+
+        return (
+          <div key={tier} className={`rounded-xl border-2 transition-all ${
+            isSelected ? "border-[#70FFE8] bg-[#70FFE8]/8" : "border-gray-200"
+          }`}>
+            {/* Card header — clickable to select */}
+            <button
+              type="button"
+              onClick={() => onSelect(tier)}
+              className="w-full p-5 text-left"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-bold text-[#414141] text-lg">{tierData?.label ?? tier}</span>
+                    {isFirst && (
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-[#FFC3BC] text-[#414141] px-2 py-0.5 rounded-full font-semibold">
+                        <Star size={9} fill="currentColor" /> Most Popular
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold text-[#414141]">{formatPounds(monthlyPence)}</span>
+                    <span className="text-sm text-gray-500">/month</span>
+                    {selectedType !== "solo" && (
+                      <span className="text-xs text-gray-400 ml-1">· covers your whole team</span>
+                    )}
+                  </div>
+                </div>
+                {/* Selection indicator */}
+                <div className={`mt-1 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  isSelected ? "border-[#02E6D2] bg-[#02E6D2]" : "border-gray-300"
+                }`}>
+                  {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                </div>
+              </div>
+
+              {/* Highlight bullets */}
+              <div className="mt-3 grid grid-cols-1 gap-1">
+                {highlights.map((h) => (
+                  <div key={h} className="text-xs text-gray-600 flex items-start gap-1.5">
+                    <CheckCircle2 size={12} className="text-[#02E6D2] shrink-0 mt-0.5" />
+                    <span>{h}</span>
+                  </div>
+                ))}
+              </div>
+            </button>
+
+            {/* Expand toggle */}
+            <button
+              type="button"
+              className="w-full px-5 pb-4 flex items-center gap-1.5 text-xs text-[#02E6D2] font-medium hover:text-[#414141] transition-colors"
+              onClick={(e) => { e.stopPropagation(); setExpanded(isExpanded ? null : tier); }}
+            >
+              {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              {isExpanded ? "Hide full details" : "See everything that's included"}
+            </button>
+
+            {/* Expanded detail panel */}
+            {isExpanded && (
+              <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
+                {fullDetails.map((group) => (
+                  <div key={group.section}>
+                    <div className="text-xs font-semibold text-[#414141] uppercase tracking-wide mb-2">{group.section}</div>
+                    <div className="space-y-1">
+                      {group.items.map((item) => (
+                        <div key={item} className={`text-xs flex items-start gap-1.5 ${
+                          item.startsWith("  ") ? "ml-4 text-gray-400" : "text-gray-600"
+                        }`}>
+                          {!item.startsWith("  ") && <CheckCircle2 size={11} className="text-[#02E6D2] shrink-0 mt-0.5" />}
+                          <span>{item.trimStart()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // ─── Step 1: Plan Selection ───────────────────────────────────────────────────
@@ -127,56 +316,12 @@ function PlanStep({
       {/* Step 2: Plan */}
       <div>
         <h2 className="text-lg font-semibold text-[#414141] mb-3">2. Choose your plan</h2>
-        <div className="grid grid-cols-2 gap-4">
-          {(["business_class", "first_class"] as MembershipTier[]).map((tier) => {
-            const tierData = pricing?.tiers.find((t) => t.tier === tier);
-            const typeData = tierData?.types.find((t) => t.type === selectedType);
-            const monthlyPence = typeData?.monthlyPence ?? 0;
-            const isFirst = tier === "first_class";
-            return (
-              <button
-                key={tier}
-                onClick={() => setSelectedTier(tier)}
-                className={`p-5 rounded-xl border-2 text-left transition-all relative ${
-                  selectedTier === tier
-                    ? "border-[#70FFE8] bg-[#70FFE8]/10"
-                    : "border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                {isFirst && (
-                  <span className="absolute top-3 right-3 text-xs bg-[#FFC3BC] text-[#414141] px-2 py-0.5 rounded-full font-semibold">
-                    Popular
-                  </span>
-                )}
-                <div className="font-bold text-[#414141] text-base mb-1">{tierData?.label ?? tier}</div>
-                <div className="text-2xl font-bold text-[#414141]">
-                  {formatPounds(monthlyPence)}
-                  <span className="text-sm font-normal text-gray-500">/month</span>
-                </div>
-                {selectedType !== "solo" && (
-                  <div className="text-xs text-gray-500 mt-1">
-                    Covers your whole team
-                  </div>
-                )}
-                <div className="mt-3 space-y-1">
-                  {tier === "business_class" ? (
-                    <>
-                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> Full booking management</div>
-                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> Commission tracking</div>
-                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> PTS membership</div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> Everything in Business Class</div>
-                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> Priority support</div>
-                      <div className="text-xs text-gray-600 flex items-center gap-1"><CheckCircle2 size={12} className="text-[#02E6D2]" /> Enhanced commission rates</div>
-                    </>
-                  )}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        <PlanCards
+          pricing={pricing}
+          selectedTier={selectedTier}
+          selectedType={selectedType}
+          onSelect={setSelectedTier}
+        />
       </div>
 
       {/* Joining fee notice */}
