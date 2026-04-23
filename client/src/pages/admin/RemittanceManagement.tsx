@@ -208,7 +208,34 @@ function JaninesView({ batchId }: { batchId?: number }) {
       "Matched": l.isMatched ? "Yes" : "No",
       "Notes": l.adminNotes ?? "",
     }));
-    exportToCsv("janines-view.csv", rows);
+    // Add totals row
+    const sumField = (field: (l: typeof lines[0]) => string | number | null | undefined) =>
+      lines.reduce((acc, l) => acc + (parseFloat(String(field(l) ?? 0)) || 0), 0);
+    const totalsRow: Record<string, string> = {
+      "Batch": "TOTALS",
+      "Week Of": "",
+      "Client": `${lines.length} bookings`,
+      "Booking Reference": "",
+      "Return Date": "",
+      "PAX": String(lines.reduce((acc, l) => acc + (Number(l.pax) || 0), 0)),
+      "Currency": "",
+      "Total IN": `£${sumField(l => l.totalIn).toFixed(2)}`,
+      "Total OUT": `£${sumField(l => l.totalOut).toFixed(2)}`,
+      "SFI": `£${sumField(l => l.sfi).toFixed(2)}`,
+      "SAFI": `£${sumField(l => l.safi).toFixed(2)}`,
+      "PTRC": `£${sumField(l => l.ptrc).toFixed(2)}`,
+      "PTS Fee": `£${sumField(l => l.pts).toFixed(2)}`,
+      "VAT": `£${sumField(l => (l as any).vatFromPortal ?? l.vatFromPts).toFixed(2)}`,
+      "Booking Type": "",
+      "Remittance": `£${sumField(l => parseFloat(String(l.remittance ?? 0).replace(/[^0-9.-]/g, ""))).toFixed(2)}`,
+      "0.80": `£${sumField(l => parseFloat(String(l.remit80 ?? 0).replace(/[^0-9.-]/g, ""))).toFixed(2)}`,
+      "0.20": `£${sumField(l => parseFloat(String(l.jlt20 ?? 0).replace(/[^0-9.-]/g, ""))).toFixed(2)}`,
+      "Agent": "",
+      "Agent Email": "",
+      "Matched": "",
+      "Notes": "",
+    };
+    exportToCsv("janines-view.csv", [...rows, totalsRow]);
   };
 
   if (isLoading) return <div className="py-8 text-center text-muted-foreground">Loading…</div>;
@@ -345,6 +372,35 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
     exportToCsv(`agent-view${batchName ? `-${batchName}` : ""}.csv`, rows);
   };
 
+  const exportPaymentSummary = () => {
+    const rows = agents.map((a) => {
+      const total = a.lines.reduce((sum: number, l: any) => {
+        const v = parseFloat(String(l.remit80 ?? 0).replace(/[^0-9.-]/g, ""));
+        return sum + (isNaN(v) ? 0 : v);
+      }, 0);
+      return {
+        "Agent": a.agentName ?? "",
+        "Agent Email": a.agentEmail ?? "",
+        "Number of Claims": String(a.lines.length),
+        "Total to Pay (80%)": `£${total.toFixed(2)}`,
+      };
+    });
+    // Add grand total row
+    const grandTotal = agents.reduce((sum, a) =>
+      sum + a.lines.reduce((s: number, l: any) => {
+        const v = parseFloat(String(l.remit80 ?? 0).replace(/[^0-9.-]/g, ""));
+        return s + (isNaN(v) ? 0 : v);
+      }, 0), 0);
+    const totalClaims = agents.reduce((sum, a) => sum + a.lines.length, 0);
+    rows.push({
+      "Agent": "TOTAL",
+      "Agent Email": "",
+      "Number of Claims": String(totalClaims),
+      "Total to Pay (80%)": `£${grandTotal.toFixed(2)}`,
+    });
+    exportToCsv(`payment-summary${batchName ? `-${batchName}` : ""}.csv`, rows);
+  };
+
   const [confirmPush, setConfirmPush] = useState(false);
 
   const handlePush = () => {
@@ -409,8 +465,11 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
               <CheckCircle2 className="h-3 w-3" />All pushed
             </Badge>
           )}
+          <Button size="sm" variant="outline" onClick={exportPaymentSummary} title="One row per agent showing total to pay">
+            <Download className="h-4 w-4 mr-2" />Payment Summary
+          </Button>
           <Button size="sm" variant="outline" onClick={exportAgentView}>
-            <Download className="h-4 w-4 mr-2" />Export CSV
+            <Download className="h-4 w-4 mr-2" />Full Export
           </Button>
         </div>
       </div>
