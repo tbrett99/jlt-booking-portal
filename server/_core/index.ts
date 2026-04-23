@@ -839,18 +839,32 @@ async function startServer() {
             },
           });
 
-          // Update the gc_mandates placeholder record with the real userId and joiningFeePaidAt
+          // Create the gc_mandates row now that we have the real userId.
+          // We do this here (not in join-router) so the insert never runs without a valid userId.
           if (session.billingRequestId) {
             try {
-              const localMandate = await getGcMandateByBillingRequestId(session.billingRequestId);
-              if (localMandate) {
-                await updateGcMandate(localMandate.id, {
-                  userId: newUser.id,
-                  joiningFeePaidAt: new Date(),
-                });
+              const { createGcMandate: insertMandate } = await import("../gocardless-db");
+              await insertMandate({
+                userId: newUser.id,
+                billingRequestId: session.billingRequestId,
+                billingRequestFlowId: session.billingRequestId, // flow ID not stored on session; use brq ID as reference
+                preferredPaymentDay: 1, // default — agent updates during onboarding
+                joiningFeePaidAt: new Date(),
+              });
+            } catch (mandateErr: any) {
+              // If a row already exists (duplicate), update it instead
+              if (mandateErr?.code === "ER_DUP_ENTRY" || String(mandateErr?.message).includes("duplicate")) {
+                try {
+                  const existing = await getGcMandateByBillingRequestId(session.billingRequestId);
+                  if (existing) {
+                    await updateGcMandate(existing.id, { userId: newUser.id, joiningFeePaidAt: new Date() });
+                  }
+                } catch (upErr) {
+                  console.error(`[GC Webhook] Failed to upsert gc_mandate for billing request ${session.billingRequestId}:`, upErr);
+                }
+              } else {
+                console.error(`[GC Webhook] Failed to create gc_mandate for billing request ${session.billingRequestId}:`, mandateErr);
               }
-            } catch (mandateErr) {
-              console.error(`[GC Webhook] Failed to update gc_mandate for billing request ${session.billingRequestId}:`, mandateErr);
             }
           }
 

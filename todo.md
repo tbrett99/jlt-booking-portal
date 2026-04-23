@@ -1649,3 +1649,8 @@
 ## Bug Fix — GC Mandate Insert userId=0 + Subscription Creation
 - [x] Fix GoCardless webhook: gc_mandates insert fails with userId=0 — made userId nullable in schema so placeholder row can be inserted before user account exists; webhook updates it with real userId on billing_request.fulfilled
 - [x] Wire preferred payment day: subscription creation now triggers whenever preferredPaymentDay is set (not gated on notifyOnComplete), so saving the payment day step immediately creates the GoCardless subscription if mandate is active
+
+## Bug Fix — Simplify GC New Joiner Flow
+- [x] Remove premature gc_mandates placeholder insert from join-router (root cause of userId=0 error)
+- [x] Move all gc_mandates creation to billing_request.fulfilled webhook where real userId is known
+- [x] billing_request.fulfilled webhook creates the mandate row with correct userId, billingRequestId, joiningFeePaidAt; handles duplicate gracefully
