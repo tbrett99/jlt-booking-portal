@@ -1869,15 +1869,15 @@ function DirectDebitTab({ userId, mandate }: { userId: number; mandate: any }) {
           </div>
         )}
 
-        {/* Manual subscription creation — shown when mandate is active but no subscription exists */}
-        {mandate?.status === "active" && !subscription && (
+        {/* Manual subscription creation — shown when mandate is active OR no mandate exists at all (admin can enter mandate ID) */}
+        {(!mandate || (mandate?.status === "active" && !subscription)) && (
           <div className="mt-3">
             {!showCreateSub ? (
               <button
                 onClick={() => setShowCreateSub(true)}
                 className="w-full text-sm border border-dashed rounded-lg px-4 py-2 text-teal-700 hover:bg-teal-50 transition-colors"
               >
-                + Create Subscription Manually
+                + {mandate ? "Create Subscription Manually" : "Set Up Direct Debit Manually"}
               </button>
             ) : (
               <div className="rounded-lg border p-4 space-y-3 text-sm bg-muted/30">

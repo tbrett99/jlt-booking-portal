@@ -788,9 +788,29 @@ async function startServer() {
             continue;
           }
 
-          // Idempotency: if already processed, skip
+          // Idempotency: if already processed AND mandate row exists, skip
           if (session.userId) {
-            console.log(`[GC Webhook] billing_request.fulfilled: already processed for session ${session.id}`);
+            // Check if mandate row was already created
+            const existingMandate = await getGcMandateByBillingRequestId(billingRequestId);
+            if (existingMandate) {
+              console.log(`[GC Webhook] billing_request.fulfilled: already fully processed for session ${session.id}`);
+              continue;
+            }
+            // User exists but mandate row is missing — create it now
+            console.log(`[GC Webhook] billing_request.fulfilled: user ${session.userId} exists but mandate row missing — creating now`);
+            try {
+              const { createGcMandate: insertMandate } = await import("../gocardless-db");
+              await insertMandate({
+                userId: session.userId,
+                billingRequestId: session.billingRequestId!,
+                billingRequestFlowId: session.billingRequestId!,
+                preferredPaymentDay: 1,
+                joiningFeePaidAt: session.joiningFeePaidAt ?? new Date(),
+              });
+              console.log(`[GC Webhook] billing_request.fulfilled: created missing mandate row for user ${session.userId}`);
+            } catch (mErr: any) {
+              console.error(`[GC Webhook] Failed to create missing mandate row for user ${session.userId}:`, mErr.message);
+            }
             continue;
           }
 
@@ -934,8 +954,37 @@ async function startServer() {
             : null;
 
           if (!localMandate) {
-            console.warn(`[GC Webhook] No local mandate found for mandate ${mandateId}`);
-            continue;
+            // Mandate row missing — try to create it now by looking up the join session via billingRequestId
+            console.warn(`[GC Webhook] mandates.active: no local mandate for ${mandateId}, attempting recovery via join session`);
+            if (billingRequestId) {
+              try {
+                const db2 = await getDb();
+                if (db2) {
+                  const { joinSessions: jSess } = await import("../../drizzle/schema");
+                  const { eq: eqOp } = await import("drizzle-orm");
+                  const sessRows = await db2.select().from(jSess).where(eqOp(jSess.billingRequestId, billingRequestId)).limit(1);
+                  const sess = sessRows[0];
+                  if (sess?.userId) {
+                    const { createGcMandate: insertMandate } = await import("../gocardless-db");
+                    await insertMandate({
+                      userId: sess.userId,
+                      billingRequestId,
+                      billingRequestFlowId: billingRequestId,
+                      preferredPaymentDay: 1,
+                      joiningFeePaidAt: sess.joiningFeePaidAt ?? new Date(),
+                    });
+                    localMandate = await getGcMandateByBillingRequestId(billingRequestId);
+                    console.log(`[GC Webhook] mandates.active: recovered mandate row for user ${sess.userId}`);
+                  }
+                }
+              } catch (recErr: any) {
+                console.error(`[GC Webhook] mandates.active: recovery failed:`, recErr.message);
+              }
+            }
+            if (!localMandate) {
+              console.warn(`[GC Webhook] mandates.active: could not recover mandate for ${mandateId}, skipping subscription creation`);
+              continue;
+            }
           }
 
           // Update local mandate status
