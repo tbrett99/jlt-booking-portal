@@ -1674,3 +1674,10 @@
 - [x] Added "↻ Refresh status from GoCardless" link — shown when mandate exists but is not yet active; calls GC API, updates DB row, shows toast
 - [x] Added adminRefreshMandateStatus backend procedure to gocardless router
 - [x] TypeScript: 0 errors
+
+## CRM Direct Debit — Refresh Error Fix & Payment Day Options (Apr 23)
+- [x] Fixed DB error on Refresh Status: gc_mandates status enum was missing 'pending_submission' and 'submitted' values — ALTER TABLE migration applied
+- [x] Updated updateGcMandate TypeScript type to include all GoCardless mandate statuses
+- [x] Removed active-status guard from adminCreateSubscription — now allows subscription creation for any non-cancelled/expired mandate
+- [x] Restricted payment day options to 1st, 15th, 28th only (both CRM and agent onboarding already use these)
+- [x] TypeScript: 0 errors

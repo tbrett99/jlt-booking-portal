@@ -2864,7 +2864,8 @@ export const appRouter = router({
         // Allow proceeding if admin provides a mandate ID directly (no DB row required)
         const effectiveMandateId = input.mandateId ?? mandate?.mandateId;
         if (!effectiveMandateId) throw new TRPCError({ code: "NOT_FOUND", message: "No mandate found — please enter the GoCardless Mandate ID from the GC dashboard" });
-        if (mandate && mandate.status !== "active" && !input.mandateId) throw new TRPCError({ code: "BAD_REQUEST", message: `Mandate is not active (status: ${mandate.status}). Use the manual Mandate ID field to override.` });
+        // Allow subscription creation for any non-cancelled/expired mandate status
+        if (mandate && (mandate.status === "cancelled" || mandate.status === "expired") && !input.mandateId) throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot create subscription: mandate is ${mandate.status}.` });
         const existingSub = await getGcSubscriptionByUserId(input.userId);
         if (existingSub) throw new TRPCError({ code: "CONFLICT", message: "Agent already has an active subscription" });
 
@@ -2936,7 +2937,7 @@ export const appRouter = router({
         const { eq: eqFn } = await import("drizzle-orm");
         const dbInst = await getDb();
         if (!dbInst) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-        const validStatuses = ["pending", "active", "cancelled", "failed", "expired"] as const;
+        const validStatuses = ["pending", "pending_submission", "submitted", "active", "cancelled", "failed", "expired"] as const;
         type MandateStatus = typeof validStatuses[number];
         const newStatus: MandateStatus = validStatuses.includes(gcMandate.status as MandateStatus)
           ? (gcMandate.status as MandateStatus)

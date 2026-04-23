@@ -1925,8 +1925,8 @@ function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; m
                     onChange={(e) => setCreateSubDay(Number(e.target.value))}
                     className="border rounded px-2 py-1 text-sm bg-background"
                   >
-                    {[1, 5, 10, 15, 20, 25, 28].map((d) => (
-                      <option key={d} value={d}>{d}{["st","nd","rd"][d-1] ?? "th"} of month</option>
+                    {[1, 15, 28].map((d) => (
+                      <option key={d} value={d}>{d === 1 ? "1st" : d === 15 ? "15th" : "28th"} of month</option>
                     ))}
                   </select>
                 </div>

@@ -1,0 +1,1 @@
+ALTER TABLE `gc_mandates` MODIFY COLUMN `status` enum('pending','pending_submission','submitted','active','cancelled','failed','expired') NOT NULL DEFAULT 'pending';

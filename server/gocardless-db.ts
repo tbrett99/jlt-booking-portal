@@ -51,7 +51,7 @@ export async function updateGcMandate(
   id: number,
   data: Partial<{
     mandateId: string;
-    status: "pending" | "active" | "cancelled" | "failed" | "expired";
+    status: "pending" | "pending_submission" | "submitted" | "active" | "cancelled" | "failed" | "expired";
     userId: number;
     joiningFeePaidAt: Date;
     preferredPaymentDay: number;

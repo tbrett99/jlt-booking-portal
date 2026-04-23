@@ -928,7 +928,7 @@ export const gcMandates = mysqlTable("gc_mandates", {
   mandateId: varchar("mandateId", { length: 100 }), // GoCardless mandate ID (MD...)
   billingRequestId: varchar("billingRequestId", { length: 100 }), // BRQ...
   billingRequestFlowId: varchar("billingRequestFlowId", { length: 100 }), // BRF...
-  status: mysqlEnum("status", ["pending", "active", "cancelled", "failed", "expired"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "pending_submission", "submitted", "active", "cancelled", "failed", "expired"]).default("pending").notNull(),
   preferredPaymentDay: int("preferredPaymentDay"), // 1–28, agent's chosen day of month
   joiningFeePaidAt: timestamp("joiningFeePaidAt"), // When joining fee was paid
   createdAt: timestamp("createdAt").defaultNow().notNull(),
