@@ -245,7 +245,7 @@ function JaninesView({ batchId }: { batchId?: number }) {
       <div className="flex justify-between items-center mb-4">
         <p className="text-sm text-muted-foreground">{lines.length} rows</p>
         <Button size="sm" variant="outline" onClick={exportJanines}>
-          <Download className="h-4 w-4 mr-2" />Export CSV
+          <Download className="h-4 w-4 mr-2" />Full Export
         </Button>
       </div>
       <div className="rounded-md border overflow-x-auto">
@@ -469,7 +469,7 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
             <Download className="h-4 w-4 mr-2" />Payment Summary
           </Button>
           <Button size="sm" variant="outline" onClick={exportAgentView}>
-            <Download className="h-4 w-4 mr-2" />Full Export
+            <Download className="h-4 w-4 mr-2" />Export CSV
           </Button>
         </div>
       </div>
