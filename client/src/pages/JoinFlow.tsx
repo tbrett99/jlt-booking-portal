@@ -500,9 +500,10 @@ function CompleteStep({ sessionToken }: { sessionToken: string }) {
     try {
       await setPasswordMutation.mutateAsync({ sessionToken, password });
       setPasswordSet(true);
-      toast.success("Password set! Redirecting to your onboarding...");
-      // Hard redirect so the new session cookie is sent with the next request
-      setTimeout(() => { window.location.href = "/onboarding"; }, 1200);
+      // Hard redirect to root — the auth router detects the session cookie
+      // and redirects onboarding agents to /onboarding automatically.
+      // Use replace() so back-button doesn't return to /join/complete.
+      window.location.replace("/");
     } catch (err: any) {
       setPasswordError(err.message ?? "Failed to set password. Please try again.");
     }

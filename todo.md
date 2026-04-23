@@ -1611,3 +1611,6 @@
 - [x] Fix: setPassword now uses window.location.href hard reload so session cookie is properly sent on next request
 - [x] Fix: loginWithPassword also uses window.location.href hard reload for same reason
 - [x] Note: password reset email flow is correct — forgotPassword sends email via SMTP; "wrong credentials" was because webhook hadn't created the user yet when login was attempted
+
+## Redirect After Set Password (Smoothness Fix)
+- [x] Fix: removed setTimeout delay, now uses window.location.replace('/') immediately after setPassword so auth router handles the /onboarding redirect cleanly
