@@ -1,0 +1,1 @@
+ALTER TABLE `gc_mandates` MODIFY COLUMN `userId` int;

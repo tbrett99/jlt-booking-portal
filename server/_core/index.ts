@@ -943,12 +943,12 @@ async function startServer() {
             if (db2) {
               const { agentCrmProfiles: crmProfiles } = await import("../../drizzle/schema");
               const { eq: eqOp } = await import("drizzle-orm");
-              const crmRows = await db2.select().from(crmProfiles).where(eqOp(crmProfiles.userId, localMandate.userId)).limit(1);
+              const crmRows = await db2.select().from(crmProfiles).where(eqOp(crmProfiles.userId, localMandate.userId ?? 0)).limit(1);
               if (crmRows[0]) {
                 const tier = (crmRows[0].membershipTier ?? "business_class") as any;
                 // Look up the join session to get membershipType
                 const { joinSessions: jSessions } = await import("../../drizzle/schema");
-                const sessionRows = await db2.select().from(jSessions).where(eqOp(jSessions.userId, localMandate.userId)).limit(1);
+                const sessionRows = await db2.select().from(jSessions).where(eqOp(jSessions.userId, localMandate.userId ?? 0)).limit(1);
                 const membershipType = (sessionRows[0]?.membershipType ?? "solo") as any;
                 monthlyAmountPence = getMonthlyAmount(tier, membershipType);
               }
@@ -968,7 +968,7 @@ async function startServer() {
 
           // Store subscription locally
           await createGcSubscription({
-            userId: localMandate.userId,
+            userId: localMandate.userId ?? 0,
             mandateId,
             subscriptionId: sub.id,
             amount: sub.amount,
@@ -1021,7 +1021,7 @@ async function startServer() {
             });
             // Record the event
             await createPaymentEvent({
-              userId: localMandate.userId,
+              userId: localMandate.userId ?? undefined,
               mandateId,
               eventType: `mandates_${event.action}`,
               status: event.action,
@@ -1073,7 +1073,7 @@ async function startServer() {
               const { gcMandates } = await import("../../drizzle/schema");
               const { eq: eqOp } = await import("drizzle-orm");
               const rows = await db.select().from(gcMandates).where(eqOp(gcMandates.mandateId, mandateId)).limit(1);
-              if (rows[0]) userId = rows[0].userId;
+              if (rows[0]) userId = rows[0].userId ?? undefined;
             }
           }
           await createPaymentEvent({

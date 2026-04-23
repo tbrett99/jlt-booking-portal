@@ -1642,3 +1642,10 @@
 - [x] Audit all direct debit notification triggers (GoCardless webhook, DD setup, mandate events)
 - [x] Route all new joiner notifications to support@thejltgroup.co.uk
 - [x] Route all direct debit notifications to support@thejltgroup.co.uk
+
+## Bug Fix — GC Mandate Insert userId=0
+- [ ] Fix GoCardless webhook: gc_mandates insert fails with userId=0 (user lookup returning null/0 at billing_request.fulfilled time)
+
+## Bug Fix — GC Mandate Insert userId=0 + Subscription Creation
+- [x] Fix GoCardless webhook: gc_mandates insert fails with userId=0 — made userId nullable in schema so placeholder row can be inserted before user account exists; webhook updates it with real userId on billing_request.fulfilled
+- [x] Wire preferred payment day: subscription creation now triggers whenever preferredPaymentDay is set (not gated on notifyOnComplete), so saving the payment day step immediately creates the GoCardless subscription if mandate is active

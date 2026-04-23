@@ -924,13 +924,13 @@ export type PaymentLink = typeof paymentLinks.$inferSelect;
 
 export const gcMandates = mysqlTable("gc_mandates", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(), // FK → users.id
+  userId: int("userId"), // FK → users.id (nullable — placeholder row created before user account exists)
   mandateId: varchar("mandateId", { length: 100 }), // GoCardless mandate ID (MD...)
   billingRequestId: varchar("billingRequestId", { length: 100 }), // BRQ...
   billingRequestFlowId: varchar("billingRequestFlowId", { length: 100 }), // BRF...
   status: mysqlEnum("status", ["pending", "active", "cancelled", "failed", "expired"]).default("pending").notNull(),
   preferredPaymentDay: int("preferredPaymentDay"), // 1–28, agent's chosen day of month
-  joiningFeePaidAt: timestamp("joiningFeePaidAt"), // When Stripe joining fee was paid
+  joiningFeePaidAt: timestamp("joiningFeePaidAt"), // When joining fee was paid
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

@@ -1288,8 +1288,9 @@ export const crmRouter = router({
         const { name, notifyOnComplete, ...profileFields } = input;
         // jltEmailPreference is included in profileFields automatically
         await upsertAgentCrmProfile(ctx.user.id, profileFields);
-        // If completing onboarding with a payment day, create the GoCardless subscription
-        if (input.preferredPaymentDay && notifyOnComplete) {
+        // Create the GoCardless subscription whenever a payment day is set and mandate is active
+        // (not gated on notifyOnComplete — subscription should be created as soon as the agent picks their day)
+        if (input.preferredPaymentDay) {
           try {
             const mandateRows = await db
               .select()
