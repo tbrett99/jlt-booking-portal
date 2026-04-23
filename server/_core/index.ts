@@ -868,11 +868,7 @@ async function startServer() {
             }
           }
 
-          // Notify admin — in-app + email to support@
-          await notifyOwner({
-            title: "New Agent Joined via Self-Sign-Up",
-            content: `${session.email} (${session.signerName ?? ""}) has completed sign-up. Membership: ${session.membershipTier ?? "business_class"} ${session.membershipType ?? "solo"}. User ID: ${newUser.id}. Please activate their portal access.`,
-          });
+          // Notify support@ by email only (no Manus in-app notification)
           try {
             await sendSupportEmail({
               subject: `New Agent Joined: ${session.signerName ?? session.email}`,
@@ -991,11 +987,7 @@ async function startServer() {
             nextChargeDate: sub.upcoming_payments?.[0]?.charge_date,
           });
 
-          // Notify admin — in-app + email to support@
-          await notifyOwner({
-            title: "New DD Mandate Active",
-            content: `Agent (user ID ${localMandate.userId}) has set up their Direct Debit mandate. First payment scheduled for ${startDate}.`,
-          });
+          // Notify support@ by email only
           try {
             await sendSupportEmail({
               subject: `Direct Debit Mandate Active — Agent ID ${localMandate.userId}`,
@@ -1042,11 +1034,7 @@ async function startServer() {
               occurredAt: new Date(),
               rawPayload: JSON.stringify(event),
             });
-            // Notify admin — in-app + email to support@
-            await notifyOwner({
-              title: `DD Mandate ${event.action.charAt(0).toUpperCase() + event.action.slice(1)}`,
-              content: `The Direct Debit mandate for agent (user ID ${localMandate.userId}) has been ${event.action}. Please check their account in the CRM.`,
-            });
+            // Notify support@ by email only
             try {
               await sendSupportEmail({
                 subject: `DD Mandate ${event.action.charAt(0).toUpperCase() + event.action.slice(1)} — Agent ID ${localMandate.userId}`,
@@ -1101,11 +1089,7 @@ async function startServer() {
             occurredAt: new Date(),
             rawPayload: JSON.stringify(event),
           });
-          // Notify admin — in-app + email to support@
-          await notifyOwner({
-            title: `DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}`,
-            content: `A Direct Debit payment (${paymentId}) has ${event.action === "charged_back" ? "been charged back" : "failed"}${userId ? ` for agent (user ID ${userId})` : ""}. ${meta.description ? `Reason: ${meta.description}.` : ""} Please check the CRM.`,
-          });
+          // Notify support@ by email only
           try {
             await sendSupportEmail({
               subject: `DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}${userId ? ` — Agent ID ${userId}` : ""}`,

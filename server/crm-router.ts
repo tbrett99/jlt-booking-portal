@@ -1345,15 +1345,8 @@ export const crmRouter = router({
             // Don't block onboarding completion — admin can create subscription manually
           }
         }
-        // Notify JLT team when onboarding is complete
+        // Notify JLT team when onboarding is complete — email only
         if (notifyOnComplete) {
-          try {
-            const { notifyOwner } = await import("./_core/notification");
-            await notifyOwner({
-              title: `New agent onboarding complete: ${name}`,
-              content: `Agent ${name} (ID: ${ctx.user.id}) has completed their onboarding profile. Preferred payment day: ${input.preferredPaymentDay ?? "not set"}. Please review and activate their portal access.`,
-            });
-          } catch {}
           try {
             const { sendSupportEmail } = await import("./email");
             await sendSupportEmail({

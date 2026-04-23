@@ -37,7 +37,6 @@ import {
 } from "../shared/membership";
 import { sendDirectEmail } from "./email";
 import { nanoid } from "nanoid";
-import { notifyOwner } from "./_core/notification";
 import bcrypt from "bcryptjs";
 import { sdk } from "./_core/sdk";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -567,12 +566,6 @@ export const joinRouter = router({
           teamId: invite.teamId,
         } as any);
       }
-
-      // Notify admin
-      await notifyOwner({
-        title: "Team Member Joined",
-        content: `A team member (user ID ${input.userId}) has accepted their invite and joined team ID ${invite.teamId}.`,
-      });
 
       return { success: true };
     }),
