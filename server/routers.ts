@@ -2846,7 +2846,16 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const mandate = await getGcMandateByUserId(input.userId);
         const subscription = await getGcSubscriptionByUserId(input.userId);
-        return { mandate, subscription };
+        // Also fetch preferredPaymentDay from CRM profile as the authoritative source
+        const { getAgentCrmProfile } = await import("./agent-crm-db");
+        const crmProfile = await getAgentCrmProfile(input.userId);
+        const preferredPaymentDay = mandate?.preferredPaymentDay ?? crmProfile?.preferredPaymentDay ?? null;
+        // If mandate row has stale preferredPaymentDay (hardcoded 1), sync it from CRM profile
+        if (mandate && crmProfile?.preferredPaymentDay && mandate.preferredPaymentDay !== crmProfile.preferredPaymentDay) {
+          const { updateGcMandate: updateMandate } = await import("./gocardless-db");
+          await updateMandate(mandate.id, { preferredPaymentDay: crmProfile.preferredPaymentDay });
+        }
+        return { mandate: mandate ? { ...mandate, preferredPaymentDay } : null, subscription };
       }),
 
     /**
@@ -2929,14 +2938,33 @@ export const appRouter = router({
       .input(z.object({ userId: z.number().int() }))
       .mutation(async ({ input }) => {
         const mandate = await getGcMandateByUserId(input.userId);
-        if (!mandate?.mandateId) throw new TRPCError({ code: "NOT_FOUND", message: "No mandate row found for this agent" });
-        const { getMandate } = await import("./gocardless");
-        const gcMandate = await getMandate(mandate.mandateId);
+        if (!mandate) throw new TRPCError({ code: "NOT_FOUND", message: "No mandate row found for this agent" });
+        const { getMandate, getBillingRequest } = await import("./gocardless");
         const { getDb } = await import("./db");
         const { gcMandates: gcMandatesTable } = await import("../drizzle/schema");
         const { eq: eqFn } = await import("drizzle-orm");
         const dbInst = await getDb();
         if (!dbInst) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        // If mandateId is missing, try to resolve it from the billing request
+        let resolvedMandateId = mandate.mandateId;
+        if (!resolvedMandateId && mandate.billingRequestId) {
+          try {
+            const brq = await getBillingRequest(mandate.billingRequestId);
+            resolvedMandateId = brq?.links?.mandate_request_mandate ?? brq?.links?.mandate ?? null;
+            if (resolvedMandateId) {
+              // Persist the resolved mandateId so future lookups work
+              await dbInst.update(gcMandatesTable)
+                .set({ mandateId: resolvedMandateId, updatedAt: new Date() })
+                .where(eqFn(gcMandatesTable.id, mandate.id));
+            }
+          } catch (brqErr: any) {
+            console.warn("[adminRefreshMandateStatus] Could not fetch billing request:", brqErr.message);
+          }
+        }
+        if (!resolvedMandateId) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "No GoCardless mandate ID found. The billing request may not have been fulfilled yet." });
+        }
+        const gcMandate = await getMandate(resolvedMandateId);
         const validStatuses = ["pending", "pending_submission", "submitted", "active", "cancelled", "failed", "expired"] as const;
         type MandateStatus = typeof validStatuses[number];
         const newStatus: MandateStatus = validStatuses.includes(gcMandate.status as MandateStatus)
@@ -2944,9 +2972,9 @@ export const appRouter = router({
           : "pending";
         await dbInst
           .update(gcMandatesTable)
-          .set({ status: newStatus, updatedAt: new Date() })
-          .where(eqFn(gcMandatesTable.userId, input.userId));
-        return { status: gcMandate.status, mandateId: mandate.mandateId };
+          .set({ status: newStatus, mandateId: resolvedMandateId, updatedAt: new Date() })
+          .where(eqFn(gcMandatesTable.id, mandate.id));
+        return { status: gcMandate.status, mandateId: resolvedMandateId };
       }),
   }),
 

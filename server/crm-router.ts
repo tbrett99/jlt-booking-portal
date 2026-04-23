@@ -1298,6 +1298,13 @@ export const crmRouter = router({
               .where(eq(gcMandates.userId, ctx.user.id))
               .limit(1);
             const mandate = mandateRows[0];
+            // Always sync preferredPaymentDay to gc_mandates row (even if mandate isn't active yet)
+            if (mandate) {
+              await db
+                .update(gcMandates)
+                .set({ preferredPaymentDay: input.preferredPaymentDay })
+                .where(eq(gcMandates.id, mandate.id));
+            }
             if (mandate?.mandateId && mandate.status === "active") {
               const existingSubs = await db
                 .select()
@@ -1334,10 +1341,6 @@ export const crmRouter = router({
                   dayOfMonth: input.preferredPaymentDay,
                   nextChargeDate: (sub as any).upcoming_payments?.[0]?.charge_date,
                 });
-                await db
-                  .update(gcMandates)
-                  .set({ preferredPaymentDay: input.preferredPaymentDay })
-                  .where(eq(gcMandates.id, mandate.id));
               }
             }
           } catch (subErr: any) {

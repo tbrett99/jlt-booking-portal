@@ -43,6 +43,11 @@ export interface GcBillingRequest {
   id: string;
   status: string;
   mandate_request: { scheme: string; links?: { mandate?: string } };
+  links?: {
+    mandate_request_mandate?: string;
+    mandate?: string;
+    [key: string]: string | undefined;
+  };
 }
 
 export async function createBillingRequest(opts: {
