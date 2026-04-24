@@ -184,6 +184,8 @@ function JaninesView({ batchId }: { batchId?: number }) {
   const { data: lines = [], isLoading } = trpc.remittance.getJaninesView.useQuery({ batchId }, { staleTime: 0 });
   const utils = trpc.useUtils();
   const [vatEditing, setVatEditing] = useState<Record<number, string>>({});
+  const [showAll, setShowAll] = useState(false);
+  const displayLines = showAll ? lines : lines.filter((l) => !(l as any).pushedToAgent);
   const updateVatMutation = trpc.remittance.updateLineVat.useMutation({
     onSuccess: () => utils.remittance.getJaninesView.invalidate(),
     onError: (e) => toast.error(`VAT update failed: ${e.message}`),
@@ -197,7 +199,7 @@ function JaninesView({ batchId }: { batchId?: number }) {
   };
 
   const exportJanines = () => {
-    const rows = lines.map((l) => ({
+    const rows = displayLines.map((l) => ({
       "Batch": l.batchName,
       "Week Of": l.weekOf ? new Date(l.weekOf).toLocaleDateString("en-GB") : "",
       "Client": l.clientName,
@@ -223,11 +225,11 @@ function JaninesView({ batchId }: { batchId?: number }) {
     }));
     // Add totals row
     const sumField = (field: (l: typeof lines[0]) => string | number | null | undefined) =>
-      lines.reduce((acc, l) => acc + (parseFloat(String(field(l) ?? 0)) || 0), 0);
+      displayLines.reduce((acc, l) => acc + (parseFloat(String(field(l) ?? 0)) || 0), 0);
     const totalsRow: Record<string, string> = {
       "Batch": "TOTALS",
       "Week Of": "",
-      "Client": `${lines.length} bookings`,
+      "Client": `${displayLines.length} bookings`,
       "Booking Reference": "",
       "Return Date": "",
       "PAX": String(lines.reduce((acc, l) => acc + (Number(l.pax) || 0), 0)),
@@ -253,12 +255,28 @@ function JaninesView({ batchId }: { batchId?: number }) {
 
   if (isLoading) return <div className="py-8 text-center text-muted-foreground">Loading…</div>;
 
+  const pushedCount = lines.filter((l) => (l as any).pushedToAgent).length;
+  const unpushedCount = lines.length - pushedCount;
+
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <p className="text-sm text-muted-foreground">{lines.length} rows</p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            {showAll ? `${lines.length} rows (all)` : `${unpushedCount} unpushed`}
+            {!showAll && pushedCount > 0 && (
+              <span className="ml-1 text-muted-foreground/60">({pushedCount} pushed hidden)</span>
+            )}
+          </p>
+          <button
+            onClick={() => setShowAll((v) => !v)}
+            className="text-xs px-2 py-1 rounded border border-border bg-muted hover:bg-muted/80 text-muted-foreground transition-colors"
+          >
+            {showAll ? "Hide pushed" : "Show all (inc. pushed)"}
+          </button>
+        </div>
         <Button size="sm" variant="outline" onClick={exportJanines}>
-          <Download className="h-4 w-4 mr-2" />Full Export
+          <Download className="h-4 w-4 mr-2" />{showAll ? "Full Export" : "Export Unpushed"}
         </Button>
       </div>
       <div className="rounded-md border overflow-x-auto">
@@ -287,14 +305,14 @@ function JaninesView({ batchId }: { batchId?: number }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {lines.length === 0 && (
+            {displayLines.length === 0 && !isLoading && (
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                  No data
+                <TableCell colSpan={19} className="text-center text-muted-foreground py-8">
+                  {showAll ? "No data" : "All lines have been pushed to agents"}
                 </TableCell>
               </TableRow>
             )}
-            {lines.map((l) => (
+            {displayLines.map((l) => (
                 <TableRow key={l.id} className={!l.isMatched ? "bg-amber-50 dark:bg-amber-950/20" : ""}>
                 <TableCell>
                   {l.isMatched ? (
