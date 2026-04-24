@@ -1727,3 +1727,7 @@
 ## Commission VAT Handling (Apr 24)
 - [x] Commission Due page: show VAT prompt dialog when marking a booking as Commission Claimable — admin can enter VAT amount before confirming
 - [x] Confirm/fix that VAT entered on Commission Management page persists when claim moves from Processing → Claimed → Paid
+
+## Bug Fixes (Apr 24)
+- [ ] Fix FORBIDDEN error when admin tries to match a remittance batch (Remittance Management page)
+- [x] Fix: VAT figures entered on unmatched remittance lines are lost when the line is manually matched to a booking

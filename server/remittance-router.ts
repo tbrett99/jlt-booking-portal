@@ -585,6 +585,16 @@ export const remittanceRouter = router({
       let processingClaimId: number | null = null;
       let vatFromPortal: string | null = null;
 
+      // First: read any VAT the admin already entered on this line — we must not overwrite it
+      const existingLineRows = await db
+        .select({ vatFromPortal: remittanceLines.vatFromPortal })
+        .from(remittanceLines)
+        .where(eq(remittanceLines.id, input.lineId))
+        .limit(1);
+      const existingLineVat = existingLineRows.length > 0 && existingLineRows[0].vatFromPortal !== null
+        ? existingLineRows[0].vatFromPortal
+        : null;
+
       // Try awaiting_payment first
       const awaitingClaims = await db
         .select({ id: commissionClaims.id, vatAmount: commissionClaims.vatAmount })
@@ -607,6 +617,11 @@ export const remittanceRouter = router({
           const v = processingClaims[0].vatAmount;
           if (v !== null && v !== undefined) vatFromPortal = parseFloat(String(v)).toFixed(2);
         }
+      }
+
+      // Preserve the admin-entered VAT on the line if no claim VAT was found
+      if (vatFromPortal === null && existingLineVat !== null) {
+        vatFromPortal = existingLineVat;
       }
 
       // Recalculate remit80/jlt20 using vatFromPortal if available
