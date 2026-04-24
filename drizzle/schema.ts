@@ -62,6 +62,7 @@ export const bookings = mysqlTable("bookings", {
   paymentDateDismissed: boolean("paymentDateDismissed").default(false).notNull(), // Suppress from missing-payment-date dashboard alert
   isPersonalBooking: boolean("isPersonalBooking").default(false).notNull(), // Agent's own travel — no commission, payment date = departure date
   commissionPreAuthorised: boolean("commissionPreAuthorised").default(false).notNull(), // Agent pre-authorises auto-claim when file becomes claimable
+  commissionVat: decimal("commissionVat", { precision: 10, scale: 2 }), // VAT amount set by admin when marking claimable
   // Current pipeline stage
   currentStage: varchar("currentStage", { length: 100 }).default("New Booking").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

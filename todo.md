@@ -1723,3 +1723,7 @@
 ## Contract Evidence & Onboarding Visibility (Apr 24)
 - [x] Fix contract page: send signingUserAgent, consentConfirmed, contractTextSnapshot from all three signing pages (JoinFlow, JoinAccept, SignContract)
 - [x] Show agent self-onboarding completion in New Sign-Ups tab: personal details, bank details, ID docs, emergency contact, payment day, JLT email
+
+## Commission VAT Handling (Apr 24)
+- [x] Commission Due page: show VAT prompt dialog when marking a booking as Commission Claimable — admin can enter VAT amount before confirming
+- [x] Confirm/fix that VAT entered on Commission Management page persists when claim moves from Processing → Claimed → Paid

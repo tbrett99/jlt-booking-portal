@@ -1,0 +1,1 @@
+ALTER TABLE `bookings` ADD `commissionVat` decimal(10,2);

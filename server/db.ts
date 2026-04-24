@@ -345,6 +345,7 @@ export async function updateBookingAdminFields(
     departureDate?: Date;
     bookedDate?: Date | null;
     isPersonalBooking?: boolean;
+    commissionVat?: number | null;
   }
 ) {
   const db = await getDb();

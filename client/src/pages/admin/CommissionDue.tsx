@@ -166,8 +166,8 @@ export default function CommissionDue() {
   const [pastDepartureOnly, setPastDepartureOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [shortFundsBooking, setShortFundsBooking] = useState<{ id: number; clientName: string; agentName?: string; ptsRef?: string | null; topdogRef?: string | null } | null>(null);
-  // Pre-auth VAT dialog state
-  const [preAuthBooking, setPreAuthBooking] = useState<{ id: number; clientName: string } | null>(null);
+  // VAT dialog state — used for both pre-auth (auto-claim) and standard (mark claimable) flows
+  const [preAuthBooking, setPreAuthBooking] = useState<{ id: number; clientName: string; isPreAuth: boolean } | null>(null);
   const [vatInput, setVatInput] = useState("");
 
   const moveStage = trpc.bookings.moveStage.useMutation({
@@ -427,13 +427,9 @@ export default function CommissionDue() {
                         size="sm"
                         className="bg-[#70FFE8] text-[#414141] hover:bg-[#02E6D2] h-8"
                         onClick={() => {
-                          if ((booking as any).commissionPreAuthorised) {
-                            // Pre-auth: prompt for VAT before auto-claiming
-                            setPreAuthBooking({ id: booking.id, clientName: booking.clientName });
-                            setVatInput("");
-                          } else {
-                            moveStage.mutate({ bookingId: booking.id, toStage: "Commission Claimable" });
-                          }
+                          // Always show VAT dialog — both pre-auth and standard flows
+                          setPreAuthBooking({ id: booking.id, clientName: booking.clientName, isPreAuth: !!(booking as any).commissionPreAuthorised });
+                          setVatInput("");
                         }}
                         disabled={moveStage.isPending || bulkMoveStage.isPending}
                       >
@@ -450,16 +446,21 @@ export default function CommissionDue() {
       )}
       <ShortFundsDialog booking={shortFundsBooking} onClose={() => setShortFundsBooking(null)} />
 
-      {/* Pre-Auth VAT Dialog */}
+      {/* VAT Dialog — shown for both pre-auth (auto-claim) and standard (mark claimable) flows */}
       <Dialog open={!!preAuthBooking} onOpenChange={(v) => !v && setPreAuthBooking(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Zap size={16} className="text-emerald-600" />
-              Auto-Claim Commission
+              {preAuthBooking?.isPreAuth
+                ? <><Zap size={16} className="text-emerald-600" /> Auto-Claim Commission</>
+                : <><CheckCircle2 size={16} className="text-[#02E6D2]" /> Mark as Commission Claimable</>
+              }
             </DialogTitle>
             <DialogDescription>
-              This booking has pre-authorisation enabled. The commission will be automatically claimed and moved directly to <strong>Commission Claimed</strong> — the agent will not need to do anything.
+              {preAuthBooking?.isPreAuth
+                ? <>This booking has pre-authorisation enabled. The commission will be automatically claimed and moved directly to <strong>Commission Claimed</strong> — the agent will not need to do anything.</>
+                : <>The booking will be moved to <strong>Commission Claimable</strong> and the agent will be notified to submit their claim.</>
+              }
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -467,22 +468,24 @@ export default function CommissionDue() {
               Booking: <span className="text-muted-foreground">{preAuthBooking?.clientName}</span>
             </p>
             <div className="space-y-1.5">
-              <Label className="text-sm">VAT Amount (£) — leave blank if not applicable</Label>
+              <Label className="text-sm">Is VAT due on this commission?</Label>
+              <p className="text-xs text-muted-foreground">Enter the VAT amount if applicable, or leave blank if no VAT is due.</p>
               <Input
                 type="number"
                 min="0"
                 step="0.01"
-                placeholder="e.g. 12.50"
+                placeholder="e.g. 12.50 — leave blank if no VAT"
                 value={vatInput}
                 onChange={(e) => setVatInput(e.target.value)}
                 className="h-9"
+                autoFocus
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPreAuthBooking(null)}>Cancel</Button>
             <Button
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className={preAuthBooking?.isPreAuth ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-[#70FFE8] text-[#414141] hover:bg-[#02E6D2]"}
               disabled={moveStage.isPending}
               onClick={() => {
                 if (!preAuthBooking) return;
@@ -493,7 +496,12 @@ export default function CommissionDue() {
                 );
               }}
             >
-              {moveStage.isPending ? "Processing..." : "Confirm & Auto-Claim"}
+              {moveStage.isPending
+                ? "Processing..."
+                : preAuthBooking?.isPreAuth
+                  ? "Confirm & Auto-Claim"
+                  : "Confirm & Mark Claimable"
+              }
             </Button>
           </DialogFooter>
         </DialogContent>

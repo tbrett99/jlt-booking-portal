@@ -868,6 +868,12 @@ export const appRouter = router({
 
         const updated = await updateBookingStage(input.bookingId, input.toStage, ctx.user.id);
 
+        // Store admin-entered VAT on the booking when marking Commission Claimable
+        // so it is pre-populated on the commission claim when the agent submits
+        if (input.toStage === "Commission Claimable" && input.vatAmount !== undefined) {
+          await updateBookingAdminFields(input.bookingId, { commissionVat: input.vatAmount ?? null });
+        }
+
         // Auto-schedule pending reimbursements when booking moves to "Added to PTS"
         if (input.toStage === "Added to PTS") {
           await scheduleReimbursementsForBooking(input.bookingId);
@@ -2019,6 +2025,10 @@ export const appRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "Booking is not in Commission Claimable stage" });
         }
         const claim = await createCommissionClaim(input.bookingId, ctx.user.id, input.bookingType, input.grossAmount);
+        // Auto-apply admin-set VAT to the claim if it was recorded when the booking was marked claimable
+        if (claim && (booking as any).commissionVat != null) {
+          await updateCommissionVat(claim.id, parseFloat(String((booking as any).commissionVat)));
+        }
         // Sync the booking's expectedCommission with the gross amount the agent declared
         await updateBookingAdminFields(input.bookingId, { expectedCommission: input.grossAmount });
         // Move booking to Commission Claimed
