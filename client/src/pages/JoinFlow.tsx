@@ -409,6 +409,11 @@ function ContractStep({
         signatureDataUrl,
         signerName: signerName.trim(),
         signerAddress: signerAddress.trim(),
+        signingUserAgent: navigator.userAgent,
+        consentConfirmed: true,
+        contractTextSnapshot: template?.pdfUrl
+          ? `<p><strong>Contract signed via PDF document.</strong></p><p>Document: <a href="${template.pdfUrl}">${template.name ?? "JLT Group Membership Contract"}</a></p><p>The signatory confirmed they had read and agreed to the full contract before signing.</p>`
+          : undefined,
       });
       onNext();
     } catch (err: any) {

@@ -64,6 +64,11 @@ export default function SignContract() {
       signerAddress: signerAddress.trim(),
       signatureDataUrl,
       origin: window.location.origin,
+      signingUserAgent: navigator.userAgent,
+      consentConfirmed: true,
+      contractTextSnapshot: contract?.templatePdfUrl
+        ? `<p><strong>Contract signed via PDF document.</strong></p><p>Document: <a href="${contract.templatePdfUrl}">JLT Group Membership Contract</a></p><p>The signatory confirmed they had read and agreed to the full contract before signing.</p>`
+        : undefined,
     });
   };
 

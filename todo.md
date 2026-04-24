@@ -1719,3 +1719,7 @@
 - [ ] Show agent name, tier, join date, onboarding checklist progress, and a quick link to their CRM profile
 - [ ] Automate "Send Welcome Email" button with the correct JLT welcome email template
 - [ ] Welcome email: personalised greeting, training hub setup instructions, WhatsApp group, JLT email 7-day timeline, weekly Thursday induction call info
+
+## Contract Evidence & Onboarding Visibility (Apr 24)
+- [x] Fix contract page: send signingUserAgent, consentConfirmed, contractTextSnapshot from all three signing pages (JoinFlow, JoinAccept, SignContract)
+- [x] Show agent self-onboarding completion in New Sign-Ups tab: personal details, bank details, ID docs, emergency contact, payment day, JLT email

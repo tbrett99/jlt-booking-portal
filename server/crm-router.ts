@@ -2155,6 +2155,7 @@ export const crmRouter = router({
           dateJoined: agentCrmProfiles.dateJoined,
           uniqueAgentId: agentCrmProfiles.uniqueAgentId,
           jltEmailPreference: agentCrmProfiles.jltEmailPreference,
+          // Admin checklist fields
           trainingHubLogin: adminOnboardingChecklist.trainingHubLogin,
           jltEmailSetup: adminOnboardingChecklist.jltEmailSetup,
           idDocsReviewed: adminOnboardingChecklist.idDocsReviewed,
@@ -2162,6 +2163,18 @@ export const crmRouter = router({
           welcomeEmailSent: adminOnboardingChecklist.welcomeEmailSent,
           portalAccessApproved: adminOnboardingChecklist.portalAccessApproved,
           ddSubscriptionCreated: adminOnboardingChecklist.ddSubscriptionCreated,
+          // Agent self-onboarding fields
+          personalEmail: agentCrmProfiles.personalEmail,
+          mobile: agentCrmProfiles.mobile,
+          addressLine1: agentCrmProfiles.addressLine1,
+          bankAccountName: agentCrmProfiles.bankAccountName,
+          bankSortCode: agentCrmProfiles.bankSortCode,
+          bankAccountNumber: agentCrmProfiles.bankAccountNumber,
+          emergencyContactName: agentCrmProfiles.emergencyContactName,
+          emergencyContactPhone: agentCrmProfiles.emergencyContactPhone,
+          idDocUrl: agentCrmProfiles.idDocUrl,
+          proofOfAddressUrl: agentCrmProfiles.proofOfAddressUrl,
+          preferredPaymentDay: agentCrmProfiles.preferredPaymentDay,
         })
         .from(users)
         .leftJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, users.id))
@@ -2169,7 +2182,7 @@ export const crmRouter = router({
         .where(eq(users.portalStatus, "onboarding"))
         .orderBy(users.createdAt);
       return rows.map(r => {
-        const steps = [
+        const adminSteps = [
           r.trainingHubLogin ?? false,
           r.jltEmailSetup ?? false,
           r.idDocsReviewed ?? false,
@@ -2178,8 +2191,27 @@ export const crmRouter = router({
           r.portalAccessApproved ?? false,
           r.ddSubscriptionCreated ?? false,
         ];
-        const completedSteps = steps.filter(Boolean).length;
-        return { ...r, completedSteps, totalSteps: steps.length };
+        const completedSteps = adminSteps.filter(Boolean).length;
+        // Agent self-onboarding completion — what the agent has filled in themselves
+        const agentSelfOnboarding = {
+          personalDetails: !!(r.name && r.personalEmail && r.mobile && r.addressLine1),
+          bankDetails: !!(r.bankAccountName && r.bankSortCode && r.bankAccountNumber),
+          idDocs: !!(r.idDocUrl && r.proofOfAddressUrl),
+          emergencyContact: !!(r.emergencyContactName && r.emergencyContactPhone),
+          paymentDay: !!(r.preferredPaymentDay),
+          jltEmail: !!(r.jltEmailPreference),
+        };
+        const agentSelfComplete = Object.values(agentSelfOnboarding).every(Boolean);
+        const agentSelfCompletedCount = Object.values(agentSelfOnboarding).filter(Boolean).length;
+        return {
+          ...r,
+          completedSteps,
+          totalSteps: adminSteps.length,
+          agentSelfOnboarding,
+          agentSelfComplete,
+          agentSelfCompletedCount,
+          agentSelfTotalSteps: Object.keys(agentSelfOnboarding).length,
+        };
       });
     }),
   }),

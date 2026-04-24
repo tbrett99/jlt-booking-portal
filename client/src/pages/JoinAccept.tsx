@@ -80,6 +80,11 @@ export default function JoinAccept() {
         signerName: signerName.trim(),
         signerAddress: signerAddress.trim(),
         userId: user.id,
+        signingUserAgent: navigator.userAgent,
+        consentConfirmed: true,
+        contractTextSnapshot: template?.pdfUrl
+          ? `<p><strong>Contract signed via PDF document.</strong></p><p>Document: <a href="${template.pdfUrl}">${template.name ?? "JLT Group Membership Contract"}</a></p><p>The signatory confirmed they had read and agreed to the full contract before signing.</p>`
+          : undefined,
       });
       setDone(true);
     } catch (err: any) {

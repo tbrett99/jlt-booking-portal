@@ -521,12 +521,14 @@ export const joinRouter = router({
         signerName: z.string().min(2),
         signerAddress: z.string().min(5),
         userId: z.number().int(), // the team member's user ID
+        signingUserAgent: z.string().optional(),
+        consentConfirmed: z.boolean().optional(),
+        contractTextSnapshot: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-
       // Validate invite
       const rows = await db
         .select()
@@ -537,7 +539,6 @@ export const joinRouter = router({
       if (!invite) throw new TRPCError({ code: "NOT_FOUND", message: "Invite not found" });
       if (invite.status === "accepted") throw new TRPCError({ code: "BAD_REQUEST", message: "Already accepted" });
       if (invite.expiresAt < new Date()) throw new TRPCError({ code: "FORBIDDEN", message: "Invite expired" });
-
       // Mark invite as accepted
       await db
         .update(teamInvites)
@@ -547,7 +548,38 @@ export const joinRouter = router({
           acceptedByUserId: input.userId,
         })
         .where(eq(teamInvites.id, invite.id));
-
+      // Store signing evidence in joinSessions if a session token was provided
+      const signingIp = (ctx.req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
+        ?? ctx.req.socket?.remoteAddress
+        ?? null;
+      const session = await getSessionByToken(input.sessionToken).catch(() => null);
+      if (session) {
+        const { createHash } = await import("crypto");
+        const signedAtIso = new Date().toISOString();
+        const hashInput = [
+          input.contractTextSnapshot ?? "",
+          input.signatureDataUrl,
+          signedAtIso,
+          input.signerName,
+          signingIp ?? "",
+        ].join("|");
+        const contractHash = createHash("sha256").update(hashInput).digest("hex");
+        await db
+          .update(joinSessions)
+          .set({
+            signatureDataUrl: input.signatureDataUrl,
+            signerName: input.signerName,
+            signerAddress: input.signerAddress,
+            contractSignedAt: new Date(),
+            step: "complete",
+            ipAddress: signingIp,
+            signingUserAgent: input.signingUserAgent ?? null,
+            consentConfirmed: input.consentConfirmed ?? false,
+            contractTextSnapshot: input.contractTextSnapshot ?? null,
+            contractHash,
+          })
+          .where(eq(joinSessions.id, session.id));
+      }
       // Link team member to the team
       const existingProfile = await db
         .select()

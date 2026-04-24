@@ -410,7 +410,7 @@ export default function Memberships() {
                     const tierLabel = agent.membershipTier
                       ? agent.membershipTier.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())
                       : null;
-                    const stepLabels = [
+                    const adminStepLabels = [
                       { key: "trainingHubLogin", label: "Training Hub" },
                       { key: "jltEmailSetup", label: "JLT Email" },
                       { key: "idDocsReviewed", label: "ID Docs" },
@@ -419,33 +419,91 @@ export default function Memberships() {
                       { key: "portalAccessApproved", label: "Portal Access" },
                       { key: "ddSubscriptionCreated", label: "DD Setup" },
                     ];
+                    const agentSelfLabels = [
+                      { key: "personalDetails", label: "Personal Details" },
+                      { key: "bankDetails", label: "Bank Details" },
+                      { key: "idDocs", label: "ID Docs" },
+                      { key: "emergencyContact", label: "Emergency Contact" },
+                      { key: "paymentDay", label: "Payment Day" },
+                      { key: "jltEmail", label: "JLT Email Pref" },
+                    ];
+                    const selfOnboarding = agent.agentSelfOnboarding ?? {};
+                    const selfPct = agent.agentSelfTotalSteps > 0
+                      ? Math.round((agent.agentSelfCompletedCount / agent.agentSelfTotalSteps) * 100)
+                      : 0;
                     return (
-                      <div key={agent.userId} className="flex items-center gap-4 p-4 rounded-xl border bg-card hover:bg-muted/40 transition-colors">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-sm">{agent.name ?? "—"}</span>
-                            {agent.uniqueAgentId && (
-                              <Badge variant="outline" className="font-mono text-xs">{agent.uniqueAgentId}</Badge>
+                      <div key={agent.userId} className="p-4 rounded-xl border bg-card hover:bg-muted/40 transition-colors">
+                        {/* Header row */}
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-sm">{agent.name ?? "—"}</span>
+                              {agent.uniqueAgentId && (
+                                <Badge variant="outline" className="font-mono text-xs">{agent.uniqueAgentId}</Badge>
+                              )}
+                              {tierLabel && (
+                                <Badge variant="secondary" className="text-xs">{tierLabel}</Badge>
+                              )}
+                              <span className="text-xs text-muted-foreground">{agent.email}</span>
+                            </div>
+                            {agent.jltEmailPreference && (
+                              <div className="mt-1 flex items-center gap-1.5">
+                                <Mail size={11} className="text-muted-foreground shrink-0" />
+                                <span className="text-xs text-muted-foreground">Requested JLT email:</span>
+                                <span className="text-xs font-semibold font-mono text-foreground">{agent.jltEmailPreference}</span>
+                              </div>
                             )}
-                            {tierLabel && (
-                              <Badge variant="secondary" className="text-xs">{tierLabel}</Badge>
-                            )}
-                            <span className="text-xs text-muted-foreground">{agent.email}</span>
                           </div>
-                          {agent.jltEmailPreference && (
-                            <div className="mt-1 flex items-center gap-1.5">
-                              <Mail size={11} className="text-muted-foreground shrink-0" />
-                              <span className="text-xs text-muted-foreground">Requested JLT email:</span>
-                              <span className="text-xs font-semibold font-mono text-foreground">{agent.jltEmailPreference}</span>
+                          <Link href={`/crm/agents?agent=${agent.userId}&tab=onboarding`}>
+                            <Button size="sm" variant="outline" className="gap-1.5 shrink-0">
+                              Open Checklist <ArrowRight className="h-3.5 w-3.5" />
+                            </Button>
+                          </Link>
+                        </div>
+
+                        {/* Two-column progress section */}
+                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* Agent self-onboarding */}
+                          <div className="rounded-lg border bg-muted/30 p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Agent Portal Setup</span>
+                              {agent.agentSelfComplete ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                                  <CheckCircle2 size={10} /> Complete
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                                  <Clock size={10} /> {agent.agentSelfCompletedCount}/{agent.agentSelfTotalSteps} done
+                                </span>
+                              )}
                             </div>
-                          )}
-                          <div className="mt-2 space-y-1.5">
-                            <div className="flex items-center gap-2">
-                              <Progress value={pct} className="h-1.5 flex-1" />
-                              <span className="text-xs text-muted-foreground whitespace-nowrap">{agent.completedSteps}/{agent.totalSteps} steps</span>
+                            <Progress value={selfPct} className="h-1.5 mb-2" />
+                            <div className="flex flex-wrap gap-1">
+                              {agentSelfLabels.map(({ key, label }) => (
+                                <span
+                                  key={key}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                                    selfOnboarding[key]
+                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                      : "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-400"
+                                  }`}
+                                >
+                                  {selfOnboarding[key] ? <CheckCircle2 size={9} /> : <Clock size={9} />}
+                                  {label}
+                                </span>
+                              ))}
                             </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {stepLabels.map(({ key, label }) => (
+                          </div>
+
+                          {/* Admin checklist */}
+                          <div className="rounded-lg border bg-muted/30 p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Admin Checklist</span>
+                              <span className="text-[10px] text-muted-foreground">{agent.completedSteps}/{agent.totalSteps} done</span>
+                            </div>
+                            <Progress value={pct} className="h-1.5 mb-2" />
+                            <div className="flex flex-wrap gap-1">
+                              {adminStepLabels.map(({ key, label }) => (
                                 <span
                                   key={key}
                                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
@@ -461,11 +519,6 @@ export default function Memberships() {
                             </div>
                           </div>
                         </div>
-                        <Link href={`/crm/agents?agent=${agent.userId}&tab=onboarding`}>
-                          <Button size="sm" variant="outline" className="gap-1.5 shrink-0">
-                            Open Checklist <ArrowRight className="h-3.5 w-3.5" />
-                          </Button>
-                        </Link>
                       </div>
                     );
                   })}
