@@ -73,6 +73,7 @@ import PaymentRedirect from "./pages/PaymentRedirect";
 import CrmChangeRequests from "./pages/crm/CrmChangeRequests";
 import Memberships from "./pages/crm/Memberships";
 import MyProfile from "./pages/MyProfile";
+import TermsAndPolicies from "./pages/TermsAndPolicies";
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -163,6 +164,8 @@ function AuthRouter() {
         <Route path="/join" component={JoinFlow} />
         <Route path="/join/complete" component={JoinFlow} />
         <Route path="/join/accept" component={JoinAccept} />
+        {/* Public terms & policies — no auth required */}
+        <Route path="/terms" component={TermsAndPolicies} />
         <Route component={LoginPage} />
       </Switch>
     );

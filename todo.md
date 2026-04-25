@@ -1733,3 +1733,4 @@
 - [x] Fix: VAT figures entered on unmatched remittance lines are lost when the line is manually matched to a booking
 - [x] Janine's View: add filter toggle to default to unpushed lines only, with option to show all lines for historic view
 - [x] Admin dashboard: add Late Reimbursements (unactioned), Pending Flight Requests, and New Sign-Ups pills to the quick-stats row
+- [x] Build public Terms & Policies page (/terms) with three tabs: Full Terms, Code of Conduct, Privacy Policy — no login required, compact formatted layout
