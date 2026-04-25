@@ -707,10 +707,9 @@ export const appRouter = router({
             }))
           );
         }
-        // If historic booking, move immediately to "Added to PTS" and auto-schedule reimbursements
+        // If historic booking, move immediately to "Added to PTS"
         if (input.isHistoricBooking && booking?.id) {
           await updateBookingStage(booking.id, "Added to PTS", ctx.user.id);
-          await scheduleReimbursementsForBooking(booking.id);
           await createNote({
             bookingId: booking.id,
             authorId: ctx.user.id,
@@ -872,11 +871,6 @@ export const appRouter = router({
         // so it is pre-populated on the commission claim when the agent submits
         if (input.toStage === "Commission Claimable" && input.vatAmount !== undefined) {
           await updateBookingAdminFields(input.bookingId, { commissionVat: input.vatAmount ?? null });
-        }
-
-        // Auto-schedule pending reimbursements when booking moves to "Added to PTS"
-        if (input.toStage === "Added to PTS") {
-          await scheduleReimbursementsForBooking(input.bookingId);
         }
 
         // Trigger notifications based on stage

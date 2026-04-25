@@ -1750,3 +1750,7 @@
 - [x] Surface query messages from booking pipeline stage moves (Query stage) in the booking Messages tab
 - [x] Surface query messages from flight request queries in the booking Messages tab
 - [x] Surface query messages from refund queries in the booking Messages tab
+
+## Reimbursement Auto-Scheduling Removal (Apr 25)
+- [x] Remove all automatic reimbursement scheduling — only admins should be able to mark as scheduled
+- [x] No backdate required — existing data left as-is, auto-scheduling removed going forward only
