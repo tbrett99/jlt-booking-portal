@@ -54,6 +54,7 @@ const SUPPLIERS = [
   "Easyjet",
   "Etihad Holidays",
   "Every Holiday",
+  "Gold Medal",
   "Holiday Best",
   "Koveli",
   "Major Travel",
@@ -390,7 +391,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             )}
           </div>
           <Tabs defaultValue="profile">
-            <TabsList className="grid grid-cols-10 w-full">
+            <TabsList className="grid grid-cols-11 w-full">
               <TabsTrigger value="profile" className="text-xs">Profile</TabsTrigger>
               <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
               <TabsTrigger value="team" className="text-xs">Team</TabsTrigger>
@@ -401,6 +402,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <TabsTrigger value="history" className="text-xs">History</TabsTrigger>
               <TabsTrigger value="dd" className="text-xs">Direct Debit</TabsTrigger>
               <TabsTrigger value="onboarding" className="text-xs">Onboarding</TabsTrigger>
+              <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
             </TabsList>
 
             <TabsContent value="profile" className="mt-5 pb-8">
@@ -432,6 +434,9 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             </TabsContent>
             <TabsContent value="onboarding" className="mt-5 pb-8">
               <AdminOnboardingChecklistTab userId={agent.id} agentName={agent.name ?? ""} open={open} onRefresh={refresh} />
+            </TabsContent>
+            <TabsContent value="notes" className="mt-5 pb-8">
+              <AgentNotesTab userId={agent.id} />
             </TabsContent>
           </Tabs>
         </div>
@@ -2332,6 +2337,84 @@ function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
       <p className="text-xs text-muted-foreground text-center">
         Ticking "Approve Portal Access" will automatically activate the agent's portal login.
       </p>
+    </div>
+  );
+}
+
+
+// ─── Agent CRM Notes Tab ──────────────────────────────────────────────────────
+function AgentNotesTab({ userId }: { userId: number }) {
+  const [noteText, setNoteText] = useState("");
+  const utils = trpc.useUtils();
+  const { data: notes = [], isLoading } = trpc.crm.agentNotes.list.useQuery({ agentUserId: userId });
+  const addNote = trpc.crm.agentNotes.add.useMutation({
+    onSuccess: () => {
+      setNoteText("");
+      utils.crm.agentNotes.list.invalidate({ agentUserId: userId });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  function handleSubmit() {
+    const trimmed = noteText.trim();
+    addNote.mutate({ agentUserId: userId, content: trimmed });
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Input area */}
+      <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700 p-4 space-y-3">
+        <p className="text-xs font-semibold text-amber-800 dark:text-amber-400 uppercase tracking-wide">Add a note</p>
+        <Textarea
+          placeholder="Record a call, meeting, or general note about this agent…"
+          value={noteText}
+          onChange={(e) => setNoteText(e.target.value)}
+          rows={3}
+          className="text-sm resize-none bg-white dark:bg-background"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit();
+          }}
+        />
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">Ctrl+Enter to submit</span>
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            className="bg-amber-600 hover:bg-amber-700 text-white"
+          >
+            {addNote.isPending ? "Saving…" : "Add Note"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Notes list */}
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground text-center py-4">Loading notes…</p>
+      ) : notes.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-amber-300 dark:border-amber-700 p-8 text-center">
+          <p className="text-sm text-muted-foreground">No notes yet. Add the first note above.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {notes.map((note) => (
+            <div
+              key={note.id}
+              className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/10 p-4"
+            >
+              <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.content}</p>
+              <p className="mt-2 text-xs text-amber-700 dark:text-amber-500 font-medium">
+                {new Date(note.createdAt).toLocaleString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })} — {note.authorName ?? "Admin"}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

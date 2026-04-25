@@ -603,12 +603,13 @@ export default function AdminCalendar() {
       {/* Event Form Dialog */}
       {formOpen && (
         <EventFormDialog
+          key={editingEvent ? `edit-${editingEvent.id}` : `new-${defaultFormDate?.toISOString() ?? 'new'}`}
           open={formOpen}
-          onClose={() => setFormOpen(false)}
+          onClose={() => { setFormOpen(false); setEditingEvent(null); }}
           event={editingEvent}
           defaultDate={defaultFormDate}
           adminUsers={adminUsers as { id: number; name: string | null }[]}
-          onSaved={refetch}
+          onSaved={() => { refetch(); setEditingEvent(null); }}
         />
       )}
     </div>

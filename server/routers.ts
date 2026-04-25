@@ -1276,6 +1276,25 @@ export const appRouter = router({
         }
         return { success: true, docId: input.docId };
       }),
+    // Agent/Admin: upload a document to attach to a message (not a reimbursement doc)
+    uploadMessageDoc: protectedProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        fileBase64: z.string(),
+        fileName: z.string(),
+        mimeType: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `msg-attachments/${input.bookingId}-${nanoid(8)}-${input.fileName}`;
+        const { url } = await storagePut(key, buffer, input.mimeType);
+        return { url, fileName: input.fileName };
+      }),
   }),
   // ── Notes ─────────────────────────────────────────────────────────────────
   notes: router({

@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
   CheckCircle2, Circle, AlertCircle, Sparkles, TrendingUp, Clock,
   RefreshCw, Pencil, User, Check, X, Trash2, Plane, Zap,
-  CreditCard, Copy, ExternalLink
+  CreditCard, Copy, ExternalLink, Paperclip
 } from "lucide-react";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -253,7 +253,9 @@ export default function AgentBookingDetail() {
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
   const [editingCommission, setEditingCommission] = useState(false);
   const [commissionInput, setCommissionInput] = useState("");
+  const [messageAttachments, setMessageAttachments] = useState<File[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const messageFileRef = useRef<HTMLInputElement>(null);
   // Per-item doc upload state: maps reimbItemId -> uploading boolean
   const [uploadingItemId, setUploadingItemId] = useState<number | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
@@ -320,14 +322,35 @@ export default function AgentBookingDetail() {
     updateCommission.mutate({ bookingId, expectedCommission: val });
   };
 
+  const uploadMessageDoc = trpc.bookings.uploadMessageDoc.useMutation();
+
   const handleSendNote = async () => {
-    if (!noteContent.trim()) return;
+    if (!noteContent.trim() && messageAttachments.length === 0) return;
     setIsSendingNote(true);
     try {
-      await addNote.mutateAsync({ bookingId, content: noteContent, isInternal: false });
+      // Upload any attachments first, then include links in the message
+      let content = noteContent.trim();
+      if (messageAttachments.length > 0) {
+        const uploadedLinks: string[] = [];
+        for (const file of messageAttachments) {
+          const arrayBuffer = await file.arrayBuffer();
+          const uint8 = new Uint8Array(arrayBuffer);
+          const base64 = btoa(Array.from(uint8).map(b => String.fromCharCode(b)).join(''));
+          const result = await uploadMessageDoc.mutateAsync({
+            bookingId,
+            fileBase64: base64,
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+          });
+          uploadedLinks.push(`[Attachment: ${file.name}](${result.url})`);
+        }
+        content = content ? `${content}\n\n${uploadedLinks.join('\n')}` : uploadedLinks.join('\n');
+      }
+      await addNote.mutateAsync({ bookingId, content, isInternal: false });
       setNoteContent("");
+      setMessageAttachments([]);
       await refetchNotes();
-      toast.success("Message sent");
+      toast.success(messageAttachments.length > 0 ? "Message & attachment(s) sent" : "Message sent");
     } catch (err: any) {
       toast.error(err.message || "Failed to send message");
     } finally {
@@ -336,29 +359,30 @@ export default function AgentBookingDetail() {
   };
 
   const handleItemDocUpload = async (e: React.ChangeEvent<HTMLInputElement>, itemId: number) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { toast.error("File must be under 10MB"); return; }
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    const oversized = files.find(f => f.size > 10 * 1024 * 1024);
+    if (oversized) { toast.error(`${oversized.name} is over 10MB — please compress it first`); return; }
     setUploadingItemId(itemId);
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const uint8 = new Uint8Array(arrayBuffer);
-      const base64 = btoa(Array.from(uint8).map(b => String.fromCharCode(b)).join(''));
-      // Upload via the booking-level upload endpoint, tagging the reimbursement item
-      await uploadItemDoc.mutateAsync({
-        reimbursementItemId: itemId,
-        bookingId,
-        fileUrl: `data:${file.type};base64,${base64}`,
-        fileKey: `reimb-item-${itemId}-${Date.now()}-${file.name}`,
-        fileName: file.name,
-      });
+      for (const file of files) {
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8 = new Uint8Array(arrayBuffer);
+        const base64 = btoa(Array.from(uint8).map(b => String.fromCharCode(b)).join(''));
+        await uploadItemDoc.mutateAsync({
+          reimbursementItemId: itemId,
+          bookingId,
+          fileUrl: `data:${file.type};base64,${base64}`,
+          fileKey: `reimb-item-${itemId}-${Date.now()}-${file.name}`,
+          fileName: file.name,
+        });
+      }
       await refetchReimbItems();
-      toast.success("Document uploaded — the JLT team has been notified");
+      toast.success(files.length > 1 ? `${files.length} documents uploaded — the JLT team has been notified` : "Document uploaded — the JLT team has been notified");
     } catch (err: any) {
       toast.error(err.message || "Upload failed");
     } finally {
       setUploadingItemId(null);
-      // Reset the file input
       e.target.value = "";
     }
   };
@@ -818,26 +842,34 @@ export default function AgentBookingDetail() {
                       {docsMissing && (
                         <p className="text-xs font-medium" style={{ color: '#92400e' }}>No document uploaded yet — please attach one below.</p>
                       )}
-                      <label className="block">
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                          onChange={(e) => handleItemDocUpload(e, item.id)}
-                          disabled={uploadingItemId === item.id}
-                        />
-                        <Button
-                          size="sm"
-                          variant={docsMissing ? 'default' : 'outline'}
-                          className="w-full gap-1 text-xs"
-                          style={docsMissing ? { background: '#f59e0b', color: 'white' } : {}}
-                          disabled={uploadingItemId === item.id}
-                          onClick={(e) => { e.preventDefault(); (e.currentTarget.previousElementSibling as HTMLInputElement)?.click(); }}
-                        >
-                          {uploadingItemId === item.id ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                          {uploadingItemId === item.id ? 'Uploading...' : docsMissing ? 'Upload Supporting Document' : 'Upload Another Document'}
-                        </Button>
-                      </label>
+                      <div className="space-y-1.5">
+                        {docsMissing && (
+                          <p className="text-xs font-medium px-1" style={{ color: '#92400e' }}>
+                            ⚠️ Each reimbursement requires at least 2 documents (e.g. supplier invoice + booking confirmation). You can select multiple files at once.
+                          </p>
+                        )}
+                        <label className="block">
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                            multiple
+                            onChange={(e) => handleItemDocUpload(e, item.id)}
+                            disabled={uploadingItemId === item.id}
+                          />
+                          <Button
+                            size="sm"
+                            variant={docsMissing ? 'default' : 'outline'}
+                            className="w-full gap-1 text-xs"
+                            style={docsMissing ? { background: '#f59e0b', color: 'white' } : {}}
+                            disabled={uploadingItemId === item.id}
+                            onClick={(e) => { e.preventDefault(); (e.currentTarget.previousElementSibling as HTMLInputElement)?.click(); }}
+                          >
+                            {uploadingItemId === item.id ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                            {uploadingItemId === item.id ? 'Uploading...' : docsMissing ? 'Upload Documents (select multiple)' : 'Upload More Documents'}
+                          </Button>
+                        </label>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1176,27 +1208,67 @@ export default function AgentBookingDetail() {
               })
             )}
           </div>
-          <div className="flex gap-2 pt-2 border-t">
-            <Textarea
-              placeholder="Type a message to the JLT team..."
-              value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
-              className="min-h-[60px] resize-none text-sm"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendNote();
-                }
-              }}
-            />
-            <Button
-              onClick={handleSendNote}
-              disabled={isSendingNote || !noteContent.trim()}
-              style={{ background: '#70FFE8', color: '#414141' }}
-              className="self-end"
-            >
-              {isSendingNote ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-            </Button>
+          <div className="space-y-2 pt-2 border-t">
+            <div className="px-3 py-2 rounded-md text-xs flex items-start gap-2" style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#92400e' }}>
+              <span className="font-bold flex-shrink-0">📎</span>
+              <span>You can attach documents here for general queries (e.g. supplier invoices requested by JLT). <strong>Reimbursement documents must be submitted via the Reimbursements section below — not here.</strong></span>
+            </div>
+            {messageAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 px-1">
+                {messageAttachments.map((f, i) => (
+                  <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-full text-xs" style={{ background: '#f0fdf4', border: '1px solid #86efac', color: '#166534' }}>
+                    <FileText size={10} />
+                    <span className="max-w-[120px] truncate">{f.name}</span>
+                    <button onClick={() => setMessageAttachments(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 hover:text-red-500">
+                      <X size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                ref={messageFileRef}
+                type="file"
+                className="hidden"
+                multiple
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  setMessageAttachments(prev => [...prev, ...files]);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                size="icon"
+                variant="outline"
+                className="self-end shrink-0 h-9 w-9"
+                onClick={() => messageFileRef.current?.click()}
+                title="Attach a file"
+              >
+                <Paperclip size={14} />
+              </Button>
+              <Textarea
+                placeholder="Type a message to the JLT team..."
+                value={noteContent}
+                onChange={(e) => setNoteContent(e.target.value)}
+                className="min-h-[60px] resize-none text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendNote();
+                  }
+                }}
+              />
+              <Button
+                onClick={handleSendNote}
+                disabled={isSendingNote || (!noteContent.trim() && messageAttachments.length === 0)}
+                style={{ background: '#70FFE8', color: '#414141' }}
+                className="self-end"
+              >
+                {isSendingNote ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

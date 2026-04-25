@@ -1051,3 +1051,15 @@ export const adminOnboardingChecklist = mysqlTable("admin_onboarding_checklist",
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type AdminOnboardingChecklist = typeof adminOnboardingChecklist.$inferSelect;
+
+// ─── Agent CRM Notes ──────────────────────────────────────────────────────────
+// Timestamped contact log / general notes on an agent's CRM profile
+export const agentCrmNotes = mysqlTable("agent_crm_notes", {
+  id: int("id").autoincrement().primaryKey(),
+  agentUserId: int("agentUserId").notNull(),                        // FK → users.id (the agent being noted)
+  authorId: int("authorId").notNull(),                              // FK → users.id (the admin who wrote the note)
+  authorName: varchar("authorName", { length: 128 }),               // Denormalised for display
+  content: text("content").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AgentCrmNote = typeof agentCrmNotes.$inferSelect;

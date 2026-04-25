@@ -1735,3 +1735,10 @@
 - [x] Admin dashboard: add Late Reimbursements (unactioned), Pending Flight Requests, and New Sign-Ups pills to the quick-stats row
 - [x] Build public Terms & Policies page (/terms) with three tabs: Full Terms, Code of Conduct, Privacy Policy — no login required, compact formatted layout
 - [x] Review JLT Membership Agreement from shared Manus task and update Full Terms on /terms page to align throughout (particularly termination clause allowing agents to continue managing existing bookings)
+
+## Portal Improvements (Apr 25)
+- [x] Reimbursement upload: allow multiple documents at once, add clear guidance that at least 2 docs are required
+- [x] Messages: allow agents to attach documents to shared notes/messages, with a clear warning banner that reimbursement docs must be submitted via the reimbursement form
+- [x] Calendar: allow calendar entries to be edited after creation
+- [x] CRM Agent Profile: add timestamped notes box (contact log / general notes), showing author name and timestamp
+- [x] CRM Supplier Logins: add Etihad Holidays and Gold Medal as supplier options

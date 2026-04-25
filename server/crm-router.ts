@@ -2227,4 +2227,38 @@ export const crmRouter = router({
       return rows.length;
     }),
   }),
+
+  // ─── Agent CRM Notes ───────────────────────────────────────────────────────
+  agentNotes: router({
+    list: adminProcedure
+      .input(z.object({ agentUserId: z.number() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) return [];
+        const { agentCrmNotes } = await import("../drizzle/schema");
+        const { eq, desc } = await import("drizzle-orm");
+        return db
+          .select()
+          .from(agentCrmNotes)
+          .where(eq(agentCrmNotes.agentUserId, input.agentUserId))
+          .orderBy(desc(agentCrmNotes.createdAt));
+      }),
+
+    add: adminProcedure
+      .input(z.object({ agentUserId: z.number(), content: z.string().min(1) }))
+      .mutation(async ({ input, ctx }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const { agentCrmNotes } = await import("../drizzle/schema");
+        await db.insert(agentCrmNotes).values({
+          agentUserId: input.agentUserId,
+          authorId: ctx.user.id,
+          authorName: ctx.user.name ?? "Admin",
+          content: input.content,
+        });
+        return { ok: true };
+      }),
+  }),
 });
