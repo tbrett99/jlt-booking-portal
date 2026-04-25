@@ -174,7 +174,16 @@ export default function AdminFlightsPipeline() {
                 >
                   {badge.label}
                 </span>
-                <Badge variant="outline" className="text-xs">
+                <Badge
+                  variant="outline"
+                  className={`text-xs font-semibold ${
+                    r.requestType === "cancellation"
+                      ? "border-orange-400 bg-orange-50 text-orange-700"
+                      : r.requestType === "both"
+                      ? "border-purple-400 bg-purple-50 text-purple-700"
+                      : ""
+                  }`}
+                >
                   {TYPE_LABEL[r.requestType] ?? r.requestType}
                 </Badge>
                 <Badge variant="outline" className="text-xs">

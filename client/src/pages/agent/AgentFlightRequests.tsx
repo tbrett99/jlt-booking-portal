@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Plane, Plus, Loader2 } from "lucide-react";
 import { format } from "date-fns";
@@ -141,7 +142,19 @@ export default function AgentFlightRequests() {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold text-sm">
-                      {typeLabel(r.requestType)} — {r.supplier}
+                      <Badge
+                        variant="outline"
+                        className={`text-xs font-semibold mr-1 ${
+                          r.requestType === "cancellation"
+                            ? "border-orange-400 bg-orange-50 text-orange-700"
+                            : r.requestType === "both"
+                            ? "border-purple-400 bg-purple-50 text-purple-700"
+                            : ""
+                        }`}
+                      >
+                        {typeLabel(r.requestType)}
+                      </Badge>
+                      — {r.supplier}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {r.clientName}

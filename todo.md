@@ -1754,3 +1754,6 @@
 ## Reimbursement Auto-Scheduling Removal (Apr 25)
 - [x] Remove all automatic reimbursement scheduling — only admins should be able to mark as scheduled
 - [x] No backdate required — existing data left as-is, auto-scheduling removed going forward only
+
+## Flight Request UI (Apr 25)
+- [x] Highlight cancellation requests in a distinct colour to make them more obvious vs ticketing requests
