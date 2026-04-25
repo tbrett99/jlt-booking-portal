@@ -2214,5 +2214,17 @@ export const crmRouter = router({
         };
       });
     }),
+    newSignUpsCount: adminProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return 0;
+      const { users } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const rows = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.portalStatus, "onboarding"));
+      return rows.length;
+    }),
   }),
 });

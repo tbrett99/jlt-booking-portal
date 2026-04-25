@@ -180,6 +180,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const { data: refunds = [] } = trpc.refunds.all.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
   const { data: outstandingReimbs = 0 } = trpc.reimbursements.outstandingCount.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
   const { data: commissionDueList = [] } = trpc.commissionDue.list.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
+  const { data: lateUnactionedCount = 0 } = trpc.reimbursements.lateUnactionedCount.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
+  const { data: pendingFlightCount = 0 } = trpc.flightRequests.pendingCount.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
+  const { data: newSignUpsCount = 0 } = trpc.crm.agentCrm.newSignUpsCount.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
 
   const STAGES_BEFORE_PTS = new Set(["New Booking", "Not on Topdog", "Query", "Reimb Docs Missing", "Urgent/Reimb", "T/O Package", "DP", "Holding Accounts"]);
   const filesToAddToPts = (bookings as any[]).filter((b) => STAGES_BEFORE_PTS.has(b.currentStage)).length;
@@ -193,6 +196,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     { label: "New Refunds", value: newRefunds, href: "/refunds/pipeline", color: "#9d174d", bg: "#fce7f3" },
     { label: "Outstanding Reimb.", value: outstandingReimbs as number, href: "/admin/reimbursements", color: "#1e3a5f", bg: "#dbeafe" },
     { label: "Commission Due", value: commissionDueCount, href: "/commission-due", color: "#065f46", bg: "#d1fae5" },
+    { label: "Late Reimb.", value: lateUnactionedCount as number, href: "/admin/reimbursements", color: "#7c2d12", bg: "#fee2e2" },
+    { label: "Pending Flights", value: pendingFlightCount as number, href: "/flights", color: "#1e40af", bg: "#dbeafe" },
+    { label: "New Sign-Ups", value: newSignUpsCount as number, href: "/crm/memberships", color: "#5b21b6", bg: "#ede9fe" },
   ] : [];
 
   // ── Agent nav ─────────────────────────────────────────────────────────────

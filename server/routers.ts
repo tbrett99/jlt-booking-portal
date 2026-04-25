@@ -2753,6 +2753,26 @@ export const appRouter = router({
       return getOutstandingReimbursementsCount();
     }),
 
+    // Admin: count of late reimbursements that are unactioned (isLate=true, not scheduled/paid)
+    lateUnactionedCount: adminProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return 0;
+      const { reimbursementItems } = await import("../drizzle/schema");
+      const { and, eq, ne } = await import("drizzle-orm");
+      const rows = await db
+        .select({ id: reimbursementItems.id })
+        .from(reimbursementItems)
+        .where(
+          and(
+            eq(reimbursementItems.isLate, true),
+            ne(reimbursementItems.status, "scheduled"),
+            ne(reimbursementItems.status, "paid")
+          )
+        );
+      return rows.length;
+    }),
+
     // Admin: delete a reimbursement item and all its associated docs
     deleteItem: adminProcedure
       .input(z.object({ id: z.number() }))
