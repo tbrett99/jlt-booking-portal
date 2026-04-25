@@ -1745,3 +1745,8 @@
 - [x] Calendar: allow calendar entries to be edited after creation
 - [x] CRM Agent Profile: add timestamped notes box (contact log / general notes), showing author name and timestamp
 - [x] CRM Supplier Logins: add Etihad Holidays and Gold Medal as supplier options
+
+## Query Messages in Booking Messages Tab (Apr 25)
+- [x] Surface query messages from booking pipeline stage moves (Query stage) in the booking Messages tab
+- [x] Surface query messages from flight request queries in the booking Messages tab
+- [x] Surface query messages from refund queries in the booking Messages tab

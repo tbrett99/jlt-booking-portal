@@ -4,7 +4,7 @@ import { eq, desc, asc, count } from "drizzle-orm";
 import { router, protectedProcedure, adminProcedure } from "./_core/trpc";
 import { getDb } from "./db";
 import { flightRequests, bookings, users } from "../drizzle/schema";
-import { createInAppNotification } from "./db";
+import { createInAppNotification, createNote } from "./db";
 import { sendNotificationEmail } from "./email";
 
 export const flightRequestsRouter = router({
@@ -179,7 +179,7 @@ export const flightRequestsRouter = router({
         queryMessage: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const [req] = await db
@@ -261,6 +261,16 @@ export const flightRequestsRouter = router({
             bookingId: req.bookingId,
           });
         }
+      }
+
+      // If this is a query, write the message as a shared note on the booking (visible in Messages tab)
+      if (input.status === "query" && input.queryMessage?.trim() && req.bookingId) {
+        await createNote({
+          bookingId: req.bookingId,
+          authorId: ctx.user.id,
+          content: `[Flight Query] ${input.queryMessage.trim()}`,
+          isInternal: false,
+        });
       }
 
       const [updated] = await db

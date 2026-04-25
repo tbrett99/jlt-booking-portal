@@ -1899,12 +1899,12 @@ export const appRouter = router({
                   },
                 });
               }
-              // Add the query message as an internal note on the booking
+              // Add the query message as a shared note on the booking (visible to agent in Messages tab)
               await createNote({
                 bookingId: booking.id,
                 authorId: ctx.user.id,
-                content: `[Refund Query to Agent] ${queryMessage}`,
-                isInternal: true,
+                content: `[Refund Query] ${queryMessage}`,
+                isInternal: false,
               });
             } else {
               const stageMessages: Record<string, string> = {
