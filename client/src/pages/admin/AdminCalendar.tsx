@@ -662,24 +662,18 @@ function MonthView({ currentDate, eventsOnDay, onDayClick, onEventClick, selecte
                 {dayEvents.slice(0, 3).map((ev, i) => {
                   const colors = TYPE_COLORS[ev.type];
                   return (
-                    <Popover key={`${ev.id}-${i}`} open={selectedEvent?.id === ev.id && isSameDay(selectedEvent.occurrenceStart, ev.occurrenceStart)} onOpenChange={(o) => !o && onCloseDetail()}>
-                      <PopoverTrigger asChild>
-                        <div
-                          className={`text-xs px-1 rounded truncate cursor-pointer ${colors.bg} ${colors.text} font-medium flex items-center gap-0.5`}
-                          onClick={e => { e.stopPropagation(); onEventClick(ev); }}
-                        >
-                          {ev.isRecurring && <RefreshCw size={9} className="shrink-0 opacity-70" />}
-                          {ev.dueDate && ev.type === "task" && <Clock size={9} className="shrink-0 opacity-70" />}
-                          <span className="truncate">
-                            {ev.assigneeName && ev.type === "holiday" ? `${ev.assigneeName.split(" ")[0]}: ` : ""}
-                            {ev.title}
-                          </span>
-                        </div>
-                      </PopoverTrigger>
-                      <PopoverContent className="p-0 w-auto" side="right">
-                        <EventDetail event={ev} onEdit={() => onEditEvent(ev)} onDelete={() => onDeleteEvent(ev)} onClose={onCloseDetail} />
-                      </PopoverContent>
-                    </Popover>
+                    <div
+                      key={`${ev.id}-${i}`}
+                      className={`text-xs px-1 rounded truncate cursor-pointer ${colors.bg} ${colors.text} font-medium flex items-center gap-0.5`}
+                      onClick={e => { e.stopPropagation(); onEditEvent(ev); }}
+                    >
+                      {ev.isRecurring && <RefreshCw size={9} className="shrink-0 opacity-70" />}
+                      {ev.dueDate && ev.type === "task" && <Clock size={9} className="shrink-0 opacity-70" />}
+                      <span className="truncate">
+                        {ev.assigneeName && ev.type === "holiday" ? `${ev.assigneeName.split(" ")[0]}: ` : ""}
+                        {ev.title}
+                      </span>
+                    </div>
                   );
                 })}
                 {dayEvents.length > 3 && (
@@ -733,24 +727,18 @@ function WeekView({ currentDate, eventsOnDay, onDayClick, onEventClick, selected
               {dayEvents.map((ev, i) => {
                 const colors = TYPE_COLORS[ev.type];
                 return (
-                  <Popover key={`${ev.id}-${i}`} open={selectedEvent?.id === ev.id && isSameDay(selectedEvent.occurrenceStart, ev.occurrenceStart)} onOpenChange={o => !o && onCloseDetail()}>
-                    <PopoverTrigger asChild>
-                      <div
-                        className={`text-xs px-2 py-1 rounded-md cursor-pointer ${colors.bg} ${colors.text} font-medium flex items-center gap-1`}
-                        onClick={e => { e.stopPropagation(); onEventClick(ev); }}
-                      >
-                        {ev.isRecurring && <RefreshCw size={9} className="shrink-0 opacity-70" />}
-                        {ev.dueDate && ev.type === "task" && <Clock size={9} className="shrink-0 opacity-70" />}
-                        <span className="truncate">
-                          {ev.assigneeName && ev.type === "holiday" ? `${ev.assigneeName.split(" ")[0]}: ` : ""}
-                          {ev.title}
-                        </span>
-                      </div>
-                    </PopoverTrigger>
-                    <PopoverContent className="p-0 w-auto" side="bottom">
-                      <EventDetail event={ev} onEdit={() => onEditEvent(ev)} onDelete={() => onDeleteEvent(ev)} onClose={onCloseDetail} />
-                    </PopoverContent>
-                  </Popover>
+                  <div
+                    key={`${ev.id}-${i}`}
+                    className={`text-xs px-2 py-1 rounded-md cursor-pointer ${colors.bg} ${colors.text} font-medium flex items-center gap-1`}
+                    onClick={e => { e.stopPropagation(); onEditEvent(ev); }}
+                  >
+                    {ev.isRecurring && <RefreshCw size={9} className="shrink-0 opacity-70" />}
+                    {ev.dueDate && ev.type === "task" && <Clock size={9} className="shrink-0 opacity-70" />}
+                    <span className="truncate">
+                      {ev.assigneeName && ev.type === "holiday" ? `${ev.assigneeName.split(" ")[0]}: ` : ""}
+                      {ev.title}
+                    </span>
+                  </div>
                 );
               })}
             </div>
@@ -806,38 +794,32 @@ function AgendaView({ from, to, events, onEventClick, selectedEvent, onEditEvent
               {dayEvents.map((ev, i) => {
                 const colors = TYPE_COLORS[ev.type];
                 return (
-                  <Popover key={`${ev.id}-${i}`} open={selectedEvent?.id === ev.id && isSameDay(selectedEvent.occurrenceStart, ev.occurrenceStart)} onOpenChange={o => !o && onCloseDetail()}>
-                    <PopoverTrigger asChild>
-                      <div
-                        className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer hover:opacity-90 ${colors.bg}`}
-                        onClick={() => onEventClick(ev)}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-semibold truncate flex items-center gap-1 ${colors.text}`}>
-                            {ev.isRecurring && <RefreshCw size={11} className="shrink-0 opacity-70" />}
-                            {ev.title}
-                          </p>
-                          {ev.assigneeName && (
-                            <p className={`text-xs flex items-center gap-1 ${colors.text} opacity-80`}>
-                              <User size={10} /> {ev.assigneeName}
-                            </p>
-                          )}
-                          {ev.dueDate && ev.type === "task" && (
-                            <p className={`text-xs flex items-center gap-1 text-amber-700 font-medium`}>
-                              <Clock size={10} /> Due: {format(new Date(ev.dueDate), "d MMM yyyy")}
-                            </p>
-                          )}
-                          {ev.description && (
-                            <p className={`text-xs mt-0.5 ${colors.text} opacity-70 truncate`}>{ev.description}</p>
-                          )}
-                        </div>
-                        <Badge className={`shrink-0 text-xs ${colors.badge}`}>{TYPE_LABELS[ev.type]}</Badge>
-                      </div>
-                    </PopoverTrigger>
-                    <PopoverContent className="p-0 w-auto" side="right">
-                      <EventDetail event={ev} onEdit={() => onEditEvent(ev)} onDelete={() => onDeleteEvent(ev)} onClose={onCloseDetail} />
-                    </PopoverContent>
-                  </Popover>
+                  <div
+                    key={`${ev.id}-${i}`}
+                    className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer hover:opacity-90 ${colors.bg}`}
+                    onClick={() => onEditEvent(ev)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-semibold truncate flex items-center gap-1 ${colors.text}`}>
+                        {ev.isRecurring && <RefreshCw size={11} className="shrink-0 opacity-70" />}
+                        {ev.title}
+                      </p>
+                      {ev.assigneeName && (
+                        <p className={`text-xs flex items-center gap-1 ${colors.text} opacity-80`}>
+                          <User size={10} /> {ev.assigneeName}
+                        </p>
+                      )}
+                      {ev.dueDate && ev.type === "task" && (
+                        <p className={`text-xs flex items-center gap-1 text-amber-700 font-medium`}>
+                          <Clock size={10} /> Due: {format(new Date(ev.dueDate), "d MMM yyyy")}
+                        </p>
+                      )}
+                      {ev.description && (
+                        <p className={`text-xs mt-0.5 ${colors.text} opacity-70 truncate`}>{ev.description}</p>
+                      )}
+                    </div>
+                    <Badge className={`shrink-0 text-xs ${colors.badge}`}>{TYPE_LABELS[ev.type]}</Badge>
+                  </div>
                 );
               })}
             </div>
