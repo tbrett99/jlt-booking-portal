@@ -525,8 +525,8 @@ export default function AgentBookingDetail() {
             <p className="font-semibold text-sm" style={{ color: '#92400e' }}>Documents needed for your reimbursement{itemsMissingDocs.length > 1 ? 's' : ''}</p>
             <p className="text-xs mt-0.5" style={{ color: '#92400e', opacity: 0.85 }}>
               {itemsMissingDocs.length === 1
-                ? `Please upload a supporting document for your ${itemsMissingDocs[0].supplierName} reimbursement (£${Number(itemsMissingDocs[0].amount).toFixed(2)}) in the Reimbursements section below.`
-                : `${itemsMissingDocs.length} reimbursement items are missing documents. Please upload supporting documents in the Reimbursements section below.`}
+                ? `Please upload a supporting document for your ${itemsMissingDocs[0].supplierName} reimbursement (£${Number(itemsMissingDocs[0].amount).toFixed(2)}) in the Reimbursements section above.`
+                : `${itemsMissingDocs.length} reimbursement items are missing documents. Please upload supporting documents in the Reimbursements section above.`}
             </p>
           </div>
         </div>
@@ -844,7 +844,7 @@ export default function AgentBookingDetail() {
                 <AlertCircle size={18} style={{ color: '#991b1b' }} className="flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-bold" style={{ color: '#991b1b' }}>Documents required</p>
-                  <p className="text-xs mt-0.5" style={{ color: '#7f1d1d' }}>Please upload documents for your reimbursements below. The JLT team is waiting.</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#7f1d1d' }}>Please upload documents for your reimbursements above. The JLT team is waiting.</p>
                 </div>
               </div>
             )}
@@ -1262,7 +1262,7 @@ export default function AgentBookingDetail() {
           <div className="space-y-2 pt-2 border-t">
             <div className="px-3 py-2 rounded-md text-xs flex items-start gap-2" style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#92400e' }}>
               <span className="font-bold flex-shrink-0">📎</span>
-              <span>You can attach documents here for general queries (e.g. supplier invoices requested by JLT). <strong>Reimbursement documents must be submitted via the Reimbursements section below — not here.</strong></span>
+              <span>You can attach documents here for general queries (e.g. supplier invoices requested by JLT). <strong>Reimbursement documents must be submitted via the Reimbursements section above — not here.</strong></span>
             </div>
             {messageAttachments.length > 0 && (
               <div className="flex flex-wrap gap-1.5 px-1">
