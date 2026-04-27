@@ -1088,6 +1088,33 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // Agent: set Topdog ref (only allowed once — when topdogRef is currently blank)
+    setTopdogRef: protectedProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        topdogRef: z.string().min(1, "TD reference cannot be empty").max(100),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
+        // Agents can only update their own bookings
+        if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: 'FORBIDDEN' });
+        }
+        // Only allow setting if currently blank — once set, must go via admin amendment
+        if ((booking as any).topdogRef) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'TD reference is already set. Please contact an admin to amend it.' });
+        }
+        await updateBookingAdminFields(input.bookingId, { topdogRef: input.topdogRef });
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Agent set Topdog reference to "${input.topdogRef}".`,
+          isInternal: false,
+        });
+        return { success: true };
+      }),
+
     // Bulk import bookings from CSV (admin only)
     bulkImport: adminProcedure
       .input(

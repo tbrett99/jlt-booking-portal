@@ -1757,3 +1757,7 @@
 
 ## Flight Request UI (Apr 25)
 - [x] Highlight cancellation requests in a distinct colour to make them more obvious vs ticketing requests
+
+## Agent TD Reference Edit (Apr 25)
+- [x] Allow agents to add a TD reference to their booking if it is currently blank
+- [x] Once set, lock the TD reference field — agents cannot change it (must contact admin to amend)

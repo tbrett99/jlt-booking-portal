@@ -272,6 +272,10 @@ export default function AgentBookingDetail() {
   const [ptsRefInput, setPtsRefInput] = useState("");
   const [paymentDateInput, setPaymentDateInput] = useState("");
 
+  // TD reference (one-time set by agent)
+  const [editingTdRef, setEditingTdRef] = useState(false);
+  const [tdRefInput, setTdRefInput] = useState("");
+
   const utils = trpc.useUtils();
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
   const { data: notes = [], refetch: refetchNotes } = trpc.notes.list.useQuery({ bookingId });
@@ -289,6 +293,21 @@ export default function AgentBookingDetail() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const setTopdogRef = trpc.bookings.setTopdogRef.useMutation({
+    onSuccess: () => {
+      utils.bookings.byId.invalidate({ id: bookingId });
+      setEditingTdRef(false);
+      setTdRefInput("");
+      toast.success("Topdog reference saved");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleSaveTdRef = () => {
+    if (!tdRefInput.trim()) { toast.error("Please enter a TD reference"); return; }
+    setTopdogRef.mutate({ bookingId, topdogRef: tdRefInput.trim() });
+  };
 
   const handleSavePtsDetails = () => {
     updatePtsDetails.mutate({
@@ -590,10 +609,42 @@ export default function AgentBookingDetail() {
         </div>
 
         <div className="rounded-xl p-3 border" style={{ background: '#f9fafb' }}>
-          <p className="text-xs text-muted-foreground mb-1">Topdog Ref</p>
-          {booking.topdogRef
-            ? <CopyableRef value={booking.topdogRef} label="Topdog ref" />
-            : <span className="italic text-muted-foreground text-sm">Not set</span>}
+          <p className="text-xs text-muted-foreground mb-1 font-semibold flex items-center justify-between">
+            <span>Topdog Ref</span>
+            {!booking.topdogRef && !editingTdRef && (
+              <button
+                onClick={() => { setTdRefInput(""); setEditingTdRef(true); }}
+                className="text-[10px] underline opacity-60 hover:opacity-100"
+              >
+                Add
+              </button>
+            )}
+          </p>
+          {editingTdRef ? (
+            <div className="space-y-2 mt-1">
+              <Input
+                value={tdRefInput}
+                onChange={(e) => setTdRefInput(e.target.value)}
+                placeholder="e.g. TD123456"
+                className="h-7 text-xs"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTdRef(); if (e.key === 'Escape') setEditingTdRef(false); }}
+                autoFocus
+              />
+              <div className="flex gap-1">
+                <Button size="sm" className="h-6 text-xs px-2" onClick={handleSaveTdRef} disabled={setTopdogRef.isPending}>
+                  {setTopdogRef.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                </Button>
+                <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setEditingTdRef(false)}>Cancel</Button>
+              </div>
+            </div>
+          ) : booking.topdogRef ? (
+            <div className="space-y-0.5">
+              <CopyableRef value={booking.topdogRef} label="Topdog ref" />
+              <p className="text-[10px] text-muted-foreground">To amend, please contact an admin.</p>
+            </div>
+          ) : (
+            <span className="italic text-muted-foreground text-sm">Not set</span>
+          )}
         </div>
 
         <div className={`rounded-xl p-3 border col-span-2 sm:col-span-1 ${booking.ptsRef ? 'border-[#70FFE8]' : booking.currentStage === 'Creating own PTS file' ? 'border-amber-300' : ''}`} style={{ background: booking.ptsRef ? '#ecfdf5' : booking.currentStage === 'Creating own PTS file' ? '#fffbeb' : '#f9fafb' }}>
