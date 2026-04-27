@@ -2782,6 +2782,113 @@ export const appRouter = router({
     }),
 
     // Agent: get bookings that have at least one reimbursement item with no docs
+    // Agent: comprehensive outstanding items summary for the dashboard
+    agentOutstandingSummary: protectedProcedure.query(async ({ ctx }) => {
+      const agentId = ctx.user.id;
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return { reimbursements: [], amendments: [], refunds: [], flightRequests: [] };
+
+      const { reimbursementItems, amendments, refunds, flightRequests, bookings } = await import("../drizzle/schema");
+      const { and, eq, ne, inArray } = await import("drizzle-orm");
+
+      // 1. Reimbursement items that are pending or scheduled (not yet paid) for this agent's bookings
+      const agentBookingRows = await db
+        .select({ id: bookings.id, clientName: bookings.clientName })
+        .from(bookings)
+        .where(eq(bookings.agentId, agentId));
+      const agentBookingIds = agentBookingRows.map((b) => b.id);
+      const bookingNameMap = new Map(agentBookingRows.map((b) => [b.id, b.clientName]));
+
+      const reimbRows = agentBookingIds.length > 0
+        ? await db
+            .select()
+            .from(reimbursementItems)
+            .where(and(
+              inArray(reimbursementItems.bookingId, agentBookingIds),
+              ne(reimbursementItems.status, "paid")
+            ))
+        : [];
+
+      // 2. Pending amendments for this agent's bookings
+      const amendmentRows = agentBookingIds.length > 0
+        ? await db
+            .select()
+            .from(amendments)
+            .where(and(
+              inArray(amendments.bookingId, agentBookingIds),
+              ne(amendments.pipelineStage, "Actioned")
+            ))
+        : [];
+
+      // 3. Active refunds (not yet processed) for this agent's bookings
+      const refundRows = agentBookingIds.length > 0
+        ? await db
+            .select()
+            .from(refunds)
+            .where(and(
+              inArray(refunds.bookingId, agentBookingIds),
+              ne(refunds.pipelineStage, "Refund Processed")
+            ))
+        : [];
+
+      // 4. Active flight requests (not ticketed/cancelled) for this agent
+      const flightRows = await db
+        .select({
+          id: flightRequests.id,
+          bookingId: flightRequests.bookingId,
+          requestType: flightRequests.requestType,
+          supplier: flightRequests.supplier,
+          status: flightRequests.status,
+          queryMessage: flightRequests.queryMessage,
+          ticketingDeadline: flightRequests.ticketingDeadline,
+          createdAt: flightRequests.createdAt,
+        })
+        .from(flightRequests)
+        .where(and(
+          eq(flightRequests.agentId, agentId),
+          ne(flightRequests.status, "ticketed"),
+          ne(flightRequests.status, "cancelled")
+        ));
+
+      return {
+        reimbursements: reimbRows.map((r) => ({
+          id: r.id,
+          bookingId: r.bookingId,
+          clientName: bookingNameMap.get(r.bookingId) ?? null,
+          supplierName: r.supplierName,
+          amount: r.amount,
+          status: r.status,
+          isLate: r.isLate,
+        })),
+        amendments: amendmentRows.map((a) => ({
+          id: a.id,
+          bookingId: a.bookingId,
+          clientName: bookingNameMap.get(a.bookingId) ?? null,
+          pipelineStage: a.pipelineStage,
+          createdAt: a.createdAt,
+        })),
+        refunds: refundRows.map((r) => ({
+          id: r.id,
+          bookingId: r.bookingId,
+          clientName: bookingNameMap.get(r.bookingId) ?? null,
+          pipelineStage: r.pipelineStage,
+          createdAt: r.createdAt,
+        })),
+        flightRequests: flightRows.map((r) => ({
+          id: r.id,
+          bookingId: r.bookingId,
+          clientName: bookingNameMap.get(r.bookingId) ?? null,
+          requestType: r.requestType,
+          supplier: r.supplier,
+          status: r.status,
+          queryMessage: r.queryMessage,
+          ticketingDeadline: r.ticketingDeadline,
+          createdAt: r.createdAt,
+        })),
+      };
+    }),
+
     myBookingsWithMissingDocs: protectedProcedure.query(async ({ ctx }) => {
       const { getReimbItemsWithMissingDocsByAgent } = await import("./db");
       return getReimbItemsWithMissingDocsByAgent(ctx.user.id);

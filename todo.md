@@ -1761,3 +1761,10 @@
 ## Agent TD Reference Edit (Apr 25)
 - [x] Allow agents to add a TD reference to their booking if it is currently blank
 - [x] Once set, lock the TD reference field — agents cannot change it (must contact admin to amend)
+
+## Agent Contract (Apr 27)
+- [x] Ensure the latest uploaded contract is the one new agents sign during onboarding (not the original) — confirmed working, latest contract (id 30001) is active in DB and served correctly
+
+## Agent Outstanding Actions Panel (Apr 27)
+- [x] Add "Outstanding Actions" summary panel to agent dashboard showing pending reimbursements, flight requests, amendments, refunds, and queries
+- [x] Each item should be a clickable link taking the agent directly to the relevant booking or section

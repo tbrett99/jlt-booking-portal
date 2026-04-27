@@ -10,7 +10,7 @@ import {
   BookOpen, XCircle, Bell, Plus, TrendingUp, Search,
   Calendar, ChevronRight, AlertCircle, CheckCircle2, Clock,
   Sparkles, Filter, Plane, Zap, RefreshCw, FileText,
-  ArrowRight, Banknote, Activity
+  ArrowRight, Banknote, Activity, ReceiptText, Edit3, RotateCcw, Wallet
 } from "lucide-react";
 import { format, differenceInDays, isPast, isWithinInterval, addDays } from "date-fns";
 
@@ -63,6 +63,7 @@ export default function AgentDashboard() {
   const { data: missingDocItems = [] } = trpc.reimbursements.myBookingsWithMissingDocs.useQuery();
   const { data: flightRequests = [] } = trpc.flightRequests.myRequests.useQuery();
   const { data: earnings } = trpc.commissionClaims.myEarningsSummary.useQuery();
+  const { data: outstandingSummary } = trpc.reimbursements.agentOutstandingSummary.useQuery();
 
   const now = new Date();
   const next30Days = addDays(now, 30);
@@ -459,79 +460,14 @@ export default function AgentDashboard() {
         {/* ── RIGHT COLUMN (1/3 width) ─────────────────────────────────────── */}
         <div className="space-y-5">
 
-          {/* Actions Required panel */}
-          {totalActionsRequired > 0 ? (
-            <Card className="border-2" style={{ borderColor: '#f97316' }}>
-              <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-sm font-bold flex items-center gap-2" style={{ color: '#92400e' }}>
-                  <AlertCircle size={15} style={{ color: '#f97316' }} />
-                  Actions Required
-                  <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: '#f97316', color: 'white' }}>
-                    {totalActionsRequired}
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 space-y-2">
-                {needsAttention.map((b) => (
-                  <Link key={b.id} href={`/bookings/${b.id}`}>
-                    <div className="flex items-center justify-between rounded-lg bg-orange-50 border border-orange-200 px-3 py-2 hover:shadow-sm transition-shadow cursor-pointer">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold truncate" style={{ color: '#92400e' }}>{b.clientName}</p>
-                        <p className="text-[10px] text-orange-600 mt-0.5">
-                          {b.currentStage === "Query" ? "Query — reply needed" : "Docs missing"}
-                        </p>
-                      </div>
-                      <ChevronRight size={13} style={{ color: '#f97316' }} className="flex-shrink-0" />
-                    </div>
-                  </Link>
-                ))}
-                {requiresPtsAction.map((b) => (
-                  <Link key={b.id} href={`/bookings/${b.id}`}>
-                    <div className="flex items-center justify-between rounded-lg bg-orange-50 border border-orange-200 px-3 py-2 hover:shadow-sm transition-shadow cursor-pointer">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold truncate" style={{ color: '#92400e' }}>{b.clientName}</p>
-                        <div className="flex gap-2 text-[10px] text-orange-600 mt-0.5">
-                          {!b.ptsRef && <span>PTS ref missing</span>}
-                          {!b.finalSupplierPaymentDate && <span>Payment date missing</span>}
-                        </div>
-                      </div>
-                      <ChevronRight size={13} style={{ color: '#f97316' }} className="flex-shrink-0" />
-                    </div>
-                  </Link>
-                ))}
-                {missingDocItems.map((item: any) => (
-                  <Link key={item.id} href={`/bookings/${item.bookingId}`}>
-                    <div className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 hover:shadow-sm transition-shadow cursor-pointer">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold truncate" style={{ color: '#92400e' }}>{item.clientName ?? `Booking #${item.bookingId}`}</p>
-                        <p className="text-[10px] text-amber-600 mt-0.5">{item.supplierName} — upload doc</p>
-                      </div>
-                      <ChevronRight size={13} style={{ color: '#d97706' }} className="flex-shrink-0" />
-                    </div>
-                  </Link>
-                ))}
-                {flightQueries.map((r) => (
-                  <Link key={r.id} href={`/bookings/${r.bookingId}`}>
-                    <div className="flex items-center justify-between rounded-lg bg-red-50 border border-red-200 px-3 py-2 hover:shadow-sm transition-shadow cursor-pointer">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold truncate" style={{ color: '#991b1b' }}>{r.clientName}</p>
-                        <p className="text-[10px] text-red-600 mt-0.5">Flight query — {r.queryMessage?.slice(0, 40)}</p>
-                      </div>
-                      <ChevronRight size={13} style={{ color: '#ef4444' }} className="flex-shrink-0" />
-                    </div>
-                  </Link>
-                ))}
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="rounded-xl border p-4 flex items-center gap-3" style={{ background: '#ecfdf5', borderColor: '#6ee7b7' }}>
-              <CheckCircle2 size={18} style={{ color: '#059669' }} className="flex-shrink-0" />
-              <div>
-                <p className="font-semibold text-sm" style={{ color: '#065f46' }}>All clear!</p>
-                <p className="text-xs mt-0.5" style={{ color: '#065f46', opacity: 0.75 }}>No actions required right now.</p>
-              </div>
-            </div>
-          )}
+          {/* ── Outstanding Items panel ─────────────────────────────────── */}
+          <OutstandingItemsPanel
+            needsAttention={needsAttention}
+            requiresPtsAction={requiresPtsAction}
+            missingDocItems={missingDocItems}
+            flightQueries={flightQueries}
+            outstandingSummary={outstandingSummary}
+          />
 
           {/* Commission Ready banner */}
           {commissionClaimable.length > 0 && (
@@ -768,5 +704,218 @@ export default function AgentDashboard() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Outstanding Items Panel ──────────────────────────────────────────────────
+type OutstandingSummary = {
+  reimbursements: { id: number; bookingId: number; clientName: string | null; supplierName: string; amount: string | null; status: string; isLate: boolean }[];
+  amendments: { id: number; bookingId: number; clientName: string | null; pipelineStage: string; createdAt: Date }[];
+  refunds: { id: number; bookingId: number; clientName: string | null; pipelineStage: string; createdAt: Date }[];
+  flightRequests: { id: number; bookingId: number; clientName: string | null; requestType: string; supplier: string; status: string; queryMessage: string | null; ticketingDeadline: Date | null; createdAt: Date }[];
+};
+
+function OutstandingItemsPanel({
+  needsAttention,
+  requiresPtsAction,
+  missingDocItems,
+  flightQueries,
+  outstandingSummary,
+}: {
+  needsAttention: any[];
+  requiresPtsAction: any[];
+  missingDocItems: any[];
+  flightQueries: any[];
+  outstandingSummary?: OutstandingSummary;
+}) {
+  const [expanded, setExpanded] = useState<string | null>("urgent");
+
+  const urgentItems = [
+    ...needsAttention.map((b) => ({ type: "booking_query" as const, bookingId: b.id, clientName: b.clientName, label: b.currentStage === "Query" ? "Query — reply needed" : "Docs missing", urgent: true })),
+    ...requiresPtsAction.map((b) => ({ type: "pts_action" as const, bookingId: b.id, clientName: b.clientName, label: [!b.ptsRef && "PTS ref missing", !b.finalSupplierPaymentDate && "Payment date missing"].filter(Boolean).join(" · "), urgent: true })),
+    ...missingDocItems.map((item: any) => ({ type: "missing_doc" as const, bookingId: item.bookingId, clientName: item.clientName ?? `Booking #${item.bookingId}`, label: `${item.supplierName} — upload doc`, urgent: true })),
+    ...(outstandingSummary?.flightRequests.filter((r) => r.status === "query") ?? []).map((r) => ({ type: "flight_query" as const, bookingId: r.bookingId, clientName: r.clientName, label: `Flight query — ${r.queryMessage?.slice(0, 40) ?? ""}`, urgent: true })),
+  ];
+
+  const reimbItems = outstandingSummary?.reimbursements ?? [];
+  const pendingReimb = reimbItems.filter((r) => r.status === "pending");
+  const scheduledReimb = reimbItems.filter((r) => r.status === "scheduled");
+  const amendmentItems = outstandingSummary?.amendments ?? [];
+  const refundItems = outstandingSummary?.refunds ?? [];
+  const pendingFlights = (outstandingSummary?.flightRequests ?? []).filter((r) => r.status !== "query");
+
+  const totalUrgent = urgentItems.length;
+  const totalReimb = reimbItems.length;
+  const totalAmendments = amendmentItems.length;
+  const totalRefunds = refundItems.length;
+  const totalFlights = pendingFlights.length;
+  const grandTotal = totalUrgent + totalReimb + totalAmendments + totalRefunds + totalFlights;
+
+  if (grandTotal === 0) {
+    return (
+      <div className="rounded-xl border p-4 flex items-center gap-3" style={{ background: '#ecfdf5', borderColor: '#6ee7b7' }}>
+        <CheckCircle2 size={18} style={{ color: '#059669' }} className="flex-shrink-0" />
+        <div>
+          <p className="font-semibold text-sm" style={{ color: '#065f46' }}>All clear!</p>
+          <p className="text-xs mt-0.5" style={{ color: '#065f46', opacity: 0.75 }}>No outstanding items right now.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const Section = ({ id, icon, title, count, color, bg, borderColor, children }: {
+    id: string; icon: React.ReactNode; title: string; count: number;
+    color: string; bg: string; borderColor: string; children: React.ReactNode;
+  }) => {
+    if (count === 0) return null;
+    const isOpen = expanded === id;
+    return (
+      <div className="rounded-xl border overflow-hidden" style={{ borderColor }}>
+        <button
+          onClick={() => setExpanded(isOpen ? null : id)}
+          className="w-full flex items-center justify-between px-3 py-2.5 text-left transition-colors hover:opacity-90"
+          style={{ background: bg }}
+        >
+          <div className="flex items-center gap-2">
+            <span style={{ color }}>{icon}</span>
+            <span className="text-xs font-semibold" style={{ color }}>{title}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: color, color: 'white' }}>{count}</span>
+            <ChevronRight size={12} style={{ color, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+          </div>
+        </button>
+        {isOpen && (
+          <div className="divide-y divide-border bg-card">
+            {children}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const Row = ({ href, primary, secondary, badge }: { href: string; primary: string; secondary: string; badge?: React.ReactNode }) => (
+    <Link href={href}>
+      <div className="flex items-center justify-between px-3 py-2 hover:bg-muted/50 transition-colors cursor-pointer">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold truncate text-foreground">{primary}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{secondary}</p>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+          {badge}
+          <ChevronRight size={12} className="text-muted-foreground" />
+        </div>
+      </div>
+    </Link>
+  );
+
+  return (
+    <Card className="border-2" style={{ borderColor: totalUrgent > 0 ? '#f97316' : '#e5e7eb' }}>
+      <CardHeader className="pb-2 pt-3 px-4">
+        <CardTitle className="text-sm font-bold flex items-center gap-2">
+          <Activity size={15} style={{ color: totalUrgent > 0 ? '#f97316' : '#6b7280' }} />
+          <span style={{ color: totalUrgent > 0 ? '#92400e' : '#374151' }}>My Outstanding Items</span>
+          <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: totalUrgent > 0 ? '#f97316' : '#6b7280', color: 'white' }}>
+            {grandTotal}
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="px-4 pb-4 space-y-2">
+
+        {/* Urgent / Action Required */}
+        {totalUrgent > 0 && (
+          <Section id="urgent" icon={<AlertCircle size={13} />} title="Action Required" count={totalUrgent} color="#dc2626" bg="#fef2f2" borderColor="#fca5a5">
+            {urgentItems.map((item, i) => (
+              <Row
+                key={i}
+                href={`/bookings/${item.bookingId}`}
+                primary={item.clientName ?? `Booking #${item.bookingId}`}
+                secondary={item.label}
+                badge={<span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: '#fee2e2', color: '#dc2626' }}>Urgent</span>}
+              />
+            ))}
+          </Section>
+        )}
+
+        {/* Reimbursements */}
+        {totalReimb > 0 && (
+          <Section id="reimb" icon={<Wallet size={13} />} title="Reimbursements" count={totalReimb} color="#d97706" bg="#fffbeb" borderColor="#fcd34d">
+            {pendingReimb.length > 0 && (
+              <div className="px-3 py-1.5 bg-amber-50">
+                <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Pending ({pendingReimb.length})</p>
+              </div>
+            )}
+            {pendingReimb.map((r) => (
+              <Row
+                key={r.id}
+                href={`/bookings/${r.bookingId}`}
+                primary={r.clientName ?? `Booking #${r.bookingId}`}
+                secondary={`${r.supplierName}${r.amount ? ` · £${Number(r.amount).toFixed(2)}` : ''}`}
+                badge={r.isLate ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">Late</span> : undefined}
+              />
+            ))}
+            {scheduledReimb.length > 0 && (
+              <div className="px-3 py-1.5 bg-amber-50">
+                <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Scheduled ({scheduledReimb.length})</p>
+              </div>
+            )}
+            {scheduledReimb.map((r) => (
+              <Row
+                key={r.id}
+                href={`/bookings/${r.bookingId}`}
+                primary={r.clientName ?? `Booking #${r.bookingId}`}
+                secondary={`${r.supplierName}${r.amount ? ` · £${Number(r.amount).toFixed(2)}` : ''} · Scheduled`}
+              />
+            ))}
+          </Section>
+        )}
+
+        {/* Amendments */}
+        {totalAmendments > 0 && (
+          <Section id="amendments" icon={<Edit3 size={13} />} title="Amendments" count={totalAmendments} color="#7c3aed" bg="#f5f3ff" borderColor="#c4b5fd">
+            {amendmentItems.map((a) => (
+              <Row
+                key={a.id}
+                href={`/bookings/${a.bookingId}`}
+                primary={a.clientName ?? `Booking #${a.bookingId}`}
+                secondary={a.pipelineStage}
+                badge={<span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: '#ede9fe', color: '#7c3aed' }}>{a.pipelineStage}</span>}
+              />
+            ))}
+          </Section>
+        )}
+
+        {/* Refunds */}
+        {totalRefunds > 0 && (
+          <Section id="refunds" icon={<RotateCcw size={13} />} title="Refunds" count={totalRefunds} color="#0891b2" bg="#ecfeff" borderColor="#a5f3fc">
+            {refundItems.map((r) => (
+              <Row
+                key={r.id}
+                href={`/bookings/${r.bookingId}`}
+                primary={r.clientName ?? `Booking #${r.bookingId}`}
+                secondary={r.pipelineStage}
+                badge={<span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: '#cffafe', color: '#0891b2' }}>{r.pipelineStage}</span>}
+              />
+            ))}
+          </Section>
+        )}
+
+        {/* Flight Requests */}
+        {totalFlights > 0 && (
+          <Section id="flights" icon={<Plane size={13} />} title="Flight Requests" count={totalFlights} color="#059669" bg="#ecfdf5" borderColor="#6ee7b7">
+            {pendingFlights.map((r) => (
+              <Row
+                key={r.id}
+                href={`/bookings/${r.bookingId}`}
+                primary={r.clientName ?? `Booking #${r.bookingId}`}
+                secondary={`${r.requestType} · ${r.supplier}`}
+                badge={<span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full capitalize" style={{ background: '#d1fae5', color: '#065f46' }}>{r.status}</span>}
+              />
+            ))}
+          </Section>
+        )}
+
+      </CardContent>
+    </Card>
   );
 }
