@@ -1768,3 +1768,6 @@
 ## Agent Outstanding Actions Panel (Apr 27)
 - [x] Add "Outstanding Actions" summary panel to agent dashboard showing pending reimbursements, flight requests, amendments, refunds, and queries
 - [x] Each item should be a clickable link taking the agent directly to the relevant booking or section
+
+## Reimbursement Multi-Doc Guidance (Apr 28)
+- [x] Always show "at least 2 documents required" guidance on reimbursement upload — not just when 0 docs uploaded; make it a prominent amber banner
