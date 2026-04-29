@@ -62,6 +62,20 @@ export async function sendDirectEmail(params: {
   }
 }
 
+// Standard portal reply footer injected into all agent-facing emails
+function portalReplyFooter(bookingId?: number): string {
+  const bookingLink = bookingId
+    ? `https://portal.thejltgroup.co.uk/bookings/${bookingId}`
+    : `https://portal.thejltgroup.co.uk`;
+  return `
+    <div style="margin-top:28px;padding:16px 20px;background:#f0fffe;border-top:3px solid #02E6D2;border-radius:0 0 8px 8px;">
+      <p style="margin:0 0 10px;color:#1a1a2e;font-weight:600;font-size:14px;">&#128274; Please reply in the portal — not by email</p>
+      <p style="margin:0 0 12px;color:#444;font-size:13px;">All communication should be kept inside the JLT Group Booking Portal so nothing gets missed. Click the button below to view your booking and reply.</p>
+      <a href="${bookingLink}" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;">Open in Portal &rarr;</a>
+    </div>
+  `;
+}
+
 export async function sendNotificationEmail(params: {
   triggerKey: string;
   toEmail: string;
@@ -106,12 +120,19 @@ export async function sendNotificationEmail(params: {
       body = body.replace(new RegExp(`{{${key}}}`, "g"), value);
     }
 
+    // Append portal reply footer to all agent-facing notification emails
+    const footer = portalReplyFooter(params.bookingId);
+    // Wrap body in a container if it isn't already, then append footer
+    const wrappedBody = body.includes('<div') 
+      ? body.replace(/<\/div>\s*$/, `${footer}</div>`)
+      : `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">${body}${footer}</div>`;
+
     const t = getTransporter();
     await t.sendMail({
       from: `"JLT Group" <support@thejltgroup.co.uk>`,
       to: `"${params.toName}" <${params.toEmail}>`,
       subject,
-      html: body,
+      html: wrappedBody,
     });
 
     return { success: true };

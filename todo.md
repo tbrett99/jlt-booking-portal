@@ -1786,3 +1786,7 @@
 - [x] Investigate why DD payments are not recorded in payment history (e.g. Peter Stamford)
 - [x] Back-fill missing payment history from GoCardless API (104 records created)
 - [x] Fix webhook handler to record confirmed/paid_out/cancelled payment events going forward
+
+## Refund Query Note Fix (Apr 29)
+- [x] Fix refund query notes being saved as internal — they must be saved as shared (visible to agent) + back-filled 5 existing internal notes to shared
+- [x] Update all agent-facing email notifications to include a "Reply in the portal" button/link, not reply by email

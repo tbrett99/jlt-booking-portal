@@ -2007,8 +2007,7 @@ export const appRouter = router({
             subject: `Action required — Booking #${input.bookingId} (${booking.clientName})`,
             html: `<p>Hi ${agent.name ?? 'there'},</p>
 <p>${input.message.replace(/\n/g, '<br/>')}</p>
-<p>If you have any questions, please contact us at <a href="mailto:memberships@thejltgroup.co.uk">memberships@thejltgroup.co.uk</a>.</p>
-<p>The JLT Group Team</p>`,
+<p style="margin-top:20px;padding:14px 18px;background:#f0fffe;border-top:3px solid #02E6D2;border-radius:6px;"><strong>&#128274; Please reply in the portal — not by email.</strong><br/>All communication should be kept inside the portal so nothing gets missed.<br/><a href="https://portal.thejltgroup.co.uk/bookings/${input.bookingId}" style="display:inline-block;margin-top:10px;background:#02E6D2;color:#1a1a2e;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:700;">Open in Portal &rarr;</a></p>`,
           });
         }
         return { success: true };
