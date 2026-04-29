@@ -1618,10 +1618,22 @@ export async function getReimbursementsByBooking(bookingId: number) {
     .from(reimbursementItemDocs)
     .where(eq(reimbursementItemDocs.bookingId, bookingId))
     .orderBy(reimbursementItemDocs.createdAt);
+  // Generate presigned download URLs for each doc
+  const { storageGet } = await import("./storage");
+  const docsWithUrls = await Promise.all(
+    docs.map(async (doc) => {
+      try {
+        const { url } = await storageGet(doc.fileKey);
+        return { ...doc, fileUrl: url };
+      } catch {
+        return doc;
+      }
+    })
+  );
   // Group docs under their item
   return items.map((item) => ({
     ...item,
-    docs: docs.filter((d) => d.reimbursementItemId === item.id),
+    docs: docsWithUrls.filter((d) => d.reimbursementItemId === item.id),
   }));
 }
 
@@ -1768,18 +1780,40 @@ export async function addReimbursementItemDoc(data: {
     .from(reimbursementItemDocs)
     .where(eq(reimbursementItemDocs.reimbursementItemId, data.reimbursementItemId))
     .orderBy(desc(reimbursementItemDocs.createdAt));
-  return rows;
+  // Return presigned URLs so the client can open files immediately after upload
+  const { storageGet } = await import("./storage");
+  return Promise.all(
+    rows.map(async (doc) => {
+      try {
+        const { url } = await storageGet(doc.fileKey);
+        return { ...doc, fileUrl: url };
+      } catch {
+        return doc;
+      }
+    })
+  );
 }
 
 export async function getReimbursementItemDocs(reimbursementItemId: number) {
   const db = await getDb();
   if (!db) return [];
   const { reimbursementItemDocs } = await import("../drizzle/schema");
-  return db
+  const docs = await db
     .select()
     .from(reimbursementItemDocs)
     .where(eq(reimbursementItemDocs.reimbursementItemId, reimbursementItemId))
     .orderBy(reimbursementItemDocs.createdAt);
+  const { storageGet } = await import("./storage");
+  return Promise.all(
+    docs.map(async (doc) => {
+      try {
+        const { url } = await storageGet(doc.fileKey);
+        return { ...doc, fileUrl: url };
+      } catch {
+        return doc;
+      }
+    })
+  );
 }
 
 export async function getReimbursementItemDocsByBooking(bookingId: number) {

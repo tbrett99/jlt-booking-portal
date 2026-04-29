@@ -1806,3 +1806,4 @@
 
 ## Bug Fixes (Apr 29 — Round 2)
 - [x] Fix: booking documents S3 Access Denied error — list procedure now calls storageGet() to generate fresh presigned download URLs for each document
+- [x] Fix: reimbursement documents S3 Access Denied — getReimbursementsByBooking, getReimbursementItemDocs, and addReimbursementItemDoc now generate presigned download URLs via storageGet()
