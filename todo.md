@@ -1807,3 +1807,9 @@
 ## Bug Fixes (Apr 29 — Round 2)
 - [x] Fix: booking documents S3 Access Denied error — list procedure now calls storageGet() to generate fresh presigned download URLs for each document
 - [x] Fix: reimbursement documents S3 Access Denied — getReimbursementsByBooking, getReimbursementItemDocs, and addReimbursementItemDoc now generate presigned download URLs via storageGet()
+
+## Bug Fixes (Apr 29 — Round 3)
+- [x] Fix: "Unable to transform response from server" error on login — root cause was IMAP scheduler crashing the server; resolved by disabling inbox auto-import
+
+## Bug Fixes (Apr 29 — Round 4)
+- [x] Fix: IMAP inbox scheduler disabled — was crashing the server with unhandled TLS ECONNRESET errors; cron job commented out in scheduler.ts until IMAP stability is resolved

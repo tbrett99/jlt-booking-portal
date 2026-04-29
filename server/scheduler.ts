@@ -463,10 +463,11 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  // Run inbox auto-import every 15 minutes
-  cron.schedule("*/15 * * * *", async () => {
-    await runInboxImport(false);
-  }, { timezone: "UTC" });
+  // Inbox auto-import disabled — IMAP connection instability was crashing the server
+  // To re-enable, uncomment the block below and redeploy.
+  // cron.schedule("*/15 * * * *", async () => {
+  //   await runInboxImport(false);
+  // }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly), inbox import (every 15 min)");
+  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly) — inbox auto-import DISABLED");
 }
