@@ -1153,10 +1153,11 @@ async function startServer() {
         // Payment failed or charged back
         if (
           event.resource_type === "payments" &&
-          ["failed", "charged_back"].includes(event.action)
+          ["confirmed", "paid_out", "failed", "charged_back", "cancelled"].includes(event.action)
         ) {
           const paymentId = event.links.payment;
           const mandateId = event.links.mandate;
+          const subscriptionId = event.links.subscription;
           const meta = (event as any).details ?? {};
           // Resolve user from mandate
           let userId: number | undefined;
@@ -1169,40 +1170,55 @@ async function startServer() {
               if (rows[0]) userId = rows[0].userId ?? undefined;
             }
           }
+          // Resolve amount from the payment resource if available
+          let amount: number | undefined;
+          let currency: string | undefined;
+          try {
+            const { fetchPayment } = await import("../gocardless");
+            if (paymentId) {
+              const gcPayment = await fetchPayment(paymentId);
+              amount = gcPayment?.amount;
+              currency = gcPayment?.currency;
+            }
+          } catch { /* non-critical */ }
           await createPaymentEvent({
             userId,
             mandateId,
             paymentId,
             eventType: `payments_${event.action}`,
             status: event.action,
+            amount,
+            currency,
             failureReason: meta.cause ?? meta.reason_code ?? undefined,
             failureDescription: meta.description ?? undefined,
             occurredAt: new Date(),
             rawPayload: JSON.stringify(event),
           });
-          // Notify support@ by email only
-          try {
-            await sendSupportEmail({
-              subject: `DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}${userId ? ` — Agent ID ${userId}` : ""}`,
-              html: `
-                <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
-                  <h2 style="color:#414141;margin:0 0 16px;">DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}</h2>
-                  <table style="width:100%;border-collapse:collapse;">
-                    ${userId ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent User ID</td><td style="padding:6px 0;color:#414141;font-weight:600;">${userId}</td></tr>` : ""}
-                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Payment ID</td><td style="padding:6px 0;color:#414141;">${paymentId ?? "—"}</td></tr>
-                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Event</td><td style="padding:6px 0;color:#dc2626;font-weight:600;">${event.action}</td></tr>
-                    ${meta.description ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Reason</td><td style="padding:6px 0;color:#414141;">${meta.description}</td></tr>` : ""}
-                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Time</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
-                  </table>
-                  <p style="margin:20px 0 0;color:#414141;">Please check the agent's account in the CRM and contact them if necessary.</p>
-                  <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
-                </div>
-              `,
-            });
-          } catch (supportEmailErr) {
-            console.error("[GC Webhook] Failed to send support payment failed email:", supportEmailErr);
+          // For failures and chargebacks, notify support
+          if (["failed", "charged_back"].includes(event.action)) {
+            try {
+              await sendSupportEmail({
+                subject: `DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}${userId ? ` — Agent ID ${userId}` : ""}`,
+                html: `
+                  <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
+                    <h2 style="color:#414141;margin:0 0 16px;">DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}</h2>
+                    <table style="width:100%;border-collapse:collapse;">
+                      ${userId ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent User ID</td><td style="padding:6px 0;color:#414141;font-weight:600;">${userId}</td></tr>` : ""}
+                      <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Payment ID</td><td style="padding:6px 0;color:#414141;">${paymentId ?? "—"}</td></tr>
+                      <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Event</td><td style="padding:6px 0;color:#dc2626;font-weight:600;">${event.action}</td></tr>
+                      ${meta.description ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Reason</td><td style="padding:6px 0;color:#414141;">${meta.description}</td></tr>` : ""}
+                      <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Time</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
+                    </table>
+                    <p style="margin:20px 0 0;color:#414141;">Please check the agent's account in the CRM and contact them if necessary.</p>
+                    <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
+                  </div>
+                `,
+              });
+            } catch (supportEmailErr) {
+              console.error("[GC Webhook] Failed to send support payment failed email:", supportEmailErr);
+            }
           }
-          console.log(`[GC Webhook] Payment ${paymentId} ${event.action} for user ${userId ?? "unknown"}`);
+          console.log(`[GC Webhook] Payment ${paymentId} ${event.action} for user ${userId ?? "unknown"} amount=${amount ?? "?"} pence`);
         }
       }
 

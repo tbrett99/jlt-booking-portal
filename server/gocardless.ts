@@ -256,3 +256,23 @@ export function calcSubscriptionStartDate(
   const day = candidate.getDate();
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
+
+// ─── Payments ─────────────────────────────────────────────────────────────────
+
+export interface GcPayment {
+  id: string;
+  status: string;
+  amount: number;
+  currency: string;
+  charge_date: string;
+  description: string | null;
+}
+
+export async function fetchPayment(paymentId: string): Promise<GcPayment | null> {
+  try {
+    const res = await gcRequest<{ payments: GcPayment }>("GET", `/payments/${paymentId}`);
+    return res.payments;
+  } catch {
+    return null;
+  }
+}

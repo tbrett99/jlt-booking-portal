@@ -1771,3 +1771,18 @@
 
 ## Reimbursement Multi-Doc Guidance (Apr 28)
 - [x] Always show "at least 2 documents required" guidance on reimbursement upload — not just when 0 docs uploaded; make it a prominent amber banner
+
+## Agent Accelerator Matching (Apr 29)
+- [x] Extract agent phone numbers from Full_Agent_Contacts.pdf
+- [x] Match against CRM agents by phone number
+- [x] Mark matched agents as Agent Accelerator in CRM
+
+## GoCardless DD Back-fill (Apr 29)
+- [x] Investigate GoCardless integration and what fields are stored/updated by webhooks
+- [x] Back-fill DD subscription statuses for agents who set up DD before webhook integration
+- [x] Fix webhook issues going forward — GOCARDLESS_WEBHOOK_SECRET now configured
+
+## DD Payment History (Apr 29)
+- [x] Investigate why DD payments are not recorded in payment history (e.g. Peter Stamford)
+- [x] Back-fill missing payment history from GoCardless API (104 records created)
+- [x] Fix webhook handler to record confirmed/paid_out/cancelled payment events going forward
