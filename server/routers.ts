@@ -3453,6 +3453,7 @@ export const appRouter = router({
         const { bookingDocuments } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
         const { getDb } = await import('./db');
+        const { storageGet } = await import('./storage');
         const db = await getDb();
         if (!db) return [];
         // Agents can only see docs for their own bookings
@@ -3465,7 +3466,17 @@ export const appRouter = router({
           .from(bookingDocuments)
           .where(eq(bookingDocuments.bookingId, input.bookingId))
           .orderBy(bookingDocuments.createdAt);
-        return docs;
+        // Generate fresh presigned download URLs for each document
+        return Promise.all(
+          docs.map(async (doc) => {
+            try {
+              const { url } = await storageGet(doc.fileKey);
+              return { ...doc, fileUrl: url };
+            } catch {
+              return doc; // fallback to stored URL if presign fails
+            }
+          })
+        );
       }),
 
     // Agent/Admin: upload a document to a booking

@@ -1803,3 +1803,6 @@
 ## Bug Fixes (Apr 29)
 - [x] Fix: refund query notes sent by agents should default to public (isInternal=false), not internal
 - [x] Fix: email notifications sent to agents should direct them to reply in the portal, not by email (update email templates to include portal link and remove any "reply to this email" language)
+
+## Bug Fixes (Apr 29 — Round 2)
+- [x] Fix: booking documents S3 Access Denied error — list procedure now calls storageGet() to generate fresh presigned download URLs for each document
