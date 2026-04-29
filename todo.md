@@ -1790,3 +1790,16 @@
 ## Refund Query Note Fix (Apr 29)
 - [x] Fix refund query notes being saved as internal — they must be saved as shared (visible to agent) + back-filled 5 existing internal notes to shared
 - [x] Update all agent-facing email notifications to include a "Reply in the portal" button/link, not reply by email
+
+## Booking Documents (Apr 29)
+- [x] DB: create booking_documents table (id, bookingId, uploadedById, docType: invoice|atol|other, displayName, fileUrl, fileKey, mimeType, fileSize, createdAt)
+- [x] Backend: uploadBookingDoc procedure — agents upload file, choose type (invoice/atol/other), system auto-names it; admins can also upload
+- [x] Backend: listBookingDocs procedure — returns all docs for a booking (agents see own booking docs, admins see all)
+- [x] Backend: renameBookingDoc procedure — admin only, sets displayName on any doc
+- [x] Backend: deleteBookingDoc procedure — admin only
+- [x] Frontend (agent): Documents section on AgentBookingDetail — upload button with type selector, list of uploaded docs with download links
+- [x] Frontend (admin): Documents section on AdminBookingDetail — same list + rename button per doc (inline edit), delete button
+
+## Bug Fixes (Apr 29)
+- [x] Fix: refund query notes sent by agents should default to public (isInternal=false), not internal
+- [x] Fix: email notifications sent to agents should direct them to reply in the portal, not by email (update email templates to include portal link and remove any "reply to this email" language)

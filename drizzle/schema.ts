@@ -1063,3 +1063,22 @@ export const agentCrmNotes = mysqlTable("agent_crm_notes", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type AgentCrmNote = typeof agentCrmNotes.$inferSelect;
+
+// ─── Booking Documents ────────────────────────────────────────────────────────
+// Files uploaded to a booking (invoices, ATOL certificates, other docs)
+export const bookingDocuments = mysqlTable("booking_documents", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId").notNull(),                            // FK → bookings.id
+  uploadedById: int("uploadedById").notNull(),                      // FK → users.id
+  uploadedByName: varchar("uploadedByName", { length: 128 }),       // Denormalised for display
+  docType: mysqlEnum("docType", ["invoice", "atol", "other"]).notNull().default("other"),
+  displayName: varchar("displayName", { length: 255 }).notNull(),   // Human-readable name (admin can rename)
+  fileUrl: text("fileUrl").notNull(),                               // S3 public URL
+  fileKey: varchar("fileKey", { length: 512 }).notNull(),           // S3 key for deletion
+  mimeType: varchar("mimeType", { length: 128 }),
+  fileSize: int("fileSize"),                                        // bytes
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type BookingDocument = typeof bookingDocuments.$inferSelect;
+export type InsertBookingDocument = typeof bookingDocuments.$inferInsert;

@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
   CheckCircle2, Circle, AlertCircle, Sparkles, TrendingUp, Clock,
   RefreshCw, Pencil, User, Check, X, Trash2, Plane, Zap,
-  CreditCard, Copy, ExternalLink, Paperclip
+  CreditCard, Copy, ExternalLink, Paperclip, FolderOpen, Download
 } from "lucide-react";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -1341,6 +1341,9 @@ export default function AgentBookingDetail() {
         </CardContent>
       </Card>
 
+      {/* Booking Documents Section */}
+      <BookingDocumentsSection bookingId={bookingId} />
+
       {/* Flight Requests Section */}
       <FlightRequestsSection bookingId={bookingId} />
 
@@ -1411,6 +1414,163 @@ function FlightRequestsSection({ bookingId }: { bookingId: number }) {
             )}
           </div>
         ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Booking Documents Section ────────────────────────────────────────────────
+function BookingDocumentsSection({ bookingId }: { bookingId: number }) {
+  const { user } = useAuth();
+  const utils = trpc.useUtils();
+  const { data: docs = [], isLoading } = trpc.bookingDocs.list.useQuery({ bookingId }, { staleTime: 0 });
+
+  const [uploading, setUploading] = useState(false);
+  const [docType, setDocType] = useState<'invoice' | 'atol' | 'other'>('invoice');
+  const [displayName, setDisplayName] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const uploadMutation = trpc.bookingDocs.upload.useMutation({
+    onSuccess: () => {
+      toast.success('Document uploaded');
+      utils.bookingDocs.list.invalidate({ bookingId });
+      setShowForm(false);
+      setDisplayName('');
+      setDocType('invoice');
+      if (fileRef.current) fileRef.current.value = '';
+    },
+    onError: (e) => toast.error(e.message || 'Upload failed'),
+  });
+
+  const handleUpload = async () => {
+    const file = fileRef.current?.files?.[0];
+    if (!file) { toast.error('Please select a file'); return; }
+    if (!displayName.trim()) { toast.error('Please enter a document name'); return; }
+    setUploading(true);
+    try {
+      const ab = await file.arrayBuffer();
+      const bytes = new Uint8Array(ab);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      const base64 = btoa(binary);
+      await uploadMutation.mutateAsync({
+        bookingId,
+        docType,
+        displayName: displayName.trim(),
+        fileBase64: base64,
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const docTypeLabel = (t: string) =>
+    t === 'invoice' ? 'Invoice' : t === 'atol' ? 'ATOL Certificate' : 'Other';
+
+  const docTypeBadgeStyle = (t: string) => {
+    if (t === 'invoice') return { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' };
+    if (t === 'atol') return { background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' };
+    return { background: '#f9fafb', color: '#374151', border: '1px solid #e5e7eb' };
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <FolderOpen className="h-4 w-4 text-primary" />
+            Booking Documents
+          </CardTitle>
+          <Button size="sm" variant="outline" onClick={() => setShowForm((v) => !v)}>
+            <Upload className="h-3.5 w-3.5 mr-1.5" />
+            Upload Document
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Upload form */}
+        {showForm && (
+          <div className="rounded-md border p-4 space-y-3 bg-muted/30">
+            <p className="text-sm font-medium">Upload a document to this booking</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Document type</Label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={docType}
+                  onChange={(e) => {
+                    const t = e.target.value as 'invoice' | 'atol' | 'other';
+                    setDocType(t);
+                    if (!displayName || displayName === 'Invoice' || displayName === 'ATOL Certificate' || displayName === 'Other') {
+                      setDisplayName(t === 'invoice' ? 'Invoice' : t === 'atol' ? 'ATOL Certificate' : '');
+                    }
+                  }}
+                >
+                  <option value="invoice">Invoice</option>
+                  <option value="atol">ATOL Certificate</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Document name</Label>
+                <Input
+                  placeholder="e.g. Invoice – Jet2 Holidays"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  maxLength={255}
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">File</Label>
+              <input ref={fileRef} type="file" className="block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-primary/10 file:text-primary cursor-pointer" />
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleUpload} disabled={uploading || uploadMutation.isPending}>
+                {(uploading || uploadMutation.isPending) ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+                Upload
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        {/* Document list */}
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading documents…</p>
+        ) : docs.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No documents uploaded yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {docs.map((doc: any) => (
+              <div key={doc.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2.5 text-sm">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{doc.displayName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Uploaded by {doc.uploadedByName ?? 'Unknown'} · {format(new Date(doc.createdAt), 'dd MMM yyyy')}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span style={{ ...docTypeBadgeStyle(doc.docType), borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: 700 }}>
+                    {docTypeLabel(doc.docType)}
+                  </span>
+                  <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

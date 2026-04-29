@@ -463,6 +463,13 @@
       "when": 1777122684963,
       "tag": "0065_fixed_dazzler",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "5",
+      "when": 1777470022927,
+      "tag": "0066_wild_mandroid",
+      "breakpoints": true
     }
   ]
 }

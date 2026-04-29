@@ -1498,22 +1498,22 @@ export const appRouter = router({
             // Email the agent (fire-and-forget)
             const agent = await getUserById(booking.agentId);
             if (agent?.email) {
-              void sendDirectEmail({
-                toEmail: agent.email,
-                toName: agent.name ?? "Agent",
-                subject: `New message on your booking: ${booking.clientName}`,
-                html: `
+            void sendDirectEmail({
+              toEmail: agent.email,
+              toName: agent.name ?? "Agent",
+              subject: `New message on your booking: ${booking.clientName}`,
+              injectPortalFooter: true,
+              bookingId: input.bookingId,
+              html: `
                   <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
                     <h2 style="color:#1a1a2e;">New Message from JLT Group</h2>
                     <p>There is a new message on your booking for <strong>${booking.clientName}</strong> (Booking #${input.bookingId}).</p>
                     <div style="background:#f5f5f5;border-left:4px solid #70FFE8;padding:12px 16px;margin:16px 0;border-radius:4px;">
                       <p style="margin:0;color:#333;">${input.content.replace(/\n/g, '<br>')}</p>
                     </div>
-                    <a href="https://portal.thejltgroup.co.uk/bookings/${input.bookingId}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;margin-top:8px;">View Booking &amp; Reply</a>
-                    <p style="color:#888;font-size:12px;margin-top:24px;">JLT Group Booking Portal</p>
                   </div>
                 `,
-              });
+            });
             }
             // Mark existing unread agent notes as read (fire-and-forget)
             void markNotesReadByAdmin(input.bookingId);
@@ -1911,6 +1911,7 @@ export const appRouter = router({
                   triggerKey: "refund_query",
                   toEmail: agent.email,
                   toName: agent.name ?? "Agent",
+                  bookingId: booking.id,
                   variables: {
                     clientName: booking.clientName ?? "your client",
                     ptsRef: booking.ptsRef ?? "",
@@ -3439,6 +3440,107 @@ export const appRouter = router({
             ? (JSON.parse(email.s3Keys) as Array<{ filename: string; contentType: string; s3Key: string; s3Url: string; size: number }>)
             : [],
         };
+      }),
+  }),
+
+  // ── Booking Documents ────────────────────────────────────────────────────────
+  bookingDocs: router({
+
+    // Agent/Admin: list documents for a booking
+    list: protectedProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const { bookingDocuments } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (!db) return [];
+        // Agents can only see docs for their own bookings
+        if (ctx.user.role === 'agent') {
+          const booking = await getBookingById(input.bookingId);
+          if (!booking || booking.agentId !== ctx.user.id) throw new TRPCError({ code: 'FORBIDDEN' });
+        }
+        const docs = await db
+          .select()
+          .from(bookingDocuments)
+          .where(eq(bookingDocuments.bookingId, input.bookingId))
+          .orderBy(bookingDocuments.createdAt);
+        return docs;
+      }),
+
+    // Agent/Admin: upload a document to a booking
+    upload: protectedProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        docType: z.enum(['invoice', 'atol', 'other']),
+        displayName: z.string().min(1).max(255),
+        fileBase64: z.string(),
+        filename: z.string(),
+        mimeType: z.string().default('application/octet-stream'),
+        fileSize: z.number().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { bookingDocuments } = await import('../drizzle/schema');
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        // Agents can only upload to their own bookings
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: 'FORBIDDEN' });
+        }
+        const buffer = Buffer.from(input.fileBase64, 'base64');
+        const ext = input.filename.split('.').pop() ?? 'bin';
+        const fileKey = `booking-docs/${input.bookingId}/${nanoid(12)}-${Date.now()}.${ext}`;
+        const { url } = await storagePut(fileKey, buffer, input.mimeType);
+        await db.insert(bookingDocuments).values({
+          bookingId: input.bookingId,
+          uploadedById: ctx.user.id,
+          uploadedByName: ctx.user.name ?? null,
+          docType: input.docType,
+          displayName: input.displayName,
+          fileUrl: url,
+          fileKey,
+          mimeType: input.mimeType,
+          fileSize: input.fileSize ?? buffer.length,
+        });
+        // Audit note on the booking
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[Document] ${ctx.user.name ?? 'User'} uploaded "${input.displayName}" (${input.docType}).`,
+          isInternal: false,
+        });
+        return { success: true };
+      }),
+
+    // Admin only: rename a document
+    rename: protectedProcedure
+      .input(z.object({ docId: z.number(), displayName: z.string().min(1).max(255) }))
+      .mutation(async ({ input, ctx }) => {
+        if (!['admin', 'super_admin'].includes(ctx.user.role)) throw new TRPCError({ code: 'FORBIDDEN' });
+        const { bookingDocuments } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        await db.update(bookingDocuments).set({ displayName: input.displayName }).where(eq(bookingDocuments.id, input.docId));
+        return { success: true };
+      }),
+
+    // Admin only: delete a document
+    delete: protectedProcedure
+      .input(z.object({ docId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (!['admin', 'super_admin'].includes(ctx.user.role)) throw new TRPCError({ code: 'FORBIDDEN' });
+        const { bookingDocuments } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        await db.delete(bookingDocuments).where(eq(bookingDocuments.id, input.docId));
+        return { success: true };
       }),
   }),
 });

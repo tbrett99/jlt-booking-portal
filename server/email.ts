@@ -37,23 +37,34 @@ export async function sendSupportEmail(params: {
 }
 
 // Direct email — bypasses template system, used for message notifications
+// Pass `injectPortalFooter: true` (+ optional `bookingId`) to append the
+// "Please reply in the portal" footer to agent-facing messages.
 export async function sendDirectEmail(params: {
   toEmail: string;
   toName: string;
   subject: string;
   html: string;
+  injectPortalFooter?: boolean;
+  bookingId?: number;
 }): Promise<{ success: boolean; error?: string }> {
   try {
     if (await areNotificationsPaused()) {
       console.log(`[Notifications] Paused — skipping direct email to ${params.toEmail}`);
       return { success: false, error: "Notifications are currently paused" };
     }
+    let html = params.html;
+    if (params.injectPortalFooter) {
+      const footer = portalReplyFooter(params.bookingId);
+      html = html.includes('<div')
+        ? html.replace(/<\/div>\s*$/, `${footer}</div>`)
+        : `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">${html}${footer}</div>`;
+    }
     const t = getTransporter();
     await t.sendMail({
       from: `"JLT Group" <support@thejltgroup.co.uk>`,
       to: `"${params.toName}" <${params.toEmail}>`,
       subject: params.subject,
-      html: params.html,
+      html,
     });
     return { success: true };
   } catch (err: any) {
