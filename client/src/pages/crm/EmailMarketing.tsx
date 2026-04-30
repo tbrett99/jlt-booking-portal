@@ -551,8 +551,15 @@ export default function EmailMarketing() {
             <div className="space-y-3">
               {campaigns.map((c: any) => {
                 const filters = parseFilters(c.segmentFilters);
+                const agentParts: string[] = [];
+                if (c.audienceType === "agent") {
+                  if (filters.membershipTiers?.length) agentParts.push(`Tier: ${filters.membershipTiers.join(", ")}`);
+                  if (filters.trainingStages?.length) agentParts.push(`Training: ${filters.trainingStages.join(", ")}`);
+                  if (filters.tags?.length) agentParts.push(`Tags: ${filters.tags.join(", ")}`);
+                  if (filters.agentStatus?.length) agentParts.push(`Status: ${filters.agentStatus.join(", ")}`);
+                }
                 const audience = c.audienceType === "agent"
-                  ? "All Agents"
+                  ? agentParts.length > 0 ? agentParts.join(" | ") : "All Active Agents"
                   : filters.stages?.length > 0
                     ? `Prospects: ${filters.stages.join(", ")}`
                     : "All Prospects";
@@ -755,7 +762,15 @@ export default function EmailMarketing() {
           <p className="text-sm text-muted-foreground">
             You are about to send <strong>"{sendConfirm?.name}"</strong> to{" "}
             <strong>
-              {sendConfirm?.audienceType === "agent" ? "all active agents" : (() => {
+              {sendConfirm?.audienceType === "agent" ? (() => {
+                const f = parseFilters(sendConfirm?.segmentFilters);
+                const parts: string[] = [];
+                if (f.membershipTiers?.length) parts.push(`tier: ${f.membershipTiers.join(", ")}`);
+                if (f.trainingStages?.length) parts.push(`training: ${f.trainingStages.join(", ")}`);
+                if (f.tags?.length) parts.push(`tags: ${f.tags.join(", ")}`);
+                if (f.agentStatus?.length) parts.push(`status: ${f.agentStatus.join(", ")}`);
+                return parts.length > 0 ? `agents filtered by ${parts.join(" | ")}` : "all active agents";
+              })() : (() => {
                 const f = parseFilters(sendConfirm?.segmentFilters);
                 return f.stages?.length > 0 ? `prospects in: ${f.stages.join(", ")}` : "all prospects";
               })()}
