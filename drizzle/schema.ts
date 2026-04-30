@@ -1194,3 +1194,17 @@ export const emailBrandingSettings = mysqlTable("email_branding_settings", {
 });
 export type EmailBrandingSettings = typeof emailBrandingSettings.$inferSelect;
 export type InsertEmailBrandingSettings = typeof emailBrandingSettings.$inferInsert;
+
+// ─── Reimbursement Audit Log ──────────────────────────────────────────────────
+export const reimbursementAuditLogs = mysqlTable("reimbursement_audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  reimbursementItemId: int("reimbursementItemId").notNull(), // FK → reimbursement_items.id
+  bookingId: int("bookingId").notNull(),                     // FK → bookings.id
+  action: varchar("action", { length: 100 }).notNull(),      // e.g. "status_changed", "created", "deleted"
+  oldStatus: varchar("oldStatus", { length: 50 }),           // previous status
+  newStatus: varchar("newStatus", { length: 50 }),           // new status
+  actedById: int("actedById").notNull(),                     // FK → users.id
+  actedAt: timestamp("actedAt").defaultNow().notNull(),
+  note: text("note"),                                        // optional free-text note
+});
+export type ReimbursementAuditLog = typeof reimbursementAuditLogs.$inferSelect;

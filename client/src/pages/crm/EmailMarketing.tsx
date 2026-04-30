@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import {
   Plus, Send, Eye, Pencil, Trash2, Mail, Users, Zap,
   BarChart2, Clock, CheckCircle, AlertCircle, FileText, Paintbrush,
+  ChevronDown, ChevronUp, RefreshCw, MailOpen, MailX,
 } from "lucide-react";
 import EmailBrandingEditor from "./EmailBrandingEditor";
 
@@ -428,6 +429,135 @@ function DripWorkflowDetail({ workflowId, onBack }: { workflowId: number; onBack
   );
 }
 
+// ─── Campaign Recipients Panel ───────────────────────────────────────────────
+function CampaignRecipientsPanel({
+  campaignId,
+  onResendOne,
+  onResendAll,
+  isResendingOne,
+  isResendingAll,
+}: {
+  campaignId: number;
+  onResendOne: (sendId: number) => void;
+  onResendAll: () => void;
+  isResendingOne: boolean;
+  isResendingAll: boolean;
+}) {
+  const { data: recipients = [], isLoading } = trpc.crm.campaigns.recipients.useQuery({ campaignId });
+  const [filter, setFilter] = useState<"all" | "opened" | "unopened">("all");
+
+  const filtered = recipients.filter((r: any) => {
+    if (filter === "opened") return ["opened", "clicked"].includes(r.status);
+    if (filter === "unopened") return !["opened", "clicked"].includes(r.status);
+    return true;
+  });
+
+  const openedCount = recipients.filter((r: any) => ["opened", "clicked"].includes(r.status)).length;
+  const unopenedCount = recipients.length - openedCount;
+
+  return (
+    <div className="mt-4 border-t pt-4 space-y-3">
+      {/* Summary bar */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex gap-3 text-sm">
+          <span className="flex items-center gap-1 text-green-700">
+            <MailOpen className="h-3.5 w-3.5" /> {openedCount} opened
+          </span>
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <MailX className="h-3.5 w-3.5" /> {unopenedCount} unopened
+          </span>
+        </div>
+        <div className="flex gap-1 ml-auto">
+          {(["all", "opened", "unopened"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                filter === f ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"
+              }`}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
+        {unopenedCount > 0 && (
+          <Button
+            size="sm" variant="outline"
+            className="text-xs h-7"
+            disabled={isResendingAll}
+            onClick={() => {
+              if (!window.confirm(`Resend to all ${unopenedCount} unopened recipients?`)) return;
+              onResendAll();
+            }}
+          >
+            <RefreshCw className="h-3 w-3 mr-1" />
+            Resend to all unopened
+          </Button>
+        )}
+      </div>
+
+      {/* Recipient list */}
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground py-2">Loading recipients…</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-2">No recipients match this filter.</p>
+      ) : (
+        <div className="rounded-lg border overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-muted/50 border-b">
+                <th className="text-left px-3 py-2 font-medium">Recipient</th>
+                <th className="text-left px-3 py-2 font-medium">Status</th>
+                <th className="text-left px-3 py-2 font-medium">Opened</th>
+                <th className="text-right px-3 py-2 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r: any) => {
+                const opened = ["opened", "clicked"].includes(r.status);
+                return (
+                  <tr key={r.id} className="border-b last:border-0 hover:bg-muted/30">
+                    <td className="px-3 py-2">
+                      <p className="font-medium">{r.recipientName ?? r.recipientEmail}</p>
+                      {r.recipientName && <p className="text-muted-foreground">{r.recipientEmail}</p>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`px-2 py-0.5 rounded-full font-medium ${
+                        opened ? "bg-green-100 text-green-800" :
+                        r.status === "bounced" ? "bg-red-100 text-red-800" :
+                        r.status === "failed" ? "bg-red-100 text-red-800" :
+                        "bg-muted text-muted-foreground"
+                      }`}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {r.openedAt
+                        ? new Date(r.openedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Button
+                        size="sm" variant="ghost"
+                        className="h-6 text-xs px-2"
+                        disabled={isResendingOne}
+                        onClick={() => onResendOne(r.id)}
+                        title="Resend to this recipient"
+                      >
+                        <RefreshCw className="h-3 w-3 mr-1" /> Resend
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function EmailMarketing() {
   const [tab, setTab] = useState("campaigns");
@@ -438,6 +568,7 @@ export default function EmailMarketing() {
   const [editCampaign, setEditCampaign] = useState<any>(null);
   const [sendConfirm, setSendConfirm] = useState<any>(null);
   const [previewCampaign, setPreviewCampaign] = useState<any>(null);
+  const [expandedCampaignId, setExpandedCampaignId] = useState<number | null>(null);
 
   // Templates
   const { data: templates = [], refetch: refetchTemplates } = trpc.crm.emailTemplates.list.useQuery({});
@@ -461,6 +592,14 @@ export default function EmailMarketing() {
   });
   const sendCampaign = trpc.crm.campaigns.send.useMutation({
     onSuccess: (data) => { refetchCampaigns(); setSendConfirm(null); toast.success(`Sending to ${data.recipientCount} recipients…`); },
+    onError: (e) => toast.error(e.message),
+  });
+  const resendOne = trpc.crm.campaigns.resendOne.useMutation({
+    onSuccess: () => toast.success("Email resent successfully"),
+    onError: (e) => toast.error(e.message),
+  });
+  const resendUnopenedAll = trpc.crm.campaigns.resendUnopenedAll.useMutation({
+    onSuccess: (data) => toast.success(`Resent to ${data.count} unopened recipient${data.count !== 1 ? 's' : ''}`),
     onError: (e) => toast.error(e.message),
   });
 
@@ -567,46 +706,70 @@ export default function EmailMarketing() {
                   : filters.stages?.length > 0
                     ? `Prospects: ${filters.stages.join(", ")}`
                     : "All Prospects";
+                const isExpanded = expandedCampaignId === c.id;
                 return (
                   <Card key={c.id}>
-                    <CardContent className="p-4 flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">{c.name}</span>
-                          {statusBadge(c.status)}
-                          <Badge variant="outline" className="text-xs">
-                            {c.audienceType === "agent" ? <Users className="h-3 w-3 mr-1 inline" /> : <Mail className="h-3 w-3 mr-1 inline" />}
-                            {audience}
-                          </Badge>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium">{c.name}</span>
+                            {statusBadge(c.status)}
+                            <Badge variant="outline" className="text-xs">
+                              {c.audienceType === "agent" ? <Users className="h-3 w-3 mr-1 inline" /> : <Mail className="h-3 w-3 mr-1 inline" />}
+                              {audience}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-0.5 truncate">{c.subject}</p>
+                          {c.totalRecipients > 0 && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              <CheckCircle className="h-3 w-3 inline mr-1 text-green-600" />
+                              Sent to {c.totalRecipients} recipients
+                              {c.sentByName && ` by ${c.sentByName}`}
+                            </p>
+                          )}
                         </div>
-                        <p className="text-sm text-muted-foreground mt-0.5 truncate">{c.subject}</p>
-                        {c.totalRecipients > 0 && (
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            <CheckCircle className="h-3 w-3 inline mr-1 text-green-600" />
-                            Sent to {c.totalRecipients} recipients
-                            {c.sentByName && ` by ${c.sentByName}`}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex gap-1 flex-shrink-0">
-                        <Button size="sm" variant="ghost" title="Preview" onClick={() => setPreviewCampaign(c)}>
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        {c.status === "draft" && (
-                          <>
-                            <Button size="sm" variant="ghost" title="Edit" onClick={() => {
-                              const filters = parseFilters(c.segmentFilters);
-                              setEditCampaign(c);
-                              setCampaignDialog("edit");
-                            }}>
-                              <Pencil className="h-4 w-4" />
+                        <div className="flex gap-1 flex-shrink-0">
+                          <Button size="sm" variant="ghost" title="Preview" onClick={() => setPreviewCampaign(c)}>
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          {c.status === "draft" && (
+                            <>
+                              <Button size="sm" variant="ghost" title="Edit" onClick={() => {
+                                setEditCampaign(c);
+                                setCampaignDialog("edit");
+                              }}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button size="sm" variant="default" onClick={() => setSendConfirm(c)}>
+                                <Send className="h-4 w-4 mr-1" /> Send
+                              </Button>
+                            </>
+                          )}
+                          {c.status === "sent" && (
+                            <Button
+                              size="sm" variant="outline"
+                              onClick={() => setExpandedCampaignId(isExpanded ? null : c.id)}
+                              className="text-xs"
+                            >
+                              <BarChart2 className="h-3.5 w-3.5 mr-1" />
+                              Recipients
+                              {isExpanded ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
                             </Button>
-                            <Button size="sm" variant="default" onClick={() => setSendConfirm(c)}>
-                              <Send className="h-4 w-4 mr-1" /> Send
-                            </Button>
-                          </>
-                        )}
+                          )}
+                        </div>
                       </div>
+
+                      {/* Recipients panel — lazy loaded when expanded */}
+                      {isExpanded && (
+                        <CampaignRecipientsPanel
+                          campaignId={c.id}
+                          onResendOne={(sendId) => resendOne.mutate({ sendId })}
+                          onResendAll={() => resendUnopenedAll.mutate({ campaignId: c.id })}
+                          isResendingOne={resendOne.isPending}
+                          isResendingAll={resendUnopenedAll.isPending}
+                        />
+                      )}
                     </CardContent>
                   </Card>
                 );

@@ -65,6 +65,7 @@ import {
   enrollInDripWorkflow,
   getEnrollmentsByWorkflow,
   getCampaignStats,
+  getCampaignRecipients,
   getEmailBrandingSettings,
   upsertEmailBrandingSettings,
 } from "./crm-db";
@@ -2468,6 +2469,70 @@ export const crmRouter = router({
     stats: adminProcedure
       .input(z.object({ campaignId: z.number().int() }))
       .query(async ({ input }) => getCampaignStats(input.campaignId)),
+
+    // Get per-recipient send records with open/click status
+    recipients: adminProcedure
+      .input(z.object({ campaignId: z.number().int() }))
+      .query(async ({ input }) => getCampaignRecipients(input.campaignId)),
+
+    // Resend to a single recipient (by emailSend id)
+    resendOne: adminProcedure
+      .input(z.object({ sendId: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { emailSends } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const rows = await db.select().from(emailSends).where(eq(emailSends.id, input.sendId)).limit(1);
+        const send = rows[0];
+        if (!send) throw new TRPCError({ code: "NOT_FOUND", message: "Send record not found" });
+        const campaign = await getCampaignById(send.campaignId!);
+        if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
+        const { sendMarketingEmail } = await import("./resend-email");
+        await sendMarketingEmail({
+          to: send.recipientEmail,
+          toName: send.recipientName ?? undefined,
+          subject: campaign.subject,
+          bodyHtml: campaign.bodyHtml,
+          audienceType: campaign.audienceType as "prospect" | "agent",
+          campaignId: campaign.id,
+          recipientId: send.recipientId ?? undefined,
+          recipientType: campaign.audienceType as "prospect" | "agent",
+          baseUrl: process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk",
+        });
+        return { success: true };
+      }),
+
+    // Resend to all recipients who haven't opened the campaign
+    resendUnopenedAll: adminProcedure
+      .input(z.object({ campaignId: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
+        const allSends = await getCampaignRecipients(input.campaignId);
+        const unopened = allSends.filter((s) => !['opened','clicked'].includes(s.status ?? ''));
+        if (unopened.length === 0) return { success: true, count: 0 };
+        const { sendMarketingEmail } = await import("./resend-email");
+        let sent = 0;
+        for (const s of unopened) {
+          try {
+            await sendMarketingEmail({
+              to: s.recipientEmail,
+              toName: s.recipientName ?? undefined,
+              subject: campaign.subject,
+              bodyHtml: campaign.bodyHtml,
+              audienceType: campaign.audienceType as "prospect" | "agent",
+              campaignId: campaign.id,
+              recipientId: s.recipientId ?? undefined,
+              recipientType: campaign.audienceType as "prospect" | "agent",
+              baseUrl: process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk",
+            });
+            sent++;
+          } catch { /* continue on individual failure */ }
+        }
+        return { success: true, count: sent };
+      }),
   }),
 
   // ── Email Branding Settings ──────────────────────────────────────────────────

@@ -754,6 +754,30 @@ export async function getCampaignStats(campaignId: number) {
   };
 }
 
+export async function getCampaignRecipients(campaignId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select()
+    .from(emailSends)
+    .where(eq(emailSends.campaignId, campaignId))
+    .orderBy(emailSends.sentAt);
+  return rows.map((r) => ({
+    id: r.id,
+    recipientEmail: r.recipientEmail,
+    recipientName: r.recipientName,
+    recipientType: r.recipientType,
+    recipientId: r.recipientId,
+    subject: r.subject,
+    status: r.status,
+    sentAt: r.sentAt,
+    openedAt: r.openedAt,
+    clickedAt: r.clickedAt,
+    bouncedAt: r.bouncedAt,
+    failedReason: r.failedReason,
+  }));
+}
+
 export async function recordEmailOpen(sendId: number) {
   const db = await getDb();
   if (!db) return;

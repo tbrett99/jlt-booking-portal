@@ -1703,6 +1703,53 @@ export async function getReimbursementsAdmin(filters?: {
   }));
 }
 
+export async function writeReimbursementAuditLog(opts: {
+  reimbursementItemId: number;
+  bookingId: number;
+  action: string;
+  oldStatus?: string | null;
+  newStatus?: string | null;
+  actedById: number;
+  note?: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  const { reimbursementAuditLogs } = await import("../drizzle/schema");
+  await db.insert(reimbursementAuditLogs).values({
+    reimbursementItemId: opts.reimbursementItemId,
+    bookingId: opts.bookingId,
+    action: opts.action,
+    oldStatus: opts.oldStatus ?? null,
+    newStatus: opts.newStatus ?? null,
+    actedById: opts.actedById,
+    note: opts.note ?? null,
+  });
+}
+
+export async function getReimbursementAuditLog(bookingId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { reimbursementAuditLogs } = await import("../drizzle/schema");
+  const { users } = await import("../drizzle/schema");
+  const rows = await db
+    .select({
+      id: reimbursementAuditLogs.id,
+      reimbursementItemId: reimbursementAuditLogs.reimbursementItemId,
+      action: reimbursementAuditLogs.action,
+      oldStatus: reimbursementAuditLogs.oldStatus,
+      newStatus: reimbursementAuditLogs.newStatus,
+      actedAt: reimbursementAuditLogs.actedAt,
+      note: reimbursementAuditLogs.note,
+      actedByName: users.name,
+      actedByEmail: users.email,
+    })
+    .from(reimbursementAuditLogs)
+    .leftJoin(users, eq(reimbursementAuditLogs.actedById, users.id))
+    .where(eq(reimbursementAuditLogs.bookingId, bookingId))
+    .orderBy(reimbursementAuditLogs.actedAt);
+  return rows;
+}
+
 export async function updateReimbursementStatus(
   id: number,
   status: "pending" | "scheduled" | "paid",
@@ -1711,12 +1758,27 @@ export async function updateReimbursementStatus(
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const now = new Date();
+  // Fetch current status for audit log
+  const existing = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
+  const oldStatus = existing[0]?.status ?? null;
   const updates: Record<string, unknown> = { status };
   if (status === "scheduled") { updates.scheduledAt = now; updates.actionedAt = now; }
   if (status === "paid") { updates.paidAt = now; updates.paidById = actorId; updates.actionedAt = now; }
   await db.update(reimbursementItems).set(updates as any).where(eq(reimbursementItems.id, id));
   const rows = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
-  return rows[0];
+  const updated = rows[0];
+  // Write audit log entry
+  if (updated) {
+    await writeReimbursementAuditLog({
+      reimbursementItemId: id,
+      bookingId: updated.bookingId,
+      action: "status_changed",
+      oldStatus,
+      newStatus: status,
+      actedById: actorId,
+    });
+  }
+  return updated;
 }
 
 export async function scheduleReimbursementsForBooking(bookingId: number) {

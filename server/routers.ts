@@ -99,6 +99,7 @@ import {
   updateReimbursementStatus,
   scheduleReimbursementsForBooking,
   getReimbursementDashboardStats,
+  getReimbursementAuditLog,
   getImapConfig,
   upsertImapConfig,
   getCachedEmailCount,
@@ -2755,6 +2756,19 @@ export const appRouter = router({
           if (!item || item.agentId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
         }
         return getReimbursementItemDocs(input.reimbursementItemId);
+      }),
+
+    // Admin/Agent: get audit log for a booking's reimbursements
+    auditLog: protectedProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        // Agents can only see their own bookings
+        if (ctx.user.role === "agent") {
+          const { getBookingById: getBooking } = await import("./db");
+          const booking = await getBooking(input.bookingId);
+          if (!booking || booking.agentId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        return getReimbursementAuditLog(input.bookingId);
       }),
 
     // Admin: assign a reimbursement item to an admin user

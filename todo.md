@@ -1881,3 +1881,15 @@
 ## Email Personalisation Merge Tags (Apr 30)
 - [x] Editor: merge-tag toolbar button — inserts {{first_name}}, {{full_name}}, {{email}} tokens with one click; tokens rendered as highlighted chips in editor
 - [x] Send engine: replace merge tags with real recipient values before wrapping in branded template
+
+## Email Read Tracking & Resend (Apr 30)
+- [x] Backend: tRPC procedure to get campaign recipients with open status (opened, openedAt, openCount, status)
+- [x] Backend: tRPC procedure to resend to a single recipient (by emailSend id)
+- [x] Backend: tRPC procedure to resend to all unopened recipients in a campaign
+- [x] Frontend: Campaign detail panel showing recipient list with open/unopened badges, opened timestamp, and per-row Resend button
+- [x] Frontend: "Resend to all unopened" bulk action button on campaign detail
+
+## Reimbursement Audit Log (Apr 30)
+- [x] DB: reimbursement_audit_logs table (id, reimbursementItemId, bookingId, action, oldStatus, newStatus, actedById, actedAt, note)
+- [x] Backend: write audit log entry whenever a reimbursement item status changes (mark paid, mark unpaid, etc.)
+- [x] Frontend: activity feed / audit trail on the reimbursement panel showing who changed what and when

@@ -766,6 +766,7 @@ export default function AdminBookingDetail() {
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const { data: reimbDocs = [] } = trpc.bookings.listReimbDocs.useQuery({ bookingId }, { enabled: !!bookingId });
   const { data: reimbItems = [], refetch: refetchReimbItems } = trpc.reimbursements.getByBooking.useQuery({ bookingId }, { enabled: !!bookingId });
+  const { data: reimbAuditLog = [] } = trpc.reimbursements.auditLog.useQuery({ bookingId }, { enabled: !!bookingId });
   const { data: stageHistory = [] } = trpc.bookings.pipelineHistory.useQuery({ bookingId }, { enabled: !!bookingId });
   const { data: amendments = [], refetch: refetchAmendments } = trpc.amendments.byBooking.useQuery({ bookingId }, { enabled: !!bookingId });
   const { data: refundsList = [], refetch: refetchRefunds } = trpc.refunds.byBookingAdmin.useQuery({ bookingId }, { enabled: !!bookingId });
@@ -1199,6 +1200,43 @@ export default function AdminBookingDetail() {
                 <p className="text-xs text-amber-600 flex items-center gap-1">
                   <FileText size={12} /> No documents uploaded yet
                 </p>
+              </div>
+            )}
+
+            {/* Reimbursement Audit Trail */}
+            {(reimbAuditLog as any[]).length > 0 && (
+              <div className="pt-2 border-t space-y-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  Reimbursement Activity
+                </p>
+                <div className="space-y-1">
+                  {(reimbAuditLog as any[]).map((entry: any) => {
+                    const isBackfill = entry.note?.includes('Backfilled');
+                    return (
+                      <div key={entry.id} className="flex items-start gap-2 text-xs py-1.5 border-b last:border-0">
+                        <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium">{entry.actedByName ?? 'Admin'}</span>
+                          {entry.action === 'status_changed' && (
+                            <span className="text-muted-foreground">
+                              {' '}changed status from{' '}
+                              <span className="font-medium capitalize">{entry.oldStatus ?? '—'}</span>
+                              {' '}to{' '}
+                              <span className="font-medium capitalize" style={{ color: entry.newStatus === 'paid' ? '#065f46' : entry.newStatus === 'scheduled' ? '#1d4ed8' : '#92400e' }}>{entry.newStatus}</span>
+                            </span>
+                          )}
+                          {isBackfill && <span className="text-muted-foreground italic"> (historical record)</span>}
+                        </div>
+                        <span className="text-muted-foreground flex-shrink-0 whitespace-nowrap">
+                          {new Date(entry.actedAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
