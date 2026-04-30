@@ -798,6 +798,14 @@ export const crmRouter = router({
     list: adminProcedure.query(async () => {
       return listAgentsWithCrm();
     }),
+    listTags: adminProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return [] as string[];
+      const { agentTags } = await import("../drizzle/schema");
+      const rows = await db.selectDistinct({ tag: agentTags.tag }).from(agentTags).orderBy(agentTags.tag);
+      return rows.map((r) => r.tag);
+    }),
 
     get: adminProcedure
       .input(z.object({ userId: z.number().int() }))
@@ -2375,13 +2383,53 @@ export const crmRouter = router({
             .filter((p) => p.email)
             .map((p) => ({ email: p.email!, name: `${p.firstName} ${p.lastName}`, id: p.id, type: "prospect" as const }));
         } else {
-          // Agents
-          const all = await getAllUsers();
-          let filtered = all.filter((u) => u.role === "agent" && u.isActive);
-          if (filters.portalStatus?.length) {
-            filtered = filtered.filter((u) => filters.portalStatus.includes(u.portalStatus));
+          // Agents — join with agentCrmProfiles and agentTags for segmentation
+          const { getDb } = await import("./db");
+          const db = await getDb();
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+          const { agentCrmProfiles, agentTags: agentTagsTable, users: usersTable } = await import("../drizzle/schema");
+          const { and, eq, inArray, isNotNull, sql: sqlFn } = await import("drizzle-orm");
+
+          // Build base query: active agents with email
+          const conditions: any[] = [
+            sqlFn`${usersTable.role} = 'agent'`,
+            isNotNull(usersTable.email),
+          ];
+          // Filter by agentStatus (active by default unless specified)
+          const statusFilter = filters.agentStatus?.length ? filters.agentStatus : ["active"];
+          conditions.push(inArray(agentCrmProfiles.agentStatus, statusFilter));
+
+          // Filter by membershipTier
+          if (filters.membershipTiers?.length) {
+            conditions.push(inArray(agentCrmProfiles.membershipTier, filters.membershipTiers));
           }
-          recipients = filtered
+          // Filter by trainingStage
+          if (filters.trainingStages?.length) {
+            conditions.push(inArray(agentCrmProfiles.trainingStage, filters.trainingStages));
+          }
+
+          const rows = await db
+            .select({ id: usersTable.id, email: usersTable.email, name: usersTable.name, profileId: agentCrmProfiles.id })
+            .from(usersTable)
+            .innerJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, usersTable.id))
+            .where(and(...conditions));
+
+          let agentRows = rows;
+
+          // Filter by tags (post-query)
+          if (filters.tags?.length) {
+            const tagRows = await db.select().from(agentTagsTable);
+            const tagMap = new Map<number, string[]>();
+            for (const t of tagRows) {
+              if (!tagMap.has(t.userId)) tagMap.set(t.userId, []);
+              tagMap.get(t.userId)!.push(t.tag);
+            }
+            agentRows = agentRows.filter((u) =>
+              filters.tags.some((tag: string) => tagMap.get(u.id)?.includes(tag))
+            );
+          }
+
+          recipients = agentRows
             .filter((u) => u.email)
             .map((u) => ({ email: u.email!, name: u.name ?? undefined, id: u.id, type: "agent" as const }));
         }

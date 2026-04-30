@@ -26,6 +26,11 @@ const PROSPECT_STAGES = [
   "Discovery Call Booked", "Approved", "Rejected", "Lost", "Won",
 ];
 
+// ─── Agent segmentation options ───────────────────────────────────────────────
+const MEMBERSHIP_TIERS = ["Business Class", "First Class", "Business Duo", "Business Trio", "First Class Duo"];
+const TRAINING_STAGES = ["Training", "Agent Accelerator", "Accredited"];
+const AGENT_STATUSES = ["active", "paused", "in_notice"];
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function statusBadge(status: string) {
   const map: Record<string, string> = {
@@ -49,11 +54,16 @@ interface CampaignFormData {
   bodyHtml: string;
   audienceType: "prospect" | "agent";
   stages: string[];
+  membershipTiers: string[];
+  trainingStages: string[];
+  agentTags: string[];
+  agentStatus: string[];
   templateId?: number;
 }
 
 const defaultCampaignForm: CampaignFormData = {
-  name: "", subject: "", bodyHtml: "", audienceType: "prospect", stages: [],
+  name: "", subject: "", bodyHtml: "", audienceType: "prospect",
+  stages: [], membershipTiers: [], trainingStages: [], agentTags: [], agentStatus: [],
 };
 
 function CampaignFormDialog({
@@ -66,7 +76,9 @@ function CampaignFormDialog({
   onSave: (data: CampaignFormData) => void;
   title: string;
 }) {
-  const [form, setForm] = useState<CampaignFormData>(initial ?? defaultCampaignForm);
+  const [form, setForm] = useState<CampaignFormData>(initial ?? { ...defaultCampaignForm, ...(initial ?? {}) });
+  const agentTagsQuery = trpc.crm.agentCrm.listTags.useQuery(undefined, { enabled: form.audienceType === "agent" });
+  const agentTagOptions = agentTagsQuery.data ?? [];
 
   function loadTemplate(id: number) {
     const t = templates.find((t) => t.id === id);
@@ -97,7 +109,7 @@ function CampaignFormDialog({
 
           {form.audienceType === "prospect" && (
             <div>
-              <Label>Filter by Pipeline Stage (leave empty for all prospects)</Label>
+              <Label>Filter by Pipeline Stage <span className="text-muted-foreground font-normal">(leave empty for all prospects)</span></Label>
               <div className="flex flex-wrap gap-2 mt-1.5">
                 {PROSPECT_STAGES.map((s) => (
                   <button
@@ -117,6 +129,77 @@ function CampaignFormDialog({
               </div>
               {form.stages.length > 0 && (
                 <p className="text-xs text-muted-foreground mt-1">Sending to: {form.stages.join(", ")}</p>
+              )}
+            </div>
+          )}
+
+          {form.audienceType === "agent" && (
+            <div className="space-y-3 p-3 rounded-lg border bg-muted/30">
+              <p className="text-sm font-medium">Agent Filters <span className="text-muted-foreground font-normal">(leave all empty to send to all active agents)</span></p>
+
+              <div>
+                <Label className="text-xs">Membership Tier</Label>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {MEMBERSHIP_TIERS.map((t) => (
+                    <button key={t} type="button"
+                      onClick={() => setForm((f) => ({ ...f, membershipTiers: f.membershipTiers.includes(t) ? f.membershipTiers.filter((x) => x !== t) : [...f.membershipTiers, t] }))}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${form.membershipTiers.includes(t) ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"}`}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs">Training Stage</Label>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {TRAINING_STAGES.map((t) => (
+                    <button key={t} type="button"
+                      onClick={() => setForm((f) => ({ ...f, trainingStages: f.trainingStages.includes(t) ? f.trainingStages.filter((x) => x !== t) : [...f.trainingStages, t] }))}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${form.trainingStages.includes(t) ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"}`}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs">Agent Status <span className="text-muted-foreground">(default: active only)</span></Label>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {AGENT_STATUSES.map((s) => (
+                    <button key={s} type="button"
+                      onClick={() => setForm((f) => ({ ...f, agentStatus: f.agentStatus.includes(s) ? f.agentStatus.filter((x) => x !== s) : [...f.agentStatus, s] }))}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${form.agentStatus.includes(s) ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"}`}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {agentTagOptions.length > 0 && (
+                <div>
+                  <Label className="text-xs">Tags</Label>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {agentTagOptions.map((t: string) => (
+                      <button key={t} type="button"
+                        onClick={() => setForm((f) => ({ ...f, agentTags: f.agentTags.includes(t) ? f.agentTags.filter((x) => x !== t) : [...f.agentTags, t] }))}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${form.agentTags.includes(t) ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"}`}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(form.membershipTiers.length > 0 || form.trainingStages.length > 0 || form.agentTags.length > 0 || form.agentStatus.length > 0) && (
+                <p className="text-xs text-muted-foreground">
+                  Filters: {[
+                    form.membershipTiers.length > 0 && `Tier: ${form.membershipTiers.join(", ")}`,
+                    form.trainingStages.length > 0 && `Training: ${form.trainingStages.join(", ")}`,
+                    form.agentStatus.length > 0 && `Status: ${form.agentStatus.join(", ")}`,
+                    form.agentTags.length > 0 && `Tags: ${form.agentTags.join(", ")}`,
+                  ].filter(Boolean).join(" · ")}
+                </p>
               )}
             </div>
           )}
@@ -405,7 +488,13 @@ export default function EmailMarketing() {
   });
 
   function handleSaveCampaign(form: CampaignFormData) {
-    const segmentFilters = form.stages.length > 0 ? JSON.stringify({ stages: form.stages }) : undefined;
+    const filters: Record<string, string[]> = {};
+    if (form.stages.length > 0) filters.stages = form.stages;
+    if (form.membershipTiers.length > 0) filters.membershipTiers = form.membershipTiers;
+    if (form.trainingStages.length > 0) filters.trainingStages = form.trainingStages;
+    if (form.agentTags.length > 0) filters.tags = form.agentTags;
+    if (form.agentStatus.length > 0) filters.agentStatus = form.agentStatus;
+    const segmentFilters = Object.keys(filters).length > 0 ? JSON.stringify(filters) : undefined;
     if (campaignDialog === "create") {
       createCampaign.mutate({ ...form, segmentFilters });
     } else if (editCampaign) {
@@ -623,13 +712,20 @@ export default function EmailMarketing() {
         <CampaignFormDialog
           open={!!campaignDialog}
           onClose={() => { setCampaignDialog(null); setEditCampaign(null); }}
-          initial={editCampaign ? {
-            name: editCampaign.name,
-            subject: editCampaign.subject,
-            bodyHtml: editCampaign.bodyHtml,
-            audienceType: editCampaign.audienceType,
-            stages: parseFilters(editCampaign.segmentFilters).stages ?? [],
-          } : undefined}
+          initial={editCampaign ? (() => {
+            const f = parseFilters(editCampaign.segmentFilters);
+            return {
+              name: editCampaign.name,
+              subject: editCampaign.subject,
+              bodyHtml: editCampaign.bodyHtml,
+              audienceType: editCampaign.audienceType,
+              stages: f.stages ?? [],
+              membershipTiers: f.membershipTiers ?? [],
+              trainingStages: f.trainingStages ?? [],
+              agentTags: f.tags ?? [],
+              agentStatus: f.agentStatus ?? [],
+            } as CampaignFormData;
+          })() : undefined}
           templates={templates}
           onSave={handleSaveCampaign}
           title={campaignDialog === "create" ? "New Campaign" : "Edit Campaign"}

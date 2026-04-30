@@ -1852,3 +1852,7 @@
 
 ## Email Sending Domain Update (Apr 30)
 - [x] Update from addresses to use mail.thejltgroup.co.uk subdomain: jointheteam@mail.thejltgroup.co.uk (prospects) and support@mail.thejltgroup.co.uk (agents)
+
+## Email Agent Segmentation (Apr 30)
+- [x] Backend: update campaigns.send procedure to filter agents by membershipTier, trainingStage, and tags when audienceType=agent
+- [x] Frontend: add agent segment filter UI in campaign builder — dropdowns/multi-select for membership tier, training stage, tags; show estimated recipient count
