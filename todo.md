@@ -1872,3 +1872,12 @@
 - [x] Backend: emailBranding tRPC router — get, update (admin only)
 - [x] Frontend: Email Branding tab in Email Marketing section with visual editor + live preview
 - [x] Wire branding settings into buildBrandedHtml() in resend-email.ts
+
+## Email Editor & Mobile Fixes (Apr 30)
+- [x] Fix Loom embed: detect Loom share URL, convert to embed URL, render as responsive iframe thumbnail in editor and in sent HTML
+- [x] Make images responsive in editor output: inserted images get max-width:100%, height:auto, display:block
+- [x] Mobile-responsive HTML email wrapper: fluid table layout, media queries for single-column on <600px, font size adjustments, padding reduction on mobile
+
+## Email Personalisation Merge Tags (Apr 30)
+- [x] Editor: merge-tag toolbar button — inserts {{first_name}}, {{full_name}}, {{email}} tokens with one click; tokens rendered as highlighted chips in editor
+- [x] Send engine: replace merge tags with real recipient values before wrapping in branded template

@@ -12,6 +12,20 @@ import crypto from "crypto";
 import { getEmailBrandingSettings } from "./crm-db";
 import type { EmailBrandingSettings } from "../drizzle/schema";
 
+/**
+ * Replace {{first_name}}, {{full_name}}, {{email}} merge tags with real values.
+ * Mirrors the client-side applyMergeTags helper in RichEmailEditor.tsx.
+ */
+function applyMergeTags(html: string, recipient: { name?: string | null; email?: string | null }): string {
+  const fullName = recipient.name?.trim() ?? "";
+  const firstName = fullName.split(" ")[0] ?? fullName;
+  const email = recipient.email ?? "";
+  return html
+    .replace(/\{\{first_name\}\}/gi, firstName || fullName || "there")
+    .replace(/\{\{full_name\}\}/gi, fullName || firstName || "there")
+    .replace(/\{\{email\}\}/gi, email);
+}
+
 // Lazy-init Resend client
 let _resend: Resend | null = null;
 function getResend(): Resend {
@@ -133,61 +147,81 @@ function wrapInBrandedTemplate(opts: {
     b?.linkedinUrl && `<a href="${b.linkedinUrl}" style="color:${accent};text-decoration:none;margin:0 6px;font-family:'Poppins',Arial,sans-serif;font-size:12px;">LinkedIn</a>`,
   ].filter(Boolean).join("");
 
-  const unsubscribeSection = opts.unsubscribeUrl
-    ? `<tr><td style="padding:16px 40px;text-align:center;">
-        <p style="font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#999;margin:0;">
-          You're receiving this email because you enquired about joining the JLT Group.<br/>
-          <a href="${opts.unsubscribeUrl}" style="color:${accent};text-decoration:underline;">Unsubscribe</a>
-        </p>
-      </td></tr>`
-    : "";
-
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <meta name="x-apple-disable-message-reformatting"/>
   <title>${companyName}</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    /* Reset */
+    body, table, td, a { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+    table, td { mso-table-lspace:0pt; mso-table-rspace:0pt; border-collapse:collapse; }
+    img { -ms-interpolation-mode:bicubic; border:0; outline:none; text-decoration:none;
+          max-width:100% !important; width:100% !important; height:auto !important; display:block; }
+    /* Responsive wrapper */
+    .email-wrapper { width:100% !important; background-color:${bodyBg}; padding:20px 0; }
+    .email-card   { max-width:600px; width:100%; margin:0 auto; background:${cardBg};
+                    border-radius:12px; overflow:hidden; }
+    .email-header { background-color:${headerBg}; padding:24px 40px; text-align:center; }
+    .email-body   { padding:32px 40px; color:#414141; font-family:'Poppins',Arial,sans-serif;
+                    font-size:15px; line-height:1.7; }
+    .email-footer { padding:20px 40px; text-align:center; background-color:#fafafa; }
+    /* Mobile */
+    @media only screen and (max-width:620px) {
+      .email-wrapper { padding:0 !important; }
+      .email-card    { border-radius:0 !important; }
+      .email-header  { padding:20px 20px !important; }
+      .email-body    { padding:24px 20px !important; font-size:15px !important; }
+      .email-footer  { padding:16px 20px !important; }
+      .email-unsub   { padding:12px 20px !important; }
+      /* Make CTA buttons full-width on mobile */
+      a[data-cta] { display:block !important; text-align:center !important;
+                    padding:14px 20px !important; }
+      /* Ensure images never overflow */
+      img { max-width:100% !important; height:auto !important; }
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;background-color:${bodyBg};font-family:'Poppins',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:${bodyBg};padding:32px 0;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${cardBg};border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
-          <!-- Header -->
-          <tr>
-            <td style="background-color:${headerBg};padding:28px 40px;text-align:center;">
-              ${logoHtml}
-              ${tagline ? `<div style="font-family:'Poppins',Arial,sans-serif;font-size:13px;color:${headerText};opacity:0.75;margin-top:6px;">${tagline}</div>` : ""}
-            </td>
-          </tr>
-          <!-- Body -->
-          <tr>
-            <td style="padding:36px 40px;color:#414141;font-family:'Poppins',Arial,sans-serif;font-size:15px;line-height:1.7;">
-              ${opts.bodyHtml}
-            </td>
-          </tr>
-          <!-- Divider -->
-          <tr>
-            <td style="padding:0 40px;">
-              <hr style="border:none;border-top:1px solid #f0f0f0;margin:0;"/>
-            </td>
-          </tr>
-          <!-- Footer -->
-          <tr>
-            <td style="padding:24px 40px;text-align:center;background-color:#fafafa;">
-              ${socials ? `<div style="margin-bottom:10px;">${socials}</div>` : ""}
-              <p style="font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#999;margin:0;">
-                ${footerText}
-              </p>
-            </td>
-          </tr>
-          ${unsubscribeSection}
-        </table>
-      </td>
-    </tr>
-  </table>
+  <!--[if mso]><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><![endif]-->
+  <div class="email-wrapper">
+    <div class="email-card" style="max-width:600px;width:100%;margin:0 auto;background:${cardBg};border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+
+      <!-- Header -->
+      <div class="email-header" style="background-color:${headerBg};padding:24px 40px;text-align:center;">
+        ${logoHtml}
+        ${tagline ? `<div style="font-family:'Poppins',Arial,sans-serif;font-size:13px;color:${headerText};opacity:0.75;margin-top:6px;">${tagline}</div>` : ""}
+      </div>
+
+      <!-- Body -->
+      <div class="email-body" style="padding:32px 40px;color:#414141;font-family:'Poppins',Arial,sans-serif;font-size:15px;line-height:1.7;">
+        ${opts.bodyHtml}
+      </div>
+
+      <!-- Divider -->
+      <div style="padding:0 40px;"><hr style="border:none;border-top:1px solid #f0f0f0;margin:0;"/></div>
+
+      <!-- Footer -->
+      <div class="email-footer" style="padding:20px 40px;text-align:center;background-color:#fafafa;">
+        ${socials ? `<div style="margin-bottom:10px;">${socials}</div>` : ""}
+        <p style="font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#999;margin:0;">${footerText}</p>
+      </div>
+
+      ${opts.unsubscribeUrl ? `
+      <!-- Unsubscribe -->
+      <div class="email-unsub" style="padding:12px 40px;text-align:center;">
+        <p style="font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#999;margin:0;">
+          You're receiving this email because you enquired about joining the JLT Group.<br/>
+          <a href="${opts.unsubscribeUrl}" style="color:${accent};text-decoration:underline;">Unsubscribe</a>
+        </p>
+      </div>` : ""}
+
+    </div>
+  </div>
+  <!--[if mso]></td></tr></table><![endif]-->
 </body>
 </html>`;
 }
@@ -271,9 +305,13 @@ export async function sendMarketingEmail(opts: {
   // Load branding settings (cached per process — acceptable for email sends)
   const branding = await getEmailBrandingSettings();
 
+  // Apply personalisation merge tags ({{first_name}}, {{full_name}}, {{email}})
+  const personalisedBody = applyMergeTags(opts.bodyHtml, { name: opts.toName, email: opts.to });
+  const personalisedSubject = applyMergeTags(opts.subject, { name: opts.toName, email: opts.to });
+
   // Wrap in branded template
   let html = wrapInBrandedTemplate({
-    bodyHtml: opts.bodyHtml,
+    bodyHtml: personalisedBody,
     audienceType: opts.audienceType,
     unsubscribeUrl,
     branding,
@@ -289,7 +327,7 @@ export async function sendMarketingEmail(opts: {
       from: getFromAddress(opts.audienceType),
       replyTo: getReplyTo(opts.audienceType),
       to: opts.to,
-      subject: opts.subject,
+      subject: personalisedSubject,
       html,
     });
 
