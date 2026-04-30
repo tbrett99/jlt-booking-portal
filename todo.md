@@ -1856,3 +1856,13 @@
 ## Email Agent Segmentation (Apr 30)
 - [x] Backend: update campaigns.send procedure to filter agents by membershipTier, trainingStage, and tags when audienceType=agent
 - [x] Frontend: add agent segment filter UI in campaign builder — dropdowns/multi-select for membership tier, training stage, tags; show estimated recipient count
+
+## Email Marketing Improvements (Apr 30)
+- [x] Add reply-to headers: jointheteam@thejltgroup.co.uk for prospects, support@thejltgroup.co.uk for agents
+- [x] Branded HTML email wrapper — JLT logo, turquoise header (#70FFE8), Poppins font, styled body, footer with social links
+- [x] DB: email_unsubscribes table (id, email, unsubscribedAt, prospectId nullable)
+- [x] Backend: unsubscribe token generation + /api/unsubscribe/:token endpoint
+- [x] Backend: auto-exclude unsubscribed emails from prospect campaign sends
+- [x] Frontend: unsubscribe landing page (/unsubscribe) with confirmation message
+- [ ] Frontend: admin view of unsubscribes list in Email Marketing section (deferred)
+- [x] Rich editor: colour picker for text/background, button block, divider, font size controls

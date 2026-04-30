@@ -484,6 +484,13 @@
       "when": 1777541616478,
       "tag": "0068_email_marketing_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "5",
+      "when": 1777559040887,
+      "tag": "0069_email_unsubscribes",
+      "breakpoints": true
     }
   ]
 }

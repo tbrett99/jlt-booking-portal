@@ -1160,3 +1160,14 @@ export const emailDripEnrollments = mysqlTable("email_drip_enrollments", {
 });
 export type EmailDripEnrollment = typeof emailDripEnrollments.$inferSelect;
 export type InsertEmailDripEnrollment = typeof emailDripEnrollments.$inferInsert;
+
+// ── Email Unsubscribes ────────────────────────────────────────────────────────
+export const emailUnsubscribes = mysqlTable("email_unsubscribes", {
+  id: int("id").primaryKey().autoincrement(),
+  email: varchar("email", { length: 255 }).notNull(),
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  prospectId: int("prospectId"),
+  unsubscribedAt: timestamp("unsubscribedAt").notNull().defaultNow(),
+});
+export type EmailUnsubscribe = typeof emailUnsubscribes.$inferSelect;
+export type InsertEmailUnsubscribe = typeof emailUnsubscribes.$inferInsert;

@@ -1229,6 +1229,62 @@ async function startServer() {
     }
   });
 
+  // ── Email Open/Click Tracking ──────────────────────────────────────────────
+  app.get("/api/email-track/open", async (req, res) => {
+    try {
+      const sid = parseInt(req.query.sid as string);
+      if (!isNaN(sid)) {
+        const { getDb } = await import("../db");
+        const { emailSends } = await import("../../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const db = await getDb();
+        if (db) {
+          await db.update(emailSends).set({ status: "opened", openedAt: new Date() }).where(eq(emailSends.id, sid));
+        }
+      }
+    } catch (e) { /* silent */ }
+    // Return 1x1 transparent GIF
+    const gif = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+    res.setHeader("Content-Type", "image/gif");
+    res.setHeader("Cache-Control", "no-store");
+    res.end(gif);
+  });
+
+  app.get("/api/email-track/click", async (req, res) => {
+    const sid = parseInt(req.query.sid as string);
+    const url = req.query.url as string;
+    try {
+      if (!isNaN(sid)) {
+        const { getDb } = await import("../db");
+        const { emailSends } = await import("../../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const db = await getDb();
+        if (db) {
+          await db.update(emailSends).set({ status: "clicked", clickedAt: new Date() }).where(eq(emailSends.id, sid));
+        }
+      }
+    } catch (e) { /* silent */ }
+    if (url) {
+      res.redirect(302, decodeURIComponent(url));
+    } else {
+      res.redirect(302, "/");
+    }
+  });
+
+  // ── Email Unsubscribe ─────────────────────────────────────────────────────
+  app.get("/api/unsubscribe", async (req, res) => {
+    const token = req.query.token as string;
+    if (!token) return res.redirect("/unsubscribe?error=invalid");
+    try {
+      const { processUnsubscribe } = await import("../resend-email");
+      const email = await processUnsubscribe(token);
+      if (!email) return res.redirect("/unsubscribe?error=invalid");
+      res.redirect(`/unsubscribe?success=1&email=${encodeURIComponent(email)}`);
+    } catch (e) {
+      res.redirect("/unsubscribe?error=server");
+    }
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",

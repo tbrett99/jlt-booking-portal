@@ -75,6 +75,7 @@ import CrmChangeRequests from "./pages/crm/CrmChangeRequests";
 import Memberships from "./pages/crm/Memberships";
 import MyProfile from "./pages/MyProfile";
 import TermsAndPolicies from "./pages/TermsAndPolicies";
+import UnsubscribePage from "./pages/UnsubscribePage";
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -167,6 +168,8 @@ function AuthRouter() {
         <Route path="/join/accept" component={JoinAccept} />
         {/* Public terms & policies — no auth required */}
         <Route path="/terms" component={TermsAndPolicies} />
+        {/* Public unsubscribe page — no auth required */}
+        <Route path="/unsubscribe" component={UnsubscribePage} />
         <Route component={LoginPage} />
       </Switch>
     );
@@ -211,6 +214,7 @@ function AuthRouter() {
           <Route path="/notifications" component={AgentNotifications} />
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
+          <Route path="/unsubscribe" component={UnsubscribePage} />
           <Route component={NotFound} />
         </Switch>
         </OnboardingGate>
@@ -244,6 +248,7 @@ function AuthRouter() {
           <Route path="/notifications" component={AgentNotifications} />
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
+          <Route path="/unsubscribe" component={UnsubscribePage} />
           <Route component={NotFound} />
         </Switch>
       </PortalLayout>
@@ -298,6 +303,7 @@ function AuthRouter() {
         <Route path="/crm/change-requests" component={CrmChangeRequests} />
         <Route path="/crm/memberships" component={Memberships} />
         <Route path="/profile" component={ProfilePage} />
+        <Route path="/unsubscribe" component={UnsubscribePage} />
         <Route component={NotFound} />
       </Switch>
     </PortalLayout>
