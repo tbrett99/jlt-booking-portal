@@ -73,11 +73,15 @@ export default function RegisterBooking() {
       toast.error("Please select a destination country");
       return;
     }
+    if (!grossCost || parseFloat(grossCost) <= 0) {
+      toast.error("Please enter the gross cost of the booking");
+      return;
+    }
     if (!passengers || parseInt(passengers) < 1) {
       toast.error("Please enter the number of passengers (excluding infants)");
       return;
     }
-    if (!numberOfNights || parseInt(numberOfNights) < 0) {
+    if (numberOfNights === "" || numberOfNights === null || numberOfNights === undefined || parseInt(numberOfNights) < 0) {
       toast.error("Please enter the number of nights");
       return;
     }
@@ -94,10 +98,10 @@ export default function RegisterBooking() {
         reimbursementsRequired,
         reimbursementItems: validReimbItems,
         expectedCommission: !isPersonalBooking && commNum > 0 ? commNum : undefined,
-        grossCost: grossNum > 0 ? grossNum : undefined,
+        grossCost: grossNum,
         destination: destination || undefined,
-        passengers: passengers ? parseInt(passengers) : undefined,
-        numberOfNights: numberOfNights ? parseInt(numberOfNights) : undefined,
+        passengers: parseInt(passengers),
+        numberOfNights: parseInt(numberOfNights),
         isPersonalBooking,
         isHistoricBooking,
       });

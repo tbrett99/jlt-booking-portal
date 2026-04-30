@@ -662,10 +662,10 @@ export const appRouter = router({
           reimbursementsRequired: z.boolean(),
           reimbursementDocUrl: z.string().optional(),
           expectedCommission: z.number().min(0).optional(),
-          grossCost: z.number().min(0).optional(),
+          grossCost: z.number().min(0.01, "Gross cost is required"),
           destination: z.string().optional(),
-          passengers: z.number().int().min(1).optional(),
-          numberOfNights: z.number().int().min(0).optional(),
+          passengers: z.number().int().min(1, "At least 1 passenger is required"),
+          numberOfNights: z.number().int().min(0, "Number of nights is required"),
           isPersonalBooking: z.boolean().optional(),
           isHistoricBooking: z.boolean().optional(),
           reimbursementItems: z.array(z.object({

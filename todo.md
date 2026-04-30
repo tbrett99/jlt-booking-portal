@@ -1893,3 +1893,7 @@
 - [x] DB: reimbursement_audit_logs table (id, reimbursementItemId, bookingId, action, oldStatus, newStatus, actedById, actedAt, note)
 - [x] Backend: write audit log entry whenever a reimbursement item status changes (mark paid, mark unpaid, etc.)
 - [x] Frontend: activity feed / audit trail on the reimbursement panel showing who changed what and when
+
+## Mandatory Booking Fields (Apr 30)
+- [x] Frontend: make grossCost, paxNumbers, and nightNumbers required on agent booking registration form (cannot submit without them)
+- [x] Backend: enforce grossCost, paxNumbers, nightNumbers as required in the tRPC booking create/register procedure
