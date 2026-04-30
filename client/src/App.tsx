@@ -47,6 +47,7 @@ import ProfilePage from "./pages/ProfilePage";
 import BookingDocuments from "./pages/BookingDocuments";
 import AdminInboxConfig from "./pages/admin/AdminInboxConfig";
 import AdminInboxAudit from "./pages/admin/AdminInboxAudit";
+import AbandonedSignups from "./pages/admin/AbandonedSignups";
 import CrmPipeline from "./pages/crm/CrmPipeline";
 import CrmProspects from "./pages/crm/CrmProspects";
 import ProspectDetail from "./pages/crm/ProspectDetail";
@@ -300,6 +301,7 @@ function AuthRouter() {
         <Route path="/crm/agents" component={AgentCrm} />
         <Route path="/crm/agents/:userId/contract-evidence" component={ContractEvidenceViewer} />
         <Route path="/crm/join-sessions" component={JoinSessions} />
+        <Route path="/crm/abandoned-signups" component={AbandonedSignups} />
         <Route path="/crm/change-requests" component={CrmChangeRequests} />
         <Route path="/crm/memberships" component={Memberships} />
         <Route path="/profile" component={ProfilePage} />

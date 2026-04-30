@@ -12,7 +12,7 @@
  */
 
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull, desc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
@@ -739,5 +739,102 @@ export const joinRouter = router({
       );
 
       return teamsWithCounts;
+    }),
+
+  // ── Admin: list abandoned sign-up sessions ──────────────────────────────────
+  getAbandonedSessions: protectedProcedure
+    .input(z.object({ daysIdle: z.number().int().min(0).default(0) }).optional())
+    .query(async ({ ctx, input }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db
+        .select({
+          id: joinSessions.id,
+          email: joinSessions.email,
+          membershipTier: joinSessions.membershipTier,
+          membershipType: joinSessions.membershipType,
+          step: joinSessions.step,
+          contractSignedAt: joinSessions.contractSignedAt,
+          joiningFeePaidAt: joinSessions.joiningFeePaidAt,
+          createdAt: joinSessions.createdAt,
+          updatedAt: joinSessions.updatedAt,
+          expiresAt: joinSessions.expiresAt,
+          sessionToken: joinSessions.sessionToken,
+        })
+        .from(joinSessions)
+        .where(isNull(joinSessions.userId))
+        .orderBy(desc(joinSessions.createdAt));
+
+      const now = Date.now();
+      const minDaysIdle = input?.daysIdle ?? 0;
+      return rows
+        .map((r) => {
+          const createdMs = r.createdAt ? new Date(r.createdAt as any).getTime() : now;
+          const updatedMs = r.updatedAt ? new Date(r.updatedAt as any).getTime() : createdMs;
+          const daysIdle = Math.floor((now - updatedMs) / (1000 * 60 * 60 * 24));
+          const daysAgo = Math.floor((now - createdMs) / (1000 * 60 * 60 * 24));
+          let progress = 'Started application';
+          if (r.joiningFeePaidAt) progress = 'Paid — awaiting account creation';
+          else if (r.contractSignedAt) progress = 'Contract signed — payment pending';
+          else if (r.step === 'payment') progress = 'Reached payment step';
+          else if (r.step === 'contract') progress = 'Reached contract step';
+          return { ...r, daysIdle, daysAgo, progress };
+        })
+        .filter((r) => r.daysIdle >= minDaysIdle);
+    }),
+
+  // ── Admin: send a nudge email to an abandoned sign-up ──────────────────────
+  sendNudge: protectedProcedure
+    .input(z.object({ sessionId: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const rows = await db
+        .select()
+        .from(joinSessions)
+        .where(and(eq(joinSessions.id, input.sessionId), isNull(joinSessions.userId)))
+        .limit(1);
+
+      const session = rows[0];
+      if (!session) throw new TRPCError({ code: 'NOT_FOUND', message: 'Session not found or already completed' });
+
+      const baseUrl = process.env.VITE_OAUTH_PORTAL_URL ?? 'https://portal.thejltgroup.co.uk';
+      const resumeUrl = `${baseUrl}/join?token=${session.sessionToken}`;
+
+      const tierLabel = session.membershipTier === 'business_class' ? 'Business Class'
+        : session.membershipTier === 'first_class' ? 'First Class'
+        : session.membershipTier === 'charter' ? 'Charter'
+        : session.membershipTier ?? 'membership';
+
+      const stepLabel = session.joiningFeePaidAt ? 'finalising your account'
+        : session.contractSignedAt ? 'completing your payment'
+        : session.step === 'payment' ? 'completing your payment'
+        : 'reviewing and signing your contract';
+
+      await sendDirectEmail({
+        toEmail: session.email,
+        toName: session.email.split('@')[0],
+        subject: `You're almost there — complete your JLT Group application`,
+        html: `
+          <p>Hi there,</p>
+          <p>We noticed you started your application to join JLT Group as a <strong>${tierLabel}</strong> member, but didn't quite finish.</p>
+          <p>You were at the step of <strong>${stepLabel}</strong> — you're so close!</p>
+          <p>Click the button below to pick up right where you left off:</p>
+          <p style="margin: 24px 0;">
+            <a href="${resumeUrl}" style="background:#70FFE8;color:#0a0a0a;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Resume My Application</a>
+          </p>
+          <p>If you have any questions or need help, just reply to this email — we'd love to have you on board.</p>
+          <p>The JLT Group Team</p>
+        `,
+      });
+
+      return { ok: true, email: session.email };
     }),
 });

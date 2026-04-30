@@ -7,7 +7,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -315,6 +315,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       items: [
         { label: "Agent CRM", href: "/crm/agents", icon: <UserCheck size={16} /> },
         { label: "Sign-Up Applications", href: "/crm/join-sessions", icon: <UserSearch size={16} /> },
+        { label: "Abandoned Sign-Ups", href: "/crm/abandoned-signups", icon: <UserX size={16} /> },
         { label: "Change Requests", href: "/crm/change-requests", icon: <ClipboardList size={16} /> },
         { label: "Memberships", href: "/crm/memberships", icon: <CreditCard size={16} /> },
       ],

@@ -1897,3 +1897,9 @@
 ## Mandatory Booking Fields (Apr 30)
 - [x] Frontend: make grossCost, paxNumbers, and nightNumbers required on agent booking registration form (cannot submit without them)
 - [x] Backend: enforce grossCost, paxNumbers, nightNumbers as required in the tRPC booking create/register procedure
+
+## Abandoned Sign-Up Tracker (Apr 30)
+- [x] Backend: tRPC procedure to list abandoned join_sessions (userId IS NULL, grouped by step, with email, tier, type, step, createdAt, updatedAt, days since started)
+- [x] Backend: tRPC mutation to send a nudge email to an abandoned sign-up (personalised with their name/tier, link back to resume their session)
+- [x] Frontend: Abandoned Sign-Ups page in admin area showing table with email, membership tier, step abandoned at, date started, days idle, and Nudge button
+- [x] Frontend: Add "Abandoned Sign-Ups" entry to the admin sidebar under CRM or a new Sign-Ups section
