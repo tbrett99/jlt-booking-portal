@@ -20,8 +20,8 @@ function getResend(): Resend {
 }
 
 // Sending addresses
-export const PROSPECT_FROM = "JLT Group <jointheteam@thejltgroup.co.uk>";
-export const AGENT_FROM = "JLT Group <support@thejltgroup.co.uk>";
+export const PROSPECT_FROM = "JLT Group <jointheteam@mail.thejltgroup.co.uk>";
+export const AGENT_FROM = "JLT Group <support@mail.thejltgroup.co.uk>";
 
 export function getFromAddress(audienceType: "prospect" | "agent"): string {
   return audienceType === "prospect" ? PROSPECT_FROM : AGENT_FROM;

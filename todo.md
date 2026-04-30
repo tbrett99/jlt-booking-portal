@@ -1849,3 +1849,6 @@
 
 ### Setup Instructions for User
 - [x] Document: Resend account setup steps for user (create API key, verify sending domains jointheteam@ and support@)
+
+## Email Sending Domain Update (Apr 30)
+- [x] Update from addresses to use mail.thejltgroup.co.uk subdomain: jointheteam@mail.thejltgroup.co.uk (prospects) and support@mail.thejltgroup.co.uk (agents)
