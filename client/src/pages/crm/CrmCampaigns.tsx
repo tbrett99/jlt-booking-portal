@@ -6,35 +6,42 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Plus, Send, Eye, Pencil } from "lucide-react";
 
-const SEGMENT_LABELS: Record<string, string> = {
-  all_agents: "All Agents",
-  all_prospects: "All Prospects",
-  all_contacts: "All Contacts (Agents + Prospects)",
-  won_prospects: "Won Prospects Only",
-  custom: "Custom",
-};
+const PROSPECT_STAGES = [
+  "New Enquiry", "AR Submitted", "AR Approved", "Discovery Call Booked", "Approved", "Won",
+];
 
 const statusColor: Record<string, string> = {
   draft: "bg-gray-100 text-gray-600",
   sending: "bg-blue-100 text-blue-700",
   sent: "bg-green-100 text-green-700",
+  failed: "bg-red-100 text-red-700",
 };
+
+type FormState = {
+  name: string;
+  subject: string;
+  bodyHtml: string;
+  audienceType: "prospect" | "agent";
+  stages: string[];
+};
+
+const defaultForm: FormState = { name: "", subject: "", bodyHtml: "", audienceType: "prospect", stages: [] };
 
 export default function CrmCampaigns() {
   const [createDialog, setCreateDialog] = useState(false);
   const [editDialog, setEditDialog] = useState<any>(null);
   const [previewDialog, setPreviewDialog] = useState<any>(null);
   const [sendConfirm, setSendConfirm] = useState<any>(null);
-  const [form, setForm] = useState({ name: "", subject: "", bodyHtml: "", segmentType: "all_agents" as const });
+  const [form, setForm] = useState<FormState>(defaultForm);
 
   const { data: campaigns = [], refetch } = trpc.crm.campaigns.list.useQuery();
+
   const createCampaign = trpc.crm.campaigns.create.useMutation({
-    onSuccess: () => { refetch(); setCreateDialog(false); setForm({ name: "", subject: "", bodyHtml: "", segmentType: "all_agents" }); toast.success("Campaign created"); },
+    onSuccess: () => { refetch(); setCreateDialog(false); setForm(defaultForm); toast.success("Campaign created"); },
     onError: (e) => toast.error(e.message),
   });
   const updateCampaign = trpc.crm.campaigns.update.useMutation({
@@ -42,26 +49,36 @@ export default function CrmCampaigns() {
     onError: (e) => toast.error(e.message),
   });
   const sendCampaign = trpc.crm.campaigns.send.useMutation({
-    onSuccess: (data) => { refetch(); setSendConfirm(null); toast.success(`Campaign sent to ${data.sentCount} recipients`); },
+    onSuccess: (data) => { refetch(); setSendConfirm(null); toast.success(`Campaign sent to ${data.recipientCount} recipients`); },
     onError: (e) => toast.error(e.message),
   });
+
+  function buildFilters(stages: string[]) {
+    return stages.length > 0 ? JSON.stringify({ stages }) : undefined;
+  }
+
+  function parseStages(filters: string | null | undefined): string[] {
+    if (!filters) return [];
+    try { return JSON.parse(filters).stages ?? []; } catch { return []; }
+  }
+
+  function audienceLabel(c: any) {
+    if (c.audienceType === "agent") return "All Agents";
+    const stages = parseStages(c.segmentFilters);
+    if (stages.length === 0) return "All Prospects";
+    return `Prospects: ${stages.join(", ")}`;
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Email Campaigns</h1>
-          <p className="text-sm text-muted-foreground">Send business updates to agents and prospects (up to 500 recipients)</p>
+          <p className="text-sm text-muted-foreground">Send bulk emails to agents and prospects</p>
         </div>
         <Button size="sm" onClick={() => setCreateDialog(true)}><Plus size={14} className="mr-1" />New Campaign</Button>
       </div>
 
-      {/* Info banner */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700">
-        <strong>Note:</strong> Emails are sent via SMTP. For best deliverability, ensure your domain's SPF/DKIM records are configured. Campaigns are capped at 500 recipients.
-      </div>
-
-      {/* Campaign list */}
       <div className="space-y-3">
         {(campaigns as any[]).length === 0 ? (
           <div className="text-center py-12 text-muted-foreground border rounded-lg">
@@ -79,16 +96,16 @@ export default function CrmCampaigns() {
                   </div>
                   <p className="text-sm text-muted-foreground mt-0.5">Subject: {c.subject}</p>
                   <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
-                    <span>Segment: {SEGMENT_LABELS[c.segmentType] ?? c.segmentType}</span>
+                    <span>Audience: {audienceLabel(c)}</span>
                     {c.sentAt && <span>Sent: {new Date(c.sentAt).toLocaleDateString("en-GB")}</span>}
-                    {c.sentCount > 0 && <span>{c.sentCount} recipients</span>}
+                    {(c.totalRecipients ?? 0) > 0 && <span>{c.totalRecipients} recipients</span>}
                   </div>
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
                   <Button size="sm" variant="outline" onClick={() => setPreviewDialog(c)}><Eye size={13} className="mr-1" />Preview</Button>
                   {c.status === "draft" && (
                     <>
-                      <Button size="sm" variant="outline" onClick={() => setEditDialog({ ...c })}><Pencil size={13} className="mr-1" />Edit</Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditDialog({ ...c, stages: parseStages(c.segmentFilters) })}><Pencil size={13} className="mr-1" />Edit</Button>
                       <Button size="sm" onClick={() => setSendConfirm(c)}><Send size={13} className="mr-1" />Send</Button>
                     </>
                   )}
@@ -110,15 +127,31 @@ export default function CrmCampaigns() {
                 <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. April Business Update" />
               </div>
               <div className="space-y-1.5">
-                <Label>Recipients</Label>
-                <Select value={form.segmentType} onValueChange={(v) => setForm((f) => ({ ...f, segmentType: v as any }))}>
+                <Label>Audience</Label>
+                <Select value={form.audienceType} onValueChange={(v) => setForm((f) => ({ ...f, audienceType: v as "prospect" | "agent", stages: [] }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(SEGMENT_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                    <SelectItem value="prospect">Prospects</SelectItem>
+                    <SelectItem value="agent">Agents</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
+            {form.audienceType === "prospect" && (
+              <div className="space-y-1.5">
+                <Label>Filter by Pipeline Stage <span className="text-muted-foreground font-normal">(leave blank for all prospects)</span></Label>
+                <div className="flex flex-wrap gap-2">
+                  {PROSPECT_STAGES.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, stages: f.stages.includes(s) ? f.stages.filter((x) => x !== s) : [...f.stages, s] }))}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${form.stages.includes(s) ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:border-primary"}`}
+                    >{s}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Email Subject</Label>
               <Input value={form.subject} onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} placeholder="e.g. Important update from JLT Group" />
@@ -126,12 +159,15 @@ export default function CrmCampaigns() {
             <div className="space-y-1.5">
               <Label>Email Body (HTML)</Label>
               <Textarea rows={10} value={form.bodyHtml} onChange={(e) => setForm((f) => ({ ...f, bodyHtml: e.target.value }))} placeholder="<p>Dear Agent,</p><p>We have an exciting update...</p>" className="font-mono text-sm" />
-              <p className="text-xs text-muted-foreground">You can use HTML to format your email. Keep it simple for best compatibility.</p>
+              <p className="text-xs text-muted-foreground">Use HTML to format your email. A rich editor with templates is coming soon.</p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialog(false)}>Cancel</Button>
-            <Button onClick={() => createCampaign.mutate(form)} disabled={createCampaign.isPending || !form.name || !form.subject || !form.bodyHtml}>
+            <Button
+              onClick={() => createCampaign.mutate({ name: form.name, subject: form.subject, bodyHtml: form.bodyHtml, audienceType: form.audienceType, segmentFilters: buildFilters(form.stages) })}
+              disabled={createCampaign.isPending || !form.name || !form.subject || !form.bodyHtml}
+            >
               {createCampaign.isPending ? "Creating…" : "Create Campaign"}
             </Button>
           </DialogFooter>
@@ -150,15 +186,31 @@ export default function CrmCampaigns() {
                   <Input value={editDialog.name} onChange={(e) => setEditDialog((d: any) => ({ ...d, name: e.target.value }))} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Recipients</Label>
-                  <Select value={editDialog.segmentType} onValueChange={(v) => setEditDialog((d: any) => ({ ...d, segmentType: v }))}>
+                  <Label>Audience</Label>
+                  <Select value={editDialog.audienceType} onValueChange={(v) => setEditDialog((d: any) => ({ ...d, audienceType: v, stages: [] }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {Object.entries(SEGMENT_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                      <SelectItem value="prospect">Prospects</SelectItem>
+                      <SelectItem value="agent">Agents</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
+              {editDialog.audienceType === "prospect" && (
+                <div className="space-y-1.5">
+                  <Label>Filter by Pipeline Stage</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {PROSPECT_STAGES.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setEditDialog((d: any) => ({ ...d, stages: (d.stages ?? []).includes(s) ? (d.stages ?? []).filter((x: string) => x !== s) : [...(d.stages ?? []), s] }))}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${(editDialog.stages ?? []).includes(s) ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:border-primary"}`}
+                      >{s}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label>Email Subject</Label>
                 <Input value={editDialog.subject} onChange={(e) => setEditDialog((d: any) => ({ ...d, subject: e.target.value }))} />
@@ -171,7 +223,10 @@ export default function CrmCampaigns() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialog(null)}>Cancel</Button>
-            <Button onClick={() => updateCampaign.mutate({ id: editDialog.id, name: editDialog.name, subject: editDialog.subject, bodyHtml: editDialog.bodyHtml, segmentType: editDialog.segmentType })} disabled={updateCampaign.isPending}>
+            <Button
+              onClick={() => updateCampaign.mutate({ id: editDialog.id, name: editDialog.name, subject: editDialog.subject, bodyHtml: editDialog.bodyHtml, audienceType: editDialog.audienceType, segmentFilters: buildFilters(editDialog.stages ?? []) })}
+              disabled={updateCampaign.isPending}
+            >
               {updateCampaign.isPending ? "Saving…" : "Save Changes"}
             </Button>
           </DialogFooter>
@@ -199,11 +254,11 @@ export default function CrmCampaigns() {
         <DialogContent>
           <DialogHeader><DialogTitle>Send Campaign</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
-            You are about to send <strong>"{sendConfirm?.name}"</strong> to all <strong>{SEGMENT_LABELS[sendConfirm?.segmentType] ?? sendConfirm?.segmentType}</strong>. This action cannot be undone.
+            You are about to send <strong>"{sendConfirm?.name}"</strong> to <strong>{audienceLabel(sendConfirm ?? {})}</strong>. This action cannot be undone.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSendConfirm(null)}>Cancel</Button>
-            <Button onClick={() => sendCampaign.mutate({ id: sendConfirm.id })} disabled={sendCampaign.isPending}>
+            <Button onClick={() => sendCampaign.mutate({ campaignId: sendConfirm!.id, baseUrl: window.location.origin })} disabled={sendCampaign.isPending}>
               {sendCampaign.isPending ? "Sending…" : "Yes, Send Now"}
             </Button>
           </DialogFooter>

@@ -470,6 +470,20 @@
       "when": 1777470022927,
       "tag": "0066_wild_mandroid",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "5",
+      "when": 1777539993399,
+      "tag": "0067_email_marketing",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "5",
+      "when": 1777541616478,
+      "tag": "0068_email_marketing_tables",
+      "breakpoints": true
     }
   ]
 }

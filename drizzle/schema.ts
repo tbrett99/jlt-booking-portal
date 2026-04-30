@@ -611,40 +611,53 @@ export const prospectContracts = mysqlTable("prospect_contracts", {
 export type ProspectContract = typeof prospectContracts.$inferSelect;
 
 // ─── CRM: Email Campaigns ─────────────────────────────────────────────────────
+// Full marketing campaigns (ad-hoc bulk sends to prospects or agents)
 
 export const emailCampaigns = mysqlTable("email_campaigns", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
+  audienceType: mysqlEnum("audienceType", ["prospect", "agent"]).notNull().default("prospect"),
+  segmentFilters: text("segmentFilters"),                           // JSON string: { stages?, tags?, membershipTiers?, trainingStages? }
   subject: varchar("subject", { length: 500 }).notNull(),
-  bodyHtml: mediumtext("bodyHtml").notNull(),
-  segmentType: mysqlEnum("segmentType", [
-    "all_agents",
-    "all_prospects",
-    "all_contacts",
-    "won_prospects",
-    "custom",
-  ]).default("all_contacts").notNull(),
-  status: mysqlEnum("status", ["draft", "sending", "sent"]).default("draft").notNull(),
+  bodyHtml: longtext("bodyHtml").notNull(),
+  bodyText: text("bodyText"),
+  templateId: int("templateId"),                                    // FK → emailTemplates.id (if based on template)
+  status: mysqlEnum("status", ["draft", "sending", "sent", "failed"]).default("draft").notNull(),
+  totalRecipients: int("totalRecipients").default(0),
   sentAt: timestamp("sentAt"),
-  sentCount: int("sentCount").default(0).notNull(),
-  createdById: int("createdById").notNull(),  // FK → users.id
+  sentById: int("sentById"),                                        // FK → users.id
+  sentByName: varchar("sentByName", { length: 128 }),
+  createdById: int("createdById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type EmailCampaign = typeof emailCampaigns.$inferSelect;
+export type InsertEmailCampaign = typeof emailCampaigns.$inferInsert;
 
-// ─── CRM: Campaign Sends (per-recipient tracking) ────────────────────────────
+// ─── CRM: Email Sends (per-recipient tracking for campaigns and drip steps) ──
 
-export const campaignSends = mysqlTable("campaign_sends", {
+export const emailSends = mysqlTable("email_sends", {
   id: int("id").autoincrement().primaryKey(),
-  campaignId: int("campaignId").notNull(),  // FK → email_campaigns.id
+  campaignId: int("campaignId"),                                    // FK → emailCampaigns.id (null for drip)
+  dripStepId: int("dripStepId"),                                    // FK → emailDripSteps.id (null for campaign)
+  enrollmentId: int("enrollmentId"),                                // FK → emailDripEnrollments.id (null for campaign)
   recipientEmail: varchar("recipientEmail", { length: 320 }).notNull(),
   recipientName: varchar("recipientName", { length: 255 }),
-  status: mysqlEnum("status", ["pending", "sent", "failed"]).default("pending").notNull(),
-  errorMessage: varchar("errorMessage", { length: 500 }),
+  recipientType: mysqlEnum("recipientType", ["prospect", "agent"]).notNull(),
+  recipientId: int("recipientId"),                                  // FK → agentCrmProfiles.id or users.id
+  subject: varchar("subject", { length: 500 }).notNull(),
+  resendMessageId: varchar("resendMessageId", { length: 255 }),     // Resend message ID for webhook matching
+  status: mysqlEnum("status", ["queued", "sent", "delivered", "opened", "clicked", "bounced", "complained", "failed"]).default("queued").notNull(),
   sentAt: timestamp("sentAt"),
+  deliveredAt: timestamp("deliveredAt"),
+  openedAt: timestamp("openedAt"),
+  clickedAt: timestamp("clickedAt"),
+  bouncedAt: timestamp("bouncedAt"),
+  failedReason: varchar("failedReason", { length: 500 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-export type CampaignSend = typeof campaignSends.$inferSelect;
+export type EmailSend = typeof emailSends.$inferSelect;
+export type InsertEmailSend = typeof emailSends.$inferInsert;
 
 // ─── CRM: Commission Remittances (weekly CSV uploads) ────────────────────────
 
@@ -1082,3 +1095,68 @@ export const bookingDocuments = mysqlTable("booking_documents", {
 });
 export type BookingDocument = typeof bookingDocuments.$inferSelect;
 export type InsertBookingDocument = typeof bookingDocuments.$inferInsert;
+
+
+// ─── Email Templates ──────────────────────────────────────────────────────────
+// Reusable email templates for campaigns and drip workflows
+export const emailTemplates = mysqlTable("email_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  bodyHtml: longtext("bodyHtml").notNull(),
+  bodyText: text("bodyText"),
+  audienceType: mysqlEnum("audienceType", ["prospect", "agent"]).notNull().default("prospect"),
+  createdById: int("createdById"),
+  createdByName: varchar("createdByName", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
+export type InsertEmailTemplate = typeof emailTemplates.$inferInsert;
+
+// ─── Email Drip Workflows ─────────────────────────────────────────────────────
+export const emailDripWorkflows = mysqlTable("email_drip_workflows", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  audienceType: mysqlEnum("audienceType", ["prospect", "agent"]).notNull().default("prospect"),
+  triggerStage: varchar("triggerStage", { length: 100 }),
+  isActive: boolean("isActive").notNull().default(true),
+  createdById: int("createdById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmailDripWorkflow = typeof emailDripWorkflows.$inferSelect;
+export type InsertEmailDripWorkflow = typeof emailDripWorkflows.$inferInsert;
+
+// ─── Email Drip Steps ─────────────────────────────────────────────────────────
+export const emailDripSteps = mysqlTable("email_drip_steps", {
+  id: int("id").autoincrement().primaryKey(),
+  workflowId: int("workflowId").notNull(),
+  stepOrder: int("stepOrder").notNull().default(0),
+  delayDays: int("delayDays").notNull().default(0),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  bodyHtml: longtext("bodyHtml").notNull(),
+  bodyText: text("bodyText"),
+  templateId: int("templateId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmailDripStep = typeof emailDripSteps.$inferSelect;
+export type InsertEmailDripStep = typeof emailDripSteps.$inferInsert;
+
+// ─── Email Drip Enrollments ───────────────────────────────────────────────────
+export const emailDripEnrollments = mysqlTable("email_drip_enrollments", {
+  id: int("id").autoincrement().primaryKey(),
+  workflowId: int("workflowId").notNull(),
+  recipientEmail: varchar("recipientEmail", { length: 320 }).notNull(),
+  recipientName: varchar("recipientName", { length: 255 }),
+  recipientType: mysqlEnum("recipientType", ["prospect", "agent"]).notNull(),
+  recipientId: int("recipientId"),
+  currentStep: int("currentStep").notNull().default(0),
+  status: mysqlEnum("status", ["active", "completed", "unsubscribed", "failed"]).notNull().default("active"),
+  enrolledAt: timestamp("enrolledAt").defaultNow().notNull(),
+  nextSendAt: timestamp("nextSendAt"),
+  completedAt: timestamp("completedAt"),
+});
+export type EmailDripEnrollment = typeof emailDripEnrollments.$inferSelect;
+export type InsertEmailDripEnrollment = typeof emailDripEnrollments.$inferInsert;

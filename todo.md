@@ -1813,3 +1813,39 @@
 
 ## Bug Fixes (Apr 29 — Round 4)
 - [x] Fix: IMAP inbox scheduler disabled — was crashing the server with unhandled TLS ECONNRESET errors; cron job commented out in scheduler.ts until IMAP stability is resolved
+
+## Email Marketing System (Apr 30)
+
+### DB Schema
+- [x] DB: email_templates table (id, name, subject, bodyHtml, bodyText, category: prospect|agent, createdBy, createdAt, updatedAt)
+- [x] DB: email_campaigns table (id, name, audienceType: prospect|agent, segmentFilters JSON, subject, bodyHtml, status: draft|sent|scheduled, sentAt, sentBy, totalRecipients, createdAt)
+- [x] DB: email_sends table (id, campaignId nullable, templateId nullable, recipientEmail, recipientName, recipientType: prospect|agent, recipientId, resendMessageId, status: queued|sent|delivered|opened|clicked|bounced|failed, sentAt, openedAt, clickedAt, createdAt)
+- [x] DB: email_drip_workflows table (id, name, audienceType: prospect, triggerStage (CRM pipeline stage), isActive, createdAt)
+- [x] DB: email_drip_steps table (id, workflowId, stepOrder, delayDays, templateId, subject override nullable, createdAt)
+- [x] DB: email_drip_enrollments table (id, workflowId, prospectId, enrolledAt, currentStep, completedAt, cancelledAt)
+- [x] Run migration for all new tables
+
+### Backend
+- [x] Backend: install resend npm package
+- [x] Backend: resend.ts helper — sendEmail(to, subject, html, from) using Resend API key; from address determined by audienceType (jointheteam@ for prospects, support@ for agents)
+- [x] Backend: open/click tracking — inject tracking pixel and wrap links before sending; POST /api/email-track/open/:sendId and /api/email-track/click/:sendId?url=... endpoints
+- [ ] Backend: Resend webhook handler at /api/webhooks/resend — update email_sends status on delivery/bounce/complaint events
+- [x] Backend: emailTemplates tRPC router — list, get, create, update, delete
+- [x] Backend: emailCampaigns tRPC router — list, get, create (draft), send (bulk send to segmented recipients), getStats
+- [x] Backend: emailDripWorkflows tRPC router — list, get, create, update, delete, toggle active
+- [x] Backend: emailDripSteps tRPC router — list, create, update, delete, reorder
+- [ ] Backend: drip engine — scheduler job every hour checks email_drip_enrollments for steps due, sends email, advances step; auto-enroll prospects when their CRM pipeline stage changes
+- [x] Backend: prospect segmentation helper — filter prospects by pipeline stage, tags, source
+- [x] Backend: agent segmentation helper — filter agents by membership tier, training stage, tags
+
+### Frontend
+- [x] Frontend: Email section in admin sidebar under Marketing (or new top-level section)
+- [x] Frontend: Templates page — list all templates, create/edit with TipTap rich-text editor (bold, italic, lists, links, images via URL, Loom embed via iframe), preview rendered HTML, delete
+- [x] Frontend: Campaigns page — list campaigns with status/stats badges; create campaign: pick audience (prospects/agents), apply segment filters, compose or pick template, preview, send or schedule
+- [x] Frontend: Drip Workflows page — list workflows; create/edit workflow: pick trigger stage, add steps (delay in days + template), reorder steps, toggle active/inactive
+- [ ] Frontend: Email Analytics page — per-campaign stats: sent/opened/clicked/bounced counts and rates, recipient list with individual status
+- [x] Frontend: Loom embed support in editor — paste Loom URL, auto-convert to responsive iframe thumbnail
+- [ ] Frontend: Image upload in editor — upload to S3 via existing storagePut, insert as <img> in email body
+
+### Setup Instructions for User
+- [x] Document: Resend account setup steps for user (create API key, verify sending domains jointheteam@ and support@)

@@ -13,4 +13,5 @@ export const ENV = {
   ppsSigningSecret: process.env.PPS_SIGNING_SECRET ?? "",
   ppsGatewayUrl: process.env.PPS_GATEWAY_URL ?? "https://sales.protectedpaymentservices.com/paymentform/",
   ppsLiveMode: process.env.PPS_LIVE_MODE === "true",
+  resendApiKey: process.env.RESEND_API_KEY ?? "",
 };

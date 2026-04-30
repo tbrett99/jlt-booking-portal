@@ -51,6 +51,7 @@ import CrmPipeline from "./pages/crm/CrmPipeline";
 import CrmProspects from "./pages/crm/CrmProspects";
 import ProspectDetail from "./pages/crm/ProspectDetail";
 import CrmCampaigns from "./pages/crm/CrmCampaigns";
+import EmailMarketing from "./pages/crm/EmailMarketing";
 import CrmRemittances from "./pages/crm/CrmRemittances";
 import CrmPaymentConfig from "./pages/crm/CrmPaymentConfig";
 import EnquiryForm from "./pages/crm/EnquiryForm";
@@ -288,6 +289,7 @@ function AuthRouter() {
         <Route path="/crm/prospects" component={CrmProspects} />
         <Route path="/crm/prospects/:id" component={ProspectDetail} />
         <Route path="/crm/campaigns" component={CrmCampaigns} />
+        <Route path="/crm/email-marketing" component={EmailMarketing} />
         <Route path="/crm/remittances" component={CrmRemittances} />
         <Route path="/crm/payment-config" component={CrmPaymentConfig} />
         <Route path="/crm/agents" component={AgentCrm} />

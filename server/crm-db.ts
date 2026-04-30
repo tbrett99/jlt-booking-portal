@@ -11,7 +11,7 @@ import {
   contractTemplates,
   prospectContracts,
   emailCampaigns,
-  campaignSends,
+  emailSends,
   commissionRemittances,
   commissionRemittanceItems,
   paymentConfig,
@@ -351,7 +351,10 @@ export async function createCampaign(data: {
   name: string;
   subject: string;
   bodyHtml: string;
-  segmentType: "all_agents" | "all_prospects" | "all_contacts" | "won_prospects" | "custom";
+  bodyText?: string;
+  audienceType: "prospect" | "agent";
+  segmentFilters?: string;
+  templateId?: number;
   createdById: number;
 }) {
   const db = await getDb();
@@ -366,10 +369,15 @@ export async function updateCampaign(
     name?: string;
     subject?: string;
     bodyHtml?: string;
-    segmentType?: "all_agents" | "all_prospects" | "all_contacts" | "won_prospects" | "custom";
-    status?: "draft" | "sending" | "sent";
+    bodyText?: string;
+    audienceType?: "prospect" | "agent";
+    segmentFilters?: string;
+    templateId?: number | null;
+    status?: "draft" | "sending" | "sent" | "failed";
     sentAt?: Date;
-    sentCount?: number;
+    totalRecipients?: number;
+    sentById?: number;
+    sentByName?: string;
   }
 ) {
   const db = await getDb();
@@ -377,32 +385,53 @@ export async function updateCampaign(
   await db.update(emailCampaigns).set(data).where(eq(emailCampaigns.id, id));
 }
 
-export async function createCampaignSends(
-  sends: Array<{ campaignId: number; recipientEmail: string; recipientName?: string }>
+export async function createEmailSends(
+  sends: Array<{
+    campaignId?: number;
+    dripStepId?: number;
+    enrollmentId?: number;
+    recipientEmail: string;
+    recipientName?: string;
+    recipientType: "prospect" | "agent";
+    recipientId?: number;
+    subject: string;
+  }>
 ) {
   if (sends.length === 0) return;
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.insert(campaignSends).values(sends);
+  await db.insert(emailSends).values(sends);
 }
 
-export async function updateCampaignSendStatus(
+export async function updateEmailSendStatus(
   id: number,
-  status: "sent" | "failed",
-  errorMessage?: string
+  status: "sent" | "delivered" | "opened" | "clicked" | "bounced" | "complained" | "failed",
+  extra?: { resendMessageId?: string; failedReason?: string; openedAt?: Date; clickedAt?: Date; deliveredAt?: Date; bouncedAt?: Date }
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db
-    .update(campaignSends)
-    .set({ status, errorMessage: errorMessage ?? null, sentAt: new Date() })
-    .where(eq(campaignSends.id, id));
+  const updateData: Record<string, unknown> = { status };
+  if (status === "sent") updateData.sentAt = new Date();
+  if (extra?.resendMessageId) updateData.resendMessageId = extra.resendMessageId;
+  if (extra?.failedReason) updateData.failedReason = extra.failedReason;
+  if (extra?.openedAt) updateData.openedAt = extra.openedAt;
+  if (extra?.clickedAt) updateData.clickedAt = extra.clickedAt;
+  if (extra?.deliveredAt) updateData.deliveredAt = extra.deliveredAt;
+  if (extra?.bouncedAt) updateData.bouncedAt = extra.bouncedAt;
+  await db.update(emailSends).set(updateData).where(eq(emailSends.id, id));
 }
 
 export async function getCampaignSends(campaignId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(campaignSends).where(eq(campaignSends.campaignId, campaignId));
+  return db.select().from(emailSends).where(eq(emailSends.campaignId, campaignId));
+}
+
+export async function getEmailSendByResendId(resendMessageId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(emailSends).where(eq(emailSends.resendMessageId, resendMessageId)).limit(1);
+  return rows[0] ?? null;
 }
 
 // ─── Commission Remittances ───────────────────────────────────────────────────
@@ -543,4 +572,196 @@ export async function generateUniqueAgentId(): Promise<string> {
     }
   }
   return `JLT-${String(max + 1).padStart(4, "0")}`;
+}
+
+// ─── Email Templates ──────────────────────────────────────────────────────────
+
+import {
+  emailTemplates,
+  emailDripWorkflows,
+  emailDripSteps,
+  emailDripEnrollments,
+  type InsertEmailTemplate,
+  type InsertEmailDripWorkflow,
+} from "../drizzle/schema";
+
+export async function getAllEmailTemplates(audienceType?: "prospect" | "agent") {
+  const db = await getDb();
+  if (!db) return [];
+  if (audienceType) {
+    return db.select().from(emailTemplates).where(eq(emailTemplates.audienceType, audienceType)).orderBy(desc(emailTemplates.createdAt));
+  }
+  return db.select().from(emailTemplates).orderBy(desc(emailTemplates.createdAt));
+}
+
+export async function getEmailTemplateById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(emailTemplates).where(eq(emailTemplates.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createEmailTemplate(data: InsertEmailTemplate) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(emailTemplates).values(data);
+  return (result as { insertId: number }).insertId;
+}
+
+export async function updateEmailTemplate(id: number, data: Partial<InsertEmailTemplate>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(emailTemplates).set(data).where(eq(emailTemplates.id, id));
+}
+
+export async function deleteEmailTemplate(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(emailTemplates).where(eq(emailTemplates.id, id));
+}
+
+// ─── Drip Workflows ───────────────────────────────────────────────────────────
+
+export async function getAllDripWorkflows() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(emailDripWorkflows).orderBy(desc(emailDripWorkflows.createdAt));
+}
+
+export async function getDripWorkflowById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(emailDripWorkflows).where(eq(emailDripWorkflows.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createDripWorkflow(data: InsertEmailDripWorkflow) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(emailDripWorkflows).values(data);
+  return (result as { insertId: number }).insertId;
+}
+
+export async function updateDripWorkflow(id: number, data: Partial<InsertEmailDripWorkflow>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(emailDripWorkflows).set(data).where(eq(emailDripWorkflows.id, id));
+}
+
+export async function deleteDripWorkflow(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(emailDripSteps).where(eq(emailDripSteps.workflowId, id));
+  await db.delete(emailDripEnrollments).where(eq(emailDripEnrollments.workflowId, id));
+  await db.delete(emailDripWorkflows).where(eq(emailDripWorkflows.id, id));
+}
+
+// ─── Drip Steps ───────────────────────────────────────────────────────────────
+
+export async function getDripStepsByWorkflow(workflowId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(emailDripSteps).where(eq(emailDripSteps.workflowId, workflowId)).orderBy(emailDripSteps.stepOrder);
+}
+
+export async function upsertDripSteps(workflowId: number, steps: Array<{
+  stepOrder: number;
+  delayDays: number;
+  subject: string;
+  bodyHtml: string;
+  bodyText?: string;
+  templateId?: number;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(emailDripSteps).where(eq(emailDripSteps.workflowId, workflowId));
+  if (steps.length > 0) {
+    await db.insert(emailDripSteps).values(steps.map((s) => ({ workflowId, ...s })));
+  }
+}
+
+// ─── Drip Enrollments ─────────────────────────────────────────────────────────
+
+export async function enrollInDripWorkflow(data: {
+  workflowId: number;
+  recipientEmail: string;
+  recipientName?: string;
+  recipientType: "prospect" | "agent";
+  recipientId?: number;
+  nextSendAt?: Date;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db.select().from(emailDripEnrollments)
+    .where(and(
+      eq(emailDripEnrollments.workflowId, data.workflowId),
+      eq(emailDripEnrollments.recipientEmail, data.recipientEmail),
+      eq(emailDripEnrollments.status, "active")
+    )).limit(1);
+  if (existing.length > 0) return existing[0].id;
+  const [result] = await db.insert(emailDripEnrollments).values({
+    workflowId: data.workflowId,
+    recipientEmail: data.recipientEmail,
+    recipientName: data.recipientName,
+    recipientType: data.recipientType,
+    recipientId: data.recipientId,
+    currentStep: 0,
+    status: "active",
+    nextSendAt: data.nextSendAt ?? new Date(),
+  });
+  return (result as { insertId: number }).insertId;
+}
+
+export async function getEnrollmentsByWorkflow(workflowId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(emailDripEnrollments).where(eq(emailDripEnrollments.workflowId, workflowId)).orderBy(desc(emailDripEnrollments.enrolledAt));
+}
+
+export async function advanceEnrollment(id: number, nextStep: number, nextSendAt: Date | null) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (nextSendAt === null) {
+    await db.update(emailDripEnrollments).set({ status: "completed", completedAt: new Date() }).where(eq(emailDripEnrollments.id, id));
+  } else {
+    await db.update(emailDripEnrollments).set({ currentStep: nextStep, nextSendAt }).where(eq(emailDripEnrollments.id, id));
+  }
+}
+
+export async function getDueEnrollments() {
+  const db = await getDb();
+  if (!db) return [];
+  const { lte } = await import("drizzle-orm");
+  return db.select().from(emailDripEnrollments)
+    .where(and(
+      eq(emailDripEnrollments.status, "active"),
+      lte(emailDripEnrollments.nextSendAt, new Date())
+    ));
+}
+
+// ─── Campaign Stats ───────────────────────────────────────────────────────────
+
+export async function getCampaignStats(campaignId: number) {
+  const db = await getDb();
+  if (!db) return { total: 0, sent: 0, opened: 0, clicked: 0, failed: 0 };
+  const sends = await db.select().from(emailSends).where(eq(emailSends.campaignId, campaignId));
+  return {
+    total: sends.length,
+    sent: sends.filter((s) => ["sent", "delivered", "opened", "clicked"].includes(s.status)).length,
+    opened: sends.filter((s) => ["opened", "clicked"].includes(s.status)).length,
+    clicked: sends.filter((s) => s.status === "clicked").length,
+    failed: sends.filter((s) => s.status === "failed").length,
+  };
+}
+
+export async function recordEmailOpen(sendId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(emailSends).set({ status: "opened", openedAt: new Date() }).where(eq(emailSends.id, sendId));
+}
+
+export async function recordEmailClick(sendId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(emailSends).set({ status: "clicked", clickedAt: new Date() }).where(eq(emailSends.id, sendId));
 }

@@ -326,7 +326,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       items: [
         { label: "Recruitment Pipeline", href: "/crm/pipeline", icon: <UserSearch size={16} /> },
         { label: "Prospects", href: "/crm/prospects", icon: <Users size={16} /> },
-        { label: "Email Campaigns", href: "/crm/campaigns", icon: <Megaphone size={16} /> },
+        { label: "Email Marketing", href: "/crm/email-marketing", icon: <Megaphone size={16} /> },
       ],
     },
     {

@@ -37,8 +37,8 @@ import {
   getCampaignById,
   createCampaign,
   updateCampaign,
-  createCampaignSends,
-  updateCampaignSendStatus,
+  createEmailSends,
+  updateEmailSendStatus,
   getCampaignSends,
   createRemittance,
   createRemittanceItems,
@@ -50,10 +50,26 @@ import {
   getPaymentConfig,
   upsertPaymentConfig,
   generateUniqueAgentId,
+  getAllEmailTemplates,
+  getEmailTemplateById,
+  createEmailTemplate,
+  updateEmailTemplate,
+  deleteEmailTemplate,
+  getAllDripWorkflows,
+  getDripWorkflowById,
+  createDripWorkflow,
+  updateDripWorkflow,
+  deleteDripWorkflow,
+  getDripStepsByWorkflow,
+  upsertDripSteps,
+  enrollInDripWorkflow,
+  getEnrollmentsByWorkflow,
+  getCampaignStats,
 } from "./crm-db";
 import { getAllUsers, getUserByEmail } from "./db";
 import { storagePut } from "./storage";
 import { sendDirectEmail } from "./email";
+import { sendCampaignBatch } from "./resend-email";
 import { createInAppNotification } from "./db";
 import {
   listAgentsWithCrm,
@@ -629,137 +645,6 @@ export const crmRouter = router({
   }),
 
   // ── Email Campaigns ────────────────────────────────────────────────────────
-
-  campaigns: router({
-    list: adminProcedure.query(async () => getAllCampaigns()),
-
-    get: adminProcedure
-      .input(z.object({ id: z.number().int() }))
-      .query(async ({ input }) => {
-        const c = await getCampaignById(input.id);
-        if (!c) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
-        return c;
-      }),
-
-    create: adminProcedure
-      .input(
-        z.object({
-          name: z.string().min(1),
-          subject: z.string().min(1),
-          bodyHtml: z.string().min(1),
-          segmentType: z.enum(["all_agents", "all_prospects", "all_contacts", "won_prospects", "custom"]),
-        })
-      )
-      .mutation(async ({ input, ctx }) => {
-        const id = await createCampaign({ ...input, createdById: ctx.user.id });
-        return { success: true, id };
-      }),
-
-    update: adminProcedure
-      .input(
-        z.object({
-          id: z.number().int(),
-          name: z.string().optional(),
-          subject: z.string().optional(),
-          bodyHtml: z.string().optional(),
-          segmentType: z.enum(["all_agents", "all_prospects", "all_contacts", "won_prospects", "custom"]).optional(),
-        })
-      )
-      .mutation(async ({ input }) => {
-        const { id, ...data } = input;
-        await updateCampaign(id, data);
-        return { success: true };
-      }),
-
-    // Send a campaign (up to 500 recipients)
-    send: adminProcedure
-      .input(z.object({ id: z.number().int() }))
-      .mutation(async ({ input }) => {
-        const campaign = await getCampaignById(input.id);
-        if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
-        if (campaign.status === "sent") throw new TRPCError({ code: "BAD_REQUEST", message: "Campaign already sent" });
-
-        // Build recipient list based on segment
-        const allUsers = await getAllUsers();
-        const allProspects = await (await import("./crm-db")).getAllProspects();
-
-        type Recipient = { email: string; name: string };
-        let recipients: Recipient[] = [];
-
-        if (campaign.segmentType === "all_agents") {
-          recipients = allUsers
-            .filter((u) => u.isActive && u.email)
-            .map((u) => ({ email: u.email!, name: u.name ?? u.email! }));
-        } else if (campaign.segmentType === "all_prospects") {
-          recipients = allProspects
-            .filter((p) => p.email)
-            .map((p) => ({ email: p.email, name: `${p.firstName} ${p.lastName}` }));
-        } else if (campaign.segmentType === "won_prospects") {
-          recipients = allProspects
-            .filter((p) => p.stage === "Won" && p.email)
-            .map((p) => ({ email: p.email, name: `${p.firstName} ${p.lastName}` }));
-        } else {
-          // all_contacts = agents + prospects combined (deduped by email)
-          const emailSet = new Set<string>();
-          const combined: Recipient[] = [];
-          for (const u of allUsers.filter((u) => u.isActive && u.email)) {
-            if (!emailSet.has(u.email!)) {
-              emailSet.add(u.email!);
-              combined.push({ email: u.email!, name: u.name ?? u.email! });
-            }
-          }
-          for (const p of allProspects.filter((p) => p.email)) {
-            if (!emailSet.has(p.email)) {
-              emailSet.add(p.email);
-              combined.push({ email: p.email, name: `${p.firstName} ${p.lastName}` });
-            }
-          }
-          recipients = combined;
-        }
-
-        // Cap at 500
-        recipients = recipients.slice(0, 500);
-
-        // Mark as sending
-        await updateCampaign(input.id, { status: "sending" });
-
-        // Create send records
-        await createCampaignSends(
-          recipients.map((r) => ({
-            campaignId: input.id,
-            recipientEmail: r.email,
-            recipientName: r.name,
-          }))
-        );
-
-        // Send via Resend (or fallback SMTP)
-        const sends = await getCampaignSends(input.id);
-        let sentCount = 0;
-        for (const send of sends) {
-          try {
-            await sendDirectEmail({
-              toEmail: send.recipientEmail,
-              toName: send.recipientName ?? send.recipientEmail,
-              subject: campaign.subject,
-              html: campaign.bodyHtml,
-            });
-            await updateCampaignSendStatus(send.id, "sent");
-            sentCount++;
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            await updateCampaignSendStatus(send.id, "failed", msg);
-          }
-        }
-
-        await updateCampaign(input.id, {
-          status: "sent",
-          sentAt: new Date(),
-          sentCount,
-        });
-
-        return { success: true, sentCount };
-      }),
-  }),
 
   // ── Commission Remittances ─────────────────────────────────────────────────
 
@@ -2260,5 +2145,278 @@ export const crmRouter = router({
         });
         return { ok: true };
       }),
+  }),
+
+  // ── Email Templates ───────────────────────────────────────────────────────
+
+  emailTemplates: router({
+    list: adminProcedure
+      .input(z.object({ audienceType: z.enum(["prospect", "agent"]).optional() }))
+      .query(async ({ input }) => getAllEmailTemplates(input.audienceType)),
+
+    get: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .query(async ({ input }) => {
+        const t = await getEmailTemplateById(input.id);
+        if (!t) throw new TRPCError({ code: "NOT_FOUND", message: "Template not found" });
+        return t;
+      }),
+
+    create: adminProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        subject: z.string().min(1),
+        bodyHtml: z.string().min(1),
+        bodyText: z.string().optional(),
+        audienceType: z.enum(["prospect", "agent"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await createEmailTemplate({
+          ...input,
+          createdById: ctx.user.id,
+          createdByName: ctx.user.name ?? "Admin",
+        });
+        return { id };
+      }),
+
+    update: adminProcedure
+      .input(z.object({
+        id: z.number().int(),
+        name: z.string().min(1).optional(),
+        subject: z.string().min(1).optional(),
+        bodyHtml: z.string().optional(),
+        bodyText: z.string().optional(),
+        audienceType: z.enum(["prospect", "agent"]).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateEmailTemplate(id, data);
+        return { success: true };
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ input }) => {
+        await deleteEmailTemplate(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ── Drip Workflows ────────────────────────────────────────────────────────
+
+  dripWorkflows: router({
+    list: adminProcedure.query(async () => getAllDripWorkflows()),
+
+    get: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .query(async ({ input }) => {
+        const w = await getDripWorkflowById(input.id);
+        if (!w) throw new TRPCError({ code: "NOT_FOUND", message: "Workflow not found" });
+        const steps = await getDripStepsByWorkflow(input.id);
+        const enrollments = await getEnrollmentsByWorkflow(input.id);
+        return { ...w, steps, enrollmentCount: enrollments.length };
+      }),
+
+    create: adminProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        audienceType: z.enum(["prospect", "agent"]),
+        triggerStage: z.string().optional(),
+        isActive: z.boolean().default(true),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await createDripWorkflow({ ...input, createdById: ctx.user.id });
+        return { id };
+      }),
+
+    update: adminProcedure
+      .input(z.object({
+        id: z.number().int(),
+        name: z.string().min(1).optional(),
+        triggerStage: z.string().optional().nullable(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateDripWorkflow(id, data);
+        return { success: true };
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ input }) => {
+        await deleteDripWorkflow(input.id);
+        return { success: true };
+      }),
+
+    saveSteps: adminProcedure
+      .input(z.object({
+        workflowId: z.number().int(),
+        steps: z.array(z.object({
+          stepOrder: z.number().int(),
+          delayDays: z.number().int().min(0),
+          subject: z.string().min(1),
+          bodyHtml: z.string().min(1),
+          bodyText: z.string().optional(),
+          templateId: z.number().int().optional(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        await upsertDripSteps(input.workflowId, input.steps);
+        return { success: true };
+      }),
+
+    enroll: adminProcedure
+      .input(z.object({
+        workflowId: z.number().int(),
+        recipientEmail: z.string().email(),
+        recipientName: z.string().optional(),
+        recipientType: z.enum(["prospect", "agent"]),
+        recipientId: z.number().int().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const id = await enrollInDripWorkflow(input);
+        return { id };
+      }),
+  }),
+
+  // ── Campaign send (Resend) ────────────────────────────────────────────────
+
+  campaigns: router({
+    list: adminProcedure.query(async () => getAllCampaigns()),
+
+    get: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .query(async ({ input }) => {
+        const c = await getCampaignById(input.id);
+        if (!c) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
+        const stats = await getCampaignStats(input.id);
+        return { ...c, stats };
+      }),
+
+    create: adminProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        subject: z.string().min(1),
+        bodyHtml: z.string().min(1),
+        bodyText: z.string().optional(),
+        audienceType: z.enum(["prospect", "agent"]),
+        segmentFilters: z.string().optional(), // JSON string of filters
+        templateId: z.number().int().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await createCampaign({
+          name: input.name,
+          subject: input.subject,
+          bodyHtml: input.bodyHtml,
+          bodyText: input.bodyText,
+          audienceType: input.audienceType,
+          segmentFilters: input.segmentFilters,
+          templateId: input.templateId,
+          createdById: ctx.user.id,
+        });
+        return { id };
+      }),
+
+    update: adminProcedure
+      .input(z.object({
+        id: z.number().int(),
+        name: z.string().min(1).optional(),
+        subject: z.string().min(1).optional(),
+        bodyHtml: z.string().optional(),
+        bodyText: z.string().optional(),
+        audienceType: z.enum(["prospect", "agent"]).optional(),
+        segmentFilters: z.string().optional(),
+        templateId: z.number().int().optional().nullable(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateCampaign(id, data);
+        return { success: true };
+      }),
+
+    send: adminProcedure
+      .input(z.object({
+        campaignId: z.number().int(),
+        baseUrl: z.string().url(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
+        if (campaign.status === "sent") throw new TRPCError({ code: "BAD_REQUEST", message: "Campaign already sent" });
+
+        // Build recipient list from segmentFilters
+        const filters = campaign.segmentFilters ? JSON.parse(campaign.segmentFilters) : {};
+        let recipients: Array<{ email: string; name?: string; id?: number; type: "prospect" | "agent" }> = [];
+
+        if (campaign.audienceType === "prospect") {
+          const all = await (await import("./crm-db")).getAllProspects();
+          let filtered = all;
+          if (filters.stages?.length) {
+            filtered = filtered.filter((p) => filters.stages.includes(p.stage));
+          }
+          if (filters.tags?.length) {
+            const { getDb } = await import("./db");
+            const db = await getDb();
+            if (db) {
+              const { prospectTags } = await import("../drizzle/schema");
+              const tagRows = await db.select().from(prospectTags);
+              const tagMap = new Map<number, string[]>();
+              for (const t of tagRows) {
+                if (!tagMap.has(t.prospectId)) tagMap.set(t.prospectId, []);
+                tagMap.get(t.prospectId)!.push(t.tag);
+              }
+              filtered = filtered.filter((p) =>
+                filters.tags.some((tag: string) => tagMap.get(p.id)?.includes(tag))
+              );
+            }
+          }
+          recipients = filtered
+            .filter((p) => p.email)
+            .map((p) => ({ email: p.email!, name: `${p.firstName} ${p.lastName}`, id: p.id, type: "prospect" as const }));
+        } else {
+          // Agents
+          const all = await getAllUsers();
+          let filtered = all.filter((u) => u.role === "agent" && u.isActive);
+          if (filters.portalStatus?.length) {
+            filtered = filtered.filter((u) => filters.portalStatus.includes(u.portalStatus));
+          }
+          recipients = filtered
+            .filter((u) => u.email)
+            .map((u) => ({ email: u.email!, name: u.name ?? undefined, id: u.id, type: "agent" as const }));
+        }
+
+        if (recipients.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No recipients match the selected filters" });
+        }
+
+        // Mark as sending
+        await updateCampaign(input.campaignId, {
+          status: "sending",
+          sentById: ctx.user.id,
+          sentByName: ctx.user.name ?? "Admin",
+          totalRecipients: recipients.length,
+        });
+
+        // Send in background (don't await fully — return immediately)
+        sendCampaignBatch({
+          campaignId: input.campaignId,
+          recipients,
+          subject: campaign.subject,
+          bodyHtml: campaign.bodyHtml,
+          audienceType: campaign.audienceType,
+          baseUrl: input.baseUrl,
+        }).then(async ({ sent, failed }) => {
+          await updateCampaign(input.campaignId, {
+            status: failed === recipients.length ? "failed" : "sent",
+          });
+        }).catch(console.error);
+
+        return { success: true, recipientCount: recipients.length };
+      }),
+
+    stats: adminProcedure
+      .input(z.object({ campaignId: z.number().int() }))
+      .query(async ({ input }) => getCampaignStats(input.campaignId)),
   }),
 });
