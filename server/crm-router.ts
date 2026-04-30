@@ -65,6 +65,8 @@ import {
   enrollInDripWorkflow,
   getEnrollmentsByWorkflow,
   getCampaignStats,
+  getEmailBrandingSettings,
+  upsertEmailBrandingSettings,
 } from "./crm-db";
 import { getAllUsers, getUserByEmail } from "./db";
 import { storagePut } from "./storage";
@@ -2466,5 +2468,51 @@ export const crmRouter = router({
     stats: adminProcedure
       .input(z.object({ campaignId: z.number().int() }))
       .query(async ({ input }) => getCampaignStats(input.campaignId)),
+  }),
+
+  // ── Email Branding Settings ──────────────────────────────────────────────────
+  emailBranding: router({
+    get: protectedProcedure.query(async () => {
+      return getEmailBrandingSettings();
+    }),
+
+    update: adminProcedure
+      .input(
+        z.object({
+          logoUrl: z.string().nullable().optional(),
+          headerBgColor: z.string().optional(),
+          headerTextColor: z.string().optional(),
+          bodyBgColor: z.string().optional(),
+          cardBgColor: z.string().optional(),
+          accentColor: z.string().optional(),
+          companyName: z.string().optional(),
+          tagline: z.string().nullable().optional(),
+          footerText: z.string().nullable().optional(),
+          websiteUrl: z.string().nullable().optional(),
+          facebookUrl: z.string().nullable().optional(),
+          instagramUrl: z.string().nullable().optional(),
+          twitterUrl: z.string().nullable().optional(),
+          linkedinUrl: z.string().nullable().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        return upsertEmailBrandingSettings(input, ctx.user.id);
+      }),
+
+    uploadLogo: adminProcedure
+      .input(
+        z.object({
+          fileName: z.string(),
+          fileBase64: z.string(),
+          mimeType: z.string(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `email-branding/logo-${Date.now()}-${input.fileName}`;
+        const { url } = await storagePut(key, buffer, input.mimeType);
+        await upsertEmailBrandingSettings({ logoUrl: url }, ctx.user.id);
+        return { url };
+      }),
   }),
 });

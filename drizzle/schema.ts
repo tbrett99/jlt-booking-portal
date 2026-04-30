@@ -1171,3 +1171,26 @@ export const emailUnsubscribes = mysqlTable("email_unsubscribes", {
 });
 export type EmailUnsubscribe = typeof emailUnsubscribes.$inferSelect;
 export type InsertEmailUnsubscribe = typeof emailUnsubscribes.$inferInsert;
+
+// ── Email Branding Settings ───────────────────────────────────────────────────
+export const emailBrandingSettings = mysqlTable("email_branding_settings", {
+  id: int("id").primaryKey().autoincrement(),
+  logoUrl: text("logoUrl"),                                          // S3 URL for logo image
+  headerBgColor: varchar("headerBgColor", { length: 20 }).notNull().default("#70FFE8"),
+  headerTextColor: varchar("headerTextColor", { length: 20 }).notNull().default("#414141"),
+  bodyBgColor: varchar("bodyBgColor", { length: 20 }).notNull().default("#f5f5f5"),
+  cardBgColor: varchar("cardBgColor", { length: 20 }).notNull().default("#ffffff"),
+  accentColor: varchar("accentColor", { length: 20 }).notNull().default("#02E6D2"),
+  companyName: varchar("companyName", { length: 255 }).notNull().default("JLT Group"),
+  tagline: varchar("tagline", { length: 255 }),
+  footerText: text("footerText"),
+  websiteUrl: varchar("websiteUrl", { length: 500 }),
+  facebookUrl: varchar("facebookUrl", { length: 500 }),
+  instagramUrl: varchar("instagramUrl", { length: 500 }),
+  twitterUrl: varchar("twitterUrl", { length: 500 }),
+  linkedinUrl: varchar("linkedinUrl", { length: 500 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedBy: int("updatedBy"),                                       // FK → users.id
+});
+export type EmailBrandingSettings = typeof emailBrandingSettings.$inferSelect;
+export type InsertEmailBrandingSettings = typeof emailBrandingSettings.$inferInsert;

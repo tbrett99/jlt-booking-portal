@@ -17,8 +17,9 @@ import { RichEmailEditor } from "@/components/RichEmailEditor";
 import { toast } from "sonner";
 import {
   Plus, Send, Eye, Pencil, Trash2, Mail, Users, Zap,
-  BarChart2, Clock, CheckCircle, AlertCircle, FileText,
+  BarChart2, Clock, CheckCircle, AlertCircle, FileText, Paintbrush,
 } from "lucide-react";
+import EmailBrandingEditor from "./EmailBrandingEditor";
 
 // ─── Prospect pipeline stages ─────────────────────────────────────────────────
 const PROSPECT_STAGES = [
@@ -530,6 +531,9 @@ export default function EmailMarketing() {
           <TabsTrigger value="drip" className="flex items-center gap-1.5">
             <Zap className="h-4 w-4" /> Drip Workflows
           </TabsTrigger>
+          <TabsTrigger value="branding" className="flex items-center gap-1.5">
+            <Paintbrush className="h-4 w-4" /> Email Branding
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Campaigns ── */}
@@ -711,6 +715,11 @@ export default function EmailMarketing() {
               )}
             </>
           )}
+        </TabsContent>
+
+        {/* ── Email Branding ── */}
+        <TabsContent value="branding" className="mt-4">
+          <EmailBrandingEditor />
         </TabsContent>
       </Tabs>
 

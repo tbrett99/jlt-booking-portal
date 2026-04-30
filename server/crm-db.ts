@@ -765,3 +765,34 @@ export async function recordEmailClick(sendId: number) {
   if (!db) return;
   await db.update(emailSends).set({ status: "clicked", clickedAt: new Date() }).where(eq(emailSends.id, sendId));
 }
+
+// ── Email Branding Settings ───────────────────────────────────────────────────
+import { emailBrandingSettings, type EmailBrandingSettings, type InsertEmailBrandingSettings } from "../drizzle/schema";
+
+export async function getEmailBrandingSettings(): Promise<EmailBrandingSettings | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(emailBrandingSettings).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function upsertEmailBrandingSettings(
+  data: Partial<Omit<InsertEmailBrandingSettings, "id" | "updatedAt">>,
+  updatedBy: number
+): Promise<EmailBrandingSettings | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const existing = await getEmailBrandingSettings();
+  if (existing) {
+    await db
+      .update(emailBrandingSettings)
+      .set({ ...data, updatedBy })
+      .where(eq(emailBrandingSettings.id, existing.id));
+    return getEmailBrandingSettings();
+  } else {
+    const [result] = await db.insert(emailBrandingSettings).values({ ...data, updatedBy } as InsertEmailBrandingSettings);
+    const id = (result as { insertId: number }).insertId;
+    const rows = await db.select().from(emailBrandingSettings).where(eq(emailBrandingSettings.id, id)).limit(1);
+    return rows[0] ?? null;
+  }
+}

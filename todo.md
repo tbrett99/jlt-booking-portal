@@ -1866,3 +1866,9 @@
 - [x] Frontend: unsubscribe landing page (/unsubscribe) with confirmation message
 - [ ] Frontend: admin view of unsubscribes list in Email Marketing section (deferred)
 - [x] Rich editor: colour picker for text/background, button block, divider, font size controls
+
+## Email Branding Editor (Apr 30)
+- [x] DB: email_branding_settings table (logoUrl, headerBgColor, headerTextColor, footerText, websiteUrl, facebookUrl, instagramUrl, twitterUrl, updatedAt)
+- [x] Backend: emailBranding tRPC router — get, update (admin only)
+- [x] Frontend: Email Branding tab in Email Marketing section with visual editor + live preview
+- [x] Wire branding settings into buildBrandedHtml() in resend-email.ts

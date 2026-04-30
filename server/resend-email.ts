@@ -9,6 +9,8 @@ import { getDb } from "./db";
 import { emailSends, emailUnsubscribes } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
+import { getEmailBrandingSettings } from "./crm-db";
+import type { EmailBrandingSettings } from "../drizzle/schema";
 
 // Lazy-init Resend client
 let _resend: Resend | null = null;
@@ -102,13 +104,40 @@ function wrapInBrandedTemplate(opts: {
   bodyHtml: string;
   audienceType: "prospect" | "agent";
   unsubscribeUrl?: string;
+  branding?: EmailBrandingSettings | null;
 }): string {
   const year = new Date().getFullYear();
+  const b = opts.branding;
+
+  // Colours — fall back to JLT defaults
+  const headerBg = b?.headerBgColor ?? "#70FFE8";
+  const headerText = b?.headerTextColor ?? "#414141";
+  const bodyBg = b?.bodyBgColor ?? "#f5f5f5";
+  const cardBg = b?.cardBgColor ?? "#ffffff";
+  const accent = b?.accentColor ?? "#02E6D2";
+  const companyName = b?.companyName ?? "JLT Group";
+  const tagline = b?.tagline ?? "";
+  const footerText = b?.footerText ?? `&copy; ${year} ${companyName}. All rights reserved.`;
+
+  // Logo or text fallback
+  const logoHtml = b?.logoUrl
+    ? `<img src="${b.logoUrl}" alt="${companyName}" style="max-height:60px;max-width:200px;display:block;margin:0 auto;object-fit:contain;" />`
+    : `<span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:${headerText};letter-spacing:-0.5px;">${companyName}</span>`;
+
+  // Social links
+  const socials = [
+    b?.websiteUrl && `<a href="${b.websiteUrl}" style="color:${accent};text-decoration:none;margin:0 6px;font-family:'Poppins',Arial,sans-serif;font-size:12px;">Website</a>`,
+    b?.facebookUrl && `<a href="${b.facebookUrl}" style="color:${accent};text-decoration:none;margin:0 6px;font-family:'Poppins',Arial,sans-serif;font-size:12px;">Facebook</a>`,
+    b?.instagramUrl && `<a href="${b.instagramUrl}" style="color:${accent};text-decoration:none;margin:0 6px;font-family:'Poppins',Arial,sans-serif;font-size:12px;">Instagram</a>`,
+    b?.twitterUrl && `<a href="${b.twitterUrl}" style="color:${accent};text-decoration:none;margin:0 6px;font-family:'Poppins',Arial,sans-serif;font-size:12px;">Twitter</a>`,
+    b?.linkedinUrl && `<a href="${b.linkedinUrl}" style="color:${accent};text-decoration:none;margin:0 6px;font-family:'Poppins',Arial,sans-serif;font-size:12px;">LinkedIn</a>`,
+  ].filter(Boolean).join("");
+
   const unsubscribeSection = opts.unsubscribeUrl
     ? `<tr><td style="padding:16px 40px;text-align:center;">
         <p style="font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#999;margin:0;">
           You're receiving this email because you enquired about joining the JLT Group.<br/>
-          <a href="${opts.unsubscribeUrl}" style="color:#02E6D2;text-decoration:underline;">Unsubscribe</a>
+          <a href="${opts.unsubscribeUrl}" style="color:${accent};text-decoration:underline;">Unsubscribe</a>
         </p>
       </td></tr>`
     : "";
@@ -118,24 +147,19 @@ function wrapInBrandedTemplate(opts: {
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>JLT Group</title>
+  <title>${companyName}</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 </head>
-<body style="margin:0;padding:0;background-color:#f5f5f5;font-family:'Poppins',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:32px 0;">
+<body style="margin:0;padding:0;background-color:${bodyBg};font-family:'Poppins',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:${bodyBg};padding:32px 0;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${cardBg};border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
           <!-- Header -->
           <tr>
-            <td style="background-color:#70FFE8;padding:28px 40px;text-align:center;">
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td align="center">
-                    <span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:#414141;letter-spacing:-0.5px;">JLT Group</span>
-                  </td>
-                </tr>
-              </table>
+            <td style="background-color:${headerBg};padding:28px 40px;text-align:center;">
+              ${logoHtml}
+              ${tagline ? `<div style="font-family:'Poppins',Arial,sans-serif;font-size:13px;color:${headerText};opacity:0.75;margin-top:6px;">${tagline}</div>` : ""}
             </td>
           </tr>
           <!-- Body -->
@@ -153,11 +177,9 @@ function wrapInBrandedTemplate(opts: {
           <!-- Footer -->
           <tr>
             <td style="padding:24px 40px;text-align:center;background-color:#fafafa;">
-              <p style="font-family:'Poppins',Arial,sans-serif;font-size:13px;color:#666;margin:0 0 8px 0;">
-                <strong style="color:#414141;">JLT Group</strong> &mdash; Your Travel Business, Elevated.
-              </p>
+              ${socials ? `<div style="margin-bottom:10px;">${socials}</div>` : ""}
               <p style="font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#999;margin:0;">
-                &copy; ${year} JLT Group. All rights reserved.
+                ${footerText}
               </p>
             </td>
           </tr>
@@ -246,11 +268,15 @@ export async function sendMarketingEmail(opts: {
     unsubscribeUrl = `${opts.baseUrl}/unsubscribe?token=${token}`;
   }
 
+  // Load branding settings (cached per process — acceptable for email sends)
+  const branding = await getEmailBrandingSettings();
+
   // Wrap in branded template
   let html = wrapInBrandedTemplate({
     bodyHtml: opts.bodyHtml,
     audienceType: opts.audienceType,
     unsubscribeUrl,
+    branding,
   });
 
   // Inject tracking
