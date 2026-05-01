@@ -106,6 +106,31 @@ type AgentRow = {
   teamId?: number | null;
 };
 
+// Render note content with attachment links as clickable anchors
+function NoteContent({ content }: { content: string }) {
+  const parts = content.split(/(\[Attachment:[^\]]+\]\([^)]+\))/g);
+  return (
+    <p className="text-sm whitespace-pre-wrap leading-relaxed">
+      {parts.map((part, i) => {
+        const m = part.match(/^\[Attachment:\s*([^\]]+)\]\(([^)]+)\)$/);
+        if (m) {
+          const [, fileName, url] = m;
+          return (
+            <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:opacity-80"
+              style={{ color: "#02E6D2" }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              {fileName.trim()}
+            </a>
+          );
+        }
+        return part;
+      })}
+    </p>
+  );
+}
+
 function StatusBadge({ status }: { status: string | null | undefined }) {
   const opt = AGENT_STATUS_OPTIONS.find(o => o.value === (status ?? "active")) ?? AGENT_STATUS_OPTIONS[0];
   return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${opt.color}`}>{opt.label}</span>;
@@ -2401,7 +2426,7 @@ function AgentNotesTab({ userId }: { userId: number }) {
               key={note.id}
               className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/10 p-4"
             >
-              <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.content}</p>
+              <NoteContent content={note.content} />
               <p className="mt-2 text-xs text-amber-700 dark:text-amber-500 font-medium">
                 {new Date(note.createdAt).toLocaleString("en-GB", {
                   day: "2-digit",

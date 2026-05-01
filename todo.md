@@ -1715,10 +1715,10 @@
 - [ ] Report matched/unmatched results to user
 
 ## CRM Memberships — New Sign-Ups Section & Welcome Email Automation
-- [ ] Add "New Sign-Ups" section to CRM memberships page showing agents with Onboarding status who haven't completed onboarding checklist
-- [ ] Show agent name, tier, join date, onboarding checklist progress, and a quick link to their CRM profile
-- [ ] Automate "Send Welcome Email" button with the correct JLT welcome email template
-- [ ] Welcome email: personalised greeting, training hub setup instructions, WhatsApp group, JLT email 7-day timeline, weekly Thursday induction call info
+- [x] Add "New Sign-Ups" section to CRM memberships page showing agents with Onboarding status who haven't completed onboarding checklist
+- [x] Show agent name, tier, join date, onboarding checklist progress, and a quick link to their CRM profile
+- [x] Automate "Send Welcome Email" button with the correct JLT welcome email template
+- [x] Welcome email: personalised greeting, training hub setup instructions, WhatsApp group, JLT email 7-day timeline, weekly Thursday induction call info
 
 ## Contract Evidence & Onboarding Visibility (Apr 24)
 - [x] Fix contract page: send signingUserAgent, consentConfirmed, contractTextSnapshot from all three signing pages (JoinFlow, JoinAccept, SignContract)
@@ -1729,7 +1729,7 @@
 - [x] Confirm/fix that VAT entered on Commission Management page persists when claim moves from Processing → Claimed → Paid
 
 ## Bug Fixes (Apr 24)
-- [ ] Fix FORBIDDEN error when admin tries to match a remittance batch (Remittance Management page)
+- [x] Fix FORBIDDEN error when admin tries to match a remittance batch (Remittance Management page) — root cause: admin-only queries in PortalLayout firing before auth confirmed; fixed with !!user guard
 - [x] Fix: VAT figures entered on unmatched remittance lines are lost when the line is manually matched to a booking
 - [x] Janine's View: add filter toggle to default to unpushed lines only, with option to show all lines for historic view
 - [x] Admin dashboard: add Late Reimbursements (unactioned), Pending Flight Requests, and New Sign-Ups pills to the quick-stats row
@@ -1920,3 +1920,6 @@
 ## Follow-Up Items (May 1)
 - [x] New Sign-Ups panel: add "Send Welcome Email" button directly on the Memberships page (no need to open CRM profile)
 - [x] Fix FORBIDDEN errors on PortalLayout admin-only queries firing before auth is confirmed (added !!user guard)
+
+## Clickable Attachments in Notes (May 1)
+- [x] Notes/messages: render attachment URLs as clickable links (open in new tab) instead of plain text

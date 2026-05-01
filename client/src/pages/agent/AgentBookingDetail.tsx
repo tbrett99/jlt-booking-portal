@@ -12,11 +12,40 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
   CheckCircle2, Circle, AlertCircle, Sparkles, TrendingUp, Clock,
-  RefreshCw, Pencil, User, Check, X, Trash2, Plane, Zap,
-  CreditCard, Copy, ExternalLink, Paperclip, FolderOpen, Download
+  RefreshCw, Pencil, User, Check, X, Trash2, Plane,
+  CreditCard, Copy, ExternalLink, Paperclip, FolderOpen, Download, Zap
 } from "lucide-react";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
+
+// Render note content: @mentions highlighted, [Attachment: name](url) as clickable links
+function NoteContent({ content, textColor }: { content: string; textColor?: string }) {
+  const parts = content.split(/(\[Attachment:[^\]]+\]\([^)]+\))/g);
+  return (
+    <p className="whitespace-pre-wrap">
+      {parts.map((part, i) => {
+        const attachMatch = part.match(/^\[Attachment:\s*([^\]]+)\]\(([^)]+)\)$/);
+        if (attachMatch) {
+          const [, fileName, url] = attachMatch;
+          return (
+            <a
+              key={i}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:opacity-80"
+              style={{ color: textColor ?? "#02E6D2" }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              {fileName.trim()}
+            </a>
+          );
+        }
+        return part;
+      })}
+    </p>
+  );
+}
 
 // ─── Agent Payments Card ─────────────────────────────────────────────────────
 function AgentPaymentsCard({ bookingId, booking }: { bookingId: number; booking: any }) {
@@ -1266,7 +1295,7 @@ export default function AgentBookingDetail() {
                         {isAdmin && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide" style={{ background: '#7c3aed', color: 'white' }}>JLT Team</span>}
                         {note.authorName}
                       </p>
-                      <p className="whitespace-pre-wrap">{note.content}</p>
+                      <NoteContent content={note.content} textColor={isMe ? "#414141" : "#02E6D2"} />
                       <p className="text-xs opacity-50 mt-1 text-right">
                         {format(new Date(note.createdAt), 'dd MMM, HH:mm')}
                       </p>

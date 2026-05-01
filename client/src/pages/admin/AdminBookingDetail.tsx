@@ -35,18 +35,38 @@ const STAGES_REQUIRING_PAYMENT_DATE = [
 
 // Render note content with @mentions highlighted
 function NoteContent({ content }: { content: string }) {
-  const parts = content.split(/(@[A-Za-z][A-Za-z0-9 ]*)/g);
+  // Split on @mentions AND markdown-style attachment links [Attachment: name](url)
+  const parts = content.split(/(@[A-Za-z][A-Za-z0-9 ]*|\[Attachment:[^\]]+\]\([^)]+\))/g);
   return (
     <p className="whitespace-pre-wrap text-sm">
-      {parts.map((part, i) =>
-        part.startsWith("@") ? (
-          <span key={i} className="font-semibold rounded px-1" style={{ background: "#70FFE8", color: "#414141" }}>
-            {part}
-          </span>
-        ) : (
-          part
-        )
-      )}
+      {parts.map((part, i) => {
+        if (part.startsWith("@")) {
+          return (
+            <span key={i} className="font-semibold rounded px-1" style={{ background: "#70FFE8", color: "#414141" }}>
+              {part}
+            </span>
+          );
+        }
+        // Match [Attachment: filename](url)
+        const attachMatch = part.match(/^\[Attachment:\s*([^\]]+)\]\(([^)]+)\)$/);
+        if (attachMatch) {
+          const [, fileName, url] = attachMatch;
+          return (
+            <a
+              key={i}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium underline-offset-2 hover:underline"
+              style={{ color: "#02E6D2" }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              {fileName.trim()}
+            </a>
+          );
+        }
+        return part;
+      })}
     </p>
   );
 }
