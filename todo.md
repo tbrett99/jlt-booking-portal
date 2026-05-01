@@ -1929,3 +1929,7 @@
 - [x] Backend: accept jltCompanyCard in reimbursement create/update procedures
 - [x] Frontend (agent): add JLT Company Card toggle to reimbursement form with "are you sure" confirmation dialog
 - [x] Frontend (admin): display JLT Company Card badge on reimbursement items so admin knows to retain funds
+
+## Reports & Agent Performance Fix (May 1)
+- [x] Fix: admin/super_admin users' bookings not appearing in agent performance or reports dashboard
+- [x] Fix: agent performance and reports queries must include all roles (not just role=agent) — listAgents now includes super_admin

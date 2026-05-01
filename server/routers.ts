@@ -414,11 +414,12 @@ export const appRouter = router({
           totalPages: Math.ceil(total / pageSize),
         };
       }),
-    // Lightweight list of all bookable users for dropdowns/matching (agents + admins, not super_admins)
+    // Lightweight list of all bookable users for dropdowns/matching (agents + admins + super_admins)
     listAgents: adminProcedure.query(async () => {
       const all = await getAllUsers();
+      // Include all roles that can register bookings: agent, admin, super_admin
       return all
-        .filter((u) => u.role === "agent" || u.role === "admin")
+        .filter((u) => u.role === "agent" || u.role === "admin" || u.role === "super_admin")
         .map((u) => ({ id: u.id, name: u.name ?? "", email: u.email ?? "", role: u.role, phone: (u as any).phone ?? "", credentialsSentAt: (u as any).credentialsSentAt ?? null }));
     }),
     listAdmins: protectedProcedure.query(async () => {
