@@ -254,6 +254,20 @@ const DEFAULT_TEMPLATES = [
     bodyHtml: `<p>Hi {{agentName}},</p><p>Great news — your commission for booking <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has been marked as paid.</p><p>Please log in to the portal to view your commission history.</p><p>The JLT Group Team</p>`,
     recipientType: "agent" as const,
   },
+  {
+    triggerKey: "gc_receipt",
+    label: "Membership Payment Receipt (GoCardless)",
+    subject: "Membership Payment Receipt \u2014 {{amount}}",
+    bodyHtml: `<p>Hi {{agentName}},</p><p>Your JLT Group membership payment of <strong>{{amount}}</strong> has been successfully collected.</p><p><strong>Membership:</strong> {{membershipTier}}<br/><strong>Date:</strong> {{date}}<br/><strong>Reference:</strong> {{paymentId}}</p><p>For queries contact <a href="mailto:memberships@thejltgroup.co.uk">memberships@thejltgroup.co.uk</a>.</p><p>The JLT Group Team</p>`,
+    recipientType: "agent" as const,
+  },
+  {
+    triggerKey: "gc_payment_failed",
+    label: "Membership Payment Failed (GoCardless)",
+    subject: "Action Required: Membership Payment Failed",
+    bodyHtml: `<p>Hi {{agentName}},</p><p>Your JLT Group membership Direct Debit payment was <strong>unsuccessful</strong>.</p><p>This is failure <strong>{{failureCount}} of 3</strong>. If 3 consecutive payments fail, your portal access will be temporarily suspended.</p><p>Please contact us to resolve this: <a href="mailto:memberships@thejltgroup.co.uk">memberships@thejltgroup.co.uk</a>.</p><p>The JLT Group Team</p>`,
+    recipientType: "agent" as const,
+  },
 ];
 
 // ─── App Router ───────────────────────────────────────────────────────────────

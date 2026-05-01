@@ -1218,6 +1218,74 @@ async function startServer() {
               console.error("[GC Webhook] Failed to send support payment failed email:", supportEmailErr);
             }
           }
+          // ── Send receipt email to agent on confirmed/paid_out ──────────────
+          if (["confirmed", "paid_out"].includes(event.action) && userId) {
+            try {
+              const db2 = await getDb();
+              let agentEmail: string | null = null;
+              let agentName: string | null = null;
+              let membershipTier: string | null = null;
+              if (db2) {
+                const { users: usersT } = await import("../../drizzle/schema");
+                const { eq: eqOp } = await import("drizzle-orm");
+                const [agentRow] = await db2.select().from(usersT).where(eqOp(usersT.id, userId)).limit(1);
+                agentEmail = agentRow?.email ?? null;
+                agentName = agentRow?.name ?? null;
+                membershipTier = (agentRow as any)?.membershipTier ?? null;
+              }
+              if (agentEmail) {
+                const amountFormatted = amount ? `\u00a3${(amount / 100).toFixed(2)}` : "\u2014";
+                const tierLabel = membershipTier === "first_class" ? "First Class" : membershipTier === "charter" ? "Charter" : "Business Class";
+                const receiptHtml = `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);"><div style="background:#70FFE8;padding:28px 32px;"><h1 style="margin:0;font-size:22px;font-weight:700;color:#1a1a2e;">JLT Group</h1><p style="margin:4px 0 0;font-size:13px;color:#1a1a2e;opacity:0.7;">Membership Payment Receipt</p></div><div style="padding:32px;"><p style="color:#414141;margin:0 0 20px;">Hi ${agentName ?? "there"},</p><p style="color:#414141;margin:0 0 20px;">Your JLT Group membership payment has been successfully collected.</p><table style="width:100%;border-collapse:collapse;margin:0 0 24px;"><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Amount</td><td style="padding:10px 0;color:#414141;font-weight:700;font-size:16px;text-align:right;">${amountFormatted}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Membership</td><td style="padding:10px 0;color:#414141;font-weight:600;text-align:right;">${tierLabel}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Date</td><td style="padding:10px 0;color:#414141;text-align:right;">${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</td></tr><tr><td style="padding:10px 0;color:#6b7280;font-size:14px;">Reference</td><td style="padding:10px 0;color:#414141;font-family:monospace;text-align:right;">${paymentId ?? "\u2014"}</td></tr></table><p style="color:#6b7280;font-size:13px;margin:0;">For queries contact <a href="mailto:memberships@thejltgroup.co.uk" style="color:#02E6D2;">memberships@thejltgroup.co.uk</a>.</p></div><div style="background:#f9fafb;padding:20px 32px;border-top:1px solid #f0f0f0;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">JLT Group &bull; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p></div></div>`;
+                await sendDirectEmail({ toEmail: agentEmail, toName: agentName ?? "Agent", subject: `Membership Payment Receipt \u2014 ${amountFormatted}`, html: receiptHtml, ...(({ triggerKey: "gc_receipt", userId } as any)) });
+              }
+              // Reset consecutive failure counter on successful payment
+              if (db2) {
+                const { gcPaymentFailures: gcPF } = await import("../../drizzle/schema");
+                const { eq: eqOp } = await import("drizzle-orm");
+                await db2.update(gcPF).set({ consecutiveFailures: 0 }).where(eqOp(gcPF.userId, userId));
+              }
+            } catch (receiptErr) {
+              console.error("[GC Webhook] Failed to send receipt email:", receiptErr);
+            }
+          }
+          // ── Send failure email to agent + auto-suspend after 3 failures ──
+          if (["failed", "charged_back"].includes(event.action) && userId) {
+            try {
+              const db2 = await getDb();
+              let agentEmail: string | null = null;
+              let agentName: string | null = null;
+              let newConsecutive = 1;
+              if (db2) {
+                const { users: usersT, gcPaymentFailures: gcPF } = await import("../../drizzle/schema");
+                const { eq: eqOp } = await import("drizzle-orm");
+                const [agentRow] = await db2.select().from(usersT).where(eqOp(usersT.id, userId)).limit(1);
+                agentEmail = agentRow?.email ?? null;
+                agentName = agentRow?.name ?? null;
+                const [existing] = await db2.select().from(gcPF).where(eqOp(gcPF.userId, userId)).limit(1);
+                if (existing) {
+                  newConsecutive = (existing.consecutiveFailures ?? 0) + 1;
+                  await db2.update(gcPF).set({ consecutiveFailures: newConsecutive, lastFailedAt: new Date() }).where(eqOp(gcPF.userId, userId));
+                } else {
+                  await db2.insert(gcPF).values({ userId, consecutiveFailures: 1, lastFailedAt: new Date() });
+                }
+                if (newConsecutive >= 3 && agentRow && (agentRow as any).agentStatus !== "suspended") {
+                  await db2.update(usersT).set({ agentStatus: "suspended", suspendedAt: new Date() } as any).where(eqOp(usersT.id, userId));
+                  await db2.update(gcPF).set({ autoSuspendedAt: new Date() }).where(eqOp(gcPF.userId, userId));
+                  await sendSupportEmail({ subject: `\u26a0\ufe0f Agent Auto-Suspended \u2014 3 Consecutive DD Failures (Agent ID ${userId})`, html: `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;"><h2 style="color:#dc2626;margin:0 0 16px;">Agent Auto-Suspended</h2><p style="color:#414141;">Agent <strong>${agentName ?? userId}</strong> (ID: ${userId}) has been automatically suspended after <strong>3 consecutive failed Direct Debit payments</strong>.</p><p style="color:#414141;">Please review their account in the CRM and contact them to resolve the payment issue before reinstating access.</p></div>` });
+                  console.log(`[GC Webhook] Agent ${userId} auto-suspended after 3 consecutive payment failures`);
+                }
+              }
+              if (agentEmail) {
+                const failureReason = meta.description ?? meta.cause ?? null;
+                const isSuspended = newConsecutive >= 3;
+                const failureHtml = `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);"><div style="background:#fee2e2;padding:28px 32px;"><h1 style="margin:0;font-size:22px;font-weight:700;color:#991b1b;">JLT Group</h1><p style="margin:4px 0 0;font-size:13px;color:#991b1b;opacity:0.8;">Membership Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}</p></div><div style="padding:32px;"><p style="color:#414141;margin:0 0 16px;">Hi ${agentName ?? "there"},</p><p style="color:#414141;margin:0 0 16px;">Your JLT Group membership Direct Debit payment was <strong>${event.action === "charged_back" ? "charged back" : "unsuccessful"}</strong>.</p>${failureReason ? `<p style="color:#6b7280;font-size:14px;margin:0 0 16px;"><strong>Reason:</strong> ${failureReason}</p>` : ""}${isSuspended ? `<div style="background:#fee2e2;border-left:4px solid #dc2626;padding:16px;border-radius:4px;margin:0 0 20px;"><p style="margin:0;color:#991b1b;font-weight:600;">Your portal access has been temporarily suspended</p><p style="margin:8px 0 0;color:#991b1b;font-size:14px;">This is due to ${newConsecutive} consecutive failed payments. Please contact us to resolve this.</p></div>` : `<p style="color:#414141;margin:0 0 20px;">This is failure <strong>${newConsecutive} of 3</strong>. If 3 consecutive payments fail, your portal access will be temporarily suspended.</p>`}<p style="color:#6b7280;font-size:13px;margin:0;">For help contact <a href="mailto:memberships@thejltgroup.co.uk" style="color:#02E6D2;">memberships@thejltgroup.co.uk</a>.</p></div><div style="background:#f9fafb;padding:20px 32px;border-top:1px solid #f0f0f0;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">JLT Group &bull; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p></div></div>`;
+                await sendDirectEmail({ toEmail: agentEmail, toName: agentName ?? "Agent", subject: `Action Required: Membership Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}`, html: failureHtml, ...(({ triggerKey: "gc_payment_failed", userId } as any)) });
+              }
+            } catch (failureEmailErr) {
+              console.error("[GC Webhook] Failed to send payment failure email to agent:", failureEmailErr);
+            }
+          }
           console.log(`[GC Webhook] Payment ${paymentId} ${event.action} for user ${userId ?? "unknown"} amount=${amount ?? "?"} pence`);
         }
       }

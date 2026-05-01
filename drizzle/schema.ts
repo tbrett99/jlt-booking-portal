@@ -1208,3 +1208,28 @@ export const reimbursementAuditLogs = mysqlTable("reimbursement_audit_logs", {
   note: text("note"),                                        // optional free-text note
 });
 export type ReimbursementAuditLog = typeof reimbursementAuditLogs.$inferSelect;
+
+// ─── Agent Email Log ──────────────────────────────────────────────────────────
+export const agentEmails = mysqlTable("agent_emails", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId"),                                          // null if sent before account created
+  toEmail: varchar("toEmail", { length: 320 }).notNull(),
+  toName: varchar("toName", { length: 255 }),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  triggerKey: varchar("triggerKey", { length: 100 }),             // e.g. gc_receipt, gc_payment_failed, payment_received
+  bodyHtml: mediumtext("bodyHtml"),
+  status: varchar("status", { length: 30 }).default("sent"),      // sent | failed
+  sentAt: timestamp("sentAt").defaultNow().notNull(),
+});
+export type AgentEmail = typeof agentEmails.$inferSelect;
+
+// ─── GoCardless Consecutive Payment Failures ─────────────────────────────────
+export const gcPaymentFailures = mysqlTable("gc_payment_failures", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  consecutiveFailures: int("consecutiveFailures").default(0).notNull(),
+  lastFailedAt: timestamp("lastFailedAt"),
+  autoSuspendedAt: timestamp("autoSuspendedAt"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type GcPaymentFailure = typeof gcPaymentFailures.$inferSelect;

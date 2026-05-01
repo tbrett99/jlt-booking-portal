@@ -1,5 +1,36 @@
 import nodemailer from "nodemailer";
 import { getNotificationTemplate, areNotificationsPaused } from "./db";
+import { getDb } from "./db";
+
+// Log an email sent to an agent into the agent_emails audit table
+async function logAgentEmail(params: {
+  userId?: number | null;
+  toEmail: string;
+  toName?: string;
+  subject: string;
+  triggerKey?: string;
+  bodyHtml?: string;
+  status?: string;
+}) {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    const { agentEmails } = await import("../drizzle/schema");
+    await db.insert(agentEmails).values({
+      userId: params.userId ?? null,
+      toEmail: params.toEmail,
+      toName: params.toName ?? null,
+      subject: params.subject,
+      triggerKey: params.triggerKey ?? null,
+      bodyHtml: params.bodyHtml ?? null,
+      status: params.status ?? "sent",
+      sentAt: new Date(),
+    });
+  } catch (e) {
+    // Non-critical — never block email sending
+    console.error("[Email] Failed to log agent email:", e);
+  }
+}
 
 // Always create a fresh transporter so env changes take effect without restart
 function getTransporter() {
@@ -65,6 +96,16 @@ export async function sendDirectEmail(params: {
       to: `"${params.toName}" <${params.toEmail}>`,
       subject: params.subject,
       html,
+    });
+    // Log to agent_emails audit table (non-blocking)
+    await logAgentEmail({
+      userId: (params as any).userId ?? null,
+      toEmail: params.toEmail,
+      toName: params.toName,
+      subject: params.subject,
+      triggerKey: (params as any).triggerKey ?? "direct",
+      bodyHtml: html,
+      status: "sent",
     });
     return { success: true };
   } catch (err: any) {
@@ -145,7 +186,16 @@ export async function sendNotificationEmail(params: {
       subject,
       html: wrappedBody,
     });
-
+    // Log to agent_emails audit table (non-blocking)
+    await logAgentEmail({
+      userId: (params as any).userId ?? null,
+      toEmail: params.toEmail,
+      toName: params.toName,
+      subject,
+      triggerKey: params.triggerKey,
+      bodyHtml: wrappedBody,
+      status: "sent",
+    });
     return { success: true };
   } catch (err: any) {
     console.error("[Email] Failed to send:", err?.message);

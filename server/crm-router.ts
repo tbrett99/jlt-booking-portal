@@ -2580,4 +2580,31 @@ export const crmRouter = router({
         return { url };
       }),
   }),
+
+  // ── Agent Email Log ───────────────────────────────────────────────────────────────────────────────
+  agentEmailLog: router({
+    list: adminProcedure
+      .input(
+        z.object({
+          search: z.string().optional(),
+          triggerKey: z.string().optional(),
+          limit: z.number().min(1).max(200).default(50),
+          offset: z.number().min(0).default(0),
+        })
+      )
+      .query(async ({ input }) => {
+        const { getAgentEmailLog } = await import("./crm-db");
+        return getAgentEmailLog(input);
+      }),
+    getBody: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const db = await (await import("./db")).getDb();
+        if (!db) return null;
+        const { agentEmails } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const [row] = await db.select().from(agentEmails).where(eq(agentEmails.id, input.id)).limit(1);
+        return row ?? null;
+      }),
+  }),
 });

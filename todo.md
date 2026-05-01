@@ -1903,3 +1903,16 @@
 - [x] Backend: tRPC mutation to send a nudge email to an abandoned sign-up (personalised with their name/tier, link back to resume their session)
 - [x] Frontend: Abandoned Sign-Ups page in admin area showing table with email, membership tier, step abandoned at, date started, days idle, and Nudge button
 - [x] Frontend: Add "Abandoned Sign-Ups" entry to the admin sidebar under CRM or a new Sign-Ups section
+
+## GoCardless Payment Emails & Auto-Suspend (May 1)
+- [x] GC webhook: send branded receipt email to agent when payment confirmed/paid_out (amount, date, tier, next payment date)
+- [x] GC webhook: send failure email to agent when payment fails (reason, what to do next, link to update bank details)
+- [x] GC webhook: auto-suspend agent after 3 consecutive failed payments (set agentStatus=suspended, notify admin)
+- [x] Log all agent emails (receipt, failure, any notification) to an agent_emails table for audit trail
+
+## Agent Email Log & Template Editor (May 1)
+- [x] DB: agent_emails table (id, userId, toEmail, subject, triggerKey, sentAt, status)
+- [x] Backend: write to agent_emails on every email sent to an agent
+- [x] Frontend: Agent Email Log page in admin area — searchable list of all emails sent to any agent with date, subject, status
+- [x] Frontend: Notification Template Editor — list all agent-facing templates, edit subject + body with live preview, save changes (already existed, enhanced with gc_receipt + gc_payment_failed templates)
+- [x] Add Agent Email Log to admin sidebar

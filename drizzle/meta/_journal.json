@@ -505,6 +505,13 @@
       "when": 1777569564259,
       "tag": "0071_mature_azazel",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "5",
+      "when": 1777639014695,
+      "tag": "0072_spotty_cargill",
+      "breakpoints": true
     }
   ]
 }

@@ -820,3 +820,42 @@ export async function upsertEmailBrandingSettings(
     return rows[0] ?? null;
   }
 }
+
+// ─── Agent Email Log ──────────────────────────────────────────────────────────
+export async function getAgentEmailLog(params: {
+  search?: string;
+  triggerKey?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return { rows: [], total: 0 };
+  const { agentEmails } = await import("../drizzle/schema");
+  const { sql, desc: descOp } = await import("drizzle-orm");
+
+  const conditions: any[] = [];
+  if (params.search) {
+    const s = `%${params.search}%`;
+    conditions.push(or(like(agentEmails.toEmail, s), like(agentEmails.toName as any, s), like(agentEmails.subject, s)));
+  }
+  if (params.triggerKey) {
+    conditions.push(eq(agentEmails.triggerKey, params.triggerKey));
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [countRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(agentEmails)
+    .where(where);
+
+  const rows = await db
+    .select()
+    .from(agentEmails)
+    .where(where)
+    .orderBy(descOp(agentEmails.sentAt))
+    .limit(params.limit ?? 50)
+    .offset(params.offset ?? 0);
+
+  return { rows, total: Number(countRow.count) };
+}

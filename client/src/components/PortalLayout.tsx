@@ -344,6 +344,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Notif. Preferences", href: "/notif-prefs", icon: <BellRing size={16} /> },
         { label: "Inbox Config", href: "/admin/inbox-config", icon: <Settings size={16} /> },
         { label: "Inbox Search History", href: "/admin/inbox-audit", icon: <Mail size={16} /> },
+        { label: "Agent Email Log", href: "/admin/agent-email-log", icon: <Mail size={16} /> },
       ],
     },
   ];
