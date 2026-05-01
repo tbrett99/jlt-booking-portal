@@ -1584,6 +1584,7 @@ export async function createReimbursementItems(items: Array<{
   supplierName: string;
   amount: number;
   isLate?: boolean;
+  jltCompanyCard?: boolean;
 }>) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -1596,6 +1597,7 @@ export async function createReimbursementItems(items: Array<{
       amount: String(item.amount),
       status: "pending" as const,
       isLate: item.isLate ?? false,
+      jltCompanyCard: item.jltCompanyCard ?? false,
     }))
   );
   return db.select().from(reimbursementItems).where(eq(reimbursementItems.bookingId, items[0].bookingId));

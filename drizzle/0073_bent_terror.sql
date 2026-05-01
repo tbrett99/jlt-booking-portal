@@ -1,0 +1,1 @@
+ALTER TABLE `reimbursement_items` ADD `jltCompanyCard` boolean DEFAULT false NOT NULL;

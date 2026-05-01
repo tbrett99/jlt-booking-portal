@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import { ArrowLeft, Upload, X, Loader2, PoundSterling, Info, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Upload, X, Loader2, PoundSterling, Info, CheckCircle2, CreditCard, AlertTriangle } from "lucide-react";
 import { Link } from "wouter";
 import CountrySelect from "@/components/CountrySelect";
 
@@ -22,7 +22,8 @@ export default function RegisterBooking() {
   const [isHistoricBooking, setIsHistoricBooking] = useState(false);
   const [topdogRef, setTopdogRef] = useState("");
   const [reimbursementsRequired, setReimbursementsRequired] = useState(false);
-  const [reimbItems, setReimbItems] = useState<{ supplierName: string; amount: string }[]>([{ supplierName: "", amount: "" }]);
+  const [reimbItems, setReimbItems] = useState<{ supplierName: string; amount: string; jltCompanyCard: boolean }[]>([{ supplierName: "", amount: "", jltCompanyCard: false }]);
+  const [jltCardConfirmIdx, setJltCardConfirmIdx] = useState<number | null>(null);
   const [docFile, setDocFile] = useState<File | null>(null);
   const [expectedCommission, setExpectedCommission] = useState("");
   const [grossCost, setGrossCost] = useState("");
@@ -88,7 +89,7 @@ export default function RegisterBooking() {
     setIsSubmitting(true);
     try {
       const validReimbItems = reimbursementsRequired
-        ? reimbItems.filter((r) => r.supplierName.trim() && parseFloat(r.amount) > 0).map((r) => ({ supplierName: r.supplierName.trim(), amount: parseFloat(r.amount) }))
+        ? reimbItems.filter((r) => r.supplierName.trim() && parseFloat(r.amount) > 0).map((r) => ({ supplierName: r.supplierName.trim(), amount: parseFloat(r.amount), jltCompanyCard: r.jltCompanyCard ?? false }))
         : [];
       const booking = await createBooking.mutateAsync({
         clientName,
@@ -365,7 +366,7 @@ export default function RegisterBooking() {
                   checked={reimbursementsRequired}
                   onChange={(e) => {
                     setReimbursementsRequired(e.target.checked);
-                    if (e.target.checked && reimbItems.length === 0) setReimbItems([{ supplierName: "", amount: "" }]);
+                    if (e.target.checked && reimbItems.length === 0) setReimbItems([{ supplierName: "", amount: "", jltCompanyCard: false }]);
                   }}
                   className="w-4 h-4 mt-0.5 accent-teal-500"
                 />
@@ -380,52 +381,75 @@ export default function RegisterBooking() {
               {reimbursementsRequired && (
                 <div className="space-y-3 pt-1">
                   {reimbItems.map((item, idx) => (
-                    <div key={idx} className="flex gap-2 items-end">
-                      <div className="flex-1 space-y-1">
-                        <Label className="text-xs">Supplier Name</Label>
-                        <Input
-                          placeholder="e.g. Cosmos Tours"
-                          value={item.supplierName}
-                          onChange={(e) => {
-                            const updated = [...reimbItems];
-                            updated[idx] = { ...updated[idx], supplierName: e.target.value };
-                            setReimbItems(updated);
-                          }}
-                        />
-                      </div>
-                      <div className="w-32 space-y-1">
-                        <Label className="text-xs">Amount (£)</Label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                    <div key={idx} className="space-y-2">
+                      <div className="flex gap-2 items-end">
+                        <div className="flex-1 space-y-1">
+                          <Label className="text-xs">Supplier Name</Label>
                           <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={item.amount}
+                            placeholder="e.g. Cosmos Tours"
+                            value={item.supplierName}
                             onChange={(e) => {
                               const updated = [...reimbItems];
-                              updated[idx] = { ...updated[idx], amount: e.target.value };
+                              updated[idx] = { ...updated[idx], supplierName: e.target.value };
                               setReimbItems(updated);
                             }}
-                            className="pl-7"
                           />
                         </div>
+                        <div className="w-32 space-y-1">
+                          <Label className="text-xs">Amount (£)</Label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={item.amount}
+                              onChange={(e) => {
+                                const updated = [...reimbItems];
+                                updated[idx] = { ...updated[idx], amount: e.target.value };
+                                setReimbItems(updated);
+                              }}
+                              className="pl-7"
+                            />
+                          </div>
+                        </div>
+                        {reimbItems.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setReimbItems(reimbItems.filter((_, i) => i !== idx))}
+                            className="mb-0.5 text-muted-foreground hover:text-destructive"
+                          >
+                            <X size={16} />
+                          </button>
+                        )}
                       </div>
-                      {reimbItems.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setReimbItems(reimbItems.filter((_, i) => i !== idx))}
-                          className="mb-0.5 text-muted-foreground hover:text-destructive"
-                        >
-                          <X size={16} />
-                        </button>
-                      )}
+                      {/* JLT Company Card toggle */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!item.jltCompanyCard) {
+                            setJltCardConfirmIdx(idx);
+                          } else {
+                            const updated = [...reimbItems];
+                            updated[idx] = { ...updated[idx], jltCompanyCard: false };
+                            setReimbItems(updated);
+                          }
+                        }}
+                        className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors ${
+                          item.jltCompanyCard
+                            ? 'bg-amber-50 border-amber-400 text-amber-700 font-semibold'
+                            : 'border-dashed border-gray-300 text-muted-foreground hover:border-amber-400 hover:text-amber-600'
+                        }`}
+                      >
+                        <CreditCard size={13} />
+                        {item.jltCompanyCard ? 'JLT Company Card — funds return to JLT' : 'Paid with JLT company card?'}
+                      </button>
                     </div>
                   ))}
                   <button
                     type="button"
-                    onClick={() => setReimbItems([...reimbItems, { supplierName: "", amount: "" }])}
+                    onClick={() => setReimbItems([...reimbItems, { supplierName: "", amount: "", jltCompanyCard: false }])}
                     className="text-xs font-medium underline"
                     style={{ color: '#02E6D2' }}
                   >
@@ -435,6 +459,33 @@ export default function RegisterBooking() {
                 </div>
               )}
             </div>
+
+            {/* JLT Company Card confirmation dialog */}
+            <Dialog open={jltCardConfirmIdx !== null} onOpenChange={(open) => { if (!open) setJltCardConfirmIdx(null); }}>
+              <DialogContent className="max-w-sm">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <AlertTriangle className="text-amber-500" size={18} />
+                    JLT Company Card — Are you sure?
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="text-sm text-muted-foreground space-y-2 py-2">
+                  <p>Only select this if the reimbursement was paid using the <strong>JLT company card</strong>.</p>
+                  <p>This means the funds will be <strong>retained by JLT</strong> and will <strong>not</strong> be paid back to you.</p>
+                </div>
+                <div className="flex gap-2 justify-end pt-2">
+                  <Button variant="outline" size="sm" onClick={() => setJltCardConfirmIdx(null)}>Cancel</Button>
+                  <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" onClick={() => {
+                    if (jltCardConfirmIdx !== null) {
+                      const updated = [...reimbItems];
+                      updated[jltCardConfirmIdx] = { ...updated[jltCardConfirmIdx], jltCompanyCard: true };
+                      setReimbItems(updated);
+                    }
+                    setJltCardConfirmIdx(null);
+                  }}>Yes, JLT Company Card</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
 
             {/* Historic Booking Toggle — kept at the bottom to avoid accidental selection */}
             <div className={`rounded-lg border-2 border-dashed p-4 space-y-2 transition-colors`} style={{ borderColor: isHistoricBooking ? '#FFC3BC' : '#e5e7eb', background: isHistoricBooking ? '#FFF6ED' : undefined }}>
@@ -553,7 +604,7 @@ export default function RegisterBooking() {
                     setSuccessBooking(null);
                     const todayStr = new Date().toISOString().split("T")[0];
                     setClientName(""); setDepartureDate(""); setBookedDate(todayStr); setTopdogRef("");
-                    setReimbursementsRequired(false); setReimbItems([{ supplierName: "", amount: "" }]); setDocFile(null); setExpectedCommission("");
+                    setReimbursementsRequired(false); setReimbItems([{ supplierName: "", amount: "", jltCompanyCard: false }]); setDocFile(null); setExpectedCommission("");
                     setGrossCost(""); setDestination(""); setIsHistoricBooking(false);
                   }}
                 >

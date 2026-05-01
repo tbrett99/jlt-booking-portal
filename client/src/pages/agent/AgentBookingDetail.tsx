@@ -896,6 +896,11 @@ export default function AgentBookingDetail() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate">{item.supplierName}</p>
                       <p className="text-xs text-muted-foreground">£{Number(item.amount).toFixed(2)}{item.isLate ? ' · Late submission' : ''}</p>
+                      {(item as any).jltCompanyCard && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 mt-0.5">
+                          💳 JLT Company Card — funds return to JLT
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {needsMoreDocs && (

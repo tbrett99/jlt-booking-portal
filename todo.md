@@ -1923,3 +1923,9 @@
 
 ## Clickable Attachments in Notes (May 1)
 - [x] Notes/messages: render attachment URLs as clickable links (open in new tab) instead of plain text
+
+## JLT Company Card Flag on Reimbursements (May 1)
+- [x] DB: add jltCompanyCard boolean column to reimbursement_items (default false)
+- [x] Backend: accept jltCompanyCard in reimbursement create/update procedures
+- [x] Frontend (agent): add JLT Company Card toggle to reimbursement form with "are you sure" confirmation dialog
+- [x] Frontend (admin): display JLT Company Card badge on reimbursement items so admin knows to retain funds

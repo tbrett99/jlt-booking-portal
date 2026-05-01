@@ -685,6 +685,7 @@ export const appRouter = router({
           reimbursementItems: z.array(z.object({
             supplierName: z.string().min(1),
             amount: z.number().positive(),
+            jltCompanyCard: z.boolean().optional().default(false),
           })).optional(),
         })
       )
@@ -719,6 +720,7 @@ export const appRouter = router({
               supplierName: item.supplierName,
               amount: item.amount,
               isLate: false,
+              jltCompanyCard: item.jltCompanyCard ?? false,
             }))
           );
         }
@@ -2668,6 +2670,7 @@ export const appRouter = router({
         items: z.array(z.object({
           supplierName: z.string().min(1),
           amount: z.number().positive(),
+          jltCompanyCard: z.boolean().optional().default(false),
         })).min(1),
       }))
       .mutation(async ({ input, ctx }) => {
@@ -2688,6 +2691,7 @@ export const appRouter = router({
             supplierName: item.supplierName,
             amount: item.amount,
             isLate,
+            jltCompanyCard: item.jltCompanyCard ?? false,
           }))
         );
         // Notify admins of late reimbursement

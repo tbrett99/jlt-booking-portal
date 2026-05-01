@@ -351,6 +351,7 @@ export const reimbursementItems = mysqlTable("reimbursement_items", {
   paidById: int("paidById"),                      // FK → users.id (admin who marked paid)
   assignedToId: int("assignedToId"),               // FK → users.id (admin assigned to handle this item)
   actionedAt: timestamp("actionedAt"),             // when admin marked as actioned (for late items)
+  jltCompanyCard: boolean("jltCompanyCard").default(false).notNull(), // true = paid with JLT card, funds stay with JLT
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
