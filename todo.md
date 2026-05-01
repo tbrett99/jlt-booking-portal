@@ -1916,3 +1916,7 @@
 - [x] Frontend: Agent Email Log page in admin area — searchable list of all emails sent to any agent with date, subject, status
 - [x] Frontend: Notification Template Editor — list all agent-facing templates, edit subject + body with live preview, save changes (already existed, enhanced with gc_receipt + gc_payment_failed templates)
 - [x] Add Agent Email Log to admin sidebar
+
+## Follow-Up Items (May 1)
+- [x] New Sign-Ups panel: add "Send Welcome Email" button directly on the Memberships page (no need to open CRM profile)
+- [x] Fix FORBIDDEN errors on PortalLayout admin-only queries firing before auth is confirmed (added !!user guard)

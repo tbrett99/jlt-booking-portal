@@ -178,11 +178,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const { data: bookings = [] } = trpc.bookings.all.useQuery({}, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
   const { data: amendments = [] } = trpc.amendments.all.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
   const { data: refunds = [] } = trpc.refunds.all.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
-  const { data: outstandingReimbs = 0 } = trpc.reimbursements.outstandingCount.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
+  const { data: outstandingReimbs = 0 } = trpc.reimbursements.outstandingCount.useQuery(undefined, { enabled: !!user && isAdminUser && !isAgentView, refetchInterval: 60000 });
   const { data: commissionDueList = [] } = trpc.commissionDue.list.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
-  const { data: lateUnactionedCount = 0 } = trpc.reimbursements.lateUnactionedCount.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
-  const { data: pendingFlightCount = 0 } = trpc.flightRequests.pendingCount.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
-  const { data: newSignUpsCount = 0 } = trpc.crm.agentCrm.newSignUpsCount.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
+  const { data: lateUnactionedCount = 0 } = trpc.reimbursements.lateUnactionedCount.useQuery(undefined, { enabled: !!user && isAdminUser && !isAgentView, refetchInterval: 60000 });
+  const { data: pendingFlightCount = 0 } = trpc.flightRequests.pendingCount.useQuery(undefined, { enabled: !!user && isAdminUser && !isAgentView, refetchInterval: 60000 });
+  const { data: newSignUpsCount = 0 } = trpc.crm.agentCrm.newSignUpsCount.useQuery(undefined, { enabled: !!user && isAdminUser && !isAgentView, refetchInterval: 60000 });
 
   const STAGES_BEFORE_PTS = new Set(["New Booking", "Not on Topdog", "Query", "Reimb Docs Missing", "Urgent/Reimb", "T/O Package", "DP", "Holding Accounts"]);
   const filesToAddToPts = (bookings as any[]).filter((b) => STAGES_BEFORE_PTS.has(b.currentStage)).length;
