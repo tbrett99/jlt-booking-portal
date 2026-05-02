@@ -1439,6 +1439,14 @@ async function startServer() {
     }
   });
 
+  // Allow /apply/embed to be embedded in iframes on external websites
+  // All other routes keep the default (no X-Frame-Options set, which browsers treat as SAMEORIGIN in some cases)
+  app.use("/apply/embed", (_req, res, next) => {
+    res.setHeader("X-Frame-Options", "ALLOWALL");
+    res.setHeader("Content-Security-Policy", "frame-ancestors *");
+    next();
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",

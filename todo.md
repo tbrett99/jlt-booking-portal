@@ -1968,3 +1968,9 @@
 - [x] Email sequences: Onboarding Approved — welcome to the team
 - [x] Ongoing prospect nurture: daily cron at 09:00 UTC sends follow-up emails to new_enquiry prospects who haven't completed application (Day 3, Day 7, Day 14 — idempotent via recruitment_emails_sent)
 - [x] Decline dialog: soft decline (waitlist) vs hard decline (ar_declined) options on admin pipeline
+
+## Enquiry Form Fixes (May 2)
+- [x] Make phone number required on enquiry form
+- [x] Remove tier/membership selection from enquiry form
+- [x] Remove "how did you hear about us" from enquiry form
+- [x] Make enquiry form embeddable via iframe (add X-Frame-Options + CORS headers, create /apply/embed route that strips chrome for iframe use)
