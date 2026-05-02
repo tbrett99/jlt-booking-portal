@@ -1234,3 +1234,67 @@ export const gcPaymentFailures = mysqlTable("gc_payment_failures", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type GcPaymentFailure = typeof gcPaymentFailures.$inferSelect;
+
+// ─── Recruitment Pipeline ────────────────────────────────────────────────────
+
+export const recruitmentPipelineStageEnum = mysqlEnum("recruitmentPipelineStageEnum", [
+  "new_enquiry",
+  "application_received",
+  "ar_approved",
+  "ar_declined",
+  "discovery_call_booked",
+  "did_not_turn_up",
+  "discovery_call_complete",
+  "onboarding_approved",
+  "onboarding_declined",
+  "waitlisted",
+  "archived",
+]);
+
+export const recruitmentProspects = mysqlTable("recruitment_prospects", {
+  id: int("id").primaryKey().autoincrement(),
+  firstName: varchar("firstName", { length: 100 }).notNull(),
+  lastName: varchar("lastName", { length: 100 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
+  pipelineStage: varchar("pipelineStage", { length: 50 }).notNull().default("new_enquiry"),
+  applicationData: json("applicationData"),
+  applicationSubmittedAt: timestamp("applicationSubmittedAt"),
+  calComEventId: varchar("calComEventId", { length: 255 }),
+  discoveryCallAt: timestamp("discoveryCallAt"),
+  reviewedById: int("reviewedById"),
+  reviewedAt: timestamp("reviewedAt"),
+  declineReason: text("declineReason"),
+  adminNotes: text("adminNotes"),
+  source: varchar("source", { length: 100 }).default("website"),
+  tierInterest: varchar("tierInterest", { length: 50 }),
+  howHeard: varchar("howHeard", { length: 255 }),
+  prospectusEmailSentAt: timestamp("prospectusEmailSentAt"),
+  archivedAt: timestamp("archivedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type RecruitmentProspect = typeof recruitmentProspects.$inferSelect;
+export type InsertRecruitmentProspect = typeof recruitmentProspects.$inferInsert;
+
+export const recruitmentEmailsSent = mysqlTable("recruitment_emails_sent", {
+  id: int("id").primaryKey().autoincrement(),
+  prospectId: int("prospectId").notNull(),
+  stage: varchar("stage", { length: 100 }).notNull(),
+  emailKey: varchar("emailKey", { length: 100 }).notNull(),
+  subject: varchar("subject", { length: 500 }),
+  sentAt: timestamp("sentAt").defaultNow().notNull(),
+});
+export type RecruitmentEmailSent = typeof recruitmentEmailsSent.$inferSelect;
+
+export const recruitmentStageHistory = mysqlTable("recruitment_stage_history", {
+  id: int("id").primaryKey().autoincrement(),
+  prospectId: int("prospectId").notNull(),
+  fromStage: varchar("fromStage", { length: 100 }),
+  toStage: varchar("toStage", { length: 100 }).notNull(),
+  changedById: int("changedById"),
+  changedByName: varchar("changedByName", { length: 200 }),
+  note: text("note"),
+  changedAt: timestamp("changedAt").defaultNow().notNull(),
+});
+export type RecruitmentStageHistory = typeof recruitmentStageHistory.$inferSelect;

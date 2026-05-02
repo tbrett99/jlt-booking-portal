@@ -1933,3 +1933,38 @@
 ## Reports & Agent Performance Fix (May 1)
 - [x] Fix: admin/super_admin users' bookings not appearing in agent performance or reports dashboard
 - [x] Fix: agent performance and reports queries must include all roles (not just role=agent) — listAgents now includes super_admin
+
+## Agent Recruitment Pipeline (May 2)
+- [x] Upload JLT prospectus PDF to S3 and get a permanent public URL (hosted at CloudFront CDN)
+- [x] DB: recruitment_prospects table (id, firstName, lastName, email, phone, source, pipelineStage, applicationData JSON, calComEventId, discoveryCallAt, createdAt, updatedAt, archivedAt, archiveReason, declineReason, prospectusEmailSentAt, applicationSubmittedAt, reviewedAt, reviewedById)
+- [x] DB: recruitment_emails_sent table (id, prospectId, stage, emailKey, sentAt, subject)
+- [x] DB: recruitment_stage_history table (id, prospectId, fromStage, toStage, changedById, changedByName, note, changedAt)
+- [x] DB: recruitment_pipeline_stages enum: new_enquiry, application_received, ar_approved, ar_declined, discovery_call_booked, did_not_turn_up, discovery_call_complete, onboarding_approved, onboarding_declined, archived, waitlisted
+- [x] Backend: createProspect mutation (public) — called by enquiry form, sends prospectus email + app link
+- [x] Backend: submitApplication mutation (public, token-based) — called by application form
+- [x] Backend: getApplicationByToken query (public) — pre-fills form with prospect data
+- [x] Backend: listProspects / listProspectsFiltered queries (admin) — with stage filter, search, pagination
+- [x] Backend: getProspect query (admin) — full detail including application answers, stage history, emails sent
+- [x] Backend: updateStage mutation (admin) — approve/decline/advance with reason, triggers stage email
+- [x] Backend: updateNotes mutation (admin) — preserves application token prefix
+- [x] Backend: resendProspectusEmail mutation (admin) — regenerates token if needed
+- [x] Backend: stageCounts query (admin) — counts by stage for pipeline overview
+- [x] Backend: Cal.com webhook endpoint POST /api/calcom/webhook — matches booking email to prospect, advances to discovery_call_booked or did_not_turn_up on cancellation
+- [x] Backend: per-stage email send logic — on stage change sends appropriate email (ar_approved, ar_declined, waitlisted, did_not_turn_up, onboarding_approved)
+- [x] Frontend: /apply public page — enquiry form (name, email, phone, tier interest, how did you hear)
+- [x] Frontend: /apply/form public page — full application form (occupation, why JLT, experience, full/part-time, LinkedIn, anything else)
+- [x] Frontend: Admin Recruitment Pipeline page — list view with stage filters, search, prospect cards, approve/decline/advance actions
+- [x] Frontend: Admin prospect detail page — full application answers, email history, stage timeline, notes, resend prospectus
+- [x] Frontend: Add Agent Recruitment to admin sidebar under Marketing/CRM
+- [x] Email sequences: New Enquiry Day 0 — prospectus link + application form link
+- [x] Email sequences: New Enquiry Day 3 — gentle reminder nudge (automated daily cron)
+- [x] Email sequences: New Enquiry Day 7 — second nudge (automated daily cron)
+- [x] Email sequences: New Enquiry Day 14 — final follow-up before archiving (automated daily cron)
+- [x] Email sequences: AR Approved — congrats + Cal.com booking link
+- [x] Email sequences: AR Declined — polite decline
+- [x] Email sequences: Waitlisted — waitlist notification
+- [x] Email sequences: Discovery Call Booked — confirmation email with call date/time (via Cal.com webhook)
+- [x] Email sequences: Did Not Turn Up — missed call + rebook link
+- [x] Email sequences: Onboarding Approved — welcome to the team
+- [x] Ongoing prospect nurture: daily cron at 09:00 UTC sends follow-up emails to new_enquiry prospects who haven't completed application (Day 3, Day 7, Day 14 — idempotent via recruitment_emails_sent)
+- [x] Decline dialog: soft decline (waitlist) vs hard decline (ar_declined) options on admin pipeline

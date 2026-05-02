@@ -78,6 +78,10 @@ import Memberships from "./pages/crm/Memberships";
 import MyProfile from "./pages/MyProfile";
 import TermsAndPolicies from "./pages/TermsAndPolicies";
 import UnsubscribePage from "./pages/UnsubscribePage";
+import ApplyPage from "./pages/recruitment/ApplyPage";
+import ApplicationFormPage from "./pages/recruitment/ApplicationFormPage";
+import RecruitmentPipeline from "./pages/crm/RecruitmentPipeline";
+import RecruitmentProspectDetail from "./pages/crm/RecruitmentProspectDetail";
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -172,6 +176,9 @@ function AuthRouter() {
         <Route path="/terms" component={TermsAndPolicies} />
         {/* Public unsubscribe page — no auth required */}
         <Route path="/unsubscribe" component={UnsubscribePage} />
+        {/* Public recruitment pages — no auth required */}
+        <Route path="/apply" component={ApplyPage} />
+        <Route path="/apply/form" component={ApplicationFormPage} />
         <Route component={LoginPage} />
       </Switch>
     );
@@ -306,6 +313,9 @@ function AuthRouter() {
         <Route path="/crm/abandoned-signups" component={AbandonedSignups} />
         <Route path="/crm/change-requests" component={CrmChangeRequests} />
         <Route path="/crm/memberships" component={Memberships} />
+        {/* Recruitment Pipeline */}
+        <Route path="/crm/recruitment" component={RecruitmentPipeline} />
+        <Route path="/crm/recruitment/:id" component={RecruitmentProspectDetail} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/unsubscribe" component={UnsubscribePage} />
         <Route component={NotFound} />

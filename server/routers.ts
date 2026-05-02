@@ -128,6 +128,7 @@ import { remittanceRouter } from "./remittance-router";
 import { flightRequestsRouter } from "./flight-requests-router";
 import { paymentsRouter } from "./payments-router";
 import { joinRouter } from "./join-router";
+import { recruitmentRouter } from "./recruitment-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -2969,6 +2970,7 @@ export const appRouter = router({
   flightRequests: flightRequestsRouter,
   payments: paymentsRouter,
   join: joinRouter,
+  recruitment: recruitmentRouter,
 
   // ─── GoCardless Direct Debit ───────────────────────────────────────────────
   gocardless: router({

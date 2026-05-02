@@ -1353,6 +1353,92 @@ async function startServer() {
     }
   });
 
+  // ── Cal.com Webhook ──────────────────────────────────────────────────────
+  // Cal.com POSTs booking events here. We use it to advance the recruitment
+  // pipeline stage when a discovery call is booked or completed.
+  app.post("/api/calcom/webhook", async (req, res) => {
+    try {
+      const payload = req.body as Record<string, any>;
+      const triggerEvent: string = payload?.triggerEvent ?? "";
+      const attendees: Array<{ email?: string; name?: string }> = payload?.payload?.attendees ?? [];
+      const calEventId: string | undefined = payload?.payload?.uid ?? payload?.payload?.id?.toString();
+      const startTime: string | undefined = payload?.payload?.startTime;
+
+      console.log(`[Cal.com Webhook] ${triggerEvent}`, { calEventId, attendees: attendees.map((a) => a.email) });
+
+      if (!attendees.length) {
+        return res.status(200).json({ ok: true, skipped: "no attendees" });
+      }
+
+      const { getAllRecruitmentProspects, updateRecruitmentProspect, moveRecruitmentProspectStage } = await import("../recruitment-db");
+
+      for (const attendee of attendees) {
+        if (!attendee.email) continue;
+        const email = attendee.email.toLowerCase().trim();
+
+        // Find matching prospect
+        const prospects = await getAllRecruitmentProspects({ limit: 5000 });
+        const prospect = prospects.find((p) => p.email.toLowerCase() === email);
+        if (!prospect) {
+          console.log(`[Cal.com Webhook] No recruitment prospect found for ${email}`);
+          continue;
+        }
+
+        if (triggerEvent === "BOOKING_CREATED" || triggerEvent === "BOOKING_RESCHEDULED") {
+          // Advance to discovery_call_booked
+          if (prospect.pipelineStage !== "discovery_call_booked") {
+            await moveRecruitmentProspectStage({
+              prospectId: prospect.id,
+              toStage: "discovery_call_booked",
+              changedByName: "Cal.com (auto)",
+              note: `Discovery call booked via Cal.com${calEventId ? ` (event: ${calEventId})` : ""}`,
+            });
+          }
+          if (calEventId || startTime) {
+            await updateRecruitmentProspect(prospect.id, {
+              calComEventId: calEventId ?? null,
+              discoveryCallAt: startTime ? new Date(startTime) : null,
+            });
+          }
+          // Send booking confirmation email via Resend
+          const { Resend } = await import("resend");
+          const { ENV: env } = await import("./env");
+          const { PROSPECT_FROM, PROSPECT_REPLY_TO } = await import("../resend-email");
+          if (env.resendApiKey) {
+            const resend = new Resend(env.resendApiKey);
+            const callDateStr = startTime ? new Date(startTime).toLocaleString("en-GB", { dateStyle: "full", timeStyle: "short" }) : "the scheduled time";
+            await resend.emails.send({
+              from: PROSPECT_FROM,
+              to: [prospect.email],
+              replyTo: PROSPECT_REPLY_TO,
+              subject: "Discovery Call Confirmed — JLT Group",
+              html: `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#FFF6ED;border-radius:16px;"><h2 style="color:#414141;">Your Discovery Call is Confirmed!</h2><p style="color:#414141;">Hi ${prospect.firstName},</p><p style="color:#414141;">Great news — your discovery call with the JLT Group team is confirmed for <strong>${callDateStr}</strong>.</p><p style="color:#414141;">We look forward to speaking with you. If you need to reschedule, please use the link in your calendar invitation.</p><p style="color:#414141;">Warm regards,<br/><strong>The JLT Group Team</strong></p></div>`,
+            }).catch((e: any) => console.error("[Cal.com Webhook] Failed to send booking confirmation:", e?.message));
+          }
+          console.log(`[Cal.com Webhook] Prospect ${prospect.id} advanced to discovery_call_booked`);
+        }
+
+        if (triggerEvent === "BOOKING_CANCELLED") {
+          // Mark as did_not_turn_up if they were booked
+          if (prospect.pipelineStage === "discovery_call_booked") {
+            await moveRecruitmentProspectStage({
+              prospectId: prospect.id,
+              toStage: "did_not_turn_up",
+              changedByName: "Cal.com (auto)",
+              note: "Booking cancelled via Cal.com",
+            });
+            console.log(`[Cal.com Webhook] Prospect ${prospect.id} marked did_not_turn_up`);
+          }
+        }
+      }
+
+      res.status(200).json({ ok: true });
+    } catch (err: any) {
+      console.error("[Cal.com Webhook] Error:", err?.message);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",

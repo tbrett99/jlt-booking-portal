@@ -469,5 +469,137 @@ export function startScheduler() {
   //   await runInboxImport(false);
   // }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly) — inbox auto-import DISABLED");
+  // Recruitment follow-up: every day at 09:00 UTC
+  // Sends nurture emails to prospects who enquired but haven't completed their application.
+  cron.schedule("0 9 * * *", async () => {
+    try {
+      await runRecruitmentFollowUp();
+    } catch (err: any) {
+      console.error("[Scheduler] Recruitment follow-up error:", err?.message);
+    }
+  }, { timezone: "UTC" });
+
+  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly), recruitment follow-up (09:00 UTC) — inbox auto-import DISABLED");
+}
+
+// ─── Recruitment follow-up nurture emails ─────────────────────────────────────
+/**
+ * Runs daily at 09:00 UTC.
+ * Sends nurture emails to prospects who submitted an enquiry but have NOT yet
+ * completed the full application form.
+ *
+ * Schedule:
+ *  - Day 3 after enquiry: gentle reminder with prospectus link
+ *  - Day 7 after enquiry: second nudge ("still interested?")
+ *  - Day 14 after enquiry: final follow-up before archiving
+ *
+ * Idempotent: each email key is checked against recruitment_emails_sent so
+ * duplicates are never sent even if the cron fires multiple times.
+ */
+async function runRecruitmentFollowUp(): Promise<void> {
+  try {
+    const { getAllRecruitmentProspects, hasRecruitmentEmailBeenSent, logRecruitmentEmail } = await import("./recruitment-db");
+    const { Resend } = await import("resend");
+    const { ENV } = await import("./_core/env");
+    const { PROSPECT_FROM, PROSPECT_REPLY_TO } = await import("./resend-email");
+
+    if (!ENV.resendApiKey) {
+      console.log("[RecruitmentFollowUp] RESEND_API_KEY not set — skipping");
+      return;
+    }
+
+    const resend = new Resend(ENV.resendApiKey);
+    const prospects = await getAllRecruitmentProspects({ stage: "new_enquiry", limit: 2000 });
+    const now = Date.now();
+    let sent = 0;
+
+    for (const prospect of prospects) {
+      // Skip if application already submitted
+      if (prospect.applicationSubmittedAt) continue;
+
+      const enquiryAge = now - new Date(prospect.createdAt).getTime();
+      const daysSinceEnquiry = enquiryAge / (1000 * 60 * 60 * 24);
+
+      // Determine which email to send based on age
+      let emailKey: string | null = null;
+      let subject = "";
+      let bodyHtml = "";
+
+      if (daysSinceEnquiry >= 14 && daysSinceEnquiry < 21) {
+        emailKey = "followup_day14";
+        subject = "One Last Thing — JLT Group";
+        bodyHtml = `
+<p>Hi ${prospect.firstName},</p>
+<p>We wanted to reach out one final time to see if you're still interested in joining the JLT Group travel agency team.</p>
+<p>We completely understand that life gets busy, and there's absolutely no pressure. But if you'd like to move forward, your application link is still active:</p>
+<p style="text-align:center;margin:24px 0;">
+  <a href="https://portal.thejltgroup.co.uk/apply/form" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
+    Complete Your Application
+  </a>
+</p>
+<p>If you have any questions or would like to chat before applying, simply reply to this email — we'd love to hear from you.</p>
+<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
+      } else if (daysSinceEnquiry >= 7 && daysSinceEnquiry < 14) {
+        emailKey = "followup_day7";
+        subject = "Still Thinking It Over? — JLT Group";
+        bodyHtml = `
+<p>Hi ${prospect.firstName},</p>
+<p>We hope you've had a chance to look through our prospectus. We just wanted to check in and see if you have any questions about joining the JLT Group team.</p>
+<p>We'd love to hear from you — whether you're ready to apply or just want to find out more, we're here to help.</p>
+<p style="text-align:center;margin:24px 0;">
+  <a href="https://portal.thejltgroup.co.uk/apply/form" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
+    Complete Your Application
+  </a>
+</p>
+<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
+      } else if (daysSinceEnquiry >= 3 && daysSinceEnquiry < 7) {
+        emailKey = "followup_day3";
+        subject = "Don't Forget — Your JLT Group Application";
+        bodyHtml = `
+<p>Hi ${prospect.firstName},</p>
+<p>Thank you again for your interest in JLT Group! We noticed you haven't yet completed your application form, and we'd love to hear more about you.</p>
+<p>It only takes a few minutes — click below to pick up where you left off:</p>
+<p style="text-align:center;margin:24px 0;">
+  <a href="https://portal.thejltgroup.co.uk/apply/form" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
+    Complete Your Application
+  </a>
+</p>
+<p>If you have any questions in the meantime, feel free to reply to this email.</p>
+<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
+      }
+
+      if (!emailKey) continue;
+
+      // Idempotency check
+      const alreadySent = await hasRecruitmentEmailBeenSent(prospect.id, emailKey);
+      if (alreadySent) continue;
+
+      // Send the email
+      try {
+        await resend.emails.send({
+          from: PROSPECT_FROM,
+          to: [prospect.email],
+          replyTo: PROSPECT_REPLY_TO,
+          subject,
+          html: `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>${subject}</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/></head><body style="margin:0;padding:0;background-color:#f5f5f5;font-family:'Poppins',Arial,sans-serif;"><div style="width:100%;background-color:#f5f5f5;padding:20px 0;"><div style="max-width:600px;width:100%;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><div style="background-color:#70FFE8;padding:24px 40px;text-align:center;"><span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:#414141;">JLT Group</span></div><div style="padding:32px 40px;color:#414141;font-family:'Poppins',Arial,sans-serif;font-size:15px;line-height:1.7;">${bodyHtml}</div><div style="padding:20px 40px;text-align:center;background-color:#fafafa;font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#888;">&copy; ${new Date().getFullYear()} JLT Group. All rights reserved.</div></div></div></body></html>`,
+        });
+
+        await logRecruitmentEmail({
+          prospectId: prospect.id,
+          stage: "new_enquiry",
+          emailKey,
+          subject,
+        });
+
+        sent++;
+        console.log(`[RecruitmentFollowUp] Sent ${emailKey} to prospect ${prospect.id} (${prospect.email})`);
+      } catch (sendErr: any) {
+        console.error(`[RecruitmentFollowUp] Failed to send ${emailKey} to ${prospect.email}:`, sendErr?.message);
+      }
+    }
+
+    console.log(`[RecruitmentFollowUp] Done — ${sent} follow-up email(s) sent`);
+  } catch (err: any) {
+    console.error("[RecruitmentFollowUp] Fatal error:", err?.message);
+  }
 }
