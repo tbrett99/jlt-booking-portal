@@ -161,6 +161,10 @@ function AuthRouter() {
         {/* Public payment pages — no auth required */}
         <Route path="/payment/result" component={PaymentResult} />
         <Route path="/pay/:token" component={PaymentRedirect} />
+        {/* Public recruitment pages — MUST be before /apply/:prospectId to avoid route conflict */}
+        <Route path="/apply" component={ApplyPage} />
+        <Route path="/apply/embed" component={ApplyEmbedPage} />
+        <Route path="/apply/form" component={ApplicationFormPage} />
         {/* Public CRM pages — no auth required */}
         <Route path="/enquiry" component={EnquiryForm} />
         <Route path="/apply/:prospectId" component={AgentApplicationForm} />
@@ -176,10 +180,6 @@ function AuthRouter() {
         <Route path="/terms" component={TermsAndPolicies} />
         {/* Public unsubscribe page — no auth required */}
         <Route path="/unsubscribe" component={UnsubscribePage} />
-        {/* Public recruitment pages — no auth required */}
-        <Route path="/apply" component={ApplyPage} />
-        <Route path="/apply/embed" component={ApplyEmbedPage} />
-        <Route path="/apply/form" component={ApplicationFormPage} />
         <Route component={LoginPage} />
       </Switch>
     );
