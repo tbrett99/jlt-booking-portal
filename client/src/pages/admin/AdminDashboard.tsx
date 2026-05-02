@@ -17,7 +17,7 @@ import {
   AlertTriangle, Sparkles, AlertCircle, Calendar, Clock,
   CheckCircle2, Banknote, RefreshCw, ChevronRight, Upload, BellOff,
   XCircle, ChevronDown, ChevronUp, PoundSterling, ClipboardList,
-  Flame, TriangleAlert, Plane
+  Flame, TriangleAlert, Plane, UserPlus
 } from "lucide-react";
 import { format, differenceInDays, addDays } from "date-fns";
 
@@ -127,6 +127,8 @@ export default function AdminDashboard() {
   const { data: adminUsersForAssign = [] } = trpc.reimbursements.listAdminsForAssign.useQuery();
   const { data: commissionDueList = [] } = trpc.commissionDue.list.useQuery();
   const { data: pendingFlightCount = 0 } = trpc.flightRequests.pendingCount.useQuery();
+  const { data: recruitmentStageCounts } = trpc.recruitment.stageCounts.useQuery();
+  const newApplicationsCount = (recruitmentStageCounts as Record<string, number> | undefined)?.["application_received"] ?? 0;
   const assignReimb = trpc.reimbursements.assign.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
   const scheduleReimb = trpc.reimbursements.updateStatus.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
   const notificationsPaused = notifSettings?.paused ?? false;
@@ -232,6 +234,19 @@ export default function AdminDashboard() {
             <BellOff size={13} />
             {notificationsPaused ? 'Notifs Paused' : 'Notifs Active'}
           </Button>
+          {newApplicationsCount > 0 && (
+            <Link href="/crm/recruitment?stage=application_received">
+              <Button
+                size="sm"
+                className="gap-1.5 text-xs font-semibold animate-pulse"
+                style={{ background: '#02E6D2', color: '#1a1a1a', borderColor: '#02E6D2' }}
+                title={`${newApplicationsCount} new agent application${newApplicationsCount > 1 ? 's' : ''} awaiting review`}
+              >
+                <UserPlus size={13} />
+                {newApplicationsCount} New Application{newApplicationsCount > 1 ? 's' : ''}
+              </Button>
+            </Link>
+          )}
           <Link href="/import">
             <Button size="sm" variant="outline" className="gap-1.5 text-xs">
               <Upload size={13} /> Import CSV

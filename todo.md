@@ -1974,3 +1974,6 @@
 - [x] Remove tier/membership selection from enquiry form
 - [x] Remove "how did you hear about us" from enquiry form
 - [x] Make enquiry form embeddable via iframe (add X-Frame-Options + CORS headers, create /apply/embed route that strips chrome for iframe use)
+
+## Dashboard Alert for New Applications (May 2)
+- [ ] Add recruitment applications alert icon/badge to admin dashboard header — shows count of application_received prospects awaiting review, links to recruitment pipeline
