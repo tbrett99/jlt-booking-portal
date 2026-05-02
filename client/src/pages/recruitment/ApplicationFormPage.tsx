@@ -46,9 +46,11 @@ function CheckboxGroup({
   return (
     <div className="space-y-2">
       {options.map((opt) => (
-        <label
+        <button
           key={opt}
-          className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+          type="button"
+          onClick={() => toggle(opt)}
+          className={`w-full flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors text-left ${
             value.includes(opt)
               ? "border-[#02E6D2] bg-[#02E6D2]/10"
               : "border-gray-200 hover:border-[#02E6D2]/50"
@@ -66,7 +68,7 @@ function CheckboxGroup({
             )}
           </div>
           <span className="text-sm text-[#414141]">{opt}</span>
-        </label>
+        </button>
       ))}
     </div>
   );
