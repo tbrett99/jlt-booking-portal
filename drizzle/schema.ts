@@ -1243,6 +1243,7 @@ export const recruitmentPipelineStageEnum = mysqlEnum("recruitmentPipelineStageE
   "ar_approved",
   "ar_declined",
   "discovery_call_booked",
+  "rebook_required",
   "did_not_turn_up",
   "discovery_call_complete",
   "onboarding_approved",

@@ -1976,4 +1976,16 @@
 - [x] Make enquiry form embeddable via iframe (add X-Frame-Options + CORS headers, create /apply/embed route that strips chrome for iframe use)
 
 ## Dashboard Alert for New Applications (May 2)
-- [ ] Add recruitment applications alert icon/badge to admin dashboard header — shows count of application_received prospects awaiting review, links to recruitment pipeline
+- [x] Add recruitment applications alert icon/badge to admin dashboard header — shows count of application_received prospects awaiting review, links to recruitment pipeline
+
+## Rebook Required Stage (May 2)
+- [x] Add rebook_required to recruitmentPipelineStageEnum in schema.ts and run migration
+- [x] Cal.com webhook: BOOKING_CANCELLED moves prospect to rebook_required (not did_not_turn_up)
+- [x] Email: rebook_required stage sends "No problem, let's find a better time" email with Cal.com link
+- [x] Frontend: add rebook_required stage tab and badge colour to pipeline list and detail pages
+
+## Rebook Required Stage (May 2)
+- [x] Add rebook_required to recruitmentPipelineStageEnum in schema.ts and run migration
+- [x] Cal.com webhook: BOOKING_CANCELLED moves prospect to rebook_required (not did_not_turn_up)
+- [x] Email: rebook_required stage sends "No problem, let's find a better time" email with Cal.com link
+- [x] Frontend: add rebook_required stage tab and badge colour to pipeline list and detail pages

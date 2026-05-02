@@ -25,6 +25,7 @@ export const PIPELINE_STAGES = [
   { value: "ar_approved", label: "AR Approved", color: "bg-green-100 text-green-800" },
   { value: "ar_declined", label: "AR Declined", color: "bg-red-100 text-red-800" },
   { value: "discovery_call_booked", label: "Call Booked", color: "bg-purple-100 text-purple-800" },
+  { value: "rebook_required", label: "Rebook Required", color: "bg-amber-100 text-amber-800" },
   { value: "did_not_turn_up", label: "Did Not Turn Up", color: "bg-orange-100 text-orange-800" },
   { value: "discovery_call_complete", label: "Call Complete", color: "bg-teal-100 text-teal-800" },
   { value: "onboarding_approved", label: "Onboarding Approved", color: "bg-emerald-100 text-emerald-800" },

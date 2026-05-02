@@ -1419,15 +1419,32 @@ async function startServer() {
         }
 
         if (triggerEvent === "BOOKING_CANCELLED") {
-          // Mark as did_not_turn_up if they were booked
+          // Prospect proactively cancelled → Rebook Required (they're still engaged)
+          // Did Not Turn Up is reserved for no-shows only (set manually by admin)
           if (prospect.pipelineStage === "discovery_call_booked") {
             await moveRecruitmentProspectStage({
               prospectId: prospect.id,
-              toStage: "did_not_turn_up",
+              toStage: "rebook_required",
               changedByName: "Cal.com (auto)",
-              note: "Booking cancelled via Cal.com",
+              note: "Prospect cancelled their discovery call via Cal.com — rebook required",
             });
-            console.log(`[Cal.com Webhook] Prospect ${prospect.id} marked did_not_turn_up`);
+            // Send rebook email inline (same pattern as booking confirmation above)
+            {
+              const { Resend } = await import("resend");
+              const { ENV: env } = await import("./env");
+              const { PROSPECT_FROM, PROSPECT_REPLY_TO } = await import("../resend-email");
+              if (env.resendApiKey) {
+                const resend = new Resend(env.resendApiKey);
+                await resend.emails.send({
+                  from: PROSPECT_FROM,
+                  to: [prospect.email],
+                  replyTo: PROSPECT_REPLY_TO,
+                  subject: "No problem — let's find a better time | JLT Group",
+                  html: `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#FFF6ED;border-radius:16px;"><h2 style="color:#414141;">No problem at all!</h2><p style="color:#414141;">Hi ${prospect.firstName},</p><p style="color:#414141;">We noticed you cancelled your discovery call — that's completely fine, life gets busy!</p><p style="color:#414141;">We'd love to find a time that works better for you. Simply use the link below to pick a new slot:</p><p style="text-align:center;margin:24px 0;"><a href="https://cal.com/thejltgroup" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">Book a New Time</a></p><p style="color:#414141;">If you have any questions or would prefer to chat over email first, just reply to this message.</p><p style="color:#414141;">Warm regards,<br/><strong>The JLT Group Team</strong></p></div>`,
+                }).catch((e: any) => console.error("[Cal.com Webhook] Failed to send rebook email:", e?.message));
+              }
+            }
+            console.log(`[Cal.com Webhook] Prospect ${prospect.id} moved to rebook_required`);
           }
         }
       }
