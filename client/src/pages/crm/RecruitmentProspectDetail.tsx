@@ -28,6 +28,7 @@ import { getStageBadge, PIPELINE_STAGES } from "./RecruitmentPipeline";
 // ─── Application data type ────────────────────────────────────────────────────
 
 interface ApplicationData {
+  // Core fields
   occupation?: string;
   whyJlt?: string;
   experience?: string;
@@ -35,6 +36,24 @@ interface ApplicationData {
   linkedinUrl?: string;
   anythingElse?: string;
   submittedAt?: string;
+  // Agent Readiness Form extended fields
+  selfEmployed?: string;
+  travelExperience?: string;
+  travelExperienceDetails?: string;
+  mainGoal?: string[];
+  travelSpecialism?: string;
+  hoursPerWeek?: string;
+  homeSupport?: string;
+  investmentReadiness?: string;
+  selfEmployedAwareness?: string;
+  biggestWorry?: string;
+  techConfidence?: string;
+  financialReadiness?: string;
+  twoYearVision?: string;
+  heardAbout?: string[];
+  heardAboutOther?: string;
+  lookingAtOthers?: string;
+  lookingAtOthersDetails?: string;
 }
 
 // ─── Stage transition config ──────────────────────────────────────────────────
@@ -233,47 +252,189 @@ export default function RecruitmentProspectDetail() {
           {appData ? (
             <div className="bg-card rounded-xl border border-border p-5">
               <h2 className="font-semibold text-foreground mb-4">Application Answers</h2>
-              <dl className="space-y-4">
-                {appData.occupation && (
-                  <div>
-                    <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Current Occupation</dt>
-                    <dd className="text-sm text-foreground">{appData.occupation}</dd>
+              {/* Section helper */}
+              <dl className="space-y-5">
+
+                {/* ── Background & Experience ── */}
+                <div className="pb-4 border-b border-border">
+                  <p className="text-xs font-semibold text-[#02E6D2] uppercase tracking-widest mb-3">Background &amp; Experience</p>
+                  <div className="space-y-4">
+                    {appData.whyJlt && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Why interested in becoming a travel agent?</dt>
+                        <dd className="text-sm text-foreground whitespace-pre-wrap">{appData.whyJlt}</dd>
+                      </div>
+                    )}
+                    {appData.selfEmployed && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Currently / previously self-employed?</dt>
+                        <dd className="text-sm text-foreground">{appData.selfEmployed}</dd>
+                      </div>
+                    )}
+                    {appData.travelExperience && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Worked in travel or customer service?</dt>
+                        <dd className="text-sm text-foreground">{appData.travelExperience}</dd>
+                      </div>
+                    )}
+                    {appData.travelExperienceDetails && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Travel / customer service experience details</dt>
+                        <dd className="text-sm text-foreground whitespace-pre-wrap">{appData.travelExperienceDetails}</dd>
+                      </div>
+                    )}
+                    {/* Legacy field */}
+                    {appData.experience && !appData.travelExperienceDetails && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Travel Industry Experience</dt>
+                        <dd className="text-sm text-foreground whitespace-pre-wrap">{appData.experience}</dd>
+                      </div>
+                    )}
+                    {appData.occupation && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Current occupation / income source</dt>
+                        <dd className="text-sm text-foreground">{appData.occupation}</dd>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Travel Business Plans ── */}
+                <div className="pb-4 border-b border-border">
+                  <p className="text-xs font-semibold text-[#02E6D2] uppercase tracking-widest mb-3">Travel Business Plans</p>
+                  <div className="space-y-4">
+                    {appData.mainGoal && appData.mainGoal.length > 0 && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Main goal for first 12 months</dt>
+                        <dd className="text-sm text-foreground">{appData.mainGoal.join(", ")}</dd>
+                      </div>
+                    )}
+                    {appData.travelSpecialism && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Travel specialism interest</dt>
+                        <dd className="text-sm text-foreground">{appData.travelSpecialism}</dd>
+                      </div>
+                    )}
+                    {(appData.hoursPerWeek || appData.fullOrPartTime) && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Hours per week / commitment</dt>
+                        <dd className="text-sm text-foreground">
+                          {appData.hoursPerWeek || appData.fullOrPartTime?.replace("_", "-")}
+                        </dd>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Mindset & Readiness ── */}
+                <div className="pb-4 border-b border-border">
+                  <p className="text-xs font-semibold text-[#02E6D2] uppercase tracking-widest mb-3">Mindset &amp; Readiness</p>
+                  <div className="space-y-4">
+                    {appData.homeSupport && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Support at home</dt>
+                        <dd className="text-sm text-foreground">{appData.homeSupport}</dd>
+                      </div>
+                    )}
+                    {appData.investmentReadiness && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Readiness to invest (time, energy, financially)</dt>
+                        <dd className="text-sm text-foreground">{appData.investmentReadiness}</dd>
+                      </div>
+                    )}
+                    {appData.selfEmployedAwareness && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Aware this is self-employed?</dt>
+                        <dd className="text-sm text-foreground">{appData.selfEmployedAwareness}</dd>
+                      </div>
+                    )}
+                    {appData.biggestWorry && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Biggest worry / hesitation</dt>
+                        <dd className="text-sm text-foreground whitespace-pre-wrap">{appData.biggestWorry}</dd>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Financial & Tech Readiness ── */}
+                <div className="pb-4 border-b border-border">
+                  <p className="text-xs font-semibold text-[#02E6D2] uppercase tracking-widest mb-3">Financial &amp; Tech Readiness</p>
+                  <div className="space-y-4">
+                    {appData.techConfidence && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Tech confidence</dt>
+                        <dd className="text-sm text-foreground">{appData.techConfidence}</dd>
+                      </div>
+                    )}
+                    {appData.financialReadiness && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Financial readiness</dt>
+                        <dd className="text-sm text-foreground">{appData.financialReadiness}</dd>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Long-Term Vision ── */}
+                {appData.twoYearVision && (
+                  <div className="pb-4 border-b border-border">
+                    <p className="text-xs font-semibold text-[#02E6D2] uppercase tracking-widest mb-3">Long-Term Vision</p>
+                    <div>
+                      <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Where they want to be in 2 years</dt>
+                      <dd className="text-sm text-foreground whitespace-pre-wrap">{appData.twoYearVision}</dd>
+                    </div>
                   </div>
                 )}
-                {appData.fullOrPartTime && (
-                  <div>
-                    <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Full / Part Time</dt>
-                    <dd className="text-sm text-foreground capitalize">{appData.fullOrPartTime.replace("_", "-")}</dd>
+
+                {/* ── How Did You Hear About Us ── */}
+                <div>
+                  <p className="text-xs font-semibold text-[#02E6D2] uppercase tracking-widest mb-3">How Did They Hear About Us</p>
+                  <div className="space-y-4">
+                    {appData.heardAbout && appData.heardAbout.length > 0 && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Source</dt>
+                        <dd className="text-sm text-foreground">{appData.heardAbout.join(", ")}</dd>
+                      </div>
+                    )}
+                    {appData.heardAboutOther && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Source details / referral</dt>
+                        <dd className="text-sm text-foreground">{appData.heardAboutOther}</dd>
+                      </div>
+                    )}
+                    {appData.lookingAtOthers && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Looking at other host agencies?</dt>
+                        <dd className="text-sm text-foreground">{appData.lookingAtOthers}</dd>
+                      </div>
+                    )}
+                    {appData.lookingAtOthersDetails && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Which other agencies?</dt>
+                        <dd className="text-sm text-foreground">{appData.lookingAtOthersDetails}</dd>
+                      </div>
+                    )}
+                    {/* Legacy fields */}
+                    {appData.linkedinUrl && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">LinkedIn</dt>
+                        <dd className="text-sm">
+                          <a href={appData.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-[#02E6D2] hover:underline">
+                            {appData.linkedinUrl}
+                          </a>
+                        </dd>
+                      </div>
+                    )}
+                    {appData.anythingElse && (
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Anything Else</dt>
+                        <dd className="text-sm text-foreground whitespace-pre-wrap">{appData.anythingElse}</dd>
+                      </div>
+                    )}
                   </div>
-                )}
-                {appData.experience && (
-                  <div>
-                    <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Travel Industry Experience</dt>
-                    <dd className="text-sm text-foreground whitespace-pre-wrap">{appData.experience}</dd>
-                  </div>
-                )}
-                {appData.whyJlt && (
-                  <div>
-                    <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Why JLT Group?</dt>
-                    <dd className="text-sm text-foreground whitespace-pre-wrap">{appData.whyJlt}</dd>
-                  </div>
-                )}
-                {appData.linkedinUrl && (
-                  <div>
-                    <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">LinkedIn</dt>
-                    <dd className="text-sm">
-                      <a href={appData.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-[#02E6D2] hover:underline">
-                        {appData.linkedinUrl}
-                      </a>
-                    </dd>
-                  </div>
-                )}
-                {appData.anythingElse && (
-                  <div>
-                    <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Anything Else</dt>
-                    <dd className="text-sm text-foreground whitespace-pre-wrap">{appData.anythingElse}</dd>
-                  </div>
-                )}
+                </div>
+
               </dl>
             </div>
           ) : (

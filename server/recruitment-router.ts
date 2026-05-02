@@ -259,8 +259,28 @@ export const recruitmentRouter = router({
         whyJlt: z.string().min(1).max(2000),
         experience: z.string().max(2000).optional(),
         fullOrPartTime: z.enum(["full_time", "part_time", "not_sure"]),
-        linkedinUrl: z.string().url().optional().or(z.literal("")),
+        linkedinUrl: z.string().url().optional().or(z.literal("")).optional(),
         anythingElse: z.string().max(2000).optional(),
+        // Extended Agent Readiness Form fields
+        extendedData: z.object({
+          selfEmployed: z.string().optional(),
+          travelExperience: z.string().optional(),
+          travelExperienceDetails: z.string().optional(),
+          mainGoal: z.array(z.string()).optional(),
+          travelSpecialism: z.string().optional(),
+          hoursPerWeek: z.string().optional(),
+          homeSupport: z.string().optional(),
+          investmentReadiness: z.string().optional(),
+          selfEmployedAwareness: z.string().optional(),
+          biggestWorry: z.string().optional(),
+          techConfidence: z.string().optional(),
+          financialReadiness: z.string().optional(),
+          twoYearVision: z.string().optional(),
+          heardAbout: z.array(z.string()).optional(),
+          heardAboutOther: z.string().optional(),
+          lookingAtOthers: z.string().optional(),
+          lookingAtOthersDetails: z.string().optional(),
+        }).optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -286,6 +306,8 @@ export const recruitmentRouter = router({
         linkedinUrl: input.linkedinUrl ?? "",
         anythingElse: input.anythingElse ?? "",
         submittedAt: new Date().toISOString(),
+        // Agent Readiness Form extended fields
+        ...(input.extendedData ?? {}),
       };
 
       await updateRecruitmentProspect(prospect.id, {
