@@ -1992,3 +1992,10 @@
 
 ## DD Payment Failed Email Fix (May 5)
 - [x] Add agent name, email, and direct CRM profile link to the DD payment failed notification email
+
+## Delete Entries from Sign-Up Screens (May 5)
+- [x] Backend: deleteNewSignUp mutation (adminProcedure) — deletes user + agentCrmProfile + adminOnboardingChecklist + joinSession; blocks active agents
+- [x] Backend: deleteJoinSession mutation (admin only) — deletes join session; blocks if userId set (already converted to agent)
+- [x] Frontend: New Sign-Ups Awaiting Onboarding — red trash icon button per row + AlertDialog confirm
+- [x] Frontend: Abandoned Sign-Ups — red trash icon button per row + AlertDialog confirm
+- [x] Frontend: Sign-Up Applications — red trash icon button per row (only for sessions without userId) + AlertDialog confirm

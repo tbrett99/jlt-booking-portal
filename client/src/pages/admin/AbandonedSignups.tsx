@@ -6,7 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Mail, Clock, UserX, Filter, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { Mail, Clock, UserX, Filter, RefreshCw, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const TIER_LABELS: Record<string, string> = {
   business_class: "Business Class",
@@ -36,6 +40,16 @@ export default function AbandonedSignups() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [nudgingSessions, setNudgingSessions] = useState<Set<number>>(new Set());
   const [nudgedSessions, setNudgedSessions] = useState<Set<number>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; email: string } | null>(null);
+  const utils = trpc.useUtils();
+  const deleteSession = trpc.join.deleteJoinSession.useMutation({
+    onSuccess: () => {
+      toast.success(`Session for ${deleteTarget?.email ?? "entry"} deleted`);
+      setDeleteTarget(null);
+      utils.join.getAbandonedSessions.invalidate();
+    },
+    onError: (e) => { toast.error(e.message); setDeleteTarget(null); },
+  });
 
   const { data: sessions = [], isLoading, refetch } = trpc.join.getAbandonedSessions.useQuery(
     { daysIdle: minDaysIdle },
@@ -249,20 +263,30 @@ export default function AbandonedSignups() {
                         </td>
                         <td className={`px-4 py-3 ${idleColour}`}>{idleLabel}</td>
                         <td className="px-4 py-3 text-right">
-                          {wasNudged ? (
-                            <span className="text-xs text-green-600 font-medium">✓ Nudge sent</span>
-                          ) : (
+                          <div className="flex items-center justify-end gap-2">
+                            {wasNudged ? (
+                              <span className="text-xs text-green-600 font-medium">✓ Nudge sent</span>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1.5 text-xs"
+                                disabled={isNudging}
+                                onClick={() => handleNudge(s.id)}
+                              >
+                                <Mail size={13} />
+                                {isNudging ? "Sending\u2026" : "Send Nudge"}
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"
-                              className="gap-1.5 text-xs"
-                              disabled={isNudging}
-                              onClick={() => handleNudge(s.id)}
+                              className="text-destructive hover:bg-destructive/10 border-destructive/30"
+                              onClick={() => setDeleteTarget({ id: s.id, email: s.email })}
                             >
-                              <Mail size={13} />
-                              {isNudging ? "Sending…" : "Send Nudge"}
+                              <Trash2 size={13} />
                             </Button>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -276,6 +300,26 @@ export default function AbandonedSignups() {
           )}
         </CardContent>
       </Card>
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete abandoned session?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the sign-up session for <strong>{deleteTarget?.email}</strong>. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteTarget && deleteSession.mutate({ sessionId: deleteTarget.id })}
+              disabled={deleteSession.isPending}
+            >
+              {deleteSession.isPending ? "Deleting\u2026" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

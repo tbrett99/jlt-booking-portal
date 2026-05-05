@@ -2122,6 +2122,28 @@ export const crmRouter = router({
         .where(eq(users.portalStatus, "onboarding"));
       return rows.length;
     }),
+
+    deleteNewSignUp: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { users, agentCrmProfiles, adminOnboardingChecklist, joinSessions } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        // Only allow deleting users still in onboarding status (not yet active agents)
+        const [row] = await db.select({ id: users.id, portalStatus: users.portalStatus }).from(users).where(eq(users.id, input.userId)).limit(1);
+        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+        if (row.portalStatus === "active") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot delete an active agent from here. Use the CRM agent management page instead." });
+        }
+        // Delete related records first
+        await db.delete(adminOnboardingChecklist).where(eq(adminOnboardingChecklist.userId, input.userId));
+        await db.delete(agentCrmProfiles).where(eq(agentCrmProfiles.userId, input.userId));
+        await db.delete(joinSessions).where(eq(joinSessions.userId, input.userId));
+        await db.delete(users).where(eq(users.id, input.userId));
+        return { ok: true };
+      }),
   }),
 
   // ─── Agent CRM Notes ───────────────────────────────────────────────────────

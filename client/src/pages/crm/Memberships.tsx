@@ -22,7 +22,7 @@ import {
 import {
   Users, PauseCircle, AlertTriangle, XCircle, ShieldOff,
   CheckCircle2, Clock, CalendarDays, ChevronRight, RotateCcw,
-  UserPlus, ArrowRight, Mail,
+  UserPlus, ArrowRight, Mail, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -264,6 +264,18 @@ export default function Memberships() {
   const { data, refetch, isLoading } = trpc.crm.agentCrm.getMembershipsOverview.useQuery();
   const { data: newSignUps = [], refetch: refetchSignUps } = trpc.crm.agentCrm.getNewSignUps.useQuery();
   const utils = trpc.useUtils();
+
+  // Delete new sign-up state
+  const [deleteSignUpTarget, setDeleteSignUpTarget] = useState<{ userId: number; name: string | null } | null>(null);
+  const deleteNewSignUp = trpc.crm.agentCrm.deleteNewSignUp.useMutation({
+    onSuccess: () => {
+      toast.success(`${deleteSignUpTarget?.name ?? "Entry"} removed`);
+      setDeleteSignUpTarget(null);
+      utils.crm.agentCrm.getNewSignUps.invalidate();
+      utils.crm.agentCrm.newSignUpsCount.invalidate();
+    },
+    onError: (e) => { toast.error(e.message); setDeleteSignUpTarget(null); },
+  });
   const sendWelcome = trpc.crm.agentCrm.sendWelcomeEmail.useMutation({
     onSuccess: (_, vars) => {
       toast.success("Welcome email sent!");
@@ -472,7 +484,7 @@ export default function Memberships() {
                                 onClick={() => sendWelcome.mutate({ userId: agent.userId })}
                               >
                                 <Mail className="h-3.5 w-3.5" />
-                                {sendWelcome.isPending && sendWelcome.variables?.userId === agent.userId ? "Sending…" : "Send Welcome"}
+                                {sendWelcome.isPending && sendWelcome.variables?.userId === agent.userId ? "Sending\u2026" : "Send Welcome"}
                               </Button>
                             )}
                             <Link href={`/crm/agents?agent=${agent.userId}&tab=onboarding`}>
@@ -480,6 +492,14 @@ export default function Memberships() {
                                 Open Checklist <ArrowRight className="h-3.5 w-3.5" />
                               </Button>
                             </Link>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1.5 text-destructive hover:bg-destructive/10 border-destructive/30"
+                              onClick={() => setDeleteSignUpTarget({ userId: agent.userId, name: agent.name })}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
                           </div>
                         </div>
 
@@ -796,6 +816,28 @@ export default function Memberships() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Delete New Sign-Up Confirmation Dialog */}
+      <AlertDialog open={!!deleteSignUpTarget} onOpenChange={(o) => { if (!o) setDeleteSignUpTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove sign-up entry?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{deleteSignUpTarget?.name ?? "this entry"}</strong> and all associated onboarding data. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteSignUpTarget && deleteNewSignUp.mutate({ userId: deleteSignUpTarget.userId })}
+              disabled={deleteNewSignUp.isPending}
+            >
+              {deleteNewSignUp.isPending ? "Removing\u2026" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Reinstate Confirmation Dialog */}
       <AlertDialog open={!!reinstateTarget} onOpenChange={(open) => { if (!open) setReinstateTarget(null); }}>

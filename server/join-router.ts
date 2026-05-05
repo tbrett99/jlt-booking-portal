@@ -837,4 +837,31 @@ export const joinRouter = router({
 
       return { ok: true, email: session.email };
     }),
+
+  // ── Admin: delete a join session (abandoned or application) ───────────────
+  deleteJoinSession: protectedProcedure
+    .input(z.object({ sessionId: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const { eq: eqOp } = await import('drizzle-orm');
+      // Safety: only allow deleting sessions that have NOT been converted to a user account
+      const rows = await db
+        .select({ id: joinSessions.id, userId: joinSessions.userId })
+        .from(joinSessions)
+        .where(eqOp(joinSessions.id, input.sessionId))
+        .limit(1);
+      if (!rows[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Session not found' });
+      if (rows[0].userId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Cannot delete a session that has been converted to an agent account. Delete the agent account instead.',
+        });
+      }
+      await db.delete(joinSessions).where(eqOp(joinSessions.id, input.sessionId));
+      return { ok: true };
+    }),
 });

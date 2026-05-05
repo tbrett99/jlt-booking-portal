@@ -27,7 +27,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Users, FileSignature, CreditCard, CheckCircle2, Clock, AlertCircle, RefreshCw, UserCheck } from "lucide-react";
+import { Loader2, Users, FileSignature, CreditCard, CheckCircle2, Clock, AlertCircle, RefreshCw, UserCheck, Trash2 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { TIER_LABELS, TYPE_LABELS } from "../../../../shared/membership";
 
@@ -90,6 +94,16 @@ function StepBadge({ step }: { step: string }) {
 function SessionsTab() {
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "contract" | "payment" | "complete">("all");
   const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; email: string } | null>(null);
+  const utils = trpc.useUtils();
+  const deleteSession = trpc.join.deleteJoinSession.useMutation({
+    onSuccess: () => {
+      toast.success(`Session for ${deleteTarget?.email ?? "entry"} deleted`);
+      setDeleteTarget(null);
+      utils.join.adminListSessions.invalidate();
+    },
+    onError: (e) => { toast.error(e.message); setDeleteTarget(null); },
+  });
 
   const { data: sessions, isLoading, refetch } = trpc.join.adminListSessions.useQuery({
     status: statusFilter,
@@ -218,11 +232,23 @@ function SessionsTab() {
                     </span>
                   </TableCell>
                   <TableCell>
-                    {session.userId && session.step === "complete" ? (
-                      <ActivateButton userId={session.userId} />
-                    ) : (
-                      <span className="text-xs text-gray-300">—</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {session.userId && session.step === "complete" ? (
+                        <ActivateButton userId={session.userId} />
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                      {!session.userId && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-destructive hover:bg-destructive/10 border-destructive/30"
+                          onClick={() => setDeleteTarget({ id: session.id, email: session.email })}
+                        >
+                          <Trash2 size={13} />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -230,6 +256,26 @@ function SessionsTab() {
           </Table>
         </div>
       )}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete sign-up application?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the application for <strong>{deleteTarget?.email}</strong>. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteTarget && deleteSession.mutate({ sessionId: deleteTarget.id })}
+              disabled={deleteSession.isPending}
+            >
+              {deleteSession.isPending ? "Deleting\u2026" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
