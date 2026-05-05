@@ -2006,3 +2006,7 @@
 - [x] Fix: pre-auth auto-claim does not re-fire if booking is already in Commission Claimed stage
 - [x] DB: deleted erroneous commission claim (id 1320010) for booking 1020031
 - [x] DB: booking 1020031 confirmed in "Added to PTS" stage
+
+## Duo Joining Fee Bug (May 5)
+- [x] Investigate: duo selection on Join page still shows £297 (solo fee) instead of correct duo fee — root cause was all types hardcoded to same £297 fee
+- [x] Fix: JOINING_FEES updated (solo £297, duo £447, trio £597), getPricing returns per-type joiningFees map, JoinFlow.tsx reads fee dynamically from selectedType

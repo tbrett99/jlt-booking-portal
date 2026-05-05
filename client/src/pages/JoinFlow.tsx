@@ -265,7 +265,7 @@ function PlanStep({
     );
   }
 
-  const joiningFee = pricing?.joiningFeePence ?? 29700;
+  const joiningFee = pricing?.joiningFees?.[selectedType] ?? pricing?.joiningFeePence ?? 29700;
 
   return (
     <div className="space-y-8">

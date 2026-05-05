@@ -10,8 +10,8 @@ export type MembershipType = (typeof MEMBERSHIP_TYPES)[number];
 export const PAYMENT_DAYS = [1, 15, 28] as const;
 export type PaymentDay = (typeof PAYMENT_DAYS)[number];
 
-// Joining fee — same for all tiers and types
-export const JOINING_FEE_PENCE = 29700; // £297
+// Joining fee — varies by membership type
+export const JOINING_FEE_PENCE = 29700; // £297 (solo)
 
 // Monthly subscription amounts in pence
 export const MONTHLY_AMOUNTS: Record<MembershipTier, Record<MembershipType, number>> = {
@@ -27,12 +27,11 @@ export const MONTHLY_AMOUNTS: Record<MembershipTier, Record<MembershipType, numb
   },
 };
 
-// Joining fee amounts (same for all tiers, varies by type)
-// NOTE: Currently all the same; kept separate for future flexibility
+// Joining fee amounts — vary by membership type
 export const JOINING_FEES: Record<MembershipType, number> = {
-  solo: JOINING_FEE_PENCE,
-  duo: JOINING_FEE_PENCE,
-  trio: JOINING_FEE_PENCE,
+  solo: 29700,  // £297
+  duo: 44700,   // £447
+  trio: 59700,  // £597
 };
 
 // Human-readable labels
@@ -59,8 +58,8 @@ export function getMonthlyAmount(tier: MembershipTier, type: MembershipType): nu
 }
 
 // Helper: get joining fee for a membership type
-export function getJoiningFee(_type: MembershipType): number {
-  return JOINING_FEE_PENCE;
+export function getJoiningFee(type: MembershipType): number {
+  return JOINING_FEES[type];
 }
 
 // Helper: format pence as £ string

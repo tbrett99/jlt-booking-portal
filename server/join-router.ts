@@ -328,11 +328,17 @@ export const joinRouter = router({
         label: TYPE_LABELS[type],
         memberCount: MEMBER_COUNTS[type],
         monthlyPence: getMonthlyAmount(tier, type),
+        joiningFeePence: getJoiningFee(type),
       })),
     }));
+    // Also expose a per-type map for easy frontend lookup
+    const joiningFees = Object.fromEntries(
+      MEMBERSHIP_TYPES.map((type) => [type, getJoiningFee(type)])
+    ) as Record<string, number>;
     return {
       tiers,
-      joiningFeePence: getJoiningFee("solo"), // same for all types
+      joiningFeePence: getJoiningFee("solo"), // kept for backwards compat
+      joiningFees,
       paymentDays: [...PAYMENT_DAYS],
     };
   }),
