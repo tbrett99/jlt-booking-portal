@@ -848,8 +848,29 @@ export const appRouter = router({
         }
 
         // Pre-auth auto-claim: if moving to Commission Claimable and agent has pre-authorised,
-        // skip the claimable stage and auto-create the commission claim, then move straight to Commission Claimed
-        if (input.toStage === "Commission Claimable" && (booking as any).commissionPreAuthorised) {
+        // skip the claimable stage and auto-create the commission claim, then move straight to Commission Claimed.
+        // Guards:
+        //  1. finalSupplierPaymentDate must be set AND on/before today
+        //  2. No commission claim already exists for this booking
+        //  3. Booking is not already in Commission Claimed
+        const paymentDatePassed = (() => {
+          const d = (booking as any).finalSupplierPaymentDate;
+          if (!d) return false;
+          const payDate = new Date(d);
+          payDate.setHours(0, 0, 0, 0);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          return payDate <= today;
+        })();
+        const existingClaim = await getCommissionClaimByBooking(booking.id);
+        const alreadyClaimed = booking.currentStage === "Commission Claimed";
+        if (
+          input.toStage === "Commission Claimable" &&
+          (booking as any).commissionPreAuthorised &&
+          paymentDatePassed &&
+          !existingClaim &&
+          !alreadyClaimed
+        ) {
           // Auto-create the commission claim with optional VAT
           const grossAmount = (booking as any).expectedCommission ? parseFloat((booking as any).expectedCommission) : undefined;
           const claim = await createCommissionClaim(booking.id, booking.agentId, "other", grossAmount);

@@ -1999,3 +1999,10 @@
 - [x] Frontend: New Sign-Ups Awaiting Onboarding — red trash icon button per row + AlertDialog confirm
 - [x] Frontend: Abandoned Sign-Ups — red trash icon button per row + AlertDialog confirm
 - [x] Frontend: Sign-Up Applications — red trash icon button per row (only for sessions without userId) + AlertDialog confirm
+
+## Pre-Auth Commission Bug Fix (May 5)
+- [x] Fix: pre-auth auto-claim only fires if finalSupplierPaymentDate <= today
+- [x] Fix: pre-auth auto-claim checks for existing commission claim before creating a duplicate
+- [x] Fix: pre-auth auto-claim does not re-fire if booking is already in Commission Claimed stage
+- [x] DB: deleted erroneous commission claim (id 1320010) for booking 1020031
+- [x] DB: booking 1020031 confirmed in "Added to PTS" stage
