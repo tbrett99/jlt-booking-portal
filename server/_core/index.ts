@@ -1197,19 +1197,36 @@ async function startServer() {
           // For failures and chargebacks, notify support
           if (["failed", "charged_back"].includes(event.action)) {
             try {
+              // Resolve agent name + email for the support notification
+              let supportAgentName: string | null = null;
+              let supportAgentEmail: string | null = null;
+              if (userId) {
+                const dbForSupport = await getDb();
+                if (dbForSupport) {
+                  const { users: usersT } = await import("../../drizzle/schema");
+                  const { eq: eqOp } = await import("drizzle-orm");
+                  const [agentRow] = await dbForSupport.select().from(usersT).where(eqOp(usersT.id, userId)).limit(1);
+                  supportAgentName = agentRow?.name ?? null;
+                  supportAgentEmail = agentRow?.email ?? null;
+                }
+              }
+              const crmProfileUrl = userId ? `https://portal.thejltgroup.co.uk/crm/${userId}` : null;
               await sendSupportEmail({
-                subject: `DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}${userId ? ` — Agent ID ${userId}` : ""}`,
+                subject: `DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}${supportAgentName ? ` — ${supportAgentName}` : userId ? ` — Agent ID ${userId}` : ""}`,
                 html: `
                   <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
                     <h2 style="color:#414141;margin:0 0 16px;">DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}</h2>
                     <table style="width:100%;border-collapse:collapse;">
-                      ${userId ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent User ID</td><td style="padding:6px 0;color:#414141;font-weight:600;">${userId}</td></tr>` : ""}
+                      ${supportAgentName ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent Name</td><td style="padding:6px 0;color:#414141;font-weight:600;">${supportAgentName}</td></tr>` : ""}
+                      ${supportAgentEmail ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent Email</td><td style="padding:6px 0;color:#414141;">${supportAgentEmail}</td></tr>` : ""}
+                      ${userId ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent ID</td><td style="padding:6px 0;color:#414141;">${userId}</td></tr>` : ""}
                       <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Payment ID</td><td style="padding:6px 0;color:#414141;">${paymentId ?? "—"}</td></tr>
                       <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Event</td><td style="padding:6px 0;color:#dc2626;font-weight:600;">${event.action}</td></tr>
                       ${meta.description ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Reason</td><td style="padding:6px 0;color:#414141;">${meta.description}</td></tr>` : ""}
                       <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Time</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
                     </table>
-                    <p style="margin:20px 0 0;color:#414141;">Please check the agent's account in the CRM and contact them if necessary.</p>
+                    ${crmProfileUrl ? `<p style="margin:20px 0 8px;"><a href="${crmProfileUrl}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:10px 24px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:14px;">View Agent in CRM →</a></p>` : ""}
+                    <p style="margin:12px 0 0;color:#414141;">Please check the agent's account in the CRM and contact them if necessary.</p>
                     <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
                   </div>
                 `,

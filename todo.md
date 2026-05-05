@@ -1989,3 +1989,6 @@
 - [x] Cal.com webhook: BOOKING_CANCELLED moves prospect to rebook_required (not did_not_turn_up)
 - [x] Email: rebook_required stage sends "No problem, let's find a better time" email with Cal.com link
 - [x] Frontend: add rebook_required stage tab and badge colour to pipeline list and detail pages
+
+## DD Payment Failed Email Fix (May 5)
+- [x] Add agent name, email, and direct CRM profile link to the DD payment failed notification email
