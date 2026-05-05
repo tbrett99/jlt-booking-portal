@@ -2038,7 +2038,7 @@ export const crmRouter = router({
       const { getDb } = await import("./db");
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const { users, agentCrmProfiles, adminOnboardingChecklist } = await import("../drizzle/schema");
+      const { users, agentCrmProfiles, adminOnboardingChecklist, joinSessions } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const rows = await db
         .select({
@@ -2048,6 +2048,7 @@ export const crmRouter = router({
           portalStatus: users.portalStatus,
           createdAt: users.createdAt,
           membershipTier: agentCrmProfiles.membershipTier,
+          membershipType: joinSessions.membershipType,
           dateJoined: agentCrmProfiles.dateJoined,
           uniqueAgentId: agentCrmProfiles.uniqueAgentId,
           jltEmailPreference: agentCrmProfiles.jltEmailPreference,
@@ -2075,6 +2076,7 @@ export const crmRouter = router({
         .from(users)
         .leftJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, users.id))
         .leftJoin(adminOnboardingChecklist, eq(adminOnboardingChecklist.userId, users.id))
+        .leftJoin(joinSessions, eq(joinSessions.userId, users.id))
         .where(eq(users.portalStatus, "onboarding"))
         .orderBy(users.createdAt);
       return rows.map(r => {

@@ -265,6 +265,20 @@ export default function Memberships() {
   const { data: newSignUps = [], refetch: refetchSignUps } = trpc.crm.agentCrm.getNewSignUps.useQuery();
   const utils = trpc.useUtils();
 
+  // Resend team invite state
+  const [inviteDialog, setInviteDialog] = useState<{ userId: number; name: string | null; slots: number } | null>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteEmailError, setInviteEmailError] = useState("");
+  const resendInvite = trpc.join.adminResendTeamInvite.useMutation({
+    onSuccess: () => {
+      toast.success(`Invite sent to ${inviteEmail}`);
+      setInviteDialog(null);
+      setInviteEmail("");
+      setInviteEmailError("");
+    },
+    onError: (e) => { toast.error(e.message); setInviteEmailError(e.message); },
+  });
+
   // Delete new sign-up state
   const [deleteSignUpTarget, setDeleteSignUpTarget] = useState<{ userId: number; name: string | null } | null>(null);
   const deleteNewSignUp = trpc.crm.agentCrm.deleteNewSignUp.useMutation({
@@ -492,6 +506,21 @@ export default function Memberships() {
                                 Open Checklist <ArrowRight className="h-3.5 w-3.5" />
                               </Button>
                             </Link>
+                            {(agent.membershipType === "duo" || agent.membershipType === "trio") && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1.5 text-[#02E6D2] hover:bg-[#70FFE8]/10 border-[#70FFE8]/50"
+                                onClick={() => setInviteDialog({
+                                  userId: agent.userId,
+                                  name: agent.name,
+                                  slots: agent.membershipType === "duo" ? 1 : 2,
+                                })}
+                              >
+                                <UserPlus className="h-3.5 w-3.5" />
+                                <span className="hidden sm:inline">Send Invite</span>
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"
@@ -816,6 +845,45 @@ export default function Memberships() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Team Invite Dialog */}
+      <AlertDialog open={!!inviteDialog} onOpenChange={(o) => { if (!o) { setInviteDialog(null); setInviteEmail(""); setInviteEmailError(""); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send Team Member Invite</AlertDialogTitle>
+            <AlertDialogDescription>
+              Send a sign-up invite to a team member for <strong>{inviteDialog?.name ?? "this agent"}</strong>.
+              They will receive an email with a link to sign their contract and create their account — no payment required.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="px-1 py-2">
+            <label className="text-sm font-medium text-foreground block mb-1.5">Team member email address</label>
+            <input
+              type="email"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              placeholder="teamember@example.com"
+              value={inviteEmail}
+              onChange={(e) => { setInviteEmail(e.target.value); setInviteEmailError(""); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && inviteDialog && inviteEmail) {
+                  resendInvite.mutate({ userId: inviteDialog.userId, invitedEmail: inviteEmail, origin: window.location.origin });
+                }
+              }}
+            />
+            {inviteEmailError && <p className="text-destructive text-xs mt-1">{inviteEmailError}</p>}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-[#70FFE8] text-[#414141] hover:bg-[#70FFE8]/80"
+              onClick={() => inviteDialog && inviteEmail && resendInvite.mutate({ userId: inviteDialog.userId, invitedEmail: inviteEmail, origin: window.location.origin })}
+              disabled={resendInvite.isPending || !inviteEmail}
+            >
+              {resendInvite.isPending ? "Sending…" : "Send Invite"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete New Sign-Up Confirmation Dialog */}
       <AlertDialog open={!!deleteSignUpTarget} onOpenChange={(o) => { if (!o) setDeleteSignUpTarget(null); }}>

@@ -2010,3 +2010,7 @@
 ## Duo Joining Fee Bug (May 5)
 - [x] Investigate: duo selection on Join page still shows £297 (solo fee) instead of correct duo fee — root cause was all types hardcoded to same £297 fee
 - [x] Fix: JOINING_FEES updated (solo £297, duo £447, trio £597), getPricing returns per-type joiningFees map, JoinFlow.tsx reads fee dynamically from selectedType
+
+## Admin Resend Team Invite (May 5)
+- [x] Backend: adminResendTeamInvite mutation (protectedProcedure, admin only) — takes userId + invitedEmail + origin, expires old pending invite, creates new token, sends branded invite email
+- [x] Frontend: New Sign-Ups page — "Send Invite" button shown for duo/trio agents, opens dialog with email input, sends invite on submit or Enter key

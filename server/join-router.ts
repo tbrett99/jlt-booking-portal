@@ -844,6 +844,113 @@ export const joinRouter = router({
       return { ok: true, email: session.email };
     }),
 
+  // ── Admin: resend team invite ───────────────────────────────────────────────
+  adminResendTeamInvite: protectedProcedure
+    .input(z.object({
+      userId: z.number().int(),   // team leader's userId
+      invitedEmail: z.string().email(),
+      origin: z.string().url(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const { eq: eqOp, and: andOp } = await import('drizzle-orm');
+      const { nanoid } = await import('nanoid');
+
+      // Find the leader's profile to get teamId
+      const leaderProfile = await db
+        .select({ teamId: agentCrmProfiles.teamId })
+        .from(agentCrmProfiles)
+        .where(eqOp(agentCrmProfiles.userId, input.userId))
+        .limit(1);
+
+      const leader = await db
+        .select({ name: users.name, membershipTier: agentCrmProfiles.membershipTier, membershipType: joinSessions.membershipType })
+        .from(users)
+        .leftJoin(agentCrmProfiles, eqOp(agentCrmProfiles.userId, users.id))
+        .leftJoin(joinSessions, eqOp(joinSessions.userId, users.id))
+        .where(eqOp(users.id, input.userId))
+        .limit(1);
+
+      if (!leader[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Leader not found' });
+
+      let teamId = leaderProfile[0]?.teamId;
+      if (!teamId) {
+        // Create team if it doesn't exist yet
+        const tierLabel = TIER_LABELS[(leader[0].membershipTier ?? 'business_class') as typeof MEMBERSHIP_TIERS[number]];
+        const typeLabel = TYPE_LABELS[(leader[0].membershipType ?? 'duo') as typeof MEMBERSHIP_TYPES[number]];
+        const [teamResult] = await db.insert(agentTeams).values({
+          name: `${leader[0].name ?? 'Team Leader'} — ${tierLabel} ${typeLabel}`,
+          membershipTier: leader[0].membershipTier ?? undefined,
+        });
+        teamId = (teamResult as any).insertId as number;
+        await db.update(agentCrmProfiles).set({ teamId }).where(eqOp(agentCrmProfiles.userId, input.userId));
+      }
+
+      // Expire any existing pending invite for this email
+      await db
+        .update(teamInvites)
+        .set({ status: 'expired' })
+        .where(andOp(
+          eqOp(teamInvites.teamId, teamId),
+          eqOp(teamInvites.invitedEmail, input.invitedEmail),
+        ));
+
+      // Create new invite
+      const token = nanoid(64);
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      await db.insert(teamInvites).values({
+        teamId,
+        leaderId: input.userId,
+        invitedEmail: input.invitedEmail,
+        token,
+        status: 'pending',
+        expiresAt,
+      });
+
+      const inviteUrl = `${input.origin}/join/accept?token=${token}`;
+      const tierLabel = TIER_LABELS[(leader[0].membershipTier ?? 'business_class') as typeof MEMBERSHIP_TIERS[number]];
+      const typeLabel = TYPE_LABELS[(leader[0].membershipType ?? 'duo') as typeof MEMBERSHIP_TYPES[number]];
+      const leaderName = leader[0].name ?? 'Your team leader';
+
+      await sendDirectEmail({
+        toEmail: input.invitedEmail,
+        toName: input.invitedEmail,
+        subject: `You've been invited to join JLT Group — ${tierLabel} ${typeLabel}`,
+        html: `
+          <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
+            <div style="text-align:center;margin-bottom:24px;">
+              <div style="background:#70FFE8;border-radius:50%;width:56px;height:56px;display:inline-flex;align-items:center;justify-content:center;">
+                <span style="font-weight:700;color:#414141;font-size:1rem">JLT</span>
+              </div>
+              <h1 style="color:#414141;font-size:1.4rem;margin:16px 0 4px;">You're invited to join JLT Group</h1>
+              <p style="color:#6b7280;font-size:.9rem;margin:0;">${leaderName} has invited you to join their ${tierLabel} ${typeLabel} membership.</p>
+            </div>
+            <div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;">
+              <p style="color:#414141;margin:0 0 16px;">As a team member, you'll need to:</p>
+              <ol style="color:#414141;padding-left:20px;margin:0;">
+                <li style="margin-bottom:8px;">Review and sign the JLT Group membership contract</li>
+                <li style="margin-bottom:8px;">Complete your agent profile</li>
+                <li style="margin-bottom:8px;">Upload your ID and proof of address</li>
+              </ol>
+              <p style="color:#6b7280;font-size:.85rem;margin:16px 0 0;"><strong>No payment required</strong> — your team leader covers the joining fee and monthly subscription.</p>
+            </div>
+            <div style="text-align:center;">
+              <a href="${inviteUrl}" style="display:inline-block;background:#70FFE8;color:#414141;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:1rem;">Accept Invitation</a>
+              <p style="color:#9ca3af;font-size:.75rem;margin:16px 0 0;">This invitation expires in 7 days. If you did not expect this email, please ignore it.</p>
+            </div>
+          </div>
+        `,
+      });
+
+      return { ok: true };
+    }),
+
   // ── Admin: delete a join session (abandoned or application) ───────────────
   deleteJoinSession: protectedProcedure
     .input(z.object({ sessionId: z.number().int() }))
