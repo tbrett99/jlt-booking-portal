@@ -2057,3 +2057,11 @@
 - [x] Fix: agentNotifyTopUpComplete now sets claim status back to 'pending' — booking stays in Commission Due for admin to re-review before agent re-claims
 - [x] Confirmed: pre-auth auto-claim correctly creates claim with status='processing' (booking moves to Commission Claimed — JLT claims in PTS separately)
 - [x] Confirmed: commissionDue.requestTopUp creates claim with 'pending' then immediately overwrites to 'top_up_required' (correct)
+
+## Agent Commission Timeline (May 6)
+- [x] Backend: commissionClaims.myTimeline procedure — returns agent's active bookings with finalSupplierPaymentDate set, including clientName, departureDate, finalSupplierPaymentDate, expectedCommission, currentStage, ptsRef
+- [x] Frontend: new "Timeline" tab on AgentCommissions page
+- [x] Frontend: amber disclaimer banner explaining dates are approximate
+- [x] Frontend: mini horizontal calendar strip (current + next 2 months) with dots on payment date days
+- [x] Frontend: grouped list below calendar — This Month / Next Month / Further Ahead / Overdue (past date, not yet claimed)
+- [x] Frontend: clicking a calendar date highlights matching bookings in the list

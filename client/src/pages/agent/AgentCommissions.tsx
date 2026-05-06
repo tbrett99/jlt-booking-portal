@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
-import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight, Download, FileSpreadsheet, Zap, TrendingDown } from "lucide-react";
+import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight, Download, FileSpreadsheet, Zap, TrendingDown, CalendarDays, Info, Plane } from "lucide-react";
+import { startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, format as fmtDate, isToday, isBefore } from "date-fns";
 import { Link } from "wouter";
 
 type BookingType = "lapland" | "cruise" | "disney" | "other";
@@ -70,6 +71,9 @@ export default function AgentCommissions() {
   const [activeTab, setActiveTab] = useState<string>("claimable");
 
   const { data: remittanceLines } = trpc.remittance.getMyRemittances.useQuery();
+  const { data: timelineBookings, isLoading: timelineLoading } = trpc.commissionClaims.myTimeline.useQuery();
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const [highlightedDate, setHighlightedDate] = useState<Date | null>(null);
 
   const markAgentPaidMutation = trpc.commissionClaims.markAgentPaid.useMutation({
     onSuccess: () => {
@@ -434,6 +438,10 @@ export default function AgentCommissions() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="timeline">
+            <CalendarDays size={13} className="mr-1" />
+            Timeline
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="top-up">
@@ -761,6 +769,172 @@ export default function AgentCommissions() {
                 );
               })}
             </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="timeline">
+          {/* Disclaimer */}
+          <div className="rounded-xl border p-4 mb-5 flex items-start gap-3" style={{ background: '#fffbeb', borderColor: '#f59e0b' }}>
+            <Info size={16} className="shrink-0 mt-0.5 text-amber-600" />
+            <div>
+              <p className="font-semibold text-sm text-amber-800">Approximate dates — please read</p>
+              <p className="text-xs mt-1 text-amber-700 leading-relaxed">
+                The <strong>Final Supplier Payment Date</strong> shown here is set by JLT a few days <em>after</em> the final supplier has been paid. This buffer accounts for PTS processing time and ensures funds have fully cleared before we review the file for commission. These dates are therefore a <strong>guide only</strong> — your commission will become claimable once JLT has reviewed and approved the file, which may be slightly later than the date shown.
+              </p>
+            </div>
+          </div>
+
+          {timelineLoading ? (
+            <div className="flex items-center justify-center h-40">
+              <Loader2 className="h-6 w-6 animate-spin text-[#02E6D2]" />
+            </div>
+          ) : !timelineBookings || timelineBookings.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <CalendarDays className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                <p>No upcoming commission dates yet.</p>
+                <p className="text-sm mt-1">Dates will appear here once JLT sets the final supplier payment date on your bookings.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Mini calendar strip — 3 months */}
+              {(() => {
+                const months = [calendarMonth, addMonths(calendarMonth, 1), addMonths(calendarMonth, 2)];
+                const paymentDates = (timelineBookings ?? []).map((b) => new Date(b.finalSupplierPaymentDate));
+                return (
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <button
+                        className="p-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground"
+                        onClick={() => { setCalendarMonth((m) => addMonths(m, -1)); setHighlightedDate(null); }}
+                      >
+                        &#8249;
+                      </button>
+                      <span className="text-sm font-semibold text-foreground">
+                        {fmtDate(calendarMonth, 'MMMM yyyy')} – {fmtDate(addMonths(calendarMonth, 2), 'MMMM yyyy')}
+                      </span>
+                      <button
+                        className="p-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground"
+                        onClick={() => { setCalendarMonth((m) => addMonths(m, 1)); setHighlightedDate(null); }}
+                      >
+                        &#8250;
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {months.map((month) => {
+                        const days = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) });
+                        const firstDow = (startOfMonth(month).getDay() + 6) % 7; // Mon=0
+                        return (
+                          <div key={month.toISOString()} className="rounded-xl border border-border bg-card p-3">
+                            <p className="text-xs font-semibold text-center text-muted-foreground mb-2">{fmtDate(month, 'MMMM yyyy')}</p>
+                            <div className="grid grid-cols-7 gap-0.5 text-center">
+                              {['M','T','W','T','F','S','S'].map((d, i) => (
+                                <span key={i} className="text-[10px] text-muted-foreground font-medium py-0.5">{d}</span>
+                              ))}
+                              {Array.from({ length: firstDow }).map((_, i) => <span key={`e${i}`} />)}
+                              {days.map((day) => {
+                                const hasPayment = paymentDates.some((pd) => isSameDay(pd, day));
+                                const isHighlighted = highlightedDate && isSameDay(highlightedDate, day);
+                                const todayDay = isToday(day);
+                                return (
+                                  <button
+                                    key={day.toISOString()}
+                                    onClick={() => hasPayment ? setHighlightedDate(isHighlighted ? null : day) : undefined}
+                                    className={`text-[11px] rounded-full w-6 h-6 mx-auto flex items-center justify-center transition-colors
+                                      ${ isHighlighted ? 'bg-[#02E6D2] text-[#414141] font-bold' :
+                                         hasPayment ? 'bg-[#02E6D2]/20 text-[#0f4c4a] font-bold hover:bg-[#02E6D2]/40 cursor-pointer' :
+                                         todayDay ? 'ring-1 ring-[#02E6D2] text-foreground' :
+                                         'text-muted-foreground' }
+                                    `}
+                                  >
+                                    {day.getDate()}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {highlightedDate && (
+                      <p className="text-xs text-center text-muted-foreground mt-2">
+                        Showing bookings with payment date <strong>{fmtDate(highlightedDate, 'dd MMMM yyyy')}</strong> — <button className="underline" onClick={() => setHighlightedDate(null)}>clear filter</button>
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Grouped list */}
+              {(() => {
+                const now = new Date();
+                const endOfThisMonth = endOfMonth(now);
+                const endOfNextMonth = endOfMonth(addMonths(now, 1));
+                const filtered = highlightedDate
+                  ? (timelineBookings ?? []).filter((b) => isSameDay(new Date(b.finalSupplierPaymentDate), highlightedDate))
+                  : (timelineBookings ?? []);
+
+                const overdue = filtered.filter((b) => isBefore(new Date(b.finalSupplierPaymentDate), now));
+                const thisMonth = filtered.filter((b) => { const d = new Date(b.finalSupplierPaymentDate); return !isBefore(d, now) && !isBefore(endOfThisMonth, d); });
+                const nextMonth = filtered.filter((b) => { const d = new Date(b.finalSupplierPaymentDate); return isBefore(endOfThisMonth, d) && !isBefore(endOfNextMonth, d); });
+                const further = filtered.filter((b) => isBefore(endOfNextMonth, new Date(b.finalSupplierPaymentDate)));
+
+                const TimelineRow = ({ b }: { b: typeof filtered[0] }) => (
+                  <div className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-accent/30 transition-colors gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-foreground truncate">{b.clientName}</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-0.5">
+                        {b.departureDate && (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Plane size={10} /> Departs {fmtDate(new Date(b.departureDate), 'dd/MM/yyyy')}
+                          </span>
+                        )}
+                        <span className="text-xs font-medium" style={{ color: '#0f4c4a' }}>
+                          Payment date: {fmtDate(new Date(b.finalSupplierPaymentDate), 'dd MMM yyyy')}
+                        </span>
+                      </div>
+                      {b.expectedCommission && (
+                        <p className="text-sm font-semibold mt-0.5" style={{ color: '#065f46' }}>£{Number(b.expectedCommission).toFixed(2)}</p>
+                      )}
+                      {b.ptsRef && <p className="text-xs text-muted-foreground font-mono">{b.ptsRef}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        b.claimStatus === 'processing' ? 'bg-orange-100 text-orange-700' :
+                        b.claimStatus === 'top_up_required' ? 'bg-red-100 text-red-700' :
+                        'bg-muted text-muted-foreground'
+                      }`}>{b.currentStage}</span>
+                      <Link href={`/bookings/${b.id}`}>
+                        <button className="p-1 rounded hover:bg-muted"><ChevronRight size={16} className="text-muted-foreground" /></button>
+                      </Link>
+                    </div>
+                  </div>
+                );
+
+                const Section = ({ title, items, accent }: { title: string; items: typeof filtered; accent?: string }) =>
+                  items.length === 0 ? null : (
+                    <div className="mb-5">
+                      <h3 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: accent ?? '#6b7280' }}>{title}</h3>
+                      <div className="space-y-2">
+                        {items.map((b) => <TimelineRow key={b.id} b={b} />)}
+                      </div>
+                    </div>
+                  );
+
+                return (
+                  <>
+                    <Section title="Overdue — payment date passed" items={overdue} accent="#dc2626" />
+                    <Section title="This month" items={thisMonth} accent="#0f4c4a" />
+                    <Section title="Next month" items={nextMonth} accent="#374151" />
+                    <Section title="Further ahead" items={further} accent="#6b7280" />
+                    {filtered.length === 0 && (
+                      <p className="text-sm text-center text-muted-foreground py-8">No bookings match this date.</p>
+                    )}
+                  </>
+                );
+              })()}
+            </>
           )}
         </TabsContent>
 

@@ -2562,6 +2562,35 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       return enriched;
     }),
 
+    // Agent: commission timeline — bookings with finalSupplierPaymentDate set that haven't been paid yet
+    myTimeline: protectedProcedure.query(async ({ ctx }) => {
+      const allBookings = await getAllBookings();
+      const allUsers = await getAllUsers();
+      const allClaims = await getAllCommissionClaims();
+      // Filter to this agent's bookings that have a finalSupplierPaymentDate and are not terminal
+      const terminalStages = ['Commission Claimed', 'Cancelled', 'Paid'];
+      const agentBookings = allBookings.filter((b) =>
+        b.agentId === ctx.user.id &&
+        (b as any).finalSupplierPaymentDate &&
+        !terminalStages.includes(b.currentStage) &&
+        !(b as any).isPersonalBooking
+      );
+      return agentBookings.map((b) => {
+        const claim = allClaims.find((c) => c.bookingId === b.id && c.status !== 'paid');
+        return {
+          id: b.id,
+          clientName: b.clientName,
+          currentStage: b.currentStage,
+          departureDate: b.departureDate,
+          finalSupplierPaymentDate: (b as any).finalSupplierPaymentDate as Date,
+          expectedCommission: (b as any).expectedCommission ?? null,
+          ptsRef: (b as any).ptsRef ?? null,
+          topdogRef: (b as any).topdogRef ?? null,
+          claimStatus: claim?.status ?? null,
+        };
+      }).sort((a, b) => new Date(a.finalSupplierPaymentDate).getTime() - new Date(b.finalSupplierPaymentDate).getTime());
+    }),
+
     // Agent: self-serve mark their own awaiting_payment commission as paid
     markAgentPaid: protectedProcedure
       .input(z.object({ claimIds: z.array(z.number()).min(1) }))
