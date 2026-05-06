@@ -2171,7 +2171,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         if (booking.currentStage !== "Commission Claimable") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Booking is not in Commission Claimable stage" });
         }
-        const claim = await createCommissionClaim(input.bookingId, ctx.user.id, input.bookingType, input.grossAmount);
+        const claim = await createCommissionClaim(input.bookingId, ctx.user.id, input.bookingType, input.grossAmount, 'processing');
         // Auto-apply admin-set VAT to the claim if it was recorded when the booking was marked claimable
         if (claim && (booking as any).commissionVat != null) {
           await updateCommissionVat(claim.id, parseFloat(String((booking as any).commissionVat)));
@@ -2516,9 +2516,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         if (claim.status !== 'top_up_required') throw new TRPCError({ code: 'BAD_REQUEST', message: 'No top-up is pending for this claim' });
         const booking = await getBookingById(claim.bookingId);
         if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
-        // Move back to processing so it reappears in Commission Due for admin review
+        // Move back to pending — booking stays in Commission Due for admin to re-review and mark claimable
         await db.update(claimsTable).set({
-          status: 'processing',
+          status: 'pending',
           topUpResolvedAt: new Date(),
         }).where(eq(claimsTable.id, input.claimId));
         // Add note to booking

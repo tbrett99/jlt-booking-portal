@@ -2045,3 +2045,15 @@
 - [x] AgentCommissions: Top-Up Required tab stays; confirm button moves claim to 'processing'
 - [x] AgentDashboard: Files in Minus alert stays (links to /commissions)
 - [x] DB: topUpNote column added to commission_claims table (migration 0076 applied)
+
+## Commission Claim Status Fixes (May 6)
+- [x] Fix: agent claimCommission (non-pre-auth) now creates claim with status='processing' so it appears in Processing tab immediately
+- [x] Fix: agentNotifyTopUpComplete now sets claim status back to 'pending' (not 'processing') — booking stays in Commission Due for admin to re-review
+- [x] Confirmed: pre-auth auto-claim correctly creates claim with status='processing' (unchanged)
+- [x] Confirmed: commissionDue.requestTopUp creates claim with default 'pending' then immediately overwrites to 'top_up_required' (correct)
+
+## Commission Claim Status Fixes (May 6)
+- [x] Fix: agent claimCommission (non-pre-auth) now creates claim with status='processing' — agent has confirmed they want the commission, JLT has not yet claimed in PTS
+- [x] Fix: agentNotifyTopUpComplete now sets claim status back to 'pending' — booking stays in Commission Due for admin to re-review before agent re-claims
+- [x] Confirmed: pre-auth auto-claim correctly creates claim with status='processing' (booking moves to Commission Claimed — JLT claims in PTS separately)
+- [x] Confirmed: commissionDue.requestTopUp creates claim with 'pending' then immediately overwrites to 'top_up_required' (correct)
