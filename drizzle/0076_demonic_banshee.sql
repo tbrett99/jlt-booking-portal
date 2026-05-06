@@ -1,0 +1,1 @@
+ALTER TABLE `commission_claims` ADD `topUpNote` text;

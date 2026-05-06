@@ -2035,3 +2035,13 @@
 
 ## Pre-Auth Auto-Claim Status Fix (May 5)
 - [x] Fix: pre-authorised auto-claims now create commission claim with status="processing" (skip pending gate) via initialStatus param on createCommissionClaim — they have already been pre-approved by the agent
+
+## Commission Minus Flow Fix (May 6)
+- [x] AdminCommissions: removed Pending Review tab entirely
+- [x] CommissionDue: replaced old ShortFunds dialog on Minus button with new top-up amount + optional note dialog, wired to commissionDue.requestTopUp procedure
+- [x] Backend: new commissionDue.requestTopUp procedure — finds or creates claim, sets top_up_required status, notifies agent by email + in-app
+- [x] AdminCommissions: Top-Up Required tab kept as record view — removed Mark Claimable button, added Note column
+- [x] Backend: agentNotifyTopUpComplete now moves claim back to 'processing' so it reappears in Commission Due
+- [x] AgentCommissions: Top-Up Required tab stays; confirm button moves claim to 'processing'
+- [x] AgentDashboard: Files in Minus alert stays (links to /commissions)
+- [x] DB: topUpNote column added to commission_claims table (migration 0076 applied)

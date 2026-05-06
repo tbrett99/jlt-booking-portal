@@ -2015,6 +2015,73 @@ export const appRouter = router({
         agentEmail: userMap.get(b.agentId)?.email ?? "",
       }));
     }),
+    requestTopUp: adminProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        amountPence: z.number().int().positive(),
+        note: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
+        const allUsers = await getAllUsers();
+        const agent = allUsers.find((u) => u.id === booking.agentId);
+        if (!agent) throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' });
+        const amountFormatted = `£${(input.amountPence / 100).toFixed(2)}`;
+        // Find or create a commission claim for this booking
+        const allClaims = await getAllCommissionClaims();
+        let claim = allClaims.find((c) => c.bookingId === input.bookingId && c.status !== 'paid');
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        const { commissionClaims: claimsTable } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        if (!claim) {
+          // Create a new claim — status will be set to top_up_required immediately after
+          const { createCommissionClaim } = await import('./db');
+          await createCommissionClaim(input.bookingId, booking.agentId, 'other');
+          const freshClaims = await getAllCommissionClaims();
+          claim = freshClaims.find((c) => c.bookingId === input.bookingId && c.status !== 'paid') ?? undefined;
+        }
+        if (!claim) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Could not create claim' });
+        // Update claim to top_up_required with amount
+        const now = new Date();
+        await db.update(claimsTable).set({
+          status: 'top_up_required',
+          topUpAmountPence: input.amountPence,
+          topUpRequestedAt: now,
+          topUpRequestedById: ctx.user.id,
+          topUpNotifiedAt: now,
+          ...(input.note ? { topUpNote: input.note } : {}),
+        }).where(eq(claimsTable.id, (claim as any).id));
+        // Add visible note on booking
+        const noteContent = input.note
+          ? `[System] Top-up of ${amountFormatted} requested by ${ctx.user.name ?? 'Admin'}. Note: ${input.note}`
+          : `[System] Top-up of ${amountFormatted} requested by ${ctx.user.name ?? 'Admin'}. File is in minus — agent needs to top up their account.`;
+        await createNote({ bookingId: input.bookingId, authorId: ctx.user.id, content: noteContent, isInternal: false });
+        // In-app notification to agent
+        await createInAppNotification({
+          userId: agent.id,
+          bookingId: input.bookingId,
+          message: `Action required: Your file for booking "${booking.clientName}" is in minus. Please top up your account by ${amountFormatted} and notify us when done.`,
+          linkUrl: `/commissions`,
+        });
+        // Email to agent
+        if (agent.email) {
+          await sendDirectEmail({
+            toEmail: agent.email,
+            toName: agent.name ?? 'Agent',
+            subject: `Action Required — File in Minus: ${booking.clientName} (#${booking.id})`,
+            html: `<p>Hi ${agent.name ?? 'there'},</p>
+<p>Your commission file for booking <strong>${booking.clientName} (#${booking.id})</strong> is currently in minus.</p>
+<p>Please top up your account by <strong>${amountFormatted}</strong> and then notify us via your portal once done.</p>
+${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '<br/>')}</p>` : ''}
+<p style="margin-top:20px;padding:14px 18px;background:#f0fffe;border-top:3px solid #02E6D2;border-radius:6px;"><a href="https://portal.thejltgroup.co.uk/commissions" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:700;">View My Commissions &rarr;</a></p>`,
+          });
+        }
+        return { success: true };
+      }),
+
     sendShortFundsMessage: adminProcedure
       .input(z.object({
         bookingId: z.number(),
@@ -2449,9 +2516,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         if (claim.status !== 'top_up_required') throw new TRPCError({ code: 'BAD_REQUEST', message: 'No top-up is pending for this claim' });
         const booking = await getBookingById(claim.bookingId);
         if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
-        // Move back to pending (admin needs to re-review)
+        // Move back to processing so it reappears in Commission Due for admin review
         await db.update(claimsTable).set({
-          status: 'pending',
+          status: 'processing',
           topUpResolvedAt: new Date(),
         }).where(eq(claimsTable.id, input.claimId));
         // Add note to booking

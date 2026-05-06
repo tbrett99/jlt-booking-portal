@@ -236,6 +236,7 @@ export const commissionClaims = mysqlTable("commission_claims", {
   claimedAt: timestamp("claimedAt").defaultNow().notNull(),
   status: mysqlEnum("status", ["pending", "processing", "awaiting_payment", "paid", "top_up_required"]).default("pending").notNull(),
   topUpAmountPence: int("topUpAmountPence"), // set when admin requests a top-up
+  topUpNote: text("topUpNote"), // optional note from admin when requesting top-up
   topUpRequestedAt: timestamp("topUpRequestedAt"), // when the top-up was requested
   topUpRequestedById: int("topUpRequestedById"), // admin who requested the top-up
   topUpNotifiedAt: timestamp("topUpNotifiedAt"), // when the agent was notified

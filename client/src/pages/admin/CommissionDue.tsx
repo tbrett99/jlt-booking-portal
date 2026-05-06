@@ -97,75 +97,17 @@ function MoveDatePopover({ bookingId, currentDate, onSuccess }: {
   );
 }
 
-function buildShortFundsMessage(booking: { id: number; clientName: string; agentName?: string; ptsRef?: string | null; topdogRef?: string | null } | null) {
-  if (!booking) return "";
-  const ref = booking.ptsRef
-    ? ` (PTS Ref: ${booking.ptsRef})`
-    : booking.topdogRef
-    ? ` (Topdog Ref: ${booking.topdogRef})`
-    : ` (#${booking.id})`;
-  return `Hi ${booking.agentName ?? 'there'},\n\nWe are reviewing the commission for your booking for ${booking.clientName}${ref} and it appears the file is currently short of funds.\n\nCould you please review the booking and ensure all client payments are up to date? If you have any questions, please do not hesitate to get in touch.\n\nThe JLT Group Team`;
-}
-
-function ShortFundsDialog({ booking, onClose }: {
-  booking: { id: number; clientName: string; agentName?: string; ptsRef?: string | null; topdogRef?: string | null } | null;
-  onClose: () => void;
-}) {
-  const [message, setMessage] = useState(() => buildShortFundsMessage(booking));
-
-  // Reset message whenever a new booking is opened
-  useEffect(() => {
-    if (booking) setMessage(buildShortFundsMessage(booking));
-  }, [booking?.id]);
-  const sendShortFunds = trpc.commissionDue.sendShortFundsMessage.useMutation({
-    onSuccess: () => { toast.success("Message sent to agent"); onClose(); },
-    onError: (e) => toast.error(e.message),
-  });
-  if (!booking) return null;
-  return (
-    <Dialog open={!!booking} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Short of Funds</span>
-            Notify Agent
-          </DialogTitle>
-          <DialogDescription>
-            This message will be sent to the agent by email and in-app notification, and posted as a note on the booking.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3 py-2">
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Message to agent</Label>
-            <Textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={9}
-              className="text-sm font-mono"
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button
-            className="bg-red-600 hover:bg-red-700 text-white"
-            disabled={!message.trim() || sendShortFunds.isPending}
-            onClick={() => sendShortFunds.mutate({ bookingId: booking.id, message })}
-          >
-            {sendShortFunds.isPending ? "Sending..." : "Send Message"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export default function CommissionDue() {
   const { data: bookings, isLoading, refetch } = trpc.commissionDue.list.useQuery();
   const [search, setSearch] = useState("");
   const [pastDepartureOnly, setPastDepartureOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [shortFundsBooking, setShortFundsBooking] = useState<{ id: number; clientName: string; agentName?: string; ptsRef?: string | null; topdogRef?: string | null } | null>(null);
+
+  // Top-up (Minus) dialog state
+  const [topUpBooking, setTopUpBooking] = useState<{ id: number; clientName: string } | null>(null);
+  const [topUpAmount, setTopUpAmount] = useState("");
+  const [topUpNote, setTopUpNote] = useState("");
+
   // VAT dialog state — used for both pre-auth (auto-claim) and standard (mark claimable) flows
   const [preAuthBooking, setPreAuthBooking] = useState<{ id: number; clientName: string; isPreAuth: boolean } | null>(null);
   const [vatInput, setVatInput] = useState("");
@@ -185,6 +127,17 @@ export default function CommissionDue() {
       } else {
         toast.success(`${data.succeeded} booking${data.succeeded !== 1 ? "s" : ""} moved successfully.`);
       }
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const requestTopUpMutation = trpc.commissionDue.requestTopUp.useMutation({
+    onSuccess: () => {
+      toast.success("Top-up request sent to agent.");
+      setTopUpBooking(null);
+      setTopUpAmount("");
+      setTopUpNote("");
+      refetch();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -226,6 +179,21 @@ export default function CommissionDue() {
 
   function handleBulkMove(toStage: string) {
     bulkMoveStage.mutate({ bookingIds: Array.from(selectedIds), toStage });
+  }
+
+  function handleRequestTopUp() {
+    if (!topUpBooking) return;
+    const parsed = parseFloat(topUpAmount);
+    if (!topUpAmount.trim() || isNaN(parsed) || parsed <= 0) {
+      toast.error("Please enter a valid top-up amount.");
+      return;
+    }
+    const amountPence = Math.round(parsed * 100);
+    requestTopUpMutation.mutate({
+      bookingId: topUpBooking.id,
+      amountPence,
+      note: topUpNote.trim() || undefined,
+    });
   }
 
   if (isLoading) {
@@ -413,8 +381,12 @@ export default function CommissionDue() {
                         size="sm"
                         variant="outline"
                         className="h-8 gap-1.5 text-xs border-red-300 text-red-700 hover:bg-red-50"
-                        title="File is short of funds — notify agent"
-                        onClick={() => setShortFundsBooking({ id: booking.id, clientName: booking.clientName, agentName: (booking as any).agentName, ptsRef: booking.ptsRef, topdogRef: booking.topdogRef })}
+                        title="File is in minus — request top-up from agent"
+                        onClick={() => {
+                          setTopUpBooking({ id: booking.id, clientName: booking.clientName });
+                          setTopUpAmount("");
+                          setTopUpNote("");
+                        }}
                       >
                         <Minus size={13} />
                         Minus
@@ -423,11 +395,11 @@ export default function CommissionDue() {
                         bookingId={booking.id}
                         currentDate={booking.finalSupplierPaymentDate}
                         onSuccess={refetch}
-                      />                      <Button
+                      />
+                      <Button
                         size="sm"
                         className="bg-[#70FFE8] text-[#414141] hover:bg-[#02E6D2] h-8"
                         onClick={() => {
-                          // Always show VAT dialog — both pre-auth and standard flows
                           setPreAuthBooking({ id: booking.id, clientName: booking.clientName, isPreAuth: !!(booking as any).commissionPreAuthorised });
                           setVatInput("");
                         }}
@@ -444,7 +416,61 @@ export default function CommissionDue() {
           })}
         </div>
       )}
-      <ShortFundsDialog booking={shortFundsBooking} onClose={() => setShortFundsBooking(null)} />
+
+      {/* Top-Up (Minus) Dialog */}
+      <Dialog open={!!topUpBooking} onOpenChange={(v) => !v && setTopUpBooking(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                File in Minus
+              </span>
+              Request Top-Up from Agent
+            </DialogTitle>
+            <DialogDescription>
+              The agent will be notified by email and in-app notification. They will need to top up their account and confirm via the portal before the file returns to Commission Due.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm font-medium text-foreground">
+              Booking: <span className="text-muted-foreground">{topUpBooking?.clientName}</span>
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Amount to top up (£) <span className="text-red-500">*</span></Label>
+              <Input
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="e.g. 50.00"
+                value={topUpAmount}
+                onChange={(e) => setTopUpAmount(e.target.value)}
+                className="h-9"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Note to agent <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Textarea
+                placeholder="Any additional context for the agent…"
+                value={topUpNote}
+                onChange={(e) => setTopUpNote(e.target.value)}
+                rows={3}
+                className="text-sm resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTopUpBooking(null)}>Cancel</Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={!topUpAmount.trim() || requestTopUpMutation.isPending}
+              onClick={handleRequestTopUp}
+            >
+              {requestTopUpMutation.isPending ? "Sending…" : "Send Top-Up Request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* VAT Dialog — shown for both pre-auth (auto-claim) and standard (mark claimable) flows */}
       <Dialog open={!!preAuthBooking} onOpenChange={(v) => !v && setPreAuthBooking(null)}>

@@ -548,16 +548,8 @@ export default function AdminCommissions() {
         </Card>
       </div>
 
-      <Tabs defaultValue="pending_review">
+      <Tabs defaultValue="processing">
         <TabsList className="mb-4 flex-wrap h-auto gap-1">
-          <TabsTrigger value="pending_review">
-            Pending Review
-            {pendingReview.length > 0 && (
-              <span className="ml-2 bg-yellow-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
-                {pendingReview.length}
-              </span>
-            )}
-          </TabsTrigger>
           <TabsTrigger value="top_up">
             Top-Up Required
             {topUpRequired.length > 0 && (
@@ -585,85 +577,6 @@ export default function AdminCommissions() {
           <TabsTrigger value="paid">Paid</TabsTrigger>
         </TabsList>
 
-        {/* PENDING REVIEW TAB */}
-        <TabsContent value="pending_review">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">
-                Pending Review — Mark claimable to move to Processing
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {pendingReview.length === 0 ? (
-                <div className="py-12 text-center text-muted-foreground text-sm">No claims pending review.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-muted-foreground">
-                        <th className="py-3 px-4 text-left">Client</th>
-                        <th className="py-3 px-4 text-left">Agent</th>
-                        <th className="py-3 px-4 text-left">Departure</th>
-                        <th className="py-3 px-4 text-left">Commission</th>
-                        <th className="py-3 px-4 text-left">Claimed</th>
-                        <th className="py-3 px-4 text-left">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pendingReview.map((c) => (
-                        <tr key={c.id} className="border-b border-border hover:bg-muted/30">
-                          <td className="py-3 px-4">
-                            <div className="font-medium">{c.booking?.clientName ?? "—"}</div>
-                            {c.booking?.ptsRef && <div className="text-xs text-muted-foreground">{c.booking.ptsRef}</div>}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div>{c.agentName}</div>
-                            <div className="text-xs text-muted-foreground">{c.agentEmail}</div>
-                          </td>
-                          <td className="py-3 px-4">{c.booking?.departureDate ? format(new Date(c.booking.departureDate), "dd/MM/yyyy") : "—"}</td>
-                          <td className="py-3 px-4 font-semibold">
-                            {c.booking?.expectedCommission != null ? `£${Number(c.booking.expectedCommission).toFixed(2)}` : "—"}
-                          </td>
-                          <td className="py-3 px-4 text-muted-foreground text-xs">{format(new Date(c.claimedAt), "dd/MM/yyyy")}</td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => setMarkClaimableTarget(c)}
-                                className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs gap-1"
-                              >
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                                Mark Claimable
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => { setTopUpTarget(c); setTopUpAmount(""); setTopUpNote(""); }}
-                                className="text-red-500 border-red-300 hover:bg-red-50 text-xs gap-1"
-                              >
-                                <TrendingDown className="h-3.5 w-3.5" />
-                                File in Minus
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setDeleteTarget(c)}
-                                className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         {/* TOP-UP REQUIRED TAB */}
         <TabsContent value="top_up">
           <Card>
@@ -683,6 +596,7 @@ export default function AdminCommissions() {
                         <th className="py-3 px-4 text-left">Departure</th>
                         <th className="py-3 px-4 text-left">Commission</th>
                         <th className="py-3 px-4 text-left">Top-Up Amount</th>
+                        <th className="py-3 px-4 text-left">Note</th>
                         <th className="py-3 px-4 text-left">Requested</th>
                         <th className="py-3 px-4 text-left">Actions</th>
                       </tr>
@@ -705,17 +619,12 @@ export default function AdminCommissions() {
                           <td className="py-3 px-4 font-semibold text-red-500">
                             {(c as any).topUpAmountPence != null ? `£${(Number((c as any).topUpAmountPence) / 100).toFixed(2)}` : "—"}
                           </td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs max-w-[200px]">
+                            {(c as any).topUpNote ?? "—"}
+                          </td>
                           <td className="py-3 px-4 text-muted-foreground text-xs">{format(new Date(c.claimedAt), "dd/MM/yyyy")}</td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => setMarkClaimableTarget(c)}
-                                className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs gap-1"
-                              >
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                                Mark Claimable
-                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
