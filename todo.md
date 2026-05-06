@@ -2065,3 +2065,9 @@
 - [x] Frontend: mini horizontal calendar strip (current + next 2 months) with dots on payment date days
 - [x] Frontend: grouped list below calendar — This Month / Next Month / Further Ahead / Overdue (past date, not yet claimed)
 - [x] Frontend: clicking a calendar date highlights matching bookings in the list
+
+## Commission Timeline — Dedicated Page (May 6)
+- [x] Create /commission-timeline page with month-by-month accordion and mini calendar strip
+- [x] Add route in App.tsx for /commission-timeline
+- [x] Add sidebar nav entry under Commissions for agents
+- [x] Remove Timeline tab from AgentCommissions page

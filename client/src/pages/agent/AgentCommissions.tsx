@@ -438,10 +438,6 @@ export default function AgentCommissions() {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="timeline">
-            <CalendarDays size={13} className="mr-1" />
-            Timeline
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="top-up">
@@ -772,7 +768,8 @@ export default function AgentCommissions() {
           )}
         </TabsContent>
 
-        <TabsContent value="timeline">
+        {/* Timeline moved to /commission-timeline */}
+        <TabsContent value="timeline-removed">
           {/* Disclaimer */}
           <div className="rounded-xl border p-4 mb-5 flex items-start gap-3" style={{ background: '#fffbeb', borderColor: '#f59e0b' }}>
             <Info size={16} className="shrink-0 mt-0.5 text-amber-600" />

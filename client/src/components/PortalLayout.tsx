@@ -221,6 +221,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: true,
       items: [
         { label: "My Commissions", href: "/commissions", icon: <Banknote size={16} /> },
+        { label: "Commission Timeline", href: "/commission-timeline", icon: <CalendarDays size={16} /> },
       ],
     },
     {

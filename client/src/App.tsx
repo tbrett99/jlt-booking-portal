@@ -24,6 +24,7 @@ import CommissionDue from "./pages/admin/CommissionDue";
 import AdminReports from "./pages/admin/AdminReports";
 import NotificationTemplates from "./pages/admin/NotificationTemplates";
 import AgentCommissions from "./pages/agent/AgentCommissions";
+import CommissionTimeline from "./pages/agent/CommissionTimeline";
 import AgentCancelBooking from "./pages/agent/AgentCancelBooking";
 import AgentRequestAmendment from "./pages/agent/AgentRequestAmendment";
 import AgentFlightRequests from "./pages/agent/AgentFlightRequests";
@@ -217,6 +218,7 @@ function AuthRouter() {
           <Route path="/bookings/:id/cancel">{(params) => <CancellationForm key={params.id} />}</Route>
           <Route path="/bookings/:id/refund">{(params) => <RefundForm key={params.id} />}</Route>
           <Route path="/commissions" component={AgentCommissions} />
+          <Route path="/commission-timeline" component={CommissionTimeline} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
           <Route path="/flight-requests" component={AgentFlightRequests} />
@@ -251,6 +253,7 @@ function AuthRouter() {
           <Route path="/bookings/:id/cancel">{(params) => <CancellationForm key={params.id} />}</Route>
           <Route path="/bookings/:id/refund">{(params) => <RefundForm key={params.id} />}</Route>
           <Route path="/commissions" component={AgentCommissions} />
+          <Route path="/commission-timeline" component={CommissionTimeline} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
            <Route path="/flight-requests" component={AgentFlightRequests} />
