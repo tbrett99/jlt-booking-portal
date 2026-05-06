@@ -873,7 +873,7 @@ export const appRouter = router({
         ) {
           // Auto-create the commission claim with optional VAT
           const grossAmount = (booking as any).expectedCommission ? parseFloat((booking as any).expectedCommission) : undefined;
-          const claim = await createCommissionClaim(booking.id, booking.agentId, "other", grossAmount);
+          const claim = await createCommissionClaim(booking.id, booking.agentId, "other", grossAmount, "processing");
           if (claim && input.vatAmount !== undefined && input.vatAmount !== null) {
             await updateCommissionVat(claim.id, input.vatAmount);
           }
@@ -2350,6 +2350,150 @@ export const appRouter = router({
         }
         return { updated };
       }),
+
+    // Admin: mark a pending claim as claimable (moves it to processing)
+    markClaimable: adminProcedure
+      .input(z.object({ claimId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        const { commissionClaims: claimsTable } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const allClaims = await getAllCommissionClaims();
+        const claim = allClaims.find((c) => c.id === input.claimId);
+        if (!claim) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (claim.status !== 'pending') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Claim is not in pending status' });
+        await db.update(claimsTable).set({ status: 'processing' }).where(eq(claimsTable.id, input.claimId));
+        // Add audit note to the booking
+        await createNote({
+          bookingId: claim.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Commission claim marked as claimable and moved to processing by ${ctx.user.name ?? 'Admin'}.`,
+          isInternal: true,
+        });
+        return { success: true };
+      }),
+
+    // Admin: request a top-up from the agent (file in minus)
+    requestTopUp: adminProcedure
+      .input(z.object({
+        claimId: z.number(),
+        amountPence: z.number().int().positive(),
+        note: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        const { commissionClaims: claimsTable } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const allClaims = await getAllCommissionClaims();
+        const claim = allClaims.find((c) => c.id === input.claimId);
+        if (!claim) throw new TRPCError({ code: 'NOT_FOUND' });
+        const booking = await getBookingById(claim.bookingId);
+        if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
+        const agent = await getUserById(claim.agentId);
+        if (!agent) throw new TRPCError({ code: 'NOT_FOUND' });
+        const now = new Date();
+        const amountFormatted = `£${(input.amountPence / 100).toFixed(2)}`;
+        // Update claim status to top_up_required
+        await db.update(claimsTable).set({
+          status: 'top_up_required',
+          topUpAmountPence: input.amountPence,
+          topUpRequestedAt: now,
+          topUpRequestedById: ctx.user.id,
+          topUpNotifiedAt: now,
+        }).where(eq(claimsTable.id, input.claimId));
+        // Add note to booking
+        const noteContent = input.note
+          ? `[System] Top-up of ${amountFormatted} requested by ${ctx.user.name ?? 'Admin'}. Note: ${input.note}`
+          : `[System] Top-up of ${amountFormatted} requested by ${ctx.user.name ?? 'Admin'}. File is in minus — agent needs to top up their account.`;
+        await createNote({ bookingId: claim.bookingId, authorId: ctx.user.id, content: noteContent, isInternal: false });
+        // In-app notification to agent
+        await createInAppNotification({
+          userId: agent.id,
+          bookingId: claim.bookingId,
+          message: `Action required: Your file for booking "${booking.clientName}" is in minus. Please top up your account by ${amountFormatted} and notify us when done.`,
+          linkUrl: `/my-files-in-minus`,
+        });
+        // Email to agent
+        if (agent.email) {
+          await sendDirectEmail({
+            toEmail: agent.email,
+            toName: agent.name ?? 'Agent',
+            subject: `Action Required — File in Minus: ${booking.clientName} (#${booking.id})`,
+            html: `<p>Hi ${agent.name ?? 'there'},</p>
+<p>Your commission file for booking <strong>${booking.clientName} (#${booking.id})</strong> is currently in minus.</p>
+<p>Please top up your account by <strong>${amountFormatted}</strong> and then notify us via your portal dashboard once done.</p>
+${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '<br/>')}</p>` : ''}
+<p style="margin-top:20px;padding:14px 18px;background:#f0fffe;border-top:3px solid #02E6D2;border-radius:6px;"><a href="https://portal.thejltgroup.co.uk/my-files-in-minus" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:700;">View My Files in Minus &rarr;</a></p>`,
+          });
+        }
+        return { success: true };
+      }),
+
+    // Agent: notify JLT that they have topped up their file
+    agentNotifyTopUpComplete: protectedProcedure
+      .input(z.object({ claimId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        const { commissionClaims: claimsTable } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const allClaims = await getAllCommissionClaims();
+        const claim = allClaims.find((c) => c.id === input.claimId);
+        if (!claim) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (ctx.user.role === 'agent' && claim.agentId !== ctx.user.id) throw new TRPCError({ code: 'FORBIDDEN' });
+        if (claim.status !== 'top_up_required') throw new TRPCError({ code: 'BAD_REQUEST', message: 'No top-up is pending for this claim' });
+        const booking = await getBookingById(claim.bookingId);
+        if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
+        // Move back to pending (admin needs to re-review)
+        await db.update(claimsTable).set({
+          status: 'pending',
+          topUpResolvedAt: new Date(),
+        }).where(eq(claimsTable.id, input.claimId));
+        // Add note to booking
+        await createNote({
+          bookingId: claim.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Agent ${ctx.user.name ?? 'Agent'} has confirmed their file has been topped up. Claim returned to Commission Due for review.`,
+          isInternal: false,
+        });
+        // Notify admins
+        const allUsers = await getAllUsers();
+        const admins = allUsers.filter((u) => u.role === 'admin' || u.role === 'super_admin');
+        for (const admin of admins) {
+          await createInAppNotification({
+            userId: admin.id,
+            bookingId: claim.bookingId,
+            message: `${ctx.user.name ?? 'Agent'} has confirmed top-up for booking "${booking.clientName}" — claim is back in Commission Due.`,
+            linkUrl: `/commissions/due`,
+          });
+        }
+        return { success: true };
+      }),
+
+    // Agent: get own open top-up requests
+    myTopUpRequests: protectedProcedure.query(async ({ ctx }) => {
+      const { getDb } = await import('./db');
+      const db = await getDb();
+      if (!db) return [];
+      const { commissionClaims: claimsTable } = await import('../drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+      const claims = await db
+        .select()
+        .from(claimsTable)
+        .where(and(eq(claimsTable.agentId, ctx.user.id), eq(claimsTable.status, 'top_up_required')));
+      // Enrich with booking info
+      const enriched = [];
+      for (const claim of claims) {
+        const booking = await getBookingById(claim.bookingId);
+        enriched.push({ ...claim, booking: booking ?? null });
+      }
+      return enriched;
+    }),
 
     // Agent: self-serve mark their own awaiting_payment commission as paid
     markAgentPaid: protectedProcedure

@@ -64,6 +64,7 @@ export default function AgentDashboard() {
   const { data: flightRequests = [] } = trpc.flightRequests.myRequests.useQuery();
   const { data: earnings } = trpc.commissionClaims.myEarningsSummary.useQuery();
   const { data: outstandingSummary } = trpc.reimbursements.agentOutstandingSummary.useQuery();
+  const { data: topUpRequests = [] } = trpc.commissionClaims.myTopUpRequests.useQuery();
 
   const now = new Date();
   const next30Days = addDays(now, 30);
@@ -468,6 +469,27 @@ export default function AgentDashboard() {
             flightQueries={flightQueries}
             outstandingSummary={outstandingSummary}
           />
+
+          {/* Files in Minus alert */}
+          {topUpRequests.length > 0 && (
+            <div className="rounded-xl border-l-4 p-4 flex items-start gap-3"
+              style={{ borderLeftColor: '#ef4444', background: '#fef2f2' }}>
+              <AlertCircle size={16} style={{ color: '#ef4444' }} className="flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm" style={{ color: '#991b1b' }}>
+                  Action required: {topUpRequests.length} file{topUpRequests.length > 1 ? 's' : ''} in minus
+                </p>
+                <p className="text-xs mt-0.5 opacity-80" style={{ color: '#991b1b' }}>
+                  Please top up your account and notify JLT once done.
+                </p>
+              </div>
+              <Link href="/commissions">
+                <button className="text-xs font-semibold underline flex-shrink-0" style={{ color: '#991b1b' }}>
+                  View
+                </button>
+              </Link>
+            </div>
+          )}
 
           {/* Commission Ready banner */}
           {commissionClaimable.length > 0 && (

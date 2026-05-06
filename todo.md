@@ -2014,3 +2014,24 @@
 ## Admin Resend Team Invite (May 5)
 - [x] Backend: adminResendTeamInvite mutation (protectedProcedure, admin only) — takes userId + invitedEmail + origin, expires old pending invite, creates new token, sends branded invite email
 - [x] Frontend: New Sign-Ups page — "Send Invite" button shown for duo/trio agents, opens dialog with email input, sends invite on submit or Enter key
+
+## Commission Workflow Fixes (May 6)
+
+### Fix 1: Commission Due → Processing Gate
+- [x] Investigate: find where claims move from Commission Due to Processing without admin marking as claimable
+- [x] Fix: claims must only enter Processing when admin explicitly marks them as claimable on the Commission Due page (DB enum updated, default = 'pending', admin markClaimable procedure added)
+- [x] Ensure pre-auth auto-claim also respects this gate (does not skip to Processing) — pre-auth auto-claims now use initialStatus='processing' via new param on createCommissionClaim, bypassing the pending gate intentionally since agent pre-approved
+
+### Fix 2: Minus File Top-Up Request Flow
+- [x] DB: topUpAmountPence and topUpNote fields added to commissionClaims table; 'top_up_required' status added to enum
+- [x] Backend: requestTopUp mutation (admin) — records top-up amount, sends agent email/notification, moves claim to 'top_up_required' status
+- [x] Backend: agentNotifyTopUpComplete mutation (agent) — agent marks top-up done, moves claim back to 'pending' for admin review
+- [x] Backend: myTopUpRequests query (agent) — returns open top-up requests for the logged-in agent
+- [x] Frontend: Admin Commission page — 'Top-Up Required' tab + 'Request Top-Up' dialog (enter amount + note)
+- [x] Frontend: Admin Commission page — 'Pending Review' tab showing new claims awaiting admin approval
+- [x] Frontend: Agent dashboard — 'Files in Minus' alert banner when there are open top-up requests
+- [x] Frontend: Agent Commissions page — 'Top-Up Required' tab with 'I've Topped Up — Notify JLT' button
+- [x] Email: agent receives email when top-up is requested, with amount and link to their dashboard
+
+## Pre-Auth Auto-Claim Status Fix (May 5)
+- [x] Fix: pre-authorised auto-claims now create commission claim with status="processing" (skip pending gate) via initialStatus param on createCommissionClaim — they have already been pre-approved by the agent

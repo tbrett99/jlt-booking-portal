@@ -234,7 +234,12 @@ export const commissionClaims = mysqlTable("commission_claims", {
   agentId: int("agentId").notNull(), // FK → users.id
   bookingType: mysqlEnum("bookingType", ["lapland", "cruise", "disney", "other"]).notNull().default("other"),
   claimedAt: timestamp("claimedAt").defaultNow().notNull(),
-  status: mysqlEnum("status", ["processing", "awaiting_payment", "paid"]).default("processing").notNull(),
+  status: mysqlEnum("status", ["pending", "processing", "awaiting_payment", "paid", "top_up_required"]).default("pending").notNull(),
+  topUpAmountPence: int("topUpAmountPence"), // set when admin requests a top-up
+  topUpRequestedAt: timestamp("topUpRequestedAt"), // when the top-up was requested
+  topUpRequestedById: int("topUpRequestedById"), // admin who requested the top-up
+  topUpNotifiedAt: timestamp("topUpNotifiedAt"), // when the agent was notified
+  topUpResolvedAt: timestamp("topUpResolvedAt"), // when the agent confirmed top-up done
   grossAmount: decimal("grossAmount", { precision: 10, scale: 2 }), // Agent's declared gross commission before fees
   vatAmount: decimal("vatAmount", { precision: 10, scale: 2 }), // VAT on the commission
   paidAt: timestamp("paidAt"),

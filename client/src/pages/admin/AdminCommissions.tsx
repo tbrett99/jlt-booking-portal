@@ -1,15 +1,18 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle, CheckCircle2, TrendingDown } from "lucide-react";
 import CopyableRef from "@/components/CopyableRef";
 import { useLocation } from "wouter";
 
@@ -292,7 +295,35 @@ export default function AdminCommissions() {
     onError: (err) => toast.error(err.message),
   });
 
+  // Pending review state
+  const [markClaimableTarget, setMarkClaimableTarget] = useState<ClaimRow | null>(null);
+  const [topUpTarget, setTopUpTarget] = useState<ClaimRow | null>(null);
+  const [topUpAmount, setTopUpAmount] = useState("");
+  const [topUpNote, setTopUpNote] = useState("");
+
+  const markClaimableMutation = trpc.commissionClaims.markClaimable.useMutation({
+    onSuccess: () => {
+      toast.success("Claim marked as claimable — moved to Processing.");
+      setMarkClaimableTarget(null);
+      utils.commissionClaims.all.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const requestTopUpMutation = trpc.commissionClaims.requestTopUp.useMutation({
+    onSuccess: () => {
+      toast.success("Top-up request sent to agent.");
+      setTopUpTarget(null);
+      setTopUpAmount("");
+      setTopUpNote("");
+      utils.commissionClaims.all.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const allClaims = (claims ?? []) as ClaimRow[];
+  const pendingReview = allClaims.filter((c) => c.status === "pending");
+  const topUpRequired = allClaims.filter((c) => c.status === "top_up_required");
   const processing = allClaims.filter((c) => c.status === "processing");
   const awaitingPayment = allClaims.filter((c) => c.status === "awaiting_payment");
   const claimed = awaitingPayment;
@@ -448,7 +479,29 @@ export default function AdminCommissions() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <Card className="border-yellow-400">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-yellow-500" />
+              <div>
+                <p className="text-2xl font-bold text-yellow-500">{pendingReview.length}</p>
+                <p className="text-xs text-muted-foreground">Pending Review</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-red-400">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2">
+              <TrendingDown className="h-4 w-4 text-red-500" />
+              <div>
+                <p className="text-2xl font-bold text-red-500">{topUpRequired.length}</p>
+                <p className="text-xs text-muted-foreground">Top-Up Required</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
         <Card className="border-amber-400">
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
@@ -495,9 +548,25 @@ export default function AdminCommissions() {
         </Card>
       </div>
 
-      <Tabs defaultValue="pending">
-        <TabsList className="mb-4">
-          <TabsTrigger value="pending">
+      <Tabs defaultValue="pending_review">
+        <TabsList className="mb-4 flex-wrap h-auto gap-1">
+          <TabsTrigger value="pending_review">
+            Pending Review
+            {pendingReview.length > 0 && (
+              <span className="ml-2 bg-yellow-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                {pendingReview.length}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="top_up">
+            Top-Up Required
+            {topUpRequired.length > 0 && (
+              <span className="ml-2 bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                {topUpRequired.length}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="processing">
             Processing
             {processing.length > 0 && (
               <span className="ml-2 bg-orange-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
@@ -516,11 +585,163 @@ export default function AdminCommissions() {
           <TabsTrigger value="paid">Paid</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pending">
+        {/* PENDING REVIEW TAB */}
+        <TabsContent value="pending_review">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">
+                Pending Review — Mark claimable to move to Processing
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {pendingReview.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground text-sm">No claims pending review.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        <th className="py-3 px-4 text-left">Client</th>
+                        <th className="py-3 px-4 text-left">Agent</th>
+                        <th className="py-3 px-4 text-left">Departure</th>
+                        <th className="py-3 px-4 text-left">Commission</th>
+                        <th className="py-3 px-4 text-left">Claimed</th>
+                        <th className="py-3 px-4 text-left">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingReview.map((c) => (
+                        <tr key={c.id} className="border-b border-border hover:bg-muted/30">
+                          <td className="py-3 px-4">
+                            <div className="font-medium">{c.booking?.clientName ?? "—"}</div>
+                            {c.booking?.ptsRef && <div className="text-xs text-muted-foreground">{c.booking.ptsRef}</div>}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div>{c.agentName}</div>
+                            <div className="text-xs text-muted-foreground">{c.agentEmail}</div>
+                          </td>
+                          <td className="py-3 px-4">{c.booking?.departureDate ? format(new Date(c.booking.departureDate), "dd/MM/yyyy") : "—"}</td>
+                          <td className="py-3 px-4 font-semibold">
+                            {c.booking?.expectedCommission != null ? `£${Number(c.booking.expectedCommission).toFixed(2)}` : "—"}
+                          </td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs">{format(new Date(c.claimedAt), "dd/MM/yyyy")}</td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => setMarkClaimableTarget(c)}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs gap-1"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Mark Claimable
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => { setTopUpTarget(c); setTopUpAmount(""); setTopUpNote(""); }}
+                                className="text-red-500 border-red-300 hover:bg-red-50 text-xs gap-1"
+                              >
+                                <TrendingDown className="h-3.5 w-3.5" />
+                                File in Minus
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDeleteTarget(c)}
+                                className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* TOP-UP REQUIRED TAB */}
+        <TabsContent value="top_up">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Top-Up Required — Awaiting agent action</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {topUpRequired.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground text-sm">No files awaiting top-up.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        <th className="py-3 px-4 text-left">Client</th>
+                        <th className="py-3 px-4 text-left">Agent</th>
+                        <th className="py-3 px-4 text-left">Departure</th>
+                        <th className="py-3 px-4 text-left">Commission</th>
+                        <th className="py-3 px-4 text-left">Top-Up Amount</th>
+                        <th className="py-3 px-4 text-left">Requested</th>
+                        <th className="py-3 px-4 text-left">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topUpRequired.map((c) => (
+                        <tr key={c.id} className="border-b border-border hover:bg-muted/30">
+                          <td className="py-3 px-4">
+                            <div className="font-medium">{c.booking?.clientName ?? "—"}</div>
+                            {c.booking?.ptsRef && <div className="text-xs text-muted-foreground">{c.booking.ptsRef}</div>}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div>{c.agentName}</div>
+                            <div className="text-xs text-muted-foreground">{c.agentEmail}</div>
+                          </td>
+                          <td className="py-3 px-4">{c.booking?.departureDate ? format(new Date(c.booking.departureDate), "dd/MM/yyyy") : "—"}</td>
+                          <td className="py-3 px-4 font-semibold">
+                            {c.booking?.expectedCommission != null ? `£${Number(c.booking.expectedCommission).toFixed(2)}` : "—"}
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-red-500">
+                            {(c as any).topUpAmountPence != null ? `£${(Number((c as any).topUpAmountPence) / 100).toFixed(2)}` : "—"}
+                          </td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs">{format(new Date(c.claimedAt), "dd/MM/yyyy")}</td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => setMarkClaimableTarget(c)}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs gap-1"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Mark Claimable
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDeleteTarget(c)}
+                                className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* PROCESSING TAB */}
+        <TabsContent value="processing">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center justify-between">
-                <span>Processing — Awaiting Admin Action</span>
+                <span>Processing — Claim in PTS to advance</span>
                 <div className="flex items-center gap-2">
                   {processing.length > 0 && selectedIds.size === 0 && (
                     <Button variant="outline" size="sm" onClick={() => toggleSelectAll(processing)} className="text-xs">
@@ -577,6 +798,88 @@ export default function AdminCommissions() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Mark Claimable confirmation dialog */}
+      <AlertDialog open={!!markClaimableTarget} onOpenChange={(open) => { if (!open) setMarkClaimableTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark as Claimable</AlertDialogTitle>
+            <AlertDialogDescription>
+              Confirm you have reviewed the file for{" "}
+              <strong>{markClaimableTarget?.booking?.clientName ?? "this booking"}</strong> by{" "}
+              <strong>{markClaimableTarget?.agentName}</strong>. This will move the claim to{" "}
+              <em>Processing</em> so it can be claimed in PTS.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-emerald-500 hover:bg-emerald-600 text-white"
+              onClick={() => markClaimableTarget && markClaimableMutation.mutate({ claimId: markClaimableTarget.id })}
+              disabled={markClaimableMutation.isPending}
+            >
+              {markClaimableMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Claimable"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Request Top-Up dialog */}
+      <Dialog open={!!topUpTarget} onOpenChange={(open) => { if (!open) { setTopUpTarget(null); setTopUpAmount(""); setTopUpNote(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingDown className="h-5 w-5 text-red-500" />
+              File in Minus — Request Top-Up
+            </DialogTitle>
+            <DialogDescription>
+              Enter the amount the agent needs to top up for{" "}
+              <strong>{topUpTarget?.booking?.clientName ?? "this booking"}</strong>. They will receive a notification
+              and see an action point on their dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="topup-amount">Amount to Top Up (£)</Label>
+              <Input
+                id="topup-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="e.g. 45.00"
+                value={topUpAmount}
+                onChange={(e) => setTopUpAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="topup-note">Note to Agent (optional)</Label>
+              <Textarea
+                id="topup-note"
+                placeholder="Explain why the top-up is needed..."
+                value={topUpNote}
+                onChange={(e) => setTopUpNote(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setTopUpTarget(null); setTopUpAmount(""); setTopUpNote(""); }}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!topUpTarget) return;
+                const pence = Math.round(parseFloat(topUpAmount) * 100);
+                if (isNaN(pence) || pence <= 0) { toast.error("Please enter a valid amount."); return; }
+                requestTopUpMutation.mutate({ claimId: topUpTarget.id, amountPence: pence, note: topUpNote || undefined });
+              }}
+              disabled={requestTopUpMutation.isPending}
+              className="bg-red-500 hover:bg-red-600 text-white gap-2"
+            >
+              {requestTopUpMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingDown className="h-4 w-4" />}
+              Send Top-Up Request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirmation dialog */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>

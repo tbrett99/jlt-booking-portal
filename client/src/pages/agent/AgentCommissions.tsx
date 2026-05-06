@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
-import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight, Download, FileSpreadsheet, Zap } from "lucide-react";
+import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight, Download, FileSpreadsheet, Zap, TrendingDown } from "lucide-react";
 import { Link } from "wouter";
 
 type BookingType = "lapland" | "cruise" | "disney" | "other";
@@ -35,6 +35,8 @@ type BookingWithClaim = {
     claimedAt: Date | string;
     paidAt: Date | string | null;
     bookingType?: string | null;
+    topUpAmountPence?: number | null;
+    topUpNote?: string | null;
   } | null;
 };
 
@@ -52,6 +54,16 @@ export default function AgentCommissions() {
   const { data: bookings, isLoading } = trpc.commissionClaims.myCommissions.useQuery();
 
   const [claimTarget, setClaimTarget] = useState<BookingWithClaim | null>(null);
+  const [notifyTopUpId, setNotifyTopUpId] = useState<number | null>(null);
+
+  const notifyTopUpMutation = trpc.commissionClaims.agentNotifyTopUpComplete.useMutation({
+    onSuccess: () => {
+      toast.success("JLT have been notified — your claim will be reviewed shortly.");
+      setNotifyTopUpId(null);
+      utils.commissionClaims.myCommissions.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
   const [selectedType, setSelectedType] = useState<BookingType>("other");
   const [grossAmount, setGrossAmount] = useState<string>("");
   const [markPaidIds, setMarkPaidIds] = useState<number[]>([]);
@@ -95,6 +107,7 @@ export default function AgentCommissions() {
       b.currentStage !== "Cancelled"
   );
   const claimable = all.filter((b) => !b.claim && b.currentStage === "Commission Claimable");
+  const topUpRequired = all.filter((b) => b.claim && b.claim.status === "top_up_required");
   const processing = all.filter((b) => b.claim && b.claim.status === "processing");
   const awaitingPayment = all.filter((b) => b.claim && b.claim.status === "awaiting_payment");
   const paid = all.filter((b) => b.claim && b.claim.status === "paid");
@@ -372,6 +385,14 @@ export default function AgentCommissions() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4 flex-wrap h-auto gap-1">
+          <TabsTrigger value="top-up">
+            Files in Minus
+            {topUpRequired.length > 0 && (
+              <span className="ml-2 bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                {topUpRequired.length}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="claimable">
             Ready to Claim
             {claimable.length > 0 && (
@@ -414,6 +435,74 @@ export default function AgentCommissions() {
             )}
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="top-up">
+          <p className="text-sm text-muted-foreground mb-4">These files are currently in minus. Please top up your account and notify us once done — we will then review and move the claim back to Commission Due.</p>
+          {topUpRequired.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <TrendingDown className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                <p>No files currently in minus.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {topUpRequired.map((b) => (
+                <div key={b.id} className="flex items-start justify-between p-4 border-2 border-red-300 rounded-lg bg-red-50">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-foreground">{b.clientName}</p>
+                    <p className="text-sm text-muted-foreground">Departure: {fmt(b.departureDate)}</p>
+                    {b.claim?.topUpAmountPence && (
+                      <p className="text-sm font-bold text-red-600 mt-1">Amount to top up: £{(b.claim.topUpAmountPence / 100).toFixed(2)}</p>
+                    )}
+                    {b.claim?.topUpNote && (
+                      <p className="text-sm text-muted-foreground mt-1 italic">{b.claim.topUpNote}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-red-400 text-red-600 hover:bg-red-50"
+                      onClick={() => setNotifyTopUpId(b.claim!.id)}
+                      disabled={notifyTopUpMutation.isPending && notifyTopUpId === b.claim?.id}
+                    >
+                      {notifyTopUpMutation.isPending && notifyTopUpId === b.claim?.id ? (
+                        <Loader2 size={14} className="animate-spin mr-1" />
+                      ) : null}
+                      I've Topped Up — Notify JLT
+                    </Button>
+                    <Link href={`/bookings/${b.id}`}>
+                      <button className="p-1 rounded hover:bg-muted">
+                        <ChevronRight size={16} className="text-muted-foreground" />
+                      </button>
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Confirm top-up notify dialog */}
+          {notifyTopUpId !== null && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <div className="bg-background rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+                <h3 className="font-bold text-lg mb-2">Confirm Top-Up</h3>
+                <p className="text-sm text-muted-foreground mb-4">Please confirm that you have topped up your account. JLT will be notified and will review your claim shortly.</p>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" onClick={() => setNotifyTopUpId(null)}>Cancel</Button>
+                  <Button
+                    className="bg-[#02E6D2] text-[#414141] hover:bg-[#70FFE8]"
+                    onClick={() => notifyTopUpMutation.mutate({ claimId: notifyTopUpId! })}
+                    disabled={notifyTopUpMutation.isPending}
+                  >
+                    {notifyTopUpMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+                    Confirm
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </TabsContent>
 
         <TabsContent value="claimable">
           <p className="text-sm text-muted-foreground mb-4">All suppliers have been paid and you can now claim your commission on these bookings.</p>
