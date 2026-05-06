@@ -144,6 +144,7 @@ function MonthAccordion({
   paymentDates,
   highlightedDate,
   onDateClick,
+  isOverdue,
 }: {
   label: string;
   bookings: TimelineBooking[];
@@ -153,6 +154,7 @@ function MonthAccordion({
   paymentDates?: Date[];
   highlightedDate?: Date | null;
   onDateClick?: (d: Date) => void;
+  isOverdue?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
   const total = bookings.reduce((acc, b) => acc + Number(b.expectedCommission ?? 0), 0);
@@ -191,6 +193,21 @@ function MonthAccordion({
 
       {open && (
         <div className="px-5 pb-5 pt-3 border-t border-border bg-background space-y-4">
+          {/* Overdue explainer */}
+          {isOverdue && (
+            <div className="rounded-lg border p-3 flex items-start gap-3" style={{ background: "#fef2f2", borderColor: "#fca5a5" }}>
+              <Info size={14} className="shrink-0 mt-0.5 text-red-500" />
+              <div>
+                <p className="font-semibold text-xs text-red-700">Final supplier payment date has passed</p>
+                <p className="text-xs mt-0.5 text-red-600 leading-relaxed">
+                  The final supplier payment date on these bookings has now passed, but commission has not yet been claimed. JLT will review each file and notify you when it becomes claimable.
+                </p>
+                <p className="text-xs mt-1.5 text-red-600 leading-relaxed">
+                  <strong>Tip:</strong> You can <strong>pre-authorise your commission</strong> on any booking — open the booking and toggle the pre-authorisation switch. This allows JLT to automatically process your claim as soon as the file is reviewed, with no action needed from you.
+                </p>
+              </div>
+            </div>
+          )}
           {/* Mini calendar for this month if provided */}
           {month && paymentDates && (
             <MonthCalendar
@@ -348,6 +365,7 @@ export default function CommissionTimeline() {
                   paymentDates={isOverdue ? undefined : paymentDates}
                   highlightedDate={highlighted}
                   onDateClick={isOverdue ? undefined : (d) => toggleHighlight(key, d)}
+                  isOverdue={isOverdue}
                 />
               );
             })
