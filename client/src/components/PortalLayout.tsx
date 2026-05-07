@@ -7,7 +7,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -478,6 +478,23 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             />
           ))}
         </nav>
+
+        {/* Open CRM button — admins/super admins only for now */}
+        {isAdminUser && (
+          <div className="px-2 pb-1 border-t border-sidebar-border pt-2">
+            <a
+              href={`https://portal.thejltgroup.co.uk/api/oauth2/authorize?response_type=code&client_id=jlt_cid_419b25cd176a7e388a3ce1356addef90&redirect_uri=https%3A%2F%2Fjlt-dashboard-c4pzyiw4.manus.space%2Fauth%2Fjlt%2Fcallback&state=${Math.random().toString(36).slice(2)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open JLT Dashboard CRM"
+              className={`flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${collapsed ? "justify-center" : ""}`}
+              style={{ color: "#70FFE8", background: "rgba(112,255,232,0.08)" }}
+            >
+              <ExternalLink size={16} />
+              {!collapsed && <span>Open CRM</span>}
+            </a>
+          </div>
+        )}
 
         {/* View switcher */}
         {isAdminUser && (

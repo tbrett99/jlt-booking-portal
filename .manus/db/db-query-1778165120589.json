@@ -1,0 +1,18 @@
+{
+  "query": "SELECT id, name, clientId, redirectUri, isActive, createdAt FROM oauth_clients ORDER BY createdAt DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, clientId, redirectUri, isActive, createdAt FROM oauth_clients ORDER BY createdAt DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "JLT Dashboard CRM",
+      "clientId": "jlt_cid_419b25cd176a7e388a3ce1356addef90",
+      "redirectUri": "https://jlt-dashboard-c4pzyiw4.manus.space/auth/jlt/callback",
+      "isActive": "1",
+      "createdAt": "2026-05-07 13:42:28"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tclientId\tredirectUri\tisActive\tcreatedAt\n1\tJLT Dashboard CRM\tjlt_cid_419b25cd176a7e388a3ce1356addef90\thttps://jlt-dashboard-c4pzyiw4.manus.space/auth/jlt/callback\t1\t2026-05-07 13:42:28\n",
+  "stderr": "",
+  "execution_time_ms": 961
+}

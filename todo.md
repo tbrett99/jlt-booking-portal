@@ -2090,3 +2090,8 @@
 - [x] Frontend: Admin → OAuth Clients page at /admin/oauth-clients — register/revoke trusted client apps, one-time secret reveal
 - [x] Sidebar: OAuth Clients nav item added under System section for admin users
 - [x] Docs: OAuth integration spec for Tom produced and delivered
+
+## Open CRM Sidebar Button (May 7)
+- [x] Verify Tom's CRM OAuth client registered in DB (clientId: jlt_cid_419b25cd176a7e388a3ce1356addef90)
+- [x] Add "Open CRM" button to agent sidebar — teal styled, opens OAuth authorize URL in new tab with random state param, shown to agents and admins in agent view
+- [x] Add ExternalLink icon import to PortalLayout
