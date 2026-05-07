@@ -12,7 +12,7 @@ import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { eq, and } from "drizzle-orm";
 import { getDb, createBooking, updateBookingAdminFields, getBookingById } from "./db";
-import { apiKeys, users } from "../drizzle/schema";
+import { apiKeys, users, ssoTokens } from "../drizzle/schema";
 
 const router = Router();
 
@@ -257,6 +257,60 @@ router.post("/update-commission", async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error("[external-api] update-commission error:", err);
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── GET /api/external/sso/verify ───────────────────────────────────────────
+/**
+ * Tom's CRM calls this to verify a magic link token and get the agent's details.
+ * The token is single-use and expires after 90 seconds.
+ *
+ * Query param: ?token=<token>
+ * Returns: { valid: true, userId, email, name, role } or { valid: false, error }
+ */
+router.get("/sso/verify", async (req: Request, res: Response) => {
+  try {
+    const { token } = req.query as { token?: string };
+    if (!token) return res.status(400).json({ valid: false, error: "Missing token parameter" });
+
+    const db = await getDb();
+    if (!db) return res.status(503).json({ valid: false, error: "Database unavailable" });
+
+    // Find token
+    const results = await db
+      .select()
+      .from(ssoTokens)
+      .where(eq(ssoTokens.token, token))
+      .limit(1);
+    const record = results[0];
+
+    if (!record) return res.status(404).json({ valid: false, error: "Token not found" });
+    if (record.usedAt) return res.status(410).json({ valid: false, error: "Token already used" });
+    if (new Date() > record.expiresAt) return res.status(410).json({ valid: false, error: "Token expired" });
+
+    // Mark as used
+    await db.update(ssoTokens).set({ usedAt: new Date() }).where(eq(ssoTokens.id, record.id));
+
+    // Get agent details
+    const agentResults = await db
+      .select({ id: users.id, email: users.email, name: users.name, role: users.role, phone: users.phone })
+      .from(users)
+      .where(eq(users.id, record.userId))
+      .limit(1);
+    const agent = agentResults[0];
+    if (!agent) return res.status(404).json({ valid: false, error: "Agent not found" });
+
+    return res.status(200).json({
+      valid: true,
+      userId: agent.id,
+      email: agent.email,
+      name: agent.name,
+      role: agent.role,
+      phone: agent.phone ?? null,
+    });
+  } catch (err: any) {
+    console.error("[external-api] sso/verify error:", err);
+    return res.status(500).json({ valid: false, error: "Internal server error" });
   }
 });
 

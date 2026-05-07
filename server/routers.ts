@@ -3987,5 +3987,31 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         return { success: true };
       }),
   }),
+
+  // ─── SSO ──────────────────────────────────────────────────────────────────────
+  sso: router({
+    // Generate a short-lived magic link token for the current user to SSO into Tom's CRM
+    generateToken: protectedProcedure.mutation(async ({ ctx }) => {
+      const { ssoTokens } = await import('../drizzle/schema');
+      const { getDb } = await import('./db');
+      const crypto = await import('node:crypto');
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      // Only agents/admins with crmAccess (or admins/super_admins) can generate SSO tokens
+      const user = ctx.user as any;
+      const canAccess = ['admin', 'super_admin'].includes(user.role) || user.crmAccess === true;
+      if (!canAccess) throw new TRPCError({ code: 'FORBIDDEN', message: 'CRM access not enabled for this account' });
+
+      const token = crypto.randomBytes(48).toString('hex'); // 96-char hex token
+      const expiresAt = new Date(Date.now() + 90_000); // 90 seconds
+
+      await db.insert(ssoTokens).values({ token, userId: user.id, expiresAt });
+
+      const crmBase = 'https://jlt-dashboard-c4pzyiw4.manus.space';
+      const ssoUrl = `${crmBase}/api/auth/jlt/magic?token=${token}`;
+      return { ssoUrl };
+    }),
+  }),
 });
 export type AppRouter = typeof appRouter;

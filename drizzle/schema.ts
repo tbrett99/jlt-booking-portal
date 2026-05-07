@@ -1355,3 +1355,15 @@ export const oauthCodes = mysqlTable("oauth_codes", {
 });
 export type OAuthCode = typeof oauthCodes.$inferSelect;
 export type InsertOAuthCode = typeof oauthCodes.$inferInsert;
+
+// ─── Magic Link / SSO Tokens ──────────────────────────────────────────────────
+export const ssoTokens = mysqlTable("sso_tokens", {
+  id: int("id").autoincrement().primaryKey(),
+  token: varchar("token", { length: 128 }).notNull().unique(), // Cryptographically random token
+  userId: int("userId").notNull(), // FK → users.id
+  expiresAt: timestamp("expiresAt").notNull(), // Short-lived: 90 seconds
+  usedAt: timestamp("usedAt"), // Null until consumed; prevents replay
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type SsoToken = typeof ssoTokens.$inferSelect;
+export type InsertSsoToken = typeof ssoTokens.$inferInsert;

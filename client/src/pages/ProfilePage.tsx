@@ -58,7 +58,7 @@ export default function ProfilePage() {
 
   const handleProfileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateProfileMutation.mutate({ name, email, phone, crmEmail: crmEmail || null });
+    updateProfileMutation.mutate({ name, phone, crmEmail: crmEmail || null });
   };
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
@@ -113,13 +113,13 @@ export default function ProfilePage() {
                 <Input
                   id="profile-email"
                   type="email"
-                  placeholder="you@example.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
+                  readOnly
+                  disabled
+                  className="bg-muted cursor-not-allowed opacity-70"
                 />
                 <p className="text-xs text-muted-foreground">
-                  This is the email used to log in and receive notifications.
+                  Your email address cannot be changed. Contact an admin if you need to update it.
                 </p>
               </div>
               <div className="space-y-2">
