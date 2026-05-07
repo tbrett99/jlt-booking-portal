@@ -483,7 +483,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         {isAdminUser && (
           <div className="px-2 pb-1 border-t border-sidebar-border pt-2">
             <a
-              href={`https://portal.thejltgroup.co.uk/api/oauth2/authorize?response_type=code&client_id=jlt_cid_419b25cd176a7e388a3ce1356addef90&redirect_uri=https%3A%2F%2Fjlt-dashboard-c4pzyiw4.manus.space%2Fauth%2Fjlt%2Fcallback&state=${Math.random().toString(36).slice(2)}`}
+              href={`https://portal.thejltgroup.co.uk/api/oauth2/authorize?response_type=code&client_id=jlt_cid_d0990946f6f7d12be51e1300bbec2c29&redirect_uri=https%3A%2F%2Fjlt-dashboard-c4pzyiw4.manus.space%2Fapi%2Fauth%2Fjlt%2Fcallback&state=${Math.random().toString(36).slice(2)}`}
               target="_blank"
               rel="noopener noreferrer"
               title="Open JLT Dashboard CRM"
