@@ -470,6 +470,17 @@ export const appRouter = router({
         await toggleUserActive(input.userId, input.isActive);
         return { success: true };
       }),
+    toggleCrmAccess: adminProcedure
+      .input(z.object({ userId: z.number(), crmAccess: z.boolean() }))
+      .mutation(async ({ input }) => {
+        const db = await import("./db").then((m) => m.getDb());
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const { users: usersTable } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(usersTable).set({ crmAccess: input.crmAccess } as any).where(eq(usersTable.id, input.userId));
+        return { success: true };
+      }),
+
     delete: superAdminProcedure
       .input(z.object({ userId: z.number() }))
       .mutation(async ({ input, ctx }) => {

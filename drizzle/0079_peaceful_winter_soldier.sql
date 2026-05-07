@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `crmAccess` boolean DEFAULT false NOT NULL;

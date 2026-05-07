@@ -479,8 +479,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           ))}
         </nav>
 
-        {/* Open CRM button — admins/super admins only for now */}
-        {isAdminUser && (
+        {/* Open CRM button — admins/super admins always; agents only if crmAccess is enabled */}
+        {(isAdminUser || (user as any)?.crmAccess) && (
           <div className="px-2 pb-1 border-t border-sidebar-border pt-2">
             <a
               href={`https://portal.thejltgroup.co.uk/api/oauth2/authorize?response_type=code&client_id=jlt_cid_d0990946f6f7d12be51e1300bbec2c29&redirect_uri=https%3A%2F%2Fjlt-dashboard-c4pzyiw4.manus.space%2Fapi%2Fauth%2Fjlt%2Fcallback&state=${Math.random().toString(36).slice(2)}`}

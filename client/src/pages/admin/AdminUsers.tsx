@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Search, ChevronLeft, ChevronRight, Loader2, Trash2, UserCheck, LogIn } from "lucide-react";
+import { Plus, Search, ChevronLeft, ChevronRight, Loader2, Trash2, UserCheck, LogIn, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
 
@@ -55,6 +55,9 @@ export default function AdminUsers() {
     onSuccess: () => utils.users.list.invalidate(),
   });
   const deleteUser = trpc.users.delete.useMutation({
+    onSuccess: () => utils.users.list.invalidate(),
+  });
+  const toggleCrmAccess = trpc.users.toggleCrmAccess.useMutation({
     onSuccess: () => utils.users.list.invalidate(),
   });
   const [, navigate] = useLocation();
@@ -301,6 +304,30 @@ export default function AdminUsers() {
                             >
                               {u.isActive ? "Suspend" : "Reactivate"}
                             </Button>
+                            {/* CRM Access toggle — only for agent-role users */}
+                            {u.role === "agent" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={`text-xs h-7 ${
+                                  (u as any).crmAccess
+                                    ? "text-teal-600 border-teal-300 hover:bg-teal-50"
+                                    : "text-muted-foreground border-muted hover:bg-muted/50"
+                                }`}
+                                title={(u as any).crmAccess ? "Revoke CRM access" : "Grant CRM access"}
+                                disabled={toggleCrmAccess.isPending}
+                                onClick={async () => {
+                                  try {
+                                    await toggleCrmAccess.mutateAsync({ userId: u.id, crmAccess: !(u as any).crmAccess });
+                                    toast.success((u as any).crmAccess ? "CRM access revoked" : "CRM access granted");
+                                  } catch (err: any) {
+                                    toast.error(err.message || "Failed to update CRM access");
+                                  }
+                                }}
+                              >
+                                <ExternalLink size={12} />
+                              </Button>
+                            )}
                             {isSuperAdmin && u.role !== "super_admin" && (
                               <Button
                                 size="sm"

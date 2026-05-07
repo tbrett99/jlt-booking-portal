@@ -27,6 +27,7 @@ export const users = mysqlTable("users", {
   phone: varchar("phone", { length: 30 }), // optional phone number for future SMS alerts
   credentialsSentAt: timestamp("credentialsSentAt"), // when login credentials were last sent
   portalStatus: mysqlEnum("portalStatus", ["onboarding", "active"]).default("onboarding").notNull(),
+  crmAccess: boolean("crmAccess").default(false).notNull(), // Whether this agent can access the CRM via Open CRM button
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
