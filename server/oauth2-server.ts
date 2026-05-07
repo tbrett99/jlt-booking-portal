@@ -65,6 +65,7 @@ router.get("/authorize", async (req: Request, res: Response) => {
 
   // Check if agent is already authenticated via session cookie
   const cookieHeader = req.headers.cookie ?? "";
+  console.log(`[OAuth/authorize] cookie header present: ${cookieHeader.length > 0}, keys: ${cookieHeader.split(";").map(c => c.trim().split("=")[0]).join(",")}`);
   const cookieMap = new Map(
     cookieHeader.split(";").map((c) => {
       const [k, ...v] = c.trim().split("=");
@@ -72,6 +73,7 @@ router.get("/authorize", async (req: Request, res: Response) => {
     })
   );
   const sessionCookie = cookieMap.get(COOKIE_NAME);
+  console.log(`[OAuth/authorize] session cookie found: ${!!sessionCookie}, COOKIE_NAME: ${COOKIE_NAME}`);
   if (!sessionCookie) {
     const returnUrl = encodeURIComponent(req.originalUrl);
     return res.redirect(`/oauth2/login?returnTo=${returnUrl}`);

@@ -1,0 +1,21 @@
+{
+  "query": "SELECT id, name, email, role, isActive, mustChangePassword, portalStatus, crmAccess, lastSignedIn FROM users WHERE email = 'partnerships@thejltgroup.co.uk';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, email, role, isActive, mustChangePassword, portalStatus, crmAccess, lastSignedIn FROM users WHERE email = 'partnerships@thejltgroup.co.uk';",
+  "rows": [
+    {
+      "id": "7086309",
+      "name": "Charles Test",
+      "email": "partnerships@thejltgroup.co.uk",
+      "role": "agent",
+      "isActive": "1",
+      "mustChangePassword": "0",
+      "portalStatus": "active",
+      "crmAccess": "1",
+      "lastSignedIn": "2026-05-07 15:45:54"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\trole\tisActive\tmustChangePassword\tportalStatus\tcrmAccess\tlastSignedIn\n7086309\tCharles Test\tpartnerships@thejltgroup.co.uk\tagent\t1\t0\tactive\t1\t2026-05-07 15:45:54\n",
+  "stderr": "",
+  "execution_time_ms": 257
+}

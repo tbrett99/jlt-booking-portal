@@ -101,6 +101,11 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
+  // Trust the reverse proxy (Cloud Run / load balancer) so that req.protocol
+  // correctly reflects the original HTTPS scheme via x-forwarded-proto.
+  // Without this, SameSite=None cookies are set without Secure=true and
+  // modern browsers silently drop them, breaking the OAuth flow.
+  app.set("trust proxy", true);
   const server = createServer(app);
 
   // Capture raw body for PPS callback signature verification BEFORE urlencoded parser decodes it.
