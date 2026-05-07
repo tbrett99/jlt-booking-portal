@@ -1,0 +1,17 @@
+{
+  "query": "SELECT id, clientName, currentStage, commissionPreAuthorised, agentId FROM bookings WHERE id = 30134;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, clientName, currentStage, commissionPreAuthorised, agentId FROM bookings WHERE id = 30134;",
+  "rows": [
+    {
+      "id": "30134",
+      "clientName": "CHRISTINE BROMILOW",
+      "currentStage": "Commission Claimable",
+      "commissionPreAuthorised": "0",
+      "agentId": "60297"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tclientName\tcurrentStage\tcommissionPreAuthorised\tagentId\n30134\tCHRISTINE BROMILOW\tCommission Claimable\t0\t60297\n",
+  "stderr": "",
+  "execution_time_ms": 255
+}

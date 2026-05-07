@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, bookingRef, stage, commissionStage, commissionClaimable, commissionClaimableAt, agentId, clientName, totalValue, agentCommission FROM bookings WHERE id = 30134 OR bookingRef = '30134' LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, bookingRef, stage, commissionStage, commissionClaimable, commissionClaimableAt, agentId, clientName, totalValue, agentCommission FROM bookings WHERE id = 30134 OR bookingRef = '30134' LIMIT 5;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'bookingref' in 'where clause'"
+  ]
+}

@@ -875,6 +875,19 @@ export const appRouter = router({
         })();
         const existingClaim = await getCommissionClaimByBooking(booking.id);
         const alreadyClaimed = booking.currentStage === "Commission Claimed";
+
+        // Guard: prevent reverting to Commission Claimable if a paid or awaiting-payment claim already exists.
+        // This stops admins from accidentally re-opening a booking whose commission has already been processed.
+        if (
+          input.toStage === "Commission Claimable" &&
+          existingClaim &&
+          (existingClaim.status === "paid" || existingClaim.status === "awaiting_payment")
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `This booking already has a commission claim that has been ${existingClaim.status === "paid" ? "paid" : "processed and is awaiting payment"}. It cannot be moved back to Commission Claimable. If you need to reverse this, please delete the commission claim first.`,
+          });
+        }
         if (
           input.toStage === "Commission Claimable" &&
           (booking as any).commissionPreAuthorised &&

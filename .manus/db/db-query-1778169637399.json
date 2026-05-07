@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE bookings SET currentStage = 'Commission Claimed', updatedAt = NOW() WHERE id = 30134;\nINSERT INTO pipeline_history (bookingId, fromStage, toStage, movedById, movedAt) VALUES (30134, 'Commission Claimable', 'Commission Claimed', 672, NOW());",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute UPDATE bookings SET currentStage = 'Commission Claimed', updatedAt = NOW() WHERE id = 30134;\nINSERT INTO pipeline_history (bookingId, fromStage, toStage, movedById, movedAt) VALUES (30134, 'Commission Claimable', 'Commission Claimed', 672, NOW());",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 279
+}

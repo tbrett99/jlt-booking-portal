@@ -1,0 +1,31 @@
+{
+  "query": "SELECT * FROM commission_claims WHERE bookingId = 30134 ORDER BY createdAt DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT * FROM commission_claims WHERE bookingId = 30134 ORDER BY createdAt DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "660002",
+      "bookingId": "30134",
+      "agentId": "60297",
+      "claimedAt": "2026-04-21 08:37:09",
+      "status": "awaiting_payment",
+      "paidAt": "2026-04-21 09:21:04",
+      "paidById": "672",
+      "createdAt": "2026-04-21 08:37:09",
+      "updatedAt": "2026-04-22 18:04:15",
+      "bookingType": "other",
+      "grossAmount": "97.72",
+      "vatAmount": "16.14",
+      "remittanceLineId": "NULL",
+      "topUpAmountPence": "NULL",
+      "topUpRequestedAt": "NULL",
+      "topUpRequestedById": "NULL",
+      "topUpNotifiedAt": "NULL",
+      "topUpResolvedAt": "NULL",
+      "topUpNote": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tbookingId\tagentId\tclaimedAt\tstatus\tpaidAt\tpaidById\tcreatedAt\tupdatedAt\tbookingType\tgrossAmount\tvatAmount\tremittanceLineId\ttopUpAmountPence\ttopUpRequestedAt\ttopUpRequestedById\ttopUpNotifiedAt\ttopUpResolvedAt\ttopUpNote\n660002\t30134\t60297\t2026-04-21 08:37:09\tawaiting_payment\t2026-04-21 09:21:04\t672\t2026-04-21 08:37:09\t2026-04-22 18:04:15\tother\t97.72\t16.14\tNULL\tNULL\tNULL\tNULL\tNULL\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 260
+}

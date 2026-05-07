@@ -1,0 +1,30 @@
+{
+  "query": "SELECT fromStage, toStage, movedAt FROM pipeline_history WHERE bookingId = 30134 ORDER BY movedAt DESC LIMIT 15;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT fromStage, toStage, movedAt FROM pipeline_history WHERE bookingId = 30134 ORDER BY movedAt DESC LIMIT 15;",
+  "rows": [
+    {
+      "fromStage": "Commission Claimed",
+      "toStage": "Commission Claimable",
+      "movedAt": "2026-04-28 09:50:47"
+    },
+    {
+      "fromStage": "Commission Claimable",
+      "toStage": "Commission Claimed",
+      "movedAt": "2026-04-21 08:37:09"
+    },
+    {
+      "fromStage": "Added to PTS",
+      "toStage": "Commission Claimable",
+      "movedAt": "2026-04-15 21:24:16"
+    },
+    {
+      "fromStage": "New Booking",
+      "toStage": "Added to PTS",
+      "movedAt": "2026-04-10 09:01:40"
+    }
+  ],
+  "messages": [],
+  "stdout": "fromStage\ttoStage\tmovedAt\nCommission Claimed\tCommission Claimable\t2026-04-28 09:50:47\nCommission Claimable\tCommission Claimed\t2026-04-21 08:37:09\nAdded to PTS\tCommission Claimable\t2026-04-15 21:24:16\nNew Booking\tAdded to PTS\t2026-04-10 09:01:40\n",
+  "stderr": "",
+  "execution_time_ms": 263
+}
