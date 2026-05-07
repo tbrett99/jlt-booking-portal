@@ -1,0 +1,20 @@
+{
+  "query": "SELECT portalStatus, isActive, COUNT(*) as count FROM users WHERE role IN ('agent', 'admin', 'super_admin') GROUP BY portalStatus, isActive ORDER BY portalStatus;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT portalStatus, isActive, COUNT(*) as count FROM users WHERE role IN ('agent', 'admin', 'super_admin') GROUP BY portalStatus, isActive ORDER BY portalStatus;",
+  "rows": [
+    {
+      "portalStatus": "onboarding",
+      "isActive": "1",
+      "count": "4"
+    },
+    {
+      "portalStatus": "active",
+      "isActive": "1",
+      "count": "447"
+    }
+  ],
+  "messages": [],
+  "stdout": "portalStatus\tisActive\tcount\nonboarding\t1\t4\nactive\t1\t447\n",
+  "stderr": "",
+  "execution_time_ms": 262
+}

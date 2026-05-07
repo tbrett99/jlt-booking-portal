@@ -15,6 +15,10 @@ export async function createContext(
 
   try {
     user = await sdk.authenticateRequest(opts.req);
+    // Cancelled agents are locked out — treat as unauthenticated
+    if (user && (user as any).portalStatus === 'cancelled') {
+      user = null;
+    }
   } catch (error) {
     // Authentication is optional for public procedures.
     user = null;

@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Search, ChevronLeft, ChevronRight, Loader2, Trash2, UserCheck, LogIn, ExternalLink } from "lucide-react";
+import { Plus, Search, ChevronLeft, ChevronRight, Loader2, Trash2, UserCheck, LogIn, ExternalLink, UserX, UserPlus } from "lucide-react";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
 
@@ -58,6 +58,9 @@ export default function AdminUsers() {
     onSuccess: () => utils.users.list.invalidate(),
   });
   const toggleCrmAccess = trpc.users.toggleCrmAccess.useMutation({
+    onSuccess: () => utils.users.list.invalidate(),
+  });
+  const setPortalStatus = trpc.users.setPortalStatus.useMutation({
     onSuccess: () => utils.users.list.invalidate(),
   });
   const [, navigate] = useLocation();
@@ -283,8 +286,11 @@ export default function AdminUsers() {
                           )}
                         </td>
                         <td className="py-3">
-                          <span className={`text-xs font-medium ${u.isActive ? "text-green-600" : "text-red-500"}`}>
-                            {u.isActive ? "Active" : "Suspended"}
+                          <span className={`text-xs font-medium ${
+                            (u as any).portalStatus === 'cancelled' ? 'text-red-500' :
+                            u.isActive ? 'text-green-600' : 'text-amber-500'
+                          }`}>
+                            {(u as any).portalStatus === 'cancelled' ? 'Cancelled' : u.isActive ? 'Active' : 'Suspended'}
                           </span>
                         </td>
                         <td className="py-3">
@@ -304,6 +310,32 @@ export default function AdminUsers() {
                             >
                               {u.isActive ? "Suspend" : "Reactivate"}
                             </Button>
+                            {/* Cancel Membership / Reactivate from cancelled — only for agents */}
+                            {u.role === 'agent' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={`text-xs h-7 ${
+                                  (u as any).portalStatus === 'cancelled'
+                                    ? 'text-green-600 border-green-300 hover:bg-green-50'
+                                    : 'text-red-500 border-red-200 hover:bg-red-50'
+                                }`}
+                                title={(u as any).portalStatus === 'cancelled' ? 'Reactivate membership' : 'Cancel membership'}
+                                disabled={setPortalStatus.isPending}
+                                onClick={async () => {
+                                  const isCancelled = (u as any).portalStatus === 'cancelled';
+                                  if (!isCancelled && !confirm(`Cancel ${u.name ?? u.email}'s membership? They will lose portal access immediately.`)) return;
+                                  try {
+                                    await setPortalStatus.mutateAsync({ userId: u.id, status: isCancelled ? 'active' : 'cancelled' });
+                                    toast.success(isCancelled ? 'Membership reactivated' : 'Membership cancelled — access revoked');
+                                  } catch (err: any) {
+                                    toast.error(err.message || 'Failed to update status');
+                                  }
+                                }}
+                              >
+                                {(u as any).portalStatus === 'cancelled' ? <UserPlus size={12} /> : <UserX size={12} />}
+                              </Button>
+                            )}
                             {/* CRM Access toggle — only for agent-role users */}
                             {u.role === "agent" && (
                               <Button

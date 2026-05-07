@@ -311,7 +311,7 @@ export const appRouter = router({
       .input(z.object({ email: z.string().email(), password: z.string() }))
       .mutation(async ({ input, ctx }) => {
         const user = await getUserByEmail(input.email);
-        if (!user || !user.tempPassword || !user.isActive) {
+        if (!user || !user.tempPassword || !user.isActive || (user as any).portalStatus === 'cancelled') {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid credentials" });
         }
         const valid = await bcrypt.compare(input.password, user.tempPassword);
@@ -479,6 +479,16 @@ export const appRouter = router({
         const { users: usersTable } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
         await db.update(usersTable).set({ crmAccess: input.crmAccess } as any).where(eq(usersTable.id, input.userId));
+        return { success: true };
+      }),
+    setPortalStatus: adminProcedure
+      .input(z.object({ userId: z.number(), status: z.enum(['onboarding', 'active', 'cancelled']) }))
+      .mutation(async ({ input }) => {
+        const db = await import('./db').then((m) => m.getDb());
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const { users: usersTable } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.update(usersTable).set({ portalStatus: input.status } as any).where(eq(usersTable.id, input.userId));
         return { success: true };
       }),
 

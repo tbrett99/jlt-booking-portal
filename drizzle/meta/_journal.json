@@ -575,6 +575,13 @@
       "when": 1778176407875,
       "tag": "0081_yielding_meltdown",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "5",
+      "when": 1778177418268,
+      "tag": "0082_giant_hardball",
+      "breakpoints": true
     }
   ]
 }
