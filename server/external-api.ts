@@ -11,7 +11,7 @@
 import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { eq, and } from "drizzle-orm";
-import { getDb, createBooking } from "./db";
+import { getDb, createBooking, updateBookingAdminFields, getBookingById } from "./db";
 import { apiKeys, users } from "../drizzle/schema";
 
 const router = Router();
@@ -170,6 +170,92 @@ router.post("/register-booking", async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error("[external-api] register-booking error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── POST /api/external/update-commission ────────────────────────────────────
+/**
+ * Update the expectedCommission on an existing booking.
+ * Called by Tom's CRM when the agent clicks "Send Expected Commission".
+ *
+ * Body: { bookingId?, crmRef?, expectedCommission, agentEmail? }
+ * At least one of bookingId or crmRef must be provided.
+ */
+router.post("/update-commission", async (req: Request, res: Response) => {
+  try {
+    // 1. Auth
+    const rawKey = req.headers["x-api-key"] as string | undefined;
+    if (!rawKey) return res.status(401).json({ error: "Missing X-API-Key header" });
+    const keyRecord = await validateApiKey(rawKey);
+    if (!keyRecord) return res.status(401).json({ error: "Invalid or inactive API key" });
+
+    // 2. Parse body
+    const { bookingId, crmRef, expectedCommission, agentEmail } = req.body;
+
+    // 3. Validate
+    if (bookingId == null && !crmRef) {
+      return res.status(400).json({ error: "Provide at least one of bookingId or crmRef to identify the booking" });
+    }
+    if (expectedCommission == null) {
+      return res.status(400).json({ error: "Missing required field: expectedCommission" });
+    }
+    const parsedCommission = parseFloat(String(expectedCommission));
+    if (isNaN(parsedCommission) || parsedCommission < 0) {
+      return res.status(400).json({ error: "expectedCommission must be a non-negative number" });
+    }
+
+    // 4. Resolve booking
+    const db = await getDb();
+    if (!db) return res.status(503).json({ error: "Database unavailable" });
+
+    const { bookings: bookingsTable } = await import("../drizzle/schema");
+    let booking;
+    if (bookingId != null) {
+      booking = await getBookingById(Number(bookingId));
+    } else {
+      const results = await db
+        .select()
+        .from(bookingsTable)
+        .where(eq(bookingsTable.crmRef, String(crmRef).trim()))
+        .limit(1);
+      booking = results[0];
+    }
+
+    if (!booking) {
+      return res.status(404).json({
+        error: bookingId != null
+          ? `No booking found with id: ${bookingId}`
+          : `No booking found with crmRef: ${crmRef}`,
+      });
+    }
+
+    // 5. Optional: verify agentEmail matches the booking's agent (security check)
+    if (agentEmail) {
+      const normalizedEmail = String(agentEmail).toLowerCase().trim();
+      const agentResults = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, booking.agentId))
+        .limit(1);
+      const agent = agentResults[0];
+      if (agent) {
+        const portalEmail = (agent.email ?? "").toLowerCase();
+        const crmAliasEmail = ((agent as any).crmEmail ?? "").toLowerCase();
+        if (portalEmail !== normalizedEmail && crmAliasEmail !== normalizedEmail) {
+          return res.status(403).json({
+            error: `The agentEmail provided (${agentEmail}) does not match the agent assigned to this booking.`,
+          });
+        }
+      }
+    }
+
+    // 6. Update
+    await updateBookingAdminFields(booking.id, { expectedCommission: parsedCommission });
+
+    return res.status(200).json({ success: true, bookingId: booking.id, expectedCommission: parsedCommission });
+  } catch (err: any) {
+    console.error("[external-api] update-commission error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
