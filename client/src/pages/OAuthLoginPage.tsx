@@ -1,9 +1,21 @@
-import { useState } from "react";
+/**
+ * OAuthLoginPage
+ *
+ * Shown when an unauthenticated user arrives at /oauth2/login?returnTo=...
+ * (redirected from /api/oauth2/authorize).
+ *
+ * Provides:
+ *  - A login form for existing JLT portal users (redirects back to OAuth authorize on success)
+ *  - A clear "Don't have an account?" panel directing new users to contact JLT
+ */
+
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -12,14 +24,23 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { useLocation, useSearch } from "wouter";
-import { getLoginUrl } from "@/const";
-import { Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
+import { useSearch } from "wouter";
+import { Eye, EyeOff, Loader2, CheckCircle2, ExternalLink, Mail, UserPlus } from "lucide-react";
 
-export default function LoginPage() {
-  const [, navigate] = useLocation();
+export default function OAuthLoginPage() {
   const search = useSearch();
-  const returnTo = new URLSearchParams(search).get("returnTo");
+  const params = new URLSearchParams(search);
+  const returnTo = params.get("returnTo") ?? "/";
+
+  // If the user is already logged in, send them straight to the OAuth authorize
+  // endpoint — no need to show the login form.
+  const { user, loading } = useAuth();
+  useEffect(() => {
+    if (!loading && user) {
+      window.location.href = returnTo;
+    }
+  }, [user, loading, returnTo]);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -30,14 +51,10 @@ export default function LoginPage() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSent, setForgotSent] = useState(false);
 
-  const utils = trpc.useUtils();
-
   const loginMutation = trpc.auth.loginWithPassword.useMutation({
     onSuccess: () => {
-      // Hard reload so the new session cookie is sent with the next request
-      // and the auth context is fully re-initialised from scratch.
-      // If a returnTo param is present (e.g. from OAuth authorize redirect), honour it.
-      window.location.href = returnTo ?? "/";
+      // After login, navigate back to the OAuth authorize endpoint so the code is issued
+      window.location.href = returnTo;
     },
     onError: (err) => {
       toast.error(err.message || "Invalid email or password");
@@ -46,15 +63,13 @@ export default function LoginPage() {
   });
 
   const forgotMutation = trpc.auth.forgotPassword.useMutation({
-    onSuccess: () => {
-      setForgotSent(true);
-    },
+    onSuccess: () => setForgotSent(true),
     onError: (err) => {
       toast.error(err.message || "Something went wrong. Please try again.");
     },
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       toast.error("Please enter your email and password");
@@ -93,9 +108,9 @@ export default function LoginPage() {
         />
       </div>
 
-      <div className="w-full max-w-md relative">
-        {/* Logo */}
-        <div className="text-center mb-8">
+      <div className="w-full max-w-md relative space-y-4">
+        {/* Logo & heading */}
+        <div className="text-center mb-6">
           <div
             className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 font-bold text-xl"
             style={{ background: "#70FFE8", color: "#414141" }}
@@ -103,14 +118,25 @@ export default function LoginPage() {
             JLT
           </div>
           <h1 className="text-2xl font-bold text-white">JLT Group</h1>
-          <p className="text-white/60 text-sm mt-1">Booking Portal</p>
+          <p className="text-white/60 text-sm mt-1">Sign in to access the CRM</p>
         </div>
 
+        {/* Context banner */}
+        <div
+          className="rounded-xl px-4 py-3 text-sm flex items-start gap-3"
+          style={{ background: "rgba(112,255,232,0.12)", border: "1px solid rgba(112,255,232,0.25)" }}
+        >
+          <ExternalLink size={16} className="mt-0.5 shrink-0" style={{ color: "#70FFE8" }} />
+          <p className="text-white/80 leading-snug">
+            You're signing in to <strong className="text-white">JLT Dashboard CRM</strong> using
+            your JLT Portal account. Sign in below to continue.
+          </p>
+        </div>
+
+        {/* Login card */}
         <Card className="shadow-2xl border-0">
-          <CardHeader className="pb-4">
-            <h2 className="text-lg font-semibold text-center">Sign in to your account</h2>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
+            <h2 className="text-base font-semibold mb-4">Sign in to your account</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email address</Label>
@@ -168,15 +194,44 @@ export default function LoginPage() {
                     Signing in...
                   </>
                 ) : (
-                  "Sign In"
+                  "Sign In & Continue to CRM"
                 )}
               </Button>
             </form>
-
           </CardContent>
         </Card>
 
-        <p className="text-center text-white/40 text-xs mt-6">
+        {/* No account panel */}
+        <Card className="shadow-xl border-0" style={{ background: "rgba(255,255,255,0.06)" }}>
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-start gap-3">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: "rgba(255,195,188,0.2)" }}
+              >
+                <UserPlus size={18} style={{ color: "#FFC3BC" }} />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-white font-medium text-sm">Don't have a JLT Portal account?</p>
+                <p className="text-white/60 text-xs leading-relaxed">
+                  Access to the JLT Portal and CRM is by invitation only. If you're a JLT agent and
+                  haven't received your login details yet, please contact the JLT Memberships team to
+                  get set up.
+                </p>
+                <a
+                  href="mailto:memberships@thejltgroup.co.uk?subject=JLT Portal Account Request"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium mt-1 hover:underline"
+                  style={{ color: "#FFC3BC" }}
+                >
+                  <Mail size={13} />
+                  memberships@thejltgroup.co.uk
+                </a>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <p className="text-center text-white/30 text-xs mt-4">
           © {new Date().getFullYear()} JLT Group. All rights reserved.
         </p>
       </div>

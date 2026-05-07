@@ -74,7 +74,7 @@ router.get("/authorize", async (req: Request, res: Response) => {
   const sessionCookie = cookieMap.get(COOKIE_NAME);
   if (!sessionCookie) {
     const returnUrl = encodeURIComponent(req.originalUrl);
-    return res.redirect(`/login?returnTo=${returnUrl}`);
+    return res.redirect(`/oauth2/login?returnTo=${returnUrl}`);
   }
 
   // Verify session using jose (same as core SDK)
@@ -86,7 +86,7 @@ router.get("/authorize", async (req: Request, res: Response) => {
     if (!openId) throw new Error("Missing openId");
   } catch {
     const returnUrl = encodeURIComponent(req.originalUrl);
-    return res.redirect(`/login?returnTo=${returnUrl}`);
+    return res.redirect(`/oauth2/login?returnTo=${returnUrl}`);
   }
 
   // Load user by openId

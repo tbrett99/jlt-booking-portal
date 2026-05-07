@@ -6,6 +6,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ViewModeProvider, useViewMode } from "./contexts/ViewModeContext";
 import LoginPage from "./pages/LoginPage";
+import OAuthLoginPage from "./pages/OAuthLoginPage";
 import AgentDashboard from "./pages/agent/AgentDashboard";
 import RegisterBooking from "./pages/agent/RegisterBooking";
 import AgentBookingDetail from "./pages/agent/AgentBookingDetail";
@@ -160,6 +161,8 @@ function AuthRouter() {
       <Switch>
         <Route path="/" component={LoginPage} />
         <Route path="/login" component={LoginPage} />
+        {/* Dedicated OAuth login page — shown when /api/oauth2/authorize redirects unauthenticated users */}
+        <Route path="/oauth2/login" component={OAuthLoginPage} />
         <Route path="/reset-password" component={ResetPasswordPage} />
         {/* Public payment pages — no auth required */}
         <Route path="/payment/result" component={PaymentResult} />
@@ -229,6 +232,8 @@ function AuthRouter() {
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
+          {/* OAuth login page — auto-redirects logged-in users back to authorize */}
+          <Route path="/oauth2/login" component={OAuthLoginPage} />
           <Route component={NotFound} />
         </Switch>
         </OnboardingGate>
@@ -264,6 +269,8 @@ function AuthRouter() {
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
+          {/* OAuth login page — auto-redirects logged-in users back to authorize */}
+          <Route path="/oauth2/login" component={OAuthLoginPage} />
           <Route component={NotFound} />
         </Switch>
       </PortalLayout>
@@ -326,6 +333,8 @@ function AuthRouter() {
         <Route path="/crm/recruitment/:id" component={RecruitmentProspectDetail} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/unsubscribe" component={UnsubscribePage} />
+        {/* OAuth login page — auto-redirects logged-in users back to authorize */}
+        <Route path="/oauth2/login" component={OAuthLoginPage} />
         <Route component={NotFound} />
       </Switch>
     </PortalLayout>
