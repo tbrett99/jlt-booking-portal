@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `crmEmail` varchar(320);

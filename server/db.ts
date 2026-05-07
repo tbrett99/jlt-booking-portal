@@ -1129,7 +1129,7 @@ export async function markPasswordResetTokenUsed(tokenId: number) {
 
 export async function updateUserProfile(
   userId: number,
-  data: { name?: string; email?: string; phone?: string }
+  data: { name?: string; email?: string; phone?: string; crmEmail?: string | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -1137,6 +1137,7 @@ export async function updateUserProfile(
   if (data.name !== undefined) updateSet.name = data.name;
   if (data.email !== undefined) updateSet.email = data.email;
   if (data.phone !== undefined) updateSet.phone = data.phone;
+  if (data.crmEmail !== undefined) updateSet.crmEmail = data.crmEmail || null;
   if (Object.keys(updateSet).length === 0) return;
   await db.update(users).set(updateSet as any).where(eq(users.id, userId));
 }

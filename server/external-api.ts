@@ -86,15 +86,26 @@ router.post("/register-booking", async (req: Request, res: Response) => {
     const db = await getDb();
     if (!db) return res.status(503).json({ error: "Database unavailable" });
 
+    const normalizedEmail = agentEmail.toLowerCase().trim();
+    // First try matching by primary portal email, then fall back to crmEmail alias
     const agentResults = await db
       .select()
       .from(users)
-      .where(eq(users.email, agentEmail.toLowerCase().trim()))
+      .where(eq(users.email, normalizedEmail))
       .limit(1);
-    const agent = agentResults[0];
+    let agent = agentResults[0];
+    if (!agent) {
+      // Try CRM email alias
+      const aliasResults = await db
+        .select()
+        .from(users)
+        .where(eq(users.crmEmail, normalizedEmail))
+        .limit(1);
+      agent = aliasResults[0];
+    }
     if (!agent) {
       return res.status(404).json({
-        error: `No agent account found with email: ${agentEmail}. Please ensure the agent is registered on the JLT portal.`,
+        error: `No agent account found with email: ${agentEmail}. Please ensure the agent is registered on the JLT portal, or ask them to set their CRM email alias in their profile.`,
       });
     }
     if (agent.role !== "agent" && agent.role !== "admin" && agent.role !== "super_admin") {

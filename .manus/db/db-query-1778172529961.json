@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE users SET crmEmail = 'hello@loupr.com' WHERE id IN (47, 760);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute UPDATE users SET crmEmail = 'hello@loupr.com' WHERE id IN (47, 760);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 265
+}

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Loader2, User, Lock, Eye, EyeOff } from "lucide-react";
+import { Loader2, User, Lock, Eye, EyeOff, Link2 } from "lucide-react";
 
 export default function ProfilePage() {
   const { user } = useAuth();
@@ -18,6 +18,7 @@ export default function ProfilePage() {
   const [name, setName] = useState(user?.name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [phone, setPhone] = useState((user as any)?.phone ?? "");
+  const [crmEmail, setCrmEmail] = useState((user as any)?.crmEmail ?? "");
 
   // Sync when user loads
   useEffect(() => {
@@ -25,6 +26,7 @@ export default function ProfilePage() {
       setName(user.name ?? "");
       setEmail(user.email ?? "");
       setPhone((user as any).phone ?? "");
+      setCrmEmail((user as any).crmEmail ?? "");
     }
   }, [user]);
 
@@ -56,7 +58,7 @@ export default function ProfilePage() {
 
   const handleProfileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateProfileMutation.mutate({ name, email, phone });
+    updateProfileMutation.mutate({ name, email, phone, crmEmail: crmEmail || null });
   };
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
@@ -129,6 +131,22 @@ export default function ProfilePage() {
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="profile-crm-email" className="flex items-center gap-1.5">
+                  <Link2 size={13} className="text-muted-foreground" />
+                  CRM email alias <span className="text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <Input
+                  id="profile-crm-email"
+                  type="email"
+                  placeholder="e.g. hello@loupr.com"
+                  value={crmEmail}
+                  onChange={(e) => setCrmEmail(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  If you use a different email address in the CRM (e.g. Tom&apos;s system), enter it here so bookings are automatically linked to your portal account.
+                </p>
               </div>
               <Button
                 type="submit"

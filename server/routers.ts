@@ -376,6 +376,7 @@ export const appRouter = router({
         name: z.string().min(1).optional(),
         email: z.string().email().optional(),
         phone: z.string().optional(),
+        crmEmail: z.string().email().nullable().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         await updateUserProfile(ctx.user.id, input);

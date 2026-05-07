@@ -28,6 +28,7 @@ export const users = mysqlTable("users", {
   credentialsSentAt: timestamp("credentialsSentAt"), // when login credentials were last sent
   portalStatus: mysqlEnum("portalStatus", ["onboarding", "active"]).default("onboarding").notNull(),
   crmAccess: boolean("crmAccess").default(false).notNull(), // Whether this agent can access the CRM via Open CRM button
+  crmEmail: varchar("crmEmail", { length: 320 }), // Optional CRM email alias (e.g. hello@loupr.com) — used to match bookings from external CRM
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
