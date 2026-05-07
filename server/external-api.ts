@@ -13,7 +13,6 @@ import crypto from "crypto";
 import { eq, and } from "drizzle-orm";
 import { getDb, createBooking } from "./db";
 import { apiKeys, users } from "../drizzle/schema";
-import { notifyOwner } from "./_core/notification";
 
 const router = Router();
 
@@ -147,12 +146,6 @@ router.post("/register-booking", async (req: Request, res: Response) => {
     if (!booking) {
       return res.status(500).json({ error: "Failed to create booking" });
     }
-
-    // 8. Notify JLT admins
-    await notifyOwner({
-      title: `New booking registered via CRM — ${booking.clientName}`,
-      content: `${agent.name} registered booking for ${booking.clientName} (${destination}, departs ${parsedDepartureDate.toLocaleDateString("en-GB")}) via the CRM integration. Booking ID: #${booking.id}${crmRef ? ` | CRM Ref: ${crmRef}` : ""}`,
-    }).catch(() => {});
 
     // 10. Return success
     const portalUrl = `https://portal.thejltgroup.co.uk/bookings/${booking.id}`;
