@@ -3904,5 +3904,63 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         return { success: true };
       }),
   }),
+
+  // ─── OAuth Clients ─────────────────────────────────────────────────────────
+  oauthClients: router({
+    // List all registered OAuth clients (admin only)
+    list: protectedProcedure.query(async ({ ctx }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) throw new TRPCError({ code: 'FORBIDDEN' });
+      const { oauthClients } = await import('../drizzle/schema');
+      const { getDb } = await import('./db');
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return db.select().from(oauthClients).orderBy(oauthClients.createdAt);
+    }),
+
+    // Register a new OAuth client (admin only)
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1).max(100),
+        redirectUri: z.string().url(),
+        logoUrl: z.string().url().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (!['admin', 'super_admin'].includes(ctx.user.role)) throw new TRPCError({ code: 'FORBIDDEN' });
+        const { oauthClients } = await import('../drizzle/schema');
+        const { getDb } = await import('./db');
+        const cryptoMod = await import('crypto');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        const clientId = 'jlt_cid_' + cryptoMod.default.randomBytes(16).toString('hex');
+        const rawSecret = 'jlt_cs_' + cryptoMod.default.randomBytes(24).toString('hex');
+        const secretHash = cryptoMod.default.createHash('sha256').update(rawSecret).digest('hex');
+        const secretPrefix = rawSecret.slice(0, 10);
+        await db.insert(oauthClients).values({
+          name: input.name,
+          clientId,
+          clientSecretHash: secretHash,
+          clientSecretPrefix: secretPrefix,
+          redirectUri: input.redirectUri,
+          logoUrl: input.logoUrl ?? null,
+          isActive: true,
+          createdById: ctx.user.id,
+        } as any);
+        return { clientId, rawSecret };
+      }),
+
+    // Revoke (deactivate) an OAuth client (admin only)
+    revoke: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (!['admin', 'super_admin'].includes(ctx.user.role)) throw new TRPCError({ code: 'FORBIDDEN' });
+        const { oauthClients } = await import('../drizzle/schema');
+        const { getDb } = await import('./db');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        await db.update(oauthClients).set({ isActive: false }).where(eq(oauthClients.id, input.id));
+        return { success: true };
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;

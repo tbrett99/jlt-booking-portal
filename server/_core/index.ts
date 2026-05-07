@@ -27,6 +27,7 @@ import {
 } from "../gocardless-db";
 import { notifyOwner } from "./notification";
 import { externalApiRouter } from "../external-api";
+import { oauth2Router } from "../oauth2-server";
 import { joinSessions, agentCrmProfiles } from "../../drizzle/schema";
 import { createAgentUser } from "../db";
 import { getMonthlyAmount } from "../../shared/membership";
@@ -1484,6 +1485,7 @@ async function startServer() {
 
   // External CRM API
   app.use("/api/external", externalApiRouter);
+  app.use("/api/oauth2", oauth2Router);
 
   // tRPC API
   app.use(

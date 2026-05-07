@@ -1323,3 +1323,33 @@ export const apiKeys = mysqlTable("api_keys", {
 
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type InsertApiKey = typeof apiKeys.$inferInsert;
+
+// ─── OAuth 2.0 Identity Provider ─────────────────────────────────────────────
+
+export const oauthClients = mysqlTable("oauth_clients", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(), // Friendly name e.g. "Tom's CRM"
+  clientId: varchar("clientId", { length: 64 }).notNull().unique(), // Public client identifier
+  clientSecretHash: varchar("clientSecretHash", { length: 255 }).notNull(), // SHA-256 hash of secret
+  clientSecretPrefix: varchar("clientSecretPrefix", { length: 10 }).notNull(), // First 8 chars for display
+  redirectUri: varchar("redirectUri", { length: 500 }).notNull(), // Allowed callback URL
+  logoUrl: varchar("logoUrl", { length: 500 }), // Optional logo shown on consent screen
+  isActive: boolean("isActive").default(true).notNull(),
+  createdById: int("createdById").notNull(), // FK → users.id
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type OAuthClient = typeof oauthClients.$inferSelect;
+export type InsertOAuthClient = typeof oauthClients.$inferInsert;
+
+export const oauthCodes = mysqlTable("oauth_codes", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 128 }).notNull().unique(), // The auth code sent to client
+  clientId: varchar("clientId", { length: 64 }).notNull(), // FK → oauth_clients.clientId
+  userId: int("userId").notNull(), // FK → users.id (the agent who authorised)
+  redirectUri: varchar("redirectUri", { length: 500 }).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(), // Short-lived: 10 minutes
+  usedAt: timestamp("usedAt"), // Null until exchanged; prevents replay
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type OAuthCode = typeof oauthCodes.$inferSelect;
+export type InsertOAuthCode = typeof oauthCodes.$inferInsert;

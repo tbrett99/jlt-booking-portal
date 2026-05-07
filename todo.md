@@ -2079,3 +2079,14 @@
 - [x] Backend: apiKeys.list / apiKeys.create / apiKeys.revoke tRPC procedures (admin only)
 - [x] Frontend: Admin → API Keys page at /admin/api-keys — generate/revoke keys, show prefix only after creation, one-time key reveal dialog
 - [x] Docs: API spec document for Tom produced and delivered
+
+## OAuth 2.0 Identity Provider (May 7)
+- [x] DB: oauth_clients table created (migration 0078 applied)
+- [x] DB: oauth_codes table created (migration 0078 applied)
+- [x] Backend: GET /api/oauth2/authorize — validates session cookie, shows HTML consent screen, issues auth code on approval
+- [x] Backend: POST /api/oauth2/token — exchanges auth code for JWT access token (HS256, 1h expiry)
+- [x] Backend: GET /api/oauth2/userinfo — returns agent profile (id, email, name, openId, role) from Bearer token
+- [x] Frontend: OAuth consent screen served as inline HTML from the authorize endpoint
+- [x] Frontend: Admin → OAuth Clients page at /admin/oauth-clients — register/revoke trusted client apps, one-time secret reveal
+- [x] Sidebar: OAuth Clients nav item added under System section for admin users
+- [x] Docs: OAuth integration spec for Tom produced and delivered
