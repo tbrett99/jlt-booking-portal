@@ -61,6 +61,7 @@ export const bookings = mysqlTable("bookings", {
   finalSupplierPaymentNotified: boolean("finalSupplierPaymentNotified").default(false).notNull(),
   paymentDateDismissed: boolean("paymentDateDismissed").default(false).notNull(), // Suppress from missing-payment-date dashboard alert
   isPersonalBooking: boolean("isPersonalBooking").default(false).notNull(), // Agent's own travel — no commission, payment date = departure date
+  crmRef: varchar("crmRef", { length: 100 }), // External CRM booking reference (e.g. Tom's CRM ref L71)
   commissionPreAuthorised: boolean("commissionPreAuthorised").default(false).notNull(), // Agent pre-authorises auto-claim when file becomes claimable
   commissionVat: decimal("commissionVat", { precision: 10, scale: 2 }), // VAT amount set by admin when marking claimable
   // Current pipeline stage
@@ -1305,3 +1306,20 @@ export const recruitmentStageHistory = mysqlTable("recruitment_stage_history", {
   changedAt: timestamp("changedAt").defaultNow().notNull(),
 });
 export type RecruitmentStageHistory = typeof recruitmentStageHistory.$inferSelect;
+
+// ─── External API Keys ────────────────────────────────────────────────────────
+
+export const apiKeys = mysqlTable("api_keys", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(), // Friendly name e.g. "Tom's CRM"
+  keyHash: varchar("keyHash", { length: 255 }).notNull(), // SHA-256 hash of the raw key
+  keyPrefix: varchar("keyPrefix", { length: 10 }).notNull(), // First 8 chars of raw key for display
+  agencyName: varchar("agencyName", { length: 100 }), // Optional agency name
+  createdById: int("createdById").notNull(), // FK → users.id
+  lastUsedAt: timestamp("lastUsedAt"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type InsertApiKey = typeof apiKeys.$inferInsert;

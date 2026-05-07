@@ -3850,5 +3850,59 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         return { success: true };
       }),
   }),
+
+  // ─── API Keys (CRM Integration) ─────────────────────────────────────────────
+  apiKeys: router({
+    // List all API keys (admin only)
+    list: protectedProcedure.query(async ({ ctx }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) throw new TRPCError({ code: 'FORBIDDEN' });
+      const { apiKeys } = await import('../drizzle/schema');
+      const { getDb } = await import('./db');
+      const { desc } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return db.select().from(apiKeys).orderBy(desc(apiKeys.createdAt));
+    }),
+
+    // Generate a new API key (admin only)
+    create: protectedProcedure
+      .input(z.object({ name: z.string().min(1), agencyName: z.string().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        if (!['admin', 'super_admin'].includes(ctx.user.role)) throw new TRPCError({ code: 'FORBIDDEN' });
+        const { apiKeys } = await import('../drizzle/schema');
+        const { getDb } = await import('./db');
+        const crypto = await import('crypto');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        // Generate a secure random key: jlt_ prefix + 40 hex chars
+        const rawKey = 'jlt_' + crypto.randomBytes(20).toString('hex');
+        const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
+        const keyPrefix = rawKey.slice(0, 8);
+        await db.insert(apiKeys).values({
+          name: input.name,
+          agencyName: input.agencyName ?? null,
+          keyHash,
+          keyPrefix,
+          createdById: ctx.user.id,
+          isActive: true,
+        } as any);
+        // Return the raw key ONCE — never stored in plaintext
+        return { rawKey };
+      }),
+
+    // Revoke an API key (admin only)
+    revoke: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (!['admin', 'super_admin'].includes(ctx.user.role)) throw new TRPCError({ code: 'FORBIDDEN' });
+        const { apiKeys } = await import('../drizzle/schema');
+        const { getDb } = await import('./db');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        await db.update(apiKeys).set({ isActive: false }).where(eq(apiKeys.id, input.id));
+        return { success: true };
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;

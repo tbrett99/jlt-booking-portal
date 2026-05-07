@@ -2071,3 +2071,11 @@
 - [x] Add route in App.tsx for /commission-timeline
 - [x] Add sidebar nav entry under Commissions for agents
 - [x] Remove Timeline tab from AgentCommissions page
+
+## CRM API Integration (May 7)
+- [x] DB: crmRef column added to bookings table (migration 0077 applied)
+- [x] DB: api_keys table created (id, name, keyHash, keyPrefix, agencyName, createdById, lastUsedAt, isActive, createdAt)
+- [x] Backend: POST /api/external/register-booking — public endpoint, API key auth via X-API-Key header, matches agent by email, creates booking in New Booking stage, notifies JLT admins, returns bookingId + portalUrl
+- [x] Backend: apiKeys.list / apiKeys.create / apiKeys.revoke tRPC procedures (admin only)
+- [x] Frontend: Admin → API Keys page at /admin/api-keys — generate/revoke keys, show prefix only after creation, one-time key reveal dialog
+- [x] Docs: API spec document for Tom produced and delivered

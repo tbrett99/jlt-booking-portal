@@ -7,7 +7,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -347,6 +347,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Inbox Config", href: "/admin/inbox-config", icon: <Settings size={16} /> },
         { label: "Inbox Search History", href: "/admin/inbox-audit", icon: <Mail size={16} /> },
         { label: "Agent Email Log", href: "/admin/agent-email-log", icon: <Mail size={16} /> },
+        ...(user?.role === "super_admin" || user?.role === "admin"
+          ? [{ label: "API Keys", href: "/admin/api-keys", icon: <Key size={16} /> }]
+          : []),
       ],
     },
   ];

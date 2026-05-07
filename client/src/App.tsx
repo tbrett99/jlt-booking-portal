@@ -47,6 +47,7 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ProfilePage from "./pages/ProfilePage";
 import BookingDocuments from "./pages/BookingDocuments";
 import AdminInboxConfig from "./pages/admin/AdminInboxConfig";
+import AdminApiKeys from "./pages/admin/AdminApiKeys";
 import AdminInboxAudit from "./pages/admin/AdminInboxAudit";
 import AgentEmailLog from "./pages/admin/AgentEmailLog";
 import AbandonedSignups from "./pages/admin/AbandonedSignups";
@@ -303,6 +304,7 @@ function AuthRouter() {
         <Route path="/admin/inbox-config" component={AdminInboxConfig} />
         <Route path="/admin/inbox-audit" component={AdminInboxAudit} />
         <Route path="/admin/agent-email-log" component={AgentEmailLog} />
+        <Route path="/admin/api-keys" component={AdminApiKeys} />
         {/* CRM Routes */}
         <Route path="/crm/pipeline" component={CrmPipeline} />
         <Route path="/crm/prospects" component={CrmProspects} />

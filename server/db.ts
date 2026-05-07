@@ -220,6 +220,7 @@ export async function createBooking(data: {
   passengers?: number;
   numberOfNights?: number;
   isPersonalBooking?: boolean;
+  crmRef?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -240,6 +241,7 @@ export async function createBooking(data: {
     passengers: data.passengers,
     numberOfNights: data.numberOfNights,
     isPersonalBooking: data.isPersonalBooking ?? false,
+    crmRef: data.crmRef,
     finalSupplierPaymentDate,
     currentStage: "New Booking",
   } as any);
