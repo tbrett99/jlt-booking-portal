@@ -140,11 +140,39 @@ const STEP_COLOURS_ABANDONED: Record<string, string> = {
   "Started application": "bg-gray-100 text-gray-700",
 };
 
+// ─── Stage transitions (mirrors RecruitmentProspectDetail) ─────────────────────
+
+const STAGE_TRANSITIONS: Record<string, string[]> = {
+  new_enquiry: ["application_received", "archived"],
+  application_received: ["ar_approved", "ar_declined", "waitlisted"],
+  ar_approved: ["discovery_call_booked", "waitlisted", "archived"],
+  ar_declined: ["waitlisted", "archived"],
+  discovery_call_booked: ["discovery_call_complete", "rebook_required", "did_not_turn_up"],
+  rebook_required: ["discovery_call_booked", "did_not_turn_up", "waitlisted", "archived"],
+  did_not_turn_up: ["discovery_call_booked", "rebook_required", "waitlisted", "archived"],
+  discovery_call_complete: ["onboarding_approved", "onboarding_declined", "waitlisted"],
+  onboarding_approved: ["won", "archived"],
+  onboarding_declined: ["waitlisted", "archived"],
+  waitlisted: ["ar_approved", "archived"],
+  won: ["archived"],
+  archived: [],
+};
+
 // ─── Tab: Prospects Pipeline ───────────────────────────────────────────────────
 
 function ProspectsPipelineTab() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
+  const utils = trpc.useUtils();
+
+  const updateStage = trpc.recruitment.updateStage.useMutation({
+    onSuccess: (_, vars) => {
+      toast.success(`Moved to ${getStageBadge(vars.toStage).label}`);
+      utils.recruitment.listProspectsFiltered.invalidate();
+      utils.recruitment.stageCounts.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const { data: prospects = [], isLoading } = trpc.recruitment.listProspectsFiltered.useQuery(
     { stage: stageFilter === "all" ? undefined : stageFilter, search: search || undefined },
@@ -229,6 +257,7 @@ function ProspectsPipelineTab() {
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Stage</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Move To</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Source</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Applied</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Enquired</th>
@@ -259,6 +288,31 @@ function ProspectsPipelineTab() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {new Date(p.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      {/* Inline stage change dropdown */}
+                      {(STAGE_TRANSITIONS[p.pipelineStage] ?? []).length > 0 ? (
+                        <Select
+                          value=""
+                          onValueChange={(toStage) => {
+                            if (toStage) updateStage.mutate({ id: p.id, toStage });
+                          }}
+                          disabled={updateStage.isPending}
+                        >
+                          <SelectTrigger className="h-7 text-xs w-44 border-dashed">
+                            <SelectValue placeholder="Move to..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(STAGE_TRANSITIONS[p.pipelineStage] ?? []).map((toStage) => (
+                              <SelectItem key={toStage} value={toStage} className="text-xs">
+                                {getStageBadge(toStage).label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/40">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <Link href={`/crm/recruitment/${p.id}`}>

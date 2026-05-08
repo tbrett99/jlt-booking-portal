@@ -190,7 +190,8 @@ const DEFAULT_WORKFLOW_EMAILS: Record<string, { subject: string; bodyHtml: strin
 
 async function seedDefaultWorkflows() {
   const existing = await listWorkflows();
-  if (existing.length > 0) return;
+  // Only seed if fewer than 13 workflows exist (full set)
+  if (existing.length >= 13) return;
 
   const STAGE_NAMES: Record<string, string> = {
     new_enquiry: "New Enquiry",

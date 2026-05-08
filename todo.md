@@ -2111,9 +2111,15 @@
 - [x] Removed Recruitment Pipeline Kanban from Marketing nav; Agent Recruitment is now the only recruitment nav entry
 
 ## Recruitment Email Workflow Builder
-- [ ] Schema: recruitment_workflows (id, stage, name, active), recruitment_workflow_emails (id, workflow_id, step_order, delay_hours, subject, body_html), recruitment_workflow_enrollments (id, prospect_id, workflow_id, current_step, next_send_at, cancelled_at) — run migration
-- [ ] Server: tRPC procedures for workflow CRUD (list, get, upsert steps, toggle active), enrollment/unenrollment helpers, processWorkflowEmails procedure
-- [ ] Seed default workflow emails from existing hardcoded stage emails into the new workflow tables
-- [ ] Workflow Builder UI: per-stage sequence editor, email step cards with delay/subject/body editor, enable/disable toggle per workflow
-- [ ] Wire enrollment on stage entry and unenrollment from all other workflows on stage change
-- [ ] Scheduled task to process and send pending workflow emails every hour
+- [x] Schema: recruitment_workflows, recruitment_workflow_emails, recruitment_workflow_enrollments tables — migration applied
+- [x] Server: tRPC procedures for workflow CRUD (list, get, upsert steps, toggle active), enrollment/unenrollment helpers, processWorkflowEmails procedure
+- [x] Seed default workflow emails from existing hardcoded stage emails into the new workflow tables
+- [x] Workflow Builder UI: per-stage sequence editor, email step cards with delay/subject/body editor, enable/disable toggle per workflow
+- [x] Wire enrollment on stage entry and unenrollment from all other workflows on stage change
+- [x] /api/scheduled/process-workflows endpoint added for scheduled task
+- [ ] Hourly scheduled task to process workflow emails (manus-config schedule not available in this environment)
+
+## Workflow & Recruitment Fixes (May 8)
+- [x] Fix workflow builder: seed all stage emails — cleared partial data, ran seed script, all 13 stages now seeded
+- [x] Fix Call Complete stage: inline stage dropdown now shows Onboarding Approved, Onboarding Declined, Waitlisted directly in the table
+- [x] Add inline stage change dropdown to each row in the Prospects Pipeline table (using STAGE_TRANSITIONS map)

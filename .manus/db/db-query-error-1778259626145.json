@@ -1,0 +1,8 @@
+{
+  "query": "SELECT rw.id, rw.stage, rw.name, rw.is_active, COUNT(rwe.id) as email_count FROM recruitment_workflows rw LEFT JOIN recruitment_workflow_emails rwe ON rwe.workflowId = rw.id GROUP BY rw.id, rw.stage, rw.name, rw.is_active ORDER BY rw.id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT rw.id, rw.stage, rw.name, rw.is_active, COUNT(rwe.id) as email_count FROM recruitment_workflows rw LEFT JOIN recruitment_workflow_emails rwe ON rwe.workflowId = rw.id GROUP BY rw.id, rw.stage, rw.name, rw.is_active ORDER BY rw.id;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'rw.is_active' in 'group statement'"
+  ]
+}
