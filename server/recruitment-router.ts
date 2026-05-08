@@ -622,7 +622,7 @@ async function sendStageEmail(
 <p>We've reviewed your application and we're delighted to let you know that you've been approved to move forward in our recruitment process!</p>
 <p>The next step is a short discovery call with our team. Please use the link below to book a time that works for you:</p>
 <p style="text-align:center;margin:24px 0;">
-  <a href="https://cal.com/thejltgroup" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
+  <a href="https://cal.com/jlt-group/jlt-discovery" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
     Book Your Discovery Call
   </a>
 </p>
@@ -664,7 +664,7 @@ async function sendStageEmail(
 <p>We noticed you weren't able to make it to your discovery call today. No worries — these things happen!</p>
 <p>If you'd still like to speak with us, please feel free to rebook at a time that suits you:</p>
 <p style="text-align:center;margin:24px 0;">
-  <a href="https://cal.com/thejltgroup" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
+  <a href="https://cal.com/jlt-group/jlt-discovery" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
     Rebook Your Discovery Call
   </a>
 </p>
