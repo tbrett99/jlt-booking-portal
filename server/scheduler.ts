@@ -479,7 +479,21 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly), recruitment follow-up (09:00 UTC) — inbox auto-import DISABLED");
+  // Recruitment workflow emails: every 15 minutes
+  // Processes pending enrollment steps (delayed follow-up emails) and sends via Resend.
+  cron.schedule("*/15 * * * *", async () => {
+    try {
+      const { processWorkflowEmailsInternal } = await import("./recruitment-workflow-router");
+      const result = await processWorkflowEmailsInternal();
+      if (result.sent > 0 || result.errors > 0) {
+        console.log(`[WorkflowScheduler] Processed ${result.processed} enrollments, sent ${result.sent} emails, ${result.errors} errors`);
+      }
+    } catch (err: any) {
+      console.error("[WorkflowScheduler] Error:", err?.message);
+    }
+  }, { timezone: "UTC" });
+
+  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min) — inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────

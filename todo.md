@@ -2123,3 +2123,8 @@
 - [x] Fix workflow builder: seed all stage emails — cleared partial data, ran seed script, all 13 stages now seeded
 - [x] Fix Call Complete stage: inline stage dropdown now shows Onboarding Approved, Onboarding Declined, Waitlisted directly in the table
 - [x] Add inline stage change dropdown to each row in the Prospects Pipeline table (using STAGE_TRANSITIONS map)
+
+## Onboarding Approved Email & Automation Engine
+- [x] Update Onboarding Approved workflow email: include sign-up steps, join link (portal.thejltgroup.co.uk/join), and first payment note
+- [x] Build email automation engine: fire 0-delay workflow emails automatically on stage entry (not just on manual Process Now click)
+- [x] Wire periodic scheduled task for delayed workflow emails (node-cron every 15 min in scheduler.ts)
