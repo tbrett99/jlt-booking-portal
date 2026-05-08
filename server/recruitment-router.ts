@@ -46,16 +46,9 @@ async function sendProspectEmail(opts: {
   try {
     const resend = getResend();
     const branding = await getEmailBrandingSettings();
-    const b = branding;
-    const headerBg = b?.headerBgColor ?? "#70FFE8";
-    const headerText = b?.headerTextColor ?? "#414141";
-    const bodyBg = b?.bodyBgColor ?? "#f5f5f5";
-    const cardBg = b?.cardBgColor ?? "#ffffff";
-    const accent = b?.accentColor ?? "#02E6D2";
-    const companyName = b?.companyName ?? "JLT Group";
-    const logoHtml = b?.logoUrl
-      ? `<img src="${b.logoUrl}" alt="${companyName}" style="max-height:60px;max-width:200px;display:block;margin:0 auto;object-fit:contain;" />`
-      : `<span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:${headerText};">${companyName}</span>`;
+    const logoHtml = branding?.logoUrl
+      ? `<img src="${branding.logoUrl}" alt="JLT Group" style="max-height:60px;max-width:200px;display:block;margin:0 auto;object-fit:contain;" />`
+      : `<span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:#414141;">JLT Group</span>`;
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -65,17 +58,17 @@ async function sendProspectEmail(opts: {
   <title>${opts.subject}</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 </head>
-<body style="margin:0;padding:0;background-color:${bodyBg};font-family:'Poppins',Arial,sans-serif;">
-  <div style="width:100%;background-color:${bodyBg};padding:20px 0;">
-    <div style="max-width:600px;width:100%;margin:0 auto;background:${cardBg};border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
-      <div style="background-color:${headerBg};padding:24px 40px;text-align:center;">
+<body style="margin:0;padding:0;background-color:#FFF6ED;font-family:'Poppins',Arial,sans-serif;">
+  <div style="width:100%;background-color:#FFF6ED;padding:32px 0;">
+    <div style="max-width:600px;width:100%;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.07);">
+      <div style="background-color:#70FFE8;padding:28px 40px;text-align:center;">
         ${logoHtml}
       </div>
-      <div style="padding:32px 40px;color:#414141;font-family:'Poppins',Arial,sans-serif;font-size:15px;line-height:1.7;">
+      <div style="padding:36px 40px;color:#414141;font-family:'Poppins',Arial,sans-serif;font-size:15px;line-height:1.8;">
         ${opts.bodyHtml}
       </div>
-      <div style="padding:20px 40px;text-align:center;background-color:#fafafa;font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#888;">
-        &copy; ${new Date().getFullYear()} ${companyName}. All rights reserved.
+      <div style="padding:20px 40px;text-align:center;background-color:#FFF6ED;font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#888;">
+        &copy; ${new Date().getFullYear()} JLT Group. All rights reserved.
       </div>
     </div>
   </div>
@@ -102,22 +95,24 @@ async function sendProspectusEmail(opts: {
 }): Promise<void> {
   const subject = "Your JLT Group Prospectus";
   const bodyHtml = `
-<p>Hi ${opts.firstName},</p>
-<p>Thank you for your interest in joining the JLT Group travel agency team! We're excited to share more about what we do.</p>
-<p>Please find your copy of our prospectus below &mdash; we recommend reading it before completing your application:</p>
-<p style="text-align:center;margin:24px 0;">
-  <a href="${PROSPECTUS_URL}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">View JLT Prospectus</a>
+<p style="margin:0 0 16px;">Hi ${opts.firstName},</p>
+<p style="margin:0 0 16px;">Thank you for your interest in joining JLT Group. We are really excited to share more about who we are and what we offer.</p>
+<p style="margin:0 0 16px;">Start by reading our prospectus. It covers everything you need to know about life at JLT Group and what makes us different:</p>
+<p style="text-align:center;margin:28px 0;">
+  <a href="${PROSPECTUS_URL}" style="display:inline-block;background:#02E6D2;color:#414141;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Read the JLT Prospectus</a>
 </p>
-<p>While you're getting to know us, we'd also love for you to join our exclusive Facebook community for JLT agents and prospective members. <strong>Please make sure you answer the membership questions when you request to join so we can approve you quickly.</strong></p>
-<p style="text-align:center;margin:24px 0;">
-  <a href="${FACEBOOK_GROUP_URL}" style="display:inline-block;background:#1877F2;color:#ffffff;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">Join Our Facebook Group</a>
+<p style="margin:0 0 16px;">We also have a fantastic Facebook community where current agents and prospective members connect, share tips, and get a real feel for the JLT culture. We would love for you to join us there. When you request to join, please answer the membership questions so we can approve you straight away:</p>
+<p style="text-align:center;margin:28px 0;">
+  <a href="${FACEBOOK_GROUP_URL}" style="display:inline-block;background:#414141;color:#ffffff;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Join the JLT Facebook Community</a>
 </p>
-<p>Once you've had a chance to read through the prospectus, we'd love to learn more about you. Please complete our short application form:</p>
-<p style="text-align:center;margin:24px 0;">
-  <a href="${opts.applicationUrl}" style="display:inline-block;background:#414141;color:#ffffff;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">Complete Your Application</a>
+<hr style="border:none;border-top:1px solid #e8e8e8;margin:28px 0;"/>
+<p style="margin:0 0 12px;"><strong>Ready for the next step?</strong></p>
+<p style="margin:0 0 16px;">Once you have read the prospectus, we would love to learn more about you by completing a short application form. There is absolutely no commitment involved in doing so. The form simply helps us understand where you are right now and allows us to organise a discovery call that is completely tailored to you and your goals. It takes just a few minutes and makes all the difference.</p>
+<p style="text-align:center;margin:28px 0;">
+  <a href="${opts.applicationUrl}" style="display:inline-block;background:#70FFE8;color:#414141;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Complete Your Application</a>
 </p>
-<p>If you have any questions in the meantime, feel free to reply to this email and we'll be happy to help.</p>
-<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
+<p style="margin:0 0 16px;">If you have any questions at any point, just reply to this email and we will be happy to help.</p>
+<p style="margin:0;">Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
 
   await sendProspectEmail({
     toEmail: opts.toEmail,
