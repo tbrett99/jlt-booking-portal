@@ -1,0 +1,25 @@
+{
+  "query": "SELECT pipelineStage, COUNT(*) as count FROM recruitment_prospects GROUP BY pipelineStage ORDER BY count DESC;\nSELECT COUNT(*) as total FROM recruitment_prospects;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT pipelineStage, COUNT(*) as count FROM recruitment_prospects GROUP BY pipelineStage ORDER BY count DESC;\nSELECT COUNT(*) as total FROM recruitment_prospects;",
+  "rows": [
+    {
+      "pipelineStage": "new_enquiry",
+      "count": "4"
+    },
+    {
+      "pipelineStage": "application_received",
+      "count": "1"
+    },
+    {
+      "pipelineStage": "ar_declined",
+      "count": "1"
+    }
+  ],
+  "messages": [
+    "total",
+    "6"
+  ],
+  "stdout": "pipelineStage\tcount\nnew_enquiry\t4\napplication_received\t1\nar_declined\t1\ntotal\n6\n",
+  "stderr": "",
+  "execution_time_ms": 76
+}

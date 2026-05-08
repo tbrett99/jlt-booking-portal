@@ -1,0 +1,43 @@
+{
+  "query": "\nSELECT id, firstName, lastName, email, pipelineStage, applicationSubmittedAt, createdAt, LEFT(adminNotes, 100) as adminNotes\nFROM recruitment_prospects\nWHERE email = 'maxillingworth@icloud.com'\nORDER BY createdAt DESC\nLIMIT 5;\n\nSELECT id, firstName, lastName, email, stage, createdAt\nFROM prospects\nWHERE email = 'maxillingworth@icloud.com'\nORDER BY createdAt DESC\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, firstName, lastName, email, pipelineStage, applicationSubmittedAt, createdAt, LEFT(adminNotes, 100) as adminNotes\nFROM recruitment_prospects\nWHERE email = 'maxillingworth@icloud.com'\nORDER BY createdAt DESC\nLIMIT 5;\n\nSELECT id, firstName, lastName, email, stage, createdAt\nFROM prospects\nWHERE email = 'maxillingworth@icloud.com'\nORDER BY createdAt DESC\nLIMIT 5;\n",
+  "rows": [
+    {
+      "id": "30003",
+      "firstName": "max",
+      "lastName": "test",
+      "email": "maxillingworth@icloud.com",
+      "pipelineStage": "application_received",
+      "applicationSubmittedAt": "2026-05-08 14:19:08",
+      "createdAt": "2026-05-08 14:17:43",
+      "adminNotes": "APP_TOKEN:01lXJQxJIfXfwqVkKWWSMPL5C9Hr0BT9"
+    },
+    {
+      "id": "30002",
+      "firstName": "max",
+      "lastName": "test",
+      "email": "maxillingworth@icloud.com",
+      "pipelineStage": "new_enquiry",
+      "applicationSubmittedAt": "NULL",
+      "createdAt": "2026-05-08 14:04:12",
+      "adminNotes": "APP_TOKEN:GV2qa8hcxAKdEMCCzfKT5B5Ku-tVriKf"
+    },
+    {
+      "id": "30001",
+      "firstName": "max",
+      "lastName": "test",
+      "email": "maxillingworth@icloud.com",
+      "pipelineStage": "new_enquiry",
+      "applicationSubmittedAt": "NULL",
+      "createdAt": "2026-05-08 13:55:50",
+      "adminNotes": "APP_TOKEN:zsfhMiTG51HGJkPBv2y07dv6wo9WtRKp"
+    }
+  ],
+  "messages": [
+    "id\tfirstName\tlastName\temail\tstage\tcreatedAt",
+    "30009\tmax\ttest\tmaxillingworth@icloud.com\tNew Enquiry\t2026-05-08 14:17:43"
+  ],
+  "stdout": "id\tfirstName\tlastName\temail\tpipelineStage\tapplicationSubmittedAt\tcreatedAt\tadminNotes\n30003\tmax\ttest\tmaxillingworth@icloud.com\tapplication_received\t2026-05-08 14:19:08\t2026-05-08 14:17:43\tAPP_TOKEN:01lXJQxJIfXfwqVkKWWSMPL5C9Hr0BT9\n30002\tmax\ttest\tmaxillingworth@icloud.com\tnew_enquiry\tNULL\t2026-05-08 14:04:12\tAPP_TOKEN:GV2qa8hcxAKdEMCCzfKT5B5Ku-tVriKf\n30001\tmax\ttest\tmaxillingworth@icloud.com\tnew_enquiry\tNULL\t2026-05-08 13:55:50\tAPP_TOKEN:zsfhMiTG51HGJkPBv2y07dv6wo9WtRKp\nid\tfirstName\tlastName\temail\tstage\tcreatedAt\n30009\tmax\ttest\tmaxillingworth@icloud.com\tNew Enquiry\t2026-05-08 14:17:43\n",
+  "stderr": "",
+  "execution_time_ms": 65
+}

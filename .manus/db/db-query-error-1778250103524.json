@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT id, first_name, last_name, email, pipeline_stage, application_submitted_at, created_at, admin_notes\nFROM recruitment_prospects\nWHERE email = 'maxillingworth@icloud.com'\nORDER BY created_at DESC\nLIMIT 5;\n\nSELECT id, first_name, last_name, email, stage, created_at\nFROM prospects\nWHERE email = 'maxillingworth@icloud.com'\nORDER BY created_at DESC\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, first_name, last_name, email, pipeline_stage, application_submitted_at, created_at, admin_notes\nFROM recruitment_prospects\nWHERE email = 'maxillingworth@icloud.com'\nORDER BY created_at DESC\nLIMIT 5;\n\nSELECT id, first_name, last_name, email, stage, created_at\nFROM prospects\nWHERE email = 'maxillingworth@icloud.com'\nORDER BY created_at DESC\nLIMIT 5;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'first_name' in 'field list'"
+  ]
+}

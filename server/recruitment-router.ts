@@ -23,7 +23,7 @@ import {
 import { PROSPECT_FROM, PROSPECT_REPLY_TO } from "./resend-email";
 import { Resend } from "resend";
 import { ENV } from "./_core/env";
-import { getEmailBrandingSettings } from "./crm-db";
+import { getEmailBrandingSettings, getProspectByEmail, moveProspectStage } from "./crm-db";
 
 // ─── Prospectus / Application email helpers ───────────────────────────────────
 
@@ -311,7 +311,15 @@ export const recruitmentRouter = router({
         applicationSubmittedAt: new Date(),
         pipelineStage: "application_received",
       });
-
+      // Sync CRM prospect stage to "AR Submitted" if a matching CRM prospect exists
+      try {
+        const crmProspect = await getProspectByEmail(prospect.email);
+        if (crmProspect && crmProspect.stage === "New Enquiry") {
+          await moveProspectStage(crmProspect.id, "AR Submitted", null, "Application form submitted (auto-synced from recruitment pipeline)");
+        }
+      } catch (syncErr) {
+        console.error("[Recruitment] Failed to sync CRM prospect stage:", syncErr);
+      }
       // Log stage change
       await moveRecruitmentProspectStage({
         prospectId: prospect.id,

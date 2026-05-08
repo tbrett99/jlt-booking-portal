@@ -1,0 +1,40 @@
+{
+  "query": "SELECT id, firstName, lastName, email, pipelineStage, applicationSubmittedAt, archivedAt, createdAt FROM recruitment_prospects WHERE email = 'maxillingworth@icloud.com' ORDER BY createdAt DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, firstName, lastName, email, pipelineStage, applicationSubmittedAt, archivedAt, createdAt FROM recruitment_prospects WHERE email = 'maxillingworth@icloud.com' ORDER BY createdAt DESC;",
+  "rows": [
+    {
+      "id": "30003",
+      "firstName": "max",
+      "lastName": "test",
+      "email": "maxillingworth@icloud.com",
+      "pipelineStage": "application_received",
+      "applicationSubmittedAt": "2026-05-08 14:19:08",
+      "archivedAt": "NULL",
+      "createdAt": "2026-05-08 14:17:43"
+    },
+    {
+      "id": "30002",
+      "firstName": "max",
+      "lastName": "test",
+      "email": "maxillingworth@icloud.com",
+      "pipelineStage": "new_enquiry",
+      "applicationSubmittedAt": "NULL",
+      "archivedAt": "NULL",
+      "createdAt": "2026-05-08 14:04:12"
+    },
+    {
+      "id": "30001",
+      "firstName": "max",
+      "lastName": "test",
+      "email": "maxillingworth@icloud.com",
+      "pipelineStage": "new_enquiry",
+      "applicationSubmittedAt": "NULL",
+      "archivedAt": "NULL",
+      "createdAt": "2026-05-08 13:55:50"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tlastName\temail\tpipelineStage\tapplicationSubmittedAt\tarchivedAt\tcreatedAt\n30003\tmax\ttest\tmaxillingworth@icloud.com\tapplication_received\t2026-05-08 14:19:08\tNULL\t2026-05-08 14:17:43\n30002\tmax\ttest\tmaxillingworth@icloud.com\tnew_enquiry\tNULL\tNULL\t2026-05-08 14:04:12\n30001\tmax\ttest\tmaxillingworth@icloud.com\tnew_enquiry\tNULL\tNULL\t2026-05-08 13:55:50\n",
+  "stderr": "",
+  "execution_time_ms": 59
+}
