@@ -1,0 +1,1 @@
+ALTER TABLE `users` MODIFY COLUMN `portalStatus` enum('onboarding','active','paused','suspended','in_notice','cancelled') NOT NULL DEFAULT 'onboarding';

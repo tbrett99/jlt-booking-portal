@@ -2095,3 +2095,9 @@
 - [x] Verify Tom's CRM OAuth client registered in DB (clientId: jlt_cid_419b25cd176a7e388a3ce1356addef90)
 - [x] Add "Open CRM" button to agent sidebar — teal styled, opens OAuth authorize URL in new tab with random state param, shown to agents and admins in agent view
 - [x] Add ExternalLink icon import to PortalLayout
+
+## Paused/Suspended Portal Access Fix (May 8)
+- [x] DB: portalStatus enum extended with 'paused', 'suspended', 'in_notice' (migration 0085 applied)
+- [x] context.ts: login guard now blocks 'paused' and 'suspended' agents (in addition to 'cancelled')
+- [x] routers.ts: password login guard updated to block 'paused' and 'suspended'
+- [x] crm-router.ts: updateAgentStatus now syncs users.portalStatus when agentStatus changes (paused→paused, suspended→suspended, cancelled→cancelled, in_notice→active, active→active)

@@ -8,6 +8,9 @@ export type TrpcContext = {
   user: User | null;
 };
 
+// Portal statuses that block all access
+const BLOCKED_PORTAL_STATUSES = ['cancelled', 'paused', 'suspended'];
+
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
@@ -15,8 +18,8 @@ export async function createContext(
 
   try {
     user = await sdk.authenticateRequest(opts.req);
-    // Cancelled agents are locked out — treat as unauthenticated
-    if (user && (user as any).portalStatus === 'cancelled') {
+    // Cancelled, paused, and suspended agents are locked out — treat as unauthenticated
+    if (user && BLOCKED_PORTAL_STATUSES.includes((user as any).portalStatus)) {
       user = null;
     }
   } catch (error) {

@@ -311,7 +311,8 @@ export const appRouter = router({
       .input(z.object({ email: z.string().email(), password: z.string() }))
       .mutation(async ({ input, ctx }) => {
         const user = await getUserByEmail(input.email);
-        if (!user || !user.tempPassword || !user.isActive || (user as any).portalStatus === 'cancelled') {
+        const blockedStatuses = ['cancelled', 'paused', 'suspended'];
+        if (!user || !user.tempPassword || !user.isActive || blockedStatuses.includes((user as any).portalStatus)) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid credentials" });
         }
         const valid = await bcrypt.compare(input.password, user.tempPassword);

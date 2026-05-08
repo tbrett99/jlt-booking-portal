@@ -1347,6 +1347,18 @@ export const crmRouter = router({
 
         await upsertAgentCrmProfile(input.userId, profileUpdate as any);
 
+        // Sync portalStatus on the users table so login guards are enforced
+        // paused + suspended = blocked from portal; in_notice = still has access; cancelled = blocked; active = access restored
+        const portalStatusMap: Record<string, string> = {
+          active: 'active',
+          paused: 'paused',
+          suspended: 'suspended',
+          in_notice: 'active', // agents in notice still have portal access
+          cancelled: 'cancelled',
+        };
+        const newPortalStatus = portalStatusMap[input.newStatus] ?? 'active';
+        await db.update(users).set({ portalStatus: newPortalStatus as any }).where(eq(users.id, input.userId));
+
         // Log the status event
         await db.insert(agentStatusEvents).values({
           userId: input.userId,
