@@ -233,6 +233,8 @@ function AuthRouter() {
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
+          {/* Terms & Policies — accessible to logged-in agents */}
+          <Route path="/terms" component={TermsAndPolicies} />
           {/* OAuth login page — auto-redirects logged-in users back to authorize */}
           <Route path="/oauth2/login" component={OAuthLoginPage} />
           <Route component={NotFound} />
@@ -270,6 +272,8 @@ function AuthRouter() {
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
+          {/* Terms & Policies — accessible to admins in agent view */}
+          <Route path="/terms" component={TermsAndPolicies} />
           {/* OAuth login page — auto-redirects logged-in users back to authorize */}
           <Route path="/oauth2/login" component={OAuthLoginPage} />
           <Route component={NotFound} />
@@ -335,6 +339,8 @@ function AuthRouter() {
         <Route path="/crm/recruitment/:id" component={RecruitmentProspectDetail} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/unsubscribe" component={UnsubscribePage} />
+        {/* Terms & Policies — accessible to logged-in admins */}
+        <Route path="/terms" component={TermsAndPolicies} />
         {/* OAuth login page — auto-redirects logged-in users back to authorize */}
         <Route path="/oauth2/login" component={OAuthLoginPage} />
         <Route component={NotFound} />
