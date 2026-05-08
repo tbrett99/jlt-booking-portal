@@ -499,6 +499,7 @@ export async function getAllMessageThreads() {
       authorId: notes.authorId,
       authorName: users.name,
       authorRole: users.role,
+      tag: notes.tag,
       clientName: bookings.clientName,
       agentId: bookings.agentId,
       ptsRef: bookings.ptsRef,
@@ -525,17 +526,27 @@ export async function getAllMessageThreads() {
     bookingId: number; clientName: string; agentId: number;
     ptsRef: string | null; topdogRef: string | null;
     latestNote: typeof allRows[0] | null; unreadCount: number;
+    tag: string | null; lastAdminName: string | null; lastNoteId: number | null;
   }>();
 
   for (const row of allRows) {
     let thread = threadMap.get(row.bookingId);
     if (!thread) {
       thread = { bookingId: row.bookingId, clientName: row.clientName, agentId: row.agentId,
-        ptsRef: row.ptsRef ?? null, topdogRef: row.topdogRef ?? null, latestNote: null, unreadCount: 0 };
+        ptsRef: row.ptsRef ?? null, topdogRef: row.topdogRef ?? null, latestNote: null, unreadCount: 0,
+        tag: null, lastAdminName: null, lastNoteId: null };
       threadMap.set(row.bookingId, thread);
     }
     // First row per booking (ordered desc) = latest note
     if (!thread.latestNote) thread.latestNote = row;
+    // Track the most recent tag set on any note in this thread
+    if (thread.tag === null && row.tag) thread.tag = row.tag;
+    // Track last note ID for tag updates
+    if (thread.lastNoteId === null) thread.lastNoteId = row.noteId;
+    // Track the most recent admin who replied
+    if (thread.lastAdminName === null && (row.authorRole === 'admin' || row.authorRole === 'super_admin')) {
+      thread.lastAdminName = row.authorName ?? null;
+    }
     // Count unread agent notes
     if (!row.isReadByAdmin && row.authorRole === 'agent') thread.unreadCount++;
   }
@@ -554,6 +565,9 @@ export async function getAllMessageThreads() {
       latestAuthorName: t.latestNote!.authorName ?? 'Unknown',
       latestAuthorRole: t.latestNote!.authorRole ?? 'agent',
       unreadCount: t.unreadCount,
+      tag: t.tag ?? null,
+      lastAdminName: t.lastAdminName ?? null,
+      latestNoteId: t.lastNoteId ?? null,
     }));
 
   // Sort by latest message date descending

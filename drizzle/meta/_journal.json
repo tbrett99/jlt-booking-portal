@@ -603,6 +603,13 @@
       "when": 1778232742925,
       "tag": "0085_loud_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "5",
+      "when": 1778240674720,
+      "tag": "0086_youthful_ikaris",
+      "breakpoints": true
     }
   ]
 }

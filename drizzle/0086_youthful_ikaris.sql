@@ -1,0 +1,1 @@
+ALTER TABLE `notes` ADD `tag` enum('Commissions','Refunds','Amendments','Reimbursements','New Booking','Support') DEFAULT null;

@@ -181,6 +181,7 @@ export const notes = mysqlTable("notes", {
   isInternal: boolean("isInternal").default(false).notNull(), // true = admin-only
   isReadByAdmin: boolean("isReadByAdmin").default(false).notNull(), // true once an admin has seen/replied
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  tag: mysqlEnum("tag", ["Commissions", "Refunds", "Amendments", "Reimbursements", "New Booking", "Support"]),
 });
 
 export type Note = typeof notes.$inferSelect;

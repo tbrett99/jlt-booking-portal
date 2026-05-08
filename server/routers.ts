@@ -1411,6 +1411,24 @@ export const appRouter = router({
     totalUnreadCount: adminProcedure.query(async () => {
       return getTotalUnreadMessageCount();
     }),
+    // Admin: set department tag on a booking thread (latest note in thread)
+    setThreadTag: adminProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        tag: z.enum(["Commissions", "Refunds", "Amendments", "Reimbursements", "New Booking", "Support"]).nullable(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await (await import('./db')).getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        const { notes: notesTable } = await import('../drizzle/schema');
+        const { eq, and, not, like } = await import('drizzle-orm');
+        // Update ALL notes on this booking thread with the new tag
+        await db.update(notesTable)
+          .set({ tag: input.tag as any })
+          .where(and(eq(notesTable.bookingId, input.bookingId), not(like(notesTable.content, '[System]%'))));
+        return { success: true };
+      }),
+
     // Admin: mark ALL unread agent notes as read ("Mark all as read" button on Messages page)
     markAllRead: adminProcedure.mutation(async () => {
       await markAllAgentNotesAsRead();
