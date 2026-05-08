@@ -55,6 +55,11 @@ export default function ProspectDetail() {
     onError: (e) => toast.error(e.message),
   });
   const uploadDoc = trpc.crm.prospects.uploadDoc.useMutation({ onSuccess: () => { refetch(); toast.success("Document uploaded"); } });
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const deleteProspect = trpc.crm.prospects.delete.useMutation({
+    onSuccess: () => { toast.success("Prospect deleted"); navigate("/crm/pipeline"); },
+    onError: (e) => toast.error(e.message),
+  });
 
   if (isLoading) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
   if (!prospect) return <div className="p-8 text-center text-muted-foreground">Prospect not found.</div>;
@@ -111,6 +116,9 @@ export default function ProspectDetail() {
         <div className="flex gap-2 flex-shrink-0">
           <Button size="sm" variant="outline" onClick={() => { setNewStage(p.stage); setMoveDialog(true); }}>Move Stage</Button>
           <Button size="sm" onClick={handleEdit}>Edit Profile</Button>
+          <Button size="sm" variant="outline" className="text-red-500 border-red-200 hover:bg-red-50 hover:text-red-600" onClick={() => setShowDeleteDialog(true)}>
+            <Trash2 size={12} className="mr-1" />Delete
+          </Button>
         </div>
       </div>
 
@@ -478,6 +486,21 @@ export default function ProspectDetail() {
             <Button variant="outline" onClick={() => setContractDialog(false)}>Cancel</Button>
             <Button onClick={() => sendContract.mutate({ prospectId: p.id, origin: window.location.origin })} disabled={sendContract.isPending}>
               {sendContract.isPending ? "Sending…" : "Send Signing Link"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Delete confirmation dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Delete Prospect</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to permanently delete <strong>{p.firstName} {p.lastName}</strong>? All their data including application forms, contracts, documents, and history will be removed. This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => deleteProspect.mutate({ id: p.id })} disabled={deleteProspect.isPending}>
+              {deleteProspect.isPending ? "Deleting..." : "Delete Permanently"}
             </Button>
           </DialogFooter>
         </DialogContent>
