@@ -22,7 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Mail, Clock, ChevronRight, Send } from "lucide-react";
+import { ArrowLeft, Mail, Clock, ChevronRight, Send, Trash2 } from "lucide-react";
+import { useLocation } from "wouter";
 import { getStageBadge, PIPELINE_STAGES } from "./RecruitmentPipeline";
 
 // ─── Application data type ────────────────────────────────────────────────────
@@ -88,8 +89,9 @@ export default function RecruitmentProspectDetail() {
   const [notesValue, setNotesValue] = useState<string | null>(null);
   const [editingNotes, setEditingNotes] = useState(false);
 
-  const utils = trpc.useUtils();
-
+   const utils = trpc.useUtils();
+  const [, navigate] = useLocation();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const { data, isLoading, error } = trpc.recruitment.getProspect.useQuery(
     { id },
     { enabled: !!id }
@@ -174,6 +176,16 @@ export default function RecruitmentProspectDetail() {
   const targetStageMeta = getStageBadge(targetStage);
   const isDeclineAction = DECLINE_STAGES.includes(targetStage);
 
+  const deleteProspect = trpc.recruitment.deleteProspect.useMutation({
+    onSuccess: () => {
+      toast.success("Prospect deleted");
+      utils.recruitment.listProspects.invalidate();
+      utils.recruitment.stageCounts.invalidate();
+      navigate("/crm/recruitment");
+    },
+    onError: () => toast.error("Failed to delete prospect"),
+  });
+
   return (
     <div className="p-6 max-w-5xl mx-auto">
       {/* Back */}
@@ -241,6 +253,15 @@ export default function RecruitmentProspectDetail() {
           >
             <Send size={12} className="mr-1" />
             Resend Prospectus
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-red-500 border-red-200 hover:bg-red-50 hover:text-red-600"
+            onClick={() => setShowDeleteDialog(true)}
+          >
+            <Trash2 size={12} className="mr-1" />
+            Delete
           </Button>
         </div>
       </div>
@@ -669,6 +690,28 @@ export default function RecruitmentProspectDetail() {
               disabled={updateStage.isPending}
             >
               {updateStage.isPending ? "Updating..." : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Prospect</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to permanently delete <strong>{data?.firstName} {data?.lastName}</strong>? This will remove all their application data, stage history, and email logs. This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteProspect.mutate({ id })}
+              disabled={deleteProspect.isPending}
+            >
+              {deleteProspect.isPending ? "Deleting..." : "Delete Permanently"}
             </Button>
           </DialogFooter>
         </DialogContent>

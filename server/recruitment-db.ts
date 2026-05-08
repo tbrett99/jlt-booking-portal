@@ -198,3 +198,13 @@ export async function hasRecruitmentEmailBeenSent(
     .limit(1);
   return rows.length > 0;
 }
+
+export async function deleteRecruitmentProspect(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  // Delete related rows first to avoid FK constraint errors
+  await db.delete(recruitmentEmailsSent).where(eq(recruitmentEmailsSent.prospectId, id));
+  await db.delete(recruitmentStageHistory).where(eq(recruitmentStageHistory.prospectId, id));
+  // Delete the prospect itself
+  await db.delete(recruitmentProspects).where(eq(recruitmentProspects.id, id));
+}

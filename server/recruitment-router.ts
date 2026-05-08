@@ -18,6 +18,7 @@ import {
   getRecruitmentStageHistory,
   getRecruitmentEmailsSent,
   logRecruitmentEmail,
+  deleteRecruitmentProspect,
 } from "./recruitment-db";
 import { PROSPECT_FROM, PROSPECT_REPLY_TO } from "./resend-email";
 import { Resend } from "resend";
@@ -549,7 +550,8 @@ export const recruitmentRouter = router({
    * ADMIN — Count prospects by stage (for pipeline overview).
    */
   stageCounts: protectedProcedure.query(async ({ ctx }) => {
-    if (!["admin", "super_admin"].includes(ctx.user.role)) {
+    if (![
+"admin", "super_admin"].includes(ctx.user.role)) {
       throw new TRPCError({ code: "FORBIDDEN" });
     }
     const all = await getAllRecruitmentProspects({ limit: 5000 });
@@ -559,8 +561,20 @@ export const recruitmentRouter = router({
     }
     return counts;
   }),
-});
 
+  /**
+   * ADMIN — Permanently delete a prospect and all related data.
+   */
+  deleteProspect: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!["admin", "super_admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      await deleteRecruitmentProspect(input.id);
+      return { success: true };
+    }),
+});
 // ─── Stage-triggered emails ───────────────────────────────────────────────────
 
 async function sendStageEmail(
