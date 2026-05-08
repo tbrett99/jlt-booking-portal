@@ -1367,3 +1367,30 @@ export const ssoTokens = mysqlTable("sso_tokens", {
 });
 export type SsoToken = typeof ssoTokens.$inferSelect;
 export type InsertSsoToken = typeof ssoTokens.$inferInsert;
+
+// ─── Terms & Contract Signing ─────────────────────────────────────────────────
+
+export const termsVersions = mysqlTable("terms_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  versionLabel: varchar("versionLabel", { length: 50 }).notNull(), // e.g. "May 2026"
+  description: text("description"), // Admin notes about what changed
+  isActive: boolean("isActive").default(false).notNull(), // Only one active at a time
+  sentAt: timestamp("sentAt"), // When admin pushed this version out to agents
+  sentById: int("sentById"), // FK → users.id (admin who sent it)
+  deadline: timestamp("deadline"), // Optional signing deadline shown to agents
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type TermsVersion = typeof termsVersions.$inferSelect;
+export type InsertTermsVersion = typeof termsVersions.$inferInsert;
+
+export const termsSignings = mysqlTable("terms_signings", {
+  id: int("id").autoincrement().primaryKey(),
+  termsVersionId: int("termsVersionId").notNull(), // FK → terms_versions.id
+  userId: int("userId").notNull(), // FK → users.id (the agent who signed)
+  signedName: varchar("signedName", { length: 200 }).notNull(), // Typed full name
+  ipAddress: varchar("ipAddress", { length: 45 }), // IPv4 or IPv6
+  userAgent: varchar("userAgent", { length: 500 }), // Browser info
+  signedAt: timestamp("signedAt").defaultNow().notNull(),
+});
+export type TermsSigning = typeof termsSignings.$inferSelect;
+export type InsertTermsSigning = typeof termsSignings.$inferInsert;

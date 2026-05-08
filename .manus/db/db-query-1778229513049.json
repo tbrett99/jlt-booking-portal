@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `terms_signings` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`termsVersionId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`signedName` varchar(200) NOT NULL,\n\t`ipAddress` varchar(45),\n\t`userAgent` varchar(500),\n\t`signedAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `terms_signings_id` PRIMARY KEY(`id`)\n);\n\nCREATE TABLE `terms_versions` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`versionLabel` varchar(50) NOT NULL,\n\t`description` text,\n\t`isActive` boolean NOT NULL DEFAULT false,\n\t`sentAt` timestamp,\n\t`sentById` int,\n\t`deadline` timestamp,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `terms_versions_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute CREATE TABLE `terms_signings` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`termsVersionId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`signedName` varchar(200) NOT NULL,\n\t`ipAddress` varchar(45),\n\t`userAgent` varchar(500),\n\t`signedAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `terms_signings_id` PRIMARY KEY(`id`)\n);\n\nCREATE TABLE `terms_versions` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`versionLabel` varchar(50) NOT NULL,\n\t`description` text,\n\t`isActive` boolean NOT NULL DEFAULT false,\n\t`sentAt` timestamp,\n\t`sentById` int,\n\t`deadline` timestamp,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `terms_versions_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 509
+}

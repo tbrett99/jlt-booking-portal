@@ -19,7 +19,7 @@ import {
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
   ChevronDown, X, Pencil, Clock, ArrowRight, CheckCircle2,
-  Shield, ExternalLink
+  Shield, ExternalLink, FileSignature
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -416,7 +416,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             )}
           </div>
           <Tabs defaultValue="profile">
-            <TabsList className="grid grid-cols-11 w-full">
+            <TabsList className="grid grid-cols-12 w-full">
               <TabsTrigger value="profile" className="text-xs">Profile</TabsTrigger>
               <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
               <TabsTrigger value="team" className="text-xs">Team</TabsTrigger>
@@ -428,6 +428,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <TabsTrigger value="dd" className="text-xs">Direct Debit</TabsTrigger>
               <TabsTrigger value="onboarding" className="text-xs">Onboarding</TabsTrigger>
               <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
+              <TabsTrigger value="terms" className="text-xs">Terms</TabsTrigger>
             </TabsList>
 
             <TabsContent value="profile" className="mt-5 pb-8">
@@ -462,6 +463,9 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             </TabsContent>
             <TabsContent value="notes" className="mt-5 pb-8">
               <AgentNotesTab userId={agent.id} />
+            </TabsContent>
+            <TabsContent value="terms" className="mt-5 pb-8">
+              <AgentTermsSigningTab userId={agent.id} />
             </TabsContent>
           </Tabs>
         </div>
@@ -2440,6 +2444,61 @@ function AgentNotesTab({ userId }: { userId: number }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Agent Terms Signing Tab ──────────────────────────────────────────────────
+function AgentTermsSigningTab({ userId }: { userId: number }) {
+  const { data, isLoading } = trpc.terms.getAgentSigningHistory.useQuery({ userId });
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-10 text-muted-foreground text-sm">Loading signing history…</div>
+    );
+  }
+
+  if (!data?.length) {
+    return (
+      <div className="text-center py-10 text-muted-foreground text-sm">
+        <FileSignature className="h-8 w-8 mx-auto mb-2 opacity-30" />
+        <p>No terms have been signed by this agent yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">Complete record of all terms versions signed by this agent.</p>
+      <div className="border rounded-md overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="text-left px-4 py-2 font-medium text-muted-foreground">Version</th>
+              <th className="text-left px-4 py-2 font-medium text-muted-foreground">Signed At</th>
+              <th className="text-left px-4 py-2 font-medium text-muted-foreground">Signed Name</th>
+
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((record, i) => (
+              <tr key={i} className="border-t">
+                <td className="px-4 py-2.5 font-medium">{record.versionLabel}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">
+                  {record.signedAt
+                    ? new Date(record.signedAt).toLocaleString("en-GB", {
+                        day: "2-digit", month: "short", year: "numeric",
+                        hour: "2-digit", minute: "2-digit",
+                      })
+                    : "—"}
+                </td>
+                <td className="px-4 py-2.5">{record.signedName ?? "—"}</td>
+
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

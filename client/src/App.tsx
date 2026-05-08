@@ -81,6 +81,7 @@ import CrmChangeRequests from "./pages/crm/CrmChangeRequests";
 import Memberships from "./pages/crm/Memberships";
 import MyProfile from "./pages/MyProfile";
 import TermsAndPolicies from "./pages/TermsAndPolicies";
+import AdminTermsTracker from "./pages/admin/AdminTermsTracker";
 import UnsubscribePage from "./pages/UnsubscribePage";
 import ApplyPage, { ApplyEmbedPage } from "./pages/recruitment/ApplyPage";
 import ApplicationFormPage from "./pages/recruitment/ApplicationFormPage";
@@ -314,6 +315,7 @@ function AuthRouter() {
         <Route path="/admin/agent-email-log" component={AgentEmailLog} />
         <Route path="/admin/api-keys" component={AdminApiKeys} />
         <Route path="/admin/oauth-clients" component={AdminOAuthClients} />
+        <Route path="/admin/terms-tracker" component={AdminTermsTracker} />
         {/* CRM Routes */}
         <Route path="/crm/pipeline" component={CrmPipeline} />
         <Route path="/crm/prospects" component={CrmProspects} />

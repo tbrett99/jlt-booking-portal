@@ -582,6 +582,13 @@
       "when": 1778177418268,
       "tag": "0082_giant_hardball",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "5",
+      "when": 1778229502579,
+      "tag": "0083_lucky_spitfire",
+      "breakpoints": true
     }
   ]
 }

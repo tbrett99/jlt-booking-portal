@@ -4023,5 +4023,208 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       return { ssoUrl };
     }),
   }),
+
+  // ─── Terms & Contract Signing ─────────────────────────────────────────────
+  terms: router({
+    // Get the active terms version and whether the current user has signed it
+    getStatus: protectedProcedure.query(async ({ ctx }) => {
+      const { getDb } = await import('./db');
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+      const { termsVersions, termsSignings } = await import('../drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+
+      const [active] = await db
+        .select()
+        .from(termsVersions)
+        .where(eq(termsVersions.isActive, true))
+        .limit(1);
+
+      if (!active) return { hasActiveTerm: false, hasSigned: false, activeVersion: null, signedAt: null };
+
+      const [signing] = await db
+        .select()
+        .from(termsSignings)
+        .where(and(eq(termsSignings.termsVersionId, active.id), eq(termsSignings.userId, ctx.user.id)))
+        .limit(1);
+
+      return {
+        hasActiveTerm: true,
+        hasSigned: !!signing,
+        signedAt: signing?.signedAt ?? null,
+        activeVersion: {
+          id: active.id,
+          versionLabel: active.versionLabel,
+          description: active.description,
+          deadline: active.deadline,
+          sentAt: active.sentAt,
+        },
+      };
+    }),
+
+    // Agent signs the active terms
+    sign: protectedProcedure
+      .input(z.object({ signedName: z.string().min(2).max(200) }))
+      .mutation(async ({ ctx, input }) => {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const { termsVersions, termsSignings } = await import('../drizzle/schema');
+        const { eq, and } = await import('drizzle-orm');
+
+        const [active] = await db
+          .select()
+          .from(termsVersions)
+          .where(eq(termsVersions.isActive, true))
+          .limit(1);
+
+        if (!active) throw new TRPCError({ code: 'NOT_FOUND', message: 'No active terms version found' });
+
+        const [existing] = await db
+          .select()
+          .from(termsSignings)
+          .where(and(eq(termsSignings.termsVersionId, active.id), eq(termsSignings.userId, ctx.user.id)))
+          .limit(1);
+
+        if (existing) return { success: true, alreadySigned: true };
+
+        await db.insert(termsSignings).values({
+          termsVersionId: active.id,
+          userId: ctx.user.id,
+          signedName: input.signedName,
+          signedAt: new Date(),
+        });
+
+        return { success: true, alreadySigned: false };
+      }),
+
+    // Admin: send/activate a terms version (makes it live and records sentAt)
+    sendVersion: protectedProcedure
+      .input(z.object({
+        versionLabel: z.string().min(1).max(50),
+        description: z.string().optional(),
+        deadline: z.date().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+          throw new TRPCError({ code: 'FORBIDDEN' });
+        }
+         const { getDb } = await import('./db');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const { termsVersions } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.update(termsVersions).set({ isActive: false }).where(eq(termsVersions.isActive, true));
+        const [result] = await db.insert(termsVersions).values({
+          versionLabel: input.versionLabel,
+          description: input.description ?? null,
+          isActive: true,
+          sentAt: new Date(),
+          sentById: ctx.user.id,
+          deadline: input.deadline ?? null,
+        }).$returningId();
+
+        return { success: true, versionId: result.id };
+      }),
+
+    // Admin: deactivate the current active terms version (hides banner for all agents)
+    deactivateVersion: protectedProcedure.mutation(async ({ ctx }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const { getDb } = await import('./db');
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+      const { termsVersions } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      await db.update(termsVersions).set({ isActive: false }).where(eq(termsVersions.isActive, true));
+      return { success: true };
+    }),
+
+    // Admin: get signing tracker — all agents and whether they've signed
+    getSigningTracker: protectedProcedure.query(async ({ ctx }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const { getDb } = await import('./db');
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+      const { termsVersions, termsSignings, users } = await import('../drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+
+      const [active] = await db
+        .select()
+        .from(termsVersions)
+        .where(eq(termsVersions.isActive, true))
+        .limit(1);
+
+      if (!active) return { activeVersion: null, agents: [], signedCount: 0, totalCount: 0 };
+
+      const agents = await db
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(users)
+        .where(and(eq(users.role, 'agent'), eq(users.isActive, true)));
+
+      const signings = await db
+        .select()
+        .from(termsSignings)
+        .where(eq(termsSignings.termsVersionId, active.id));
+
+      const signingMap = new Map(signings.map((s) => [s.userId, s]));
+
+      const agentRows = agents.map((a) => {
+        const signing = signingMap.get(a.id);
+        return {
+          id: a.id,
+          name: a.name,
+          email: a.email,
+          hasSigned: !!signing,
+          signedAt: signing?.signedAt ?? null,
+          signedName: signing?.signedName ?? null,
+        };
+      });
+
+      return {
+        activeVersion: {
+          id: active.id,
+          versionLabel: active.versionLabel,
+          sentAt: active.sentAt,
+          deadline: active.deadline,
+        },
+        agents: agentRows,
+        signedCount: agentRows.filter((a) => a.hasSigned).length,
+        totalCount: agentRows.length,
+      };
+    }),
+
+    // Admin: get signing history for a specific agent (for their profile view)
+    getAgentSigningHistory: protectedProcedure
+      .input(z.object({ userId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+          throw new TRPCError({ code: 'FORBIDDEN' });
+        }
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const { termsVersions, termsSignings } = await import('../drizzle/schema');
+        const { eq, desc } = await import('drizzle-orm');
+
+        const signings = await db
+          .select({
+            id: termsSignings.id,
+            signedName: termsSignings.signedName,
+            signedAt: termsSignings.signedAt,
+            versionLabel: termsVersions.versionLabel,
+            description: termsVersions.description,
+          })
+          .from(termsSignings)
+          .innerJoin(termsVersions, eq(termsSignings.termsVersionId, termsVersions.id))
+          .where(eq(termsSignings.userId, input.userId))
+          .orderBy(desc(termsSignings.signedAt));
+
+        return signings;
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;

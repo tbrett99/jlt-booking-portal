@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import GlobalSearch from "@/components/GlobalSearch";
+import { TermsSigningBanner } from "@/components/TermsSigningBanner";
 import { trpc } from "@/lib/trpc";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import {
@@ -7,7 +8,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { Link, useLocation } from "wouter";
@@ -385,6 +386,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           ? [
               { label: "API Keys", href: "/admin/api-keys", icon: <Key size={16} /> },
               { label: "OAuth Clients", href: "/admin/oauth-clients", icon: <Shield size={16} /> },
+              { label: "Terms Tracker", href: "/admin/terms-tracker", icon: <FileSignature size={16} /> },
             ]
           : []),
       ],
@@ -659,6 +661,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             </div>
           )}
         </header>
+
+        {/* Terms signing banner — shown to agents with unsigned active terms */}
+        <TermsSigningBanner />
 
         {/* Page content */}
         <main className="flex-1 p-4 md:p-6 overflow-auto">
