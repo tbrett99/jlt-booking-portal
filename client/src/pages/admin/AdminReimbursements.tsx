@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import {
-  PoundSterling, Clock, CheckCircle2, AlertCircle, RefreshCw, Download, Trash2
+  PoundSterling, Clock, CheckCircle2, AlertCircle, RefreshCw, Download, Trash2, CreditCard
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -219,7 +219,21 @@ export default function AdminReimbursements() {
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{r.ptsRef ?? "—"}</td>
                       <td className="px-4 py-3 text-muted-foreground">{r.agentName ?? "—"}</td>
-                      <td className="px-4 py-3">{r.supplierName}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span>{r.supplierName}</span>
+                          {(r as any).jltCompanyCard && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                              style={{ background: "#70FFE8", color: "#1a4a44" }}
+                              title="Paid on JLT company card — funds return to JLT"
+                            >
+                              <CreditCard size={10} />
+                              JLT Card
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-right font-medium">£{Number(r.amount).toFixed(2)}</td>
                       <td className="px-4 py-3">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: sb.bg, color: sb.color }}>
