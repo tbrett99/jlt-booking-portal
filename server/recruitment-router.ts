@@ -25,6 +25,7 @@ import { sendSupportEmail } from "./email";
 import { Resend } from "resend";
 import { ENV } from "./_core/env";
 import { getEmailBrandingSettings, getProspectByEmail, moveProspectStage } from "./crm-db";
+import { enrollProspectInWorkflow } from "./recruitment-workflow-db";
 
 // ─── Prospectus / Application email helpers ───────────────────────────────────
 
@@ -217,6 +218,9 @@ export const recruitmentRouter = router({
       // Update prospectusEmailSentAt
       await updateRecruitmentProspect(id, { prospectusEmailSentAt: new Date() });
 
+      // Enroll in new_enquiry workflow (skip step 1 — prospectus already sent above)
+      try { await enrollProspectInWorkflow(id, "new_enquiry"); } catch {}
+
       return { success: true, duplicate: false };
     }),
 
@@ -376,6 +380,9 @@ export const recruitmentRouter = router({
         console.error("[Recruitment] Failed to send admin application notification:", adminEmailErr);
       }
 
+      // Enroll in application_received workflow
+      try { await enrollProspectInWorkflow(prospect.id, "application_received"); } catch {}
+
       return { success: true, alreadySubmitted: false };
     }),
 
@@ -488,6 +495,9 @@ export const recruitmentRouter = router({
 
       // Send stage-specific emails
       await sendStageEmail(input.id, input.toStage, prospect);
+
+      // Enroll in the new stage's workflow (unenrolls from previous automatically)
+      try { await enrollProspectInWorkflow(input.id, input.toStage); } catch {}
 
       return { success: true };
     }),

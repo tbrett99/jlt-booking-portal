@@ -2109,3 +2109,11 @@
 - [x] GoCardless billing_request.fulfilled webhook now advances recruitment prospect to Won stage
 - [x] Cal.com webhook already advances to discovery_call_booked (existing, preserved)
 - [x] Removed Recruitment Pipeline Kanban from Marketing nav; Agent Recruitment is now the only recruitment nav entry
+
+## Recruitment Email Workflow Builder
+- [ ] Schema: recruitment_workflows (id, stage, name, active), recruitment_workflow_emails (id, workflow_id, step_order, delay_hours, subject, body_html), recruitment_workflow_enrollments (id, prospect_id, workflow_id, current_step, next_send_at, cancelled_at) — run migration
+- [ ] Server: tRPC procedures for workflow CRUD (list, get, upsert steps, toggle active), enrollment/unenrollment helpers, processWorkflowEmails procedure
+- [ ] Seed default workflow emails from existing hardcoded stage emails into the new workflow tables
+- [ ] Workflow Builder UI: per-stage sequence editor, email step cards with delay/subject/body editor, enable/disable toggle per workflow
+- [ ] Wire enrollment on stage entry and unenrollment from all other workflows on stage change
+- [ ] Scheduled task to process and send pending workflow emails every hour

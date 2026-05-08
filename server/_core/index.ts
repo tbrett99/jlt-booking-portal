@@ -1508,6 +1508,11 @@ async function startServer() {
           } catch (adminEmailErr) {
             console.error("[Cal.com Webhook] Failed to send admin discovery call notification:", adminEmailErr);
           }
+          // Enroll in discovery_call_booked workflow
+          try {
+            const { enrollProspectInWorkflow } = await import("../recruitment-workflow-db");
+            await enrollProspectInWorkflow(prospect.id, "discovery_call_booked");
+          } catch {}
           console.log(`[Cal.com Webhook] Prospect ${prospect.id} advanced to discovery_call_booked`);
         }
 
@@ -1537,6 +1542,11 @@ async function startServer() {
                 }).catch((e: any) => console.error("[Cal.com Webhook] Failed to send rebook email:", e?.message));
               }
             }
+            // Enroll in rebook_required workflow
+            try {
+              const { enrollProspectInWorkflow } = await import("../recruitment-workflow-db");
+              await enrollProspectInWorkflow(prospect.id, "rebook_required");
+            } catch {}
             console.log(`[Cal.com Webhook] Prospect ${prospect.id} moved to rebook_required`);
           }
         }
@@ -1560,6 +1570,22 @@ async function startServer() {
   // External CRM API
   app.use("/api/external", externalApiRouter);
   app.use("/api/oauth2", oauth2Router);
+
+  // ── Scheduled: process recruitment workflow emails ─────────────────────────
+  // Called hourly by the Manus scheduled task via session cookie auth.
+  // Per periodic_updates guidelines: user.role == "user" is allowed.
+  app.post("/api/scheduled/process-workflows", async (req, res) => {
+    try {
+      const { processWorkflowEmailsInternal } = await import("../recruitment-workflow-router");
+      const processWorkflowEmails = processWorkflowEmailsInternal;
+      const result = await processWorkflowEmails();
+      console.log(`[WorkflowScheduler] Processed ${result.processed} enrollments, sent ${result.sent} emails`);
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      console.error("[WorkflowScheduler] Error:", err?.message);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
 
   // tRPC API
   app.use(

@@ -1396,3 +1396,44 @@ export const termsSignings = mysqlTable("terms_signings", {
 });
 export type TermsSigning = typeof termsSignings.$inferSelect;
 export type InsertTermsSigning = typeof termsSignings.$inferInsert;
+
+// ─── Recruitment Email Workflows ──────────────────────────────────────────────
+// One workflow per pipeline stage. Each workflow contains ordered email steps.
+// When a prospect enters a stage, they are enrolled in that stage's workflow.
+// When they move to a new stage, they are unenrolled from all other workflows.
+
+export const recruitmentWorkflows = mysqlTable("recruitment_workflows", {
+  id: int("id").autoincrement().primaryKey(),
+  stage: varchar("stage", { length: 100 }).notNull().unique(), // e.g. "new_enquiry"
+  name: varchar("name", { length: 255 }).notNull(),            // human-readable label
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type RecruitmentWorkflow = typeof recruitmentWorkflows.$inferSelect;
+export type InsertRecruitmentWorkflow = typeof recruitmentWorkflows.$inferInsert;
+
+export const recruitmentWorkflowEmails = mysqlTable("recruitment_workflow_emails", {
+  id: int("id").autoincrement().primaryKey(),
+  workflowId: int("workflowId").notNull(),   // FK → recruitment_workflows.id
+  stepOrder: int("stepOrder").notNull(),      // 1-based ordering within workflow
+  delayHours: int("delayHours").notNull().default(0), // hours after enrollment before sending
+  subject: varchar("subject", { length: 500 }).notNull(),
+  bodyHtml: longtext("bodyHtml").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type RecruitmentWorkflowEmail = typeof recruitmentWorkflowEmails.$inferSelect;
+export type InsertRecruitmentWorkflowEmail = typeof recruitmentWorkflowEmails.$inferInsert;
+
+export const recruitmentWorkflowEnrollments = mysqlTable("recruitment_workflow_enrollments", {
+  id: int("id").autoincrement().primaryKey(),
+  prospectId: int("prospectId").notNull(),   // FK → recruitment_prospects.id
+  workflowId: int("workflowId").notNull(),   // FK → recruitment_workflows.id
+  currentStep: int("currentStep").notNull().default(1), // next step to send
+  nextSendAt: timestamp("nextSendAt"),        // when to send the next email (null = done)
+  enrolledAt: timestamp("enrolledAt").defaultNow().notNull(),
+  cancelledAt: timestamp("cancelledAt"),      // set when prospect moves to a different stage
+});
+export type RecruitmentWorkflowEnrollment = typeof recruitmentWorkflowEnrollments.$inferSelect;
+export type InsertRecruitmentWorkflowEnrollment = typeof recruitmentWorkflowEnrollments.$inferInsert;

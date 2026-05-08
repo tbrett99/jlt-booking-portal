@@ -362,6 +362,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: false,
       items: [
         { label: "Agent Recruitment", href: "/crm/recruitment", icon: <UserPlus size={16} /> },
+        { label: "Email Workflows", href: "/crm/workflows", icon: <Mail size={16} /> },
         { label: "Prospects", href: "/crm/prospects", icon: <Users size={16} /> },
         { label: "Email Marketing", href: "/crm/email-marketing", icon: <Megaphone size={16} /> },
       ],

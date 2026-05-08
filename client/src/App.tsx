@@ -86,6 +86,7 @@ import UnsubscribePage from "./pages/UnsubscribePage";
 import ApplyPage, { ApplyEmbedPage } from "./pages/recruitment/ApplyPage";
 import ApplicationFormPage from "./pages/recruitment/ApplicationFormPage";
 import RecruitmentPipeline from "./pages/crm/RecruitmentPipeline";
+import WorkflowBuilder from "./pages/crm/WorkflowBuilder";
 import RecruitmentProspectDetail from "./pages/crm/RecruitmentProspectDetail";
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
@@ -347,6 +348,7 @@ function AuthRouter() {
         {/* Recruitment Pipeline */}
         <Route path="/crm/recruitment" component={RecruitmentPipeline} />
         <Route path="/crm/recruitment/:id" component={RecruitmentProspectDetail} />
+        <Route path="/crm/workflows" component={WorkflowBuilder} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/unsubscribe" component={UnsubscribePage} />
         {/* Terms & Policies — accessible to logged-in admins */}
