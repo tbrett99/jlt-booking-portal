@@ -1,2 +1,0 @@
-ALTER TABLE `notes` MODIFY COLUMN `tag` enum('Commissions','Refunds','Amendments','Reimbursements','New Booking','Support');--> statement-breakpoint
-ALTER TABLE `prospects` MODIFY COLUMN `stage` enum('New Enquiry','AR Submitted','AR Approved','Discovery Call Booked','Approved','Waitlisted','Rejected','Lost','Won') NOT NULL DEFAULT 'New Enquiry';

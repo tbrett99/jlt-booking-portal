@@ -115,7 +115,6 @@ const PROSPECT_STAGES = [
   "AR Approved",
   "Discovery Call Booked",
   "Approved",
-  "Waitlisted",
   "Rejected",
   "Lost",
   "Won",

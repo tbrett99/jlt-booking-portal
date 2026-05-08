@@ -466,7 +466,6 @@ export const prospects = mysqlTable("prospects", {
     "AR Approved",
     "Discovery Call Booked",
     "Approved",
-    "Waitlisted",
     "Rejected",
     "Lost",
     "Won",

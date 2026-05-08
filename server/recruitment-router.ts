@@ -454,36 +454,6 @@ export const recruitmentRouter = router({
         note: input.note,
       });
 
-      // Sync CRM Kanban stage
-      const CRM_STAGE_MAP: Record<string, string> = {
-        ar_approved: "AR Approved",
-        discovery_call_booked: "Discovery Call Booked",
-        rebook_required: "Discovery Call Booked",
-        did_not_turn_up: "Discovery Call Booked",
-        discovery_call_complete: "Approved",
-        onboarding_approved: "Won",
-        ar_declined: "Rejected",
-        onboarding_declined: "Rejected",
-        waitlisted: "Waitlisted",
-        archived: "Lost",
-      };
-      const crmStage = CRM_STAGE_MAP[input.toStage];
-      if (crmStage) {
-        try {
-          const crmProspect = await getProspectByEmail(prospect.email);
-          if (crmProspect) {
-            await moveProspectStage(
-              crmProspect.id,
-              crmStage as any,
-              ctx.user.id,
-              `Stage synced from recruitment pipeline: ${input.toStage}`
-            );
-          }
-        } catch (syncErr) {
-          console.error("[Recruitment] Failed to sync CRM stage:", syncErr);
-        }
-      }
-
       // Store decline reason if provided
       if (input.declineReason) {
         await updateRecruitmentProspect(input.id, {
