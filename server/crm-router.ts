@@ -353,15 +353,20 @@ export const crmRouter = router({
             const logoHtml = b?.logoUrl
               ? `<img src="${b.logoUrl}" alt="${companyName}" style="max-height:60px;max-width:200px;display:block;margin:0 auto;object-fit:contain;" />`
               : `<span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:${headerText};">${companyName}</span>`;
-            const PROSPECTUS_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310419663026820811/PdcDVQRp8zC2FzsyWBWptW/JLTProspectus_518c7f51.pdf";
+            const PROSPECTUS_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310419663026820811/PdcDVQRp8zC2FzsyWBWptW/JLTProspectus-4_0115900d.pdf";
+            const FACEBOOK_GROUP_URL = "https://www.facebook.com/groups/jltgroup/";
             const bodyHtml = `
 <p>Hi ${input.firstName},</p>
 <p>Thank you for your interest in joining the JLT Group travel agency team! We're excited to share more about what we do.</p>
-<p>Please find your copy of our prospectus below:</p>
+<p>Please find your copy of our prospectus below &mdash; we recommend reading it before completing your application:</p>
 <p style="text-align:center;margin:24px 0;">
   <a href="${PROSPECTUS_URL}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">View JLT Prospectus</a>
 </p>
-<p>Once you've had a chance to read through it, we'd love to learn more about you. Please complete our short application form:</p>
+<p>While you're getting to know us, we'd also love for you to join our exclusive Facebook community for JLT agents and prospective members. <strong>Please make sure you answer the membership questions when you request to join so we can approve you quickly.</strong></p>
+<p style="text-align:center;margin:24px 0;">
+  <a href="${FACEBOOK_GROUP_URL}" style="display:inline-block;background:#1877F2;color:#ffffff;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">Join Our Facebook Group</a>
+</p>
+<p>Once you've had a chance to read through the prospectus, we'd love to learn more about you. Please complete our short application form:</p>
 <p style="text-align:center;margin:24px 0;">
   <a href="${applicationUrl}" style="display:inline-block;background:#414141;color:#ffffff;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">Complete Your Application</a>
 </p>
