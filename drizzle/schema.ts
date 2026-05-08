@@ -1388,6 +1388,7 @@ export const termsSignings = mysqlTable("terms_signings", {
   termsVersionId: int("termsVersionId").notNull(), // FK → terms_versions.id
   userId: int("userId").notNull(), // FK → users.id (the agent who signed)
   signedName: varchar("signedName", { length: 200 }).notNull(), // Typed full name
+  signatureImage: text("signatureImage"), // Base64 data URL of drawn signature
   ipAddress: varchar("ipAddress", { length: 45 }), // IPv4 or IPv6
   userAgent: varchar("userAgent", { length: 500 }), // Browser info
   signedAt: timestamp("signedAt").defaultNow().notNull(),

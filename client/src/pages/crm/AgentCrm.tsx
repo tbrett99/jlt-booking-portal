@@ -416,7 +416,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             )}
           </div>
           <Tabs defaultValue="profile">
-            <TabsList className="grid grid-cols-12 w-full">
+            <TabsList className="grid grid-cols-11 w-full">
               <TabsTrigger value="profile" className="text-xs">Profile</TabsTrigger>
               <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
               <TabsTrigger value="team" className="text-xs">Team</TabsTrigger>
@@ -428,7 +428,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <TabsTrigger value="dd" className="text-xs">Direct Debit</TabsTrigger>
               <TabsTrigger value="onboarding" className="text-xs">Onboarding</TabsTrigger>
               <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
-              <TabsTrigger value="terms" className="text-xs">Terms</TabsTrigger>
+
             </TabsList>
 
             <TabsContent value="profile" className="mt-5 pb-8">
@@ -464,9 +464,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             <TabsContent value="notes" className="mt-5 pb-8">
               <AgentNotesTab userId={agent.id} />
             </TabsContent>
-            <TabsContent value="terms" className="mt-5 pb-8">
-              <AgentTermsSigningTab userId={agent.id} />
-            </TabsContent>
+
           </Tabs>
         </div>
       </SheetContent>
@@ -1177,6 +1175,8 @@ function DocsTab({ userId, profile, contractData, onRefresh }: { userId: number;
   const idRef = useRef<HTMLInputElement>(null);
   const poaRef = useRef<HTMLInputElement>(null);
   const [showSignature, setShowSignature] = useState(false);
+  const [showTermsSig, setShowTermsSig] = useState<Record<number, boolean>>({});
+  const { data: termsHistory, isLoading: termsLoading } = trpc.terms.getAgentSigningHistory.useQuery({ userId });
   const uploadDoc = trpc.crm.agentCrm.uploadIdDoc.useMutation({
     onSuccess: () => { toast.success("Document uploaded"); onRefresh(); },
     onError: (e) => toast.error(e.message),
@@ -1273,6 +1273,72 @@ function DocsTab({ userId, profile, contractData, onRefresh }: { userId: number;
           onUpload={(f) => handleUpload("proof_of_address", f)}
           loading={uploadDoc.isPending}
         />
+      </div>
+
+      <Separator />
+
+      {/* Terms signing history */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Terms &amp; Conditions Signings</h3>
+        {termsLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : !termsHistory?.length ? (
+          <div className="rounded-lg border border-dashed p-4 text-center">
+            <FileSignature className="h-6 w-6 mx-auto mb-1.5 text-muted-foreground opacity-40" />
+            <p className="text-sm text-muted-foreground">No terms signed yet</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {termsHistory.map((record) => (
+              <div key={record.id} className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{record.versionLabel}</p>
+                    {record.signedAt && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Signed {new Date(record.signedAt).toLocaleString("en-GB", {
+                          day: "numeric", month: "long", year: "numeric",
+                          hour: "2-digit", minute: "2-digit",
+                        })}
+                        {record.signedName ? ` by ${record.signedName}` : ""}
+                      </p>
+                    )}
+                    {record.ipAddress && (
+                      <p className="text-xs text-muted-foreground mt-0.5">IP: {record.ipAddress}</p>
+                    )}
+                  </div>
+                  {record.signatureImage && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowTermsSig(prev => ({ ...prev, [record.id]: !prev[record.id] }))}
+                      className="shrink-0"
+                    >
+                      <Eye className="h-3.5 w-3.5 mr-1.5" />
+                      {showTermsSig[record.id] ? "Hide" : "View"} Signature
+                    </Button>
+                  )}
+                </div>
+                {showTermsSig[record.id] && record.signatureImage && (
+                  <div className="border rounded-md p-3 bg-white">
+                    <p className="text-xs text-muted-foreground mb-2">Drawn signature:</p>
+                    <img
+                      src={record.signatureImage}
+                      alt="Terms signature"
+                      className="max-h-24 border rounded"
+                      style={{ background: "white" }}
+                    />
+                  </div>
+                )}
+                {record.userAgent && (
+                  <p className="text-xs text-muted-foreground border-t pt-2 truncate">
+                    Browser: {record.userAgent}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2448,57 +2514,4 @@ function AgentNotesTab({ userId }: { userId: number }) {
   );
 }
 
-// ─── Agent Terms Signing Tab ──────────────────────────────────────────────────
-function AgentTermsSigningTab({ userId }: { userId: number }) {
-  const { data, isLoading } = trpc.terms.getAgentSigningHistory.useQuery({ userId });
 
-  if (isLoading) {
-    return (
-      <div className="text-center py-10 text-muted-foreground text-sm">Loading signing history…</div>
-    );
-  }
-
-  if (!data?.length) {
-    return (
-      <div className="text-center py-10 text-muted-foreground text-sm">
-        <FileSignature className="h-8 w-8 mx-auto mb-2 opacity-30" />
-        <p>No terms have been signed by this agent yet.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">Complete record of all terms versions signed by this agent.</p>
-      <div className="border rounded-md overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="text-left px-4 py-2 font-medium text-muted-foreground">Version</th>
-              <th className="text-left px-4 py-2 font-medium text-muted-foreground">Signed At</th>
-              <th className="text-left px-4 py-2 font-medium text-muted-foreground">Signed Name</th>
-
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((record, i) => (
-              <tr key={i} className="border-t">
-                <td className="px-4 py-2.5 font-medium">{record.versionLabel}</td>
-                <td className="px-4 py-2.5 text-muted-foreground">
-                  {record.signedAt
-                    ? new Date(record.signedAt).toLocaleString("en-GB", {
-                        day: "2-digit", month: "short", year: "numeric",
-                        hour: "2-digit", minute: "2-digit",
-                      })
-                    : "—"}
-                </td>
-                <td className="px-4 py-2.5">{record.signedName ?? "—"}</td>
-
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}

@@ -1,0 +1,1 @@
+ALTER TABLE `terms_signings` ADD `signatureImage` text;

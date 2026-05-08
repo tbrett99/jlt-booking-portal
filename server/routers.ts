@@ -4064,7 +4064,11 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
 
     // Agent signs the active terms
     sign: protectedProcedure
-      .input(z.object({ signedName: z.string().min(2).max(200) }))
+      .input(z.object({
+        signedName: z.string().min(2).max(200),
+        signatureImage: z.string().optional(), // base64 data URL of drawn signature
+        signingUserAgent: z.string().optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         const { getDb } = await import('./db');
         const db = await getDb();
@@ -4088,10 +4092,19 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
 
         if (existing) return { success: true, alreadySigned: true };
 
+        // Capture IP from request (trust proxy is enabled so x-forwarded-for is reliable)
+        const ip = (ctx.req as any)?.ip ||
+          ((ctx.req as any)?.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+          (ctx.req as any)?.socket?.remoteAddress ||
+          null;
+
         await db.insert(termsSignings).values({
           termsVersionId: active.id,
           userId: ctx.user.id,
           signedName: input.signedName,
+          signatureImage: input.signatureImage ?? null,
+          ipAddress: ip,
+          userAgent: input.signingUserAgent ?? null,
           signedAt: new Date(),
         });
 
@@ -4214,6 +4227,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           .select({
             id: termsSignings.id,
             signedName: termsSignings.signedName,
+            signatureImage: termsSignings.signatureImage,
+            ipAddress: termsSignings.ipAddress,
+            userAgent: termsSignings.userAgent,
             signedAt: termsSignings.signedAt,
             versionLabel: termsVersions.versionLabel,
             description: termsVersions.description,

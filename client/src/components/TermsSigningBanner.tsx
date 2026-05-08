@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,11 +6,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertTriangle, FileSignature, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, FileSignature, CheckCircle2, Pen, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
+import SignatureCanvas from "react-signature-canvas";
 
-// Inline the terms content sections for the modal
 const TERMS_SUMMARY = `By signing below, you confirm that you have read and understood the updated JLT Group Membership Agreement (including all Appendices) in full, and you agree to be bound by its terms and conditions, effective 30 days from the date of verbal notice (12 May 2026).
 
 Key updates in this version include:
@@ -21,6 +21,7 @@ The full updated terms are available in the Terms & Policies section of the port
 
 export function TermsSigningBanner() {
   const { user } = useAuth();
+  const sigRef = useRef<SignatureCanvas>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [signedName, setSignedName] = useState("");
   const [agreed, setAgreed] = useState(false);
@@ -58,15 +59,24 @@ export function TermsSigningBanner() {
     : null;
 
   const handleSign = () => {
+    if (!sigRef.current || sigRef.current.isEmpty()) {
+      toast.error("Please draw your signature in the box.");
+      return;
+    }
     if (!signedName.trim()) {
-      toast.error("Please type your full name to sign.");
+      toast.error("Please type your full name.");
       return;
     }
     if (!agreed) {
       toast.error("Please tick the confirmation checkbox.");
       return;
     }
-    signMutation.mutate({ signedName: signedName.trim() });
+    const signatureImage = sigRef.current.getTrimmedCanvas().toDataURL("image/png");
+    signMutation.mutate({
+      signedName: signedName.trim(),
+      signatureImage,
+      signingUserAgent: navigator.userAgent,
+    });
   };
 
   return (
@@ -105,7 +115,8 @@ export function TermsSigningBanner() {
           </DialogHeader>
 
           <ScrollArea className="flex-1 px-6 py-4">
-            <div className="space-y-4">
+            <div className="space-y-5">
+              {/* Terms summary */}
               <div className="bg-muted/50 rounded-lg p-4 text-sm leading-relaxed whitespace-pre-line">
                 {TERMS_SUMMARY}
               </div>
@@ -118,35 +129,61 @@ export function TermsSigningBanner() {
                 section of the portal.
               </p>
 
-              <div className="space-y-3 pt-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="signedName" className="text-sm font-medium">
-                    Full name <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="signedName"
-                    placeholder="Type your full legal name"
-                    value={signedName}
-                    onChange={(e) => setSignedName(e.target.value)}
-                    className="max-w-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Typing your name acts as your electronic signature.
-                  </p>
-                </div>
+              {/* Full name */}
+              <div className="space-y-1.5">
+                <Label htmlFor="signedName" className="text-sm font-medium">
+                  Full name <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="signedName"
+                  placeholder="Type your full legal name"
+                  value={signedName}
+                  onChange={(e) => setSignedName(e.target.value)}
+                  className="max-w-sm"
+                />
+              </div>
 
-                <div className="flex items-start gap-3 pt-1">
-                  <Checkbox
-                    id="agree-terms"
-                    checked={agreed}
-                    onCheckedChange={(v) => setAgreed(!!v)}
-                    className="mt-0.5"
-                  />
-                  <Label htmlFor="agree-terms" className="text-sm font-normal cursor-pointer leading-relaxed">
-                    I confirm that I have read and understood the updated JLT Group Membership Agreement in full,
-                    and I agree to be bound by its terms and conditions.
+              {/* Signature canvas */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-1.5 text-sm font-medium">
+                    <Pen size={14} />
+                    Your Signature <span className="text-red-500">*</span>
                   </Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => sigRef.current?.clear()}
+                    className="text-xs h-7"
+                  >
+                    <RotateCcw size={12} className="mr-1" />
+                    Clear
+                  </Button>
                 </div>
+                <div className="border-2 border-dashed rounded-lg overflow-hidden bg-gray-50">
+                  <SignatureCanvas
+                    ref={sigRef}
+                    penColor="#1a2a3a"
+                    canvasProps={{ className: "w-full", height: 140 }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Draw your signature using your mouse or touchscreen.
+                </p>
+              </div>
+
+              {/* Agreement checkbox */}
+              <div className="flex items-start gap-3 border rounded-lg p-4 bg-muted/30">
+                <Checkbox
+                  id="agree-terms"
+                  checked={agreed}
+                  onCheckedChange={(v) => setAgreed(!!v)}
+                  className="mt-0.5"
+                />
+                <Label htmlFor="agree-terms" className="text-sm font-normal cursor-pointer leading-relaxed">
+                  I confirm that I have read and understood the updated JLT Group Membership Agreement in full,
+                  and I agree to be bound by its terms and conditions.
+                </Label>
               </div>
             </div>
           </ScrollArea>
