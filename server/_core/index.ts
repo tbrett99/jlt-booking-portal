@@ -954,6 +954,17 @@ async function startServer() {
             console.error("[GC Webhook] Failed to send welcome email:", emailErr);
           }
 
+          // Sync CRM Kanban to Won stage (joining fee paid)
+          try {
+            const { getProspectByEmail: getCrmProspect, moveProspectStage: moveCrmStage } = await import("../crm-db");
+            const crmProspect = await getCrmProspect(session.email);
+            if (crmProspect) {
+              await moveCrmStage(crmProspect.id, "Won", null, "Joining fee paid via GoCardless (auto-synced)");
+            }
+          } catch (crmSyncErr: any) {
+            console.error("[GC Webhook] Failed to sync CRM prospect to Won:", crmSyncErr?.message);
+          }
+
           console.log(`[GC Webhook] billing_request.fulfilled: created agent user ${newUser.id} for ${session.email}`);
         }
 
@@ -1441,6 +1452,16 @@ async function startServer() {
               note: `Discovery call booked via Cal.com${calEventId ? ` (event: ${calEventId})` : ""}`,
             });
           }
+          // Sync CRM Kanban to Discovery Call Booked
+          try {
+            const { getProspectByEmail: getCrmProspect, moveProspectStage: moveCrmStage } = await import("../crm-db");
+            const crmProspect = await getCrmProspect(email);
+            if (crmProspect) {
+              await moveCrmStage(crmProspect.id, "Discovery Call Booked", null, "Discovery call booked via Cal.com (auto-synced)");
+            }
+          } catch (crmErr: any) {
+            console.error("[Cal.com Webhook] Failed to sync CRM stage:", crmErr?.message);
+          }
           if (calEventId || startTime) {
             await updateRecruitmentProspect(prospect.id, {
               calComEventId: calEventId ?? null,
@@ -1490,6 +1511,16 @@ async function startServer() {
                   html: `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#FFF6ED;border-radius:16px;"><h2 style="color:#414141;">No problem at all!</h2><p style="color:#414141;">Hi ${prospect.firstName},</p><p style="color:#414141;">We noticed you cancelled your discovery call — that's completely fine, life gets busy!</p><p style="color:#414141;">We'd love to find a time that works better for you. Simply use the link below to pick a new slot:</p><p style="text-align:center;margin:24px 0;"><a href="https://cal.com/thejltgroup" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">Book a New Time</a></p><p style="color:#414141;">If you have any questions or would prefer to chat over email first, just reply to this message.</p><p style="color:#414141;">Warm regards,<br/><strong>The JLT Group Team</strong></p></div>`,
                 }).catch((e: any) => console.error("[Cal.com Webhook] Failed to send rebook email:", e?.message));
               }
+            }
+            // Sync CRM Kanban back to Discovery Call Booked (still engaged, needs rebooking)
+            try {
+              const { getProspectByEmail: getCrmProspect, moveProspectStage: moveCrmStage } = await import("../crm-db");
+              const crmProspect = await getCrmProspect(email);
+              if (crmProspect) {
+                await moveCrmStage(crmProspect.id, "Discovery Call Booked", null, "Discovery call cancelled via Cal.com — rebook required (auto-synced)");
+              }
+            } catch (crmErr: any) {
+              console.error("[Cal.com Webhook] Failed to sync CRM stage on cancel:", crmErr?.message);
             }
             console.log(`[Cal.com Webhook] Prospect ${prospect.id} moved to rebook_required`);
           }
