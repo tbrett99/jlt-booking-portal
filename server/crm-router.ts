@@ -5,6 +5,7 @@ import { router, protectedProcedure, publicProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { nanoid } from "nanoid";
+import { createRecruitmentProspect } from "./recruitment-db";
 import {
   createProspect,
   getProspectById,
@@ -317,20 +318,64 @@ export const crmRouter = router({
           stage: "New Enquiry",
           source: "enquiry_form",
         });
-        // Send prospectus email (placeholder until real PDF uploaded)
+        // Generate a proper application token and create a recruitment prospect so the token lookup works
         try {
-          await sendDirectEmail({
-            toEmail: input.email,
-            toName: `${input.firstName} ${input.lastName}`,
-            subject: "Welcome to JLT Group — Your Prospectus",
-            html: `<p>Hi ${input.firstName},</p>
-<p>Thank you for your interest in joining the JLT Group travel agency network.</p>
-<p>We're excited to share more about the opportunity with you. Please find attached our prospectus (coming soon — we'll send it shortly).</p>
-<p>In the meantime, we'd love for you to complete our <strong>Agent Application Form</strong> so we can learn more about you:</p>
-<p><a href="${process.env.VITE_OAUTH_PORTAL_URL ?? ""}/apply/${prospect?.id}" style="background:#70FFE8;color:#414141;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">Complete Your Application</a></p>
-<p>If you have any questions, please don't hesitate to get in touch.</p>
-<p>Best regards,<br/>The JLT Group Team</p>`,
+          const appToken = nanoid(32);
+          const applicationUrl = `https://portal.thejltgroup.co.uk/apply/form?token=${appToken}`;
+          // Also store token in CRM prospect adminNotes for reference
+          if (prospect?.id) {
+            await updateProspect(prospect.id, { adminNotes: `APP_TOKEN:${appToken}` });
+          }
+          // Create a recruitment prospect so getApplicationByToken and submitApplication work
+          await createRecruitmentProspect({
+            firstName: input.firstName,
+            lastName: input.lastName,
+            email: input.email,
+            phone: input.phone,
+            pipelineStage: "new_enquiry",
+            source: "enquiry_form",
+            adminNotes: `APP_TOKEN:${appToken}`,
           });
+          // Send the properly branded prospectus email via Resend
+          const { Resend } = await import("resend");
+          const { PROSPECT_FROM, PROSPECT_REPLY_TO } = await import("./resend-email");
+          const { getEmailBrandingSettings } = await import("./crm-db");
+          const resendKey = process.env.RESEND_API_KEY;
+          if (resendKey && prospect?.id) {
+            const resend = new Resend(resendKey);
+            const branding = await getEmailBrandingSettings();
+            const b = branding;
+            const headerBg = b?.headerBgColor ?? "#70FFE8";
+            const headerText = b?.headerTextColor ?? "#414141";
+            const bodyBg = b?.bodyBgColor ?? "#f5f5f5";
+            const cardBg = b?.cardBgColor ?? "#ffffff";
+            const companyName = b?.companyName ?? "JLT Group";
+            const logoHtml = b?.logoUrl
+              ? `<img src="${b.logoUrl}" alt="${companyName}" style="max-height:60px;max-width:200px;display:block;margin:0 auto;object-fit:contain;" />`
+              : `<span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:${headerText};">${companyName}</span>`;
+            const PROSPECTUS_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310419663026820811/PdcDVQRp8zC2FzsyWBWptW/JLTProspectus_518c7f51.pdf";
+            const bodyHtml = `
+<p>Hi ${input.firstName},</p>
+<p>Thank you for your interest in joining the JLT Group travel agency team! We're excited to share more about what we do.</p>
+<p>Please find your copy of our prospectus below:</p>
+<p style="text-align:center;margin:24px 0;">
+  <a href="${PROSPECTUS_URL}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">View JLT Prospectus</a>
+</p>
+<p>Once you've had a chance to read through it, we'd love to learn more about you. Please complete our short application form:</p>
+<p style="text-align:center;margin:24px 0;">
+  <a href="${applicationUrl}" style="display:inline-block;background:#414141;color:#ffffff;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">Complete Your Application</a>
+</p>
+<p>If you have any questions in the meantime, feel free to reply to this email and we'll be happy to help.</p>
+<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
+            const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Your JLT Group Prospectus</title></head><body style="margin:0;padding:0;background-color:${bodyBg};font-family:'Poppins',Arial,sans-serif;"><div style="width:100%;background-color:${bodyBg};padding:20px 0;"><div style="max-width:600px;width:100%;margin:0 auto;background:${cardBg};border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><div style="background-color:${headerBg};padding:24px 40px;text-align:center;">${logoHtml}</div><div style="padding:32px 40px;color:#414141;font-family:'Poppins',Arial,sans-serif;font-size:15px;line-height:1.7;">${bodyHtml}</div><div style="padding:20px 40px;text-align:center;background-color:#fafafa;font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#888;">&copy; ${new Date().getFullYear()} ${companyName}. All rights reserved.</div></div></div></body></html>`;
+            await resend.emails.send({
+              from: PROSPECT_FROM,
+              to: [input.email],
+              replyTo: PROSPECT_REPLY_TO,
+              subject: "Your JLT Group Prospectus",
+              html,
+            });
+          }
         } catch (e) {
           // Non-fatal — log but don't fail the submission
           console.warn("[CRM] Failed to send prospectus email:", e);
