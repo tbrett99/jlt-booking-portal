@@ -1483,6 +1483,31 @@ async function startServer() {
               html: `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#FFF6ED;border-radius:16px;"><h2 style="color:#414141;">Your Discovery Call is Confirmed!</h2><p style="color:#414141;">Hi ${prospect.firstName},</p><p style="color:#414141;">Great news — your discovery call with the JLT Group team is confirmed for <strong>${callDateStr}</strong>.</p><p style="color:#414141;">We look forward to speaking with you. If you need to reschedule, please use the link in your calendar invitation.</p><p style="color:#414141;">Warm regards,<br/><strong>The JLT Group Team</strong></p></div>`,
             }).catch((e: any) => console.error("[Cal.com Webhook] Failed to send booking confirmation:", e?.message));
           }
+          // Notify support@ that a discovery call has been booked
+          try {
+            const { sendSupportEmail: notifySupport } = await import("../email");
+            const callDateStr = startTime ? new Date(startTime).toLocaleString("en-GB", { dateStyle: "full", timeStyle: "short", timeZone: "Europe/London" }) : "TBC";
+            await notifySupport({
+              subject: `Discovery Call Booked \u2014 ${prospect.firstName} ${prospect.lastName}`,
+              html: `
+                <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
+                  <h2 style="color:#414141;margin:0 0 16px;">Discovery Call Booked</h2>
+                  <table style="width:100%;border-collapse:collapse;">
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Name</td><td style="padding:6px 0;color:#414141;font-weight:600;">${prospect.firstName} ${prospect.lastName}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Email</td><td style="padding:6px 0;color:#414141;">${prospect.email}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Phone</td><td style="padding:6px 0;color:#414141;">${prospect.phone ?? '\u2014'}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Call Date &amp; Time</td><td style="padding:6px 0;color:#414141;font-weight:600;">${callDateStr}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Tier Interest</td><td style="padding:6px 0;color:#414141;">${prospect.tierInterest ?? '\u2014'}</td></tr>
+                    <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Pipeline Stage</td><td style="padding:6px 0;color:#414141;">Discovery Call Booked</td></tr>
+                  </table>
+                  <p style="margin:20px 0 0;"><a href="https://portal.thejltgroup.co.uk/crm/recruitment" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">View in Agent Recruitment</a></p>
+                  <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal \u2014 automated notification</p>
+                </div>
+              `,
+            });
+          } catch (adminEmailErr) {
+            console.error("[Cal.com Webhook] Failed to send admin discovery call notification:", adminEmailErr);
+          }
           console.log(`[Cal.com Webhook] Prospect ${prospect.id} advanced to discovery_call_booked`);
         }
 

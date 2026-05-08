@@ -21,6 +21,7 @@ import {
   deleteRecruitmentProspect,
 } from "./recruitment-db";
 import { PROSPECT_FROM, PROSPECT_REPLY_TO } from "./resend-email";
+import { sendSupportEmail } from "./email";
 import { Resend } from "resend";
 import { ENV } from "./_core/env";
 import { getEmailBrandingSettings, getProspectByEmail, moveProspectStage } from "./crm-db";
@@ -350,6 +351,30 @@ export const recruitmentRouter = router({
         emailKey: "application_confirmation",
         subject,
       });
+
+      // Notify support@ that a new application has been submitted
+      try {
+        await sendSupportEmail({
+          subject: `New Recruitment Application — ${prospect.firstName} ${prospect.lastName}`,
+          html: `
+            <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
+              <h2 style="color:#414141;margin:0 0 16px;">New Recruitment Application Received</h2>
+              <table style="width:100%;border-collapse:collapse;">
+                <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Name</td><td style="padding:6px 0;color:#414141;font-weight:600;">${prospect.firstName} ${prospect.lastName}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Email</td><td style="padding:6px 0;color:#414141;">${prospect.email}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Phone</td><td style="padding:6px 0;color:#414141;">${prospect.phone ?? '—'}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Tier Interest</td><td style="padding:6px 0;color:#414141;">${prospect.tierInterest ?? '—'}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Source</td><td style="padding:6px 0;color:#414141;">${prospect.source ?? '—'}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Submitted</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
+              </table>
+              <p style="margin:20px 0 0;"><a href="https://portal.thejltgroup.co.uk/crm/recruitment" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">View in Agent Recruitment</a></p>
+              <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
+            </div>
+          `,
+        });
+      } catch (adminEmailErr) {
+        console.error("[Recruitment] Failed to send admin application notification:", adminEmailErr);
+      }
 
       return { success: true, alreadySubmitted: false };
     }),
