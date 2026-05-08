@@ -1363,6 +1363,29 @@ async function startServer() {
     }
   });
 
+  // ── Prospectus PDF (inline viewer) ──────────────────────────────────────────
+  // Proxies the PDF from CloudFront with Content-Disposition: inline so it
+  // opens directly in the browser tab rather than triggering a download.
+  app.get("/api/prospectus", async (_req, res) => {
+    try {
+      const PROSPECTUS_CDN = "https://d2xsxph8kpxj0f.cloudfront.net/310419663026820811/PdcDVQRp8zC2FzsyWBWptW/JLTProspectus-4_0115900d.pdf";
+      const upstream = await fetch(PROSPECTUS_CDN);
+      if (!upstream.ok) {
+        res.status(502).send("Could not retrieve prospectus");
+        return;
+      }
+      const buffer = Buffer.from(await upstream.arrayBuffer());
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", 'inline; filename="JLT-Group-Prospectus.pdf"');
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.setHeader("Content-Length", buffer.length);
+      res.end(buffer);
+    } catch (e) {
+      console.error("[Prospectus] Failed to proxy PDF:", e);
+      res.status(500).send("Error loading prospectus");
+    }
+  });
+
   // ── Email Unsubscribe ─────────────────────────────────────────────────────
   app.get("/api/unsubscribe", async (req, res) => {
     const token = req.query.token as string;

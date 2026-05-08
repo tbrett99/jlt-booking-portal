@@ -27,8 +27,7 @@ import { getEmailBrandingSettings } from "./crm-db";
 
 // ─── Prospectus / Application email helpers ───────────────────────────────────
 
-const PROSPECTUS_URL =
-  "https://d2xsxph8kpxj0f.cloudfront.net/310419663026820811/PdcDVQRp8zC2FzsyWBWptW/JLTProspectus-4_0115900d.pdf";
+const PROSPECTUS_URL = "https://portal.thejltgroup.co.uk/api/prospectus";
 const FACEBOOK_GROUP_URL = "https://www.facebook.com/groups/jltgroup/";
 
 function getResend(): Resend {
@@ -47,7 +46,7 @@ async function sendProspectEmail(opts: {
     const resend = getResend();
     const branding = await getEmailBrandingSettings();
     const logoHtml = branding?.logoUrl
-      ? `<img src="${branding.logoUrl}" alt="JLT Group" style="max-height:60px;max-width:200px;display:block;margin:0 auto;object-fit:contain;" />`
+      ? `<img src="${branding.logoUrl}" alt="JLT Group" style="max-height:60px;max-width:200px;display:block;margin:0 auto;object-fit:contain;mix-blend-mode:multiply;" />`
       : `<span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:#414141;">JLT Group</span>`;
 
     const html = `<!DOCTYPE html>
@@ -99,7 +98,7 @@ async function sendProspectusEmail(opts: {
 <p style="margin:0 0 16px;">Thank you for your interest in joining JLT Group. We are really excited to share more about who we are and what we offer.</p>
 <p style="margin:0 0 16px;">Start by reading our prospectus. It covers everything you need to know about life at JLT Group and what makes us different:</p>
 <p style="text-align:center;margin:28px 0;">
-  <a href="${PROSPECTUS_URL}" style="display:inline-block;background:#02E6D2;color:#414141;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Read the JLT Prospectus</a>
+  <a href="${PROSPECTUS_URL}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Read the JLT Prospectus</a>
 </p>
 <p style="margin:0 0 16px;">We also have a fantastic Facebook community where current agents and prospective members connect, share tips, and get a real feel for the JLT culture. We would love for you to join us there. When you request to join, please answer the membership questions so we can approve you straight away:</p>
 <p style="text-align:center;margin:28px 0;">
