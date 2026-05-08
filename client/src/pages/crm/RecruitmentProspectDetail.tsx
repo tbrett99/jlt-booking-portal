@@ -124,14 +124,22 @@ export default function RecruitmentProspectDetail() {
     onError: (err) => toast.error(err.message),
   });
 
-  const resendProspectus = trpc.recruitment.resendProspectusEmail.useMutation({
+   const resendProspectus = trpc.recruitment.resendProspectusEmail.useMutation({
     onSuccess: () => {
       toast.success("Prospectus email resent");
       utils.recruitment.getProspect.invalidate({ id });
     },
     onError: (err) => toast.error(err.message),
   });
-
+  const deleteProspect = trpc.recruitment.deleteProspect.useMutation({
+    onSuccess: () => {
+      toast.success("Prospect deleted");
+      utils.recruitment.listProspects.invalidate();
+      utils.recruitment.stageCounts.invalidate();
+      navigate("/crm/recruitment");
+    },
+    onError: () => toast.error("Failed to delete prospect"),
+  });
   if (isLoading) {
     return (
       <div className="p-6">
@@ -175,16 +183,6 @@ export default function RecruitmentProspectDetail() {
 
   const targetStageMeta = getStageBadge(targetStage);
   const isDeclineAction = DECLINE_STAGES.includes(targetStage);
-
-  const deleteProspect = trpc.recruitment.deleteProspect.useMutation({
-    onSuccess: () => {
-      toast.success("Prospect deleted");
-      utils.recruitment.listProspects.invalidate();
-      utils.recruitment.stageCounts.invalidate();
-      navigate("/crm/recruitment");
-    },
-    onError: () => toast.error("Failed to delete prospect"),
-  });
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
