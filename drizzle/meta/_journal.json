@@ -610,6 +610,20 @@
       "when": 1778240674720,
       "tag": "0086_youthful_ikaris",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "5",
+      "when": 1778251517390,
+      "tag": "0087_mute_loa",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "5",
+      "when": 1778252738569,
+      "tag": "0088_fixed_selene",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `prospects` MODIFY COLUMN `stage` enum('New Enquiry','AR Submitted','AR Approved','Discovery Call Booked','Approved','Rejected','Lost','Won') NOT NULL DEFAULT 'New Enquiry';

@@ -955,6 +955,27 @@ async function startServer() {
           }
 
           console.log(`[GC Webhook] billing_request.fulfilled: created agent user ${newUser.id} for ${session.email}`);
+
+          // Advance recruitment prospect to 'won' if one exists with this email
+          try {
+            const { moveRecruitmentProspectStage } = await import("../recruitment-db");
+            const { getAllRecruitmentProspects } = await import("../recruitment-db");
+            const allProspects = await getAllRecruitmentProspects();
+            const prospect = allProspects.find(
+              (p: any) => p.email?.toLowerCase() === session.email?.toLowerCase()
+            );
+            if (prospect && prospect.pipelineStage !== "won") {
+              await moveRecruitmentProspectStage({
+                prospectId: prospect.id,
+                toStage: "won",
+                changedByName: "System (payment confirmed)",
+                note: `Joining fee paid via GoCardless — agent account created (user #${newUser.id})`,
+              });
+              console.log(`[GC Webhook] Recruitment prospect ${prospect.id} advanced to 'won'`);
+            }
+          } catch (recruitErr) {
+            console.error("[GC Webhook] Failed to advance recruitment prospect stage:", recruitErr);
+          }
         }
 
         // Mandate became active → create the subscription

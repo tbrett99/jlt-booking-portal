@@ -2101,3 +2101,11 @@
 - [x] context.ts: login guard now blocks 'paused' and 'suspended' agents (in addition to 'cancelled')
 - [x] routers.ts: password login guard updated to block 'paused' and 'suspended'
 - [x] crm-router.ts: updateAgentStatus now syncs users.portalStatus when agentStatus changes (paused→paused, suspended→suspended, cancelled→cancelled, in_notice→active, active→active)
+
+## Agent Recruitment Single View Rebuild (May 8)
+- [x] Rolled back to checkpoint 1ee75357 (clean state before incorrect consolidation)
+- [x] Added Won stage to PIPELINE_STAGES in RecruitmentPipeline.tsx
+- [x] Rebuilt /crm/recruitment as tabbed single management view: Prospects Pipeline + Sign-Up Applications + Abandoned Sign-Ups
+- [x] GoCardless billing_request.fulfilled webhook now advances recruitment prospect to Won stage
+- [x] Cal.com webhook already advances to discovery_call_booked (existing, preserved)
+- [x] Removed Recruitment Pipeline Kanban from Marketing nav; Agent Recruitment is now the only recruitment nav entry
