@@ -10,9 +10,35 @@ import "./index.css";
 
 const queryClient = new QueryClient();
 
+// Paths that are intentionally public — never redirect to Manus OAuth from these.
+const PUBLIC_PATHS = [
+  "/apply",
+  "/apply/embed",
+  "/apply/form",
+  "/terms",
+  "/unsubscribe",
+  "/enquiry",
+  "/sign-contract",
+  "/membership",
+  "/register",
+  "/join",
+  "/payment",
+  "/pay",
+  "/login",
+  "/reset-password",
+];
+
+const isPublicPath = () => {
+  if (typeof window === "undefined") return false;
+  const path = window.location.pathname;
+  return PUBLIC_PATHS.some(p => path === p || path.startsWith(p + "/") || path.startsWith(p + "?"));
+};
+
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
+  // Never redirect to Manus OAuth from public pages — they don't require login.
+  if (isPublicPath()) return;
 
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
 
