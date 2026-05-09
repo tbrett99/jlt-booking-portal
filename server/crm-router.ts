@@ -483,16 +483,7 @@ export const crmRouter = router({
               html,
             });
           }
-          // Notify the referring user
-          if (refUserId) {
-            try {
-              const { notifyOwner } = await import("./_core/notification");
-              await notifyOwner({
-                title: `New lead: ${prospectInput.firstName} ${prospectInput.lastName}`,
-                content: `${prospectInput.firstName} ${prospectInput.lastName} (${prospectInput.email}) registered via your personal JLT funnel page.`,
-              });
-            } catch (_) { /* non-fatal */ }
-          }
+          // Lead attribution recorded — no owner notification needed (visible in recruitment pipeline)
         } catch (e) {
           console.warn("[CRM] Failed to process referral enquiry:", e);
         }

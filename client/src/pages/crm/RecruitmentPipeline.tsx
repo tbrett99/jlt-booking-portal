@@ -289,7 +289,7 @@ function ProspectsPipelineTab() {
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Stage</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Move To</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Move Stage</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Referred By</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Source</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Applied</th>
