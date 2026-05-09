@@ -88,6 +88,81 @@ function TagSelector({ bookingId, currentTag, onTagSet }: { bookingId: number; c
   );
 }
 
+function ThreadCard({ thread, setTag, markRead }: {
+  thread: any;
+  setTag: { mutate: (args: { bookingId: number; tag: DeptTag | null }) => void };
+  markRead: { mutate: (args: { bookingId: number }) => void };
+}) {
+  const isUnread = thread.unreadCount > 0;
+  const isAgentLatest = thread.latestAuthorRole === "agent";
+  const currentTag = thread.tag as DeptTag | null;
+  return (
+    <div
+      className="rounded-xl border transition-all"
+      style={{
+        borderColor: isUnread ? "#02E6D2" : "var(--border)",
+        background: isUnread ? "rgba(2,230,210,0.04)" : "var(--card)",
+      }}
+    >
+      <div className="flex items-start gap-4 p-4">
+        <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: isAgentLatest ? "#FFF6ED" : "rgba(112,255,232,0.15)" }}>
+          <User size={16} style={{ color: isAgentLatest ? "#92400e" : "#0f766e" }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+            <span className="font-semibold text-sm text-foreground">{thread.clientName}</span>
+            {isUnread && (
+              <span className="flex-shrink-0 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "#ef4444", color: "white" }}>
+                {thread.unreadCount} unread
+              </span>
+            )}
+            {currentTag && (
+              <TagChip tag={currentTag} onRemove={() => setTag.mutate({ bookingId: thread.bookingId, tag: null })} />
+            )}
+            <span className="text-xs text-muted-foreground ml-auto flex-shrink-0">
+              {formatDistanceToNow(new Date(thread.latestMessageAt), { addSuffix: true })}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            <span className="text-xs text-muted-foreground">Agent: <span className="font-medium text-foreground/80">{thread.agentName}</span></span>
+            {thread.ptsRef && <span className="text-xs text-muted-foreground">· PTS: {thread.ptsRef}</span>}
+            {thread.topdogRef && <span className="text-xs text-muted-foreground">· TD: {thread.topdogRef}</span>}
+            {thread.lastAdminName && (
+              <span className="text-xs text-muted-foreground ml-auto">
+                Last replied by: <span className="font-medium text-foreground/80">{thread.lastAdminName}</span>
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            <span className="font-medium text-foreground">{thread.latestAuthorName}:</span>{" "}
+            {thread.latestMessage.replace(/^\[System\]\s*/i, "")}
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 flex-shrink-0 items-end">
+          <Link href={`/bookings/${thread.bookingId}`}>
+            <Button size="sm" className="h-8 text-xs gap-1.5" style={{ background: "#02E6D2", color: "#414141" }}>
+              Open <ArrowRight size={13} />
+            </Button>
+          </Link>
+          <TagSelector
+            bookingId={thread.bookingId}
+            currentTag={currentTag}
+            onTagSet={(tag) => setTag.mutate({ bookingId: thread.bookingId, tag })}
+          />
+          {isUnread && (
+            <button
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+              onClick={() => markRead.mutate({ bookingId: thread.bookingId })}
+            >
+              <CheckCheck size={12} /> Mark read
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminMessages() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "unread">("unread");
@@ -108,7 +183,7 @@ export default function AdminMessages() {
 
   const sortedThreads = [...threads].sort((a, b) => new Date(b.latestMessageAt).getTime() - new Date(a.latestMessageAt).getTime());
 
-  const filtered = sortedThreads.filter((t) => {
+  const baseFiltered = sortedThreads.filter((t) => {
     if (filter === "unread" && t.unreadCount === 0) return false;
     if (tagFilter && t.tag !== tagFilter) return false;
     if (search) {
@@ -123,6 +198,11 @@ export default function AdminMessages() {
     }
     return true;
   });
+
+  // Split into unassigned (no department tag) and assigned (has a tag)
+  const unassignedThreads = baseFiltered.filter((t) => !t.tag);
+  const assignedThreads = baseFiltered.filter((t) => !!t.tag);
+  const filtered = baseFiltered; // keep for empty state check
 
   const totalUnread = sortedThreads.filter((t) => t.unreadCount > 0).length;
 
@@ -239,94 +319,36 @@ export default function AdminMessages() {
           )}
         </div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map((thread) => {
-            const isUnread = thread.unreadCount > 0;
-            const isAgentLatest = thread.latestAuthorRole === "agent";
-            const currentTag = thread.tag as DeptTag | null;
-            return (
-              <div
-                key={thread.bookingId}
-                className="rounded-xl border transition-all"
-                style={{
-                  borderColor: isUnread ? "#02E6D2" : "var(--border)",
-                  background: isUnread ? "rgba(2,230,210,0.04)" : "var(--card)",
-                }}
-              >
-                <div className="flex items-start gap-4 p-4">
-                  {/* Avatar */}
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: isAgentLatest ? "#FFF6ED" : "rgba(112,255,232,0.15)" }}>
-                    <User size={16} style={{ color: isAgentLatest ? "#92400e" : "#0f766e" }} />
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    {/* Row 1: client name, unread badge, time */}
-                    <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                      <span className="font-semibold text-sm text-foreground">{thread.clientName}</span>
-                      {isUnread && (
-                        <span className="flex-shrink-0 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "#ef4444", color: "white" }}>
-                          {thread.unreadCount} unread
-                        </span>
-                      )}
-                      {currentTag && (
-                        <TagChip
-                          tag={currentTag}
-                          onRemove={() => setTag.mutate({ bookingId: thread.bookingId, tag: null })}
-                        />
-                      )}
-                      <span className="text-xs text-muted-foreground ml-auto flex-shrink-0">
-                        {formatDistanceToNow(new Date(thread.latestMessageAt), { addSuffix: true })}
-                      </span>
-                    </div>
-
-                    {/* Row 2: agent, refs, last admin responder */}
-                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      <span className="text-xs text-muted-foreground">Agent: <span className="font-medium text-foreground/80">{thread.agentName}</span></span>
-                      {thread.ptsRef && <span className="text-xs text-muted-foreground">· PTS: {thread.ptsRef}</span>}
-                      {thread.topdogRef && <span className="text-xs text-muted-foreground">· TD: {thread.topdogRef}</span>}
-                      {(thread as any).lastAdminName && (
-                        <span className="text-xs text-muted-foreground ml-auto">
-                          Last replied by: <span className="font-medium text-foreground/80">{(thread as any).lastAdminName}</span>
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Row 3: message preview (2 lines) */}
-                    <p
-                      className="text-sm text-muted-foreground"
-                      style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
-                    >
-                      <span className="font-medium text-foreground">{thread.latestAuthorName}:</span>{" "}
-                      {thread.latestMessage.replace(/^\[System\]\s*/i, "")}
-                    </p>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex flex-col gap-2 flex-shrink-0 items-end">
-                    <Link href={`/bookings/${thread.bookingId}`}>
-                      <Button size="sm" className="h-8 text-xs gap-1.5" style={{ background: "#02E6D2", color: "#414141" }}>
-                        Open <ArrowRight size={13} />
-                      </Button>
-                    </Link>
-                    <TagSelector
-                      bookingId={thread.bookingId}
-                      currentTag={currentTag}
-                      onTagSet={(tag) => setTag.mutate({ bookingId: thread.bookingId, tag })}
-                    />
-                    {isUnread && (
-                      <button
-                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                        onClick={() => markRead.mutate({ bookingId: thread.bookingId })}
-                      >
-                        <CheckCheck size={12} /> Mark read
-                      </button>
-                    )}
-                  </div>
-                </div>
+        <div className="space-y-6">
+          {/* ── Unassigned section ── */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-semibold uppercase tracking-wider text-orange-500">Unassigned</span>
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-600">{unassignedThreads.length}</span>
+              <div className="flex-1 h-px bg-orange-200" />
+            </div>
+            {unassignedThreads.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-3 px-1">No unassigned conversations — great work!</p>
+            ) : (
+              <div className="space-y-2">
+                {unassignedThreads.map((thread) => <ThreadCard key={thread.bookingId} thread={thread} setTag={setTag} markRead={markRead} />)}
               </div>
-            );
-          })}
+            )}
+          </div>
+
+          {/* ── Assigned section ── */}
+          {assignedThreads.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Assigned</span>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{assignedThreads.length}</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+              <div className="space-y-2">
+                {assignedThreads.map((thread) => <ThreadCard key={thread.bookingId} thread={thread} setTag={setTag} markRead={markRead} />)}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import EmailEditor from "@/components/EmailEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
@@ -134,18 +134,11 @@ function EmailStepDialog({
           </div>
 
           <div className="space-y-1">
-            <Label>Email body (HTML)</Label>
-            <p className="text-xs text-muted-foreground mb-1">
-              Use <code className="bg-muted px-1 rounded">{"{{firstName}}"}</code>,{" "}
-              <code className="bg-muted px-1 rounded">{"{{lastName}}"}</code>,{" "}
-              <code className="bg-muted px-1 rounded">{"{{email}}"}</code> as template variables.
-            </p>
-            <Textarea
+            <Label>Email body</Label>
+            <EmailEditor
               value={bodyHtml}
-              onChange={(e) => setBodyHtml(e.target.value)}
-              rows={14}
-              className="font-mono text-xs"
-              placeholder="<p>Hi {{firstName}},</p>..."
+              onChange={setBodyHtml}
+              placeholder="Hi {{firstName}}, ..."
             />
           </div>
         </div>

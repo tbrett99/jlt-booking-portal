@@ -2128,3 +2128,12 @@
 - [x] Update Onboarding Approved workflow email: include sign-up steps, join link (portal.thejltgroup.co.uk/join), and first payment note
 - [x] Build email automation engine: fire 0-delay workflow emails automatically on stage entry (not just on manual Process Now click)
 - [x] Wire periodic scheduled task for delayed workflow emails (node-cron every 15 min in scheduler.ts)
+
+## Messages & Workflow UI Improvements
+- [ ] Messages page: sort unassigned conversations to top, assigned to bottom, with clear section labels
+- [ ] Workflow Builder: add visual rich-text (WYSIWYG) email editor to the email step dialog
+
+## Messages & Workflow UI Improvements
+- [x] Messages page: split into Unassigned (top, orange) and Assigned (bottom) sections with counts
+- [x] Workflow Builder: replace HTML textarea with visual WYSIWYG email editor (Tiptap)
+- [x] EmailEditor component: bold, italic, headings, lists, blockquote, alignment, link inserter, CTA button inserter, template variable hints
