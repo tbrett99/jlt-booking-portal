@@ -417,6 +417,8 @@ export const recruitmentRouter = router({
         stage: z.string().optional(),
         search: z.string().optional(),
         referredById: z.number().optional(),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
         limit: z.number().min(1).max(200).optional(),
         offset: z.number().min(0).optional(),
       })
@@ -429,6 +431,8 @@ export const recruitmentRouter = router({
         stage: input.stage,
         search: input.search,
         referredById: input.referredById,
+        dateFrom: input.dateFrom,
+        dateTo: input.dateTo,
         limit: input.limit,
         offset: input.offset,
       });

@@ -10,7 +10,7 @@ import {
   type RecruitmentProspect,
   type InsertRecruitmentProspect,
 } from "../drizzle/schema";
-import { eq, desc, like, or, and, isNull, getTableColumns } from "drizzle-orm";
+import { eq, desc, like, or, and, isNull, getTableColumns, gte, lte } from "drizzle-orm";
 
 // ─── Prospects ────────────────────────────────────────────────────────────────
 
@@ -54,6 +54,8 @@ export async function getAllRecruitmentProspects(opts?: {
   stage?: string;
   search?: string;
   referredById?: number;
+  dateFrom?: Date;
+  dateTo?: Date;
   limit?: number;
   offset?: number;
 }): Promise<(RecruitmentProspect & { referrerName: string | null })[]> {
@@ -68,6 +70,17 @@ export async function getAllRecruitmentProspects(opts?: {
 
   if (opts?.referredById) {
     conditions.push(eq(recruitmentProspects.referredById, opts.referredById));
+  }
+
+  if (opts?.dateFrom) {
+    conditions.push(gte(recruitmentProspects.createdAt, opts.dateFrom));
+  }
+
+  if (opts?.dateTo) {
+    // Include the full end day by setting time to 23:59:59
+    const endOfDay = new Date(opts.dateTo);
+    endOfDay.setHours(23, 59, 59, 999);
+    conditions.push(lte(recruitmentProspects.createdAt, endOfDay));
   }
 
   if (opts?.search) {

@@ -164,6 +164,8 @@ function ProspectsPipelineTab() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [referredByFilter, setReferredByFilter] = useState<number | undefined>(undefined);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const utils = trpc.useUtils();
 
   const updateStage = trpc.recruitment.updateStage.useMutation({
@@ -176,7 +178,13 @@ function ProspectsPipelineTab() {
   });
 
   const { data: prospects = [], isLoading } = trpc.recruitment.listProspectsFiltered.useQuery(
-    { stage: stageFilter === "all" ? undefined : stageFilter, search: search || undefined, referredById: referredByFilter },
+    {
+      stage: stageFilter === "all" ? undefined : stageFilter,
+      search: search || undefined,
+      referredById: referredByFilter,
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
+    },
     { refetchInterval: 30_000 }
   );
 
@@ -265,6 +273,31 @@ function ProspectsPipelineTab() {
             </SelectContent>
           </Select>
         )}
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+            title="From date"
+          />
+          <span className="text-muted-foreground text-sm">to</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+            title="To date"
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(""); setDateTo(""); }}
+              className="text-xs text-muted-foreground hover:text-foreground underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
         <span className="text-sm text-muted-foreground self-center">{totalActive} active</span>
       </div>
 
