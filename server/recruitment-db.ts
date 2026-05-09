@@ -6,10 +6,11 @@ import {
   recruitmentProspects,
   recruitmentEmailsSent,
   recruitmentStageHistory,
+  users,
   type RecruitmentProspect,
   type InsertRecruitmentProspect,
 } from "../drizzle/schema";
-import { eq, desc, like, or, and, isNull } from "drizzle-orm";
+import { eq, desc, like, or, and, isNull, getTableColumns } from "drizzle-orm";
 
 // ─── Prospects ────────────────────────────────────────────────────────────────
 
@@ -24,12 +25,13 @@ export async function createRecruitmentProspect(
 
 export async function getRecruitmentProspectById(
   id: number
-): Promise<RecruitmentProspect | null> {
+): Promise<(RecruitmentProspect & { referrerName: string | null }) | null> {
   const db = await getDb();
   if (!db) return null;
   const rows = await db
-    .select()
+    .select({ ...getTableColumns(recruitmentProspects), referrerName: users.name })
     .from(recruitmentProspects)
+    .leftJoin(users, eq(recruitmentProspects.referredById, users.id))
     .where(eq(recruitmentProspects.id, id))
     .limit(1);
   return rows[0] ?? null;
@@ -51,9 +53,10 @@ export async function getRecruitmentProspectByEmail(
 export async function getAllRecruitmentProspects(opts?: {
   stage?: string;
   search?: string;
+  referredById?: number;
   limit?: number;
   offset?: number;
-}): Promise<RecruitmentProspect[]> {
+}): Promise<(RecruitmentProspect & { referrerName: string | null })[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -61,6 +64,10 @@ export async function getAllRecruitmentProspects(opts?: {
 
   if (opts?.stage && opts.stage !== "all") {
     conditions.push(eq(recruitmentProspects.pipelineStage, opts.stage));
+  }
+
+  if (opts?.referredById) {
+    conditions.push(eq(recruitmentProspects.referredById, opts.referredById));
   }
 
   if (opts?.search) {
@@ -76,8 +83,9 @@ export async function getAllRecruitmentProspects(opts?: {
   }
 
   const query = db
-    .select()
+    .select({ ...getTableColumns(recruitmentProspects), referrerName: users.name })
     .from(recruitmentProspects)
+    .leftJoin(users, eq(recruitmentProspects.referredById, users.id))
     .orderBy(desc(recruitmentProspects.createdAt))
     .limit(opts?.limit ?? 100)
     .offset(opts?.offset ?? 0);

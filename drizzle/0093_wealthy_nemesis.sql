@@ -1,0 +1,1 @@
+ALTER TABLE `recruitment_prospects` ADD `referredById` int;

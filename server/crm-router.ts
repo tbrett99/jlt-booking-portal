@@ -437,6 +437,7 @@ export const crmRouter = router({
             phone: prospectInput.phone,
             pipelineStage: "new_enquiry",
             source: "referral_funnel",
+            referredById: refUserId ?? null,
             adminNotes: `APP_TOKEN:${appToken}`,
           });
           // Send prospectus email

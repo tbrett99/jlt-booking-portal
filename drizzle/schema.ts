@@ -1278,6 +1278,7 @@ export const recruitmentProspects = mysqlTable("recruitment_prospects", {
   declineReason: text("declineReason"),
   adminNotes: text("adminNotes"),
   source: varchar("source", { length: 100 }).default("website"),
+  referredById: int("referredById"),                                     // FK → users.id (null = no referrer)
   tierInterest: varchar("tierInterest", { length: 50 }),
   howHeard: varchar("howHeard", { length: 255 }),
   prospectusEmailSentAt: timestamp("prospectusEmailSentAt"),

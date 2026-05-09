@@ -163,6 +163,7 @@ const STAGE_TRANSITIONS: Record<string, string[]> = {
 function ProspectsPipelineTab() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
+  const [referredByFilter, setReferredByFilter] = useState<number | undefined>(undefined);
   const utils = trpc.useUtils();
 
   const updateStage = trpc.recruitment.updateStage.useMutation({
@@ -175,9 +176,22 @@ function ProspectsPipelineTab() {
   });
 
   const { data: prospects = [], isLoading } = trpc.recruitment.listProspectsFiltered.useQuery(
-    { stage: stageFilter === "all" ? undefined : stageFilter, search: search || undefined },
+    { stage: stageFilter === "all" ? undefined : stageFilter, search: search || undefined, referredById: referredByFilter },
     { refetchInterval: 30_000 }
   );
+
+  // Get unique referrers from all prospects for the filter dropdown
+  const { data: allProspectsForFilter = [] } = trpc.recruitment.listProspectsFiltered.useQuery(
+    {},
+    { staleTime: 60_000 }
+  );
+  const referrers = Array.from(
+    new Map(
+      (allProspectsForFilter as any[])
+        .filter((p) => p.referredById && p.referrerName)
+        .map((p) => [p.referredById, p.referrerName])
+    ).entries()
+  ).map(([id, name]) => ({ id: id as number, name: name as string }));
 
   const { data: stageCounts = {} } = trpc.recruitment.stageCounts.useQuery(undefined, {
     refetchInterval: 30_000,
@@ -210,8 +224,8 @@ function ProspectsPipelineTab() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search name or email..."
@@ -233,6 +247,24 @@ function ProspectsPipelineTab() {
             ))}
           </SelectContent>
         </Select>
+        {referrers.length > 0 && (
+          <Select
+            value={referredByFilter ? String(referredByFilter) : "all"}
+            onValueChange={(v) => setReferredByFilter(v === "all" ? undefined : Number(v))}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="All referrers" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Referrers</SelectItem>
+              {referrers.map((r) => (
+                <SelectItem key={r.id} value={String(r.id)}>
+                  {r.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <span className="text-sm text-muted-foreground self-center">{totalActive} active</span>
       </div>
 
@@ -258,6 +290,7 @@ function ProspectsPipelineTab() {
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Stage</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Move To</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Referred By</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Source</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Applied</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Enquired</th>
@@ -277,6 +310,15 @@ function ProspectsPipelineTab() {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${stage.color}`}>
                         {stage.label}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {p.referrerName ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#70FFE8]/20 text-[#0d6b5e] border border-[#70FFE8]/40">
+                          {p.referrerName}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/40 text-xs">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground capitalize">
                       {p.source ?? "website"}

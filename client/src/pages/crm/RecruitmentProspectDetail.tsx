@@ -222,6 +222,11 @@ export default function RecruitmentProspectDetail() {
                 via {data.source.replace("_", " ")}
               </span>
             )}
+            {(data as any).referrerName && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#70FFE8]/20 text-[#0d6b5e] border border-[#70FFE8]/40">
+                Referred by {(data as any).referrerName}
+              </span>
+            )}
           </div>
         </div>
 

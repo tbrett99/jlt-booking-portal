@@ -416,6 +416,7 @@ export const recruitmentRouter = router({
       z.object({
         stage: z.string().optional(),
         search: z.string().optional(),
+        referredById: z.number().optional(),
         limit: z.number().min(1).max(200).optional(),
         offset: z.number().min(0).optional(),
       })
@@ -427,6 +428,7 @@ export const recruitmentRouter = router({
       return getAllRecruitmentProspects({
         stage: input.stage,
         search: input.search,
+        referredById: input.referredById,
         limit: input.limit,
         offset: input.offset,
       });
