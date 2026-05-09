@@ -251,6 +251,8 @@ function AuthRouter() {
           <Route path="/apply/embed" component={ApplyEmbedPage} />
           <Route path="/apply/form" component={ApplicationFormPage} />
           <Route path="/apply/:prospectId" component={AgentApplicationForm} />
+          {/* Public funnel page — accessible even when logged in */}
+          <Route path="/info" component={InfoFunnelPage} />
           {/* OAuth login page — auto-redirects logged-in users back to authorize */}
           <Route path="/oauth2/login" component={OAuthLoginPage} />
           <Route component={NotFound} />
@@ -296,6 +298,8 @@ function AuthRouter() {
           <Route path="/apply/embed" component={ApplyEmbedPage} />
           <Route path="/apply/form" component={ApplicationFormPage} />
           <Route path="/apply/:prospectId" component={AgentApplicationForm} />
+          {/* Public funnel page — accessible even when logged in */}
+          <Route path="/info" component={InfoFunnelPage} />
           {/* OAuth login page — auto-redirects logged-in users back to authorize */}
           <Route path="/oauth2/login" component={OAuthLoginPage} />
           <Route component={NotFound} />
@@ -372,6 +376,8 @@ function AuthRouter() {
         <Route path="/apply/embed" component={ApplyEmbedPage} />
         <Route path="/apply/form" component={ApplicationFormPage} />
         <Route path="/apply/:prospectId" component={AgentApplicationForm} />
+        {/* Public funnel page — accessible even when logged in */}
+        <Route path="/info" component={InfoFunnelPage} />
         {/* OAuth login page — auto-redirects logged-in users back to authorize */}
         <Route path="/oauth2/login" component={OAuthLoginPage} />
         <Route component={NotFound} />
