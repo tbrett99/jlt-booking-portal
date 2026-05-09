@@ -167,7 +167,7 @@ function ProspectsPipelineTab() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showBulkSendDialog, setShowBulkSendDialog] = useState(false);
-  const [bulkSendResult, setBulkSendResult] = useState<{ sent: number; skipped: number; errors: number } | null>(null);
+  const [bulkJobStarted, setBulkJobStarted] = useState(false);
   const utils = trpc.useUtils();
 
   const updateStage = trpc.recruitment.updateStage.useMutation({
@@ -209,11 +209,15 @@ function ProspectsPipelineTab() {
 
   const { data: newEnquiryCount } = trpc.recruitment.countNewEnquiryProspects.useQuery();
 
+  // Poll job status every 2s while dialog is open
+  const { data: jobStatus } = trpc.recruitment.bulkEmailJobStatus.useQuery(undefined, {
+    refetchInterval: showBulkSendDialog ? 2000 : false,
+    staleTime: 0,
+  });
+
   const bulkSendMutation = trpc.recruitment.bulkSendReEngagementEmail.useMutation({
-    onSuccess: (result) => {
-      setBulkSendResult(result);
-      utils.recruitment.listProspectsFiltered.invalidate();
-      utils.recruitment.stageCounts.invalidate();
+    onSuccess: () => {
+      setBulkJobStarted(true);
     },
     onError: (e) => {
       toast.error(e.message);
@@ -319,7 +323,7 @@ function ProspectsPipelineTab() {
           variant="outline"
           size="sm"
           className="gap-2 ml-auto"
-          onClick={() => { setBulkSendResult(null); setShowBulkSendDialog(true); }}
+          onClick={() => { setBulkJobStarted(false); setShowBulkSendDialog(true); }}
         >
           <Send size={14} />
           Send Re-engagement Email
@@ -327,32 +331,80 @@ function ProspectsPipelineTab() {
       </div>
 
       {/* Bulk send confirmation dialog */}
-      <AlertDialog open={showBulkSendDialog} onOpenChange={(open) => { if (!bulkSendMutation.isPending) setShowBulkSendDialog(open); }}>
+      <AlertDialog
+        open={showBulkSendDialog}
+        onOpenChange={(open) => {
+          // Allow closing only when not actively running
+          if (!open && jobStatus?.status !== "running") {
+            setShowBulkSendDialog(false);
+            setBulkJobStarted(false);
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Send Re-engagement Email</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3">
-                {bulkSendResult ? (
-                  <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-sm space-y-1">
-                    <p className="font-semibold text-green-800">✓ Email send complete</p>
-                    <p className="text-green-700"><strong>{bulkSendResult.sent}</strong> emails sent successfully</p>
-                    {bulkSendResult.skipped > 0 && <p className="text-muted-foreground">{bulkSendResult.skipped} already received this email (skipped)</p>}
-                    {bulkSendResult.errors > 0 && <p className="text-red-600">{bulkSendResult.errors} failed to send</p>}
-                  </div>
+                {/* Job is running or done (started this session) */}
+                {bulkJobStarted ? (
+                  jobStatus?.status === "done" ? (
+                    <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-sm space-y-1">
+                      <p className="font-semibold text-green-800">✓ Email send complete</p>
+                      <p className="text-green-700"><strong>{jobStatus.sent}</strong> emails sent successfully</p>
+                      {(jobStatus.skipped ?? 0) > 0 && <p className="text-muted-foreground">{jobStatus.skipped} already received this email (skipped)</p>}
+                      {(jobStatus.errors ?? 0) > 0 && <p className="text-red-600">{jobStatus.errors} failed to send</p>}
+                    </div>
+                  ) : jobStatus?.status === "error" ? (
+                    <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm">
+                      <p className="font-semibold text-red-800">✗ An error occurred during sending</p>
+                      <p className="text-muted-foreground mt-1">{jobStatus.sent} sent before the error. Please try again.</p>
+                    </div>
+                  ) : (
+                    /* Running — show live progress */
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 size={14} className="animate-spin text-[#02E6D2]" />
+                        <span>Sending emails in the background… you can close this dialog and it will continue.</span>
+                      </div>
+                      <div className="rounded-lg bg-muted/40 border border-border p-4 text-sm space-y-2">
+                        <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                          <span>{(jobStatus?.sent ?? 0) + (jobStatus?.skipped ?? 0) + (jobStatus?.errors ?? 0)} of {jobStatus?.total ?? "…"} processed</span>
+                          <span>{jobStatus?.total ? Math.round(((jobStatus.sent + jobStatus.skipped + jobStatus.errors) / jobStatus.total) * 100) : 0}%</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                          <div
+                            className="h-2 rounded-full transition-all duration-500"
+                            style={{
+                              width: jobStatus?.total ? `${Math.round(((jobStatus.sent + jobStatus.skipped + jobStatus.errors) / jobStatus.total) * 100)}%` : "0%",
+                              background: "#02E6D2",
+                            }}
+                          />
+                        </div>
+                        <div className="flex gap-4 text-xs pt-1">
+                          <span className="text-green-700"><strong>{jobStatus?.sent ?? 0}</strong> sent</span>
+                          <span className="text-muted-foreground"><strong>{jobStatus?.skipped ?? 0}</strong> skipped</span>
+                          {(jobStatus?.errors ?? 0) > 0 && <span className="text-red-600"><strong>{jobStatus?.errors}</strong> errors</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )
                 ) : (
+                  /* Pre-send confirmation */
                   <>
                     <p>This will send the <strong>"Join Before the Price Increase"</strong> re-engagement email to all <strong>{newEnquiryCount?.count ?? "…"} prospects</strong> currently in the <em>New Enquiry</em> stage.</p>
                     <p>Prospects who have already received this email will be skipped automatically.</p>
-                    <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 text-xs">This action cannot be undone. Make sure you are ready to send before confirming.</p>
+                    <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 text-xs">Emails are sent in the background — you can close this dialog once sending starts and it will continue running.</p>
                   </>
                 )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            {bulkSendResult ? (
-              <AlertDialogAction onClick={() => setShowBulkSendDialog(false)}>Done</AlertDialogAction>
+            {bulkJobStarted && (jobStatus?.status === "done" || jobStatus?.status === "error") ? (
+              <AlertDialogAction onClick={() => { setShowBulkSendDialog(false); setBulkJobStarted(false); }}>Done</AlertDialogAction>
+            ) : bulkJobStarted && jobStatus?.status === "running" ? (
+              <AlertDialogAction onClick={() => setShowBulkSendDialog(false)} style={{ background: "#02E6D2", color: "#1a1a1a" }}>Close (sending continues)</AlertDialogAction>
             ) : (
               <>
                 <AlertDialogCancel disabled={bulkSendMutation.isPending}>Cancel</AlertDialogCancel>
@@ -365,7 +417,7 @@ function ProspectsPipelineTab() {
                   style={{ background: "#02E6D2", color: "#1a1a1a" }}
                 >
                   {bulkSendMutation.isPending ? (
-                    <><Loader2 size={14} className="animate-spin mr-1" /> Sending…</>
+                    <><Loader2 size={14} className="animate-spin mr-1" /> Starting…</>
                   ) : (
                     <><Send size={14} className="mr-1" /> Send to {newEnquiryCount?.count ?? "…"} Prospects</>
                   )}

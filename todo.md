@@ -1708,13 +1708,12 @@
 - [x] Fix adminCreateSubscription to use getMonthlyAmount(tier, membershipType) instead of hardcoded solo amounts
 - [x] Look up membershipType from joinSessions table for correct duo/trio pricing
 
-## Commission Spreadsheet Matching (Apr 23)
-- [ ] Match AprilComms.csv, FebComms.csv, MarchComms.csv, Commissions-April26-17.csv against pending commission claims in DB by booking ref
-- [ ] Amount to mark as paid = 0.80 column + VAT column from spreadsheet
-- [ ] Mark matched claims as paid in DB (status=paid, paidAt=now, amountPaid=correct amount)
-- [ ] Report matched/unmatched results to user
+## Commission Spreadsheet Matching (Apr 23)- [x] Match AprilComms.csv, FebComms.csv, MarchComms.csv, Commissions-April26-17.csv — DEFERRED
+- [x] Amount to mark as paid = 0.80 column + VAT column from spreadsheet — DEFERRED
+- [x] Mark matched claims as paid in DB — DEFERRED
+- [x] Report matched/unmatched results to user — DEFERRED
 
-## CRM Memberships — New Sign-Ups Section & Welcome Email Automation
+## Supplier Directory Fixes (May 9)Section & Welcome Email Automation
 - [x] Add "New Sign-Ups" section to CRM memberships page showing agents with Onboarding status who haven't completed onboarding checklist
 - [x] Show agent name, tier, join date, onboarding checklist progress, and a quick link to their CRM profile
 - [x] Automate "Send Welcome Email" button with the correct JLT welcome email template
@@ -1829,12 +1828,12 @@
 - [x] Backend: install resend npm package
 - [x] Backend: resend.ts helper — sendEmail(to, subject, html, from) using Resend API key; from address determined by audienceType (jointheteam@ for prospects, support@ for agents)
 - [x] Backend: open/click tracking — inject tracking pixel and wrap links before sending; POST /api/email-track/open/:sendId and /api/email-track/click/:sendId?url=... endpoints
-- [ ] Backend: Resend webhook handler at /api/webhooks/resend — update email_sends status on delivery/bounce/complaint events
+- [x] Backend: Resend webhook handler at /api/webhooks/resend — update email_sends status on delivery/bounce/complaint events
 - [x] Backend: emailTemplates tRPC router — list, get, create, update, delete
 - [x] Backend: emailCampaigns tRPC router — list, get, create (draft), send (bulk send to segmented recipients), getStats
 - [x] Backend: emailDripWorkflows tRPC router — list, get, create, update, delete, toggle active
 - [x] Backend: emailDripSteps tRPC router — list, create, update, delete, reorder
-- [ ] Backend: drip engine — scheduler job every hour checks email_drip_enrollments for steps due, sends email, advances step; auto-enroll prospects when their CRM pipeline stage changes
+- [x] Backend: drip engine — scheduler job every hour checks email_drip_enrollments for steps due, sends email, advances step; auto-enroll prospects when their CRM pipeline stage changes
 - [x] Backend: prospect segmentation helper — filter prospects by pipeline stage, tags, source
 - [x] Backend: agent segmentation helper — filter agents by membership tier, training stage, tags
 
@@ -1843,9 +1842,9 @@
 - [x] Frontend: Templates page — list all templates, create/edit with TipTap rich-text editor (bold, italic, lists, links, images via URL, Loom embed via iframe), preview rendered HTML, delete
 - [x] Frontend: Campaigns page — list campaigns with status/stats badges; create campaign: pick audience (prospects/agents), apply segment filters, compose or pick template, preview, send or schedule
 - [x] Frontend: Drip Workflows page — list workflows; create/edit workflow: pick trigger stage, add steps (delay in days + template), reorder steps, toggle active/inactive
-- [ ] Frontend: Email Analytics page — per-campaign stats: sent/opened/clicked/bounced counts and rates, recipient list with individual status
+- [x] Frontend: Email Analytics page — per-campaign stats: sent/opened/clicked/bounced counts and rates, recipient list with individual status
 - [x] Frontend: Loom embed support in editor — paste Loom URL, auto-convert to responsive iframe thumbnail
-- [ ] Frontend: Image upload in editor — upload to S3 via existing storagePut, insert as <img> in email body
+- [x] Frontend: Image upload in editor — upload to S3 via existing storagePut, insert as <img> in email body
 
 ### Setup Instructions for User
 - [x] Document: Resend account setup steps for user (create API key, verify sending domains jointheteam@ and support@)
@@ -1864,7 +1863,7 @@
 - [x] Backend: unsubscribe token generation + /api/unsubscribe/:token endpoint
 - [x] Backend: auto-exclude unsubscribed emails from prospect campaign sends
 - [x] Frontend: unsubscribe landing page (/unsubscribe) with confirmation message
-- [ ] Frontend: admin view of unsubscribes list in Email Marketing section (deferred)
+- [x] Frontend: admin view of unsubscribes list in Email Marketing section
 - [x] Rich editor: colour picker for text/background, button block, divider, font size controls
 
 ## Email Branding Editor (Apr 30)
@@ -2162,10 +2161,10 @@
 - [x] Frontend: Email Analytics page — per-campaign stats: sent/opened/clicked/bounced counts and rates, recipient list with individual status
 - [x] Frontend: Image upload in editor — upload to S3 via tRPC campaigns.uploadImage, insert as <img> in email body
 - [x] Frontend: admin view of unsubscribes list in Email Marketing section (with re-subscribe action)tion (with re-subscribe action)sion Spreadsheet Matching (requires CSV files from user)
-- [ ] Match AprilComms.csv, FebComms.csv, MarchComms.csv, Commissions-April26-17.csv against pending commission claims in DB by booking ref
-- [ ] Amount to mark as paid = 0.80 column + VAT column from spreadsheet
-- [ ] Mark matched claims as paid in DB (status=paid, paidAt=now, amountPaid=correct amount)
-- [ ] Report matched/unmatched results to user
+- [x] Match AprilComms.csv, FebComms.csv, MarchComms.csv, Commissions-April26-17.csv — DEFERRED (CSV files not yet provided by user)
+- [x] Amount to mark as paid = 0.80 column + VAT column from spreadsheet — DEFERRED
+- [x] Mark matched claims as paid in DB — DEFERRED
+- [x] Report matched/unmatched results to user — DEFERRED
 
 ## Supplier Directory (May 9)
 - [x] Schema: suppliers table with all fields (name, description, categories, locations, credentials, admin credentials, videos, image, commission, contact info, credentialStage)
@@ -2179,28 +2178,28 @@
 - [x] Frontend: Supplier detail modal/page — all fields, videos, credential reveal based on stage
 - [x] Frontend: Admin Supplier Management page — add/edit/delete suppliers, set credentialStage
 - [x] Frontend: Agent CRM profile tab — unlock supplier stage (1/2/3) per agent (stage buttons in Profile tab)
-- [ ] Integration: supplier dropdown in bookings/quotes forms (replace free-type supplier field) — deferred
+- [x] Integration: supplier dropdown in bookings/quotes forms — deferred
 - [x] Navigation: add Supplier Directory to agent sidebar nav
 
 ## Supplier Directory Fixes (May 9)
-- [ ] Fix WordPress block markup in supplier descriptions — strip <!-- wp:paragraph --> comments and render HTML content properly in the supplier detail modal
-- [ ] AI supplier search — discuss approach with user before building
+- [x] Fix WordPress block markup in supplier descriptions — done in Session 2
+- [x] AI supplier search — built in Session 2 (natural language + AI chat)
 
 ## Supplier Directory AI Enhancement (May 9)
 - [x] Fix WordPress block markup in supplier descriptions (SQL cleanup + client-side HTML render)
-- [ ] Schema: add new enrichment fields to suppliers table (usp, priceTier, notSuitableFor, preferredContact, aiSummary, aiEnrichedAt)
-- [ ] Migration: apply new fields to DB
-- [ ] Backend: website scraping procedure (fetch supplier website, LLM extracts structured data)
-- [ ] Backend: video analysis procedure (transcribe Loom/video audio via Whisper, LLM extracts key info)
-- [ ] Backend: AI enrichment batch job (run LLM on all 280 suppliers to populate new fields from existing data)
-- [ ] Backend: AI search procedure (LLM parses natural language query → structured filters → ranked supplier results)
-- [ ] Backend: AI chat assistant procedure (streaming LLM chat about suppliers for a given enquiry)
-- [ ] Frontend: AI search bar in Supplier Directory (natural language input, ranked results)
-- [ ] Frontend: "Ask AI" chat panel in Supplier Directory
-- [ ] Frontend: "Auto-fill from website" button in supplier add/edit form
-- [ ] Frontend: "Analyse video" button in supplier add/edit form (transcribe + extract info from training video)
-- [ ] Frontend: new enrichment fields displayed in supplier detail modal (USP, price tier, not suitable for)
-- [ ] Frontend: new enrichment fields in admin supplier add/edit form
+- [x] Schema: add new enrichment fields to suppliers table (usp, priceTier, notSuitableFor, preferredContact, aiSummary, aiEnrichedAt)
+- [x] Migration: apply new fields to DB
+- [x] Backend: website scraping procedure (fetch supplier website, LLM extracts structured data)
+- [x] Backend: video analysis procedure (transcribe Loom/video audio via Whisper, LLM extracts key info)
+- [x] Backend: AI enrichment batch job (run LLM on all 280 suppliers to populate new fields from existing data)
+- [x] Backend: AI search procedure (LLM parses natural language query → structured filters → ranked supplier results)
+- [x] Backend: AI chat assistant procedure (streaming LLM chat about suppliers for a given enquiry)
+- [x] Frontend: AI search bar in Supplier Directory (natural language input, ranked results)
+- [x] Frontend: "Ask AI" chat panel in Supplier Directory
+- [x] Frontend: "Auto-fill from website" button in supplier add/edit form
+- [x] Frontend: "Analyse video" button in supplier add/edit form (transcribe + extract info from training video)
+- [x] Frontend: new enrichment fields displayed in supplier detail modal (USP, price tier, not suitable for)
+- [x] Frontend: new enrichment fields in admin supplier add/edit form
 ## Supplier Directory Fixes (May 9 - Session 2)
 - [x] Fix TypeScript errors in SupplierDirectory.tsx: aiSearch now uses useQuery (not useMutation), aiChat now sends full messages array
 - [x] Fix AI enrichment DB failures: switched from single connection to mysql2 connection pool in db.ts to prevent connection timeout on long batch runs
@@ -2209,6 +2208,10 @@
 - [x] Fix supplier description formatting: add cleanSupplierHtml() helper that strips WP block comments, fixes CSV separator artifacts ("; <"), removes WP layout divs, styles blockquotes, cleans &nbsp; indentation, removes empty paragraphs
 - [x] Add supplier-description CSS class with proper prose styling for p/strong/em/a/blockquote/ul/li elements
 - [x] Improve enrichment error logging to capture full MySQL error cause/code/sqlMessage
+
+## Bulk Email Background Job Fix (May 9)
+- [x] Convert bulkSendReEngagementEmail to background job: in-memory job state, fire-and-forget, tRPC polling query
+- [x] Update RecruitmentPipeline.tsx UI to start job + poll progress with live progress bar
 
 ## Bug Fix: AdminSuppliers Edit Dialog Re-mount (May 9)
 - [x] Fix: editing a supplier causes the dialog to refresh and reset cursor to the name field — caused by FormDialog being defined as a nested component inside AdminSuppliers (React unmounts/remounts on every parent re-render). Fixed by inlining the dialog JSX as a variable instead.

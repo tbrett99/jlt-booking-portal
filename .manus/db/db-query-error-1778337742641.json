@@ -1,0 +1,8 @@
+{
+  "query": "SELECT COUNT(*) as total_sent FROM recruitment_emails_sent WHERE email_key = 're_engagement_june_2026'; SELECT MIN(sent_at) as first_sent, MAX(sent_at) as last_sent FROM recruitment_emails_sent WHERE email_key = 're_engagement_june_2026';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT COUNT(*) as total_sent FROM recruitment_emails_sent WHERE email_key = 're_engagement_june_2026'; SELECT MIN(sent_at) as first_sent, MAX(sent_at) as last_sent FROM recruitment_emails_sent WHERE email_key = 're_engagement_june_2026';",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'email_key' in 'where clause'"
+  ]
+}

@@ -28,6 +28,34 @@ import { ENV } from "./_core/env";
 import { getEmailBrandingSettings, getProspectByEmail, moveProspectStage } from "./crm-db";
 import { enrollProspectInWorkflow } from "./recruitment-workflow-db";
 
+// ─── Bulk email background job state ────────────────────────────────────────
+
+export type BulkEmailJobStatus = "idle" | "running" | "done" | "error";
+
+export interface BulkEmailJobState {
+  status: BulkEmailJobStatus;
+  total: number;
+  sent: number;
+  skipped: number;
+  errors: number;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+}
+
+let bulkEmailJob: BulkEmailJobState = {
+  status: "idle",
+  total: 0,
+  sent: 0,
+  skipped: 0,
+  errors: 0,
+  startedAt: null,
+  finishedAt: null,
+};
+
+export function getBulkEmailJobState(): BulkEmailJobState {
+  return { ...bulkEmailJob };
+}
+
 // ─── Prospectus / Application email helpers ───────────────────────────────────
 
 const PROSPECTUS_URL = "https://portal.thejltgroup.co.uk/api/prospectus";
@@ -633,10 +661,9 @@ export const recruitmentRouter = router({
   }),
 
   /**
-   * ADMIN — Bulk send re-engagement email to all new_enquiry prospects.
-   * Generates a fresh application token for each prospect that doesn't have one,
-   * then sends the approved re-engagement email with a personalised application link.
-   * Skips prospects that have already received this specific email.
+   * ADMIN — Start bulk re-engagement email job (fire-and-forget).
+   * Returns immediately with the current job state. The actual sending
+   * happens in the background and can be polled via bulkEmailJobStatus.
    */
   bulkSendReEngagementEmail: protectedProcedure
     .input(z.object({
@@ -647,36 +674,48 @@ export const recruitmentRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
+      // Prevent double-start
+      if (bulkEmailJob.status === "running") {
+        return { started: false, reason: "already_running", job: getBulkEmailJobState() };
+      }
+
       const prospects = await getAllRecruitmentProspects({ stage: "new_enquiry", limit: 5000 });
       const baseUrl = input.origin ?? "https://portal.thejltgroup.co.uk";
 
-      let sent = 0;
-      let skipped = 0;
-      let errors = 0;
+      // Reset job state and start
+      bulkEmailJob = {
+        status: "running",
+        total: prospects.length,
+        sent: 0,
+        skipped: 0,
+        errors: 0,
+        startedAt: new Date(),
+        finishedAt: null,
+      };
 
-      for (const prospect of prospects) {
+      // Fire-and-forget: run in background, return immediately
+      (async () => {
         try {
-          // Skip if already sent this specific re-engagement email
-          const alreadySent = await hasRecruitmentEmailBeenSent(prospect.id, "re_engagement_june_2026");
-          if (alreadySent) {
-            skipped++;
-            continue;
-          }
+          for (const prospect of prospects) {
+            try {
+              const alreadySent = await hasRecruitmentEmailBeenSent(prospect.id, "re_engagement_june_2026");
+              if (alreadySent) {
+                bulkEmailJob.skipped++;
+                continue;
+              }
 
-          // Ensure prospect has an application token — generate one if missing
-          let token = extractApplicationToken(prospect.adminNotes);
-          if (!token) {
-            token = generateApplicationToken();
-            await updateRecruitmentProspect(prospect.id, {
-              adminNotes: encodeApplicationToken(token, prospect.adminNotes),
-            });
-          }
+              let token = extractApplicationToken(prospect.adminNotes);
+              if (!token) {
+                token = generateApplicationToken();
+                await updateRecruitmentProspect(prospect.id, {
+                  adminNotes: encodeApplicationToken(token, prospect.adminNotes),
+                });
+              }
 
-          const applicationUrl = `${baseUrl}/apply/form?token=${token}`;
-          const firstName = prospect.firstName || "there";
-
-          const subject = "Your JLT Group Application — Join Before the Price Increase";
-          const bodyHtml = `
+              const applicationUrl = `${baseUrl}/apply/form?token=${token}`;
+              const firstName = prospect.firstName || "there";
+              const subject = "Your JLT Group Application — Join Before the Price Increase";
+              const bodyHtml = `
 <p style="margin:0 0 16px;">Hi ${firstName},</p>
 <p style="margin:0 0 16px;">We hope you're well! We wanted to reach out as you previously showed an interest in joining JLT Group, and we didn't want you to miss out on some exciting news.</p>
 <p style="margin:0 0 16px;"><strong>Our joining fee is increasing in June.</strong> If you've been thinking about joining, locking in at the current price means you save money from day one.</p>
@@ -693,32 +732,37 @@ export const recruitmentRouter = router({
 <p style="margin:0 0 16px;">If you have any questions before applying, feel free to reply to this email — we'd love to hear from you.</p>
 <p style="margin:0;">Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
 
-          await sendProspectEmail({
-            toEmail: prospect.email,
-            toName: firstName,
-            subject,
-            bodyHtml,
-          });
-
-          await logRecruitmentEmail({
-            prospectId: prospect.id,
-            stage: "new_enquiry",
-            emailKey: "re_engagement_june_2026",
-            subject,
-          });
-
-          sent++;
-
-          // Small delay to avoid overwhelming the email provider
-          await new Promise((r) => setTimeout(r, 100));
+              await sendProspectEmail({ toEmail: prospect.email, toName: firstName, subject, bodyHtml });
+              await logRecruitmentEmail({ prospectId: prospect.id, stage: "new_enquiry", emailKey: "re_engagement_june_2026", subject });
+              bulkEmailJob.sent++;
+              await new Promise((r) => setTimeout(r, 100));
+            } catch (e) {
+              console.error(`[BulkEmail] Failed for prospect ${prospect.id}:`, e);
+              bulkEmailJob.errors++;
+            }
+          }
+          bulkEmailJob.status = "done";
+          bulkEmailJob.finishedAt = new Date();
+          console.log(`[BulkEmail] Completed: ${bulkEmailJob.sent} sent, ${bulkEmailJob.skipped} skipped, ${bulkEmailJob.errors} errors`);
         } catch (e) {
-          console.error(`[BulkEmail] Failed for prospect ${prospect.id}:`, e);
-          errors++;
+          console.error("[BulkEmail] Fatal error:", e);
+          bulkEmailJob.status = "error";
+          bulkEmailJob.finishedAt = new Date();
         }
-      }
+      })();
 
-      return { sent, skipped, errors, total: prospects.length };
+      return { started: true, reason: null, job: getBulkEmailJobState() };
     }),
+
+  /**
+   * ADMIN — Poll the current bulk email job status.
+   */
+  bulkEmailJobStatus: protectedProcedure.query(async ({ ctx }) => {
+    if (!["admin", "super_admin"].includes(ctx.user.role)) {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
+    return getBulkEmailJobState();
+  }),
 });
 // ─── Stage-triggered emails ───────────────────────────────────────────────────
 

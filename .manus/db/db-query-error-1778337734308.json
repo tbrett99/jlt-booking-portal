@@ -1,0 +1,8 @@
+{
+  "query": "SELECT COUNT(*) as total_sent FROM recruitment_email_log WHERE email_type = 're_engagement'; SELECT MIN(sent_at) as first_sent, MAX(sent_at) as last_sent FROM recruitment_email_log WHERE email_type = 're_engagement';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT COUNT(*) as total_sent FROM recruitment_email_log WHERE email_type = 're_engagement'; SELECT MIN(sent_at) as first_sent, MAX(sent_at) as last_sent FROM recruitment_email_log WHERE email_type = 're_engagement';",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1146 (42S02) at line 1: Table 'pdcdvqrp8zc2fzsywbwptw.recruitment_email_log' doesn't exist"
+  ]
+}
