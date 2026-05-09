@@ -504,7 +504,7 @@ export default function AdminDashboard() {
                     <RefRow label="TD" value={c.topdogRef} />
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    Requested: {format(new Date(c.confirmedAt), "dd MMM yyyy, HH:mm")}
+                    Requested: {c.confirmedAt ? format(new Date(c.confirmedAt), "dd MMM yyyy, HH:mm") : "—"}
                   </p>
                 </div>
                 <button
@@ -623,7 +623,7 @@ export default function AdminDashboard() {
                   <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${n.isRead ? 'bg-muted' : 'bg-[#02E6D2]'}`} />
                   <div className="min-w-0">
                     <p className={`text-xs leading-snug ${n.isRead ? 'text-muted-foreground' : 'text-foreground font-medium'}`}>{n.message}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{format(new Date(n.createdAt), "dd MMM, HH:mm")}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{n.createdAt ? format(new Date(n.createdAt), "dd MMM, HH:mm") : ""}</p>
                   </div>
                 </div>
               ))}
@@ -655,7 +655,7 @@ export default function AdminDashboard() {
             ) : (
               <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
                 {upcomingDepartures.map((b) => {
-                  const days = differenceInDays(new Date(b.departureDate), now);
+                  const days = b.departureDate ? differenceInDays(new Date(b.departureDate), now) : 0;
                   return (
                     <Link key={b.id} href={`/bookings/${b.id}`}>
                       <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors">
@@ -665,7 +665,7 @@ export default function AdminDashboard() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold truncate">{b.clientName}</p>
-                          <p className="text-[10px] text-muted-foreground">{format(new Date(b.departureDate), "dd MMM yyyy")}</p>
+                          <p className="text-[10px] text-muted-foreground">{b.departureDate ? format(new Date(b.departureDate), "dd MMM yyyy") : "—"}</p>
                         </div>
                         <ChevronRight size={12} className="text-muted-foreground flex-shrink-0" />
                       </div>
