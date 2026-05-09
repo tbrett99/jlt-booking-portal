@@ -1,0 +1,70 @@
+{
+  "query": "SELECT id, name, email, role FROM users WHERE role IN ('super_admin', 'admin') ORDER BY id LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, email, role FROM users WHERE role IN ('super_admin', 'admin') ORDER BY id LIMIT 10;",
+  "rows": [
+    {
+      "id": "47",
+      "name": "Max",
+      "email": "max@thejltgroup.co.uk",
+      "role": "super_admin"
+    },
+    {
+      "id": "48",
+      "name": "Tom Brett",
+      "email": "tombrett@thejltgroup.co.uk",
+      "role": "super_admin"
+    },
+    {
+      "id": "620",
+      "name": "Steph Humphrey",
+      "email": "steph@thejltgroup.co.uk",
+      "role": "admin"
+    },
+    {
+      "id": "628",
+      "name": "Kate Churchill",
+      "email": "kate@thejltgroup.co.uk",
+      "role": "admin"
+    },
+    {
+      "id": "634",
+      "name": "Hannah Symonds",
+      "email": "hannah@thejltgroup.co.uk",
+      "role": "admin"
+    },
+    {
+      "id": "640",
+      "name": "Janine Marshall",
+      "email": "janine@thejltgroup.co.uk",
+      "role": "admin"
+    },
+    {
+      "id": "649",
+      "name": "Matt Spencer",
+      "email": "mattspencer@thejltgroup.co.uk",
+      "role": "admin"
+    },
+    {
+      "id": "660",
+      "name": "Kirsty Henwood",
+      "email": "kirstyhenwood@thejltgroup.co.uk",
+      "role": "admin"
+    },
+    {
+      "id": "672",
+      "name": "Chelsea Crosby",
+      "email": "chelsea@thejltgroup.co.uk",
+      "role": "admin"
+    },
+    {
+      "id": "760",
+      "name": "Max Kelly",
+      "email": "max@thejltgroup.co.uk",
+      "role": "super_admin"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\trole\n47\tMax\tmax@thejltgroup.co.uk\tsuper_admin\n48\tTom Brett\ttombrett@thejltgroup.co.uk\tsuper_admin\n620\tSteph Humphrey\tsteph@thejltgroup.co.uk\tadmin\n628\tKate Churchill\tkate@thejltgroup.co.uk\tadmin\n634\tHannah Symonds\thannah@thejltgroup.co.uk\tadmin\n640\tJanine Marshall\tjanine@thejltgroup.co.uk\tadmin\n649\tMatt Spencer\tmattspencer@thejltgroup.co.uk\tadmin\n660\tKirsty Henwood\tkirstyhenwood@thejltgroup.co.uk\tadmin\n672\tChelsea Crosby\tchelsea@thejltgroup.co.uk\tadmin\n760\tMax Kelly\tmax@thejltgroup.co.uk\tsuper_admin\n",
+  "stderr": "",
+  "execution_time_ms": 362
+}

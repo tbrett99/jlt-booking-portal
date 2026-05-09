@@ -395,6 +395,107 @@ export const crmRouter = router({
       }),
   }),
 
+  // ── Referral funnel form (personal /info page) ────────────────────────────
+  // Same as enquiry.submit but also attributes the lead to a referring user
+
+  enquiryWithRef: router({
+    submit: publicProcedure
+      .input(
+        z.object({
+          firstName: z.string().min(1).max(100),
+          lastName: z.string().min(1).max(100),
+          email: z.string().email(),
+          phone: z.string().optional(),
+          marketingConsent: z.boolean().default(false),
+          refUserId: z.number().int().optional(), // referring user's ID
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { refUserId, ...prospectInput } = input;
+        // Check for duplicate
+        const existing = await getProspectByEmail(prospectInput.email);
+        if (existing) {
+          return { success: true, prospectId: existing.id };
+        }
+        const prospect = await createProspect({
+          ...prospectInput,
+          stage: "New Enquiry",
+          source: "referral_funnel",
+          createdById: refUserId ?? null,
+        });
+        // Generate application token and send prospectus email (same as enquiry.submit)
+        try {
+          const appToken = nanoid(32);
+          const applicationUrl = `https://portal.thejltgroup.co.uk/apply/form?token=${appToken}`;
+          if (prospect?.id) {
+            await updateProspect(prospect.id, { adminNotes: `APP_TOKEN:${appToken}` });
+          }
+          await createRecruitmentProspect({
+            firstName: prospectInput.firstName,
+            lastName: prospectInput.lastName,
+            email: prospectInput.email,
+            phone: prospectInput.phone,
+            pipelineStage: "new_enquiry",
+            source: "referral_funnel",
+            adminNotes: `APP_TOKEN:${appToken}`,
+          });
+          // Send prospectus email
+          const { Resend } = await import("resend");
+          const { PROSPECT_FROM, PROSPECT_REPLY_TO } = await import("./resend-email");
+          const { getEmailBrandingSettings } = await import("./crm-db");
+          const resendKey = process.env.RESEND_API_KEY;
+          if (resendKey && prospect?.id) {
+            const resend = new Resend(resendKey);
+            const branding = await getEmailBrandingSettings();
+            const logoHtml = branding?.logoUrl
+              ? `<img src="${branding.logoUrl}" alt="JLT Group" style="max-height:60px;max-width:200px;display:block;margin:0 auto;object-fit:contain;mix-blend-mode:multiply;" />`
+              : `<span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:#414141;">JLT Group</span>`;
+            const PROSPECTUS_URL = "https://portal.thejltgroup.co.uk/api/prospectus";
+            const FACEBOOK_GROUP_URL = "https://www.facebook.com/groups/jltgroup/";
+            const bodyHtml = `
+<p style="margin:0 0 16px;">Hi ${prospectInput.firstName},</p>
+<p style="margin:0 0 16px;">Thank you for your interest in joining JLT Group. We are really excited to share more about who we are and what we offer.</p>
+<p style="margin:0 0 16px;">Start by reading our prospectus. It covers everything you need to know about life at JLT Group and what makes us different:</p>
+<p style="text-align:center;margin:28px 0;">
+  <a href="${PROSPECTUS_URL}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Read the JLT Prospectus</a>
+</p>
+<p style="margin:0 0 16px;">We also have a fantastic Facebook community where current agents and prospective members connect, share tips, and get a real feel for the JLT culture:</p>
+<p style="text-align:center;margin:28px 0;">
+  <a href="${FACEBOOK_GROUP_URL}" style="display:inline-block;background:#414141;color:#ffffff;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Join the JLT Facebook Community</a>
+</p>
+<hr style="border:none;border-top:1px solid #e8e8e8;margin:28px 0;"/>
+<p style="margin:0 0 12px;"><strong>Ready for the next step?</strong></p>
+<p style="margin:0 0 16px;">Once you have read the prospectus, complete a short application form so we can organise a discovery call tailored to you:</p>
+<p style="text-align:center;margin:28px 0;">
+  <a href="${applicationUrl}" style="display:inline-block;background:#70FFE8;color:#414141;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Complete Your Application</a>
+</p>
+<p style="margin:0;">Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
+            const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>Your JLT Group Prospectus</title></head><body style="margin:0;padding:0;background-color:#FFF6ED;font-family:'Poppins',Arial,sans-serif;"><div style="width:100%;background-color:#FFF6ED;padding:32px 0;"><div style="max-width:600px;width:100%;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.07);"><div style="background-color:#70FFE8;padding:28px 40px;text-align:center;">${logoHtml}</div><div style="padding:36px 40px;color:#414141;font-family:'Poppins',Arial,sans-serif;font-size:15px;line-height:1.8;">${bodyHtml}</div><div style="padding:20px 40px;text-align:center;background-color:#FFF6ED;font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#888;">&copy; ${new Date().getFullYear()} JLT Group. All rights reserved.</div></div></div></body></html>`;
+            await resend.emails.send({
+              from: PROSPECT_FROM,
+              to: [prospectInput.email],
+              replyTo: PROSPECT_REPLY_TO,
+              subject: "Your JLT Group Prospectus",
+              html,
+            });
+          }
+          // Notify the referring user
+          if (refUserId) {
+            try {
+              const { notifyOwner } = await import("./_core/notification");
+              await notifyOwner({
+                title: `New lead: ${prospectInput.firstName} ${prospectInput.lastName}`,
+                content: `${prospectInput.firstName} ${prospectInput.lastName} (${prospectInput.email}) registered via your personal JLT funnel page.`,
+              });
+            } catch (_) { /* non-fatal */ }
+          }
+        } catch (e) {
+          console.warn("[CRM] Failed to process referral enquiry:", e);
+        }
+        return { success: true, prospectId: prospect?.id };
+      }),
+  }),
+
   // ── Agent Application (AR) Form ────────────────────────────────────────────
 
   arForm: router({

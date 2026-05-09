@@ -21,6 +21,7 @@ import JoinFlow from "./pages/JoinFlow";
 import JoinAccept from "./pages/JoinAccept";
 import ApplyPage, { ApplyEmbedPage } from "./pages/recruitment/ApplyPage";
 import ApplicationFormPage from "./pages/recruitment/ApplicationFormPage";
+import InfoFunnelPage from "./pages/InfoFunnelPage";
 
 // Lazy-loaded pages (split into separate chunks)
 const AgentDashboard = lazy(() => import("./pages/agent/AgentDashboard"));
@@ -182,6 +183,7 @@ function AuthRouter() {
         <Route path="/apply/form" component={ApplicationFormPage} />
         {/* Public CRM pages — no auth required */}
         <Route path="/enquiry" component={EnquiryForm} />
+        <Route path="/info" component={InfoFunnelPage} />
         <Route path="/apply/:prospectId" component={AgentApplicationForm} />
         <Route path="/sign-contract/:token" component={SignContract} />
         <Route path="/membership" component={MembershipSelection} />
