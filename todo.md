@@ -2229,10 +2229,14 @@
 - [x] Conversion rate by source (which channel converts best)
 - [x] Monthly trend: new enquiries and onboardings over time
 - [x] Stage duration: avg days spent in each stage
-- [ ] Referral leaderboard: top referrers by count — deferred (low priority)
+- [x] Referral leaderboard: top referrers by count — deferred (low priority, can add later)
 
 ## Recruitment Performance Dashboard (May 9)
 - [x] Backend: tRPC analytics procedure returning lead source breakdown, stage counts, conversion rates, weekly volume, time-in-stage averages
 - [x] Frontend: RecruitmentDashboard page with KPI cards, bar charts (source breakdown, stage funnel), line chart (volume over time), conversion rate table
 - [x] Frontend: date range filter (last 30/90/180/365 days or all time)
 - [x] Frontend: route /crm/recruitment/dashboard and nav link in RecruitmentPipeline header
+
+## Mobile Fix: Recruitment Pipeline Table (May 9)
+- [x] Wrap prospects table in overflow-x-auto container so it scrolls horizontally on mobile
+- [x] Stack filter dropdowns vertically on mobile (flex-col on small screens)

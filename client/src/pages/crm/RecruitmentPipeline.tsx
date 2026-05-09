@@ -254,7 +254,7 @@ function ProspectsPipelineTab() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -462,7 +462,8 @@ function ProspectsPipelineTab() {
             </p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: "800px" }}>
             <thead>
               <tr className="border-b border-border bg-muted/30">
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
@@ -565,6 +566,7 @@ function ProspectsPipelineTab() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
