@@ -241,14 +241,8 @@ export default function AdminSuppliers() {
     }
   };
 
-  const FormDialog = ({
-    open,
-    onClose,
-  }: {
-    open: boolean;
-    onClose: () => void;
-  }) => (
-    <Dialog open={open} onOpenChange={onClose}>
+  const formDialogJsx = (
+    <Dialog open={showCreate || editSupplier !== null} onOpenChange={() => { setShowCreate(false); setEditSupplier(null); }}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editSupplier ? "Edit Supplier" : "Add Supplier"}</DialogTitle>
@@ -481,7 +475,7 @@ export default function AdminSuppliers() {
           </div>
         </div>
         <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={() => { setShowCreate(false); setEditSupplier(null); }}>
             Cancel
           </Button>
           <Button
@@ -631,10 +625,7 @@ export default function AdminSuppliers() {
       )}
 
       {/* Create/Edit dialog */}
-      <FormDialog
-        open={showCreate || editSupplier !== null}
-        onClose={() => { setShowCreate(false); setEditSupplier(null); }}
-      />
+      {formDialogJsx}
 
       {/* Delete confirmation */}
       <Dialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)}>

@@ -2209,3 +2209,6 @@
 - [x] Fix supplier description formatting: add cleanSupplierHtml() helper that strips WP block comments, fixes CSV separator artifacts ("; <"), removes WP layout divs, styles blockquotes, cleans &nbsp; indentation, removes empty paragraphs
 - [x] Add supplier-description CSS class with proper prose styling for p/strong/em/a/blockquote/ul/li elements
 - [x] Improve enrichment error logging to capture full MySQL error cause/code/sqlMessage
+
+## Bug Fix: AdminSuppliers Edit Dialog Re-mount (May 9)
+- [x] Fix: editing a supplier causes the dialog to refresh and reset cursor to the name field — caused by FormDialog being defined as a nested component inside AdminSuppliers (React unmounts/remounts on every parent re-render). Fixed by inlining the dialog JSX as a variable instead.
