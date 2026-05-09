@@ -93,6 +93,8 @@ const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const BookingDocuments = lazy(() => import("./pages/BookingDocuments"));
 const MyProfile = lazy(() => import("./pages/MyProfile"));
 const TermsAndPolicies = lazy(() => import("./pages/TermsAndPolicies"));
+const SupplierDirectory = lazy(() => import("./pages/SupplierDirectory"));
+const AdminSuppliers = lazy(() => import("./pages/admin/AdminSuppliers"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -239,6 +241,7 @@ function AuthRouter() {
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
+          <Route path="/suppliers" component={SupplierDirectory} />
           {/* Terms & Policies — accessible to logged-in agents */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}
@@ -283,6 +286,7 @@ function AuthRouter() {
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
+          <Route path="/suppliers" component={SupplierDirectory} />
           {/* Terms & Policies — accessible to admins in agent view */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}
@@ -354,6 +358,9 @@ function AuthRouter() {
         <Route path="/crm/recruitment" component={RecruitmentPipeline} />
         <Route path="/crm/recruitment/:id" component={RecruitmentProspectDetail} />
         <Route path="/crm/workflows" component={WorkflowBuilder} />
+        {/* Supplier Directory */}
+        <Route path="/suppliers" component={SupplierDirectory} />
+        <Route path="/admin/suppliers" component={AdminSuppliers} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/unsubscribe" component={UnsubscribePage} />
         {/* Terms & Policies — accessible to logged-in admins */}

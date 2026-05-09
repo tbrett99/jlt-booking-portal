@@ -1421,6 +1421,118 @@ async function startServer() {
     }
   });
 
+  // ── Resend Webhook ──────────────────────────────────────────────────────
+  // Resend POSTs delivery events here. We use it to update email_sends status.
+  // Docs: https://resend.com/docs/dashboard/webhooks/event-types
+  app.post("/api/webhooks/resend", async (req, res) => {
+    try {
+      const svixId = req.headers["svix-id"] as string | undefined;
+      const svixTimestamp = req.headers["svix-timestamp"] as string | undefined;
+      const svixSignature = req.headers["svix-signature"] as string | undefined;
+
+      // Verify webhook signature if secret is configured
+      const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+      if (webhookSecret && svixId && svixTimestamp && svixSignature) {
+        try {
+          const { createHmac } = await import("crypto");
+          const rawBody = JSON.stringify(req.body);
+          const signedContent = `${svixId}.${svixTimestamp}.${rawBody}`;
+          const secretBytes = Buffer.from(webhookSecret.replace(/^whsec_/, ""), "base64");
+          const signature = createHmac("sha256", secretBytes).update(signedContent).digest("base64");
+          const expectedSigs = svixSignature.split(" ").map((s) => s.replace(/^v1,/, ""));
+          if (!expectedSigs.includes(signature)) {
+            console.warn("[Resend Webhook] Invalid signature");
+            return res.status(401).json({ error: "Invalid signature" });
+          }
+        } catch (sigErr) {
+          console.error("[Resend Webhook] Signature verification error:", sigErr);
+        }
+      }
+
+      const event = req.body as { type: string; data: Record<string, any> };
+      const { type, data } = event;
+      const messageId: string | undefined = data?.email_id ?? data?.message_id;
+
+      console.log(`[Resend Webhook] ${type}`, { messageId });
+
+      if (!messageId) {
+        return res.status(200).json({ ok: true, skipped: "no message_id" });
+      }
+
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      if (!db) return res.status(200).json({ ok: true, skipped: "no db" });
+
+      const { emailSends, emailUnsubscribes } = await import("../../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+
+      // Find the send record by resendMessageId
+      const [send] = await db
+        .select({ id: emailSends.id, recipientEmail: emailSends.recipientEmail })
+        .from(emailSends)
+        .where(eq(emailSends.resendMessageId, messageId))
+        .limit(1);
+
+      if (!send) {
+        console.log(`[Resend Webhook] No send record found for message_id=${messageId}`);
+        return res.status(200).json({ ok: true, skipped: "no send record" });
+      }
+
+      const now = new Date();
+      let updateData: Record<string, any> = {};
+
+      switch (type) {
+        case "email.delivered":
+          updateData = { status: "delivered", deliveredAt: now };
+          break;
+        case "email.opened":
+          updateData = { status: "opened", openedAt: now };
+          break;
+        case "email.clicked":
+          updateData = { status: "clicked", clickedAt: now };
+          break;
+        case "email.bounced":
+          updateData = { status: "bounced", bouncedAt: now, failedReason: data?.bounce?.message ?? "Bounced" };
+          break;
+        case "email.complained":
+          // Mark as complained and auto-unsubscribe the recipient
+          updateData = { status: "complained" };
+          if (send.recipientEmail) {
+            // Check if already unsubscribed before inserting
+            const existing = await db
+              .select({ id: emailUnsubscribes.id })
+              .from(emailUnsubscribes)
+              .where(eq(emailUnsubscribes.email, send.recipientEmail))
+              .limit(1);
+            if (existing.length === 0) {
+              const { randomBytes } = await import("crypto");
+              await db.insert(emailUnsubscribes).values({
+                email: send.recipientEmail,
+                token: randomBytes(32).toString("hex"),
+                unsubscribedAt: now,
+              });
+            }
+            console.log(`[Resend Webhook] Auto-unsubscribed ${send.recipientEmail} due to complaint`);
+          }
+          break;
+        case "email.delivery_delayed":
+          // Don't change status, just log
+          console.log(`[Resend Webhook] Delivery delayed for send #${send.id}`);
+          return res.status(200).json({ ok: true });
+        default:
+          return res.status(200).json({ ok: true, skipped: `unhandled event type: ${type}` });
+      }
+
+      await db.update(emailSends).set(updateData).where(eq(emailSends.id, send.id));
+      console.log(`[Resend Webhook] Updated send #${send.id} → ${type}`);
+
+      return res.status(200).json({ ok: true });
+    } catch (e) {
+      console.error("[Resend Webhook] Error:", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  });
+
   // ── Cal.com Webhook ──────────────────────────────────────────────────────
   // Cal.com POSTs booking events here. We use it to advance the recruitment
   // pipeline stage when a discovery call is booked or completed.

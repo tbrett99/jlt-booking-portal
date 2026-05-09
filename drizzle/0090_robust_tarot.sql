@@ -1,0 +1,42 @@
+CREATE TABLE `agent_supplier_stages` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`userId` int NOT NULL,
+	`stage` int NOT NULL DEFAULT 1,
+	`unlockedAt` timestamp NOT NULL DEFAULT (now()),
+	`unlockedById` int,
+	CONSTRAINT `agent_supplier_stages_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `suppliers` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`name` varchar(255) NOT NULL,
+	`description` longtext,
+	`shortDescription` text,
+	`publicWebsite` varchar(1000),
+	`tradeWebsite` varchar(1000),
+	`additionalWebsite` varchar(1000),
+	`agencyId` varchar(255),
+	`loginUsername` varchar(500),
+	`loginPassword` varchar(500),
+	`commission` varchar(500),
+	`facebookUrl` varchar(1000),
+	`accountManager` varchar(255),
+	`phone` varchar(100),
+	`email` varchar(320),
+	`generalNotes` longtext,
+	`video1` text,
+	`video2` text,
+	`video3` text,
+	`categories` text,
+	`locations` text,
+	`imageUrl` text,
+	`adminUsername` varchar(500),
+	`adminPassword` varchar(500),
+	`adminNotes` text,
+	`credentialStage` int NOT NULL DEFAULT 2,
+	`isActive` int NOT NULL DEFAULT 1,
+	`sortOrder` int NOT NULL DEFAULT 0,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `suppliers_id` PRIMARY KEY(`id`)
+);

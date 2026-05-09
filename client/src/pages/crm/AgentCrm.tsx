@@ -576,6 +576,17 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
     onError: (e) => toast.error(e.message),
   });
 
+  // ── Supplier Directory Stage ────────────────────────────────────────────────
+  const { data: stageData, refetch: refetchStage } = trpc.suppliers.getAgentStageFor.useQuery(
+    { userId },
+    { staleTime: 30000 }
+  );
+  const setSupplierStage = trpc.suppliers.setAgentStage.useMutation({
+    onSuccess: () => { toast.success("Supplier directory stage updated"); refetchStage(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const currentStage = stageData?.stage ?? 1;
+
   function startEdit() {
     setForm({
       jltEmail: profile?.jltEmail ?? "",
@@ -795,6 +806,37 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
                 {profile?.trainingStage
                   ? <Badge variant="outline" className="text-xs">{profile.trainingStage}</Badge>
                   : <span className="text-muted-foreground text-sm">Not set</span>}
+              </Field>
+              <Field label="Supplier Directory Stage">
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ${
+                      currentStage === 3 ? "border-green-500 text-green-700 bg-green-50" :
+                      currentStage === 2 ? "border-blue-500 text-blue-700 bg-blue-50" :
+                      "border-amber-500 text-amber-700 bg-amber-50"
+                    }`}
+                  >
+                    Stage {currentStage} — {currentStage === 1 ? "Training Only" : currentStage === 2 ? "Select Credentials" : "Full Access"}
+                  </Badge>
+                  <div className="flex gap-1">
+                    {[1, 2, 3].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setSupplierStage.mutate({ userId, stage: s })}
+                        disabled={s === currentStage || setSupplierStage.isPending}
+                        className={`w-7 h-7 rounded text-xs font-semibold transition-colors ${
+                          s === currentStage
+                            ? "bg-primary text-primary-foreground cursor-default"
+                            : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
+                        }`}
+                        title={`Set Stage ${s}`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </Field>
               <Field label="Date Joined" value={profile?.dateJoined} />
             </div>

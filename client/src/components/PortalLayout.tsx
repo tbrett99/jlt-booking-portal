@@ -4,7 +4,7 @@ import { TermsSigningBanner } from "@/components/TermsSigningBanner";
 import { trpc } from "@/lib/trpc";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import {
-  Bell, BookOpen, CalendarDays, ChevronLeft, ChevronRight, ChevronDown,
+  Bell, BookOpen, Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronDown,
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
@@ -260,6 +260,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
+      label: "Supplier Directory",
+      icon: <Building2 size={16} />,
+      defaultOpen: false,
+      items: [
+        { label: "Supplier Directory", href: "/suppliers", icon: <Building2 size={16} /> },
+      ],
+    },
+    {
       label: "Documents",
       icon: <Mail size={16} />,
       defaultOpen: false,
@@ -365,6 +373,15 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Email Workflows", href: "/crm/workflows", icon: <Mail size={16} /> },
         { label: "Prospects", href: "/crm/prospects", icon: <Users size={16} /> },
         { label: "Email Marketing", href: "/crm/email-marketing", icon: <Megaphone size={16} /> },
+      ],
+    },
+    {
+      label: "Supplier Directory",
+      icon: <Building2 size={16} />,
+      defaultOpen: false,
+      items: [
+        { label: "View Directory", href: "/suppliers", icon: <Building2 size={16} /> },
+        { label: "Manage Suppliers", href: "/admin/suppliers", icon: <Building2 size={16} /> },
       ],
     },
     {

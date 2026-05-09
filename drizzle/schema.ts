@@ -1437,3 +1437,54 @@ export const recruitmentWorkflowEnrollments = mysqlTable("recruitment_workflow_e
 });
 export type RecruitmentWorkflowEnrollment = typeof recruitmentWorkflowEnrollments.$inferSelect;
 export type InsertRecruitmentWorkflowEnrollment = typeof recruitmentWorkflowEnrollments.$inferInsert;
+
+// ─── Supplier Directory ───────────────────────────────────────────────────────
+// credentialStage: which stage unlocks this supplier's credentials
+//   1 = always visible (no credentials shown at stage 1)
+//   2 = credentials visible at stage 2+
+//   3 = credentials visible at stage 3 only
+export const suppliers = mysqlTable("suppliers", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: longtext("description"),                          // full HTML description
+  shortDescription: text("shortDescription"),
+  publicWebsite: varchar("publicWebsite", { length: 1000 }),
+  tradeWebsite: varchar("tradeWebsite", { length: 1000 }),       // agent booking portal URL
+  additionalWebsite: varchar("additionalWebsite", { length: 1000 }),
+  agencyId: text("agencyId"),                                    // agency/ABTA ID (can be long)
+  loginUsername: varchar("loginUsername", { length: 500 }),      // trade portal username
+  loginPassword: varchar("loginPassword", { length: 500 }),      // trade portal password
+  commission: varchar("commission", { length: 500 }),
+  facebookUrl: varchar("facebookUrl", { length: 1000 }),
+  accountManager: varchar("accountManager", { length: 255 }),
+  phone: varchar("phone", { length: 500 }),
+  email: varchar("email", { length: 320 }),
+  generalNotes: longtext("generalNotes"),                        // free-text notes
+  video1: text("video1"),                                        // Loom embed HTML
+  video2: text("video2"),
+  video3: text("video3"),
+  categories: text("categories"),                                // semicolon-separated
+  locations: text("locations"),                                  // semicolon-separated countries
+  imageUrl: text("imageUrl"),                                    // S3 URL for logo/image
+  adminUsername: varchar("adminUsername", { length: 500 }),      // admin-only credential
+  adminPassword: varchar("adminPassword", { length: 500 }),
+  adminNotes: text("adminNotes"),
+  credentialStage: int("credentialStage").notNull().default(2),  // 2 = stage 2+, 3 = stage 3 only
+  isActive: int("isActive").notNull().default(1),               // soft delete (1=active, 0=inactive)
+  sortOrder: int("sortOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Supplier = typeof suppliers.$inferSelect;
+export type InsertSupplier = typeof suppliers.$inferInsert;
+
+// Per-agent supplier stage unlock (1, 2, or 3)
+export const agentSupplierStages = mysqlTable("agent_supplier_stages", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),                               // FK → users.id
+  stage: int("stage").notNull().default(1),                     // 1, 2, or 3
+  unlockedAt: timestamp("unlockedAt").defaultNow().notNull(),
+  unlockedById: int("unlockedById"),                            // FK → users.id (admin who unlocked)
+});
+export type AgentSupplierStage = typeof agentSupplierStages.$inferSelect;
+export type InsertAgentSupplierStage = typeof agentSupplierStages.$inferInsert;

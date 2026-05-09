@@ -2168,3 +2168,18 @@
 - [ ] Amount to mark as paid = 0.80 column + VAT column from spreadsheet
 - [ ] Mark matched claims as paid in DB (status=paid, paidAt=now, amountPaid=correct amount)
 - [ ] Report matched/unmatched results to user
+
+## Supplier Directory (May 9)
+- [x] Schema: suppliers table with all fields (name, description, categories, locations, credentials, admin credentials, videos, image, commission, contact info, credentialStage)
+- [x] Schema: agentSupplierStage table (agentId → stage 1/2/3) for per-agent unlocking
+- [x] Migration: apply schema to DB
+- [x] Seed: import all 280 suppliers from CSV into DB
+- [x] Upload: supplier images to S3 and update image URLs in DB
+- [x] Backend: suppliers tRPC router (list, get, create, update, delete, setStage, getAgentStageFor)
+- [x] Backend: agentSupplierStage procedures (getStage, setStage per agent)
+- [x] Frontend: Supplier Directory page (agent view) — search, filter by category/location, stage-gated credentials
+- [x] Frontend: Supplier detail modal/page — all fields, videos, credential reveal based on stage
+- [x] Frontend: Admin Supplier Management page — add/edit/delete suppliers, set credentialStage
+- [x] Frontend: Agent CRM profile tab — unlock supplier stage (1/2/3) per agent (stage buttons in Profile tab)
+- [ ] Integration: supplier dropdown in bookings/quotes forms (replace free-type supplier field) — deferred
+- [x] Navigation: add Supplier Directory to agent sidebar nav
