@@ -19,6 +19,7 @@ import {
   getRecruitmentEmailsSent,
   logRecruitmentEmail,
   deleteRecruitmentProspect,
+  hasRecruitmentEmailBeenSent,
 } from "./recruitment-db";
 import { PROSPECT_FROM, PROSPECT_REPLY_TO } from "./resend-email";
 import { sendSupportEmail } from "./email";
@@ -617,6 +618,106 @@ export const recruitmentRouter = router({
       }
       await deleteRecruitmentProspect(input.id);
       return { success: true };
+    }),
+
+  /**
+   * ADMIN — Count new_enquiry prospects eligible for bulk re-engagement email.
+   * Returns count of prospects in new_enquiry stage.
+   */
+  countNewEnquiryProspects: protectedProcedure.query(async ({ ctx }) => {
+    if (!["admin", "super_admin"].includes(ctx.user.role)) {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
+    const all = await getAllRecruitmentProspects({ stage: "new_enquiry", limit: 5000 });
+    return { count: all.length };
+  }),
+
+  /**
+   * ADMIN — Bulk send re-engagement email to all new_enquiry prospects.
+   * Generates a fresh application token for each prospect that doesn't have one,
+   * then sends the approved re-engagement email with a personalised application link.
+   * Skips prospects that have already received this specific email.
+   */
+  bulkSendReEngagementEmail: protectedProcedure
+    .input(z.object({
+      origin: z.string().url().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!["admin", "super_admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      const prospects = await getAllRecruitmentProspects({ stage: "new_enquiry", limit: 5000 });
+      const baseUrl = input.origin ?? "https://portal.thejltgroup.co.uk";
+
+      let sent = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      for (const prospect of prospects) {
+        try {
+          // Skip if already sent this specific re-engagement email
+          const alreadySent = await hasRecruitmentEmailBeenSent(prospect.id, "re_engagement_june_2026");
+          if (alreadySent) {
+            skipped++;
+            continue;
+          }
+
+          // Ensure prospect has an application token — generate one if missing
+          let token = extractApplicationToken(prospect.adminNotes);
+          if (!token) {
+            token = generateApplicationToken();
+            await updateRecruitmentProspect(prospect.id, {
+              adminNotes: encodeApplicationToken(token, prospect.adminNotes),
+            });
+          }
+
+          const applicationUrl = `${baseUrl}/apply/form?token=${token}`;
+          const firstName = prospect.firstName || "there";
+
+          const subject = "Your JLT Group Application — Join Before the Price Increase";
+          const bodyHtml = `
+<p style="margin:0 0 16px;">Hi ${firstName},</p>
+<p style="margin:0 0 16px;">We hope you're well! We wanted to reach out as you previously showed an interest in joining JLT Group, and we didn't want you to miss out on some exciting news.</p>
+<p style="margin:0 0 16px;"><strong>Our joining fee is increasing in June.</strong> If you've been thinking about joining, locking in at the current price means you save money from day one.</p>
+<p style="margin:0 0 16px;"><strong>The lates market is about to boom.</strong> Every summer, last-minute holiday bookings surge — and our agents are perfectly positioned to capitalise. The sooner you complete your training, the sooner you're earning from it.</p>
+<p style="margin:0 0 12px;"><strong>What happens next is simple:</strong></p>
+<ol style="margin:0 0 16px;padding-left:20px;">
+  <li style="margin-bottom:8px;">Complete your short application form (takes around 2 minutes)</li>
+  <li style="margin-bottom:8px;">We'll review it and invite you to a discovery call</li>
+  <li style="margin-bottom:8px;">If it's a great fit, you'll be up and running in no time</li>
+</ol>
+<p style="text-align:center;margin:28px 0;">
+  <a href="${applicationUrl}" style="display:inline-block;background:#70FFE8;color:#414141;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Complete Your Application →</a>
+</p>
+<p style="margin:0 0 16px;">If you have any questions before applying, feel free to reply to this email — we'd love to hear from you.</p>
+<p style="margin:0;">Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
+
+          await sendProspectEmail({
+            toEmail: prospect.email,
+            toName: firstName,
+            subject,
+            bodyHtml,
+          });
+
+          await logRecruitmentEmail({
+            prospectId: prospect.id,
+            stage: "new_enquiry",
+            emailKey: "re_engagement_june_2026",
+            subject,
+          });
+
+          sent++;
+
+          // Small delay to avoid overwhelming the email provider
+          await new Promise((r) => setTimeout(r, 100));
+        } catch (e) {
+          console.error(`[BulkEmail] Failed for prospect ${prospect.id}:`, e);
+          errors++;
+        }
+      }
+
+      return { sent, skipped, errors, total: prospects.length };
     }),
 });
 // ─── Stage-triggered emails ───────────────────────────────────────────────────

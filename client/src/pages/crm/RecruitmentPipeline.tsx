@@ -42,7 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, ExternalLink, RefreshCw, Loader2, UserPlus, AlertCircle,
   CheckCircle2, Clock, FileSignature, CreditCard, Users, UserX,
-  Mail, ChevronDown, ChevronUp, Trash2, UserCheck, Filter,
+  Mail, ChevronDown, ChevronUp, Trash2, UserCheck, Filter, Send,
 } from "lucide-react";
 import { toast } from "sonner";
 import { TIER_LABELS, TYPE_LABELS } from "../../../../shared/membership";
@@ -166,6 +166,8 @@ function ProspectsPipelineTab() {
   const [referredByFilter, setReferredByFilter] = useState<number | undefined>(undefined);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [showBulkSendDialog, setShowBulkSendDialog] = useState(false);
+  const [bulkSendResult, setBulkSendResult] = useState<{ sent: number; skipped: number; errors: number } | null>(null);
   const utils = trpc.useUtils();
 
   const updateStage = trpc.recruitment.updateStage.useMutation({
@@ -203,6 +205,20 @@ function ProspectsPipelineTab() {
 
   const { data: stageCounts = {} } = trpc.recruitment.stageCounts.useQuery(undefined, {
     refetchInterval: 30_000,
+  });
+
+  const { data: newEnquiryCount } = trpc.recruitment.countNewEnquiryProspects.useQuery();
+
+  const bulkSendMutation = trpc.recruitment.bulkSendReEngagementEmail.useMutation({
+    onSuccess: (result) => {
+      setBulkSendResult(result);
+      utils.recruitment.listProspectsFiltered.invalidate();
+      utils.recruitment.stageCounts.invalidate();
+    },
+    onError: (e) => {
+      toast.error(e.message);
+      setShowBulkSendDialog(false);
+    },
   });
 
   const totalActive = (prospects as any[]).filter(
@@ -299,7 +315,66 @@ function ProspectsPipelineTab() {
           )}
         </div>
         <span className="text-sm text-muted-foreground self-center">{totalActive} active</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2 ml-auto"
+          onClick={() => { setBulkSendResult(null); setShowBulkSendDialog(true); }}
+        >
+          <Send size={14} />
+          Send Re-engagement Email
+        </Button>
       </div>
+
+      {/* Bulk send confirmation dialog */}
+      <AlertDialog open={showBulkSendDialog} onOpenChange={(open) => { if (!bulkSendMutation.isPending) setShowBulkSendDialog(open); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send Re-engagement Email</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                {bulkSendResult ? (
+                  <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-sm space-y-1">
+                    <p className="font-semibold text-green-800">✓ Email send complete</p>
+                    <p className="text-green-700"><strong>{bulkSendResult.sent}</strong> emails sent successfully</p>
+                    {bulkSendResult.skipped > 0 && <p className="text-muted-foreground">{bulkSendResult.skipped} already received this email (skipped)</p>}
+                    {bulkSendResult.errors > 0 && <p className="text-red-600">{bulkSendResult.errors} failed to send</p>}
+                  </div>
+                ) : (
+                  <>
+                    <p>This will send the <strong>"Join Before the Price Increase"</strong> re-engagement email to all <strong>{newEnquiryCount?.count ?? "…"} prospects</strong> currently in the <em>New Enquiry</em> stage.</p>
+                    <p>Prospects who have already received this email will be skipped automatically.</p>
+                    <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 text-xs">This action cannot be undone. Make sure you are ready to send before confirming.</p>
+                  </>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            {bulkSendResult ? (
+              <AlertDialogAction onClick={() => setShowBulkSendDialog(false)}>Done</AlertDialogAction>
+            ) : (
+              <>
+                <AlertDialogCancel disabled={bulkSendMutation.isPending}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={bulkSendMutation.isPending}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    bulkSendMutation.mutate({ origin: window.location.origin });
+                  }}
+                  style={{ background: "#02E6D2", color: "#1a1a1a" }}
+                >
+                  {bulkSendMutation.isPending ? (
+                    <><Loader2 size={14} className="animate-spin mr-1" /> Sending…</>
+                  ) : (
+                    <><Send size={14} className="mr-1" /> Send to {newEnquiryCount?.count ?? "…"} Prospects</>
+                  )}
+                </AlertDialogAction>
+              </>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Table */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
