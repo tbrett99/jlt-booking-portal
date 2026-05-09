@@ -46,6 +46,9 @@ import {
   Loader2,
   Star,
   AlertCircle,
+  Instagram,
+  Images,
+  Link,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -63,6 +66,8 @@ type Supplier = {
   loginPassword: string | null;
   commission: string | null;
   facebookUrl: string | null;
+  instagramUrl: string | null;
+  mediaAssetsUrl: string | null;
   accountManager: string | null;
   phone: string | null;
   email: string | null;
@@ -396,11 +401,11 @@ function SupplierModal({
             </div>
           )}
 
-          {/* Websites */}
-          {(supplier.publicWebsite || supplier.tradeWebsite || supplier.additionalWebsite) && (
+          {/* Websites & Links */}
+          {(supplier.publicWebsite || supplier.tradeWebsite || supplier.additionalWebsite || supplier.facebookUrl || supplier.instagramUrl || supplier.mediaAssetsUrl) && (
             <div className="space-y-2">
               <h4 className="text-sm font-semibold flex items-center gap-2">
-                <Globe className="h-4 w-4" /> Websites
+                <Globe className="h-4 w-4" /> Links
               </h4>
               <div className="space-y-1">
                 {supplier.publicWebsite && (
@@ -410,7 +415,7 @@ function SupplierModal({
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-primary hover:underline"
                   >
-                    <ExternalLink className="h-3.5 w-3.5" /> Public Website
+                    <Globe className="h-3.5 w-3.5" /> Public Website
                   </a>
                 )}
                 {supplier.tradeWebsite && (
@@ -430,7 +435,37 @@ function SupplierModal({
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-primary hover:underline"
                   >
-                    <ExternalLink className="h-3.5 w-3.5" /> Additional Website
+                    <Link className="h-3.5 w-3.5" /> Additional Website
+                  </a>
+                )}
+                {supplier.facebookUrl && (
+                  <a
+                    href={supplier.facebookUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-primary hover:underline"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Facebook
+                  </a>
+                )}
+                {supplier.instagramUrl && (
+                  <a
+                    href={supplier.instagramUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-primary hover:underline"
+                  >
+                    <Instagram className="h-3.5 w-3.5" /> Instagram
+                  </a>
+                )}
+                {supplier.mediaAssetsUrl && (
+                  <a
+                    href={supplier.mediaAssetsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-primary hover:underline"
+                  >
+                    <Images className="h-3.5 w-3.5" /> Media Assets
                   </a>
                 )}
               </div>

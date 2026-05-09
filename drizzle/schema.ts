@@ -1456,6 +1456,8 @@ export const suppliers = mysqlTable("suppliers", {
   loginPassword: varchar("loginPassword", { length: 500 }),      // trade portal password
   commission: varchar("commission", { length: 500 }),
   facebookUrl: varchar("facebookUrl", { length: 1000 }),
+  instagramUrl: varchar("instagramUrl", { length: 1000 }),
+  mediaAssetsUrl: varchar("mediaAssetsUrl", { length: 1000 }),    // media kit / brand assets page
   accountManager: varchar("accountManager", { length: 255 }),
   phone: varchar("phone", { length: 500 }),
   email: varchar("email", { length: 320 }),

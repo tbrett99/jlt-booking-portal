@@ -37,7 +37,7 @@ function applyStageFilter(
     loginUsername: canSeeCredentials ? supplier.loginUsername : null,
     loginPassword: canSeeCredentials ? supplier.loginPassword : null,
     agencyId: canSeeCredentials ? supplier.agencyId : null,
-    tradeWebsite: canSeeCredentials ? supplier.tradeWebsite : null,
+    // tradeWebsite is always visible (it's a public URL, not a credential)
     adminUsername: null,  // agents never see admin credentials
     adminPassword: null,
     adminNotes: null,
@@ -210,6 +210,8 @@ export const suppliersRouter = router({
         loginPassword: z.string().optional(),
         commission: z.string().optional(),
         facebookUrl: z.string().optional(),
+        instagramUrl: z.string().optional(),
+        mediaAssetsUrl: z.string().optional(),
         accountManager: z.string().optional(),
         phone: z.string().optional(),
         email: z.string().optional(),
@@ -254,6 +256,8 @@ export const suppliersRouter = router({
         loginPassword: z.string().optional(),
         commission: z.string().optional(),
         facebookUrl: z.string().optional(),
+        instagramUrl: z.string().optional(),
+        mediaAssetsUrl: z.string().optional(),
         accountManager: z.string().optional(),
         phone: z.string().optional(),
         email: z.string().optional(),

@@ -39,6 +39,8 @@ type Supplier = {
   agencyId: string | null;
   loginPassword: string | null;
   facebookUrl: string | null;
+  instagramUrl: string | null;
+  mediaAssetsUrl: string | null;
   phone: string | null;
   email: string | null;
   generalNotes: string | null;
@@ -62,6 +64,9 @@ const EMPTY_FORM = {
   loginPassword: "",
   commission: "",
   facebookUrl: "",
+  instagramUrl: "",
+  mediaAssetsUrl: "",
+  additionalWebsite: "",
   accountManager: "",
   phone: "",
   email: "",
@@ -105,6 +110,9 @@ export function SupplierFormDialog({
         loginPassword: editSupplier.loginPassword ?? "",
         commission: editSupplier.commission ?? "",
         facebookUrl: editSupplier.facebookUrl ?? "",
+        instagramUrl: (editSupplier as any).instagramUrl ?? "",
+        mediaAssetsUrl: (editSupplier as any).mediaAssetsUrl ?? "",
+        additionalWebsite: editSupplier.additionalWebsite ?? "",
         accountManager: editSupplier.accountManager ?? "",
         phone: editSupplier.phone ?? "",
         email: editSupplier.email ?? "",
@@ -189,6 +197,9 @@ export function SupplierFormDialog({
       loginPassword: form.loginPassword || undefined,
       commission: form.commission || undefined,
       facebookUrl: form.facebookUrl || undefined,
+      instagramUrl: form.instagramUrl || undefined,
+      mediaAssetsUrl: form.mediaAssetsUrl || undefined,
+      additionalWebsite: (form as any).additionalWebsite || undefined,
       accountManager: form.accountManager || undefined,
       phone: form.phone || undefined,
       email: form.email || undefined,
@@ -271,6 +282,42 @@ export function SupplierFormDialog({
               value={form.tradeWebsite}
               onChange={(e) => setForm((f) => ({ ...f, tradeWebsite: e.target.value }))}
               placeholder="https://..."
+            />
+          </div>
+
+          {/* Additional Website */}
+          <div className="space-y-1">
+            <Label>Additional Website</Label>
+            <Input
+              value={(form as any).additionalWebsite ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, additionalWebsite: e.target.value }))}
+              placeholder="https://..."
+            />
+          </div>
+
+          {/* Social & Media Links */}
+          <div className="space-y-1">
+            <Label>Facebook Page URL</Label>
+            <Input
+              value={form.facebookUrl}
+              onChange={(e) => setForm((f) => ({ ...f, facebookUrl: e.target.value }))}
+              placeholder="https://facebook.com/..."
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Instagram URL</Label>
+            <Input
+              value={form.instagramUrl}
+              onChange={(e) => setForm((f) => ({ ...f, instagramUrl: e.target.value }))}
+              placeholder="https://instagram.com/..."
+            />
+          </div>
+          <div className="col-span-2 space-y-1">
+            <Label>Media Assets URL</Label>
+            <Input
+              value={form.mediaAssetsUrl}
+              onChange={(e) => setForm((f) => ({ ...f, mediaAssetsUrl: e.target.value }))}
+              placeholder="https://... (media kit, brand assets page)"
             />
           </div>
 

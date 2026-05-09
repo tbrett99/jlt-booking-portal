@@ -49,6 +49,8 @@ type Supplier = {
   agencyId: string | null;
   loginPassword: string | null;
   facebookUrl: string | null;
+  instagramUrl: string | null;
+  mediaAssetsUrl: string | null;
   phone: string | null;
   email: string | null;
   generalNotes: string | null;

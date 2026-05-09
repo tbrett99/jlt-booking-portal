@@ -645,6 +645,13 @@
       "when": 1778325465000,
       "tag": "0091_zippy_stephen_strange",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "5",
+      "when": 1778329828204,
+      "tag": "0092_handy_stellaris",
+      "breakpoints": true
     }
   ]
 }
