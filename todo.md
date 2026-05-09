@@ -2137,3 +2137,9 @@
 - [x] Messages page: split into Unassigned (top, orange) and Assigned (bottom) sections with counts
 - [x] Workflow Builder: replace HTML textarea with visual WYSIWYG email editor (Tiptap)
 - [x] EmailEditor component: bold, italic, headings, lists, blockquote, alignment, link inserter, CTA button inserter, template variable hints
+
+## Performance Optimisation
+- [ ] Add missing DB indexes on most-queried columns (bookings, notifications, pipeline stages, messages)
+- [ ] Fix N+1 queries and add limits to unbounded list queries
+- [ ] Lazy-load heavy pages to reduce initial bundle size
+- [ ] Add server-side query timing logs to identify slowest procedures

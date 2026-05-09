@@ -130,6 +130,7 @@ import { paymentsRouter } from "./payments-router";
 import { joinRouter } from "./join-router";
 import { recruitmentRouter } from "./recruitment-router";
 import { recruitmentWorkflowRouter } from "./recruitment-workflow-router";
+import { dashboardRouter } from "./dashboard-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -3288,6 +3289,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
   join: joinRouter,
   recruitment: recruitmentRouter,
   recruitmentWorkflow: recruitmentWorkflowRouter,
+  dashboard: dashboardRouter,
 
   // ─── GoCardless Direct Debit ───────────────────────────────────────────────
   gocardless: router({

@@ -1,93 +1,98 @@
 import { Toaster } from "@/components/ui/sonner";
+import { lazy, Suspense } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ViewModeProvider, useViewMode } from "./contexts/ViewModeContext";
+import PortalLayout from "./components/PortalLayout";
+
+// Critical path — always bundled
 import LoginPage from "./pages/LoginPage";
 import OAuthLoginPage from "./pages/OAuthLoginPage";
-import AgentDashboard from "./pages/agent/AgentDashboard";
-import RegisterBooking from "./pages/agent/RegisterBooking";
-import AgentBookingDetail from "./pages/agent/AgentBookingDetail";
-import AmendmentForm from "./pages/agent/AmendmentForm";
-import CancellationForm from "./pages/agent/CancellationForm";
-import RefundForm from "./pages/agent/RefundForm";
-import AdminDashboard from "./pages/admin/AdminDashboard";
-import AdminKanban from "./pages/admin/AdminKanban";
-import AdminBookingDetail from "./pages/admin/AdminBookingDetail";
-import AdminUsers from "./pages/admin/AdminUsers";
-import AdminAmendments from "./pages/admin/AdminAmendments";
-import AdminRefunds from "./pages/admin/AdminRefunds";
-import AdminAmendmentKanban from "./pages/admin/AdminAmendmentKanban";
-import AdminRefundKanban from "./pages/admin/AdminRefundKanban";
-import CommissionDue from "./pages/admin/CommissionDue";
-import AdminReports from "./pages/admin/AdminReports";
-import NotificationTemplates from "./pages/admin/NotificationTemplates";
-import AgentCommissions from "./pages/agent/AgentCommissions";
-import CommissionTimeline from "./pages/agent/CommissionTimeline";
-import AgentCancelBooking from "./pages/agent/AgentCancelBooking";
-import AgentRequestAmendment from "./pages/agent/AgentRequestAmendment";
-import AgentFlightRequests from "./pages/agent/AgentFlightRequests";
-import AgentNotifications from "./pages/agent/AgentNotifications";
-import AdminFlightsPipeline from "./pages/admin/AdminFlightsPipeline";
-import AdminCommissions from "./pages/admin/AdminCommissions";
-import RemittanceManagement from "./pages/admin/RemittanceManagement";
-import AdminImport from "./pages/admin/AdminImport";
-import AdminAgentPerformance from "./pages/admin/AdminAgentPerformance";
-import AdminMessages from "./pages/admin/AdminMessages";
-import PtsMissingPaymentDate from "./pages/admin/PtsMissingPaymentDate";
-import CommissionClaimableMissingPaymentDate from "./pages/admin/CommissionClaimableMissingPaymentDate";
-import AdminNotifPrefs from "./pages/admin/AdminNotifPrefs";
-import AdminTasks from "./pages/admin/AdminTasks";
-import AdminCalendar from "./pages/admin/AdminCalendar";
-import AdminReimbursements from "./pages/admin/AdminReimbursements";
-import PortalLayout from "./components/PortalLayout";
+import RegisterPage from "./pages/RegisterPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
-import ProfilePage from "./pages/ProfilePage";
-import BookingDocuments from "./pages/BookingDocuments";
-import AdminInboxConfig from "./pages/admin/AdminInboxConfig";
-import AdminApiKeys from "./pages/admin/AdminApiKeys";
-import AdminOAuthClients from "./pages/admin/AdminOAuthClients";
-import AdminInboxAudit from "./pages/admin/AdminInboxAudit";
-import AgentEmailLog from "./pages/admin/AgentEmailLog";
-import AbandonedSignups from "./pages/admin/AbandonedSignups";
-import CrmPipeline from "./pages/crm/CrmPipeline";
-import CrmProspects from "./pages/crm/CrmProspects";
-import ProspectDetail from "./pages/crm/ProspectDetail";
-import CrmCampaigns from "./pages/crm/CrmCampaigns";
-import EmailMarketing from "./pages/crm/EmailMarketing";
-import CrmRemittances from "./pages/crm/CrmRemittances";
-import CrmPaymentConfig from "./pages/crm/CrmPaymentConfig";
-import EnquiryForm from "./pages/crm/EnquiryForm";
-import AgentApplicationForm from "./pages/crm/AgentApplicationForm";
-import SignContract from "./pages/crm/SignContract";
-import MembershipSelection from "./pages/crm/MembershipSelection";
-import WonAgentPortal from "./pages/crm/WonAgentPortal";
-import MembershipSuccess from "./pages/crm/MembershipSuccess";
-import OnboardingDashboard from "./pages/agent/OnboardingDashboard";
-import DdSetup from "./pages/agent/DdSetup";
-import DdComplete from "./pages/agent/DdComplete";
-import RegisterPage from "./pages/RegisterPage";
-import JoinFlow from "./pages/JoinFlow";
-import JoinAccept from "./pages/JoinAccept";
-import AgentCrm from "./pages/crm/AgentCrm";
-import ContractEvidenceViewer from "./pages/crm/ContractEvidenceViewer";
-import JoinSessions from "./pages/crm/JoinSessions";
+import UnsubscribePage from "./pages/UnsubscribePage";
 import PaymentResult from "./pages/PaymentResult";
 import PaymentRedirect from "./pages/PaymentRedirect";
-import CrmChangeRequests from "./pages/crm/CrmChangeRequests";
-import Memberships from "./pages/crm/Memberships";
-import MyProfile from "./pages/MyProfile";
-import TermsAndPolicies from "./pages/TermsAndPolicies";
-import AdminTermsTracker from "./pages/admin/AdminTermsTracker";
-import UnsubscribePage from "./pages/UnsubscribePage";
+import JoinFlow from "./pages/JoinFlow";
+import JoinAccept from "./pages/JoinAccept";
 import ApplyPage, { ApplyEmbedPage } from "./pages/recruitment/ApplyPage";
 import ApplicationFormPage from "./pages/recruitment/ApplicationFormPage";
-import RecruitmentPipeline from "./pages/crm/RecruitmentPipeline";
-import WorkflowBuilder from "./pages/crm/WorkflowBuilder";
-import RecruitmentProspectDetail from "./pages/crm/RecruitmentProspectDetail";
+
+// Lazy-loaded pages (split into separate chunks)
+const AgentDashboard = lazy(() => import("./pages/agent/AgentDashboard"));
+const RegisterBooking = lazy(() => import("./pages/agent/RegisterBooking"));
+const AgentBookingDetail = lazy(() => import("./pages/agent/AgentBookingDetail"));
+const AmendmentForm = lazy(() => import("./pages/agent/AmendmentForm"));
+const CancellationForm = lazy(() => import("./pages/agent/CancellationForm"));
+const RefundForm = lazy(() => import("./pages/agent/RefundForm"));
+const AgentCommissions = lazy(() => import("./pages/agent/AgentCommissions"));
+const CommissionTimeline = lazy(() => import("./pages/agent/CommissionTimeline"));
+const AgentCancelBooking = lazy(() => import("./pages/agent/AgentCancelBooking"));
+const AgentRequestAmendment = lazy(() => import("./pages/agent/AgentRequestAmendment"));
+const AgentFlightRequests = lazy(() => import("./pages/agent/AgentFlightRequests"));
+const AgentNotifications = lazy(() => import("./pages/agent/AgentNotifications"));
+const OnboardingDashboard = lazy(() => import("./pages/agent/OnboardingDashboard"));
+const DdSetup = lazy(() => import("./pages/agent/DdSetup"));
+const DdComplete = lazy(() => import("./pages/agent/DdComplete"));
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
+const AdminKanban = lazy(() => import("./pages/admin/AdminKanban"));
+const AdminBookingDetail = lazy(() => import("./pages/admin/AdminBookingDetail"));
+const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
+const AdminAmendments = lazy(() => import("./pages/admin/AdminAmendments"));
+const AdminRefunds = lazy(() => import("./pages/admin/AdminRefunds"));
+const AdminAmendmentKanban = lazy(() => import("./pages/admin/AdminAmendmentKanban"));
+const AdminRefundKanban = lazy(() => import("./pages/admin/AdminRefundKanban"));
+const CommissionDue = lazy(() => import("./pages/admin/CommissionDue"));
+const AdminReports = lazy(() => import("./pages/admin/AdminReports"));
+const NotificationTemplates = lazy(() => import("./pages/admin/NotificationTemplates"));
+const AdminFlightsPipeline = lazy(() => import("./pages/admin/AdminFlightsPipeline"));
+const AdminCommissions = lazy(() => import("./pages/admin/AdminCommissions"));
+const RemittanceManagement = lazy(() => import("./pages/admin/RemittanceManagement"));
+const AdminImport = lazy(() => import("./pages/admin/AdminImport"));
+const AdminAgentPerformance = lazy(() => import("./pages/admin/AdminAgentPerformance"));
+const AdminMessages = lazy(() => import("./pages/admin/AdminMessages"));
+const PtsMissingPaymentDate = lazy(() => import("./pages/admin/PtsMissingPaymentDate"));
+const CommissionClaimableMissingPaymentDate = lazy(() => import("./pages/admin/CommissionClaimableMissingPaymentDate"));
+const AdminNotifPrefs = lazy(() => import("./pages/admin/AdminNotifPrefs"));
+const AdminTasks = lazy(() => import("./pages/admin/AdminTasks"));
+const AdminCalendar = lazy(() => import("./pages/admin/AdminCalendar"));
+const AdminReimbursements = lazy(() => import("./pages/admin/AdminReimbursements"));
+const AdminInboxConfig = lazy(() => import("./pages/admin/AdminInboxConfig"));
+const AdminApiKeys = lazy(() => import("./pages/admin/AdminApiKeys"));
+const AdminOAuthClients = lazy(() => import("./pages/admin/AdminOAuthClients"));
+const AdminInboxAudit = lazy(() => import("./pages/admin/AdminInboxAudit"));
+const AgentEmailLog = lazy(() => import("./pages/admin/AgentEmailLog"));
+const AbandonedSignups = lazy(() => import("./pages/admin/AbandonedSignups"));
+const AdminTermsTracker = lazy(() => import("./pages/admin/AdminTermsTracker"));
+const CrmPipeline = lazy(() => import("./pages/crm/CrmPipeline"));
+const CrmProspects = lazy(() => import("./pages/crm/CrmProspects"));
+const ProspectDetail = lazy(() => import("./pages/crm/ProspectDetail"));
+const CrmCampaigns = lazy(() => import("./pages/crm/CrmCampaigns"));
+const EmailMarketing = lazy(() => import("./pages/crm/EmailMarketing"));
+const CrmRemittances = lazy(() => import("./pages/crm/CrmRemittances"));
+const CrmPaymentConfig = lazy(() => import("./pages/crm/CrmPaymentConfig"));
+const EnquiryForm = lazy(() => import("./pages/crm/EnquiryForm"));
+const AgentApplicationForm = lazy(() => import("./pages/crm/AgentApplicationForm"));
+const SignContract = lazy(() => import("./pages/crm/SignContract"));
+const MembershipSelection = lazy(() => import("./pages/crm/MembershipSelection"));
+const WonAgentPortal = lazy(() => import("./pages/crm/WonAgentPortal"));
+const MembershipSuccess = lazy(() => import("./pages/crm/MembershipSuccess"));
+const AgentCrm = lazy(() => import("./pages/crm/AgentCrm"));
+const ContractEvidenceViewer = lazy(() => import("./pages/crm/ContractEvidenceViewer"));
+const JoinSessions = lazy(() => import("./pages/crm/JoinSessions"));
+const CrmChangeRequests = lazy(() => import("./pages/crm/CrmChangeRequests"));
+const Memberships = lazy(() => import("./pages/crm/Memberships"));
+const RecruitmentPipeline = lazy(() => import("./pages/crm/RecruitmentPipeline"));
+const WorkflowBuilder = lazy(() => import("./pages/crm/WorkflowBuilder"));
+const RecruitmentProspectDetail = lazy(() => import("./pages/crm/RecruitmentProspectDetail"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage"));
+const BookingDocuments = lazy(() => import("./pages/BookingDocuments"));
+const MyProfile = lazy(() => import("./pages/MyProfile"));
+const TermsAndPolicies = lazy(() => import("./pages/TermsAndPolicies"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -373,7 +378,21 @@ function App() {
         <ViewModeProvider>
           <TooltipProvider>
             <Toaster />
-            <AuthRouter />
+            <Suspense fallback={
+              <div className="min-h-screen flex items-center justify-center bg-background">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "#70FFE8" }}>
+                    <svg className="animate-spin text-[#414141] w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  </div>
+                  <p className="text-muted-foreground text-sm">Loading...</p>
+                </div>
+              </div>
+            }>
+              <AuthRouter />
+            </Suspense>
           </TooltipProvider>
         </ViewModeProvider>
       </ThemeProvider>

@@ -113,8 +113,8 @@ function UrgencyCard({
 }
 
 export default function AdminDashboard() {
-  const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery({});
-  const { data: agentList = [] } = trpc.users.listAgents.useQuery();
+  // ── Optimised single stats query (replaces bookings.all + recruitmentStageCounts + reimbStats) ──
+  const { data: stats, isLoading } = trpc.dashboard.stats.useQuery();
   const { data: amendments = [] } = trpc.amendments.all.useQuery();
   const { data: refunds = [] } = trpc.refunds.all.useQuery();
   const { data: cancellations = [] } = trpc.cancellations.all.useQuery();
@@ -122,13 +122,11 @@ export default function AdminDashboard() {
   const { data: claims = [] } = trpc.commissionClaims.all.useQuery();
   const utils = trpc.useUtils();
   const { data: notifSettings } = trpc.settings.getNotificationsPaused.useQuery();
-  const { data: reimbStats } = trpc.reimbursements.dashboardStats.useQuery();
   const { data: allReimbs = [] } = trpc.reimbursements.list.useQuery({});
   const { data: adminUsersForAssign = [] } = trpc.reimbursements.listAdminsForAssign.useQuery();
   const { data: commissionDueList = [] } = trpc.commissionDue.list.useQuery();
   const { data: pendingFlightCount = 0 } = trpc.flightRequests.pendingCount.useQuery();
-  const { data: recruitmentStageCounts } = trpc.recruitment.stageCounts.useQuery();
-  const newApplicationsCount = (recruitmentStageCounts as Record<string, number> | undefined)?.["application_received"] ?? 0;
+  const newApplicationsCount = stats?.stageBreakdown?.["application_received"] ?? 0;
   const assignReimb = trpc.reimbursements.assign.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
   const scheduleReimb = trpc.reimbursements.updateStatus.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
   const notificationsPaused = notifSettings?.paused ?? false;
@@ -144,8 +142,19 @@ export default function AdminDashboard() {
     },
   });
 
-  // ── Derived data ────────────────────────────────────────────────────────────
-  const activeBookings = bookings.filter((b) => b.currentStage !== "Cancelled");
+  // ── Derived data (from stats query + local filters on smaller datasets) ────
+  const now = new Date();
+
+  // From stats (server-computed, no large arrays in browser)
+  const urgentBookings: any[] = stats?.urgentBookings ?? [];
+  const upcomingDepartures: any[] = stats?.upcomingDepartures ?? [];
+  const recentBookings: any[] = stats?.recentBookings ?? [];
+  const missingPaymentDate: any[] = stats?.missingPaymentDateBookings ?? [];
+  const commissionClaimableMissingDate: any[] = stats?.commissionClaimableMissingDateBookings ?? [];
+  const lowMarginBookings: any[] = stats?.lowMarginBookings ?? [];
+  const stageCount: Record<string, number> = stats?.stageBreakdown ?? {};
+
+  // Local filters on smaller datasets (amendments, refunds, cancellations, reimbursements)
   const pendingAmendments = (amendments as any[]).filter(
     (a) => a.pipelineStage !== "Actioned" && !a.isReimbursementDoc
   );
@@ -163,45 +172,9 @@ export default function AdminDashboard() {
   );
   const pendingCancellations = (cancellations as any[]).filter((c) => c.status !== "actioned");
   const unreadNotifs = notifications.filter((n) => !n.isRead);
-  const commissionReady = bookings.filter((b) => b.currentStage === "Commission Claimable");
-  const urgentBookings = bookings.filter((b) => URGENT_STAGES.has(b.currentStage));
-  const missingPaymentDate = activeBookings.filter(
-    (b) => !b.finalSupplierPaymentDate && !(b as any).paymentDateDismissed && b.currentStage !== "Cancelled" && b.currentStage !== "Commission Claimable"
-  );
-  const commissionClaimableMissingDate = activeBookings.filter(
-    (b) => !b.finalSupplierPaymentDate && !(b as any).paymentDateDismissed && b.currentStage === "Commission Claimable"
-  );
   const pendingClaims = (claims as any[]).filter((c) => c.status === "processing");
   const lateUnactioned = (allReimbs as any[]).filter((r) => r.isLate && !r.actionedAt && r.status !== "scheduled" && r.status !== "paid");
   const outstandingReimbs = (allReimbs as any[]).filter((r) => r.status === "pending");
-
-  const now = new Date();
-  const in14 = addDays(now, 14);
-  const upcomingDepartures = activeBookings
-    .filter((b) => { const d = new Date(b.departureDate); return d >= now && d <= in14; })
-    .sort((a, b) => new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime());
-
-  const stageCount: Record<string, number> = {};
-  for (const b of bookings) stageCount[b.currentStage] = (stageCount[b.currentStage] ?? 0) + 1;
-
-  const recentBookings = [...bookings]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 6);
-
-  const lowMarginBookings = activeBookings.filter((b) => {
-    const gc = Number((b as any).grossCost || 0);
-    const ec = Number(b.expectedCommission || 0);
-    if (!gc || !ec) return false;
-    return (ec / gc) * 100 < 5;
-  });
-
-  const thisMonth = bookings.filter((b) => {
-    const d = new Date(b.createdAt);
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  });
-
-  const STAGES_BEFORE_PTS = new Set(["New Booking", "Not on Topdog", "Query", "Reimb Docs Missing", "Urgent/Reimb", "T/O Package", "DP", "Holding Accounts"]);
-  const filesToAddToPts = bookings.filter((b) => STAGES_BEFORE_PTS.has(b.currentStage)).length;
 
   // Total critical actions count (for the header badge)
   const criticalCount = urgentBookings.length + lateUnactioned.length + reimbAmendments.length;
@@ -358,8 +331,8 @@ export default function AdminDashboard() {
       {/* ── SECTION 2: KEY METRICS ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         {[
-          { label: "Active Bookings", value: activeBookings.length, icon: BookOpen, href: "/pipeline", color: "#70FFE8", textColor: "#414141", urgent: false },
-          { label: "To Add to PTS", value: filesToAddToPts, icon: ClipboardList, href: "/pipeline", color: filesToAddToPts > 0 ? "#fef3c7" : "#f3f4f6", textColor: filesToAddToPts > 0 ? "#92400e" : "#6b7280", urgent: filesToAddToPts > 0 },
+          { label: "Active Bookings", value: stats?.activeBookings ?? 0, icon: BookOpen, href: "/pipeline", color: "#70FFE8", textColor: "#414141", urgent: false },
+          { label: "To Add to PTS", value: stats?.filesToAddToPts ?? 0, icon: ClipboardList, href: "/pipeline", color: (stats?.filesToAddToPts ?? 0) > 0 ? "#fef3c7" : "#f3f4f6", textColor: (stats?.filesToAddToPts ?? 0) > 0 ? "#92400e" : "#6b7280", urgent: (stats?.filesToAddToPts ?? 0) > 0 },
           { label: "New Amendments", value: newAmendments.length, icon: FileText, href: "/amendments/pipeline", color: newAmendments.length > 0 ? "#fef3c7" : "#f3f4f6", textColor: newAmendments.length > 0 ? "#92400e" : "#6b7280", urgent: newAmendments.length > 0 },
           { label: "New Refunds", value: newRefunds.length, icon: RefreshCw, href: "/refunds/pipeline", color: newRefunds.length > 0 ? "#fce7f3" : "#f3f4f6", textColor: newRefunds.length > 0 ? "#9d174d" : "#6b7280", urgent: newRefunds.length > 0 },
           { label: "Outstanding Reimb.", value: outstandingReimbs.length, icon: PoundSterling, href: "/admin/reimbursements", color: outstandingReimbs.length > 0 ? "#dbeafe" : "#f3f4f6", textColor: outstandingReimbs.length > 0 ? "#1e3a5f" : "#6b7280", urgent: false },
@@ -611,7 +584,7 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
               {STAGE_ORDER.filter((s) => stageCount[s] > 0).map((stage) => {
                 const count = stageCount[stage] ?? 0;
-                const pct = Math.round((count / Math.max(bookings.length, 1)) * 100);
+                const pct = Math.round((count / Math.max(stats?.totalBookings ?? 1, 1)) * 100);
                 const isUrgent = URGENT_STAGES.has(stage);
                 return (
                   <Link key={stage} href="/pipeline">
@@ -627,7 +600,7 @@ export default function AdminDashboard() {
                   </Link>
                 );
               })}
-              {bookings.length === 0 && <p className="text-xs text-muted-foreground col-span-2 text-center py-4">No bookings yet</p>}
+              {(stats?.totalBookings ?? 0) === 0 && <p className="text-xs text-muted-foreground col-span-2 text-center py-4">No bookings yet</p>}
             </div>
           </CardContent>
         </Card>
