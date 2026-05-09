@@ -19,7 +19,7 @@ const STAGE_COLOURS: Record<string, string> = {
 
 export default function AdminRefunds() {
   const [selectedRefund, setSelectedRefund] = useState<any | null>(null);
-  const { data: refunds = [], isLoading } = trpc.refunds.all.useQuery();
+  const { data: refunds = [], isLoading } = trpc.refunds.all.useQuery(undefined, { staleTime: 60000 });
 
   const pending = refunds.filter((r: any) => r.pipelineStage !== "Refund Processed");
   const processed = refunds.filter((r: any) => r.pipelineStage === "Refund Processed");

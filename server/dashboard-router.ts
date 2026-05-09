@@ -140,18 +140,24 @@ export const dashboardRouter = router({
       `),
     ]);
 
-    // Parse results (drizzle sql`` returns rows array)
-    const bc = (bookingCounts as any[])[0] ?? {};
-    const ac = (amendmentCounts as any[])[0] ?? {};
-    const rc = (refundCounts as any[])[0] ?? {};
-    const cc = (cancellationCounts as any[])[0] ?? {};
-    const ccc = (commissionClaimCounts as any[])[0] ?? {};
-    const reimbc = (reimbCounts as any[])[0] ?? {};
-    const tmc = (thisMonthCount as any[])[0] ?? {};
-    const nsc = (newSignUpsCount as any[])[0] ?? {};
+    // Parse results
+    // db.execute(sql`...`) with drizzle-orm/mysql2 returns [rows, fields] tuple
+    // So we need to unwrap: result[0] is the rows array, result[0][0] is the first row
+    const unwrap = (result: any): any[] => Array.isArray(result[0]) ? result[0] : result;
+    const unwrapOne = (result: any): any => unwrap(result)[0] ?? {};
 
+    const bc = unwrapOne(bookingCounts);
+    const ac = unwrapOne(amendmentCounts);
+    const rc = unwrapOne(refundCounts);
+    const cc = unwrapOne(cancellationCounts);
+    const ccc = unwrapOne(commissionClaimCounts);
+    const reimbc = unwrapOne(reimbCounts);
+    const tmc = unwrapOne(thisMonthCount);
+    const nsc = unwrapOne(newSignUpsCount);
+
+    const stageRows = unwrap(stageBreakdown);
     const stageMap: Record<string, number> = {};
-    for (const row of stageBreakdown as any[]) {
+    for (const row of stageRows) {
       stageMap[row.currentStage] = Number(row.count);
     }
 
@@ -190,11 +196,11 @@ export const dashboardRouter = router({
       stageBreakdown: stageMap,
 
       // Lists (small, for display)
-      upcomingDepartures: (upcomingDepartures as any[]).slice(0, 10),
-      recentBookings: (recentBookings as any[]).slice(0, 6),
-      missingPaymentDateBookings: (missingPaymentDate as any[]).slice(0, 5),
-      commissionClaimableMissingDateBookings: (commissionClaimableMissingDate as any[]).slice(0, 5),
-      lowMarginBookings: (lowMarginBookings as any[]).slice(0, 10),
+      upcomingDepartures: unwrap(upcomingDepartures).slice(0, 10),
+      recentBookings: unwrap(recentBookings).slice(0, 6),
+      missingPaymentDateBookings: unwrap(missingPaymentDate).slice(0, 5),
+      commissionClaimableMissingDateBookings: unwrap(commissionClaimableMissingDate).slice(0, 5),
+      lowMarginBookings: unwrap(lowMarginBookings).slice(0, 10),
 
       // Urgent bookings (for the attention panel)
       urgentBookings: await (async () => {
@@ -205,8 +211,81 @@ export const dashboardRouter = router({
           ORDER BY updatedAt DESC
           LIMIT 20
         `);
-        return rows as any[];
+        return unwrap(rows);
       })(),
+    };
+  }),
+
+  /**
+   * Lightweight counts for the PortalLayout top bar.
+   * Returns only numbers — no row data — so it completes in ~50ms.
+   */
+  urgentCounts: adminProcedure.query(async () => {
+    const { getDb } = await import("./db");
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    const unwrapOne = (result: any): any => {
+      const rows = Array.isArray(result[0]) ? result[0] : result;
+      return rows[0] ?? {};
+    };
+
+    const [bookingCounts, amendmentCounts, refundCounts, commissionDueCounts, reimbCounts, flightCounts, signUpCounts] =
+      await Promise.all([
+        db.execute(sql`
+          SELECT
+            SUM(CASE WHEN currentStage IN ('New Booking','Not on Topdog','Query','Reimb Docs Missing','Urgent/Reimb','T/O Package','DP','Holding Accounts') THEN 1 ELSE 0 END) AS filesToAddToPts
+          FROM bookings
+        `),
+        db.execute(sql`
+          SELECT SUM(CASE WHEN pipelineStage = 'To Do' AND isReimbursementDoc = 0 THEN 1 ELSE 0 END) AS newAmendments
+          FROM amendments
+        `),
+        db.execute(sql`
+          SELECT SUM(CASE WHEN pipelineStage = 'New Refund Request' THEN 1 ELSE 0 END) AS newRefunds
+          FROM refunds
+        `),
+        db.execute(sql`
+          SELECT COUNT(*) AS commissionDue
+          FROM bookings
+          WHERE finalSupplierPaymentDate IS NOT NULL
+            AND finalSupplierPaymentDate <= CURDATE()
+            AND currentStage NOT IN ('Commission Claimable','Commission Claimed','Cancelled')
+            AND (isPersonalBooking IS NULL OR isPersonalBooking = 0)
+        `),
+        db.execute(sql`
+          SELECT
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS outstanding,
+            SUM(CASE WHEN isLate = 1 AND actionedAt IS NULL AND status NOT IN ('scheduled','paid') THEN 1 ELSE 0 END) AS lateUnactioned
+          FROM reimbursement_items
+        `),
+        db.execute(sql`
+          SELECT COUNT(*) AS pending FROM flight_requests
+          WHERE status NOT IN ('ticketed','cancelled','completed')
+        `),
+        db.execute(sql`
+          SELECT COUNT(*) AS count FROM users
+          WHERE portalStatus = 'onboarding'
+        `),
+      ]);
+
+    const bc = unwrapOne(bookingCounts);
+    const ac = unwrapOne(amendmentCounts);
+    const rc = unwrapOne(refundCounts);
+    const cdc = unwrapOne(commissionDueCounts);
+    const reimbc = unwrapOne(reimbCounts);
+    const fc = unwrapOne(flightCounts);
+    const sc = unwrapOne(signUpCounts);
+
+    return {
+      filesToAddToPts: Number(bc.filesToAddToPts ?? 0),
+      newAmendments: Number(ac.newAmendments ?? 0),
+      newRefunds: Number(rc.newRefunds ?? 0),
+      commissionDueCount: Number(cdc.commissionDue ?? 0),
+      outstandingReimbs: Number(reimbc.outstanding ?? 0),
+      lateUnactionedCount: Number(reimbc.lateUnactioned ?? 0),
+      pendingFlightCount: Number(fc.pending ?? 0),
+      newSignUpsCount: Number(sc.count ?? 0),
     };
   }),
 });

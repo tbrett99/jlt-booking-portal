@@ -2117,7 +2117,7 @@
 - [x] Workflow Builder UI: per-stage sequence editor, email step cards with delay/subject/body editor, enable/disable toggle per workflow
 - [x] Wire enrollment on stage entry and unenrollment from all other workflows on stage change
 - [x] /api/scheduled/process-workflows endpoint added for scheduled task
-- [ ] Hourly scheduled task to process workflow emails (manus-config schedule not available in this environment)
+- [x] Hourly scheduled task to process workflow emails (node-cron every 15 min in scheduler.ts — manus-config external schedule not needed)
 
 ## Workflow & Recruitment Fixes (May 8)
 - [x] Fix workflow builder: seed all stage emails — cleared partial data, ran seed script, all 13 stages now seeded
@@ -2130,8 +2130,8 @@
 - [x] Wire periodic scheduled task for delayed workflow emails (node-cron every 15 min in scheduler.ts)
 
 ## Messages & Workflow UI Improvements
-- [ ] Messages page: sort unassigned conversations to top, assigned to bottom, with clear section labels
-- [ ] Workflow Builder: add visual rich-text (WYSIWYG) email editor to the email step dialog
+- [x] Messages page: sort unassigned conversations to top, assigned to bottom, with clear section labels
+- [x] Workflow Builder: add visual rich-text (WYSIWYG) email editor to the email step dialog
 
 ## Messages & Workflow UI Improvements
 - [x] Messages page: split into Unassigned (top, orange) and Assigned (bottom) sections with counts
@@ -2139,7 +2139,32 @@
 - [x] EmailEditor component: bold, italic, headings, lists, blockquote, alignment, link inserter, CTA button inserter, template variable hints
 
 ## Performance Optimisation
-- [ ] Add missing DB indexes on most-queried columns (bookings, notifications, pipeline stages, messages)
-- [ ] Fix N+1 queries and add limits to unbounded list queries
-- [ ] Lazy-load heavy pages to reduce initial bundle size
-- [ ] Add server-side query timing logs to identify slowest procedures
+- [x] Add missing DB indexes on most-queried columns (bookings, notifications, pipeline stages, messages)
+- [x] Fix N+1 queries and add limits to unbounded list queries
+- [x] Lazy-load heavy pages to reduce initial bundle size
+- [x] Add server-side query timing logs to identify slowest procedures
+
+## Page Load Performance Fix (May 9)
+- [x] Root cause identified: PortalLayout was fetching bookings.all (3000+ rows), amendments.all, refunds.all, commissionDue.list, reimbursements.outstandingCount, reimbursements.lateUnactionedCount, flightRequests.pendingCount, crm.agentCrm.newSignUpsCount on EVERY page load (7 heavy queries, 6-47s)
+- [x] Added dashboard.urgentCounts procedure: single SQL query returning all 8 badge counts in ~50ms
+- [x] Replaced all 7 heavy PortalLayout queries with single dashboard.urgentCounts call
+- [x] Added staleTime: 120000 to AdminDashboard amendments.all and refunds.all queries
+- [x] Added staleTime: 120000 to AdminAgentPerformance bookings.all and listAgents queries
+- [x] Added staleTime: 60000 to AdminKanban, AdminAmendments, AdminAmendmentKanban, AdminRefunds, AdminRefundKanban queries
+
+## Dashboard Fix (May 9)
+- [x] Fix dashboard-router.ts MySQL2 tuple parsing bug — list results (upcomingDepartures, recentBookings, missingPaymentDate, lowMarginBookings, urgentBookings) now use unwrap() helper
+- [x] Dashboard confirmed showing real data (3362 active bookings, 44 to add to PTS, etc.)
+
+## Remaining Email Marketing Items
+- [ ] Backend: Resend webhook handler at /api/webhooks/resend — update email_sends status on delivery/bounce/complaint events
+- [ ] Backend: drip engine — scheduler job every hour checks email_drip_enrollments for steps due, sends email, advances step; auto-enroll prospects when their CRM pipeline stage changes
+- [ ] Frontend: Email Analytics page — per-campaign stats: sent/opened/clicked/bounced counts and rates, recipient list with individual status
+- [ ] Frontend: Image upload in editor — upload to S3 via existing storagePut, insert as <img> in email body
+- [ ] Frontend: admin view of unsubscribes list in Email Marketing section
+
+## Commission Spreadsheet Matching (requires CSV files from user)
+- [ ] Match AprilComms.csv, FebComms.csv, MarchComms.csv, Commissions-April26-17.csv against pending commission claims in DB by booking ref
+- [ ] Amount to mark as paid = 0.80 column + VAT column from spreadsheet
+- [ ] Mark matched claims as paid in DB (status=paid, paidAt=now, amountPaid=correct amount)
+- [ ] Report matched/unmatched results to user

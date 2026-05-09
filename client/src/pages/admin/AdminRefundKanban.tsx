@@ -49,7 +49,7 @@ const REFUND_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function AdminRefundKanban() {
-  const { data: refunds, refetch } = trpc.refunds.all.useQuery();
+  const { data: refunds, refetch } = trpc.refunds.all.useQuery(undefined, { staleTime: 60000 });
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const [search, setSearch] = useState("");
 

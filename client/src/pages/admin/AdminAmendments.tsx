@@ -9,7 +9,7 @@ import { format } from "date-fns";
 
 export default function AdminAmendments() {
   const utils = trpc.useUtils();
-  const { data: amendments = [], isLoading } = trpc.amendments.all.useQuery();
+  const { data: amendments = [], isLoading } = trpc.amendments.all.useQuery(undefined, { staleTime: 60000 });
 
   // Use pipelineStage as the source of truth (kept in sync by the Kanban)
   // "To Do" and "In Progress" = pending; "Actioned" = done

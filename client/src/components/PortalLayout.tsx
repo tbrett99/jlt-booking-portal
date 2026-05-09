@@ -209,21 +209,21 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     onSuccess: () => { refetchCount(); refetchNotifs(); },
   });
 
-  // ── Urgent counts for top bar (admin only) ────────────────────────────────
-  const { data: bookings = [] } = trpc.bookings.all.useQuery({}, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
-  const { data: amendments = [] } = trpc.amendments.all.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
-  const { data: refunds = [] } = trpc.refunds.all.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
-  const { data: outstandingReimbs = 0 } = trpc.reimbursements.outstandingCount.useQuery(undefined, { enabled: !!user && isAdminUser && !isAgentView, refetchInterval: 60000 });
-  const { data: commissionDueList = [] } = trpc.commissionDue.list.useQuery(undefined, { enabled: isAdminUser && !isAgentView, refetchInterval: 60000 });
-  const { data: lateUnactionedCount = 0 } = trpc.reimbursements.lateUnactionedCount.useQuery(undefined, { enabled: !!user && isAdminUser && !isAgentView, refetchInterval: 60000 });
-  const { data: pendingFlightCount = 0 } = trpc.flightRequests.pendingCount.useQuery(undefined, { enabled: !!user && isAdminUser && !isAgentView, refetchInterval: 60000 });
-  const { data: newSignUpsCount = 0 } = trpc.crm.agentCrm.newSignUpsCount.useQuery(undefined, { enabled: !!user && isAdminUser && !isAgentView, refetchInterval: 60000 });
+  // ── Urgent counts for top bar (admin only) ─────────────────────────────────
+  // Single lightweight SQL query replaces 4 heavy full-table fetches.
+  const { data: urgentCounts } = trpc.dashboard.urgentCounts.useQuery(undefined, {
+    enabled: isAdminUser && !isAgentView,
+    refetchInterval: 60000,
+  });
 
-  const STAGES_BEFORE_PTS = new Set(["New Booking", "Not on Topdog", "Query", "Reimb Docs Missing", "Urgent/Reimb", "T/O Package", "DP", "Holding Accounts"]);
-  const filesToAddToPts = (bookings as any[]).filter((b) => STAGES_BEFORE_PTS.has(b.currentStage)).length;
-  const newAmendments = (amendments as any[]).filter((a) => a.pipelineStage === "To Do" && !a.isReimbursementDoc).length;
-  const newRefunds = (refunds as any[]).filter((r) => r.pipelineStage === "New Refund Request").length;
-  const commissionDueCount = (commissionDueList as any[]).length;
+  const filesToAddToPts = urgentCounts?.filesToAddToPts ?? 0;
+  const newAmendments = urgentCounts?.newAmendments ?? 0;
+  const newRefunds = urgentCounts?.newRefunds ?? 0;
+  const commissionDueCount = urgentCounts?.commissionDueCount ?? 0;
+  const outstandingReimbs = urgentCounts?.outstandingReimbs ?? 0;
+  const lateUnactionedCount = urgentCounts?.lateUnactionedCount ?? 0;
+  const pendingFlightCount = urgentCounts?.pendingFlightCount ?? 0;
+  const newSignUpsCount = urgentCounts?.newSignUpsCount ?? 0;
 
   const urgentStats = isAdminUser && !isAgentView ? [
     { label: "To Add to PTS", value: filesToAddToPts, href: "/pipeline", color: "#92400e", bg: "#fef3c7" },

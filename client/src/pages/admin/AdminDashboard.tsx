@@ -115,8 +115,10 @@ function UrgencyCard({
 export default function AdminDashboard() {
   // ── Optimised single stats query (replaces bookings.all + recruitmentStageCounts + reimbStats) ──
   const { data: stats, isLoading } = trpc.dashboard.stats.useQuery();
-  const { data: amendments = [] } = trpc.amendments.all.useQuery();
-  const { data: refunds = [] } = trpc.refunds.all.useQuery();
+  // staleTime: 2 min — avoids re-fetching on every navigation since PortalLayout
+  // now uses dashboard.urgentCounts for the badge counts.
+  const { data: amendments = [] } = trpc.amendments.all.useQuery(undefined, { staleTime: 120000 });
+  const { data: refunds = [] } = trpc.refunds.all.useQuery(undefined, { staleTime: 120000 });
   const { data: cancellations = [] } = trpc.cancellations.all.useQuery();
   const { data: notifications = [] } = trpc.notifications.myNotifications.useQuery();
   const { data: claims = [] } = trpc.commissionClaims.all.useQuery();
@@ -333,10 +335,10 @@ export default function AdminDashboard() {
         {[
           { label: "Active Bookings", value: stats?.activeBookings ?? 0, icon: BookOpen, href: "/pipeline", color: "#70FFE8", textColor: "#414141", urgent: false },
           { label: "To Add to PTS", value: stats?.filesToAddToPts ?? 0, icon: ClipboardList, href: "/pipeline", color: (stats?.filesToAddToPts ?? 0) > 0 ? "#fef3c7" : "#f3f4f6", textColor: (stats?.filesToAddToPts ?? 0) > 0 ? "#92400e" : "#6b7280", urgent: (stats?.filesToAddToPts ?? 0) > 0 },
-          { label: "New Amendments", value: newAmendments.length, icon: FileText, href: "/amendments/pipeline", color: newAmendments.length > 0 ? "#fef3c7" : "#f3f4f6", textColor: newAmendments.length > 0 ? "#92400e" : "#6b7280", urgent: newAmendments.length > 0 },
-          { label: "New Refunds", value: newRefunds.length, icon: RefreshCw, href: "/refunds/pipeline", color: newRefunds.length > 0 ? "#fce7f3" : "#f3f4f6", textColor: newRefunds.length > 0 ? "#9d174d" : "#6b7280", urgent: newRefunds.length > 0 },
-          { label: "Outstanding Reimb.", value: outstandingReimbs.length, icon: PoundSterling, href: "/admin/reimbursements", color: outstandingReimbs.length > 0 ? "#dbeafe" : "#f3f4f6", textColor: outstandingReimbs.length > 0 ? "#1e3a5f" : "#6b7280", urgent: false },
-          { label: "Commission Due", value: commissionDueList.length, icon: Sparkles, href: "/commission-due", color: commissionDueList.length > 0 ? "#d1fae5" : "#f3f4f6", textColor: commissionDueList.length > 0 ? "#065f46" : "#6b7280", urgent: false },
+          { label: "New Amendments", value: stats?.newAmendments ?? newAmendments.length, icon: FileText, href: "/amendments/pipeline", color: (stats?.newAmendments ?? newAmendments.length) > 0 ? "#fef3c7" : "#f3f4f6", textColor: (stats?.newAmendments ?? newAmendments.length) > 0 ? "#92400e" : "#6b7280", urgent: (stats?.newAmendments ?? newAmendments.length) > 0 },
+          { label: "New Refunds", value: stats?.newRefunds ?? newRefunds.length, icon: RefreshCw, href: "/refunds/pipeline", color: (stats?.newRefunds ?? newRefunds.length) > 0 ? "#fce7f3" : "#f3f4f6", textColor: (stats?.newRefunds ?? newRefunds.length) > 0 ? "#9d174d" : "#6b7280", urgent: (stats?.newRefunds ?? newRefunds.length) > 0 },
+          { label: "Outstanding Reimb.", value: stats?.outstandingReimbs ?? outstandingReimbs.length, icon: PoundSterling, href: "/admin/reimbursements", color: (stats?.outstandingReimbs ?? outstandingReimbs.length) > 0 ? "#dbeafe" : "#f3f4f6", textColor: (stats?.outstandingReimbs ?? outstandingReimbs.length) > 0 ? "#1e3a5f" : "#6b7280", urgent: false },
+          { label: "Commission Due", value: stats?.commissionReady ?? commissionDueList.length, icon: Sparkles, href: "/commission-due", color: (stats?.commissionReady ?? commissionDueList.length) > 0 ? "#d1fae5" : "#f3f4f6", textColor: (stats?.commissionReady ?? commissionDueList.length) > 0 ? "#065f46" : "#6b7280", urgent: false },
         ].map(({ label, value, icon: Icon, href, color, textColor, urgent }) => (
           <Link key={label} href={href}>
             <Card className={`cursor-pointer hover:shadow-md transition-shadow ${urgent && (value as number) > 0 ? "ring-1 ring-amber-300" : ""}`}>

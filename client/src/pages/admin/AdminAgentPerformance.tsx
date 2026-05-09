@@ -10,8 +10,8 @@ export default function AdminAgentPerformance() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"bookings" | "commission" | "name">("bookings");
 
-  const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery(undefined);
-  const { data: agents = [] } = trpc.users.listAgents.useQuery();
+  const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery(undefined, { staleTime: 120000 });
+  const { data: agents = [] } = trpc.users.listAgents.useQuery(undefined, { staleTime: 120000 });
 
   const agentStats = useMemo(() => {
     const now = new Date();

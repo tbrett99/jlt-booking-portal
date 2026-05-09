@@ -68,7 +68,7 @@ export default function AdminKanban() {
   const [queryMessage, setQueryMessage] = useState("");
   const utils = trpc.useUtils();
 
-  const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery({});
+  const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery({}, { staleTime: 60000 });
   const { data: unreadIds = [] } = trpc.notes.unreadBookingIds.useQuery();
   const unreadSet = new Set(unreadIds);
   const moveStage = trpc.bookings.moveStage.useMutation({

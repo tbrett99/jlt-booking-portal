@@ -29,7 +29,7 @@ const STAGE_COLORS: Record<Stage, string> = {
 };
 
 export default function AdminAmendmentKanban() {
-  const { data: amendments, refetch } = trpc.amendments.all.useQuery();
+  const { data: amendments, refetch } = trpc.amendments.all.useQuery(undefined, { staleTime: 60000 });
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const updatePipeline = trpc.amendments.updatePipeline.useMutation({
     onSuccess: () => { refetch(); toast.success("Amendment updated"); },
