@@ -5,7 +5,7 @@ import { router, protectedProcedure, publicProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { createRecruitmentProspect } from "./recruitment-db";
+import { createRecruitmentProspect, getRecruitmentProspectByEmail } from "./recruitment-db";
 import {
   createProspect,
   getProspectById,
@@ -405,41 +405,44 @@ export const crmRouter = router({
           firstName: z.string().min(1).max(100),
           lastName: z.string().min(1).max(100),
           email: z.string().email(),
-          phone: z.string().optional(),
-          marketingConsent: z.boolean().default(false),
+          phone: z.string().min(1),
+          marketingConsent: z.literal(true),
           refUserId: z.number().int().optional(), // referring user's ID
         })
       )
       .mutation(async ({ input }) => {
         const { refUserId, ...prospectInput } = input;
-        // Check for duplicate
-        const existing = await getProspectByEmail(prospectInput.email);
-        if (existing) {
-          return { success: true, prospectId: existing.id };
+        // Check for duplicate in CRM prospects — create if new
+        let prospect = await getProspectByEmail(prospectInput.email);
+        if (!prospect) {
+          prospect = await createProspect({
+            ...prospectInput,
+            stage: "New Enquiry",
+            source: "referral_funnel",
+            createdById: refUserId ?? null,
+          });
         }
-        const prospect = await createProspect({
-          ...prospectInput,
-          stage: "New Enquiry",
-          source: "referral_funnel",
-          createdById: refUserId ?? null,
-        });
-        // Generate application token and send prospectus email (same as enquiry.submit)
+        // Always ensure a recruitment prospect exists for this email
         try {
           const appToken = nanoid(32);
           const applicationUrl = `https://portal.thejltgroup.co.uk/apply/form?token=${appToken}`;
           if (prospect?.id) {
             await updateProspect(prospect.id, { adminNotes: `APP_TOKEN:${appToken}` });
           }
-          await createRecruitmentProspect({
-            firstName: prospectInput.firstName,
-            lastName: prospectInput.lastName,
-            email: prospectInput.email,
-            phone: prospectInput.phone,
-            pipelineStage: "new_enquiry",
-            source: "referral_funnel",
-            referredById: refUserId ?? null,
-            adminNotes: `APP_TOKEN:${appToken}`,
-          });
+          // Check for duplicate in recruitment pipeline separately
+          const existingRecruit = await getRecruitmentProspectByEmail(prospectInput.email);
+          if (!existingRecruit) {
+            await createRecruitmentProspect({
+              firstName: prospectInput.firstName,
+              lastName: prospectInput.lastName,
+              email: prospectInput.email,
+              phone: prospectInput.phone,
+              pipelineStage: "new_enquiry",
+              source: "referral_funnel",
+              referredById: refUserId ?? null,
+              adminNotes: `APP_TOKEN:${appToken}`,
+            });
+          }
           // Send prospectus email
           const { Resend } = await import("resend");
           const { PROSPECT_FROM, PROSPECT_REPLY_TO } = await import("./resend-email");

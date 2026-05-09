@@ -148,6 +148,7 @@ export default function InfoFunnelPage() {
     }
     submitMutation.mutate({
       ...form,
+      marketingConsent: true as const,
       refUserId: refId ? parseInt(refId) : undefined,
     });
   };
@@ -388,13 +389,14 @@ export default function InfoFunnelPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="phone" className="text-[#414141] font-semibold text-sm">Phone Number <span className="text-[#999] font-normal">(optional)</span></Label>
+              <Label htmlFor="phone" className="text-[#414141] font-semibold text-sm">Mobile Number <span className="text-red-500">*</span></Label>
               <Input
                 id="phone"
                 type="tel"
                 value={form.phone}
                 onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
                 placeholder="+44 7700 000000"
+                required
                 className="border-[#e0e0e0] focus:border-[#02E6D2]"
               />
             </div>
@@ -411,8 +413,8 @@ export default function InfoFunnelPage() {
             </div>
             <Button
               type="submit"
-              disabled={submitMutation.isPending || !form.firstName || !form.lastName || !form.email}
-              className="w-full bg-[#70FFE8] text-[#414141] hover:bg-[#02E6D2] font-bold text-base py-3 rounded-xl"
+              disabled={submitMutation.isPending || !form.firstName || !form.lastName || !form.email || !form.phone || !form.marketingConsent}
+              className="w-full bg-[#70FFE8] text-[#414141] hover:bg-[#02E6D2] font-bold text-base py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitMutation.isPending ? "Sending..." : "Get the Prospectus →"}
             </Button>
