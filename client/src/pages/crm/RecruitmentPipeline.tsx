@@ -164,6 +164,7 @@ function ProspectsPipelineTab() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [referredByFilter, setReferredByFilter] = useState<number | undefined>(undefined);
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showBulkSendDialog, setShowBulkSendDialog] = useState(false);
@@ -184,6 +185,7 @@ function ProspectsPipelineTab() {
       stage: stageFilter === "all" ? undefined : stageFilter,
       search: search || undefined,
       referredById: referredByFilter,
+      hearAboutUs: sourceFilter === "all" ? undefined : sourceFilter,
       dateFrom: dateFrom ? new Date(dateFrom) : undefined,
       dateTo: dateTo ? new Date(dateTo) : undefined,
     },
@@ -293,6 +295,23 @@ function ProspectsPipelineTab() {
             </SelectContent>
           </Select>
         )}
+        <Select value={sourceFilter} onValueChange={setSourceFilter}>
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="All sources" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sources</SelectItem>
+            <SelectItem value="Facebook">Facebook</SelectItem>
+            <SelectItem value="Instagram">Instagram</SelectItem>
+            <SelectItem value="TikTok">TikTok</SelectItem>
+            <SelectItem value="LinkedIn">LinkedIn</SelectItem>
+            <SelectItem value="Google">Google</SelectItem>
+            <SelectItem value="Referral">Referral</SelectItem>
+            <SelectItem value="Event">JLT Event</SelectItem>
+            <SelectItem value="advertisement">Online Ad</SelectItem>
+            <SelectItem value="Other">Other</SelectItem>
+          </SelectContent>
+        </Select>
         <div className="flex items-center gap-2">
           <input
             type="date"
@@ -449,6 +468,7 @@ function ProspectsPipelineTab() {
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Stage</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Source</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Referred By</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date of Enquiry</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Applied</th>
@@ -469,6 +489,27 @@ function ProspectsPipelineTab() {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${stage.color}`}>
                         {stage.label}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        // Prefer applicationData.heardAbout (array), fall back to howHeard string
+                        let sources: string[] = [];
+                        try {
+                          const ad = typeof p.applicationData === "string" ? JSON.parse(p.applicationData) : p.applicationData;
+                          if (ad?.heardAbout?.length) sources = ad.heardAbout;
+                        } catch {}
+                        if (!sources.length && p.howHeard) sources = [p.howHeard];
+                        if (!sources.length) return <span className="text-muted-foreground/40 text-xs">—</span>;
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {sources.map((s: string) => (
+                              <span key={s} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-[#FFC3BC]/30 text-[#8b3a35] border border-[#FFC3BC]/50">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       {p.referrerName ? (

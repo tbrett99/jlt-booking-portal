@@ -10,7 +10,7 @@ import {
   type RecruitmentProspect,
   type InsertRecruitmentProspect,
 } from "../drizzle/schema";
-import { eq, desc, like, or, and, isNull, getTableColumns, gte, lte } from "drizzle-orm";
+import { eq, desc, like, or, and, isNull, getTableColumns, gte, lte, sql } from "drizzle-orm";
 
 // ─── Prospects ────────────────────────────────────────────────────────────────
 
@@ -54,6 +54,7 @@ export async function getAllRecruitmentProspects(opts?: {
   stage?: string;
   search?: string;
   referredById?: number;
+  hearAboutUs?: string;  // filter by lead source
   dateFrom?: Date;
   dateTo?: Date;
   limit?: number;
@@ -81,6 +82,17 @@ export async function getAllRecruitmentProspects(opts?: {
     const endOfDay = new Date(opts.dateTo);
     endOfDay.setHours(23, 59, 59, 999);
     conditions.push(lte(recruitmentProspects.createdAt, endOfDay));
+  }
+
+  if (opts?.hearAboutUs && opts.hearAboutUs !== "all") {
+    // Match against howHeard column OR applicationData JSON heardAbout array
+    const src = `%${opts.hearAboutUs}%`;
+    conditions.push(
+      or(
+        like(recruitmentProspects.howHeard, src),
+        sql`JSON_SEARCH(${recruitmentProspects.applicationData}, 'one', ${opts.hearAboutUs}, NULL, '$.heardAbout') IS NOT NULL`
+      )
+    );
   }
 
   if (opts?.search) {
