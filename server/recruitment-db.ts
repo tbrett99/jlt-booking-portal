@@ -28,13 +28,13 @@ export async function getRecruitmentProspectById(
 ): Promise<(RecruitmentProspect & { referrerName: string | null }) | null> {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db
+  const rows = await (db
     .select({ ...getTableColumns(recruitmentProspects), referrerName: users.name })
     .from(recruitmentProspects)
     .leftJoin(users, eq(recruitmentProspects.referredById, users.id))
     .where(eq(recruitmentProspects.id, id))
-    .limit(1);
-  return rows[0] ?? null;
+    .limit(1) as any);
+  return (rows[0] ?? null) as (RecruitmentProspect & { referrerName: string | null }) | null;
 }
 
 export async function getRecruitmentProspectByEmail(
@@ -95,7 +95,7 @@ export async function getAllRecruitmentProspects(opts?: {
     );
   }
 
-  const query = db
+  const baseQuery = db
     .select({ ...getTableColumns(recruitmentProspects), referrerName: users.name })
     .from(recruitmentProspects)
     .leftJoin(users, eq(recruitmentProspects.referredById, users.id))
@@ -103,10 +103,10 @@ export async function getAllRecruitmentProspects(opts?: {
     .limit(opts?.limit ?? 100)
     .offset(opts?.offset ?? 0);
 
-  if (conditions.length > 0) {
-    return query.where(and(...conditions));
-  }
-  return query;
+  const result: any[] = conditions.length > 0
+    ? await (baseQuery.where(and(...conditions)) as any)
+    : await (baseQuery as any);
+  return result as (RecruitmentProspect & { referrerName: string | null })[];
 }
 
 export async function updateRecruitmentProspect(
