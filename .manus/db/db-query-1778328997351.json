@@ -1,0 +1,190 @@
+{
+  "query": "-- Check all inactive suppliers\nSELECT id, name, isActive, updatedAt FROM suppliers WHERE isActive = 0 ORDER BY updatedAt DESC LIMIT 20;\n\n-- Check suppliers updated in the last 2 hours\nSELECT id, name, isActive, updatedAt FROM suppliers WHERE updatedAt > '2026-05-09 11:00:00' ORDER BY updatedAt DESC LIMIT 30;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute -- Check all inactive suppliers\nSELECT id, name, isActive, updatedAt FROM suppliers WHERE isActive = 0 ORDER BY updatedAt DESC LIMIT 20;\n\n-- Check suppliers updated in the last 2 hours\nSELECT id, name, isActive, updatedAt FROM suppliers WHERE updatedAt > '2026-05-09 11:00:00' ORDER BY updatedAt DESC LIMIT 30;",
+  "rows": [
+    {
+      "id": "501",
+      "name": "Travel Impressions",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 12:12:34"
+    },
+    {
+      "id": "283",
+      "name": "Shanti Travel",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 12:09:27"
+    },
+    {
+      "id": "352",
+      "name": "Domes",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 12:01:27"
+    },
+    {
+      "id": "414",
+      "name": "LeShuttle",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:36:07"
+    },
+    {
+      "id": "413",
+      "name": "Dillard Tours &amp; Travel",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:36:03"
+    },
+    {
+      "id": "412",
+      "name": "Joysters",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:35:58"
+    },
+    {
+      "id": "406",
+      "name": "Finalrentals",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:35:28"
+    },
+    {
+      "id": "405",
+      "name": "Red Tours",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:35:23"
+    },
+    {
+      "id": "401",
+      "name": "Travelsphere / Just You",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:35:05"
+    },
+    {
+      "id": "400",
+      "name": "Daytrip",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:35:02"
+    },
+    {
+      "id": "399",
+      "name": "Magic Breaks",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:34:58"
+    },
+    {
+      "id": "398",
+      "name": "Busot Bike Company",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:34:54"
+    },
+    {
+      "id": "397",
+      "name": "Reservest",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:34:50"
+    },
+    {
+      "id": "395",
+      "name": "Hyatt Collection (Hotel Information Only)",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:34:44"
+    },
+    {
+      "id": "392",
+      "name": "Cruise 1st",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:34:33"
+    },
+    {
+      "id": "391",
+      "name": "CV Villas",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:34:28"
+    },
+    {
+      "id": "385",
+      "name": "AE Expeditions",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:33:53"
+    },
+    {
+      "id": "384",
+      "name": "Luxury Cruise Co - ** DO NOT USE **",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:33:49"
+    },
+    {
+      "id": "381",
+      "name": "Jet2 Weddings (Perfect Weddings Abroad)",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:33:36"
+    },
+    {
+      "id": "380",
+      "name": "Amazing Africa",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:33:32"
+    },
+    {
+      "id": "377",
+      "name": "Beachcomber Tours",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:33:20"
+    },
+    {
+      "id": "374",
+      "name": "Swan Hellenic",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:33:08"
+    },
+    {
+      "id": "371",
+      "name": "Orion Travel",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:32:56"
+    },
+    {
+      "id": "370",
+      "name": "Attendance DMC Morocco",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:32:52"
+    },
+    {
+      "id": "369",
+      "name": "Bamba Travel",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:32:49"
+    },
+    {
+      "id": "368",
+      "name": "The Ritz-Carlton, DIFC - Downtown Dubai - Hotel Info",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:32:43"
+    },
+    {
+      "id": "365",
+      "name": "SGA Travel (Türkiye DMC)",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:32:30"
+    },
+    {
+      "id": "363",
+      "name": "Nikki Beach Resort &amp; Spa Dubai (Hotel Info)",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:32:19"
+    },
+    {
+      "id": "358",
+      "name": "Sensus - Portugal",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:31:59"
+    },
+    {
+      "id": "357",
+      "name": "Amazing Tours (Iceland)",
+      "isActive": "1",
+      "updatedAt": "2026-05-09 11:31:55"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tisActive\tupdatedAt\n501\tTravel Impressions\t1\t2026-05-09 12:12:34\n283\tShanti Travel\t1\t2026-05-09 12:09:27\n352\tDomes\t1\t2026-05-09 12:01:27\n414\tLeShuttle\t1\t2026-05-09 11:36:07\n413\tDillard Tours &amp; Travel\t1\t2026-05-09 11:36:03\n412\tJoysters\t1\t2026-05-09 11:35:58\n406\tFinalrentals\t1\t2026-05-09 11:35:28\n405\tRed Tours\t1\t2026-05-09 11:35:23\n401\tTravelsphere / Just You\t1\t2026-05-09 11:35:05\n400\tDaytrip\t1\t2026-05-09 11:35:02\n399\tMagic Breaks\t1\t2026-05-09 11:34:58\n398\tBusot Bike Company\t1\t2026-05-09 11:34:54\n397\tReservest\t1\t2026-05-09 11:34:50\n395\tHyatt Collection (Hotel Information Only)\t1\t2026-05-09 11:34:44\n392\tCruise 1st\t1\t2026-05-09 11:34:33\n391\tCV Villas\t1\t2026-05-09 11:34:28\n385\tAE Expeditions\t1\t2026-05-09 11:33:53\n384\tLuxury Cruise Co - ** DO NOT USE **\t1\t2026-05-09 11:33:49\n381\tJet2 Weddings (Perfect Weddings Abroad)\t1\t2026-05-09 11:33:36\n380\tAmazing Africa\t1\t2026-05-09 11:33:32\n377\tBeachcomber Tours\t1\t2026-05-09 11:33:20\n374\tSwan Hellenic\t1\t2026-05-09 11:33:08\n371\tOrion Travel\t1\t2026-05-09 11:32:56\n370\tAttendance DMC Morocco\t1\t2026-05-09 11:32:52\n369\tBamba Travel\t1\t2026-05-09 11:32:49\n368\tThe Ritz-Carlton, DIFC - Downtown Dubai - Hotel Info\t1\t2026-05-09 11:32:43\n365\tSGA Travel (Türkiye DMC)\t1\t2026-05-09 11:32:30\n363\tNikki Beach Resort &amp; Spa Dubai (Hotel Info)\t1\t2026-05-09 11:32:19\n358\tSensus - Portugal\t1\t2026-05-09 11:31:59\n357\tAmazing Tours (Iceland)\t1\t2026-05-09 11:31:55\n",
+  "stderr": "",
+  "execution_time_ms": 265
+}

@@ -1,0 +1,17 @@
+{
+  "query": "SELECT id, name, isActive, createdAt, updatedAt FROM suppliers WHERE name LIKE '%jet2%' OR name LIKE '%Jet2%'",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, isActive, createdAt, updatedAt FROM suppliers WHERE name LIKE '%jet2%' OR name LIKE '%Jet2%'",
+  "rows": [
+    {
+      "id": "381",
+      "name": "Jet2 Weddings (Perfect Weddings Abroad)",
+      "isActive": "1",
+      "createdAt": "2026-05-09 10:22:32",
+      "updatedAt": "2026-05-09 11:33:36"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tisActive\tcreatedAt\tupdatedAt\n381\tJet2 Weddings (Perfect Weddings Abroad)\t1\t2026-05-09 10:22:32\t2026-05-09 11:33:36\n",
+  "stderr": "",
+  "execution_time_ms": 286
+}
