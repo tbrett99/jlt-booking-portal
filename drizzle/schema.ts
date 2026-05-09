@@ -1472,6 +1472,13 @@ export const suppliers = mysqlTable("suppliers", {
   credentialStage: int("credentialStage").notNull().default(2),  // 2 = stage 2+, 3 = stage 3 only
   isActive: int("isActive").notNull().default(1),               // soft delete (1=active, 0=inactive)
   sortOrder: int("sortOrder").notNull().default(0),
+  // AI enrichment fields
+  usp: text("usp"),                                              // Key selling points (AI-generated or manual)
+  priceTier: varchar("priceTier", { length: 50 }),               // budget / mid-range / luxury / ultra-luxury
+  notSuitableFor: text("notSuitableFor"),                        // e.g. "last-minute bookings, solo travellers"
+  preferredContact: varchar("preferredContact", { length: 100 }), // email / phone / portal
+  aiSummary: text("aiSummary"),                                  // AI-generated one-paragraph summary for search
+  aiEnrichedAt: timestamp("aiEnrichedAt"),                       // when AI enrichment was last run
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

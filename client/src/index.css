@@ -142,6 +142,51 @@
   }
 }
 
+/* ─── Supplier description HTML rendering ─────────────────────────────────── */
+.supplier-description p {
+  margin-bottom: 0.5rem;
+  line-height: 1.6;
+}
+.supplier-description p:last-child {
+  margin-bottom: 0;
+}
+.supplier-description strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.supplier-description em {
+  font-style: italic;
+}
+.supplier-description a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.supplier-description a:hover {
+  opacity: 0.8;
+}
+.supplier-description blockquote.supplier-blockquote {
+  border-left: 3px solid color-mix(in oklch, var(--primary) 50%, transparent);
+  padding: 0.5rem 0.75rem;
+  margin: 0.75rem 0;
+  background: color-mix(in oklch, var(--muted) 50%, transparent);
+  border-radius: 0 0.375rem 0.375rem 0;
+}
+.supplier-description blockquote.supplier-blockquote p {
+  margin-bottom: 0.375rem;
+}
+.supplier-description blockquote.supplier-blockquote p:last-child {
+  margin-bottom: 0;
+}
+.supplier-description ul,
+.supplier-description ol {
+  padding-left: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.supplier-description li {
+  margin-bottom: 0.25rem;
+}
+
 @layer components {
   /**
    * Custom container utility that centers content and adds responsive padding.

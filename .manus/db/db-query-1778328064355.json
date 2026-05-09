@@ -1,0 +1,52 @@
+{
+  "query": "SELECT id, name, LENGTH(description) as desc_len, LENGTH(generalNotes) as notes_len FROM suppliers WHERE id IN (352, 353, 354, 359, 360, 361, 362) ORDER BY id",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, LENGTH(description) as desc_len, LENGTH(generalNotes) as notes_len FROM suppliers WHERE id IN (352, 353, 354, 359, 360, 361, 362) ORDER BY id",
+  "rows": [
+    {
+      "id": "352",
+      "name": "Domes",
+      "desc_len": "1613",
+      "notes_len": "1728"
+    },
+    {
+      "id": "353",
+      "name": "EMAAR Entertainment Dubai (Info)",
+      "desc_len": "651",
+      "notes_len": "230"
+    },
+    {
+      "id": "354",
+      "name": "Museum of the Future Dubai (Info)",
+      "desc_len": "356",
+      "notes_len": "594"
+    },
+    {
+      "id": "359",
+      "name": "Le Passage to India",
+      "desc_len": "470",
+      "notes_len": "348"
+    },
+    {
+      "id": "360",
+      "name": "Safari Nuggets (DMC)",
+      "desc_len": "776",
+      "notes_len": "467"
+    },
+    {
+      "id": "361",
+      "name": "Hurtigruten",
+      "desc_len": "1618",
+      "notes_len": "516"
+    },
+    {
+      "id": "362",
+      "name": "Grand Hyatt Dubai Resort and Waterpark (Hotel Info)",
+      "desc_len": "177",
+      "notes_len": "489"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tdesc_len\tnotes_len\n352\tDomes\t1613\t1728\n353\tEMAAR Entertainment Dubai (Info)\t651\t230\n354\tMuseum of the Future Dubai (Info)\t356\t594\n359\tLe Passage to India\t470\t348\n360\tSafari Nuggets (DMC)\t776\t467\n361\tHurtigruten\t1618\t516\n362\tGrand Hyatt Dubai Resort and Waterpark (Hotel Info)\t177\t489\n",
+  "stderr": "",
+  "execution_time_ms": 262
+}

@@ -1,0 +1,15 @@
+{
+  "query": "SELECT MIN(id) as min_id, MAX(id) as max_id, COUNT(*) as count FROM suppliers WHERE aiEnrichedAt IS NOT NULL",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT MIN(id) as min_id, MAX(id) as max_id, COUNT(*) as count FROM suppliers WHERE aiEnrichedAt IS NOT NULL",
+  "rows": [
+    {
+      "min_id": "282",
+      "max_id": "414",
+      "count": "57"
+    }
+  ],
+  "messages": [],
+  "stdout": "min_id\tmax_id\tcount\n282\t414\t57\n",
+  "stderr": "",
+  "execution_time_ms": 303
+}

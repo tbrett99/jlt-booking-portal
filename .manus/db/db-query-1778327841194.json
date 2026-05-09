@@ -1,0 +1,56 @@
+{
+  "query": "SELECT id, name, LEFT(description, 600) as description_sample FROM suppliers WHERE description IS NOT NULL AND description != '' LIMIT 5",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, LEFT(description, 600) as description_sample FROM suppliers WHERE description IS NOT NULL AND description != '' LIMIT 5",
+  "rows": [
+    {
+      "id": "279",
+      "name": "Caribtours",
+      "description_sample": ""
+    },
+    {
+      "id": "281",
+      "name": "Vivi Magic Travels",
+      "description_sample": ""
+    },
+    {
+      "id": "282",
+      "name": "Magic Arabia UAE",
+      "description_sample": ""
+    },
+    {
+      "id": "283",
+      "name": "Shanti Travel",
+      "description_sample": ""
+    },
+    {
+      "id": "284",
+      "name": "Holiday Best",
+      "description_sample": ""
+    }
+  ],
+  "messages": [
+    "<p>Caribtours can also book Silversea, Seabourn, Regent Seven Seas, Star Clippers and Windstar cruises as well as Yacht charters. </p>",
+    "<p>Caribtours is the UK’s leading independent holiday company. We've been arranging bespoke holidays since 1979 and we like to think that no one does it better.</p>",
+    "<p>Our award-winning team has walked on every beach, slept blissfully in every hotel, and swapped stories with the locals – they are ready and available to give you the most up-to-date personal advice when you're next choosing your perfect escape.</p>",
+    "<blockquote class=\"wp-block-quote\">",
+    "<p><stro",
+    "<p>Payments will be in Euros</p>",
+    "<p>This is not a Disney supplier, instead it is for tailor made luxury travels to France. </p>",
+    "<p></p>",
+    "<p>Since 1985, Magic Travels has been crafting exceptional journeys across the Middle East, Caucasus and Europe</p>",
+    "<p>Payments will be made in USD</p>",
+    "<p>Tailor made luxury travel. </p>",
+    "<p>Tailor-Made Asia Holidays &amp; DMC Services</p>",
+    "<p>With deep local expertise and on-the-ground teams in destinations including Sri Lanka, India, Indonesia, Vietnam, and Japan, Shanti Travel creates fully customised itineraries designed around your clients’ interests, pace, and budget. From cultural deep-dives and spiritual journeys to luxury escapes and off-the-beaten-path adventures, every trip is crafted with authentic local experiences at its core. Their hands-on approach, reliable local support, and attention to detail make them a fantastic partner for delivering truly unique Asia ho",
+    "<p>PRICE PARITY</p>",
+    "<p>Holiday Best are a tour operator offering holidays to over 30 destinations and from 30+ regional airports, with price parity and low deposits from just £25pp (this includes holidays to Mauritius too!)</p>",
+    "<p><strong>Once you've been signed off, please complete the agency registration form and return it to agencysupport@holidaybest.com</strong><br><br><em>Help completing the form:</em><br>Agency name = your business name, </p>",
+    "<p>ABTA No = PTS 6090, </p>",
+    "<p>Email address = your email address, </p>",
+    "<p>postal address = your postal address, </p>",
+    "<p>phone number = your"
+  ],
+  "stdout": "id\tname\tdescription_sample\n279\tCaribtours\t\n<p>Caribtours can also book Silversea, Seabourn, Regent Seven Seas, Star Clippers and Windstar cruises as well as Yacht charters. </p>\n\n<p>Caribtours is the UK’s leading independent holiday company. We've been arranging bespoke holidays since 1979 and we like to think that no one does it better.</p>\n\n<p>Our award-winning team has walked on every beach, slept blissfully in every hotel, and swapped stories with the locals – they are ready and available to give you the most up-to-date personal advice when you're next choosing your perfect escape.</p>\n\n<blockquote class=\"wp-block-quote\">\n<p><stro\n281\tVivi Magic Travels\t\n<p>Payments will be in Euros</p>\n\n<p>This is not a Disney supplier, instead it is for tailor made luxury travels to France. </p>\n\n<p></p>\n\n282\tMagic Arabia UAE\t\n<p>Since 1985, Magic Travels has been crafting exceptional journeys across the Middle East, Caucasus and Europe</p>\n\n<p>Payments will be made in USD</p>\n\n<p>Tailor made luxury travel. </p>\n\n283\tShanti Travel\t\n<p>Tailor-Made Asia Holidays &amp; DMC Services</p>\n\n<p>With deep local expertise and on-the-ground teams in destinations including Sri Lanka, India, Indonesia, Vietnam, and Japan, Shanti Travel creates fully customised itineraries designed around your clients’ interests, pace, and budget. From cultural deep-dives and spiritual journeys to luxury escapes and off-the-beaten-path adventures, every trip is crafted with authentic local experiences at its core. Their hands-on approach, reliable local support, and attention to detail make them a fantastic partner for delivering truly unique Asia ho\n284\tHoliday Best\t\n<p>PRICE PARITY</p>\n\n<p>Holiday Best are a tour operator offering holidays to over 30 destinations and from 30+ regional airports, with price parity and low deposits from just £25pp (this includes holidays to Mauritius too!)</p>\n\n<p><strong>Once you've been signed off, please complete the agency registration form and return it to agencysupport@holidaybest.com</strong><br><br><em>Help completing the form:</em><br>Agency name = your business name, </p>\n\n<p>ABTA No = PTS 6090, </p>\n\n<p>Email address = your email address, </p>\n\n<p>postal address = your postal address, </p>\n\n<p>phone number = your\n",
+  "stderr": "",
+  "execution_time_ms": 358
+}

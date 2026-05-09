@@ -1,0 +1,13 @@
+{
+  "query": "\nUPDATE suppliers \nSET description = TRIM(\n  REGEXP_REPLACE(\n    REGEXP_REPLACE(\n      description,\n      '<!--\\\\s*/?wp:[^>]*-->',\n      ''\n    ),\n    '\\\\n{3,}',\n    '\\n\\n'\n  )\n)\nWHERE description IS NOT NULL \n  AND description LIKE '%<!-- wp:%';\nSELECT COUNT(*) as updated_count FROM suppliers WHERE description NOT LIKE '%<!-- wp:%' AND description IS NOT NULL;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nUPDATE suppliers \nSET description = TRIM(\n  REGEXP_REPLACE(\n    REGEXP_REPLACE(\n      description,\n      '<!--\\\\s*/?wp:[^>]*-->',\n      ''\n    ),\n    '\\\\n{3,}',\n    '\\n\\n'\n  )\n)\nWHERE description IS NOT NULL \n  AND description LIKE '%<!-- wp:%';\nSELECT COUNT(*) as updated_count FROM suppliers WHERE description NOT LIKE '%<!-- wp:%' AND description IS NOT NULL;\n",
+  "rows": [
+    {
+      "updated_count": "259"
+    }
+  ],
+  "messages": [],
+  "stdout": "updated_count\n259\n",
+  "stderr": "",
+  "execution_time_ms": 326
+}

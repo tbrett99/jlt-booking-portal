@@ -135,6 +135,69 @@ async function startServer() {
     res.json(result);
   });
 
+  // ── Supplier AI enrichment trigger (one-time bulk enrichment) ────────────────
+  app.post("/api/suppliers/enrich-all", async (req, res) => {
+    const auth = req.headers.authorization ?? "";
+    const token = ENV.exportTriggerToken;
+    if (!token || auth !== `Bearer ${token}`) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const { getDb } = await import("../db");
+    const { invokeLLM } = await import("./llm");
+    const { suppliers: suppliersTable } = await import("../../drizzle/schema");
+    const { eq, sql: drizzleSql } = await import("drizzle-orm");
+    const db = await getDb();
+    if (!db) { res.status(500).json({ error: "DB unavailable" }); return; }
+    const allSuppliers = await db.select().from(suppliersTable).where(drizzleSql`${suppliersTable.aiEnrichedAt} IS NULL AND ${suppliersTable.isActive} = 1`);
+    const count = allSuppliers.length;
+    res.json({ ok: true, count, message: `Started enriching ${count} suppliers in background` });
+    (async () => {
+      let done = 0;
+      for (const supplier of allSuppliers) {
+        try {
+          const context = [
+            `Name: ${supplier.name}`,
+            supplier.description ? `Description: ${supplier.description.replace(/<[^>]+>/g, " ").slice(0, 1500)}` : "",
+            supplier.categories ? `Categories: ${supplier.categories}` : "",
+            supplier.locations ? `Locations: ${supplier.locations}` : "",
+            supplier.commission ? `Commission: ${supplier.commission}` : "",
+          ].filter(Boolean).join("\n");
+          const result = await invokeLLM({
+            messages: [
+              { role: "system", content: `You are a travel industry expert. Generate enrichment data for this travel supplier. Return ONLY valid JSON with these exact fields (null if unknown):\n{"usp":"2-3 bullet points (use - dash prefix) of key selling points","priceTier":"budget|mid-range|luxury|ultra-luxury","notSuitableFor":"what this supplier is not ideal for","aiSummary":"1-2 sentence summary for AI matching mentioning destinations, trip types, client types"}` },
+              { role: "user", content: context },
+            ],
+            response_format: { type: "json_object" },
+          });
+          const rawContent = (result.choices[0]?.message?.content as string) ?? "{}";
+          const enriched = JSON.parse(rawContent);
+          // Get a fresh DB connection for each update to avoid connection timeout
+          const freshDb = await getDb();
+          if (!freshDb) { console.error(`[SupplierEnrich] DB unavailable for supplier ${supplier.id}`); continue; }
+          await freshDb.update(suppliersTable).set({
+            usp: enriched.usp ? String(enriched.usp).slice(0, 2000) : null,
+            priceTier: enriched.priceTier ? String(enriched.priceTier).slice(0, 50) : null,
+            notSuitableFor: enriched.notSuitableFor ? String(enriched.notSuitableFor).slice(0, 1000) : null,
+            aiSummary: enriched.aiSummary ? String(enriched.aiSummary).slice(0, 1000) : null,
+            aiEnrichedAt: new Date(),
+          }).where(eq(suppliersTable.id, supplier.id));
+          done++;
+          if (done % 20 === 0) console.log(`[SupplierEnrich] Progress: ${done}/${count}`);
+          await new Promise(r => setTimeout(r, 300));
+        } catch (err: any) {
+          const cause = err?.cause;
+          console.error(`[SupplierEnrich] Error on supplier ${supplier.id}:`, err?.message,
+            cause ? `| cause: ${cause?.message ?? JSON.stringify(cause)}` : "",
+            cause?.code ? `| code: ${cause.code}` : "",
+            cause?.sqlMessage ? `| sql: ${cause.sqlMessage}` : ""
+          );
+        }
+      }
+      console.log(`[SupplierEnrich] Completed: ${done}/${count} suppliers enriched`);
+    })();
+  });
+
   // ── Last export run status (for admin dashboard) ────────────────────────────
   app.get("/api/export/status", async (req, res) => {
     const auth = req.headers.authorization ?? "";

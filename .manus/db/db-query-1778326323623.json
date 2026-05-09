@@ -1,0 +1,19 @@
+{
+  "query": "SELECT COUNT(*) as enriched FROM suppliers WHERE aiEnrichedAt IS NOT NULL;\nSELECT COUNT(*) as total FROM suppliers WHERE isActive = 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT COUNT(*) as enriched FROM suppliers WHERE aiEnrichedAt IS NOT NULL;\nSELECT COUNT(*) as total FROM suppliers WHERE isActive = 1;",
+  "rows": [
+    {
+      "enriched": "32"
+    },
+    {
+      "enriched": "total"
+    },
+    {
+      "enriched": "280"
+    }
+  ],
+  "messages": [],
+  "stdout": "enriched\n32\ntotal\n280\n",
+  "stderr": "",
+  "execution_time_ms": 283
+}

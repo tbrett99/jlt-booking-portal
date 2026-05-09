@@ -355,4 +355,390 @@ export const suppliersRouter = router({
       .from(agentSupplierStages)
       .orderBy(desc(agentSupplierStages.unlockedAt));
   }),
+
+  // ── AI: Scrape website and auto-fill supplier fields ──────────────────────────────────────
+  scrapeWebsite: adminProcedure
+    .input(z.object({ url: z.string().url() }))
+    .mutation(async ({ input }) => {
+      const { invokeLLM } = await import("./_core/llm");
+      // Fetch the website content
+      let pageText = "";
+      try {
+        const resp = await fetch(input.url, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; JLTPortalBot/1.0)" },
+          signal: AbortSignal.timeout(15000),
+        });
+        const html = await resp.text();
+        // Strip HTML tags to get readable text
+        pageText = html
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s{3,}/g, " ")
+          .trim()
+          .slice(0, 8000); // limit to 8k chars for LLM
+      } catch (e) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Could not fetch website: ${e}` });
+      }
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You are a travel industry data extraction assistant. Extract structured information about a travel supplier from their website text. Return ONLY valid JSON with these fields (use null for unknown fields):
+{
+  "name": string,
+  "description": string (2-4 sentences, plain text, no HTML),
+  "shortDescription": string (1 sentence),
+  "categories": string (semicolon-separated from: Accommodation, Adventure, Airlines, Cruises, DMCs, Family, Groups, Honeymoon, Hotels, Luxury, Safari, Ski, Tours, Transfers, Weddings),
+  "locations": string (semicolon-separated countries/regions they operate in),
+  "commission": string (commission rate if mentioned, e.g. "10%" or "NETT"),
+  "priceTier": string (one of: budget, mid-range, luxury, ultra-luxury),
+  "usp": string (2-3 key selling points as bullet points starting with •),
+  "notSuitableFor": string (what this supplier is NOT good for, or null),
+  "preferredContact": string (email/phone/portal/null),
+  "publicWebsite": string (the URL provided)
+}`,
+          },
+          { role: "user", content: `Website URL: ${input.url}\n\nWebsite content:\n${pageText}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      try {
+        const content = ((result.choices[0]?.message?.content as string) ?? "{}");
+        return JSON.parse(content);
+      } catch {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to parse AI response" });
+      }
+    }),
+
+  // ── AI: Analyse training video and extract supplier info ──────────────────────────────────
+  analyseVideo: adminProcedure
+    .input(z.object({ videoUrl: z.string(), supplierId: z.number().int().optional() }))
+    .mutation(async ({ input }) => {
+      const { invokeLLM } = await import("./_core/llm");
+      // Use manus-analyze-video via LLM with video URL
+      // First try to get a Loom direct video URL from the embed HTML if needed
+      let videoUrl = input.videoUrl;
+      // If it's a Loom embed HTML snippet, extract the URL
+      const loomMatch = videoUrl.match(/src=["'](https:\/\/www\.loom\.com\/embed\/[^"']+)["']/i)
+        || videoUrl.match(/(https:\/\/www\.loom\.com\/share\/[a-z0-9]+)/i)
+        || videoUrl.match(/(https:\/\/www\.loom\.com\/embed\/[a-z0-9]+)/i);
+      if (loomMatch) videoUrl = loomMatch[1];
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You are a travel industry training video analyst. Watch this training video about a travel supplier and extract key information. Return ONLY valid JSON:
+{
+  "supplierName": string,
+  "description": string (2-4 sentences about what this supplier offers),
+  "categories": string (semicolon-separated travel categories),
+  "locations": string (semicolon-separated destinations they cover),
+  "usp": string (2-3 key selling points as bullet points starting with •),
+  "priceTier": string (budget/mid-range/luxury/ultra-luxury),
+  "notSuitableFor": string (what this supplier is NOT ideal for),
+  "bookingTips": string (practical tips for agents from the video),
+  "keyProducts": string (main products/packages mentioned)
+}`,
+          },
+          {
+            role: "user",
+            content: `Please analyse this training video and extract supplier information. Video URL: ${videoUrl}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      try {
+        const content = ((result.choices[0]?.message?.content as string) ?? "{}");
+        return JSON.parse(content);
+      } catch {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to parse AI response" });
+      }
+    }),
+
+  // ── AI: Enrich a single supplier using existing data ──────────────────────────────────────
+  enrichSupplier: adminProcedure
+    .input(z.object({ supplierId: z.number().int() }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { invokeLLM } = await import("./_core/llm");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, input.supplierId)).limit(1);
+      if (!supplier) throw new TRPCError({ code: "NOT_FOUND", message: "Supplier not found" });
+
+      const context = [
+        `Name: ${supplier.name}`,
+        supplier.description ? `Description: ${supplier.description.replace(/<[^>]+>/g, " ").slice(0, 2000)}` : "",
+        supplier.categories ? `Categories: ${supplier.categories}` : "",
+        supplier.locations ? `Locations: ${supplier.locations}` : "",
+        supplier.commission ? `Commission: ${supplier.commission}` : "",
+        supplier.generalNotes ? `Notes: ${supplier.generalNotes.slice(0, 500)}` : "",
+      ].filter(Boolean).join("\n");
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You are a travel industry expert. Based on the supplier information provided, generate enrichment data. Return ONLY valid JSON:
+{
+  "usp": string (2-3 key selling points as bullet points starting with •, based on what makes this supplier stand out),
+  "priceTier": string (one of: budget, mid-range, luxury, ultra-luxury — infer from name/description/commission),
+  "notSuitableFor": string (what this supplier is NOT ideal for, e.g. "last-minute bookings" or "budget travellers"),
+  "aiSummary": string (1-2 sentence summary optimised for search matching — include destinations, specialisms, client types)
+}`,
+          },
+          { role: "user", content: context },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      try {
+        const content = ((result.choices[0]?.message?.content as string) ?? "{}");
+        const enriched = JSON.parse(content);
+        await db.update(suppliers)
+          .set({
+            usp: enriched.usp ?? supplier.usp,
+            priceTier: enriched.priceTier ?? supplier.priceTier,
+            notSuitableFor: enriched.notSuitableFor ?? supplier.notSuitableFor,
+            aiSummary: enriched.aiSummary ?? supplier.aiSummary,
+            aiEnrichedAt: new Date(),
+          })
+          .where(eq(suppliers.id, input.supplierId));
+        return { ok: true, ...enriched };
+      } catch {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to parse AI response" });
+      }
+    }),
+
+  // ── AI: Batch enrich all suppliers ────────────────────────────────────────────────────────
+  enrichAllSuppliers: adminProcedure
+    .input(z.object({ onlyUnenriched: z.boolean().default(true) }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const allSuppliers = await db
+        .select()
+        .from(suppliers)
+        .where(
+          input.onlyUnenriched
+            ? sql`${suppliers.aiEnrichedAt} IS NULL`
+            : sql`1=1`
+        );
+
+      // Process in background — return immediately with count
+      const count = allSuppliers.length;
+      // Fire and forget enrichment
+      (async () => {
+        const { invokeLLM } = await import("./_core/llm");
+        for (const supplier of allSuppliers) {
+          try {
+            const context = [
+              `Name: ${supplier.name}`,
+              supplier.description ? `Description: ${supplier.description.replace(/<[^>]+>/g, " ").slice(0, 2000)}` : "",
+              supplier.categories ? `Categories: ${supplier.categories}` : "",
+              supplier.locations ? `Locations: ${supplier.locations}` : "",
+              supplier.commission ? `Commission: ${supplier.commission}` : "",
+            ].filter(Boolean).join("\n");
+
+            const result = await invokeLLM({
+              messages: [
+                {
+                  role: "system",
+                  content: `You are a travel industry expert. Generate enrichment data for this supplier. Return ONLY valid JSON:
+{"usp":string,"priceTier":string,"notSuitableFor":string,"aiSummary":string}`,
+                },
+                { role: "user", content: context },
+              ],
+              response_format: { type: "json_object" },
+            });
+            const enriched = JSON.parse(((result.choices[0]?.message?.content as string) ?? "{}"));
+            await db.update(suppliers)
+              .set({
+                usp: enriched.usp ?? null,
+                priceTier: enriched.priceTier ?? null,
+                notSuitableFor: enriched.notSuitableFor ?? null,
+                aiSummary: enriched.aiSummary ?? null,
+                aiEnrichedAt: new Date(),
+              })
+              .where(eq(suppliers.id, supplier.id));
+            // Small delay to avoid rate limiting
+            await new Promise(r => setTimeout(r, 200));
+          } catch { /* skip on error */ }
+        }
+      })();
+
+      return { ok: true, count, message: `Started enriching ${count} suppliers in the background` };
+    }),
+
+  // ── AI: Smart search (LLM query understanding + filtered results) ─────────────────────────
+  aiSearch: protectedProcedure
+    .input(z.object({
+      query: z.string().min(1).max(500),
+      limit: z.number().min(1).max(20).default(8),
+    }))
+    .query(async ({ input, ctx }) => {
+      const { getDb } = await import("./db");
+      const { invokeLLM } = await import("./_core/llm");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // Step 1: LLM extracts structured intent from the query
+      const intentResult = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You are a travel supplier search assistant. Extract search intent from a travel agent's query. Return ONLY valid JSON:
+{
+  "destinations": string[] (countries/regions mentioned or implied),
+  "tripTypes": string[] (e.g. honeymoon, family, adventure, luxury, group, cruise, safari, ski, beach, city break),
+  "clientType": string (couples/family/solo/group/corporate or null),
+  "priceTier": string (budget/mid-range/luxury/ultra-luxury or null),
+  "keywords": string[] (other important keywords for matching),
+  "searchSummary": string (1 sentence describing what the agent is looking for)
+}`,
+          },
+          { role: "user", content: input.query },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      let intent: { destinations?: string[]; tripTypes?: string[]; clientType?: string; priceTier?: string; keywords?: string[]; searchSummary?: string } = {};
+      try {
+        intent = JSON.parse((intentResult.choices[0]?.message?.content as string) ?? "{}");
+      } catch { /* use empty intent */ }
+
+      // Step 2: Fetch all active suppliers
+      const agentStage = await getAgentStage(ctx.user.id);
+      const isAdmin = ctx.user.role === "admin";
+      const allSuppliers = await db
+        .select()
+        .from(suppliers)
+        .where(eq(suppliers.isActive, 1))
+        .orderBy(asc(suppliers.sortOrder), asc(suppliers.name));
+
+      // Step 3: LLM ranks and filters the suppliers based on intent
+      const supplierSummaries = allSuppliers.map(s => ({
+        id: s.id,
+        name: s.name,
+        categories: s.categories ?? "",
+        locations: s.locations ?? "",
+        priceTier: s.priceTier ?? "",
+        aiSummary: s.aiSummary ?? "",
+        usp: s.usp ?? "",
+        description: (s.description ?? "").replace(/<[^>]+>/g, " ").slice(0, 200),
+      }));
+
+      const rankResult = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You are a travel supplier matching expert. Given a search intent and a list of suppliers, return the IDs of the best matching suppliers in order of relevance. Return ONLY valid JSON:
+{
+  "matches": [
+    { "id": number, "relevanceScore": number (0-100), "reason": string (1 sentence why this supplier matches) }
+  ]
+}
+Return at most ${input.limit} matches. Only include suppliers that are genuinely relevant.`,
+          },
+          {
+            role: "user",
+            content: `Search intent: ${JSON.stringify(intent)}\n\nAvailable suppliers:\n${JSON.stringify(supplierSummaries)}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      let matches: { id: number; relevanceScore: number; reason: string }[] = [];
+      try {
+        const ranked = JSON.parse((rankResult.choices[0]?.message?.content as string) ?? "{}");
+        matches = ranked.matches ?? [];
+      } catch { /* return empty */ }
+
+      // Step 4: Fetch full supplier data for matched IDs
+      const matchedIds = matches.map(m => m.id);
+      const matchedSuppliers = allSuppliers
+        .filter(s => matchedIds.includes(s.id))
+        .map(s => applyStageFilter(s, agentStage, isAdmin));
+
+      // Merge relevance data
+      const results = matches
+        .map(m => {
+          const supplier = matchedSuppliers.find(s => s.id === m.id);
+          if (!supplier) return null;
+          return { ...supplier, relevanceScore: m.relevanceScore, matchReason: m.reason };
+        })
+        .filter(Boolean);
+
+      return {
+        results,
+        searchSummary: intent.searchSummary ?? input.query,
+        totalFound: results.length,
+      };
+    }),
+
+  // ── AI: Chat assistant for supplier recommendations ───────────────────────────────────────
+  aiChat: protectedProcedure
+    .input(z.object({
+      messages: z.array(z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+      })),
+      supplierId: z.number().int().optional(), // if chatting about a specific supplier
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import("./db");
+      const { invokeLLM } = await import("./_core/llm");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const agentStage = await getAgentStage(ctx.user.id);
+      const isAdmin = ctx.user.role === "admin";
+
+      // If chatting about a specific supplier, include their full data
+      let supplierContext = "";
+      if (input.supplierId) {
+        const [s] = await db.select().from(suppliers).where(eq(suppliers.id, input.supplierId)).limit(1);
+        if (s) {
+          const filtered = applyStageFilter(s, agentStage, isAdmin);
+          supplierContext = `\n\nYou are answering questions about this specific supplier:\n${JSON.stringify({
+            name: filtered.name,
+            description: (filtered.description ?? "").replace(/<[^>]+>/g, " "),
+            categories: filtered.categories,
+            locations: filtered.locations,
+            commission: filtered.commission,
+            usp: filtered.usp,
+            priceTier: filtered.priceTier,
+            notSuitableFor: filtered.notSuitableFor,
+            generalNotes: filtered.generalNotes,
+          })}`;
+        }
+      } else {
+        // General chat — include all supplier summaries for context
+        const allSuppliers = await db.select().from(suppliers).where(eq(suppliers.isActive, 1));
+        supplierContext = `\n\nYou have access to ${allSuppliers.length} suppliers in the JLT Group supplier directory. Here are summaries:\n` +
+          allSuppliers.map(s => `- ${s.name} (${s.categories ?? ""}) | ${s.locations ?? ""} | ${s.priceTier ?? ""} | ${s.aiSummary ?? s.shortDescription ?? ""}`).join("\n").slice(0, 6000);
+      }
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You are a knowledgeable travel industry assistant for JLT Group travel agents. Help agents find the right suppliers for their client enquiries. Be concise, practical, and specific. When recommending suppliers, explain why they're a good fit.${supplierContext}`,
+          },
+          ...input.messages,
+        ],
+      });
+
+      return {
+        reply: result.choices[0]?.message?.content ?? "Sorry, I couldn't generate a response.",
+      };
+    }),
 });

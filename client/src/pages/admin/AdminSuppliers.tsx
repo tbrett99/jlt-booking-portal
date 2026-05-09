@@ -36,6 +36,9 @@ import {
   Building2,
   Lock,
   Unlock,
+  Sparkles,
+  Video,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -140,6 +143,39 @@ export default function AdminSuppliers() {
     onError: (e) => toast.error(e.message),
   });
 
+  const scrapeWebsiteMutation = trpc.suppliers.scrapeWebsite.useMutation({
+    onSuccess: (data) => {
+      setForm((f) => ({
+        ...f,
+        name: data.name || f.name,
+        description: data.description || f.description,
+        shortDescription: data.shortDescription || f.shortDescription,
+        categories: data.categories || f.categories,
+        locations: data.locations || f.locations,
+        commission: data.commission || f.commission,
+      }));
+      toast.success("Fields auto-filled from website");
+    },
+    onError: (e) => toast.error("Auto-fill failed: " + e.message),
+  });
+
+  const analyseVideoMutation = trpc.suppliers.analyseVideo.useMutation({
+    onSuccess: (data) => {
+      setForm((f) => ({
+        ...f,
+        name: data.supplierName || f.name,
+        description: data.description || f.description,
+        categories: data.categories || f.categories,
+        locations: data.locations || f.locations,
+        generalNotes: data.bookingTips
+          ? (f.generalNotes ? f.generalNotes + "\n\n" + data.bookingTips : data.bookingTips)
+          : f.generalNotes,
+      }));
+      toast.success("Fields filled from video analysis");
+    },
+    onError: (e) => toast.error("Video analysis failed: " + e.message),
+  });
+
   const openEdit = (s: Supplier) => {
     setEditSupplier(s);
     setForm({
@@ -240,7 +276,24 @@ export default function AdminSuppliers() {
 
           {/* Websites */}
           <div className="space-y-1">
-            <Label>Public Website</Label>
+            <div className="flex items-center justify-between">
+              <Label>Public Website</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs gap-1 text-primary"
+                disabled={!form.publicWebsite || scrapeWebsiteMutation.isPending}
+                onClick={() => scrapeWebsiteMutation.mutate({ url: form.publicWebsite })}
+              >
+                {scrapeWebsiteMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3 w-3" />
+                )}
+                Auto-fill from website
+              </Button>
+            </div>
             <Input
               value={form.publicWebsite}
               onChange={(e) => setForm((f) => ({ ...f, publicWebsite: e.target.value }))}
@@ -367,7 +420,24 @@ export default function AdminSuppliers() {
 
           {/* Videos */}
           <div className="col-span-2 space-y-1">
-            <Label>Training Video 1 (Loom embed HTML or URL)</Label>
+            <div className="flex items-center justify-between">
+              <Label>Training Video 1 (Loom embed HTML or URL)</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs gap-1 text-primary"
+                disabled={!form.video1 || analyseVideoMutation.isPending}
+                onClick={() => analyseVideoMutation.mutate({ videoUrl: form.video1, supplierId: editSupplier?.id })}
+              >
+                {analyseVideoMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Video className="h-3 w-3" />
+                )}
+                Analyse video
+              </Button>
+            </div>
             <Input
               value={form.video1}
               onChange={(e) => setForm((f) => ({ ...f, video1: e.target.value }))}

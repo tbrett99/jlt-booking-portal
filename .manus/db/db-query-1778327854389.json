@@ -1,0 +1,91 @@
+{
+  "query": "SELECT id, name, description FROM suppliers WHERE description LIKE '%blockquote%' OR description LIKE '%&lt;ul%' OR description LIKE '%&lt;li%' LIMIT 5",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, description FROM suppliers WHERE description LIKE '%blockquote%' OR description LIKE '%&lt;ul%' OR description LIKE '%&lt;li%' LIMIT 5",
+  "rows": [
+    {
+      "id": "279",
+      "name": "Caribtours",
+      "description": ""
+    },
+    {
+      "id": "291",
+      "name": "Visions Holiday Group",
+      "description": ""
+    },
+    {
+      "id": "303",
+      "name": "Just Sicily",
+      "description": ""
+    },
+    {
+      "id": "313",
+      "name": "Dubai Holdings Entertainment (Info Only)",
+      "description": ""
+    },
+    {
+      "id": "327",
+      "name": "Ras Al Khaimah Tourism Development Authority (Info)",
+      "description": ""
+    }
+  ],
+  "messages": [
+    "<p>Caribtours can also book Silversea, Seabourn, Regent Seven Seas, Star Clippers and Windstar cruises as well as Yacht charters. </p>",
+    "<p>Caribtours is the UK’s leading independent holiday company. We've been arranging bespoke holidays since 1979 and we like to think that no one does it better.</p>",
+    "<p>Our award-winning team has walked on every beach, slept blissfully in every hotel, and swapped stories with the locals – they are ready and available to give you the most up-to-date personal advice when you're next choosing your perfect escape.</p>",
+    "<blockquote class=\"wp-block-quote\">",
+    "<p><strong>OUR PROGRAMMES</strong></p>",
+    "<p>Our collections include a gorgeous selection of hotels across the&nbsp;<strong>Caribbean&nbsp;</strong><a href=\"https://issuu.com/caribtours6/docs/caribtours_our_beautiful_world_collection_2025\" target=\"_blank\" rel=\"noreferrer noopener\">here</a><strong>, Indian Ocean, Arabia, South Africa, and Europe</strong>&nbsp;<a href=\"https://issuu.com/caribtours6/docs/caribtours_our_european_collection_2025\" target=\"_blank\" rel=\"noreferrer noopener\">here</a>&nbsp;- from the sublime 5* luxury, to boutique boltholes, family friendly All Inclusive’s and adult only escapes.&nbsp;</p>",
+    "<p>Whilst we are a luxury operator focusing on high end hotels and resorts, in the Caribbean especially we are widely acknowledged as the market leading specialist. We are therefore able to offer a far broader range of product in the affordable luxury and boutique category.</p>",
+    "<p><strong>CARIBTOURS CONCIERGE</strong></p>",
+    "<p>We can go way beyond just booking your holiday package and offer extras including restaurant reservations, upgraded transfers, babysitting , nanny services and private jet and yacht charters.</p>",
+    "</blockquote>",
+    "<p><strong>Deposits to be paid by the  Agent within 5 days of the booking being made.</strong> <strong>The balance payment is due to Caribtours 10 weeks prior to departure (or earlier if advised).</strong></p>",
+    "<p>You will be advised (or need to ask) but a deposit of 10% of the full booking price per person (except yacht charters, villa and cruising holidays where between 15% and 50% of total holiday cost is required, flights on selected routes, where full payment is required or when flight tickets have to be issued earlier than usual, and some hotels in high season where an increased deposit must be collected</p>",
+    "<p></p>",
+    "<blockquote class=\"wp-block-quote\">",
+    "<blockquote class=\"wp-block-quote\">",
+    "<p>Who are Visions Holiday Group? We work with Travel agents across the UK creating bespoke tailor-made itineraries for your clients so whether its Greek Island Hopping, Villas in Turkey or a safari in Africa we are here to help. Our goal is to serve as a trusted partner, helping you enhance your travel offerings while ensuring your clients receive exceptional service and memorable experiences. </p>",
+    "</blockquote>",
+    "</blockquote>",
+    "<p>Group Portfolio Includes:</p>",
+    "<p>Visions of Africa</p>",
+    "<p>Islands of Greece<br></p>",
+    "<p>Ilios Travel</p>",
+    "<p>Pure Crete<br><br>Visions in Education - Educational Tours, Ski Tours, STEM Tours</p>",
+    "<p>Private Retreats</p>",
+    "<p>EXPERIENCE SICILY WITH THE ISLAND SPECIALISTS We are the Sicily Island Specialist. Care, efficiency and attention to detail are the bywords for Just Sicily. Our aim is to listen to your requirements, guide you to the most suitable accommodation and provide you with accurate information about travel to Sicily, your chosen resort and local area. We look forward to welcoming you to this truly fascinating island....</p>",
+    "<p>Call or email to enquire or book on holidays@justsicily.co.uk / 01202 489040</p>",
+    "<blockquote class=\"wp-block-quote\">",
+    "<p></p>",
+    "</blockquote>",
+    "<p></p>",
+    "<blockquote class=\"wp-block-quote\">",
+    "<p>Currently bookings for the following attractions can be made via <strong>BedsOnline</strong>, <strong>Attraction World</strong> and <strong>Do Something Different</strong> - If making a booking for one of the following attractions please email support so we can track the volume of bookings which we can monitor so a trade partnership can be set up.</p>",
+    "</blockquote>",
+    "<p>Please see attachments for further information. </p>",
+    "<p><strong>List of our Attractions</strong></p>",
+    "<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Dubai Parks and Resorts,&nbsp;<em>including</em></p>",
+    "<div class=\"wp-block-columns\">",
+    "<div class=\"wp-block-column\" style=\"flex-basis:100%\">",
+    "<div class=\"wp-block-group\">",
+    "<p>o&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Motiongate Dubai</p>",
+    "<p>o&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Legoland Dubai</p>",
+    "<p>o&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Legoland Waterpark</p>",
+    "<p>o&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Real Madrid World</p>",
+    "</div>",
+    "</div>",
+    "</div>",
+    "<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; The Green Planet</p>",
+    "<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Wild Wadi Waterpark</p>",
+    "<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Inside Burj Al Arab Tour</p>",
+    "<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; The View Palm Jumeirah</p>",
+    "<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Ain Dubai</p>",
+    "<p>The price grid is not be shared!<br>You can use the comparison for the Gate Price and Online price and then purchase through one of the above suppliers. <br><br>The volume of bookings will determine if we can get a direct contract with them for even more savings. </p>",
+    "<blockquote class=\"wp-block-quote\">",
+    "<p></p>",
+    "</blockquote>"
+  ],
+  "stdout": "id\tname\tdescription\n279\tCaribtours\t\n<p>Caribtours can also book Silversea, Seabourn, Regent Seven Seas, Star Clippers and Windstar cruises as well as Yacht charters. </p>\n\n<p>Caribtours is the UK’s leading independent holiday company. We've been arranging bespoke holidays since 1979 and we like to think that no one does it better.</p>\n\n<p>Our award-winning team has walked on every beach, slept blissfully in every hotel, and swapped stories with the locals – they are ready and available to give you the most up-to-date personal advice when you're next choosing your perfect escape.</p>\n\n<blockquote class=\"wp-block-quote\">\n<p><strong>OUR PROGRAMMES</strong></p>\n\n<p>Our collections include a gorgeous selection of hotels across the&nbsp;<strong>Caribbean&nbsp;</strong><a href=\"https://issuu.com/caribtours6/docs/caribtours_our_beautiful_world_collection_2025\" target=\"_blank\" rel=\"noreferrer noopener\">here</a><strong>, Indian Ocean, Arabia, South Africa, and Europe</strong>&nbsp;<a href=\"https://issuu.com/caribtours6/docs/caribtours_our_european_collection_2025\" target=\"_blank\" rel=\"noreferrer noopener\">here</a>&nbsp;- from the sublime 5* luxury, to boutique boltholes, family friendly All Inclusive’s and adult only escapes.&nbsp;</p>\n\n<p>Whilst we are a luxury operator focusing on high end hotels and resorts, in the Caribbean especially we are widely acknowledged as the market leading specialist. We are therefore able to offer a far broader range of product in the affordable luxury and boutique category.</p>\n\n<p><strong>CARIBTOURS CONCIERGE</strong></p>\n\n<p>We can go way beyond just booking your holiday package and offer extras including restaurant reservations, upgraded transfers, babysitting , nanny services and private jet and yacht charters.</p>\n</blockquote>\n\n<p><strong>Deposits to be paid by the  Agent within 5 days of the booking being made.</strong> <strong>The balance payment is due to Caribtours 10 weeks prior to departure (or earlier if advised).</strong></p>\n\n<p>You will be advised (or need to ask) but a deposit of 10% of the full booking price per person (except yacht charters, villa and cruising holidays where between 15% and 50% of total holiday cost is required, flights on selected routes, where full payment is required or when flight tickets have to be issued earlier than usual, and some hotels in high season where an increased deposit must be collected</p>\n\n<p></p>\n\n291\tVisions Holiday Group\t\n<blockquote class=\"wp-block-quote\">\n<blockquote class=\"wp-block-quote\">\n<p>Who are Visions Holiday Group? We work with Travel agents across the UK creating bespoke tailor-made itineraries for your clients so whether its Greek Island Hopping, Villas in Turkey or a safari in Africa we are here to help. Our goal is to serve as a trusted partner, helping you enhance your travel offerings while ensuring your clients receive exceptional service and memorable experiences. </p>\n</blockquote>\n</blockquote>\n\n<p>Group Portfolio Includes:</p>\n\n<p>Visions of Africa</p>\n\n<p>Islands of Greece<br></p>\n\n<p>Ilios Travel</p>\n\n<p>Pure Crete<br><br>Visions in Education - Educational Tours, Ski Tours, STEM Tours</p>\n\n<p>Private Retreats</p>\n\n303\tJust Sicily\t\n<p>EXPERIENCE SICILY WITH THE ISLAND SPECIALISTS We are the Sicily Island Specialist. Care, efficiency and attention to detail are the bywords for Just Sicily. Our aim is to listen to your requirements, guide you to the most suitable accommodation and provide you with accurate information about travel to Sicily, your chosen resort and local area. We look forward to welcoming you to this truly fascinating island....</p>\n\n<p>Call or email to enquire or book on holidays@justsicily.co.uk / 01202 489040</p>\n\n<blockquote class=\"wp-block-quote\">\n<p></p>\n</blockquote>\n\n<p></p>\n\n313\tDubai Holdings Entertainment (Info Only)\t\n<blockquote class=\"wp-block-quote\">\n<p>Currently bookings for the following attractions can be made via <strong>BedsOnline</strong>, <strong>Attraction World</strong> and <strong>Do Something Different</strong> - If making a booking for one of the following attractions please email support so we can track the volume of bookings which we can monitor so a trade partnership can be set up.</p>\n</blockquote>\n\n<p>Please see attachments for further information. </p>\n\n<p><strong>List of our Attractions</strong></p>\n\n<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Dubai Parks and Resorts,&nbsp;<em>including</em></p>\n\n<div class=\"wp-block-columns\">\n<div class=\"wp-block-column\" style=\"flex-basis:100%\">\n<div class=\"wp-block-group\">\n<p>o&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Motiongate Dubai</p>\n\n<p>o&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Legoland Dubai</p>\n\n<p>o&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Legoland Waterpark</p>\n\n<p>o&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Real Madrid World</p>\n</div>\n</div>\n</div>\n\n<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; The Green Planet</p>\n\n<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Wild Wadi Waterpark</p>\n\n<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Inside Burj Al Arab Tour</p>\n\n<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; The View Palm Jumeirah</p>\n\n<p>•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Ain Dubai</p>\n\n<p>The price grid is not be shared!<br>You can use the comparison for the Gate Price and Online price and then purchase through one of the above suppliers. <br><br>The volume of bookings will determine if we can get a direct contract with them for even more savings. </p>\n\n327\tRas Al Khaimah Tourism Development Authority (Info)\t\n<blockquote class=\"wp-block-quote\">\n<p></p>\n</blockquote>\n\n",
+  "stderr": "",
+  "execution_time_ms": 264
+}

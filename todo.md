@@ -2181,3 +2181,31 @@
 - [x] Frontend: Agent CRM profile tab — unlock supplier stage (1/2/3) per agent (stage buttons in Profile tab)
 - [ ] Integration: supplier dropdown in bookings/quotes forms (replace free-type supplier field) — deferred
 - [x] Navigation: add Supplier Directory to agent sidebar nav
+
+## Supplier Directory Fixes (May 9)
+- [ ] Fix WordPress block markup in supplier descriptions — strip <!-- wp:paragraph --> comments and render HTML content properly in the supplier detail modal
+- [ ] AI supplier search — discuss approach with user before building
+
+## Supplier Directory AI Enhancement (May 9)
+- [x] Fix WordPress block markup in supplier descriptions (SQL cleanup + client-side HTML render)
+- [ ] Schema: add new enrichment fields to suppliers table (usp, priceTier, notSuitableFor, preferredContact, aiSummary, aiEnrichedAt)
+- [ ] Migration: apply new fields to DB
+- [ ] Backend: website scraping procedure (fetch supplier website, LLM extracts structured data)
+- [ ] Backend: video analysis procedure (transcribe Loom/video audio via Whisper, LLM extracts key info)
+- [ ] Backend: AI enrichment batch job (run LLM on all 280 suppliers to populate new fields from existing data)
+- [ ] Backend: AI search procedure (LLM parses natural language query → structured filters → ranked supplier results)
+- [ ] Backend: AI chat assistant procedure (streaming LLM chat about suppliers for a given enquiry)
+- [ ] Frontend: AI search bar in Supplier Directory (natural language input, ranked results)
+- [ ] Frontend: "Ask AI" chat panel in Supplier Directory
+- [ ] Frontend: "Auto-fill from website" button in supplier add/edit form
+- [ ] Frontend: "Analyse video" button in supplier add/edit form (transcribe + extract info from training video)
+- [ ] Frontend: new enrichment fields displayed in supplier detail modal (USP, price tier, not suitable for)
+- [ ] Frontend: new enrichment fields in admin supplier add/edit form
+## Supplier Directory Fixes (May 9 - Session 2)
+- [x] Fix TypeScript errors in SupplierDirectory.tsx: aiSearch now uses useQuery (not useMutation), aiChat now sends full messages array
+- [x] Fix AI enrichment DB failures: switched from single connection to mysql2 connection pool in db.ts to prevent connection timeout on long batch runs
+- [x] Add Auto-fill from website button to AdminSuppliers form (calls scrapeWebsite procedure, populates name/description/categories/locations/commission)
+- [x] Add Analyse video button to AdminSuppliers form (calls analyseVideo procedure, populates name/description/categories/locations/bookingTips)
+- [x] Fix supplier description formatting: add cleanSupplierHtml() helper that strips WP block comments, fixes CSV separator artifacts ("; <"), removes WP layout divs, styles blockquotes, cleans &nbsp; indentation, removes empty paragraphs
+- [x] Add supplier-description CSS class with proper prose styling for p/strong/em/a/blockquote/ul/li elements
+- [x] Improve enrichment error logging to capture full MySQL error cause/code/sqlMessage

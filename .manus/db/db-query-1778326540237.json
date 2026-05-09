@@ -1,0 +1,58 @@
+{
+  "query": "SHOW VARIABLES LIKE 'character_set%';\nSHOW VARIABLES LIKE 'collation%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SHOW VARIABLES LIKE 'character_set%';\nSHOW VARIABLES LIKE 'collation%';",
+  "rows": [
+    {
+      "Variable_name": "character_set_client",
+      "Value": "utf8mb4"
+    },
+    {
+      "Variable_name": "character_set_connection",
+      "Value": "utf8mb4"
+    },
+    {
+      "Variable_name": "character_set_database",
+      "Value": "utf8mb4"
+    },
+    {
+      "Variable_name": "character_set_filesystem",
+      "Value": "binary"
+    },
+    {
+      "Variable_name": "character_set_results",
+      "Value": "utf8mb4"
+    },
+    {
+      "Variable_name": "character_set_server",
+      "Value": "utf8mb4"
+    },
+    {
+      "Variable_name": "character_set_system",
+      "Value": "utf8"
+    },
+    {
+      "Variable_name": "character_sets_dir",
+      "Value": "/usr/local/mysql-5.6.25-osx10.8-x86_64/share/charsets/"
+    },
+    {
+      "Variable_name": "Variable_name",
+      "Value": "Value"
+    },
+    {
+      "Variable_name": "collation_connection",
+      "Value": "utf8mb4_0900_ai_ci"
+    },
+    {
+      "Variable_name": "collation_database",
+      "Value": "utf8mb4_unicode_ci"
+    },
+    {
+      "Variable_name": "collation_server",
+      "Value": "utf8mb4_bin"
+    }
+  ],
+  "messages": [],
+  "stdout": "Variable_name\tValue\ncharacter_set_client\tutf8mb4\ncharacter_set_connection\tutf8mb4\ncharacter_set_database\tutf8mb4\ncharacter_set_filesystem\tbinary\ncharacter_set_results\tutf8mb4\ncharacter_set_server\tutf8mb4\ncharacter_set_system\tutf8\ncharacter_sets_dir\t/usr/local/mysql-5.6.25-osx10.8-x86_64/share/charsets/\nVariable_name\tValue\ncollation_connection\tutf8mb4_0900_ai_ci\ncollation_database\tutf8mb4_unicode_ci\ncollation_server\tutf8mb4_bin\n",
+  "stderr": "",
+  "execution_time_ms": 281
+}

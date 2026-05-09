@@ -1,0 +1,58 @@
+{
+  "query": "SHOW COLUMNS FROM suppliers WHERE Field IN ('usp', 'priceTier', 'notSuitableFor', 'aiSummary', 'aiEnrichedAt', 'preferredContact');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SHOW COLUMNS FROM suppliers WHERE Field IN ('usp', 'priceTier', 'notSuitableFor', 'aiSummary', 'aiEnrichedAt', 'preferredContact');",
+  "rows": [
+    {
+      "Field": "usp",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "priceTier",
+      "Type": "varchar(50)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "notSuitableFor",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "preferredContact",
+      "Type": "varchar(100)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "aiSummary",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "aiEnrichedAt",
+      "Type": "timestamp",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nusp\ttext\tYES\t\tNULL\t\npriceTier\tvarchar(50)\tYES\t\tNULL\t\nnotSuitableFor\ttext\tYES\t\tNULL\t\npreferredContact\tvarchar(100)\tYES\t\tNULL\t\naiSummary\ttext\tYES\t\tNULL\t\naiEnrichedAt\ttimestamp\tYES\t\tNULL\t\n",
+  "stderr": "",
+  "execution_time_ms": 258
+}
