@@ -42,7 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, ExternalLink, RefreshCw, Loader2, UserPlus, AlertCircle,
   CheckCircle2, Clock, FileSignature, CreditCard, Users, UserX,
-  Mail, ChevronDown, ChevronUp, Trash2, UserCheck, Filter, Send,
+  Mail, ChevronDown, ChevronUp, Trash2, UserCheck, Filter, Send, BarChart2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { TIER_LABELS, TYPE_LABELS } from "../../../../shared/membership";
@@ -1084,15 +1084,23 @@ export default function RecruitmentPipeline() {
             Manage prospects, sign-up applications, and abandoned sign-ups in one place
           </p>
         </div>
-        <a
-          href="/apply"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#02E6D2] hover:bg-[#02E6D2]/90 text-[#1a1a1a] font-semibold text-sm transition-colors"
-        >
-          <ExternalLink size={14} />
-          View Enquiry Form
-        </a>
+        <div className="flex items-center gap-2">
+          <Link href="/crm/recruitment/dashboard">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <BarChart2 size={14} />
+              Performance
+            </Button>
+          </Link>
+          <a
+            href="/apply"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#02E6D2] hover:bg-[#02E6D2]/90 text-[#1a1a1a] font-semibold text-sm transition-colors"
+          >
+            <ExternalLink size={14} />
+            View Enquiry Form
+          </a>
+        </div>
       </div>
 
       {/* Tabs */}

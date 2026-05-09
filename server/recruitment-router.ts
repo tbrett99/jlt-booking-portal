@@ -5,6 +5,7 @@
  * Admin procedures: listProspects, getProspect, updateStage, updateNotes, getStageHistory, getEmailsSent
  */
 import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
+import { getRecruitmentAnalytics } from "./recruitment-analytics";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { nanoid } from "nanoid";
@@ -756,7 +757,7 @@ export const recruitmentRouter = router({
       return { started: true, reason: null, job: getBulkEmailJobState() };
     }),
 
-  /**
+/**
    * ADMIN — Poll the current bulk email job status.
    */
   bulkEmailJobStatus: protectedProcedure.query(async ({ ctx }) => {
@@ -765,6 +766,18 @@ export const recruitmentRouter = router({
     }
     return getBulkEmailJobState();
   }),
+
+  /**
+   * ADMIN — Recruitment performance analytics.
+   */
+  analytics: protectedProcedure
+    .input(z.object({ dateFrom: z.date().optional() }))
+    .query(async ({ input, ctx }) => {
+      if (!["admin", "super_admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      return getRecruitmentAnalytics({ dateFrom: input.dateFrom });
+    }),
 });
 // ─── Stage-triggered emails ───────────────────────────────────────────────────
 

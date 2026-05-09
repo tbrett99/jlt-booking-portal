@@ -90,6 +90,7 @@ const Memberships = lazy(() => import("./pages/crm/Memberships"));
 const RecruitmentPipeline = lazy(() => import("./pages/crm/RecruitmentPipeline"));
 const WorkflowBuilder = lazy(() => import("./pages/crm/WorkflowBuilder"));
 const RecruitmentProspectDetail = lazy(() => import("./pages/crm/RecruitmentProspectDetail"));
+const RecruitmentDashboard = lazy(() => import("./pages/crm/RecruitmentDashboard"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const BookingDocuments = lazy(() => import("./pages/BookingDocuments"));
 const MyProfile = lazy(() => import("./pages/MyProfile"));
@@ -361,6 +362,7 @@ function AuthRouter() {
         <Route path="/crm/change-requests" component={CrmChangeRequests} />
         <Route path="/crm/memberships" component={Memberships} />
         {/* Recruitment Pipeline */}
+        <Route path="/crm/recruitment/dashboard" component={RecruitmentDashboard} />
         <Route path="/crm/recruitment" component={RecruitmentPipeline} />
         <Route path="/crm/recruitment/:id" component={RecruitmentProspectDetail} />
         <Route path="/crm/workflows" component={WorkflowBuilder} />

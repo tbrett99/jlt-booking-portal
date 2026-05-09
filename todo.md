@@ -2217,16 +2217,22 @@
 - [x] Fix: editing a supplier causes the dialog to refresh and reset cursor to the name field — caused by FormDialog being defined as a nested component inside AdminSuppliers (React unmounts/remounts on every parent re-render). Fixed by inlining the dialog JSX as a variable instead.
 
 ## Recruitment Pipeline: Lead Source Visibility (May 9)
-- [ ] Add "Source" column to recruitment pipeline table showing hearAboutUs value (badge-style)
-- [ ] Add "Source" filter dropdown to pipeline filters (all sources, Facebook, Instagram, LinkedIn, Google, Referral, Event, Ad, Other)
-- [ ] Ensure hearAboutUs is returned in listProspectsFiltered tRPC query
+- [x] Add "Source" column to recruitment pipeline table showing hearAboutUs value (badge-style)
+- [x] Add "Source" filter dropdown to pipeline filters (all sources, Facebook, Instagram, LinkedIn, Google, Referral, Event, Ad, Other)
+- [x] Ensure hearAboutUs is returned in listProspectsFiltered tRPC query
 
 ## Recruitment Analytics Dashboard (future)
-- [ ] New page: Recruitment Analytics (under CRM sidebar)
-- [ ] KPIs: total enquiries, total applications, total onboarded, overall conversion rate
-- [ ] Funnel chart: enquiries → applied → approved → discovery call → onboarded
-- [ ] Lead source breakdown: pie/bar chart of hearAboutUs values
-- [ ] Conversion rate by source (which channel converts best)
-- [ ] Monthly trend: new enquiries and onboardings over time
-- [ ] Stage duration: avg days spent in each stage
-- [ ] Referral leaderboard: top referrers by count
+- [x] New page: Recruitment Analytics (under CRM sidebar) — at /crm/recruitment/dashboard
+- [x] KPIs: total enquiries, total applications, total onboarded, overall conversion rate
+- [x] Funnel chart: enquiries → applied → approved → discovery call → onboarded
+- [x] Lead source breakdown: pie/bar chart of hearAboutUs values
+- [x] Conversion rate by source (which channel converts best)
+- [x] Monthly trend: new enquiries and onboardings over time
+- [x] Stage duration: avg days spent in each stage
+- [ ] Referral leaderboard: top referrers by count — deferred (low priority)
+
+## Recruitment Performance Dashboard (May 9)
+- [x] Backend: tRPC analytics procedure returning lead source breakdown, stage counts, conversion rates, weekly volume, time-in-stage averages
+- [x] Frontend: RecruitmentDashboard page with KPI cards, bar charts (source breakdown, stage funnel), line chart (volume over time), conversion rate table
+- [x] Frontend: date range filter (last 30/90/180/365 days or all time)
+- [x] Frontend: route /crm/recruitment/dashboard and nav link in RecruitmentPipeline header
