@@ -493,7 +493,21 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min) — inbox auto-import DISABLED");
+  // CRM Drip email processor: every 15 minutes
+  // Processes active CRM drip enrollments (email_drip_enrollments) that are due.
+  cron.schedule("*/15 * * * *", async () => {
+    try {
+      const { processDripEmailsInternal } = await import("./crm-db");
+      const result = await processDripEmailsInternal();
+      if (result.sent > 0 || result.errors > 0) {
+        console.log(`[DripScheduler] Processed ${result.processed} enrollments, sent ${result.sent} emails, ${result.errors} errors`);
+      }
+    } catch (err: any) {
+      console.error("[DripScheduler] Error:", err?.message);
+    }
+  }, { timezone: "UTC" });
+
+  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min) — inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────

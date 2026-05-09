@@ -2157,13 +2157,11 @@
 - [x] Dashboard confirmed showing real data (3362 active bookings, 44 to add to PTS, etc.)
 
 ## Remaining Email Marketing Items
-- [ ] Backend: Resend webhook handler at /api/webhooks/resend — update email_sends status on delivery/bounce/complaint events
-- [ ] Backend: drip engine — scheduler job every hour checks email_drip_enrollments for steps due, sends email, advances step; auto-enroll prospects when their CRM pipeline stage changes
-- [ ] Frontend: Email Analytics page — per-campaign stats: sent/opened/clicked/bounced counts and rates, recipient list with individual status
-- [ ] Frontend: Image upload in editor — upload to S3 via existing storagePut, insert as <img> in email body
-- [ ] Frontend: admin view of unsubscribes list in Email Marketing section
-
-## Commission Spreadsheet Matching (requires CSV files from user)
+- [x]- [x] Backend: Resend webhook handler at /api/webhooks/resend — update email_sends status on delivery/bounce/complaint events
+- [x] Backend: drip engine — scheduler job every 15 min checks email_drip_enrollments for steps due, sends email, advances step; auto-enroll prospects when their CRM pipeline stage changes
+- [x] Frontend: Email Analytics page — per-campaign stats: sent/opened/clicked/bounced counts and rates, recipient list with individual status
+- [x] Frontend: Image upload in editor — upload to S3 via tRPC campaigns.uploadImage, insert as <img> in email body
+- [x] Frontend: admin view of unsubscribes list in Email Marketing section (with re-subscribe action)tion (with re-subscribe action)sion Spreadsheet Matching (requires CSV files from user)
 - [ ] Match AprilComms.csv, FebComms.csv, MarchComms.csv, Commissions-April26-17.csv against pending commission claims in DB by booking ref
 - [ ] Amount to mark as paid = 0.80 column + VAT column from spreadsheet
 - [ ] Mark matched claims as paid in DB (status=paid, paidAt=now, amountPaid=correct amount)

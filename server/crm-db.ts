@@ -12,6 +12,7 @@ import {
   prospectContracts,
   emailCampaigns,
   emailSends,
+  emailUnsubscribes,
   commissionRemittances,
   commissionRemittanceItems,
   paymentConfig,
@@ -583,6 +584,7 @@ import {
   emailDripEnrollments,
   type InsertEmailTemplate,
   type InsertEmailDripWorkflow,
+  type InsertEmailDripEnrollment,
 } from "../drizzle/schema";
 
 export async function getAllEmailTemplates(audienceType?: "prospect" | "agent") {
@@ -858,4 +860,162 @@ export async function getAgentEmailLog(params: {
     .offset(params.offset ?? 0);
 
   return { rows, total: Number(countRow.count) };
+}
+
+// ─── Drip Email Processor ─────────────────────────────────────────────────────
+
+/**
+ * Processes all active CRM drip enrollments that are due to send.
+ * Called by the scheduler every 15 minutes.
+ */
+export async function processDripEmailsInternal(): Promise<{ processed: number; sent: number; errors: number }> {
+  const db = await getDb();
+  if (!db) return { processed: 0, sent: 0, errors: 0 };
+
+  const { lte } = await import("drizzle-orm");
+  const due = await db.select().from(emailDripEnrollments)
+    .where(and(
+      eq(emailDripEnrollments.status, "active"),
+      lte(emailDripEnrollments.nextSendAt, new Date())
+    ));
+
+  let sent = 0;
+  let errors = 0;
+
+  for (const enrollment of due) {
+    try {
+      // Get the workflow
+      const workflow = await getDripWorkflowById(enrollment.workflowId);
+      if (!workflow || !workflow.isActive) continue;
+
+      // Get steps for this workflow
+      const steps = await getDripStepsByWorkflow(enrollment.workflowId);
+      const currentStep = steps.find((s) => s.stepOrder === enrollment.currentStep);
+
+      if (!currentStep) {
+        // No more steps — mark as completed
+        await db.update(emailDripEnrollments)
+          .set({ status: "completed", completedAt: new Date() })
+          .where(eq(emailDripEnrollments.id, enrollment.id));
+        continue;
+      }
+
+      // Check if recipient is unsubscribed
+      const unsub = await db.select({ id: emailUnsubscribes.id })
+        .from(emailUnsubscribes)
+        .where(eq(emailUnsubscribes.email, enrollment.recipientEmail))
+        .limit(1);
+      if (unsub.length > 0) {
+        await db.update(emailDripEnrollments)
+          .set({ status: "unsubscribed" })
+          .where(eq(emailDripEnrollments.id, enrollment.id));
+        continue;
+      }
+
+      // Replace template variables
+      const firstName = enrollment.recipientName?.split(" ")[0] ?? enrollment.recipientName ?? "";
+      const subject = currentStep.subject
+        .replace(/\{\{firstName\}\}/g, firstName)
+        .replace(/\{\{name\}\}/g, enrollment.recipientName ?? "")
+        .replace(/\{\{email\}\}/g, enrollment.recipientEmail);
+      const bodyHtml = currentStep.bodyHtml
+        .replace(/\{\{firstName\}\}/g, firstName)
+        .replace(/\{\{name\}\}/g, enrollment.recipientName ?? "")
+        .replace(/\{\{email\}\}/g, enrollment.recipientEmail);
+
+      // Send via Resend
+      const { sendMarketingEmail } = await import("./resend-email");
+      const result = await sendMarketingEmail({
+        to: enrollment.recipientEmail,
+        toName: enrollment.recipientName ?? undefined,
+        subject,
+        bodyHtml,
+        audienceType: enrollment.recipientType,
+        recipientType: enrollment.recipientType,
+        recipientId: enrollment.recipientId ?? undefined,
+        dripStepId: currentStep.id,
+        enrollmentId: enrollment.id,
+        baseUrl: process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk",
+      });
+
+      if (!result.success) {
+        errors++;
+        continue;
+      }
+
+      sent++;
+
+      // Advance to next step
+      const nextStep = steps.find((s) => s.stepOrder > enrollment.currentStep);
+      if (nextStep) {
+        const nextSendAt = new Date();
+        nextSendAt.setDate(nextSendAt.getDate() + nextStep.delayDays);
+        await db.update(emailDripEnrollments)
+          .set({ currentStep: nextStep.stepOrder, nextSendAt })
+          .where(eq(emailDripEnrollments.id, enrollment.id));
+      } else {
+        // All steps done
+        await db.update(emailDripEnrollments)
+          .set({ status: "completed", completedAt: new Date() })
+          .where(eq(emailDripEnrollments.id, enrollment.id));
+      }
+    } catch (err: any) {
+      console.error(`[DripProcessor] Error processing enrollment ${enrollment.id}:`, err?.message);
+      errors++;
+    }
+  }
+
+  return { processed: due.length, sent, errors };
+}
+
+/**
+ * Auto-enroll CRM prospects in active drip workflows when their pipeline stage changes.
+ * Called from the CRM prospect stage-change mutation.
+ */
+export async function autoEnrollProspectInDripWorkflows(prospectId: number, newStage: string, prospectEmail: string, prospectName: string) {
+  const db = await getDb();
+  if (!db) return;
+
+  // Find active workflows triggered by this stage
+  const workflows = await db.select()
+    .from(emailDripWorkflows)
+    .where(and(
+      eq(emailDripWorkflows.isActive, true),
+      eq(emailDripWorkflows.triggerStage, newStage)
+    ));
+
+  for (const workflow of workflows) {
+    // Check if already enrolled
+    const existing = await db.select({ id: emailDripEnrollments.id })
+      .from(emailDripEnrollments)
+      .where(and(
+        eq(emailDripEnrollments.workflowId, workflow.id),
+        eq(emailDripEnrollments.recipientEmail, prospectEmail),
+        eq(emailDripEnrollments.status, "active")
+      ))
+      .limit(1);
+
+    if (existing.length > 0) continue; // Already enrolled
+
+    // Get first step to determine initial send time
+    const steps = await getDripStepsByWorkflow(workflow.id);
+    const firstStep = steps.sort((a, b) => a.stepOrder - b.stepOrder)[0];
+    if (!firstStep) continue;
+
+    const nextSendAt = new Date();
+    nextSendAt.setDate(nextSendAt.getDate() + firstStep.delayDays);
+
+    await db.insert(emailDripEnrollments).values({
+      workflowId: workflow.id,
+      recipientEmail: prospectEmail,
+      recipientName: prospectName,
+      recipientType: "prospect",
+      recipientId: prospectId,
+      currentStep: firstStep.stepOrder,
+      status: "active",
+      nextSendAt,
+    });
+
+    console.log(`[DripEngine] Auto-enrolled prospect ${prospectId} in workflow "${workflow.name}" (stage: ${newStage})`);
+  }
 }

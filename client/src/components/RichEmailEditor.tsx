@@ -26,6 +26,7 @@ import {
   Palette, Type, UserRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { trpc } from "@/lib/trpc";
 
 // ── Custom FontSize extension ─────────────────────────────────────────────────
 const FontSize = TextStyle.extend({
@@ -182,6 +183,8 @@ interface RichEmailEditorProps {
 }
 
 export function RichEmailEditor({ value, onChange, placeholder = "Compose your email…", className }: RichEmailEditorProps) {
+  const [imageUploading, setImageUploading] = useState(false);
+  const uploadImageMutation = trpc.crm.emailBranding.uploadImage.useMutation();
   const [linkDialog, setLinkDialog] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
   const [imageDialog, setImageDialog] = useState(false);
@@ -285,13 +288,29 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
   function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
+    // Upload to S3 via tRPC instead of embedding as base64
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const src = ev.target?.result as string;
-      editor?.chain().focus().setImage({ src }).run();
+    reader.onload = async (ev) => {
+      const base64 = (ev.target?.result as string).split(",")[1];
+      if (!base64) return;
+      setImageUploading(true);
+      try {
+        const { url } = await uploadImageMutation.mutateAsync({
+          fileName: file.name,
+          fileBase64: base64,
+          mimeType: file.type,
+        });
+        editor?.chain().focus().setImage({ src: url }).run();
+      } catch {
+        // Fallback to base64 if S3 upload fails
+        const src = ev.target?.result as string;
+        editor?.chain().focus().setImage({ src }).run();
+      } finally {
+        setImageUploading(false);
+      }
     };
     reader.readAsDataURL(file);
-    e.target.value = "";
   }
 
   function applyColor(color: string) {
@@ -491,8 +510,12 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
         <ToolbarBtn onClick={() => setImageDialog(true)} title="Insert Image from URL">
           <ImageIcon className="h-4 w-4" />
         </ToolbarBtn>
-        <ToolbarBtn onClick={() => fileInputRef.current?.click()} title="Upload Image">
-          <span className="text-xs font-medium px-1">IMG</span>
+        <ToolbarBtn onClick={() => !imageUploading && fileInputRef.current?.click()} title={imageUploading ? "Uploading…" : "Upload Image from Computer"}>
+          {imageUploading ? (
+            <span className="text-xs font-medium px-1 animate-pulse">...</span>
+          ) : (
+            <span className="text-xs font-medium px-1">IMG</span>
+          )}
         </ToolbarBtn>
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
 

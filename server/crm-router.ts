@@ -242,6 +242,16 @@ export const crmRouter = router({
           const agentId = await generateUniqueAgentId();
           await updateProspect(input.id, { uniqueAgentId: agentId, wonPortalAccess: true });
         }
+        // Auto-enroll in CRM drip workflows triggered by this stage
+        if (updated?.email) {
+          const { autoEnrollProspectInDripWorkflows } = await import("./crm-db");
+          autoEnrollProspectInDripWorkflows(
+            input.id,
+            input.stage,
+            updated.email,
+            [updated.firstName, updated.lastName].filter(Boolean).join(" ") || updated.email
+          ).catch((e) => console.error("[DripEngine] Auto-enroll error:", e?.message));
+        }
         return updated;
       }),
 
@@ -2661,9 +2671,59 @@ export const crmRouter = router({
         await upsertEmailBrandingSettings({ logoUrl: url }, ctx.user.id);
         return { url };
       }),
+
+    uploadImage: adminProcedure
+      .input(
+        z.object({
+          fileName: z.string(),
+          fileBase64: z.string(),
+          mimeType: z.string(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const ext = input.fileName.split(".").pop() ?? "jpg";
+        const key = `email-images/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const { url } = await storagePut(key, buffer, input.mimeType);
+        return { url };
+      }),
   }),
 
-  // ── Agent Email Log ───────────────────────────────────────────────────────────────────────────────
+   // ── Email Unsubscribes ─────────────────────────────────────────────────────────────────────────────
+  emailUnsubscribes: router({
+    list: adminProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        limit: z.number().min(1).max(200).default(50),
+        offset: z.number().min(0).default(0),
+      }))
+      .query(async ({ input }) => {
+        const db = await (await import("./db")).getDb();
+        if (!db) return { rows: [], total: 0 };
+        const { emailUnsubscribes } = await import("../drizzle/schema");
+        const { like, or, sql, desc } = await import("drizzle-orm");
+        const conditions = [];
+        if (input.search) {
+          conditions.push(like(emailUnsubscribes.email, `%${input.search}%`));
+        }
+        const where = conditions.length > 0 ? or(...conditions) : undefined;
+        const [countRow] = await db.select({ count: sql<number>`count(*)` }).from(emailUnsubscribes).where(where);
+        const rows = await db.select().from(emailUnsubscribes).where(where).orderBy(desc(emailUnsubscribes.unsubscribedAt)).limit(input.limit).offset(input.offset);
+        return { rows, total: Number(countRow.count) };
+      }),
+    remove: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const db = await (await import("./db")).getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { emailUnsubscribes } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.delete(emailUnsubscribes).where(eq(emailUnsubscribes.id, input.id));
+        return { success: true };
+      }),
+  }),
+
+  // ── Agent Email Log ──────────────────────────────────────────────────────────────────────────────
   agentEmailLog: router({
     list: adminProcedure
       .input(

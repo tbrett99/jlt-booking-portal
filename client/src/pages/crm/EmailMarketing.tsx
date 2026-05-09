@@ -673,6 +673,12 @@ export default function EmailMarketing() {
           <TabsTrigger value="branding" className="flex items-center gap-1.5">
             <Paintbrush className="h-4 w-4" /> Email Branding
           </TabsTrigger>
+          <TabsTrigger value="analytics" className="flex items-center gap-1.5">
+            <BarChart2 className="h-4 w-4" /> Analytics
+          </TabsTrigger>
+          <TabsTrigger value="unsubscribes" className="flex items-center gap-1.5">
+            <AlertCircle className="h-4 w-4" /> Unsubscribes
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Campaigns ── */}
@@ -884,6 +890,16 @@ export default function EmailMarketing() {
         <TabsContent value="branding" className="mt-4">
           <EmailBrandingEditor />
         </TabsContent>
+
+        {/* ── Analytics ── */}
+        <TabsContent value="analytics" className="mt-4">
+          <EmailAnalyticsTab campaigns={campaigns} />
+        </TabsContent>
+
+        {/* ── Unsubscribes ── */}
+        <TabsContent value="unsubscribes" className="mt-4">
+          <EmailUnsubscribesTab />
+        </TabsContent>
       </Tabs>
 
       {/* Campaign Form Dialog */}
@@ -1020,6 +1036,208 @@ export default function EmailMarketing() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Email Analytics Tab ──────────────────────────────────────────────────────
+
+function EmailAnalyticsTab({ campaigns }: { campaigns: any[] }) {
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+
+  const { data: stats } = trpc.crm.campaigns.stats.useQuery(
+    { campaignId: selectedCampaignId! },
+    { enabled: !!selectedCampaignId }
+  );
+  const { data: recipientsData } = trpc.crm.campaigns.recipients.useQuery(
+    { campaignId: selectedCampaignId! },
+    { enabled: !!selectedCampaignId }
+  );
+
+  const sentCampaigns = campaigns.filter((c: any) => c.status === "sent");
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <Label className="text-sm font-medium">Select Campaign</Label>
+        <Select
+          value={selectedCampaignId ? String(selectedCampaignId) : ""}
+          onValueChange={(v) => setSelectedCampaignId(Number(v))}
+        >
+          <SelectTrigger className="mt-1 w-full max-w-sm">
+            <SelectValue placeholder="Choose a sent campaign…" />
+          </SelectTrigger>
+          <SelectContent>
+            {sentCampaigns.map((c: any) => (
+              <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {selectedCampaignId && stats && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              { label: "Total Sent", value: stats.total, icon: Send, color: "text-blue-500" },
+              { label: "Delivered", value: stats.sent, icon: CheckCircle, color: "text-green-500" },
+              { label: "Opened", value: stats.opened, icon: Eye, color: "text-purple-500" },
+              { label: "Failed", value: stats.failed, icon: AlertCircle, color: "text-red-500" },
+            ].map(({ label, value, icon: Icon, color }) => (
+              <Card key={label}>
+                <CardContent className="pt-4 pb-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Icon className={`h-4 w-4 ${color}`} />
+                    <span className="text-xs text-muted-foreground">{label}</span>
+                  </div>
+                  <p className="text-2xl font-bold">{value}</p>
+                  {stats.total > 0 && (
+                    <p className="text-xs text-muted-foreground">{Math.round((value / stats.total) * 100)}%</p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {recipientsData && recipientsData.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Recipients</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b bg-muted/30">
+                        <th className="text-left px-4 py-2 font-medium">Email</th>
+                        <th className="text-left px-4 py-2 font-medium">Name</th>
+                        <th className="text-left px-4 py-2 font-medium">Type</th>
+                        <th className="text-left px-4 py-2 font-medium">Status</th>
+                        <th className="text-left px-4 py-2 font-medium">Sent At</th>
+                        <th className="text-left px-4 py-2 font-medium">Opened At</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recipientsData.map((r: any) => (
+                        <tr key={r.id} className="border-b hover:bg-muted/20">
+                          <td className="px-4 py-2">{r.recipientEmail}</td>
+                          <td className="px-4 py-2">{r.recipientName ?? "—"}</td>
+                          <td className="px-4 py-2 capitalize">{r.recipientType}</td>
+                          <td className="px-4 py-2">
+                            <Badge variant={
+                              r.status === "opened" || r.status === "clicked" ? "default" :
+                              r.status === "delivered" || r.status === "sent" ? "secondary" :
+                              r.status === "failed" ? "destructive" : "outline"
+                            } className="text-xs capitalize">{r.status}</Badge>
+                          </td>
+                          <td className="px-4 py-2">{r.sentAt ? new Date(r.sentAt).toLocaleString() : "—"}</td>
+                          <td className="px-4 py-2">{r.openedAt ? new Date(r.openedAt).toLocaleString() : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {!selectedCampaignId && (
+        <div className="text-center py-16 text-muted-foreground">
+          <BarChart2 className="h-10 w-10 mx-auto mb-3 opacity-30" />
+          <p className="font-medium">Select a campaign to view analytics</p>
+          <p className="text-sm">Delivery, open, and click stats for each sent campaign</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Email Unsubscribes Tab ───────────────────────────────────────────────────
+
+function EmailUnsubscribesTab() {
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  const { data, refetch } = trpc.crm.emailUnsubscribes.list.useQuery({
+    search: debouncedSearch || undefined,
+    limit: 100,
+    offset: 0,
+  });
+
+  const remove = trpc.crm.emailUnsubscribes.remove.useMutation({
+    onSuccess: () => { toast.success("Removed from unsubscribe list"); refetch(); },
+    onError: () => toast.error("Failed to remove"),
+  });
+
+  const rows = data?.rows ?? [];
+  const total = data?.total ?? 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="Search by email…"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              clearTimeout((window as any)._unsubSearchTimer);
+              (window as any)._unsubSearchTimer = setTimeout(() => setDebouncedSearch(e.target.value), 400);
+            }}
+            className="w-64"
+          />
+        </div>
+        <p className="text-sm text-muted-foreground">{total} unsubscribe{total !== 1 ? "s" : ""}</p>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <CheckCircle className="h-10 w-10 mx-auto mb-3 opacity-30" />
+          <p className="font-medium">No unsubscribes{debouncedSearch ? " matching your search" : ""}</p>
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className="text-left px-4 py-2 font-medium">Email</th>
+                    <th className="text-left px-4 py-2 font-medium">Unsubscribed At</th>
+                    <th className="text-left px-4 py-2 font-medium">Prospect ID</th>
+                    <th className="text-right px-4 py-2 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r: any) => (
+                    <tr key={r.id} className="border-b hover:bg-muted/20">
+                      <td className="px-4 py-2 font-mono">{r.email}</td>
+                      <td className="px-4 py-2">{r.unsubscribedAt ? new Date(r.unsubscribedAt).toLocaleString() : "—"}</td>
+                      <td className="px-4 py-2">{r.prospectId ?? "—"}</td>
+                      <td className="px-4 py-2 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs text-destructive hover:text-destructive"
+                          onClick={() => {
+                            if (confirm(`Re-subscribe ${r.email}? This will allow marketing emails to be sent to them again.`)) {
+                              remove.mutate({ id: r.id });
+                            }
+                          }}
+                        >
+                          Re-subscribe
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
