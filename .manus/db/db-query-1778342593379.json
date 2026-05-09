@@ -1,0 +1,90 @@
+{
+  "query": "SELECT id, firstName, lastName, howHeard, applicationData, pipelineStage FROM recruitment_prospects WHERE howHeard IS NOT NULL OR JSON_EXTRACT(applicationData, '$.heardAbout') IS NOT NULL LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, firstName, lastName, howHeard, applicationData, pipelineStage FROM recruitment_prospects WHERE howHeard IS NOT NULL OR JSON_EXTRACT(applicationData, '$.heardAbout') IS NOT NULL LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "firstName": "Charles",
+      "lastName": "Test",
+      "howHeard": "social_media",
+      "applicationData": "{\"anythingElse\": \"\", \"biggestWorry\": \"not sure\", \"experience\": \"\", \"financialReadiness\": \"Yes – I've budgeted for it\", \"fullOrPartTime\": \"part_time\", \"heardAbout\": [\"TikTok\"], \"heardAboutOther\": \"\", \"homeSupport\": \"Yes\", \"hoursPerWeek\": \"10-20 hours\", \"investmentReadiness\": \"I'm interested, but still thinking it over\", \"linkedinUrl\": \"\", \"lookingAtOthers\": \"Yes\", \"lookingAtOthersDetails\": \"\", \"mainGoal\": [\"Replace my current income\"], \"occupation\": \"test\", \"selfEmployed\": \"Yes\", \"selfEmployedAwareness\": \"Yes, I understand and that's what I'm looking for\", \"submittedAt\": \"2026-05-02T13:18:38.817Z\", \"techConfidence\": \"Confident – I can pick things up quickly\", \"travelExperience\": \"No\", \"travelExperienceDetails\": \"\", \"travelSpecialism\": \"luxury\", \"twoYearVision\": \"test\", \"whyJlt\": \"test\"}",
+      "pipelineStage": "ar_declined"
+    },
+    {
+      "id": "30004",
+      "firstName": "Kate",
+      "lastName": "C",
+      "howHeard": "NULL",
+      "applicationData": "{\"anythingElse\": \"\", \"biggestWorry\": \"Will I always be the Disney Queen.....\", \"experience\": \"\", \"financialReadiness\": \"Yes – I've budgeted for it\", \"fullOrPartTime\": \"full_time\", \"heardAbout\": [\"Other\"], \"heardAboutOther\": \"Stalking Max\", \"homeSupport\": \"Yes\", \"hoursPerWeek\": \"Full time\", \"investmentReadiness\": \"100% – I'm serious and ready to go\", \"linkedinUrl\": \"\", \"lookingAtOthers\": \"No\", \"lookingAtOthersDetails\": \"\", \"mainGoal\": [\"Not sure yet\"], \"occupation\": \"Core Team Bitch!\", \"selfEmployed\": \"Yes\", \"selfEmployedAwareness\": \"Yes, I understand and that's what I'm looking for\", \"submittedAt\": \"2026-05-08T14:26:27.620Z\", \"techConfidence\": \"Very confident – I use tech every day\", \"travelExperience\": \"No\", \"travelExperienceDetails\": \"\", \"travelSpecialism\": \"All the travel!\", \"twoYearVision\": \"On a beach.....\", \"whyJlt\": \"Supplier Finance is my niche! Just love sending them money!\"}",
+      "pipelineStage": "discovery_call_complete"
+    },
+    {
+      "id": "30005",
+      "firstName": "Kirsty",
+      "lastName": "Again",
+      "howHeard": "NULL",
+      "applicationData": "{\"anythingElse\": \"\", \"biggestWorry\": \"The training taking too long\", \"experience\": \"2 years \", \"financialReadiness\": \"Yes – I've budgeted for it\", \"fullOrPartTime\": \"part_time\", \"heardAbout\": [\"TikTok\"], \"heardAboutOther\": \"\", \"homeSupport\": \"Yes\", \"hoursPerWeek\": \"10-20 hours\", \"investmentReadiness\": \"I'm interested, but still thinking it over\", \"linkedinUrl\": \"\", \"lookingAtOthers\": \"No\", \"lookingAtOthersDetails\": \"\", \"mainGoal\": [\"Earn some extra income\"], \"occupation\": \"Babysitter\", \"selfEmployed\": \"Yes\", \"selfEmployedAwareness\": \"Yes, I understand and that's what I'm looking for\", \"submittedAt\": \"2026-05-08T14:29:15.602Z\", \"techConfidence\": \"Very confident – I use tech every day\", \"travelExperience\": \"Yes\", \"travelExperienceDetails\": \"2 years \", \"travelSpecialism\": \"Anything\", \"twoYearVision\": \"Opening my own shop within 3 months\", \"whyJlt\": \"Because I’m bored \"}",
+      "pipelineStage": "ar_declined"
+    },
+    {
+      "id": "30007",
+      "firstName": "Claire",
+      "lastName": "Anderson",
+      "howHeard": "",
+      "applicationData": "NULL",
+      "pipelineStage": "new_enquiry"
+    },
+    {
+      "id": "30008",
+      "firstName": "Ellie",
+      "lastName": "Hodgson",
+      "howHeard": "",
+      "applicationData": "NULL",
+      "pipelineStage": "new_enquiry"
+    },
+    {
+      "id": "60001",
+      "firstName": "David",
+      "lastName": "Daves",
+      "howHeard": "",
+      "applicationData": "NULL",
+      "pipelineStage": "new_enquiry"
+    },
+    {
+      "id": "60002",
+      "firstName": "Mit",
+      "lastName": "Patel",
+      "howHeard": "",
+      "applicationData": "NULL",
+      "pipelineStage": "new_enquiry"
+    },
+    {
+      "id": "60003",
+      "firstName": "Ellem",
+      "lastName": "Edwards",
+      "howHeard": "",
+      "applicationData": "NULL",
+      "pipelineStage": "new_enquiry"
+    },
+    {
+      "id": "90001",
+      "firstName": "Alison",
+      "lastName": "Abbott-Manders",
+      "howHeard": "",
+      "applicationData": "NULL",
+      "pipelineStage": "new_enquiry"
+    },
+    {
+      "id": "90002",
+      "firstName": "webrise",
+      "lastName": "jon",
+      "howHeard": "",
+      "applicationData": "NULL",
+      "pipelineStage": "new_enquiry"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tlastName\thowHeard\tapplicationData\tpipelineStage\n1\tCharles\tTest\tsocial_media\t{\"anythingElse\": \"\", \"biggestWorry\": \"not sure\", \"experience\": \"\", \"financialReadiness\": \"Yes – I've budgeted for it\", \"fullOrPartTime\": \"part_time\", \"heardAbout\": [\"TikTok\"], \"heardAboutOther\": \"\", \"homeSupport\": \"Yes\", \"hoursPerWeek\": \"10-20 hours\", \"investmentReadiness\": \"I'm interested, but still thinking it over\", \"linkedinUrl\": \"\", \"lookingAtOthers\": \"Yes\", \"lookingAtOthersDetails\": \"\", \"mainGoal\": [\"Replace my current income\"], \"occupation\": \"test\", \"selfEmployed\": \"Yes\", \"selfEmployedAwareness\": \"Yes, I understand and that's what I'm looking for\", \"submittedAt\": \"2026-05-02T13:18:38.817Z\", \"techConfidence\": \"Confident – I can pick things up quickly\", \"travelExperience\": \"No\", \"travelExperienceDetails\": \"\", \"travelSpecialism\": \"luxury\", \"twoYearVision\": \"test\", \"whyJlt\": \"test\"}\tar_declined\n30004\tKate\tC\tNULL\t{\"anythingElse\": \"\", \"biggestWorry\": \"Will I always be the Disney Queen.....\", \"experience\": \"\", \"financialReadiness\": \"Yes – I've budgeted for it\", \"fullOrPartTime\": \"full_time\", \"heardAbout\": [\"Other\"], \"heardAboutOther\": \"Stalking Max\", \"homeSupport\": \"Yes\", \"hoursPerWeek\": \"Full time\", \"investmentReadiness\": \"100% – I'm serious and ready to go\", \"linkedinUrl\": \"\", \"lookingAtOthers\": \"No\", \"lookingAtOthersDetails\": \"\", \"mainGoal\": [\"Not sure yet\"], \"occupation\": \"Core Team Bitch!\", \"selfEmployed\": \"Yes\", \"selfEmployedAwareness\": \"Yes, I understand and that's what I'm looking for\", \"submittedAt\": \"2026-05-08T14:26:27.620Z\", \"techConfidence\": \"Very confident – I use tech every day\", \"travelExperience\": \"No\", \"travelExperienceDetails\": \"\", \"travelSpecialism\": \"All the travel!\", \"twoYearVision\": \"On a beach.....\", \"whyJlt\": \"Supplier Finance is my niche! Just love sending them money!\"}\tdiscovery_call_complete\n30005\tKirsty\tAgain\tNULL\t{\"anythingElse\": \"\", \"biggestWorry\": \"The training taking too long\", \"experience\": \"2 years \", \"financialReadiness\": \"Yes – I've budgeted for it\", \"fullOrPartTime\": \"part_time\", \"heardAbout\": [\"TikTok\"], \"heardAboutOther\": \"\", \"homeSupport\": \"Yes\", \"hoursPerWeek\": \"10-20 hours\", \"investmentReadiness\": \"I'm interested, but still thinking it over\", \"linkedinUrl\": \"\", \"lookingAtOthers\": \"No\", \"lookingAtOthersDetails\": \"\", \"mainGoal\": [\"Earn some extra income\"], \"occupation\": \"Babysitter\", \"selfEmployed\": \"Yes\", \"selfEmployedAwareness\": \"Yes, I understand and that's what I'm looking for\", \"submittedAt\": \"2026-05-08T14:29:15.602Z\", \"techConfidence\": \"Very confident – I use tech every day\", \"travelExperience\": \"Yes\", \"travelExperienceDetails\": \"2 years \", \"travelSpecialism\": \"Anything\", \"twoYearVision\": \"Opening my own shop within 3 months\", \"whyJlt\": \"Because I’m bored \"}\tar_declined\n30007\tClaire\tAnderson\t\tNULL\tnew_enquiry\n30008\tEllie\tHodgson\t\tNULL\tnew_enquiry\n60001\tDavid\tDaves\t\tNULL\tnew_enquiry\n60002\tMit\tPatel\t\tNULL\tnew_enquiry\n60003\tEllem\tEdwards\t\tNULL\tnew_enquiry\n90001\tAlison\tAbbott-Manders\t\tNULL\tnew_enquiry\n90002\twebrise\tjon\t\tNULL\tnew_enquiry\n",
+  "stderr": "",
+  "execution_time_ms": 267
+}

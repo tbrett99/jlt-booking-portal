@@ -2215,3 +2215,18 @@
 
 ## Bug Fix: AdminSuppliers Edit Dialog Re-mount (May 9)
 - [x] Fix: editing a supplier causes the dialog to refresh and reset cursor to the name field — caused by FormDialog being defined as a nested component inside AdminSuppliers (React unmounts/remounts on every parent re-render). Fixed by inlining the dialog JSX as a variable instead.
+
+## Recruitment Pipeline: Lead Source Visibility (May 9)
+- [ ] Add "Source" column to recruitment pipeline table showing hearAboutUs value (badge-style)
+- [ ] Add "Source" filter dropdown to pipeline filters (all sources, Facebook, Instagram, LinkedIn, Google, Referral, Event, Ad, Other)
+- [ ] Ensure hearAboutUs is returned in listProspectsFiltered tRPC query
+
+## Recruitment Analytics Dashboard (future)
+- [ ] New page: Recruitment Analytics (under CRM sidebar)
+- [ ] KPIs: total enquiries, total applications, total onboarded, overall conversion rate
+- [ ] Funnel chart: enquiries → applied → approved → discovery call → onboarded
+- [ ] Lead source breakdown: pie/bar chart of hearAboutUs values
+- [ ] Conversion rate by source (which channel converts best)
+- [ ] Monthly trend: new enquiries and onboardings over time
+- [ ] Stage duration: avg days spent in each stage
+- [ ] Referral leaderboard: top referrers by count

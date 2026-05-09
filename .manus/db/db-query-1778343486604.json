@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, name, email, crmEmail FROM users WHERE name LIKE '%elliot%' OR name LIKE '%elliott%' OR email LIKE '%lisa%affinityangels%' OR crmEmail LIKE '%lisa%affinityangels%' LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, email, crmEmail FROM users WHERE name LIKE '%elliot%' OR name LIKE '%elliott%' OR email LIKE '%lisa%affinityangels%' OR crmEmail LIKE '%lisa%affinityangels%' LIMIT 5;",
+  "rows": [
+    {
+      "id": "60203",
+      "name": "Elliott Wall",
+      "email": "lisa@affinityangels.com",
+      "crmEmail": "NULL"
+    },
+    {
+      "id": "60316",
+      "name": "Elliot Eaton",
+      "email": "lifeseverafters@gmail.com",
+      "crmEmail": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tcrmEmail\n60203\tElliott Wall\tlisa@affinityangels.com\tNULL\n60316\tElliot Eaton\tlifeseverafters@gmail.com\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 267
+}

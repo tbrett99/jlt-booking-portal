@@ -145,7 +145,7 @@ export default function ProfilePage() {
                   onChange={(e) => setCrmEmail(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  If you use a different email address in the CRM (e.g. Tom&apos;s system), enter it here so bookings are automatically linked to your portal account.
+                  If you use a different email address in the CRM, enter it here so bookings are automatically linked to your portal account.
                 </p>
               </div>
               <Button
