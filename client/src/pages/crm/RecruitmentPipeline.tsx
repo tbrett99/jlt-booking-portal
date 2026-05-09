@@ -289,11 +289,10 @@ function ProspectsPipelineTab() {
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Stage</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Move Stage</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Referred By</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Source</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date of Enquiry</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Applied</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Enquired</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Move Stage</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -320,16 +319,13 @@ function ProspectsPipelineTab() {
                         <span className="text-muted-foreground/40 text-xs">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground capitalize">
-                      {p.source ?? "website"}
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {new Date(p.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {p.applicationSubmittedAt
                         ? new Date(p.applicationSubmittedAt).toLocaleDateString()
                         : <span className="text-muted-foreground/40">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {new Date(p.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3">
                       {/* Inline stage change dropdown */}
