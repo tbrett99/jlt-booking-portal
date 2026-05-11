@@ -2240,3 +2240,12 @@
 ## Mobile Fix: Recruitment Pipeline Table (May 9)
 - [x] Wrap prospects table in overflow-x-auto container so it scrolls horizontally on mobile
 - [x] Stack filter dropdowns vertically on mobile (flex-col on small screens)
+
+## AI Supplier Enrichment Improvements (May 11)
+- [x] Add idealClient and bookingTips columns to suppliers table in schema.ts
+- [x] Generate and apply migration SQL
+- [x] Upgrade enrichment prompt: agent-focused summary, richer USP, expanded notSuitableFor, new idealClient + bookingTips fields
+- [x] Add generalNotes and shortDescription to enrichment context for better accuracy
+- [x] Update supplier detail modal to show Ideal For (green), Not Ideal For (amber), Agent Booking Tips (blue) sections
+- [x] Add Enrich All with AI button to Admin Suppliers page header
+- [x] Run batch enrichment for all 281 suppliers — RUNNING (triggered May 11, ~25 min to complete)

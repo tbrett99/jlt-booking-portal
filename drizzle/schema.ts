@@ -1481,6 +1481,8 @@ export const suppliers = mysqlTable("suppliers", {
   notSuitableFor: text("notSuitableFor"),                        // e.g. "last-minute bookings, solo travellers"
   preferredContact: varchar("preferredContact", { length: 100 }), // email / phone / portal
   aiSummary: text("aiSummary"),                                  // AI-generated one-paragraph summary for search
+  idealClient: text("idealClient"),                              // AI: who this supplier is best for (e.g. couples, families)
+  bookingTips: text("bookingTips"),                              // AI: practical tips for agents when booking this supplier
   aiEnrichedAt: timestamp("aiEnrichedAt"),                       // when AI enrichment was last run
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

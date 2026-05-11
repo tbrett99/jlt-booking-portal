@@ -27,6 +27,8 @@ import {
   Building2,
   Lock,
   Unlock,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SupplierFormDialog } from "./SupplierFormDialog";
@@ -69,6 +71,7 @@ export default function AdminSuppliers() {
   const [editSupplier, setEditSupplier] = useState<Supplier | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [enriching, setEnriching] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -86,6 +89,21 @@ export default function AdminSuppliers() {
     onError: (e) => toast.error(e.message),
   });
 
+  const enrichAllMutation = trpc.suppliers.enrichAllSuppliers.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Enriching ${data.count} suppliers in the background — this may take a few minutes`);
+      setEnriching(true);
+      // Poll until enrichment completes (rough estimate: 300ms per supplier)
+      const estimatedMs = Math.min((data.count ?? 0) * 400, 120000);
+      setTimeout(() => {
+        setEnriching(false);
+        utils.suppliers.list.invalidate();
+        toast.success("Supplier enrichment complete!");
+      }, estimatedMs);
+    },
+    onError: (e) => toast.error("Enrichment failed: " + e.message),
+  });
+
   const handleSuccess = () => {
     utils.suppliers.list.invalidate();
     utils.suppliers.get.invalidate();
@@ -100,9 +118,22 @@ export default function AdminSuppliers() {
             {data?.total ?? 0} suppliers in the directory
           </p>
         </div>
-        <Button onClick={() => { setEditSupplier(null); setShowCreate(true); }}>
-          <Plus className="h-4 w-4 mr-2" /> Add Supplier
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => enrichAllMutation.mutate({ onlyUnenriched: false })}
+            disabled={enrichAllMutation.isPending || enriching}
+          >
+            {enriching || enrichAllMutation.isPending ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Enriching...</>
+            ) : (
+              <><Sparkles className="h-4 w-4 mr-2" /> Enrich All with AI</>
+            )}
+          </Button>
+          <Button onClick={() => { setEditSupplier(null); setShowCreate(true); }}>
+            <Plus className="h-4 w-4 mr-2" /> Add Supplier
+          </Button>
+        </div>
       </div>
 
       {/* Search */}

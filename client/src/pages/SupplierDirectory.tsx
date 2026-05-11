@@ -49,6 +49,8 @@ import {
   Instagram,
   Images,
   Link,
+  Users,
+  Lightbulb,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -87,6 +89,8 @@ type Supplier = {
   priceTier: string | null;
   notSuitableFor: string | null;
   aiSummary: string | null;
+  idealClient: string | null;
+  bookingTips: string | null;
 };
 
 type AiSearchResult = {
@@ -390,6 +394,17 @@ function SupplierModal({
             </div>
           )}
 
+          {/* Ideal Client */}
+          {(supplier as any).idealClient && (
+            <div className="flex items-start gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
+              <Users className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-semibold text-green-700">Ideal for</p>
+                <p className="text-xs text-green-700 mt-0.5">{(supplier as any).idealClient}</p>
+              </div>
+            </div>
+          )}
+
           {/* Not suitable for */}
           {supplier.notSuitableFor && (
             <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
@@ -398,6 +413,23 @@ function SupplierModal({
                 <p className="text-xs font-semibold text-amber-700">Not ideal for</p>
                 <p className="text-xs text-amber-600 mt-0.5">{supplier.notSuitableFor}</p>
               </div>
+            </div>
+          )}
+
+          {/* Booking Tips */}
+          {(supplier as any).bookingTips && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs font-semibold text-blue-700 mb-1 flex items-center gap-1">
+                <Lightbulb className="h-3 w-3" /> Agent Booking Tips
+              </p>
+              <ul className="space-y-1">
+                {(supplier as any).bookingTips.split(/\n|(?=•)/).filter((l: string) => l.trim()).map((line: string, i: number) => (
+                  <li key={i} className="text-xs text-blue-700 flex items-start gap-1">
+                    <span className="text-blue-500 mt-0.5 shrink-0">•</span>
+                    <span>{line.replace(/^[•\-\*]\s*/, "")}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

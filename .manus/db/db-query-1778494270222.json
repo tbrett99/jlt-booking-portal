@@ -1,0 +1,21 @@
+{
+  "query": "\nSELECT \n  COUNT(*) as total,\n  SUM(CASE WHEN aiSummary IS NOT NULL AND aiSummary != '' THEN 1 ELSE 0 END) as has_summary,\n  SUM(CASE WHEN aiSummary IS NULL OR aiSummary = '' THEN 1 ELSE 0 END) as needs_summary,\n  SUM(CASE WHEN usp IS NOT NULL AND usp != '' THEN 1 ELSE 0 END) as has_usp,\n  SUM(CASE WHEN priceTier IS NOT NULL AND priceTier != '' THEN 1 ELSE 0 END) as has_price_tier,\n  SUM(CASE WHEN notSuitableFor IS NOT NULL AND notSuitableFor != '' THEN 1 ELSE 0 END) as has_not_suitable,\n  SUM(CASE WHEN publicWebsite IS NOT NULL AND publicWebsite != '' THEN 1 ELSE 0 END) as has_website,\n  SUM(CASE WHEN description IS NOT NULL AND description != '' THEN 1 ELSE 0 END) as has_description,\n  SUM(CASE WHEN aiEnrichedAt IS NOT NULL THEN 1 ELSE 0 END) as has_enriched_at\nFROM suppliers WHERE isActive = 1;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT \n  COUNT(*) as total,\n  SUM(CASE WHEN aiSummary IS NOT NULL AND aiSummary != '' THEN 1 ELSE 0 END) as has_summary,\n  SUM(CASE WHEN aiSummary IS NULL OR aiSummary = '' THEN 1 ELSE 0 END) as needs_summary,\n  SUM(CASE WHEN usp IS NOT NULL AND usp != '' THEN 1 ELSE 0 END) as has_usp,\n  SUM(CASE WHEN priceTier IS NOT NULL AND priceTier != '' THEN 1 ELSE 0 END) as has_price_tier,\n  SUM(CASE WHEN notSuitableFor IS NOT NULL AND notSuitableFor != '' THEN 1 ELSE 0 END) as has_not_suitable,\n  SUM(CASE WHEN publicWebsite IS NOT NULL AND publicWebsite != '' THEN 1 ELSE 0 END) as has_website,\n  SUM(CASE WHEN description IS NOT NULL AND description != '' THEN 1 ELSE 0 END) as has_description,\n  SUM(CASE WHEN aiEnrichedAt IS NOT NULL THEN 1 ELSE 0 END) as has_enriched_at\nFROM suppliers WHERE isActive = 1;\n",
+  "rows": [
+    {
+      "total": "281",
+      "has_summary": "58",
+      "needs_summary": "223",
+      "has_usp": "58",
+      "has_price_tier": "47",
+      "has_not_suitable": "58",
+      "has_website": "128",
+      "has_description": "260",
+      "has_enriched_at": "58"
+    }
+  ],
+  "messages": [],
+  "stdout": "total\thas_summary\tneeds_summary\thas_usp\thas_price_tier\thas_not_suitable\thas_website\thas_description\thas_enriched_at\n281\t58\t223\t58\t47\t58\t128\t260\t58\n",
+  "stderr": "",
+  "execution_time_ms": 271
+}

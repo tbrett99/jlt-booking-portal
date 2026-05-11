@@ -478,23 +478,26 @@ export const suppliersRouter = router({
 
       const context = [
         `Name: ${supplier.name}`,
+        supplier.shortDescription ? `Short description: ${supplier.shortDescription}` : "",
         supplier.description ? `Description: ${supplier.description.replace(/<[^>]+>/g, " ").slice(0, 2000)}` : "",
         supplier.categories ? `Categories: ${supplier.categories}` : "",
-        supplier.locations ? `Locations: ${supplier.locations}` : "",
+        supplier.locations ? `Locations/destinations: ${supplier.locations}` : "",
         supplier.commission ? `Commission: ${supplier.commission}` : "",
-        supplier.generalNotes ? `Notes: ${supplier.generalNotes.slice(0, 500)}` : "",
+        supplier.generalNotes ? `Internal notes: ${supplier.generalNotes.slice(0, 800)}` : "",
       ].filter(Boolean).join("\n");
 
       const result = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: `You are a travel industry expert. Based on the supplier information provided, generate enrichment data. Return ONLY valid JSON:
+            content: `You are an expert travel industry consultant helping travel agents understand suppliers. Based on the supplier information provided, generate enrichment data written from the agent's perspective. Return ONLY valid JSON with these exact fields:
 {
-  "usp": string (2-3 key selling points as bullet points starting with •, based on what makes this supplier stand out),
-  "priceTier": string (one of: budget, mid-range, luxury, ultra-luxury — infer from name/description/commission),
-  "notSuitableFor": string (what this supplier is NOT ideal for, e.g. "last-minute bookings" or "budget travellers"),
-  "aiSummary": string (1-2 sentence summary optimised for search matching — include destinations, specialisms, client types)
+  "usp": string (2-3 specific bullet points starting with • of what genuinely makes this supplier stand out — be concrete, not generic),
+  "priceTier": string (one of exactly: budget, mid-range, luxury, ultra-luxury — infer from name/description/commission),
+  "notSuitableFor": string (specific scenarios this supplier is NOT ideal for, e.g. "Last-minute bookings, solo travellers on a budget, clients needing flexible cancellation"),
+  "aiSummary": string (2-3 sentences written for an agent — start with 'Use this supplier when...' or 'Best for...' — mention destinations, specialisms, and what type of client will love them),
+  "idealClient": string (comma-separated client types this supplier is perfect for, e.g. "Honeymooners, luxury couples, anniversary travellers, high-net-worth clients"),
+  "bookingTips": string (2-3 practical bullet points starting with • that an agent should know when booking this supplier — e.g. booking lead time, how to contact, any gotchas, exclusive rates, trade portal tips)
 }`,
           },
           { role: "user", content: context },
@@ -511,6 +514,8 @@ export const suppliersRouter = router({
             priceTier: enriched.priceTier ?? supplier.priceTier,
             notSuitableFor: enriched.notSuitableFor ?? supplier.notSuitableFor,
             aiSummary: enriched.aiSummary ?? supplier.aiSummary,
+            idealClient: enriched.idealClient ?? (supplier as any).idealClient,
+            bookingTips: enriched.bookingTips ?? (supplier as any).bookingTips,
             aiEnrichedAt: new Date(),
           })
           .where(eq(suppliers.id, input.supplierId));
@@ -546,18 +551,20 @@ export const suppliersRouter = router({
           try {
             const context = [
               `Name: ${supplier.name}`,
+              supplier.shortDescription ? `Short description: ${supplier.shortDescription}` : "",
               supplier.description ? `Description: ${supplier.description.replace(/<[^>]+>/g, " ").slice(0, 2000)}` : "",
               supplier.categories ? `Categories: ${supplier.categories}` : "",
-              supplier.locations ? `Locations: ${supplier.locations}` : "",
+              supplier.locations ? `Locations/destinations: ${supplier.locations}` : "",
               supplier.commission ? `Commission: ${supplier.commission}` : "",
+              supplier.generalNotes ? `Internal notes: ${supplier.generalNotes.slice(0, 800)}` : "",
             ].filter(Boolean).join("\n");
 
             const result = await invokeLLM({
               messages: [
                 {
                   role: "system",
-                  content: `You are a travel industry expert. Generate enrichment data for this supplier. Return ONLY valid JSON:
-{"usp":string,"priceTier":string,"notSuitableFor":string,"aiSummary":string}`,
+                  content: `You are an expert travel industry consultant helping travel agents understand suppliers. Based on the supplier information provided, generate enrichment data written from the agent's perspective. Return ONLY valid JSON with these exact fields:
+{"usp":string (2-3 specific bullet points starting with • of what genuinely makes this supplier stand out),"priceTier":string (one of exactly: budget, mid-range, luxury, ultra-luxury),"notSuitableFor":string (specific scenarios this supplier is NOT ideal for),"aiSummary":string (2-3 sentences for an agent — start with 'Use this supplier when...' or 'Best for...' — mention destinations, specialisms, client types),"idealClient":string (comma-separated client types this supplier is perfect for),"bookingTips":string (2-3 practical bullet points starting with • that an agent should know when booking)}`,
                 },
                 { role: "user", content: context },
               ],
@@ -570,11 +577,13 @@ export const suppliersRouter = router({
                 priceTier: enriched.priceTier ?? null,
                 notSuitableFor: enriched.notSuitableFor ?? null,
                 aiSummary: enriched.aiSummary ?? null,
+                idealClient: enriched.idealClient ?? null,
+                bookingTips: enriched.bookingTips ?? null,
                 aiEnrichedAt: new Date(),
               })
               .where(eq(suppliers.id, supplier.id));
             // Small delay to avoid rate limiting
-            await new Promise(r => setTimeout(r, 200));
+            await new Promise(r => setTimeout(r, 300));
           } catch { /* skip on error */ }
         }
       })();

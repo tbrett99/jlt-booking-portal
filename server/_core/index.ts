@@ -149,7 +149,8 @@ async function startServer() {
     const { eq, sql: drizzleSql } = await import("drizzle-orm");
     const db = await getDb();
     if (!db) { res.status(500).json({ error: "DB unavailable" }); return; }
-    const allSuppliers = await db.select().from(suppliersTable).where(drizzleSql`${suppliersTable.aiEnrichedAt} IS NULL AND ${suppliersTable.isActive} = 1`);
+    // Re-enrich ALL active suppliers (not just unenriched) with the improved prompt
+    const allSuppliers = await db.select().from(suppliersTable).where(drizzleSql`${suppliersTable.isActive} = 1`);
     const count = allSuppliers.length;
     res.json({ ok: true, count, message: `Started enriching ${count} suppliers in background` });
     (async () => {
@@ -158,14 +159,16 @@ async function startServer() {
         try {
           const context = [
             `Name: ${supplier.name}`,
-            supplier.description ? `Description: ${supplier.description.replace(/<[^>]+>/g, " ").slice(0, 1500)}` : "",
+            supplier.shortDescription ? `Short description: ${supplier.shortDescription}` : "",
+            supplier.description ? `Description: ${supplier.description.replace(/<[^>]+>/g, " ").slice(0, 2000)}` : "",
             supplier.categories ? `Categories: ${supplier.categories}` : "",
-            supplier.locations ? `Locations: ${supplier.locations}` : "",
+            supplier.locations ? `Locations/destinations: ${supplier.locations}` : "",
             supplier.commission ? `Commission: ${supplier.commission}` : "",
+            supplier.generalNotes ? `Internal notes: ${supplier.generalNotes.slice(0, 800)}` : "",
           ].filter(Boolean).join("\n");
           const result = await invokeLLM({
             messages: [
-              { role: "system", content: `You are a travel industry expert. Generate enrichment data for this travel supplier. Return ONLY valid JSON with these exact fields (null if unknown):\n{"usp":"2-3 bullet points (use - dash prefix) of key selling points","priceTier":"budget|mid-range|luxury|ultra-luxury","notSuitableFor":"what this supplier is not ideal for","aiSummary":"1-2 sentence summary for AI matching mentioning destinations, trip types, client types"}` },
+              { role: "system", content: `You are an expert travel industry consultant helping travel agents understand suppliers. Based on the supplier information provided, generate enrichment data written from the agent's perspective. Return ONLY valid JSON with these exact fields:\n{"usp":"2-3 specific bullet points starting with \u2022 of what genuinely makes this supplier stand out","priceTier":"one of exactly: budget, mid-range, luxury, ultra-luxury","notSuitableFor":"specific scenarios this supplier is NOT ideal for","aiSummary":"2-3 sentences for an agent \u2014 start with Use this supplier when... or Best for... \u2014 mention destinations, specialisms, client types","idealClient":"comma-separated client types this supplier is perfect for","bookingTips":"2-3 practical bullet points starting with \u2022 that an agent should know when booking"}` },
               { role: "user", content: context },
             ],
             response_format: { type: "json_object" },
@@ -180,6 +183,8 @@ async function startServer() {
             priceTier: enriched.priceTier ? String(enriched.priceTier).slice(0, 50) : null,
             notSuitableFor: enriched.notSuitableFor ? String(enriched.notSuitableFor).slice(0, 1000) : null,
             aiSummary: enriched.aiSummary ? String(enriched.aiSummary).slice(0, 1000) : null,
+            idealClient: enriched.idealClient ? String(enriched.idealClient).slice(0, 500) : null,
+            bookingTips: enriched.bookingTips ? String(enriched.bookingTips).slice(0, 2000) : null,
             aiEnrichedAt: new Date(),
           }).where(eq(suppliersTable.id, supplier.id));
           done++;
