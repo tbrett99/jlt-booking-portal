@@ -603,19 +603,53 @@ export default function RecruitmentProspectDetail() {
 
           {/* Emails Sent */}
           <div className="bg-card rounded-xl border border-border p-5">
-            <h2 className="font-semibold text-foreground mb-3">Emails Sent</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-foreground flex items-center gap-2">
+                <Mail className="w-4 h-4 text-muted-foreground" />
+                Email Log
+              </h2>
+              {data.emailsSent.length > 0 && (
+                <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">
+                  {data.emailsSent.length} sent
+                </span>
+              )}
+            </div>
             {data.emailsSent.length === 0 ? (
               <p className="text-muted-foreground text-sm">No emails sent yet.</p>
             ) : (
-              <div className="space-y-2">
-                {data.emailsSent.map((e) => (
-                  <div key={e.id} className="text-sm">
-                    <p className="text-foreground font-medium truncate">{e.subject ?? e.emailKey}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(e.sentAt).toLocaleString()}
-                    </p>
-                  </div>
-                ))}
+              <div className="space-y-3">
+                {data.emailsSent.map((e) => {
+                  const friendlyNames: Record<string, string> = {
+                    application_confirmation: "Application Confirmation",
+                    followup_day3: "Day 3 Follow-up",
+                    followup_day7: "Day 7 Follow-up",
+                    re_engagement_june_2026: "Re-engagement (June 2026)",
+                    ar_approved_notification: "Agent Readiness Approved",
+                    ar_declined_notification: "Agent Readiness Declined",
+                    waitlisted_notification: "Waitlisted",
+                    dntu_notification: "Did Not Turn Up",
+                    onboarding_approved_notification: "Onboarding Approved",
+                    discovery_call_booked: "Discovery Call Booked",
+                    welcome_email: "Welcome Email",
+                  };
+                  const label = friendlyNames[e.emailKey] ?? e.emailKey.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+                  return (
+                    <div key={e.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/40 border border-border/50">
+                      <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                        <Send className="w-3.5 h-3.5 text-primary" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground">{label}</p>
+                        {e.subject && e.subject !== label && (
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">Subject: {e.subject}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {new Date(e.sentAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

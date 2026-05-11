@@ -2249,3 +2249,11 @@
 - [x] Update supplier detail modal to show Ideal For (green), Not Ideal For (amber), Agent Booking Tips (blue) sections
 - [x] Add Enrich All with AI button to Admin Suppliers page header
 - [x] Run batch enrichment for all 281 suppliers — RUNNING (triggered May 11, ~25 min to complete)
+
+## Application Form Error Handling & Email Log (May 11)
+- [x] Fix application form: catch submission errors and show clear retry message with support email link
+- [x] Fix application form: add retry button on failure (do not navigate away)
+- [x] Backend: emailCount subquery added to getAllRecruitmentProspects for pipeline table
+- [x] Frontend: Emails column in pipeline table showing count badge (click to view full log)
+- [x] Frontend: Email Log section in prospect detail page enhanced with friendly names, icons, timestamps
+- [x] Frontend: Email Log accessible from pipeline table (click count badge) and prospect detail page

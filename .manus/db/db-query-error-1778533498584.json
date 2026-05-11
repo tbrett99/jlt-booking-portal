@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT id, firstName, lastName, email, stage, applicationSubmittedAt, createdAt, applicationData\nFROM recruitment_prospects\nWHERE firstName LIKE '%Alastair%' OR lastName LIKE '%Naughton%' OR email LIKE '%naughton%'\nORDER BY createdAt DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, firstName, lastName, email, stage, applicationSubmittedAt, createdAt, applicationData\nFROM recruitment_prospects\nWHERE firstName LIKE '%Alastair%' OR lastName LIKE '%Naughton%' OR email LIKE '%naughton%'\nORDER BY createdAt DESC;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'stage' in 'field list'"
+  ]
+}

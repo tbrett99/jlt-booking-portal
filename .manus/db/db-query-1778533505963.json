@@ -1,0 +1,19 @@
+{
+  "query": "\nSELECT id, firstName, lastName, email, pipelineStage, applicationSubmittedAt, createdAt\nFROM recruitment_prospects\nWHERE firstName LIKE '%Alastair%' OR lastName LIKE '%Naughton%' OR email LIKE '%naughton%'\nORDER BY createdAt DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, firstName, lastName, email, pipelineStage, applicationSubmittedAt, createdAt\nFROM recruitment_prospects\nWHERE firstName LIKE '%Alastair%' OR lastName LIKE '%Naughton%' OR email LIKE '%naughton%'\nORDER BY createdAt DESC;\n",
+  "rows": [
+    {
+      "id": "90018",
+      "firstName": "Alastair",
+      "lastName": "Naughton",
+      "email": "anaughton02@gmail.com",
+      "pipelineStage": "new_enquiry",
+      "applicationSubmittedAt": "NULL",
+      "createdAt": "2026-05-06 16:53:02"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tlastName\temail\tpipelineStage\tapplicationSubmittedAt\tcreatedAt\n90018\tAlastair\tNaughton\tanaughton02@gmail.com\tnew_enquiry\tNULL\t2026-05-06 16:53:02\n",
+  "stderr": "",
+  "execution_time_ms": 286
+}

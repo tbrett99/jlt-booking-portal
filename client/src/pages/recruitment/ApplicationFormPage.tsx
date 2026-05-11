@@ -133,6 +133,7 @@ export default function ApplicationFormPage() {
   const [submitted, setSubmitted] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { data: prospect, isLoading, error } = trpc.recruitment.getApplicationByToken.useQuery(
     { token },
@@ -140,8 +141,13 @@ export default function ApplicationFormPage() {
   );
 
   const submitApplication = trpc.recruitment.submitApplication.useMutation({
-    onSuccess: () => setSubmitted(true),
-    onError: (err) => toast.error(err.message || "Submission failed. Please try again."),
+    onSuccess: () => { setSubmitted(true); setSubmitError(null); },
+    onError: (err) => {
+      const msg = err.message || "Submission failed. Please try again.";
+      setSubmitError(msg);
+      toast.error(msg);
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    },
   });
 
   function set<K extends keyof FormState>(key: K, val: FormState[K]) {
@@ -629,10 +635,19 @@ export default function ApplicationFormPage() {
                   disabled={submitApplication.isPending}
                   className="flex-1 bg-[#02E6D2] hover:bg-[#02E6D2]/90 text-[#1a1a1a] font-semibold"
                 >
-                  {submitApplication.isPending ? "Submitting..." : "Submit Application"}
+                  {submitApplication.isPending ? "Submitting..." : submitError ? "Try Again" : "Submit Application"}
                 </Button>
               )}
             </div>
+
+            {/* Submission error banner */}
+            {submitError && (
+              <div className="mt-4 p-4 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+                <p className="font-semibold mb-1">Your application could not be submitted</p>
+                <p className="mb-3">{submitError}</p>
+                <p className="text-red-600/80">Please click <strong>"Try Again"</strong> above to resubmit. Your answers have been kept. If the problem continues, email us at <a href="mailto:jointheteam@thejltgroup.co.uk" className="underline font-medium">jointheteam@thejltgroup.co.uk</a> and we'll sort it for you.</p>
+              </div>
+            )}
           </form>
         </div>
       </div>

@@ -108,7 +108,14 @@ export async function getAllRecruitmentProspects(opts?: {
   }
 
   const baseQuery = db
-    .select({ ...getTableColumns(recruitmentProspects), referrerName: users.name })
+    .select({
+      ...getTableColumns(recruitmentProspects),
+      referrerName: users.name,
+      emailCount: sql<number>`(
+        SELECT COUNT(*) FROM recruitment_emails_sent
+        WHERE prospectId = ${recruitmentProspects.id}
+      )`,
+    })
     .from(recruitmentProspects)
     .leftJoin(users, eq(recruitmentProspects.referredById, users.id))
     .orderBy(desc(recruitmentProspects.createdAt))
@@ -118,7 +125,7 @@ export async function getAllRecruitmentProspects(opts?: {
   const result: any[] = conditions.length > 0
     ? await (baseQuery.where(and(...conditions)) as any)
     : await (baseQuery as any);
-  return result as (RecruitmentProspect & { referrerName: string | null })[];
+  return result as (RecruitmentProspect & { referrerName: string | null; emailCount: number })[];
 }
 
 export async function updateRecruitmentProspect(

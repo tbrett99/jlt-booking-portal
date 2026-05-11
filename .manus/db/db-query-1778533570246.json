@@ -1,0 +1,19 @@
+{
+  "query": "\nSELECT id, firstName, lastName, email, pipelineStage, adminNotes, applicationSubmittedAt\nFROM recruitment_prospects\nWHERE id = 90018;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, firstName, lastName, email, pipelineStage, adminNotes, applicationSubmittedAt\nFROM recruitment_prospects\nWHERE id = 90018;\n",
+  "rows": [
+    {
+      "id": "90018",
+      "firstName": "Alastair",
+      "lastName": "Naughton",
+      "email": "anaughton02@gmail.com",
+      "pipelineStage": "new_enquiry",
+      "adminNotes": "APP_TOKEN:RRywdVe20hHki0WuqctkNO-3ENPNtRJT",
+      "applicationSubmittedAt": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tlastName\temail\tpipelineStage\tadminNotes\tapplicationSubmittedAt\n90018\tAlastair\tNaughton\tanaughton02@gmail.com\tnew_enquiry\tAPP_TOKEN:RRywdVe20hHki0WuqctkNO-3ENPNtRJT\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 269
+}

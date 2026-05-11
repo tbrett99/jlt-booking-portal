@@ -473,6 +473,7 @@ function ProspectsPipelineTab() {
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Referred By</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date of Enquiry</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Applied</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Emails</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Move Stage</th>
                 <th className="px-4 py-3"></th>
               </tr>
@@ -528,6 +529,18 @@ function ProspectsPipelineTab() {
                       {p.applicationSubmittedAt
                         ? new Date(p.applicationSubmittedAt).toLocaleDateString()
                         : <span className="text-muted-foreground/40">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {p.emailCount != null && p.emailCount > 0 ? (
+                        <Link href={`/crm/recruitment/${p.id}`}>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 cursor-pointer hover:bg-blue-100 transition-colors">
+                            <Mail className="w-3 h-3" />
+                            {p.emailCount}
+                          </span>
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground/40 text-xs">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {/* Inline stage change dropdown */}
