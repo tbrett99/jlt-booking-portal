@@ -128,6 +128,7 @@ export default function AdminDashboard() {
   const { data: adminUsersForAssign = [] } = trpc.reimbursements.listAdminsForAssign.useQuery();
   const { data: commissionDueList = [] } = trpc.commissionDue.list.useQuery();
   const { data: pendingFlightCount = 0 } = trpc.flightRequests.pendingCount.useQuery();
+  const { data: missedSubscriptions = [] } = trpc.gocardless.adminGetMissedSubscriptions.useQuery(undefined, { staleTime: 300000 });
   const newApplicationsCount = stats?.stageBreakdown?.["application_received"] ?? 0;
   const assignReimb = trpc.reimbursements.assign.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
   const scheduleReimb = trpc.reimbursements.updateStatus.useMutation({ onSuccess: () => utils.reimbursements.list.invalidate() });
@@ -236,7 +237,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* ── SECTION 1: CRITICAL ALERTS (always visible, red/amber) ── */}
-      {(urgentBookings.length > 0 || missingPaymentDate.length > 0 || pendingClaims.length > 0 || lateUnactioned.length > 0) && (
+      {(urgentBookings.length > 0 || missingPaymentDate.length > 0 || pendingClaims.length > 0 || lateUnactioned.length > 0 || missedSubscriptions.length > 0) && (
         <div className="rounded-xl border-2 border-red-200 bg-red-50/50 p-4 space-y-2">
           <div className="flex items-center gap-2 mb-1">
             <TriangleAlert size={15} style={{ color: '#dc2626' }} />
@@ -310,6 +311,21 @@ export default function AdminDashboard() {
                 </span>
               </div>
               <Link href="/flights"><Button size="sm" variant="ghost" className="text-xs text-sky-700 h-7 px-2 flex-shrink-0">Review</Button></Link>
+            </div>
+          )}
+          {missedSubscriptions.length > 0 && (
+            <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 border border-red-300 bg-white">
+              <CreditCard size={14} style={{ color: '#dc2626' }} className="flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-xs" style={{ color: '#991b1b' }}>
+                  {missedSubscriptions.length} agent{missedSubscriptions.length > 1 ? 's have' : ' has'} an active mandate but no Direct Debit subscription
+                </span>
+                <p className="text-[10px] opacity-70 mt-0.5 truncate" style={{ color: '#991b1b' }}>
+                  {(missedSubscriptions as any[]).slice(0, 3).map((m: any) => m.userName).join(', ')}
+                  {missedSubscriptions.length > 3 && ` +${missedSubscriptions.length - 3} more`}
+                </p>
+              </div>
+              <Link href="/admin/crm"><Button size="sm" variant="ghost" className="text-xs text-red-700 h-7 px-2 flex-shrink-0">Fix</Button></Link>
             </div>
           )}
           {lowMarginBookings.length > 0 && (

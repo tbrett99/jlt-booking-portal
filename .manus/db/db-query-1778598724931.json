@@ -1,0 +1,21 @@
+{
+  "query": "\nSELECT \n  u.id as user_id,\n  u.email,\n  u.name,\n  gm.mandateId,\n  gm.status as mandate_status,\n  gm.preferredPaymentDay,\n  gm.joiningFeePaidAt,\n  a.membershipTier,\n  a.agentStatus\nFROM gc_mandates gm\nJOIN users u ON u.id = gm.userId\nLEFT JOIN agent_crm_profiles a ON a.userId = gm.userId\nLEFT JOIN gc_subscriptions gs ON gs.userId = gm.userId\nWHERE gm.status = 'active'\n  AND gs.id IS NULL\nORDER BY gm.joiningFeePaidAt ASC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT \n  u.id as user_id,\n  u.email,\n  u.name,\n  gm.mandateId,\n  gm.status as mandate_status,\n  gm.preferredPaymentDay,\n  gm.joiningFeePaidAt,\n  a.membershipTier,\n  a.agentStatus\nFROM gc_mandates gm\nJOIN users u ON u.id = gm.userId\nLEFT JOIN agent_crm_profiles a ON a.userId = gm.userId\nLEFT JOIN gc_subscriptions gs ON gs.userId = gm.userId\nWHERE gm.status = 'active'\n  AND gs.id IS NULL\nORDER BY gm.joiningFeePaidAt ASC;\n",
+  "rows": [
+    {
+      "user_id": "6661650",
+      "email": "katholidays.uk@gmail.com",
+      "name": "Katia Adimora",
+      "mandateId": "MD01KQVWMK81XZJNH02WBJTTGCXH",
+      "mandate_status": "active",
+      "preferredPaymentDay": "15",
+      "joiningFeePaidAt": "2026-05-05 10:58:47",
+      "membershipTier": "business_class",
+      "agentStatus": "active"
+    }
+  ],
+  "messages": [],
+  "stdout": "user_id\temail\tname\tmandateId\tmandate_status\tpreferredPaymentDay\tjoiningFeePaidAt\tmembershipTier\tagentStatus\n6661650\tkatholidays.uk@gmail.com\tKatia Adimora\tMD01KQVWMK81XZJNH02WBJTTGCXH\tactive\t15\t2026-05-05 10:58:47\tbusiness_class\tactive\n",
+  "stderr": "",
+  "execution_time_ms": 265
+}

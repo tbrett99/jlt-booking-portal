@@ -1,0 +1,16 @@
+{
+  "query": "\nSELECT u.id as user_id, u.email, u.name, u.createdAt FROM users u WHERE u.email = 'katholidays.uk@gmail.com';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id as user_id, u.email, u.name, u.createdAt FROM users u WHERE u.email = 'katholidays.uk@gmail.com';\n",
+  "rows": [
+    {
+      "user_id": "6661650",
+      "email": "katholidays.uk@gmail.com",
+      "name": "Katia Adimora",
+      "createdAt": "2026-05-05 10:58:47"
+    }
+  ],
+  "messages": [],
+  "stdout": "user_id\temail\tname\tcreatedAt\n6661650\tkatholidays.uk@gmail.com\tKatia Adimora\t2026-05-05 10:58:47\n",
+  "stderr": "",
+  "execution_time_ms": 259
+}

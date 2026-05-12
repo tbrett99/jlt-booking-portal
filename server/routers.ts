@@ -3473,6 +3473,38 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       }),
 
     /**
+     * Admin: find all agents with an active mandate but no subscription.
+     * Used by the dashboard alert to surface missed subscriptions.
+     */
+    adminGetMissedSubscriptions: adminProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const { gcMandates: gcMandatesTable, gcSubscriptions: gcSubsTable, users: usersTable, agentCrmProfiles: crmTable } = await import("../drizzle/schema");
+      const { eq: eqFn, isNull, and } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return [];
+      // Find mandates that are active and have no corresponding subscription row
+      const rows = await db
+        .select({
+          userId: gcMandatesTable.userId,
+          mandateId: gcMandatesTable.mandateId,
+          preferredPaymentDay: gcMandatesTable.preferredPaymentDay,
+          joiningFeePaidAt: gcMandatesTable.joiningFeePaidAt,
+          userName: usersTable.name,
+          userEmail: usersTable.email,
+          membershipTier: crmTable.membershipTier,
+        })
+        .from(gcMandatesTable)
+        .innerJoin(usersTable, eqFn(usersTable.id, gcMandatesTable.userId))
+        .leftJoin(crmTable, eqFn(crmTable.userId, gcMandatesTable.userId))
+        .leftJoin(gcSubsTable, eqFn(gcSubsTable.userId, gcMandatesTable.userId))
+        .where(and(
+          eqFn(gcMandatesTable.status, "active"),
+          isNull(gcSubsTable.id),
+        ));
+      return rows;
+    }),
+
+    /**
      * Admin: refresh mandate status from GoCardless API and update DB row.
      * Useful when the mandates.active webhook was delayed or missed.
      */
