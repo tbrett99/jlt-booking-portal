@@ -108,7 +108,7 @@ const PRIVACY_SECTIONS = [
   {
     title: "12. Changes to This Policy",
     content: `<p>We may update this Privacy Policy from time to time. Where changes are material, we will notify you by email or through the portal. The date of the most recent revision appears at the top of this page.</p>
-<p><em>Last updated: April 2025</em></p>`,
+<p><em>Last updated: May 2026</em></p>`,
   },
 ];
 
@@ -146,6 +146,7 @@ export default function TermsAndPolicies() {
           <p className="text-muted-foreground text-sm mt-1">
             These documents govern your membership with The JLT Group. Please read each section carefully.
           </p>
+          <p className="text-xs text-muted-foreground mt-1">Terms &amp; Conditions last updated: <strong>May 2026</strong></p>
         </div>
 
         <Tabs defaultValue="terms">
