@@ -17,7 +17,7 @@ import {
   AlertTriangle, Sparkles, AlertCircle, Calendar, Clock,
   CheckCircle2, Banknote, RefreshCw, ChevronRight, Upload, BellOff,
   XCircle, ChevronDown, ChevronUp, PoundSterling, ClipboardList,
-  Flame, TriangleAlert, Plane, UserPlus
+  Flame, TriangleAlert, Plane, UserPlus, CreditCard
 } from "lucide-react";
 import { format, differenceInDays, addDays } from "date-fns";
 
