@@ -1,0 +1,38 @@
+{
+  "query": "SELECT id, name, loginUsername, loginPassword, credentialStage FROM suppliers WHERE name LIKE '%Attraction%' OR name LIKE '%Jet2%' ORDER BY name;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, loginUsername, loginPassword, credentialStage FROM suppliers WHERE name LIKE '%Attraction%' OR name LIKE '%Jet2%' ORDER BY name;",
+  "rows": [
+    {
+      "id": "404",
+      "name": "Attraction Ticket Store & Florida Hotel Store",
+      "loginUsername": "max@thejltgroup.co.uk",
+      "loginPassword": "MAXMAX1",
+      "credentialStage": "2"
+    },
+    {
+      "id": "305",
+      "name": "Attraction World",
+      "loginUsername": "bookings@thejltgroup.co.uk",
+      "loginPassword": "JawLT@26",
+      "credentialStage": "2"
+    },
+    {
+      "id": "559",
+      "name": "Jet2 Holidays",
+      "loginUsername": "ENTER YOUR FULL NAME",
+      "loginPassword": "26!JLTjet2",
+      "credentialStage": "3"
+    },
+    {
+      "id": "381",
+      "name": "Jet2 Weddings (Perfect Weddings Abroad)",
+      "loginUsername": "NULL",
+      "loginPassword": "NULL",
+      "credentialStage": "2"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tloginUsername\tloginPassword\tcredentialStage\n404\tAttraction Ticket Store & Florida Hotel Store\tmax@thejltgroup.co.uk\tMAXMAX1\t2\n305\tAttraction World\tbookings@thejltgroup.co.uk\tJawLT@26\t2\n559\tJet2 Holidays\tENTER YOUR FULL NAME\t26!JLTjet2\t3\n381\tJet2 Weddings (Perfect Weddings Abroad)\tNULL\tNULL\t2\n",
+  "stderr": "",
+  "execution_time_ms": 264
+}

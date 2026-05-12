@@ -57,7 +57,7 @@ export const suppliersRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const isAdmin = ctx.user.role === "admin";
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
       const agentStage = isAdmin ? 3 : await getAgentStage(ctx.user.id);
 
       const conditions = [eq(suppliers.isActive, 1)];
@@ -118,7 +118,7 @@ export const suppliersRouter = router({
   get: protectedProcedure
     .input(z.object({ id: z.number().int() }))
     .query(async ({ ctx, input }) => {
-      const isAdmin = ctx.user.role === "admin";
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
       const agentStage = isAdmin ? 3 : await getAgentStage(ctx.user.id);
 
       const { getDb } = await import("./db");
@@ -630,7 +630,7 @@ export const suppliersRouter = router({
 
       // Step 2: Fetch all active suppliers
       const agentStage = await getAgentStage(ctx.user.id);
-      const isAdmin = ctx.user.role === "admin";
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
       const allSuppliers = await db
         .select()
         .from(suppliers)
@@ -713,7 +713,7 @@ Return at most ${input.limit} matches. Only include suppliers that are genuinely
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       const agentStage = await getAgentStage(ctx.user.id);
-      const isAdmin = ctx.user.role === "admin";
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
 
       // If chatting about a specific supplier, include their full data
       let supplierContext = "";

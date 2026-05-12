@@ -2257,3 +2257,13 @@
 - [x] Frontend: Emails column in pipeline table showing count badge (click to view full log)
 - [x] Frontend: Email Log section in prospect detail page enhanced with friendly names, icons, timestamps
 - [x] Frontend: Email Log accessible from pipeline table (click count badge) and prospect detail page
+
+## BUG: Supplier Login Credentials Wiped by AI Enrichment (May 12)
+- [ ] Diagnose: check enrichment update SQL to see which fields were overwritten
+- [ ] Fix: ensure enrichment update only touches AI fields (aiSummary, usp, priceTier, notSuitableFor, idealClient, bookingTips, aiEnrichedAt)
+- [ ] Assess: check how many suppliers had credentials before vs after
+- [ ] Recover: restore credentials from backup/checkpoint if possible
+
+## BUG: Admin Supplier Edit Form Shows Blank Credentials (May 12)
+- [x] Diagnose: isAdmin check used role === 'admin' but owner accounts are role === 'super_admin', so credentials were stripped
+- [x] Fix: updated all 4 isAdmin checks in suppliers-router.ts to include super_admin — admins and super_admins now see all credential fields
