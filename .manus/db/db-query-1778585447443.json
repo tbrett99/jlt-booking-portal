@@ -1,0 +1,210 @@
+{
+  "query": "\n-- Prospects who received a follow-up or re-engagement email (broken link emails)\n-- but have NOT submitted their application AND are not archived\nSELECT \n  rp.id,\n  rp.firstName,\n  rp.lastName,\n  rp.email,\n  rp.pipelineStage,\n  rp.applicationSubmittedAt IS NOT NULL as hasSubmitted,\n  GROUP_CONCAT(DISTINCT res.emailKey ORDER BY res.sentAt SEPARATOR ', ') as emailsReceived,\n  MAX(res.sentAt) as lastEmailAt\nFROM recruitment_prospects rp\nJOIN recruitment_emails_sent res ON res.prospectId = rp.id\nWHERE res.emailKey IN ('followup_day3', 'followup_day7', 'followup_day14', 're_engagement_june_2026')\n  AND rp.applicationSubmittedAt IS NULL\n  AND rp.pipelineStage = 'new_enquiry'\nGROUP BY rp.id, rp.firstName, rp.lastName, rp.email, rp.pipelineStage, rp.applicationSubmittedAt\nORDER BY lastEmailAt DESC\nLIMIT 20;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \n-- Prospects who received a follow-up or re-engagement email (broken link emails)\n-- but have NOT submitted their application AND are not archived\nSELECT \n  rp.id,\n  rp.firstName,\n  rp.lastName,\n  rp.email,\n  rp.pipelineStage,\n  rp.applicationSubmittedAt IS NOT NULL as hasSubmitted,\n  GROUP_CONCAT(DISTINCT res.emailKey ORDER BY res.sentAt SEPARATOR ', ') as emailsReceived,\n  MAX(res.sentAt) as lastEmailAt\nFROM recruitment_prospects rp\nJOIN recruitment_emails_sent res ON res.prospectId = rp.id\nWHERE res.emailKey IN ('followup_day3', 'followup_day7', 'followup_day14', 're_engagement_june_2026')\n  AND rp.applicationSubmittedAt IS NULL\n  AND rp.pipelineStage = 'new_enquiry'\nGROUP BY rp.id, rp.firstName, rp.lastName, rp.email, rp.pipelineStage, rp.applicationSubmittedAt\nORDER BY lastEmailAt DESC\nLIMIT 20;\n",
+  "rows": [
+    {
+      "id": "90063",
+      "firstName": "Toby",
+      "lastName": "Brian",
+      "email": "toby.r.brian@gmail.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day7, followup_day14",
+      "lastEmailAt": "2026-05-12 09:00:54"
+    },
+    {
+      "id": "90062",
+      "firstName": "Leonora",
+      "lastName": "Brandt",
+      "email": "leonorabrandt@hotmail.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day7, followup_day14",
+      "lastEmailAt": "2026-05-12 09:00:51"
+    },
+    {
+      "id": "90061",
+      "firstName": "Bethany",
+      "lastName": "Barrett",
+      "email": "bethanyevans83@me.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day7, followup_day14",
+      "lastEmailAt": "2026-05-12 09:00:48"
+    },
+    {
+      "id": "90059",
+      "firstName": "Nelli",
+      "lastName": "Sullivan",
+      "email": "nelli.sullivan@yahoo.co.uk",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day7, followup_day14",
+      "lastEmailAt": "2026-05-12 09:00:47"
+    },
+    {
+      "id": "90060",
+      "firstName": "Daisy",
+      "lastName": "Blatch",
+      "email": "daisyblatch@yahoo.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day7, followup_day14",
+      "lastEmailAt": "2026-05-12 09:00:47"
+    },
+    {
+      "id": "90058",
+      "firstName": "Michelle",
+      "lastName": "Clarke",
+      "email": "michelleelmes@yahoo.co.uk",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day7, followup_day14",
+      "lastEmailAt": "2026-05-12 09:00:46"
+    },
+    {
+      "id": "90039",
+      "firstName": "Frank",
+      "lastName": "Kelly",
+      "email": "info@pitchperfectparkhomes.co.uk",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3, followup_day7",
+      "lastEmailAt": "2026-05-12 09:00:42"
+    },
+    {
+      "id": "90038",
+      "firstName": "Amanda",
+      "lastName": "Crosbie",
+      "email": "ajcrosbie328@icloud.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3, followup_day7",
+      "lastEmailAt": "2026-05-12 09:00:41"
+    },
+    {
+      "id": "90036",
+      "firstName": "Ikram",
+      "lastName": "Khan",
+      "email": "ikram0527@yahoo.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3, followup_day7",
+      "lastEmailAt": "2026-05-12 09:00:40"
+    },
+    {
+      "id": "90037",
+      "firstName": "Lucie",
+      "lastName": "Draper",
+      "email": "leflohiclucie@gmail.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3, followup_day7",
+      "lastEmailAt": "2026-05-12 09:00:40"
+    },
+    {
+      "id": "90034",
+      "firstName": "Marice",
+      "lastName": "Cooper",
+      "email": "coopermarice18@gmail.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3, followup_day7",
+      "lastEmailAt": "2026-05-12 09:00:39"
+    },
+    {
+      "id": "90035",
+      "firstName": "Marlene",
+      "lastName": "Morais",
+      "email": "marlene78@email.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3, followup_day7",
+      "lastEmailAt": "2026-05-12 09:00:39"
+    },
+    {
+      "id": "90033",
+      "firstName": "laureta",
+      "lastName": "mutenga",
+      "email": "laureta.mutengaa@icloud.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3, followup_day7",
+      "lastEmailAt": "2026-05-12 09:00:34"
+    },
+    {
+      "id": "90032",
+      "firstName": "Lauren",
+      "lastName": "Hague",
+      "email": "laurenhague10@gmail.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3, followup_day7",
+      "lastEmailAt": "2026-05-12 09:00:33"
+    },
+    {
+      "id": "90031",
+      "firstName": "Kim",
+      "lastName": "Lebrun",
+      "email": "kimberley.carroll@outlook.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3, followup_day7",
+      "lastEmailAt": "2026-05-12 09:00:28"
+    },
+    {
+      "id": "90029",
+      "firstName": "James",
+      "lastName": "Muir",
+      "email": "james.andrew.muir@outlook.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3, followup_day7",
+      "lastEmailAt": "2026-05-12 09:00:27"
+    },
+    {
+      "id": "90030",
+      "firstName": "Nick",
+      "lastName": "Boydon",
+      "email": "nboydon@gmail.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3, followup_day7",
+      "lastEmailAt": "2026-05-12 09:00:27"
+    },
+    {
+      "id": "90006",
+      "firstName": "Sharon",
+      "lastName": "Mitchell",
+      "email": "info@womenofexpansion.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3",
+      "lastEmailAt": "2026-05-12 09:00:21"
+    },
+    {
+      "id": "30007",
+      "firstName": "Claire",
+      "lastName": "Anderson",
+      "email": "clairemac02@yahoo.co.uk",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3",
+      "lastEmailAt": "2026-05-12 09:00:21"
+    },
+    {
+      "id": "30008",
+      "firstName": "Ellie",
+      "lastName": "Hodgson",
+      "email": "elliehodge999@gmail.com",
+      "pipelineStage": "new_enquiry",
+      "hasSubmitted": "0",
+      "emailsReceived": "re_engagement_june_2026, followup_day3",
+      "lastEmailAt": "2026-05-12 09:00:16"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tlastName\temail\tpipelineStage\thasSubmitted\temailsReceived\tlastEmailAt\n90063\tToby\tBrian\ttoby.r.brian@gmail.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day7, followup_day14\t2026-05-12 09:00:54\n90062\tLeonora\tBrandt\tleonorabrandt@hotmail.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day7, followup_day14\t2026-05-12 09:00:51\n90061\tBethany\tBarrett\tbethanyevans83@me.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day7, followup_day14\t2026-05-12 09:00:48\n90059\tNelli\tSullivan\tnelli.sullivan@yahoo.co.uk\tnew_enquiry\t0\tre_engagement_june_2026, followup_day7, followup_day14\t2026-05-12 09:00:47\n90060\tDaisy\tBlatch\tdaisyblatch@yahoo.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day7, followup_day14\t2026-05-12 09:00:47\n90058\tMichelle\tClarke\tmichelleelmes@yahoo.co.uk\tnew_enquiry\t0\tre_engagement_june_2026, followup_day7, followup_day14\t2026-05-12 09:00:46\n90039\tFrank\tKelly\tinfo@pitchperfectparkhomes.co.uk\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3, followup_day7\t2026-05-12 09:00:42\n90038\tAmanda\tCrosbie\tajcrosbie328@icloud.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3, followup_day7\t2026-05-12 09:00:41\n90036\tIkram\tKhan\tikram0527@yahoo.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3, followup_day7\t2026-05-12 09:00:40\n90037\tLucie\tDraper\tleflohiclucie@gmail.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3, followup_day7\t2026-05-12 09:00:40\n90034\tMarice\tCooper\tcoopermarice18@gmail.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3, followup_day7\t2026-05-12 09:00:39\n90035\tMarlene\tMorais\tmarlene78@email.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3, followup_day7\t2026-05-12 09:00:39\n90033\tlaureta\tmutenga\tlaureta.mutengaa@icloud.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3, followup_day7\t2026-05-12 09:00:34\n90032\tLauren\tHague\tlaurenhague10@gmail.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3, followup_day7\t2026-05-12 09:00:33\n90031\tKim\tLebrun\tkimberley.carroll@outlook.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3, followup_day7\t2026-05-12 09:00:28\n90029\tJames\tMuir\tjames.andrew.muir@outlook.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3, followup_day7\t2026-05-12 09:00:27\n90030\tNick\tBoydon\tnboydon@gmail.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3, followup_day7\t2026-05-12 09:00:27\n90006\tSharon\tMitchell\tinfo@womenofexpansion.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3\t2026-05-12 09:00:21\n30007\tClaire\tAnderson\tclairemac02@yahoo.co.uk\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3\t2026-05-12 09:00:21\n30008\tEllie\tHodgson\telliehodge999@gmail.com\tnew_enquiry\t0\tre_engagement_june_2026, followup_day3\t2026-05-12 09:00:16\n",
+  "stderr": "",
+  "execution_time_ms": 272
+}

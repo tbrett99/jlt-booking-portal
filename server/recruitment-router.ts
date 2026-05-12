@@ -60,6 +60,21 @@ export function getBulkEmailJobState(): BulkEmailJobState {
   return { ...bulkEmailJob };
 }
 
+// Separate job state for the apology/re-contact email
+let apologyEmailJob: BulkEmailJobState = {
+  status: "idle",
+  total: 0,
+  sent: 0,
+  skipped: 0,
+  errors: 0,
+  startedAt: null,
+  finishedAt: null,
+};
+
+export function getApologyEmailJobState(): BulkEmailJobState {
+  return { ...apologyEmailJob };
+}
+
 // ─── Prospectus / Application email helpers ───────────────────────────────────
 
 const PROSPECTUS_URL = "https://portal.thejltgroup.co.uk/api/prospectus";
@@ -807,6 +822,126 @@ export const recruitmentRouter = router({
       throw new TRPCError({ code: "FORBIDDEN" });
     }
     return getBulkEmailJobState();
+  }),
+
+  /**
+   * ADMIN — Send apology/re-contact email to all prospects who received a broken
+   * follow-up link (followup_day3/7/14) but have not yet submitted their application.
+   * Uses a separate job state from the re-engagement bulk send.
+   */
+  bulkSendApologyEmail: protectedProcedure
+    .input(z.object({ origin: z.string().url().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      if (apologyEmailJob.status === 'running') {
+        return { started: false, reason: 'already_running', job: getApologyEmailJobState() };
+      }
+
+      const baseUrl = input.origin ?? 'https://portal.thejltgroup.co.uk';
+      const db = await (await import('./db')).getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+
+      // Find all prospects who received a broken follow-up email but haven't submitted
+      const { recruitmentProspects, recruitmentEmailsSent } = await import('../drizzle/schema').then(m => m);
+      const { eq, isNull, inArray, sql: drizzleSql } = await import('drizzle-orm').then(m => m);
+
+      // Get IDs of prospects who received a broken follow-up email
+      const brokenEmailRows = await (db as any)
+        .selectDistinct({ prospectId: recruitmentEmailsSent.prospectId })
+        .from(recruitmentEmailsSent)
+        .where(inArray(recruitmentEmailsSent.emailKey, ['followup_day3', 'followup_day7', 'followup_day14']));
+
+      const affectedIds: number[] = brokenEmailRows.map((r: any) => r.prospectId);
+
+      if (affectedIds.length === 0) {
+        return { started: false, reason: 'no_affected_prospects', job: getApologyEmailJobState() };
+      }
+
+      // Filter to those who haven't submitted and are still in new_enquiry
+      const prospects = await (db as any)
+        .select()
+        .from(recruitmentProspects)
+        .where(
+          drizzleSql`${recruitmentProspects.id} IN (${drizzleSql.join(affectedIds.map(id => drizzleSql`${id}`), drizzleSql`, `)}) AND ${recruitmentProspects.applicationSubmittedAt} IS NULL AND ${recruitmentProspects.pipelineStage} = 'new_enquiry'`
+        );
+
+      apologyEmailJob = {
+        status: 'running',
+        total: prospects.length,
+        sent: 0,
+        skipped: 0,
+        errors: 0,
+        startedAt: new Date(),
+        finishedAt: null,
+      };
+
+      const EMAIL_KEY = 'apology_link_resend_may2026';
+
+      // Fire-and-forget
+      (async () => {
+        try {
+          for (const prospect of prospects) {
+            try {
+              // Idempotency — skip if already sent this apology email
+              const alreadySent = await hasRecruitmentEmailBeenSent(prospect.id, EMAIL_KEY);
+              if (alreadySent) { apologyEmailJob.skipped++; continue; }
+
+              // Ensure prospect has a token
+              let token = extractApplicationToken(prospect.adminNotes);
+              if (!token) {
+                token = generateApplicationToken();
+                await updateRecruitmentProspect(prospect.id, {
+                  adminNotes: encodeApplicationToken(token, prospect.adminNotes),
+                });
+              }
+
+              const applicationUrl = `${baseUrl}/apply/form?token=${token}`;
+              const firstName = prospect.firstName || 'there';
+              const subject = 'Important — Your JLT Group Application Link';
+              const bodyHtml = `
+<p style="margin:0 0 16px;">Hi ${firstName},</p>
+<p style="margin:0 0 16px;">We owe you an apology.</p>
+<p style="margin:0 0 16px;">Due to a technical issue on our end, some of the links in our recent emails were not working correctly. If you tried to access your application form and received an error, we are truly sorry for the inconvenience.</p>
+<p style="margin:0 0 16px;">The good news is that your application is still very much open, and we'd love to hear from you. Your personal link has been fixed and is ready to use:</p>
+<p style="text-align:center;margin:28px 0;">
+  <a href="${applicationUrl}" style="display:inline-block;background:#70FFE8;color:#414141;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Complete Your Application &rarr;</a>
+</p>
+<p style="margin:0 0 16px;">It only takes a few minutes to complete, and our team reviews every application personally.</p>
+<p style="margin:0 0 16px;">Again, we apologise for any frustration this may have caused. If you have any questions, simply reply to this email and we'll be happy to help.</p>
+<p style="margin:0;">Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
+
+              await sendProspectEmail({ toEmail: prospect.email, toName: firstName, subject, bodyHtml });
+              await logRecruitmentEmail({ prospectId: prospect.id, stage: 'new_enquiry', emailKey: EMAIL_KEY, subject });
+              apologyEmailJob.sent++;
+              await new Promise(r => setTimeout(r, 120)); // ~8 emails/sec to stay within Resend limits
+            } catch (e) {
+              console.error(`[ApologyEmail] Failed for prospect ${prospect.id}:`, e);
+              apologyEmailJob.errors++;
+            }
+          }
+          apologyEmailJob.status = 'done';
+          apologyEmailJob.finishedAt = new Date();
+          console.log(`[ApologyEmail] Completed: ${apologyEmailJob.sent} sent, ${apologyEmailJob.skipped} skipped, ${apologyEmailJob.errors} errors`);
+        } catch (e) {
+          console.error('[ApologyEmail] Fatal error:', e);
+          apologyEmailJob.status = 'error';
+          apologyEmailJob.finishedAt = new Date();
+        }
+      })();
+
+      return { started: true, reason: null, job: getApologyEmailJobState() };
+    }),
+
+  /**
+   * ADMIN — Poll the apology email job status.
+   */
+  apologyEmailJobStatus: protectedProcedure.query(async ({ ctx }) => {
+    if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    return getApologyEmailJobState();
   }),
 
   /**

@@ -1,0 +1,46 @@
+{
+  "query": "\n-- 1. What email types were ever sent, and how many?\nSELECT emailKey, COUNT(*) as sent_count\nFROM recruitment_emails_sent\nGROUP BY emailKey\nORDER BY sent_count DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \n-- 1. What email types were ever sent, and how many?\nSELECT emailKey, COUNT(*) as sent_count\nFROM recruitment_emails_sent\nGROUP BY emailKey\nORDER BY sent_count DESC;\n",
+  "rows": [
+    {
+      "emailKey": "re_engagement_june_2026",
+      "sent_count": "664"
+    },
+    {
+      "emailKey": "followup_day7",
+      "sent_count": "60"
+    },
+    {
+      "emailKey": "followup_day3",
+      "sent_count": "50"
+    },
+    {
+      "emailKey": "followup_day14",
+      "sent_count": "45"
+    },
+    {
+      "emailKey": "prospectus_sent",
+      "sent_count": "31"
+    },
+    {
+      "emailKey": "application_confirmation",
+      "sent_count": "10"
+    },
+    {
+      "emailKey": "ar_approved_notification",
+      "sent_count": "8"
+    },
+    {
+      "emailKey": "ar_declined_notification",
+      "sent_count": "2"
+    },
+    {
+      "emailKey": "application_link_resent",
+      "sent_count": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "emailKey\tsent_count\nre_engagement_june_2026\t664\nfollowup_day7\t60\nfollowup_day3\t50\nfollowup_day14\t45\nprospectus_sent\t31\napplication_confirmation\t10\nar_approved_notification\t8\nar_declined_notification\t2\napplication_link_resent\t1\n",
+  "stderr": "",
+  "execution_time_ms": 282
+}

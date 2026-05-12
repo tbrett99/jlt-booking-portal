@@ -169,6 +169,8 @@ function ProspectsPipelineTab() {
   const [dateTo, setDateTo] = useState("");
   const [showBulkSendDialog, setShowBulkSendDialog] = useState(false);
   const [bulkJobStarted, setBulkJobStarted] = useState(false);
+  const [showApologyDialog, setShowApologyDialog] = useState(false);
+  const [apologyJobStarted, setApologyJobStarted] = useState(false);
   const utils = trpc.useUtils();
 
   const updateStage = trpc.recruitment.updateStage.useMutation({
@@ -215,6 +217,16 @@ function ProspectsPipelineTab() {
   const { data: jobStatus } = trpc.recruitment.bulkEmailJobStatus.useQuery(undefined, {
     refetchInterval: showBulkSendDialog ? 2000 : false,
     staleTime: 0,
+  });
+
+  const { data: apologyJobStatus } = trpc.recruitment.apologyEmailJobStatus.useQuery(undefined, {
+    refetchInterval: showApologyDialog ? 2000 : false,
+    staleTime: 0,
+  });
+
+  const apologyEmailMutation = trpc.recruitment.bulkSendApologyEmail.useMutation({
+    onSuccess: () => setApologyJobStarted(true),
+    onError: (e) => { toast.error(e.message); setShowApologyDialog(false); },
   });
 
   const bulkSendMutation = trpc.recruitment.bulkSendReEngagementEmail.useMutation({
@@ -338,16 +350,118 @@ function ProspectsPipelineTab() {
           )}
         </div>
         <span className="text-sm text-muted-foreground self-center">{totalActive} active</span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2 ml-auto"
-          onClick={() => { setBulkJobStarted(false); setShowBulkSendDialog(true); }}
-        >
-          <Send size={14} />
-          Send Re-engagement Email
-        </Button>
+        <div className="flex gap-2 ml-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 border-orange-300 text-orange-700 hover:bg-orange-50"
+            onClick={() => { setApologyJobStarted(false); setShowApologyDialog(true); }}
+          >
+            <Send size={14} />
+            Send Apology + Link Email
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => { setBulkJobStarted(false); setShowBulkSendDialog(true); }}
+          >
+            <Send size={14} />
+            Send Re-engagement Email
+          </Button>
+        </div>
       </div>
+
+      {/* Apology email dialog */}
+      <AlertDialog
+        open={showApologyDialog}
+        onOpenChange={(open) => {
+          if (!open && apologyJobStatus?.status !== "running") {
+            setShowApologyDialog(false);
+            setApologyJobStarted(false);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send Apology + Application Link Email</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                {apologyJobStarted ? (
+                  apologyJobStatus?.status === "done" ? (
+                    <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-sm space-y-1">
+                      <p className="font-semibold text-green-800">✓ Apology emails sent</p>
+                      <p className="text-green-700"><strong>{apologyJobStatus.sent}</strong> emails sent successfully</p>
+                      {(apologyJobStatus.skipped ?? 0) > 0 && <p className="text-muted-foreground">{apologyJobStatus.skipped} already received this email (skipped)</p>}
+                      {(apologyJobStatus.errors ?? 0) > 0 && <p className="text-red-600">{apologyJobStatus.errors} failed to send</p>}
+                    </div>
+                  ) : apologyJobStatus?.status === "error" ? (
+                    <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm">
+                      <p className="font-semibold text-red-800">✗ An error occurred during sending</p>
+                      <p className="text-muted-foreground mt-1">{apologyJobStatus.sent} sent before the error.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 size={14} className="animate-spin text-orange-500" />
+                        <span>Sending emails in the background…</span>
+                      </div>
+                      <div className="rounded-lg bg-muted/40 border border-border p-4 text-sm space-y-2">
+                        <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                          <span>{(apologyJobStatus?.sent ?? 0) + (apologyJobStatus?.skipped ?? 0) + (apologyJobStatus?.errors ?? 0)} of {apologyJobStatus?.total ?? "…"} processed</span>
+                          <span>{apologyJobStatus?.total ? Math.round(((apologyJobStatus.sent + apologyJobStatus.skipped + apologyJobStatus.errors) / apologyJobStatus.total) * 100) : 0}%</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                          <div
+                            className="h-2 rounded-full transition-all duration-500"
+                            style={{
+                              width: apologyJobStatus?.total ? `${Math.round(((apologyJobStatus.sent + apologyJobStatus.skipped + apologyJobStatus.errors) / apologyJobStatus.total) * 100)}%` : "0%",
+                              background: "#f97316",
+                            }}
+                          />
+                        </div>
+                        <div className="flex gap-4 text-xs pt-1">
+                          <span className="text-green-700"><strong>{apologyJobStatus?.sent ?? 0}</strong> sent</span>
+                          <span className="text-muted-foreground"><strong>{apologyJobStatus?.skipped ?? 0}</strong> skipped</span>
+                          {(apologyJobStatus?.errors ?? 0) > 0 && <span className="text-red-600"><strong>{apologyJobStatus?.errors}</strong> errors</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <>
+                    <p>This will send an <strong>apology email with a working personal application link</strong> to all prospects who received a broken follow-up link (Day 3, 7, or 14 emails) but have not yet submitted their application.</p>
+                    <p className="text-sm">Subject: <em>"Important — Your JLT Group Application Link"</em></p>
+                    <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 text-xs">Prospects who have already received this apology email will be skipped. Emails are sent in the background.</p>
+                  </>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            {apologyJobStarted && (apologyJobStatus?.status === "done" || apologyJobStatus?.status === "error") ? (
+              <AlertDialogAction onClick={() => { setShowApologyDialog(false); setApologyJobStarted(false); }}>Done</AlertDialogAction>
+            ) : apologyJobStarted && apologyJobStatus?.status === "running" ? (
+              <AlertDialogAction onClick={() => setShowApologyDialog(false)} style={{ background: "#f97316", color: "white" }}>Close (sending continues)</AlertDialogAction>
+            ) : (
+              <>
+                <AlertDialogCancel disabled={apologyEmailMutation.isPending}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={apologyEmailMutation.isPending}
+                  onClick={(e) => { e.preventDefault(); apologyEmailMutation.mutate({ origin: window.location.origin }); }}
+                  style={{ background: "#f97316", color: "white" }}
+                >
+                  {apologyEmailMutation.isPending ? (
+                    <><Loader2 size={14} className="animate-spin mr-1" /> Starting…</>
+                  ) : (
+                    <><Send size={14} className="mr-1" /> Send Apology Emails</>
+                  )}
+                </AlertDialogAction>
+              </>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Bulk send confirmation dialog */}
       <AlertDialog

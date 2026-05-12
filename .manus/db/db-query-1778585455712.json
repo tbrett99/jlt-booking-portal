@@ -1,0 +1,46 @@
+{
+  "query": "\n-- Total count of prospects who received broken-link emails but haven't submitted\nSELECT COUNT(DISTINCT rp.id) as affected_count\nFROM recruitment_prospects rp\nJOIN recruitment_emails_sent res ON res.prospectId = rp.id\nWHERE res.emailKey IN ('followup_day3', 'followup_day7', 'followup_day14', 're_engagement_june_2026')\n  AND rp.applicationSubmittedAt IS NULL\n  AND rp.pipelineStage = 'new_enquiry';\n\n-- How did the 10 successful submissions come in? What emails did they receive?\nSELECT \n  rp.id, rp.firstName, rp.lastName, rp.applicationSubmittedAt,\n  GROUP_CONCAT(DISTINCT res.emailKey ORDER BY res.sentAt SEPARATOR ', ') as emailsReceived\nFROM recruitment_prospects rp\nLEFT JOIN recruitment_emails_sent res ON res.prospectId = rp.id\nWHERE rp.applicationSubmittedAt IS NOT NULL\nGROUP BY rp.id, rp.firstName, rp.lastName, rp.applicationSubmittedAt\nORDER BY rp.applicationSubmittedAt DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \n-- Total count of prospects who received broken-link emails but haven't submitted\nSELECT COUNT(DISTINCT rp.id) as affected_count\nFROM recruitment_prospects rp\nJOIN recruitment_emails_sent res ON res.prospectId = rp.id\nWHERE res.emailKey IN ('followup_day3', 'followup_day7', 'followup_day14', 're_engagement_june_2026')\n  AND rp.applicationSubmittedAt IS NULL\n  AND rp.pipelineStage = 'new_enquiry';\n\n-- How did the 10 successful submissions come in? What emails did they receive?\nSELECT \n  rp.id, rp.firstName, rp.lastName, rp.applicationSubmittedAt,\n  GROUP_CONCAT(DISTINCT res.emailKey ORDER BY res.sentAt SEPARATOR ', ') as emailsReceived\nFROM recruitment_prospects rp\nLEFT JOIN recruitment_emails_sent res ON res.prospectId = rp.id\nWHERE rp.applicationSubmittedAt IS NOT NULL\nGROUP BY rp.id, rp.firstName, rp.lastName, rp.applicationSubmittedAt\nORDER BY rp.applicationSubmittedAt DESC;\n",
+  "rows": [
+    {
+      "affected_count": "660"
+    },
+    {
+      "affected_count": "id\tfirstName\tlastName\tapplicationSubmittedAt\temailsReceived"
+    },
+    {
+      "affected_count": "180001\tGrace\tTagg\t2026-05-11 18:08:09\tprospectus_sent, application_confirmation, ar_approved_notification"
+    },
+    {
+      "affected_count": "210007\tMichelle\tJayne\t2026-05-11 18:03:31\tprospectus_sent, application_confirmation, ar_approved_notification"
+    },
+    {
+      "affected_count": "90775\tKyle\tShepherd\t2026-05-10 20:32:19\tre_engagement_june_2026, application_confirmation, ar_approved_notification"
+    },
+    {
+      "affected_count": "90807\tNaomi\tGibson\t2026-05-10 12:58:16\tprospectus_sent, application_confirmation, ar_approved_notification"
+    },
+    {
+      "affected_count": "90806\tDaniel\tHenderson\t2026-05-09 18:37:58\tprospectus_sent, application_confirmation, ar_approved_notification"
+    },
+    {
+      "affected_count": "90275\tGeorgina\tBobb\t2026-05-09 15:18:28\tre_engagement_june_2026, application_confirmation, ar_approved_notification"
+    },
+    {
+      "affected_count": "90015\tElizabeth\tKeenan\t2026-05-09 14:57:56\tre_engagement_june_2026, application_confirmation, ar_approved_notification"
+    },
+    {
+      "affected_count": "30005\tKirsty\tAgain\t2026-05-08 14:29:16\tapplication_confirmation, ar_declined_notification"
+    },
+    {
+      "affected_count": "30004\tKate\tC\t2026-05-08 14:26:28\tapplication_confirmation, ar_approved_notification"
+    },
+    {
+      "affected_count": "1\tCharles\tTest\t2026-05-02 13:18:39\tprospectus_sent, application_confirmation, ar_declined_notification"
+    }
+  ],
+  "messages": [],
+  "stdout": "affected_count\n660\nid\tfirstName\tlastName\tapplicationSubmittedAt\temailsReceived\n180001\tGrace\tTagg\t2026-05-11 18:08:09\tprospectus_sent, application_confirmation, ar_approved_notification\n210007\tMichelle\tJayne\t2026-05-11 18:03:31\tprospectus_sent, application_confirmation, ar_approved_notification\n90775\tKyle\tShepherd\t2026-05-10 20:32:19\tre_engagement_june_2026, application_confirmation, ar_approved_notification\n90807\tNaomi\tGibson\t2026-05-10 12:58:16\tprospectus_sent, application_confirmation, ar_approved_notification\n90806\tDaniel\tHenderson\t2026-05-09 18:37:58\tprospectus_sent, application_confirmation, ar_approved_notification\n90275\tGeorgina\tBobb\t2026-05-09 15:18:28\tre_engagement_june_2026, application_confirmation, ar_approved_notification\n90015\tElizabeth\tKeenan\t2026-05-09 14:57:56\tre_engagement_june_2026, application_confirmation, ar_approved_notification\n30005\tKirsty\tAgain\t2026-05-08 14:29:16\tapplication_confirmation, ar_declined_notification\n30004\tKate\tC\t2026-05-08 14:26:28\tapplication_confirmation, ar_approved_notification\n1\tCharles\tTest\t2026-05-02 13:18:39\tprospectus_sent, application_confirmation, ar_declined_notification\n",
+  "stderr": "",
+  "execution_time_ms": 277
+}

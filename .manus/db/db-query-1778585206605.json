@@ -1,0 +1,22 @@
+{
+  "query": "\nSELECT emailKey, subject, sentAt, stage \nFROM recruitment_emails_sent \nWHERE prospectId = 90018 \nORDER BY sentAt DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT emailKey, subject, sentAt, stage \nFROM recruitment_emails_sent \nWHERE prospectId = 90018 \nORDER BY sentAt DESC;\n",
+  "rows": [
+    {
+      "emailKey": "followup_day3",
+      "subject": "Don't Forget — Your JLT Group Application",
+      "sentAt": "2026-05-10 09:00:15",
+      "stage": "new_enquiry"
+    },
+    {
+      "emailKey": "re_engagement_june_2026",
+      "subject": "Your JLT Group Application — Join Before the Price Increase",
+      "sentAt": "2026-05-09 14:38:00",
+      "stage": "new_enquiry"
+    }
+  ],
+  "messages": [],
+  "stdout": "emailKey\tsubject\tsentAt\tstage\nfollowup_day3\tDon't Forget — Your JLT Group Application\t2026-05-10 09:00:15\tnew_enquiry\nre_engagement_june_2026\tYour JLT Group Application — Join Before the Price Increase\t2026-05-09 14:38:00\tnew_enquiry\n",
+  "stderr": "",
+  "execution_time_ms": 287
+}

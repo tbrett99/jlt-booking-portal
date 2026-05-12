@@ -1,0 +1,24 @@
+{
+  "query": "\n-- Check all prospects with Alastair as first name or similar email\nSELECT id, firstName, lastName, email, pipelineStage, applicationData IS NOT NULL as hasApp, applicationSubmittedAt, createdAt\nFROM recruitment_prospects\nWHERE LOWER(firstName) LIKE '%alastair%' OR LOWER(email) LIKE '%naughton%' OR LOWER(email) LIKE '%mcnoughton%'\nORDER BY createdAt DESC;\n\n-- Check if a confirmation email was ever sent to Alastair's email\nSELECT res.*, rp.firstName, rp.lastName, rp.email \nFROM recruitment_emails_sent res\nJOIN recruitment_prospects rp ON res.prospectId = rp.id\nWHERE rp.id = 90018\nORDER BY res.sentAt DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \n-- Check all prospects with Alastair as first name or similar email\nSELECT id, firstName, lastName, email, pipelineStage, applicationData IS NOT NULL as hasApp, applicationSubmittedAt, createdAt\nFROM recruitment_prospects\nWHERE LOWER(firstName) LIKE '%alastair%' OR LOWER(email) LIKE '%naughton%' OR LOWER(email) LIKE '%mcnoughton%'\nORDER BY createdAt DESC;\n\n-- Check if a confirmation email was ever sent to Alastair's email\nSELECT res.*, rp.firstName, rp.lastName, rp.email \nFROM recruitment_emails_sent res\nJOIN recruitment_prospects rp ON res.prospectId = rp.id\nWHERE rp.id = 90018\nORDER BY res.sentAt DESC;\n",
+  "rows": [
+    {
+      "id": "90018",
+      "firstName": "Alastair",
+      "lastName": "Naughton",
+      "email": "anaughton02@gmail.com",
+      "pipelineStage": "new_enquiry",
+      "hasApp": "0",
+      "applicationSubmittedAt": "NULL",
+      "createdAt": "2026-05-06 16:53:02"
+    }
+  ],
+  "messages": [
+    "id\tprospectId\tstage\temailKey\tsubject\tsentAt\tfirstName\tlastName\temail",
+    "150007\t90018\tnew_enquiry\tfollowup_day3\tDon't Forget — Your JLT Group Application\t2026-05-10 09:00:15\tAlastair\tNaughton\tanaughton02@gmail.com",
+    "90025\t90018\tnew_enquiry\tre_engagement_june_2026\tYour JLT Group Application — Join Before the Price Increase\t2026-05-09 14:38:00\tAlastair\tNaughton\tanaughton02@gmail.com"
+  ],
+  "stdout": "id\tfirstName\tlastName\temail\tpipelineStage\thasApp\tapplicationSubmittedAt\tcreatedAt\n90018\tAlastair\tNaughton\tanaughton02@gmail.com\tnew_enquiry\t0\tNULL\t2026-05-06 16:53:02\nid\tprospectId\tstage\temailKey\tsubject\tsentAt\tfirstName\tlastName\temail\n150007\t90018\tnew_enquiry\tfollowup_day3\tDon't Forget — Your JLT Group Application\t2026-05-10 09:00:15\tAlastair\tNaughton\tanaughton02@gmail.com\n90025\t90018\tnew_enquiry\tre_engagement_june_2026\tYour JLT Group Application — Join Before the Price Increase\t2026-05-09 14:38:00\tAlastair\tNaughton\tanaughton02@gmail.com\n",
+  "stderr": "",
+  "execution_time_ms": 305
+}
