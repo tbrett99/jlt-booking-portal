@@ -1,0 +1,25 @@
+{
+  "query": "SELECT COUNT(*) as total FROM recruitment_prospects; SELECT COUNT(*) as archived FROM recruitment_prospects WHERE archivedAt IS NOT NULL; SELECT id, firstName, lastName, email, pipelineStage, archivedAt, LEFT(adminNotes, 60) as tokenPrefix FROM recruitment_prospects WHERE email = 'ryan.butcher@live.co.uk';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT COUNT(*) as total FROM recruitment_prospects; SELECT COUNT(*) as archived FROM recruitment_prospects WHERE archivedAt IS NOT NULL; SELECT id, firstName, lastName, email, pipelineStage, archivedAt, LEFT(adminNotes, 60) as tokenPrefix FROM recruitment_prospects WHERE email = 'ryan.butcher@live.co.uk';",
+  "rows": [
+    {
+      "total": "833"
+    },
+    {
+      "total": "archived"
+    },
+    {
+      "total": "1"
+    },
+    {
+      "total": "id\tfirstName\tlastName\temail\tpipelineStage\tarchivedAt\ttokenPrefix"
+    },
+    {
+      "total": "90021\tRyan\tButcher\tryan.butcher@live.co.uk\tnew_enquiry\tNULL\tAPP_TOKEN:orebTw-TKlPbBgoEuqXCpzHXy4rmr5rw"
+    }
+  ],
+  "messages": [],
+  "stdout": "total\n833\narchived\n1\nid\tfirstName\tlastName\temail\tpipelineStage\tarchivedAt\ttokenPrefix\n90021\tRyan\tButcher\tryan.butcher@live.co.uk\tnew_enquiry\tNULL\tAPP_TOKEN:orebTw-TKlPbBgoEuqXCpzHXy4rmr5rw\n",
+  "stderr": "",
+  "execution_time_ms": 284
+}

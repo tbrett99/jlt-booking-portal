@@ -2277,3 +2277,10 @@
 - [x] Match CSV users to portal agents by email (LOWER match)
 - [x] Updated agent_supplier_stages: 221 stage 3, 31 stage 2, 201 stage 1 — 455/455 agents assigned
 - [x] Report: 221 stage 3 (full access), 31 stage 2, 203 stage 1 (new/unmatched agents)
+
+## Ryan Butcher Application Link Fix (May 12)
+- [x] Fix follow-up emails (day 3, day 7, day 14) to include personalised application token in the link — previously sent generic /apply/form without ?token= causing "Invalid Link" error
+- [x] Refactor token helpers (encodeApplicationToken, extractApplicationToken, stripApplicationToken) to recruitment-db.ts so they are shared between router and scheduler
+- [x] Add resendApplicationLink tRPC mutation — sends a fresh personalised application link email to a prospect
+- [x] Add "Resend Application Link" button to RecruitmentProspectDetail page
+- [x] Fix Ryan Butcher (ryan.butcher@live.co.uk, prospect #90021) invalid application link — root cause was follow-up email missing token in URL

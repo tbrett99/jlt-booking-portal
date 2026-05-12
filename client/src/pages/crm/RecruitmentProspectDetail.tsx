@@ -131,6 +131,15 @@ export default function RecruitmentProspectDetail() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  const resendApplicationLink = trpc.recruitment.resendApplicationLink.useMutation({
+    onSuccess: () => {
+      toast.success("Application link email sent to " + data?.email);
+      utils.recruitment.getProspect.invalidate({ id });
+      utils.recruitment.getEmailsSent.invalidate({ id });
+    },
+    onError: (err) => toast.error("Failed to send: " + err.message),
+  });
   const deleteProspect = trpc.recruitment.deleteProspect.useMutation({
     onSuccess: () => {
       toast.success("Prospect deleted");
@@ -256,6 +265,16 @@ export default function RecruitmentProspectDetail() {
           >
             <Send size={12} className="mr-1" />
             Resend Prospectus
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-[#70FFE8] text-[#0d6b5e] hover:bg-[#70FFE8]/10"
+            onClick={() => resendApplicationLink.mutate({ id, origin: window.location.origin })}
+            disabled={resendApplicationLink.isPending}
+          >
+            <Send size={12} className="mr-1" />
+            {resendApplicationLink.isPending ? "Sending..." : "Resend Application Link"}
           </Button>
           <Button
             size="sm"

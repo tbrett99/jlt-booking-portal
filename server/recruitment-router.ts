@@ -21,6 +21,9 @@ import {
   logRecruitmentEmail,
   deleteRecruitmentProspect,
   hasRecruitmentEmailBeenSent,
+  encodeApplicationToken,
+  extractApplicationToken,
+  stripApplicationToken,
 } from "./recruitment-db";
 import { PROSPECT_FROM, PROSPECT_REPLY_TO } from "./resend-email";
 import { sendSupportEmail } from "./email";
@@ -160,30 +163,13 @@ async function sendProspectusEmail(opts: {
   });
 }
 
-// ─── Application token helpers ────────────────────────────────────────────────
+// ─── Application token helpers ──────────────────────────────────────────────────
+// Token helpers are now imported from recruitment-db.ts (encodeApplicationToken,
+// extractApplicationToken, stripApplicationToken). Only generateApplicationToken
+// is kept here as a thin wrapper around nanoid.
 
 function generateApplicationToken(): string {
   return nanoid(32);
-}
-
-// We store the application token in the adminNotes field temporarily as a
-// simple approach — or better, we store it in a dedicated column.
-// For simplicity we'll encode it as a prefix in adminNotes: "APP_TOKEN:<token>"
-// and strip it when displaying notes.
-function encodeApplicationToken(token: string, existingNotes?: string | null): string {
-  const existing = existingNotes?.replace(/^APP_TOKEN:[^\n]+\n?/, "") ?? "";
-  return `APP_TOKEN:${token}\n${existing}`.trim();
-}
-
-function extractApplicationToken(adminNotes?: string | null): string | null {
-  if (!adminNotes) return null;
-  const match = adminNotes.match(/^APP_TOKEN:([^\n]+)/);
-  return match ? match[1].trim() : null;
-}
-
-function stripApplicationToken(adminNotes?: string | null): string {
-  if (!adminNotes) return "";
-  return adminNotes.replace(/^APP_TOKEN:[^\n]+\n?/, "").trim();
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -596,6 +582,62 @@ export const recruitmentRouter = router({
       await updateRecruitmentProspect(input.id, { prospectusEmailSentAt: new Date() });
 
       return { success: true };
+    }),
+
+  /**
+   * ADMIN — Resend the application link email to a prospect.
+   * Generates a new token if one doesn't exist, then sends a fresh email.
+   */
+  resendApplicationLink: protectedProcedure
+    .input(z.object({ id: z.number(), origin: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const prospect = await getRecruitmentProspectById(input.id);
+      if (!prospect) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      // Ensure a token exists
+      let token = extractApplicationToken(prospect.adminNotes);
+      if (!token) {
+        token = generateApplicationToken();
+        await updateRecruitmentProspect(input.id, {
+          adminNotes: encodeApplicationToken(token, prospect.adminNotes),
+        });
+      }
+
+      const applicationUrl = input.origin
+        ? `${input.origin}/apply/form?token=${token}`
+        : `https://portal.thejltgroup.co.uk/apply/form?token=${token}`;
+
+      const firstName = prospect.firstName || 'there';
+      const subject = 'Your JLT Group Application Link';
+      const bodyHtml = `
+<p>Hi ${firstName},</p>
+<p>We're following up on your interest in joining JLT Group. Here is your personal application link:</p>
+<p style="text-align:center;margin:28px 0;">
+  <a href="${applicationUrl}" style="display:inline-block;background:#70FFE8;color:#414141;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Complete Your Application &rarr;</a>
+</p>
+<p>It only takes a few minutes to complete. If you have any questions, feel free to reply to this email.</p>
+<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
+
+      const resend = new Resend(ENV.resendApiKey);
+      await resend.emails.send({
+        from: PROSPECT_FROM,
+        to: [prospect.email],
+        replyTo: PROSPECT_REPLY_TO,
+        subject,
+        html: `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>${subject}</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/></head><body style="margin:0;padding:0;background-color:#f5f5f5;font-family:'Poppins',Arial,sans-serif;"><div style="width:100%;background-color:#f5f5f5;padding:20px 0;"><div style="max-width:600px;width:100%;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><div style="background-color:#70FFE8;padding:24px 40px;text-align:center;"><span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:#414141;">JLT Group</span></div><div style="padding:32px 40px;color:#414141;font-family:'Poppins',Arial,sans-serif;font-size:15px;line-height:1.7;">${bodyHtml}</div><div style="padding:20px 40px;text-align:center;background-color:#fafafa;font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#888;">&copy; ${new Date().getFullYear()} JLT Group. All rights reserved.</div></div></div></body></html>`,
+      });
+
+      await logRecruitmentEmail({
+        prospectId: input.id,
+        stage: prospect.pipelineStage,
+        emailKey: 'application_link_resent',
+        subject,
+      });
+
+      return { success: true, applicationUrl };
     }),
 
   /**

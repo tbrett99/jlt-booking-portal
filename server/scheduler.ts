@@ -526,7 +526,8 @@ export function startScheduler() {
  */
 async function runRecruitmentFollowUp(): Promise<void> {
   try {
-    const { getAllRecruitmentProspects, hasRecruitmentEmailBeenSent, logRecruitmentEmail } = await import("./recruitment-db");
+    const { getAllRecruitmentProspects, hasRecruitmentEmailBeenSent, logRecruitmentEmail, updateRecruitmentProspect, extractApplicationToken, encodeApplicationToken } = await import("./recruitment-db");
+    const { nanoid } = await import("nanoid");
     const { Resend } = await import("resend");
     const { ENV } = await import("./_core/env");
     const { PROSPECT_FROM, PROSPECT_REPLY_TO } = await import("./resend-email");
@@ -553,6 +554,16 @@ async function runRecruitmentFollowUp(): Promise<void> {
       let subject = "";
       let bodyHtml = "";
 
+      // Ensure this prospect has a personal application token
+      let appToken = extractApplicationToken(prospect.adminNotes);
+      if (!appToken) {
+        appToken = nanoid(32);
+        await updateRecruitmentProspect(prospect.id, {
+          adminNotes: encodeApplicationToken(appToken, prospect.adminNotes),
+        });
+      }
+      const applicationUrl = `https://portal.thejltgroup.co.uk/apply/form?token=${appToken}`;
+
       if (daysSinceEnquiry >= 14 && daysSinceEnquiry < 21) {
         emailKey = "followup_day14";
         subject = "One Last Thing — JLT Group";
@@ -561,7 +572,7 @@ async function runRecruitmentFollowUp(): Promise<void> {
 <p>We wanted to reach out one final time to see if you're still interested in joining the JLT Group travel agency team.</p>
 <p>We completely understand that life gets busy, and there's absolutely no pressure. But if you'd like to move forward, your application link is still active:</p>
 <p style="text-align:center;margin:24px 0;">
-  <a href="https://portal.thejltgroup.co.uk/apply/form" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
+  <a href="${applicationUrl}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
     Complete Your Application
   </a>
 </p>
@@ -575,7 +586,7 @@ async function runRecruitmentFollowUp(): Promise<void> {
 <p>We hope you've had a chance to look through our prospectus. We just wanted to check in and see if you have any questions about joining the JLT Group team.</p>
 <p>We'd love to hear from you — whether you're ready to apply or just want to find out more, we're here to help.</p>
 <p style="text-align:center;margin:24px 0;">
-  <a href="https://portal.thejltgroup.co.uk/apply/form" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
+  <a href="${applicationUrl}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
     Complete Your Application
   </a>
 </p>
@@ -588,7 +599,7 @@ async function runRecruitmentFollowUp(): Promise<void> {
 <p>Thank you again for your interest in JLT Group! We noticed you haven't yet completed your application form, and we'd love to hear more about you.</p>
 <p>It only takes a few minutes — click below to pick up where you left off:</p>
 <p style="text-align:center;margin:24px 0;">
-  <a href="https://portal.thejltgroup.co.uk/apply/form" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
+  <a href="${applicationUrl}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
     Complete Your Application
   </a>
 </p>

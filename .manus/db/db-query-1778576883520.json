@@ -1,0 +1,13 @@
+{
+  "query": "SELECT COUNT(*) as archived FROM recruitment_prospects WHERE archivedAt IS NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT COUNT(*) as archived FROM recruitment_prospects WHERE archivedAt IS NOT NULL;",
+  "rows": [
+    {
+      "archived": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "archived\n1\n",
+  "stderr": "",
+  "execution_time_ms": 260
+}

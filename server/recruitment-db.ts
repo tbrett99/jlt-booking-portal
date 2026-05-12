@@ -12,6 +12,34 @@ import {
 } from "../drizzle/schema";
 import { eq, desc, like, or, and, isNull, getTableColumns, gte, lte, sql } from "drizzle-orm";
 
+// ─── Application token helpers ──────────────────────────────────────────────────
+
+/**
+ * Encode an application token as a prefix in adminNotes.
+ * Format: "APP_TOKEN:<token>\n<rest of notes>"
+ */
+export function encodeApplicationToken(token: string, existingNotes?: string | null): string {
+  const existing = existingNotes?.replace(/^APP_TOKEN:[^\n]+\n?/, "") ?? "";
+  return `APP_TOKEN:${token}\n${existing}`.trim();
+}
+
+/**
+ * Extract the application token from adminNotes (returns null if not present).
+ */
+export function extractApplicationToken(adminNotes?: string | null): string | null {
+  if (!adminNotes) return null;
+  const match = adminNotes.match(/^APP_TOKEN:([^\n]+)/);
+  return match ? match[1].trim() : null;
+}
+
+/**
+ * Strip the application token prefix from adminNotes for display.
+ */
+export function stripApplicationToken(adminNotes?: string | null): string {
+  if (!adminNotes) return "";
+  return adminNotes.replace(/^APP_TOKEN:[^\n]+\n?/, "").trim();
+}
+
 // ─── Prospects ────────────────────────────────────────────────────────────────
 
 export async function createRecruitmentProspect(

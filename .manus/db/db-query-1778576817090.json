@@ -1,0 +1,20 @@
+{
+  "query": "SELECT id, firstName, lastName, email, pipelineStage, adminNotes, applicationSubmittedAt, createdAt FROM recruitment_prospects WHERE email LIKE '%ryan.butcher%' OR (firstName LIKE '%ryan%' AND lastName LIKE '%butcher%') LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, firstName, lastName, email, pipelineStage, adminNotes, applicationSubmittedAt, createdAt FROM recruitment_prospects WHERE email LIKE '%ryan.butcher%' OR (firstName LIKE '%ryan%' AND lastName LIKE '%butcher%') LIMIT 5;",
+  "rows": [
+    {
+      "id": "90021",
+      "firstName": "Ryan",
+      "lastName": "Butcher",
+      "email": "ryan.butcher@live.co.uk",
+      "pipelineStage": "new_enquiry",
+      "adminNotes": "APP_TOKEN:orebTw-TKlPbBgoEuqXCpzHXy4rmr5rw",
+      "applicationSubmittedAt": "NULL",
+      "createdAt": "2026-05-06 13:04:58"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tlastName\temail\tpipelineStage\tadminNotes\tapplicationSubmittedAt\tcreatedAt\n90021\tRyan\tButcher\tryan.butcher@live.co.uk\tnew_enquiry\tAPP_TOKEN:orebTw-TKlPbBgoEuqXCpzHXy4rmr5rw\tNULL\t2026-05-06 13:04:58\n",
+  "stderr": "",
+  "execution_time_ms": 259
+}

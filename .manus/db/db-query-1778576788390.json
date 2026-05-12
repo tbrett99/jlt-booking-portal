@@ -1,0 +1,76 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'recruitment_prospects' ORDER BY ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'recruitment_prospects' ORDER BY ORDINAL_POSITION;",
+  "rows": [
+    {
+      "COLUMN_NAME": "id"
+    },
+    {
+      "COLUMN_NAME": "firstName"
+    },
+    {
+      "COLUMN_NAME": "lastName"
+    },
+    {
+      "COLUMN_NAME": "email"
+    },
+    {
+      "COLUMN_NAME": "phone"
+    },
+    {
+      "COLUMN_NAME": "pipelineStage"
+    },
+    {
+      "COLUMN_NAME": "applicationData"
+    },
+    {
+      "COLUMN_NAME": "applicationSubmittedAt"
+    },
+    {
+      "COLUMN_NAME": "calComEventId"
+    },
+    {
+      "COLUMN_NAME": "discoveryCallAt"
+    },
+    {
+      "COLUMN_NAME": "reviewedById"
+    },
+    {
+      "COLUMN_NAME": "reviewedAt"
+    },
+    {
+      "COLUMN_NAME": "declineReason"
+    },
+    {
+      "COLUMN_NAME": "adminNotes"
+    },
+    {
+      "COLUMN_NAME": "source"
+    },
+    {
+      "COLUMN_NAME": "tierInterest"
+    },
+    {
+      "COLUMN_NAME": "howHeard"
+    },
+    {
+      "COLUMN_NAME": "prospectusEmailSentAt"
+    },
+    {
+      "COLUMN_NAME": "archivedAt"
+    },
+    {
+      "COLUMN_NAME": "createdAt"
+    },
+    {
+      "COLUMN_NAME": "updatedAt"
+    },
+    {
+      "COLUMN_NAME": "referredById"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\nid\nfirstName\nlastName\nemail\nphone\npipelineStage\napplicationData\napplicationSubmittedAt\ncalComEventId\ndiscoveryCallAt\nreviewedById\nreviewedAt\ndeclineReason\nadminNotes\nsource\ntierInterest\nhowHeard\nprospectusEmailSentAt\narchivedAt\ncreatedAt\nupdatedAt\nreferredById\n",
+  "stderr": "",
+  "execution_time_ms": 260
+}
