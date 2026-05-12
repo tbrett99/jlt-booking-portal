@@ -325,7 +325,7 @@ export default function AdminDashboard() {
                   {missedSubscriptions.length > 3 && ` +${missedSubscriptions.length - 3} more`}
                 </p>
               </div>
-              <Link href="/admin/crm"><Button size="sm" variant="ghost" className="text-xs text-red-700 h-7 px-2 flex-shrink-0">Fix</Button></Link>
+              <Link href="/crm/agents"><Button size="sm" variant="ghost" className="text-xs text-red-700 h-7 px-2 flex-shrink-0">Fix</Button></Link>
             </div>
           )}
           {lowMarginBookings.length > 0 && (
