@@ -1,0 +1,14 @@
+{
+  "query": "\nSELECT \n  stage,\n  COUNT(*) as count\nFROM agent_supplier_stages\nGROUP BY stage\nORDER BY stage;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT \n  stage,\n  COUNT(*) as count\nFROM agent_supplier_stages\nGROUP BY stage\nORDER BY stage;\n",
+  "rows": [
+    {
+      "stage": "1",
+      "count": "2"
+    }
+  ],
+  "messages": [],
+  "stdout": "stage\tcount\n1\t2\n",
+  "stderr": "",
+  "execution_time_ms": 266
+}

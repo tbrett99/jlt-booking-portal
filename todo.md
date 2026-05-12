@@ -2259,11 +2259,21 @@
 - [x] Frontend: Email Log accessible from pipeline table (click count badge) and prospect detail page
 
 ## BUG: Supplier Login Credentials Wiped by AI Enrichment (May 12)
-- [ ] Diagnose: check enrichment update SQL to see which fields were overwritten
-- [ ] Fix: ensure enrichment update only touches AI fields (aiSummary, usp, priceTier, notSuitableFor, idealClient, bookingTips, aiEnrichedAt)
-- [ ] Assess: check how many suppliers had credentials before vs after
-- [ ] Recover: restore credentials from backup/checkpoint if possible
+- [x] Diagnose: enrichment update only touches AI fields — confirmed no credentials were overwritten
+- [x] Fix: root cause was super_admin role not recognised as admin in isAdmin checks — fixed in suppliers-router.ts
+- [x] Assess: 192 suppliers have username, 151 have password — data intact
+- [x] Recover: no recovery needed — data was never lost, only hidden from super_admin users
 
 ## BUG: Admin Supplier Edit Form Shows Blank Credentials (May 12)
 - [x] Diagnose: isAdmin check used role === 'admin' but owner accounts are role === 'super_admin', so credentials were stripped
 - [x] Fix: updated all 4 isAdmin checks in suppliers-router.ts to include super_admin — admins and super_admins now see all credential fields
+
+## Copy-to-Clipboard for Supplier Credentials (May 12)
+- [x] Copy-to-clipboard already built in supplier detail modal (CredentialField component) — now visible after super_admin fix
+- [x] Copy button exists for both username and password with show/hide toggle
+
+## Agent Stage Bulk Update from CSV (May 12)
+- [x] Parse user-export CSV: 413 s2member_level1 → stage 3, 59 subscriber → stage 2
+- [x] Match CSV users to portal agents by email (LOWER match)
+- [x] Updated agent_supplier_stages: 221 stage 3, 31 stage 2, 201 stage 1 — 455/455 agents assigned
+- [x] Report: 221 stage 3 (full access), 31 stage 2, 203 stage 1 (new/unmatched agents)

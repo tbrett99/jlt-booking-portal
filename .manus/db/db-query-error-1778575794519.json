@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT \n  agentStage,\n  COUNT(*) as count\nFROM users\nWHERE role IN ('agent', 'admin', 'super_admin')\nGROUP BY agentStage\nORDER BY agentStage;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT \n  agentStage,\n  COUNT(*) as count\nFROM users\nWHERE role IN ('agent', 'admin', 'super_admin')\nGROUP BY agentStage\nORDER BY agentStage;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'agentstage' in 'group statement'"
+  ]
+}
