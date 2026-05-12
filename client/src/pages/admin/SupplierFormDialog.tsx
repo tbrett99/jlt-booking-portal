@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, Video, Loader2 } from "lucide-react";
+import { Sparkles, Video, Loader2, Upload, X, Paperclip, ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 
 type Supplier = {
@@ -47,6 +47,8 @@ type Supplier = {
   video1: string | null;
   video2: string | null;
   video3: string | null;
+  video4: string | null;
+  video5: string | null;
   locations: string | null;
   adminUsername: string | null;
   adminPassword: string | null;
@@ -74,6 +76,8 @@ const EMPTY_FORM = {
   video1: "",
   video2: "",
   video3: "",
+  video4: "",
+  video5: "",
   categories: "",
   locations: "",
   imageUrl: "",
@@ -82,6 +86,20 @@ const EMPTY_FORM = {
   adminNotes: "",
   credentialStage: 2,
 };
+
+// Convert a File to base64 string
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Strip the data URL prefix (e.g. "data:image/png;base64,")
+      resolve(result.split(",")[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 export function SupplierFormDialog({
   open,
@@ -95,6 +113,11 @@ export function SupplierFormDialog({
   onSuccess: () => void;
 }) {
   const [form, setForm] = useState(EMPTY_FORM);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
 
   // Sync form when editSupplier changes (opening edit dialog)
   useEffect(() => {
@@ -120,6 +143,8 @@ export function SupplierFormDialog({
         video1: editSupplier.video1 ?? "",
         video2: editSupplier.video2 ?? "",
         video3: editSupplier.video3 ?? "",
+        video4: editSupplier.video4 ?? "",
+        video5: editSupplier.video5 ?? "",
         categories: editSupplier.categories ?? "",
         locations: editSupplier.locations ?? "",
         imageUrl: editSupplier.imageUrl ?? "",
@@ -128,8 +153,10 @@ export function SupplierFormDialog({
         adminNotes: editSupplier.adminNotes ?? "",
         credentialStage: editSupplier.credentialStage,
       });
+      setLogoPreview(editSupplier.imageUrl ?? null);
     } else {
       setForm(EMPTY_FORM);
+      setLogoPreview(null);
     }
   }, [editSupplier]);
 
@@ -139,6 +166,7 @@ export function SupplierFormDialog({
       onSuccess();
       onClose();
       setForm(EMPTY_FORM);
+      setLogoPreview(null);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -151,6 +179,36 @@ export function SupplierFormDialog({
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const uploadLogoMutation = trpc.suppliers.uploadLogo.useMutation({
+    onSuccess: (data) => {
+      setForm((f) => ({ ...f, imageUrl: data.url }));
+      setLogoPreview(data.url);
+      toast.success("Logo uploaded successfully");
+    },
+    onError: (e) => toast.error("Logo upload failed: " + e.message),
+  });
+
+  const uploadAttachmentMutation = trpc.suppliers.uploadAttachment.useMutation({
+    onSuccess: () => {
+      toast.success("Attachment uploaded");
+      if (editSupplier) attachmentsQuery.refetch();
+    },
+    onError: (e) => toast.error("Attachment upload failed: " + e.message),
+  });
+
+  const deleteAttachmentMutation = trpc.suppliers.deleteAttachment.useMutation({
+    onSuccess: () => {
+      toast.success("Attachment deleted");
+      if (editSupplier) attachmentsQuery.refetch();
+    },
+    onError: (e) => toast.error("Delete failed: " + e.message),
+  });
+
+  const attachmentsQuery = trpc.suppliers.listAttachments.useQuery(
+    { supplierId: editSupplier?.id ?? 0 },
+    { enabled: !!editSupplier?.id }
+  );
 
   const scrapeWebsiteMutation = trpc.suppliers.scrapeWebsite.useMutation({
     onSuccess: (data) => {
@@ -185,6 +243,75 @@ export function SupplierFormDialog({
     onError: (e) => toast.error("Video analysis failed: " + e.message),
   });
 
+  const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Image must be under 10MB");
+      return;
+    }
+
+    // Show local preview immediately
+    const objectUrl = URL.createObjectURL(file);
+    setLogoPreview(objectUrl);
+
+    if (editSupplier?.id) {
+      // Existing supplier: upload immediately
+      setLogoUploading(true);
+      try {
+        const base64 = await fileToBase64(file);
+        await uploadLogoMutation.mutateAsync({
+          supplierId: editSupplier.id,
+          fileBase64: base64,
+          mimeType: file.type,
+          fileName: file.name,
+        });
+      } finally {
+        setLogoUploading(false);
+      }
+    } else {
+      // New supplier: store base64 in form state to upload after creation
+      const base64 = await fileToBase64(file);
+      (form as any)._pendingLogoBase64 = base64;
+      (form as any)._pendingLogoMime = file.type;
+      (form as any)._pendingLogoName = file.name;
+      toast.info("Logo will be uploaded when the supplier is saved");
+    }
+    // Reset input
+    e.target.value = "";
+  };
+
+  const handleAttachmentFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("File must be under 50MB");
+      return;
+    }
+    if (!editSupplier?.id) {
+      toast.error("Please save the supplier first before uploading attachments");
+      return;
+    }
+    setAttachmentUploading(true);
+    try {
+      const base64 = await fileToBase64(file);
+      await uploadAttachmentMutation.mutateAsync({
+        supplierId: editSupplier.id,
+        fileBase64: base64,
+        mimeType: file.type,
+        fileName: file.name,
+        fileSize: file.size,
+      });
+    } finally {
+      setAttachmentUploading(false);
+      e.target.value = "";
+    }
+  };
+
   const handleSave = () => {
     const payload = {
       name: form.name,
@@ -207,6 +334,8 @@ export function SupplierFormDialog({
       video1: form.video1 || undefined,
       video2: form.video2 || undefined,
       video3: form.video3 || undefined,
+      video4: form.video4 || undefined,
+      video5: form.video5 || undefined,
       categories: form.categories || undefined,
       locations: form.locations || undefined,
       imageUrl: form.imageUrl || undefined,
@@ -221,6 +350,12 @@ export function SupplierFormDialog({
     } else {
       createMutation.mutate(payload);
     }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
@@ -420,14 +555,60 @@ export function SupplierFormDialog({
             />
           </div>
 
-          {/* Image URL */}
-          <div className="col-span-2 space-y-1">
-            <Label>Logo Image URL</Label>
-            <Input
-              value={form.imageUrl}
-              onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
-              placeholder="https://..."
-            />
+          {/* Logo Upload */}
+          <div className="col-span-2 space-y-2">
+            <Label>Supplier Logo</Label>
+            <div className="flex items-start gap-4">
+              {/* Preview */}
+              <div className="w-20 h-20 rounded-lg border-2 border-dashed border-border flex items-center justify-center bg-muted/30 overflow-hidden flex-shrink-0">
+                {logoPreview ? (
+                  <img src={logoPreview} alt="Logo preview" className="w-full h-full object-contain p-1" />
+                ) : (
+                  <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex-1 space-y-2">
+                {/* Upload button */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  disabled={logoUploading || uploadLogoMutation.isPending}
+                  onClick={() => logoInputRef.current?.click()}
+                >
+                  {logoUploading || uploadLogoMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                  {logoPreview ? "Replace Logo" : "Upload Logo"}
+                </Button>
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleLogoFileChange}
+                />
+                <p className="text-xs text-muted-foreground">
+                  PNG, JPG, SVG, WebP — max 10MB. Auto-compressed to WebP (~15–50KB).
+                </p>
+                {/* Or paste URL */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">or paste URL:</span>
+                  <Input
+                    value={form.imageUrl}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, imageUrl: e.target.value }));
+                      setLogoPreview(e.target.value || null);
+                    }}
+                    placeholder="https://..."
+                    className="h-7 text-xs"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* General Notes */}
@@ -440,38 +621,121 @@ export function SupplierFormDialog({
             />
           </div>
 
-          {/* Videos */}
-          <div className="col-span-2 space-y-1">
+          {/* Videos — 5 Loom URL fields */}
+          <div className="col-span-2 space-y-3">
             <div className="flex items-center justify-between">
-              <Label>Training Video 1 (Loom embed HTML or URL)</Label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 text-xs gap-1 text-primary"
-                disabled={!form.video1 || analyseVideoMutation.isPending}
-                onClick={() => analyseVideoMutation.mutate({ videoUrl: form.video1, supplierId: editSupplier?.id })}
-              >
-                {analyseVideoMutation.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Video className="h-3 w-3" />
-                )}
-                Analyse video
-              </Button>
+              <Label>Training Videos (Loom URLs)</Label>
             </div>
-            <Input
-              value={form.video1}
-              onChange={(e) => setForm((f) => ({ ...f, video1: e.target.value }))}
-            />
+            {([
+              { key: "video1", label: "Video 1", showAnalyse: true },
+              { key: "video2", label: "Video 2", showAnalyse: false },
+              { key: "video3", label: "Video 3", showAnalyse: false },
+              { key: "video4", label: "Video 4", showAnalyse: false },
+              { key: "video5", label: "Video 5", showAnalyse: false },
+            ] as const).map(({ key, label, showAnalyse }) => (
+              <div key={key} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">{label}</span>
+                  {showAnalyse && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs gap-1 text-primary"
+                      disabled={!form[key] || analyseVideoMutation.isPending}
+                      onClick={() => analyseVideoMutation.mutate({ videoUrl: form[key], supplierId: editSupplier?.id })}
+                    >
+                      {analyseVideoMutation.isPending ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Video className="h-3 w-3" />
+                      )}
+                      Analyse video
+                    </Button>
+                  )}
+                </div>
+                <Input
+                  value={form[key]}
+                  onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                  placeholder="https://www.loom.com/share/..."
+                />
+              </div>
+            ))}
           </div>
-          <div className="col-span-2 space-y-1">
-            <Label>Training Video 2</Label>
-            <Input
-              value={form.video2}
-              onChange={(e) => setForm((f) => ({ ...f, video2: e.target.value }))}
-            />
-          </div>
+
+          {/* Attachments — only shown when editing an existing supplier */}
+          {editSupplier && (
+            <div className="col-span-2 space-y-3 border-t pt-4">
+              <div className="flex items-center justify-between">
+                <Label>Attachments</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  disabled={attachmentUploading || uploadAttachmentMutation.isPending}
+                  onClick={() => attachmentInputRef.current?.click()}
+                >
+                  {attachmentUploading || uploadAttachmentMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Paperclip className="h-4 w-4" />
+                  )}
+                  Upload File
+                </Button>
+                <input
+                  ref={attachmentInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.png,.jpg,.jpeg,.webp"
+                  className="hidden"
+                  onChange={handleAttachmentFileChange}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                PDF, Word, Excel, PowerPoint, images, ZIP — max 50MB per file.
+              </p>
+              {attachmentsQuery.isLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading attachments…
+                </div>
+              ) : attachmentsQuery.data && attachmentsQuery.data.length > 0 ? (
+                <div className="space-y-2">
+                  {attachmentsQuery.data.map((att) => (
+                    <div key={att.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <a
+                          href={att.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline truncate"
+                        >
+                          {att.fileName}
+                        </a>
+                        {att.fileSize && (
+                          <span className="text-xs text-muted-foreground flex-shrink-0">
+                            {formatFileSize(att.fileSize)}
+                          </span>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                        onClick={() => deleteAttachmentMutation.mutate({ id: att.id })}
+                        disabled={deleteAttachmentMutation.isPending}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">No attachments yet.</p>
+              )}
+            </div>
+          )}
 
           {/* Admin credentials */}
           <div className="col-span-2 border-t pt-4 space-y-3">

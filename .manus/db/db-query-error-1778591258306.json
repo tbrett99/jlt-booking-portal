@@ -1,0 +1,12 @@
+{
+  "query": "\nSELECT emailKey, subject, sentAt FROM recruitment_emails_sent\nWHERE prospectId = 90093\nORDER BY sentAt DESC;\n\nSELECT id, name, email FROM prospects WHERE email = 'tripialist@gmail.com' LIMIT 1;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT emailKey, subject, sentAt FROM recruitment_emails_sent\nWHERE prospectId = 90093\nORDER BY sentAt DESC;\n\nSELECT id, name, email FROM prospects WHERE email = 'tripialist@gmail.com' LIMIT 1;\n",
+  "returncode": 1,
+  "logs": [
+    "emailKey\tsubject\tsentAt",
+    "apology_link_resend_may2026\tImportant — Your JLT Group Application Link\t2026-05-12 11:52:59",
+    "followup_day14\tOne Last Thing — JLT Group\t2026-05-10 09:01:09",
+    "re_engagement_june_2026\tYour JLT Group Application — Join Before the Price Increase\t2026-05-09 14:38:21",
+    "ERROR 1054 (42S22) at line 6: Unknown column 'name' in 'field list'"
+  ]
+}

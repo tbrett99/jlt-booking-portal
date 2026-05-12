@@ -1466,6 +1466,8 @@ export const suppliers = mysqlTable("suppliers", {
   video1: text("video1"),                                        // Loom embed HTML
   video2: text("video2"),
   video3: text("video3"),
+  video4: text("video4"),                                        // Loom URL 4
+  video5: text("video5"),                                        // Loom URL 5
   categories: text("categories"),                                // semicolon-separated
   locations: text("locations"),                                  // semicolon-separated countries
   imageUrl: text("imageUrl"),                                    // S3 URL for logo/image
@@ -1500,3 +1502,17 @@ export const agentSupplierStages = mysqlTable("agent_supplier_stages", {
 });
 export type AgentSupplierStage = typeof agentSupplierStages.$inferSelect;
 export type InsertAgentSupplierStage = typeof agentSupplierStages.$inferInsert;
+
+// Supplier attachments (PDFs, brochures, rate cards, etc.)
+export const supplierAttachments = mysqlTable("supplier_attachments", {
+  id: int("id").autoincrement().primaryKey(),
+  supplierId: int("supplierId").notNull(),                        // FK → suppliers.id
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  fileUrl: text("fileUrl").notNull(),                            // S3 public URL
+  fileKey: varchar("fileKey", { length: 500 }).notNull(),        // S3 key for deletion
+  fileSize: int("fileSize"),                                     // bytes
+  uploadedAt: timestamp("uploadedAt").defaultNow().notNull(),
+  uploadedById: int("uploadedById"),                             // FK → users.id
+});
+export type SupplierAttachment = typeof supplierAttachments.$inferSelect;
+export type InsertSupplierAttachment = typeof supplierAttachments.$inferInsert;

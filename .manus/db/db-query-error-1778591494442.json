@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT rp.id AS prospect_id, rp.firstName, rp.lastName, rp.email, rp.createdAt,\n       u.email AS user_email\nFROM recruitment_prospects rp\nINNER JOIN user u ON LOWER(u.email) = LOWER(rp.email)\nWHERE rp.pipelineStage = 'new_enquiry'\n  AND rp.applicationSubmittedAt IS NULL\nORDER BY rp.createdAt DESC\nLIMIT 20;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT rp.id AS prospect_id, rp.firstName, rp.lastName, rp.email, rp.createdAt,\n       u.email AS user_email\nFROM recruitment_prospects rp\nINNER JOIN user u ON LOWER(u.email) = LOWER(rp.email)\nWHERE rp.pipelineStage = 'new_enquiry'\n  AND rp.applicationSubmittedAt IS NULL\nORDER BY rp.createdAt DESC\nLIMIT 20;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1146 (42S02) at line 2: Table 'pdcdvqrp8zc2fzsywbwptw.user' doesn't exist"
+  ]
+}

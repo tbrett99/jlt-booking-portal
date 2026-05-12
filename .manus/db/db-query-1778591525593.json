@@ -1,0 +1,9 @@
+{
+  "query": "\nUPDATE recruitment_prospects\nSET pipelineStage = 'archived',\n    archivedAt = NOW(),\n    adminNotes = CONCAT(COALESCE(adminNotes, ''), ' | [Auto-archived 2026-05-12: Email matches an existing active agent account — no further recruitment emails will be sent.]')\nWHERE id IN (90005, 90044, 90093, 90190, 90400, 90462, 90634, 90668, 90703, 90715, 90743);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nUPDATE recruitment_prospects\nSET pipelineStage = 'archived',\n    archivedAt = NOW(),\n    adminNotes = CONCAT(COALESCE(adminNotes, ''), ' | [Auto-archived 2026-05-12: Email matches an existing active agent account — no further recruitment emails will be sent.]')\nWHERE id IN (90005, 90044, 90093, 90190, 90400, 90462, 90634, 90668, 90703, 90715, 90743);\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 271
+}

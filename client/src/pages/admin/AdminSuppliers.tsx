@@ -59,6 +59,8 @@ type Supplier = {
   video1: string | null;
   video2: string | null;
   video3: string | null;
+  video4: string | null;
+  video5: string | null;
   locations: string | null;
   adminUsername: string | null;
   adminPassword: string | null;

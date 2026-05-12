@@ -1,0 +1,25 @@
+{
+  "query": "\nSELECT emailKey, subject, sentAt FROM recruitment_emails_sent\nWHERE prospectId = 90093\nORDER BY sentAt DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT emailKey, subject, sentAt FROM recruitment_emails_sent\nWHERE prospectId = 90093\nORDER BY sentAt DESC;\n",
+  "rows": [
+    {
+      "emailKey": "apology_link_resend_may2026",
+      "subject": "Important — Your JLT Group Application Link",
+      "sentAt": "2026-05-12 11:52:59"
+    },
+    {
+      "emailKey": "followup_day14",
+      "subject": "One Last Thing — JLT Group",
+      "sentAt": "2026-05-10 09:01:09"
+    },
+    {
+      "emailKey": "re_engagement_june_2026",
+      "subject": "Your JLT Group Application — Join Before the Price Increase",
+      "sentAt": "2026-05-09 14:38:21"
+    }
+  ],
+  "messages": [],
+  "stdout": "emailKey\tsubject\tsentAt\napology_link_resend_may2026\tImportant — Your JLT Group Application Link\t2026-05-12 11:52:59\nfollowup_day14\tOne Last Thing — JLT Group\t2026-05-10 09:01:09\nre_engagement_june_2026\tYour JLT Group Application — Join Before the Price Increase\t2026-05-09 14:38:21\n",
+  "stderr": "",
+  "execution_time_ms": 263
+}

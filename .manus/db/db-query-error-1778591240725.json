@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT rp.id, rp.first_name, rp.last_name, rp.email, rp.pipeline_stage, rp.application_submitted_at,\n       rp.created_at\nFROM recruitment_prospects rp\nWHERE rp.email = 'tripialist@gmail.com';\n\nSELECT a.id, a.name, a.email, a.status, a.created_at\nFROM agents a\nWHERE a.email = 'tripialist@gmail.com';\n\nSELECT res.email_key, res.subject, res.sent_at\nFROM recruitment_emails_sent res\nJOIN recruitment_prospects rp ON rp.id = res.prospect_id\nWHERE rp.email = 'tripialist@gmail.com'\nORDER BY res.sent_at DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT rp.id, rp.first_name, rp.last_name, rp.email, rp.pipeline_stage, rp.application_submitted_at,\n       rp.created_at\nFROM recruitment_prospects rp\nWHERE rp.email = 'tripialist@gmail.com';\n\nSELECT a.id, a.name, a.email, a.status, a.created_at\nFROM agents a\nWHERE a.email = 'tripialist@gmail.com';\n\nSELECT res.email_key, res.subject, res.sent_at\nFROM recruitment_emails_sent res\nJOIN recruitment_prospects rp ON rp.id = res.prospect_id\nWHERE rp.email = 'tripialist@gmail.com'\nORDER BY res.sent_at DESC;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'rp.first_name' in 'field list'"
+  ]
+}

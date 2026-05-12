@@ -1,0 +1,256 @@
+{
+  "query": "SHOW TABLES;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SHOW TABLES;",
+  "rows": [
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "__drizzle_migrations"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "admin_notification_prefs"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "admin_onboarding_checklist"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "admin_task_comments"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "admin_tasks"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "agent_change_requests"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "agent_crm_notes"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "agent_crm_profiles"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "agent_emails"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "agent_status_events"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "agent_supplier_logins"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "agent_supplier_stages"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "agent_tags"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "agent_teams"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "amendment_line_items"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "amendments"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "api_keys"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "booking_documents"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "booking_email_links"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "bookings"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "cached_emails"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "calendar_events"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "cancellations"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "commission_claims"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "commission_remittance_items"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "commission_remittances"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "contract_signatures"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "contract_templates"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "email_branding_settings"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "email_campaigns"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "email_drip_enrollments"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "email_drip_steps"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "email_drip_workflows"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "email_sends"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "email_templates"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "email_unsubscribes"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "export_runs"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "flight_requests"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "gc_mandates"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "gc_payment_events"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "gc_payment_failures"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "gc_subscriptions"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "imap_config"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "in_app_notifications"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "inbox_audit_logs"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "join_sessions"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "notes"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "notification_log"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "notification_templates"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "oauth_clients"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "oauth_codes"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "password_reset_tokens"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "payment_config"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "payment_links"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "pipeline_history"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "prospect_ar_forms"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "prospect_contracts"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "prospect_pipeline_history"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "prospect_supplier_logins"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "prospect_tags"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "prospects"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "recruitment_emails_sent"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "recruitment_prospects"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "recruitment_stage_history"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "recruitment_workflow_emails"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "recruitment_workflow_enrollments"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "recruitment_workflows"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "refund_suppliers"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "refunds"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "reimbursement_audit_logs"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "reimbursement_docs"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "reimbursement_item_docs"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "reimbursement_items"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "remittance_batches"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "remittance_lines"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "sso_tokens"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "suppliers"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "system_settings"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "team_invites"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "terms_signings"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "terms_versions"
+    },
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW": "users"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_PdcDVQRp8zC2FzsyWBWptW\n__drizzle_migrations\nadmin_notification_prefs\nadmin_onboarding_checklist\nadmin_task_comments\nadmin_tasks\nagent_change_requests\nagent_crm_notes\nagent_crm_profiles\nagent_emails\nagent_status_events\nagent_supplier_logins\nagent_supplier_stages\nagent_tags\nagent_teams\namendment_line_items\namendments\napi_keys\nbooking_documents\nbooking_email_links\nbookings\ncached_emails\ncalendar_events\ncancellations\ncommission_claims\ncommission_remittance_items\ncommission_remittances\ncontract_signatures\ncontract_templates\nemail_branding_settings\nemail_campaigns\nemail_drip_enrollments\nemail_drip_steps\nemail_drip_workflows\nemail_sends\nemail_templates\nemail_unsubscribes\nexport_runs\nflight_requests\ngc_mandates\ngc_payment_events\ngc_payment_failures\ngc_subscriptions\nimap_config\nin_app_notifications\ninbox_audit_logs\njoin_sessions\nnotes\nnotification_log\nnotification_templates\noauth_clients\noauth_codes\npassword_reset_tokens\npayment_config\npayment_links\npipeline_history\nprospect_ar_forms\nprospect_contracts\nprospect_pipeline_history\nprospect_supplier_logins\nprospect_tags\nprospects\nrecruitment_emails_sent\nrecruitment_prospects\nrecruitment_stage_history\nrecruitment_workflow_emails\nrecruitment_workflow_enrollments\nrecruitment_workflows\nrefund_suppliers\nrefunds\nreimbursement_audit_logs\nreimbursement_docs\nreimbursement_item_docs\nreimbursement_items\nremittance_batches\nremittance_lines\nsso_tokens\nsuppliers\nsystem_settings\nteam_invites\nterms_signings\nterms_versions\nusers\n",
+  "stderr": "",
+  "execution_time_ms": 262
+}

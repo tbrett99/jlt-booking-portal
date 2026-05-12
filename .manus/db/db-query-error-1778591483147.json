@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT rp.id AS prospect_id, rp.firstName, rp.lastName, rp.email, rp.pipelineStage, rp.createdAt\nFROM recruitment_prospects rp\nINNER JOIN agent_crm_profiles acp ON LOWER(acp.email) = LOWER(rp.email)\nWHERE rp.pipelineStage = 'new_enquiry'\n  AND rp.applicationSubmittedAt IS NULL\nORDER BY rp.createdAt DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT rp.id AS prospect_id, rp.firstName, rp.lastName, rp.email, rp.pipelineStage, rp.createdAt\nFROM recruitment_prospects rp\nINNER JOIN agent_crm_profiles acp ON LOWER(acp.email) = LOWER(rp.email)\nWHERE rp.pipelineStage = 'new_enquiry'\n  AND rp.applicationSubmittedAt IS NULL\nORDER BY rp.createdAt DESC;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'acp.email' in 'on clause'"
+  ]
+}

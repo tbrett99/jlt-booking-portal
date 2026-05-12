@@ -1,0 +1,98 @@
+{
+  "query": "\nSELECT id, firstName, lastName, email, pipelineStage, archivedAt\nFROM recruitment_prospects\nWHERE id IN (90005, 90044, 90093, 90190, 90400, 90462, 90634, 90668, 90703, 90715, 90743)\nORDER BY id;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, firstName, lastName, email, pipelineStage, archivedAt\nFROM recruitment_prospects\nWHERE id IN (90005, 90044, 90093, 90190, 90400, 90462, 90634, 90668, 90703, 90715, 90743)\nORDER BY id;\n",
+  "rows": [
+    {
+      "id": "90005",
+      "firstName": "max",
+      "lastName": "Illingworth",
+      "email": "maxillingworth@icloud.com",
+      "pipelineStage": "archived",
+      "archivedAt": "2026-05-12 13:12:05"
+    },
+    {
+      "id": "90044",
+      "firstName": "Wendy",
+      "lastName": "Rainey",
+      "email": "wendybrowne89@gmail.com",
+      "pipelineStage": "archived",
+      "archivedAt": "2026-05-12 13:12:05"
+    },
+    {
+      "id": "90093",
+      "firstName": "Yazmin",
+      "lastName": "Sarsur",
+      "email": "tripialist@gmail.com",
+      "pipelineStage": "archived",
+      "archivedAt": "2026-05-12 13:12:05"
+    },
+    {
+      "id": "90190",
+      "firstName": "Rachel",
+      "lastName": "Shaw",
+      "email": "rachelshaw477@gmail.com",
+      "pipelineStage": "archived",
+      "archivedAt": "2026-05-12 13:12:05"
+    },
+    {
+      "id": "90400",
+      "firstName": "Steph",
+      "lastName": "Reynolds",
+      "email": "stephs.suitcase.travels@gmail.com",
+      "pipelineStage": "archived",
+      "archivedAt": "2026-05-12 13:12:05"
+    },
+    {
+      "id": "90462",
+      "firstName": "Lauren",
+      "lastName": "Owen",
+      "email": "owen.lauren@hotmail.com",
+      "pipelineStage": "archived",
+      "archivedAt": "2026-05-12 13:12:05"
+    },
+    {
+      "id": "90634",
+      "firstName": "Jackson",
+      "lastName": "Reynolds",
+      "email": "thecaptain@travel-trove.com",
+      "pipelineStage": "archived",
+      "archivedAt": "2026-05-12 13:12:05"
+    },
+    {
+      "id": "90668",
+      "firstName": "Rhiannon",
+      "lastName": "Mcwhirter",
+      "email": "rhiannonmcwhirter17@gmail.com",
+      "pipelineStage": "archived",
+      "archivedAt": "2026-05-12 13:12:05"
+    },
+    {
+      "id": "90703",
+      "firstName": "Antoinette",
+      "lastName": "Austin",
+      "email": "antoinetteaustin1982@yahoo.com",
+      "pipelineStage": "archived",
+      "archivedAt": "2026-05-12 13:12:05"
+    },
+    {
+      "id": "90715",
+      "firstName": "Abi",
+      "lastName": "Keller",
+      "email": "abikeller1922@gmail.com",
+      "pipelineStage": "archived",
+      "archivedAt": "2026-05-12 13:12:05"
+    },
+    {
+      "id": "90743",
+      "firstName": "Jessica",
+      "lastName": "Fisher",
+      "email": "jessicamilln@btinternet.com",
+      "pipelineStage": "archived",
+      "archivedAt": "2026-05-12 13:12:05"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tlastName\temail\tpipelineStage\tarchivedAt\n90005\tmax\tIllingworth\tmaxillingworth@icloud.com\tarchived\t2026-05-12 13:12:05\n90044\tWendy\tRainey\twendybrowne89@gmail.com\tarchived\t2026-05-12 13:12:05\n90093\tYazmin\tSarsur\ttripialist@gmail.com\tarchived\t2026-05-12 13:12:05\n90190\tRachel\tShaw\trachelshaw477@gmail.com\tarchived\t2026-05-12 13:12:05\n90400\tSteph\tReynolds\tstephs.suitcase.travels@gmail.com\tarchived\t2026-05-12 13:12:05\n90462\tLauren\tOwen\towen.lauren@hotmail.com\tarchived\t2026-05-12 13:12:05\n90634\tJackson\tReynolds\tthecaptain@travel-trove.com\tarchived\t2026-05-12 13:12:05\n90668\tRhiannon\tMcwhirter\trhiannonmcwhirter17@gmail.com\tarchived\t2026-05-12 13:12:05\n90703\tAntoinette\tAustin\tantoinetteaustin1982@yahoo.com\tarchived\t2026-05-12 13:12:05\n90715\tAbi\tKeller\tabikeller1922@gmail.com\tarchived\t2026-05-12 13:12:05\n90743\tJessica\tFisher\tjessicamilln@btinternet.com\tarchived\t2026-05-12 13:12:05\n",
+  "stderr": "",
+  "execution_time_ms": 261
+}

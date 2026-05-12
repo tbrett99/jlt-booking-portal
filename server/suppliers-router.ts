@@ -8,6 +8,7 @@ import { router, protectedProcedure, adminProcedure } from "./_core/trpc";
 import {
   suppliers,
   agentSupplierStages,
+  supplierAttachments,
 } from "../drizzle/schema";
 import { eq, like, or, and, asc, desc, sql } from "drizzle-orm";
 
@@ -219,6 +220,8 @@ export const suppliersRouter = router({
         video1: z.string().optional(),
         video2: z.string().optional(),
         video3: z.string().optional(),
+        video4: z.string().optional(),
+        video5: z.string().optional(),
         categories: z.string().optional(),
         locations: z.string().optional(),
         imageUrl: z.string().optional(),
@@ -265,6 +268,8 @@ export const suppliersRouter = router({
         video1: z.string().optional(),
         video2: z.string().optional(),
         video3: z.string().optional(),
+        video4: z.string().optional(),
+        video5: z.string().optional(),
         categories: z.string().optional(),
         locations: z.string().optional(),
         imageUrl: z.string().optional(),
@@ -367,20 +372,40 @@ export const suppliersRouter = router({
       const { invokeLLM } = await import("./_core/llm");
       // Fetch the website content
       let pageText = "";
+      let ogTitle = "";
+      let ogDescription = "";
       try {
         const resp = await fetch(input.url, {
-          headers: { "User-Agent": "Mozilla/5.0 (compatible; JLTPortalBot/1.0)" },
-          signal: AbortSignal.timeout(15000),
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-GB,en;q=0.9",
+          },
+          signal: AbortSignal.timeout(20000),
         });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const html = await resp.text();
-        // Strip HTML tags to get readable text
+        // Extract OG/meta tags first for better quality data
+        const ogTitleMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
+          || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)
+          || html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        ogTitle = ogTitleMatch?.[1]?.trim() ?? "";
+        const ogDescMatch = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)
+          || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:description["']/i)
+          || html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)
+          || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
+        ogDescription = ogDescMatch?.[1]?.trim() ?? "";
+        // Strip HTML tags to get readable body text
         pageText = html
           .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
           .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+          .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, "")
+          .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, "")
+          .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, "")
           .replace(/<[^>]+>/g, " ")
           .replace(/\s{3,}/g, " ")
           .trim()
-          .slice(0, 8000); // limit to 8k chars for LLM
+          .slice(0, 10000);
       } catch (e) {
         throw new TRPCError({ code: "BAD_REQUEST", message: `Could not fetch website: ${e}` });
       }
@@ -389,22 +414,23 @@ export const suppliersRouter = router({
         messages: [
           {
             role: "system",
-            content: `You are a travel industry data extraction assistant. Extract structured information about a travel supplier from their website text. Return ONLY valid JSON with these fields (use null for unknown fields):
+            content: `You are a travel industry data extraction assistant. Extract structured information about a travel supplier from their website. Return ONLY valid JSON with these fields (use null for unknown fields):
 {
-  "name": string,
-  "description": string (2-4 sentences, plain text, no HTML),
-  "shortDescription": string (1 sentence),
+  "name": string (company/brand name — use the OG title if helpful),
+  "description": string (2-4 sentences, plain text, no HTML — describe what they offer),
+  "shortDescription": string (1 concise sentence),
   "categories": string (semicolon-separated from: Accommodation, Adventure, Airlines, Cruises, DMCs, Family, Groups, Honeymoon, Hotels, Luxury, Safari, Ski, Tours, Transfers, Weddings),
   "locations": string (semicolon-separated countries/regions they operate in),
-  "commission": string (commission rate if mentioned, e.g. "10%" or "NETT"),
+  "commission": string (commission rate if mentioned, e.g. "10%" or "NETT", or null),
   "priceTier": string (one of: budget, mid-range, luxury, ultra-luxury),
   "usp": string (2-3 key selling points as bullet points starting with •),
-  "notSuitableFor": string (what this supplier is NOT good for, or null),
-  "preferredContact": string (email/phone/portal/null),
-  "publicWebsite": string (the URL provided)
+  "notSuitableFor": string (what this supplier is NOT good for, or null)
 }`,
           },
-          { role: "user", content: `Website URL: ${input.url}\n\nWebsite content:\n${pageText}` },
+          {
+            role: "user",
+            content: `Website URL: ${input.url}\n${ogTitle ? `Page title: ${ogTitle}\n` : ""}${ogDescription ? `Meta description: ${ogDescription}\n` : ""}\nWebsite content:\n${pageText}`,
+          },
         ],
         response_format: { type: "json_object" },
       });
@@ -421,46 +447,47 @@ export const suppliersRouter = router({
   analyseVideo: adminProcedure
     .input(z.object({ videoUrl: z.string(), supplierId: z.number().int().optional() }))
     .mutation(async ({ input }) => {
-      const { invokeLLM } = await import("./_core/llm");
-      // Use manus-analyze-video via LLM with video URL
-      // First try to get a Loom direct video URL from the embed HTML if needed
-      let videoUrl = input.videoUrl;
-      // If it's a Loom embed HTML snippet, extract the URL
-      const loomMatch = videoUrl.match(/src=["'](https:\/\/www\.loom\.com\/embed\/[^"']+)["']/i)
-        || videoUrl.match(/(https:\/\/www\.loom\.com\/share\/[a-z0-9]+)/i)
-        || videoUrl.match(/(https:\/\/www\.loom\.com\/embed\/[a-z0-9]+)/i);
-      if (loomMatch) videoUrl = loomMatch[1];
+      const { execFile } = await import("child_process");
+      const { promisify } = await import("util");
+      const execFileAsync = promisify(execFile);
 
-      const result = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `You are a travel industry training video analyst. Watch this training video about a travel supplier and extract key information. Return ONLY valid JSON:
+      // Normalise Loom URL: extract share/embed URL from HTML snippets
+      let videoUrl = input.videoUrl.trim();
+      const loomMatch = videoUrl.match(/src=["'](https:\/\/www\.loom\.com\/embed\/[^"'?]+)/i)
+        || videoUrl.match(/(https:\/\/www\.loom\.com\/share\/[a-zA-Z0-9]+)/i)
+        || videoUrl.match(/(https:\/\/www\.loom\.com\/embed\/[a-zA-Z0-9]+)/i);
+      if (loomMatch) videoUrl = loomMatch[1];
+      // Convert embed URLs to share URLs for better compatibility
+      videoUrl = videoUrl.replace("loom.com/embed/", "loom.com/share/");
+
+      const prompt = `This is a travel industry training video about a supplier. Extract the following information and return ONLY valid JSON:
 {
-  "supplierName": string,
-  "description": string (2-4 sentences about what this supplier offers),
-  "categories": string (semicolon-separated travel categories),
-  "locations": string (semicolon-separated destinations they cover),
-  "usp": string (2-3 key selling points as bullet points starting with •),
-  "priceTier": string (budget/mid-range/luxury/ultra-luxury),
-  "notSuitableFor": string (what this supplier is NOT ideal for),
-  "bookingTips": string (practical tips for agents from the video),
-  "keyProducts": string (main products/packages mentioned)
-}`,
-          },
-          {
-            role: "user",
-            content: `Please analyse this training video and extract supplier information. Video URL: ${videoUrl}`,
-          },
-        ],
-        response_format: { type: "json_object" },
-      });
+  "supplierName": string (the name of the travel supplier being presented),
+  "description": string (2-4 sentences about what this supplier offers — destinations, product types, target clients),
+  "categories": string (semicolon-separated travel categories from: Accommodation, Adventure, Airlines, Cruises, DMCs, Family, Groups, Honeymoon, Hotels, Luxury, Safari, Ski, Tours, Transfers, Weddings),
+  "locations": string (semicolon-separated destinations/countries/regions they operate in),
+  "usp": string (2-3 genuine key selling points as bullet points starting with •),
+  "priceTier": string (one of: budget, mid-range, luxury, ultra-luxury),
+  "notSuitableFor": string (specific scenarios this supplier is NOT ideal for),
+  "bookingTips": string (2-3 practical bullet points starting with • that an agent should know when booking),
+  "keyProducts": string (main products/packages/itineraries mentioned in the video)
+}`;
 
       try {
-        const content = ((result.choices[0]?.message?.content as string) ?? "{}");
-        return JSON.parse(content);
-      } catch {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to parse AI response" });
+        const { stdout } = await execFileAsync(
+          "manus-analyze-video",
+          [videoUrl, prompt],
+          { timeout: 120000 } // 2 min timeout
+        );
+        // Extract JSON from the output
+        const jsonMatch = stdout.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error("No JSON found in video analysis output");
+        return JSON.parse(jsonMatch[0]);
+      } catch (e: any) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Video analysis failed: ${e?.message ?? e}. Make sure the Loom URL is a valid share link (e.g. https://www.loom.com/share/abc123).`,
+        });
       }
     }),
 
@@ -698,6 +725,99 @@ Return at most ${input.limit} matches. Only include suppliers that are genuinely
     }),
 
   // ── AI: Chat assistant for supplier recommendations ───────────────────────────────────────
+  // ── Admin: Upload supplier logo (multipart, compress to WebP, store in S3) ─────────────────
+  uploadLogo: adminProcedure
+    .input(z.object({
+      supplierId: z.number().int(),
+      fileBase64: z.string(), // base64-encoded image
+      mimeType: z.string(),   // e.g. image/png
+      fileName: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { storagePut } = await import("./storage");
+      const sharp = (await import("sharp")).default;
+
+      // Decode base64
+      const buffer = Buffer.from(input.fileBase64, "base64");
+
+      // Compress: resize to max 400x400, convert to WebP at quality 80
+      const compressed = await sharp(buffer)
+        .resize(400, 400, { fit: "inside", withoutEnlargement: true })
+        .webp({ quality: 80 })
+        .toBuffer();
+
+      const key = `supplier-logos/${input.supplierId}-logo-${Date.now()}.webp`;
+      const { url } = await storagePut(key, compressed, "image/webp");
+
+      // Update the supplier's imageUrl
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      await db.update(suppliers).set({ imageUrl: url }).where(eq(suppliers.id, input.supplierId));
+
+      return { url };
+    }),
+
+  // ── Admin: Upload supplier attachment (PDF, brochure, etc.) ──────────────────────────────
+  uploadAttachment: adminProcedure
+    .input(z.object({
+      supplierId: z.number().int(),
+      fileBase64: z.string(),
+      mimeType: z.string(),
+      fileName: z.string(),
+      fileSize: z.number().int().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { storagePut } = await import("./storage");
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const buffer = Buffer.from(input.fileBase64, "base64");
+      const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const key = `supplier-attachments/${input.supplierId}/${Date.now()}-${safeName}`;
+      const { url } = await storagePut(key, buffer, input.mimeType);
+
+      const [result] = await db.insert(supplierAttachments).values({
+        supplierId: input.supplierId,
+        fileName: input.fileName,
+        fileUrl: url,
+        fileKey: key,
+        fileSize: input.fileSize ?? buffer.length,
+        uploadedById: ctx.user.id,
+      });
+
+      return { id: (result as any).insertId, url, fileName: input.fileName };
+    }),
+
+  // ── List attachments for a supplier ──────────────────────────────────────────────────────
+  listAttachments: protectedProcedure
+    .input(z.object({ supplierId: z.number().int() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      return db
+        .select()
+        .from(supplierAttachments)
+        .where(eq(supplierAttachments.supplierId, input.supplierId))
+        .orderBy(desc(supplierAttachments.uploadedAt));
+    }),
+
+  // ── Admin: Delete attachment ──────────────────────────────────────────────────────────────
+  deleteAttachment: adminProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      // Get the record first so we can delete from S3 if needed
+      const [att] = await db.select().from(supplierAttachments).where(eq(supplierAttachments.id, input.id)).limit(1);
+      if (!att) throw new TRPCError({ code: "NOT_FOUND" });
+      await db.delete(supplierAttachments).where(eq(supplierAttachments.id, input.id));
+      return { ok: true };
+    }),
+
   aiChat: protectedProcedure
     .input(z.object({
       messages: z.array(z.object({
