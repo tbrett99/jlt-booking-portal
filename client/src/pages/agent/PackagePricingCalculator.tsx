@@ -103,9 +103,9 @@ export default function PackagePricingCalculator() {
       <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4 flex gap-3">
         <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
         <div className="text-sm text-amber-900 dark:text-amber-200 space-y-1.5">
-          <p className="font-semibold">Important — when does the 7.5% rule apply?</p>
+          <p className="font-semibold">Important — when does the 7.25% rule apply?</p>
           <p>
-            The 7.5% minimum mark-up over the net rate only applies to <strong>package holidays where VAT on commission is applicable</strong> (i.e. where the supplier charges VAT on your commission). This is because the VAT element reduces your effective margin.
+            The 7.25% minimum mark-up over the net rate only applies to <strong>package holidays where VAT on commission is applicable</strong> (i.e. where the supplier charges VAT on your commission). This is because the VAT element reduces your effective margin, meaning you need to add 7.25% over the net rate to clear the 6% minimum commission threshold.
           </p>
           <p>
             If you are <strong>price matching a genuine like-for-like price available online</strong>, you may go below the 6% threshold — but this should be the exception, not the rule, and you should be able to evidence the online price.
