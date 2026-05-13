@@ -60,12 +60,10 @@ export default function PackagePricingCalculator() {
   const vatOnCommission = commissionTotal * 0.2;
   const netPrice = gross - commissionTotal - vatOnCommission;
 
-  // Minimum charge: the amount at which commission ex-VAT / charge = exactly 6%
-  // after VAT on commission is accounted for (VAT-inclusive package holidays).
-  // Derivation: (charge - netPrice) / 1.2 / charge = 0.06
-  // => charge × (1 - 0.0725×1.2) = netPrice => charge = netPrice / 0.913
-  // This means the agent must add ~7.25% over the net rate to clear 6% net of VAT on commission.
-  const minimumCharge = netPrice > 0 ? netPrice / 0.913 : 0;
+  // Minimum charge = net + 7.25% (net × 1.0725)
+  // Agents must add 7.25% over the net rate to cover the 6% minimum commission threshold
+  // after VAT on commission is deducted on package holidays.
+  const minimumCharge = netPrice > 0 ? netPrice * 1.0725 : 0;
 
   // Optional: agent's desired charge
   const chargeAmount = parseMoney(chargeInput);
@@ -180,7 +178,7 @@ export default function PackagePricingCalculator() {
             <div className="rounded-lg bg-[#70FFE8]/10 border border-[#70FFE8]/40 p-3 flex items-center justify-between">
               <div>
                 <p className="font-semibold text-sm text-foreground">Minimum you can charge your client</p>
-                <p className="text-xs text-muted-foreground mt-0.5">The minimum charge at which your commission equals 6% of the client price after VAT on commission is deducted (requires adding ~7.25% over the net rate)</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Net price + 7.25% — the minimum mark-up needed to cover the 6% commission threshold after VAT on commission is deducted</p>
               </div>
               <span className="font-bold text-xl text-[#02E6D2] ml-4 shrink-0">{formatGBP(minimumCharge)}</span>
             </div>
