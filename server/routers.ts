@@ -4251,6 +4251,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           hasSigned: !!signing,
           signedAt: signing?.signedAt ?? null,
           signedName: signing?.signedName ?? null,
+          ipAddress: signing?.ipAddress ?? null,
+          userAgent: signing?.userAgent ?? null,
+          signingId: signing?.id ?? null,
         };
       });
 

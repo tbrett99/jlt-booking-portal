@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,20 +11,176 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  CheckCircle2, Clock, Send, XCircle, Download, FileSignature, Search, AlertTriangle,
+  CheckCircle2, Clock, Send, XCircle, Download, FileSignature, Search, AlertTriangle, ScrollText, Printer,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+
+type AgentRow = {
+  id: number;
+  name: string | null;
+  email: string | null;
+  hasSigned: boolean;
+  signedAt: Date | null;
+  signedName: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  signingId: number | null;
+};
+
+function SigningCertificate({
+  agent,
+  versionLabel,
+  onClose,
+}: {
+  agent: AgentRow;
+  versionLabel: string;
+  onClose: () => void;
+}) {
+  const certRef = useRef<HTMLDivElement>(null);
+
+  const handlePrint = () => {
+    const content = certRef.current?.innerHTML;
+    if (!content) return;
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Signing Certificate — ${agent.name}</title>
+          <style>
+            body { font-family: 'Times New Roman', serif; margin: 40px; color: #000; }
+            .cert-header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 24px; }
+            .cert-header h1 { font-size: 22px; font-weight: bold; margin: 0 0 4px; }
+            .cert-header p { font-size: 13px; margin: 0; color: #444; }
+            .cert-body { font-size: 13px; line-height: 1.8; }
+            .cert-field { margin-bottom: 12px; }
+            .cert-field label { font-weight: bold; display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #555; }
+            .cert-field span { font-size: 14px; }
+            .cert-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+            .cert-footer { margin-top: 32px; border-top: 1px solid #ccc; padding-top: 16px; font-size: 11px; color: #666; }
+            .cert-ref { background: #f5f5f5; border: 1px solid #ddd; padding: 10px 16px; font-family: monospace; font-size: 13px; margin: 16px 0; }
+            .cert-statement { background: #f9f9f9; border-left: 4px solid #000; padding: 12px 16px; margin: 20px 0; font-style: italic; }
+            @media print { body { margin: 20px; } }
+          </style>
+        </head>
+        <body>${content}</body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
+  };
+
+  const refNumber = `JLT-SIGN-${agent.signingId?.toString().padStart(6, "0") ?? "000000"}`;
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ScrollText className="h-5 w-5" />
+            Signing Certificate
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* Certificate content */}
+        <div ref={certRef} className="font-serif text-sm text-foreground">
+          {/* Header */}
+          <div className="cert-header text-center border-b-2 border-foreground pb-5 mb-6">
+            <h1 className="text-xl font-bold tracking-tight">ELECTRONIC SIGNING CERTIFICATE</h1>
+            <p className="text-muted-foreground text-xs mt-1">JLT Group — Agent Agreement & Terms and Conditions</p>
+          </div>
+
+          {/* Reference */}
+          <div className="bg-muted border rounded px-4 py-2 font-mono text-sm mb-5 cert-ref">
+            Reference: <strong>{refNumber}</strong>
+          </div>
+
+          {/* Statement */}
+          <div className="border-l-4 border-foreground pl-4 py-2 bg-muted/30 italic text-sm mb-5 cert-statement">
+            This certificate confirms that the individual named below has reviewed and electronically accepted the
+            JLT Group Agent Agreement and Terms &amp; Conditions in the version stated. This record constitutes
+            a legally binding electronic signature under the Electronic Communications Act 2000.
+          </div>
+
+          {/* Fields */}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 mb-5 cert-grid">
+            <div className="cert-field">
+              <label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">Full Name (as signed)</label>
+              <span className="text-base font-medium">{agent.signedName}</span>
+            </div>
+            <div className="cert-field">
+              <label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">Account Email</label>
+              <span className="text-base">{agent.email}</span>
+            </div>
+            <div className="cert-field">
+              <label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">Terms Version</label>
+              <span className="text-base font-medium">{versionLabel}</span>
+            </div>
+            <div className="cert-field">
+              <label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">Date &amp; Time of Signing</label>
+              <span className="text-base">
+                {agent.signedAt
+                  ? format(new Date(agent.signedAt), "d MMMM yyyy 'at' HH:mm:ss 'UTC'")
+                  : "—"}
+              </span>
+            </div>
+            <div className="cert-field">
+              <label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">IP Address</label>
+              <span className="text-base font-mono">{agent.ipAddress ?? "Not recorded"}</span>
+            </div>
+            <div className="cert-field">
+              <label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">User ID</label>
+              <span className="text-base font-mono">#{agent.id}</span>
+            </div>
+          </div>
+
+          {/* User agent */}
+          {agent.userAgent && (
+            <div className="cert-field mb-5">
+              <label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">Browser / Device</label>
+              <span className="text-xs font-mono text-muted-foreground break-all">{agent.userAgent}</span>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="border-t pt-4 mt-4 text-xs text-muted-foreground cert-footer">
+            <p>
+              This certificate was generated by the JLT Group Booking Portal. The signing record is stored securely
+              in the JLT Group database and includes a cryptographic audit trail. This document may be used as
+              evidence of the agent's acceptance of the terms in any dispute resolution process.
+            </p>
+            <p className="mt-2">
+              <strong>Issued by:</strong> Janine Loves Ltd t/a JLT Group (Company No. 12178075) &nbsp;·&nbsp;
+              <strong>Certificate generated:</strong> {format(new Date(), "d MMMM yyyy 'at' HH:mm 'UTC'")}
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter className="flex gap-2 mt-4">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button onClick={handlePrint} className="gap-2">
+            <Printer className="h-4 w-4" />
+            Print / Save as PDF
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function AdminTermsTracker() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "signed" | "unsigned">("all");
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
-  const [versionLabel, setVersionLabel] = useState("v2 — May 2026");
+  const [versionLabel, setVersionLabel] = useState("v3 — May 2026");
   const [description, setDescription] = useState(
-    "Updated terms including Section 26.4.1 (Commission Eligibility Conditions) and Section 5.3.1 (Fair Dealing)."
+    "Updated terms including 6% minimum margin, Family & Friends vouchers, ICO registration clause, and revised liability cap."
   );
-  const [deadline, setDeadline] = useState("2026-06-12");
+  const [deadline, setDeadline] = useState("2026-06-13");
+  const [selectedAgent, setSelectedAgent] = useState<AgentRow | null>(null);
 
   const { data, isLoading, refetch } = trpc.terms.getSigningTracker.useQuery();
 
@@ -60,22 +216,24 @@ export default function AdminTermsTracker() {
   const handleExportCsv = () => {
     if (!data?.agents?.length) return;
     const rows = [
-      ["Name", "Email", "Signed", "Signed At", "Signed Name"],
-        ...data.agents.map((a) => [
+      ["Name", "Email", "Signed", "Signed At", "Signed Name", "IP Address", "User Agent"],
+      ...data.agents.map((a) => [
         a.name ?? "",
         a.email ?? "",
         a.hasSigned ? "Yes" : "No",
         a.signedAt ? format(new Date(a.signedAt), "dd/MM/yyyy HH:mm") : "",
         a.signedName ?? "",
+        (a as AgentRow).ipAddress ?? "",
+        (a as AgentRow).userAgent ?? "",
       ]),
     ];
-    const csv = rows.map((r) => r.map((v) => `"${v}"`).join(",")).join("\n");
+    const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `terms-signing-tracker-${data.activeVersion?.versionLabel ?? "export"}.csv`;
-    a.click();
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `terms-signing-tracker-${data.activeVersion?.versionLabel ?? "export"}.csv`;
+    anchor.click();
     URL.revokeObjectURL(url);
   };
 
@@ -89,7 +247,7 @@ export default function AdminTermsTracker() {
       (filter === "signed" && a.hasSigned) ||
       (filter === "unsigned" && !a.hasSigned);
     return matchesSearch && matchesFilter;
-  });
+  }) as AgentRow[];
 
   const signedPct = data
     ? Math.round((data.signedCount / Math.max(data.totalCount, 1)) * 100)
@@ -205,18 +363,20 @@ export default function AdminTermsTracker() {
                   <TableHead>Status</TableHead>
                   <TableHead>Signed At</TableHead>
                   <TableHead>Signed Name</TableHead>
+                  <TableHead>IP Address</TableHead>
+                  <TableHead className="w-[100px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : filteredAgents.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No agents match your filter.
                     </TableCell>
                   </TableRow>
@@ -242,6 +402,22 @@ export default function AdminTermsTracker() {
                           : "—"}
                       </TableCell>
                       <TableCell className="text-sm">{agent.signedName ?? "—"}</TableCell>
+                      <TableCell className="text-sm font-mono text-muted-foreground">
+                        {agent.ipAddress ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        {agent.hasSigned && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => setSelectedAgent(agent)}
+                          >
+                            <ScrollText className="h-3.5 w-3.5" />
+                            Certificate
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -249,6 +425,15 @@ export default function AdminTermsTracker() {
             </Table>
           </CardContent>
         </Card>
+      )}
+
+      {/* Signing Certificate Modal */}
+      {selectedAgent && data?.activeVersion && (
+        <SigningCertificate
+          agent={selectedAgent}
+          versionLabel={data.activeVersion.versionLabel}
+          onClose={() => setSelectedAgent(null)}
+        />
       )}
 
       {/* Send/Activate dialog */}
@@ -264,7 +449,7 @@ export default function AdminTermsTracker() {
                 id="versionLabel"
                 value={versionLabel}
                 onChange={(e) => setVersionLabel(e.target.value)}
-                placeholder="e.g. v2 — May 2026"
+                placeholder="e.g. v3 — May 2026"
               />
             </div>
             <div className="space-y-1.5">
