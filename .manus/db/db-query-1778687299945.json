@@ -1,0 +1,77 @@
+{
+  "query": "SHOW COLUMNS FROM terms_signings; SELECT COUNT(*) as total_signings FROM terms_signings;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SHOW COLUMNS FROM terms_signings; SELECT COUNT(*) as total_signings FROM terms_signings;",
+  "rows": [
+    {
+      "Field": "id",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "PRI",
+      "Default": "NULL",
+      "Extra": "auto_increment"
+    },
+    {
+      "Field": "termsVersionId",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "userId",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "signedName",
+      "Type": "varchar(200)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "ipAddress",
+      "Type": "varchar(45)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "userAgent",
+      "Type": "varchar(500)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "signedAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": ""
+    },
+    {
+      "Field": "signatureImage",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    }
+  ],
+  "messages": [
+    "total_signings",
+    "0"
+  ],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nid\tint\tNO\tPRI\tNULL\tauto_increment\ntermsVersionId\tint\tNO\t\tNULL\t\nuserId\tint\tNO\t\tNULL\t\nsignedName\tvarchar(200)\tNO\t\tNULL\t\nipAddress\tvarchar(45)\tYES\t\tNULL\t\nuserAgent\tvarchar(500)\tYES\t\tNULL\t\nsignedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\t\nsignatureImage\ttext\tYES\t\tNULL\t\ntotal_signings\n0\n",
+  "stderr": "",
+  "execution_time_ms": 266
+}
