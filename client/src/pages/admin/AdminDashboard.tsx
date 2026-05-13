@@ -333,7 +333,7 @@ export default function AdminDashboard() {
               <TrendingUp size={14} style={{ color: '#7c3aed' }} className="flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <span className="font-semibold text-xs" style={{ color: '#4c1d95' }}>
-                  {lowMarginBookings.length} booking{lowMarginBookings.length > 1 ? 's' : ''} with margin below 5%
+                  {lowMarginBookings.length} booking{lowMarginBookings.length > 1 ? 's' : ''} with margin below 6%
                 </span>
                 <p className="text-[10px] opacity-70 mt-0.5 truncate" style={{ color: '#4c1d95' }}>
                   {lowMarginBookings.slice(0, 3).map((b) => b.clientName).join(', ')}
