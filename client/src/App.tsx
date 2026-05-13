@@ -39,6 +39,7 @@ const AgentNotifications = lazy(() => import("./pages/agent/AgentNotifications")
 const OnboardingDashboard = lazy(() => import("./pages/agent/OnboardingDashboard"));
 const DdSetup = lazy(() => import("./pages/agent/DdSetup"));
 const DdComplete = lazy(() => import("./pages/agent/DdComplete"));
+const PackagePricingCalculator = lazy(() => import("./pages/agent/PackagePricingCalculator"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminKanban = lazy(() => import("./pages/admin/AdminKanban"));
 const AdminBookingDetail = lazy(() => import("./pages/admin/AdminBookingDetail"));
@@ -245,6 +246,7 @@ function AuthRouter() {
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
           <Route path="/suppliers" component={SupplierDirectory} />
+          <Route path="/pricing-calculator" component={PackagePricingCalculator} />
           {/* Terms & Policies — accessible to logged-in agents */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}
@@ -292,6 +294,7 @@ function AuthRouter() {
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
           <Route path="/suppliers" component={SupplierDirectory} />
+          <Route path="/pricing-calculator" component={PackagePricingCalculator} />
           {/* Terms & Policies — accessible to admins in agent view */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}

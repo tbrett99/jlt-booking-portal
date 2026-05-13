@@ -2284,3 +2284,14 @@
 - [x] Add resendApplicationLink tRPC mutation — sends a fresh personalised application link email to a prospect
 - [x] Add "Resend Application Link" button to RecruitmentProspectDetail page
 - [x] Fix Ryan Butcher (ryan.butcher@live.co.uk, prospect #90021) invalid application link — root cause was follow-up email missing token in URL
+
+## Package Pricing Calculator (Agent Tool)
+- [x] Build PackagePricingCalculator page for agent portal
+- [x] Inputs: Gross Holiday Cost (£) and Commission Rate (% as whole number, e.g. 11)
+- [x] Compute: Commission Total = Gross × (rate/100), VAT on Commission = Commission × 20%, Net Price = Gross − Commission − VAT on Commission
+- [x] Show minimum charge = Net Price × 1.075 with label "Minimum you can charge"
+- [x] Optional "I want to charge" input: show Commission Total, VAT on Commission, actual margin %, green/amber/red vs 6% threshold
+- [x] Explanatory note: 7.5% minimum applies to package holidays where VAT on commission is applicable
+- [x] Explanatory note: price matching a genuine online price may allow going below the 6% threshold
+- [x] Add "Pricing Calculator" as a separate tab in the agent sidebar nav
+- [x] Wire route in App.tsx

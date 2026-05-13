@@ -8,7 +8,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { Link, useLocation } from "wouter";
@@ -276,15 +276,22 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
-      label: "My Account",
+       label: "My Account",
       icon: <UserCheck size={16} />,
       defaultOpen: false,
       items: [
         { label: "My Profile", href: "/my-profile", icon: <UserCheck size={16} /> },
       ],
     },
+    {
+      label: "Pricing Calculator",
+      icon: <Calculator size={16} />,
+      defaultOpen: false,
+      items: [
+        { label: "Package Pricing Calculator", href: "/pricing-calculator", icon: <Calculator size={16} /> },
+      ],
+    },
   ];
-
   // ── Admin nav groups ──────────────────────────────────────────────────────
   const adminNavGroups: NavGroup[] = [
     {
