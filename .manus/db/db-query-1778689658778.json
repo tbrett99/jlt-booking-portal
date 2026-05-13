@@ -1,0 +1,58 @@
+{
+  "query": "SELECT id, userId, signedName, signedAt, ipAddress, userAgent FROM terms_signings ORDER BY signedAt DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, userId, signedName, signedAt, ipAddress, userAgent FROM terms_signings ORDER BY signedAt DESC LIMIT 20;",
+  "rows": [
+    {
+      "id": "6",
+      "userId": "60611",
+      "signedName": "Brett Gooch",
+      "signedAt": "2026-05-13 16:21:18",
+      "ipAddress": "2a02:c7c:6c10:5400:58f4:be07:a729:5381",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0"
+    },
+    {
+      "id": "5",
+      "userId": "60574",
+      "signedName": "Annabel Watters",
+      "signedAt": "2026-05-13 16:15:41",
+      "ipAddress": "2a00:23c6:6017:101:5a1:fbae:2127:3c7c",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.97 Safari/537.36"
+    },
+    {
+      "id": "4",
+      "userId": "60289",
+      "signedName": "shane bland",
+      "signedAt": "2026-05-13 16:03:17",
+      "ipAddress": "2a00:23c8:2e8f:1f01:f4ab:5f:eb29:d9c7",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0"
+    },
+    {
+      "id": "3",
+      "userId": "60445",
+      "signedName": "Harriet Cowan",
+      "signedAt": "2026-05-13 16:00:41",
+      "ipAddress": "2a00:23c6:c02b:9601:4462:11da:53d6:4bba",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0"
+    },
+    {
+      "id": "2",
+      "userId": "60544",
+      "signedName": "Madlena Trifonova",
+      "signedAt": "2026-05-13 15:58:57",
+      "ipAddress": "31.4.211.50",
+      "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.2 Mobile/15E148 Safari/604.1"
+    },
+    {
+      "id": "1",
+      "userId": "60588",
+      "signedName": "Nicola Harwood",
+      "signedAt": "2026-05-13 15:58:50",
+      "ipAddress": "2a00:23c6:ea1:ee01:913d:1cd9:a75c:ac97",
+      "userAgent": "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tsignedName\tsignedAt\tipAddress\tuserAgent\n6\t60611\tBrett Gooch\t2026-05-13 16:21:18\t2a02:c7c:6c10:5400:58f4:be07:a729:5381\tMozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0\n5\t60574\tAnnabel Watters\t2026-05-13 16:15:41\t2a00:23c6:6017:101:5a1:fbae:2127:3c7c\tMozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.97 Safari/537.36\n4\t60289\tshane bland\t2026-05-13 16:03:17\t2a00:23c8:2e8f:1f01:f4ab:5f:eb29:d9c7\tMozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0\n3\t60445\tHarriet Cowan\t2026-05-13 16:00:41\t2a00:23c6:c02b:9601:4462:11da:53d6:4bba\tMozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0\n2\t60544\tMadlena Trifonova\t2026-05-13 15:58:57\t31.4.211.50\tMozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.2 Mobile/15E148 Safari/604.1\n1\t60588\tNicola Harwood\t2026-05-13 15:58:50\t2a00:23c6:ea1:ee01:913d:1cd9:a75c:ac97\tMozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36\n",
+  "stderr": "",
+  "execution_time_ms": 261
+}

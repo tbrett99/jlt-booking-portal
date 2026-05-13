@@ -19,7 +19,7 @@ import {
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
   ChevronDown, X, Pencil, Clock, ArrowRight, CheckCircle2,
-  Shield, ExternalLink, FileSignature
+  Shield, ExternalLink, FileSignature, ScrollText, Printer
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -1213,11 +1213,72 @@ function BankDetailsTab({ userId, profile, onRefresh }: { userId: number; profil
 
 type ContractData = { signatureDataUrl?: string | null; signerName?: string | null; signerAddress?: string | null; contractSignedAt?: Date | null; } | null;
 
+type TermsRecord = { id: number; versionLabel: string; signedName: string | null; signedAt: Date | null; ipAddress: string | null; userAgent: string | null; signatureImage: string | null; description: string | null; };
+
+function TermsCertificateModal({ record, agentEmail, agentUserId, onClose }: { record: TermsRecord; agentEmail: string | null; agentUserId: number; onClose: () => void; }) {
+  const certRef = useRef<HTMLDivElement>(null);
+  const refNumber = `JLT-SIGN-${record.id.toString().padStart(6, "0")}`;
+  const { format } = { format: (d: Date, fmt: string) => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    return fmt
+      .replace("d MMMM yyyy 'at' HH:mm:ss 'UTC'", `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()} at ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`)
+      .replace("d MMMM yyyy 'at' HH:mm 'UTC'", `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()} at ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`);
+  }};
+  const handlePrint = () => {
+    const content = certRef.current?.innerHTML;
+    if (!content) return;
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><title>Signing Certificate — ${record.signedName}</title><style>body{font-family:'Times New Roman',serif;margin:40px;color:#000}.cert-header{text-align:center;border-bottom:2px solid #000;padding-bottom:20px;margin-bottom:24px}.cert-header h1{font-size:22px;font-weight:bold;margin:0 0 4px}.cert-ref{background:#f5f5f5;border:1px solid #ddd;padding:10px 16px;font-family:monospace;font-size:13px;margin:16px 0}.cert-statement{background:#f9f9f9;border-left:4px solid #000;padding:12px 16px;margin:20px 0;font-style:italic}.cert-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0}.cert-field label{font-weight:bold;display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#555}.cert-field span{font-size:14px}.cert-footer{margin-top:32px;border-top:1px solid #ccc;padding-top:16px;font-size:11px;color:#666}</style></head><body>${content}</body></html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+  };
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><ScrollText className="h-5 w-5" />Signing Certificate</DialogTitle>
+        </DialogHeader>
+        <div ref={certRef} className="font-serif text-sm text-foreground">
+          <div className="text-center border-b-2 border-foreground pb-5 mb-6">
+            <h1 className="text-xl font-bold tracking-tight">ELECTRONIC SIGNING CERTIFICATE</h1>
+            <p className="text-muted-foreground text-xs mt-1">JLT Group — Agent Agreement &amp; Terms and Conditions</p>
+          </div>
+          <div className="bg-muted border rounded px-4 py-2 font-mono text-sm mb-5">Reference: <strong>{refNumber}</strong></div>
+          <div className="border-l-4 border-foreground pl-4 py-2 bg-muted/30 italic text-sm mb-5">
+            This certificate confirms that the individual named below has reviewed and electronically accepted the JLT Group Agent Agreement and Terms &amp; Conditions in the version stated. This record constitutes a legally binding electronic signature under the Electronic Communications Act 2000.
+          </div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 mb-5">
+            <div><label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">Full Name (as signed)</label><span className="text-base font-medium">{record.signedName}</span></div>
+            <div><label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">Account Email</label><span className="text-base">{agentEmail}</span></div>
+            <div><label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">Terms Version</label><span className="text-base font-medium">{record.versionLabel}</span></div>
+            <div><label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">Date &amp; Time of Signing</label><span className="text-base">{record.signedAt ? format(new Date(record.signedAt), "d MMMM yyyy 'at' HH:mm:ss 'UTC'") : "—"}</span></div>
+            <div><label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">IP Address</label><span className="text-base font-mono">{record.ipAddress ?? "Not recorded"}</span></div>
+            <div><label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">User ID</label><span className="text-base font-mono">#{agentUserId}</span></div>
+          </div>
+          {record.userAgent && <div className="mb-5"><label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground block mb-0.5">Browser / Device</label><span className="text-xs font-mono text-muted-foreground break-all">{record.userAgent}</span></div>}
+          <div className="border-t pt-4 mt-4 text-xs text-muted-foreground">
+            <p>This certificate was generated by the JLT Group Booking Portal. The signing record is stored securely in the JLT Group database and includes a cryptographic audit trail. This document may be used as evidence of the agent's acceptance of the terms in any dispute resolution process.</p>
+            <p className="mt-2"><strong>Issued by:</strong> Janine Loves Ltd t/a JLT Group (Company No. 12178075) &nbsp;·&nbsp; <strong>Certificate generated:</strong> {format(new Date(), "d MMMM yyyy 'at' HH:mm 'UTC'")}</p>
+          </div>
+        </div>
+        <DialogFooter className="flex gap-2 mt-4">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button onClick={handlePrint} className="gap-2"><Printer className="h-4 w-4" />Print / Save as PDF</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DocsTab({ userId, profile, contractData, onRefresh }: { userId: number; profile: CrmProfile | null; contractData: ContractData; onRefresh: () => void; }) {
   const idRef = useRef<HTMLInputElement>(null);
   const poaRef = useRef<HTMLInputElement>(null);
   const [showSignature, setShowSignature] = useState(false);
   const [showTermsSig, setShowTermsSig] = useState<Record<number, boolean>>({});
+  const [selectedTermsRecord, setSelectedTermsRecord] = useState<TermsRecord | null>(null);
   const { data: termsHistory, isLoading: termsLoading } = trpc.terms.getAgentSigningHistory.useQuery({ userId });
   const uploadDoc = trpc.crm.agentCrm.uploadIdDoc.useMutation({
     onSuccess: () => { toast.success("Document uploaded"); onRefresh(); },
@@ -1349,17 +1410,27 @@ function DocsTab({ userId, profile, contractData, onRefresh }: { userId: number;
                       <p className="text-xs text-muted-foreground mt-0.5">IP: {record.ipAddress}</p>
                     )}
                   </div>
-                  {record.signatureImage && (
+                  <div className="flex gap-2 shrink-0">
+                    {record.signatureImage && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowTermsSig(prev => ({ ...prev, [record.id]: !prev[record.id] }))}
+                      >
+                        <Eye className="h-3.5 w-3.5 mr-1.5" />
+                        {showTermsSig[record.id] ? "Hide" : "View"} Signature
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => setShowTermsSig(prev => ({ ...prev, [record.id]: !prev[record.id] }))}
-                      className="shrink-0"
+                      className="gap-1"
+                      onClick={() => setSelectedTermsRecord(record as TermsRecord)}
                     >
-                      <Eye className="h-3.5 w-3.5 mr-1.5" />
-                      {showTermsSig[record.id] ? "Hide" : "View"} Signature
+                      <ScrollText className="h-3.5 w-3.5" />
+                      Certificate
                     </Button>
-                  )}
+                  </div>
                 </div>
                 {showTermsSig[record.id] && record.signatureImage && (
                   <div className="border rounded-md p-3 bg-white">
@@ -1382,6 +1453,16 @@ function DocsTab({ userId, profile, contractData, onRefresh }: { userId: number;
           </div>
         )}
       </div>
+
+      {/* Terms Certificate Modal */}
+      {selectedTermsRecord && (
+        <TermsCertificateModal
+          record={selectedTermsRecord}
+          agentEmail={profile?.jltEmail ?? profile?.personalEmail ?? profile?.businessEmail ?? null}
+          agentUserId={userId}
+          onClose={() => setSelectedTermsRecord(null)}
+        />
+      )}
     </div>
   );
 }
