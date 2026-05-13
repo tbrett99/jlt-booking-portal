@@ -60,8 +60,10 @@ export default function PackagePricingCalculator() {
   const vatOnCommission = commissionTotal * 0.2;
   const netPrice = gross - commissionTotal - vatOnCommission;
 
-  // Minimum charge = net × 1.075
-  const minimumCharge = netPrice * 1.075;
+  // Minimum charge: the amount at which commission ex-VAT / charge = exactly 6%
+  // Derivation: (charge - netPrice) / 1.2 / charge = 0.06
+  // => charge × (1 - 0.072) = netPrice => charge = netPrice / 0.928
+  const minimumCharge = netPrice > 0 ? netPrice / 0.928 : 0;
 
   // Optional: agent's desired charge
   const chargeAmount = parseMoney(chargeInput);
@@ -74,8 +76,9 @@ export default function PackagePricingCalculator() {
   const chargeOverNet = hasCharge ? chargeAmount - netPrice : 0;
   const newCommissionExVat = hasCharge ? chargeOverNet / 1.2 : 0;
   const newVatOnCommission = hasCharge ? newCommissionExVat * 0.2 : 0;
-  // Actual margin % = newCommissionExVat / gross * 100
-  const actualMargin = hasCharge && gross > 0 ? (newCommissionExVat / gross) * 100 : 0;
+  // Actual margin % = commissionExVat / clientChargeAmount * 100
+  // (commission as a % of what the client pays — standard travel industry definition)
+  const actualMargin = hasCharge && chargeAmount > 0 ? (newCommissionExVat / chargeAmount) * 100 : 0;
 
   const baseReady = gross > 0 && rate > 0;
 
@@ -175,7 +178,7 @@ export default function PackagePricingCalculator() {
             <div className="rounded-lg bg-[#70FFE8]/10 border border-[#70FFE8]/40 p-3 flex items-center justify-between">
               <div>
                 <p className="font-semibold text-sm text-foreground">Minimum you can charge your client</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Net price + 7.5% (to cover 6% commission threshold after VAT on commission)</p>
+                <p className="text-xs text-muted-foreground mt-0.5">The minimum charge at which your commission (ex-VAT) equals 6% of the client price, after accounting for VAT on commission</p>
               </div>
               <span className="font-bold text-xl text-[#02E6D2] ml-4 shrink-0">{formatGBP(minimumCharge)}</span>
             </div>
