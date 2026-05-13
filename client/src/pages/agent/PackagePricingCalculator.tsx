@@ -26,11 +26,11 @@ function parsePercent(raw: string): number {
 // ─── Margin badge ─────────────────────────────────────────────────────────────
 
 function MarginBadge({ margin }: { margin: number }) {
-  if (margin >= 6) {
+  if (margin >= 7.25) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-800 px-3 py-1 text-sm font-semibold">
         <CheckCircle2 className="h-4 w-4" />
-        {margin.toFixed(2)}% — Meets minimum threshold
+        {margin.toFixed(2)}% mark-up — Meets minimum threshold
       </span>
     );
   }
@@ -38,7 +38,7 @@ function MarginBadge({ margin }: { margin: number }) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 text-red-800 px-3 py-1 text-sm font-semibold">
         <AlertTriangle className="h-4 w-4" />
-        {margin.toFixed(2)}% — Below 6% minimum
+        {margin.toFixed(2)}% mark-up — Below 7.25% minimum
       </span>
     );
   }
@@ -76,9 +76,9 @@ export default function PackagePricingCalculator() {
   const chargeOverNet = hasCharge ? chargeAmount - netPrice : 0;
   const newCommissionExVat = hasCharge ? chargeOverNet / 1.2 : 0;
   const newVatOnCommission = hasCharge ? newCommissionExVat * 0.2 : 0;
-  // Actual margin % = commissionExVat / clientChargeAmount * 100
-  // (commission as a % of what the client pays — standard travel industry definition)
-  const actualMargin = hasCharge && chargeAmount > 0 ? (newCommissionExVat / chargeAmount) * 100 : 0;
+  // Mark-up % over net = (charge - net) / net * 100
+  // Threshold is 7.25% (equivalent to charge >= net * 1.0725)
+  const actualMargin = hasCharge && netPrice > 0 ? (chargeOverNet / netPrice) * 100 : 0;
 
   const baseReady = gross > 0 && rate > 0;
 
@@ -230,12 +230,12 @@ export default function PackagePricingCalculator() {
                   <MarginBadge margin={actualMargin} />
                 </div>
 
-                {actualMargin > 0 && actualMargin < 6 && (
+                {actualMargin > 0 && actualMargin < 7.25 && (
                   <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-3 text-sm text-red-800 dark:text-red-200">
-                    <p className="font-semibold mb-1">Below the 6% minimum threshold</p>
+                    <p className="font-semibold mb-1">Below the minimum threshold</p>
                     <p>
                       To meet the minimum, you need to charge at least{" "}
-                      <strong>{formatGBP(minimumCharge)}</strong>. Remember — if you are price matching a genuine like-for-like price available online, you may go below this threshold, but you should be able to evidence the online price.
+                      <strong>{formatGBP(minimumCharge)}</strong> (net + 7.25%). Remember — if you are price matching a genuine like-for-like price available online, you may go below this threshold, but you should be able to evidence the online price.
                     </p>
                   </div>
                 )}
