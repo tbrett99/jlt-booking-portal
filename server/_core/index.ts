@@ -215,6 +215,89 @@ async function startServer() {
     res.json(last ?? { ranAt: null, success: null, rowCount: null });
   });
 
+  // ── Backdate DD receipt emails ─────────────────────────────────────────────
+  // One-off endpoint: sends backdated receipts for all confirmed/paid_out
+  // payment events that never had a userId resolved (and thus no receipt sent).
+  app.post("/api/dd/backdate-receipts", async (req, res) => {
+    const auth = req.headers.authorization ?? "";
+    const token = ENV.exportTriggerToken;
+    if (!token || auth !== `Bearer ${token}`) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const dryRun = req.query.dry === "1";
+    res.json({ ok: true, message: dryRun ? "Dry run started" : "Backdate job started — check server logs for progress" });
+    // Run async so the HTTP response returns immediately
+    (async () => {
+      try {
+        const { fetchPayment } = await import("../gocardless");
+        const { sendDirectEmail } = await import("../email");
+        const db = await getDb();
+        if (!db) { console.error("[BackdateReceipts] DB unavailable"); return; }
+        const { gcPaymentEvents, gcMandates, users: usersT } = await import("../../drizzle/schema");
+        const { eq: eqOp, isNull } = await import("drizzle-orm");
+        // Fetch all confirmed/paid_out events with no userId
+        const events = await db.select().from(gcPaymentEvents)
+          .where(isNull(gcPaymentEvents.userId))
+          .then(rows => rows.filter(r => r.eventType === "payments_confirmed" || r.eventType === "payments_paid_out"));
+        // Build DB lookup: paymentId -> { mandateId, userId } from pending_submission events
+        const allPending = await db.select().from(gcPaymentEvents)
+          .then(rows => rows.filter(r => r.eventType === "payments_pending_submission" && r.mandateId && r.userId));
+        const pendingByPaymentId = new Map<string, { mandateId: string; userId: number }>();
+        for (const p of allPending) {
+          if (p.paymentId && p.mandateId && p.userId) {
+            pendingByPaymentId.set(p.paymentId, { mandateId: p.mandateId, userId: p.userId });
+          }
+        }
+        console.log(`[BackdateReceipts] Processing ${events.length} events (dryRun=${dryRun}), DB lookup covers ${pendingByPaymentId.size} payments`);
+        let sent = 0, skipped = 0, failed = 0;
+        for (const evt of events) {
+          try {
+            if (!evt.paymentId) { skipped++; continue; }
+            // Step 1: DB cross-reference from pending_submission events (fast, no API call)
+            let mandateId: string | null = null;
+            let userId: number | null = null;
+            const pending = pendingByPaymentId.get(evt.paymentId);
+            if (pending) {
+              mandateId = pending.mandateId;
+              userId = pending.userId;
+            }
+            // Note: GoCardless API fallback removed — payments not in DB lookup are pre-portal agents
+            if (!mandateId || !userId) { console.warn(`[BackdateReceipts] Could not resolve agent for payment ${evt.paymentId}`); skipped++; continue; }
+            // Fetch agent details
+            const [agentRow] = await db.select().from(usersT).where(eqOp(usersT.id, userId)).limit(1);
+            if (!agentRow?.email) { skipped++; continue; }
+            const agentEmail = agentRow.email;
+            const agentName = agentRow.name ?? "there";
+            const membershipTier = (agentRow as any)?.membershipTier ?? null;
+            const tierLabel = membershipTier === "first_class" ? "First Class" : membershipTier === "charter" ? "Charter" : "Business Class";
+            const amount = evt.amount ?? undefined;
+            const amountFormatted = amount ? `\u00a3${(amount / 100).toFixed(2)}` : "\u2014";
+            const paymentDate = evt.occurredAt ? new Date(evt.occurredAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : "unknown date";
+            if (dryRun) {
+              console.log(`[BackdateReceipts][DRY] Would send to ${agentEmail} for payment ${evt.paymentId} (${amountFormatted}, ${paymentDate})`);
+              sent++;
+              continue;
+            }
+            // Update the event record with resolved userId and mandateId
+            await db.update(gcPaymentEvents).set({ userId, mandateId }).where(eqOp(gcPaymentEvents.id, evt.id));
+            const receiptHtml = `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);"><div style="background:#70FFE8;padding:28px 32px;"><h1 style="margin:0;font-size:22px;font-weight:700;color:#1a1a2e;">JLT Group</h1><p style="margin:4px 0 0;font-size:13px;color:#1a1a2e;opacity:0.7;">Membership Payment Receipt</p></div><div style="padding:32px;"><p style="color:#414141;margin:0 0 20px;">Hi ${agentName},</p><p style="color:#414141;margin:0 0 20px;">We noticed you didn&rsquo;t receive a receipt for a recent membership payment &mdash; we&rsquo;re sorry about that! Please find your receipt below for your records.</p><table style="width:100%;border-collapse:collapse;margin:0 0 24px;"><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Amount</td><td style="padding:10px 0;color:#414141;font-weight:700;font-size:16px;text-align:right;">${amountFormatted}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Membership</td><td style="padding:10px 0;color:#414141;font-weight:600;text-align:right;">${tierLabel}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Payment Date</td><td style="padding:10px 0;color:#414141;text-align:right;">${paymentDate}</td></tr><tr><td style="padding:10px 0;color:#6b7280;font-size:14px;">Reference</td><td style="padding:10px 0;color:#414141;font-family:monospace;text-align:right;">${evt.paymentId ?? "\u2014"}</td></tr></table><p style="color:#6b7280;font-size:13px;margin:0;">For queries contact <a href="mailto:memberships@thejltgroup.co.uk" style="color:#02E6D2;">memberships@thejltgroup.co.uk</a>.</p></div><div style="background:#f9fafb;padding:20px 32px;border-top:1px solid #f0f0f0;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">JLT Group &bull; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p></div></div>`;
+            await sendDirectEmail({ toEmail: agentEmail, toName: agentName, subject: `Backdated Membership Payment Receipt \u2014 ${amountFormatted}`, html: receiptHtml, ...({ triggerKey: "gc_receipt_backdate", userId } as any) });
+            sent++;
+            // Small delay to avoid hammering Resend rate limits
+            await new Promise(r => setTimeout(r, 200));
+          } catch (err: any) {
+            console.error(`[BackdateReceipts] Error on event ${evt.id}:`, err?.message);
+            failed++;
+          }
+        }
+        console.log(`[BackdateReceipts] Done: sent=${sent}, skipped=${skipped}, failed=${failed}`);
+      } catch (err: any) {
+        console.error("[BackdateReceipts] Fatal error:", err?.message);
+      }
+    })();
+  });
+
   // ── PPS Direct Payment Page ─────────────────────────────────────────────────
   // Server-side GET /api/pay/:token — returns a self-submitting HTML form that
   // goes straight to PPS. Uses /api/ prefix so it's never intercepted by the

@@ -1,0 +1,13 @@
+{
+  "query": "SELECT COUNT(DISTINCT p.id) as resolvable\nFROM gc_payment_events p\nJOIN gc_payment_events s ON s.paymentId = p.paymentId AND s.eventType = 'payments_pending_submission' AND s.userId IS NOT NULL\nWHERE p.userId IS NULL \n  AND p.eventType IN ('payments_confirmed', 'payments_paid_out');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT COUNT(DISTINCT p.id) as resolvable\nFROM gc_payment_events p\nJOIN gc_payment_events s ON s.paymentId = p.paymentId AND s.eventType = 'payments_pending_submission' AND s.userId IS NOT NULL\nWHERE p.userId IS NULL \n  AND p.eventType IN ('payments_confirmed', 'payments_paid_out');",
+  "rows": [
+    {
+      "resolvable": "140"
+    }
+  ],
+  "messages": [],
+  "stdout": "resolvable\n140\n",
+  "stderr": "",
+  "execution_time_ms": 267
+}

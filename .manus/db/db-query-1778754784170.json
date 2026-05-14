@@ -1,0 +1,70 @@
+{
+  "query": "SELECT \n  p.paymentId,\n  p.eventType as confirmed_type,\n  s.mandateId,\n  s.userId\nFROM gc_payment_events p\nLEFT JOIN gc_payment_events s ON s.paymentId = p.paymentId AND s.eventType = 'payments_pending_submission' AND s.mandateId IS NOT NULL\nWHERE p.userId IS NULL \n  AND p.eventType IN ('payments_confirmed', 'payments_paid_out')\n  AND s.mandateId IS NOT NULL\nLIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT \n  p.paymentId,\n  p.eventType as confirmed_type,\n  s.mandateId,\n  s.userId\nFROM gc_payment_events p\nLEFT JOIN gc_payment_events s ON s.paymentId = p.paymentId AND s.eventType = 'payments_pending_submission' AND s.mandateId IS NOT NULL\nWHERE p.userId IS NULL \n  AND p.eventType IN ('payments_confirmed', 'payments_paid_out')\n  AND s.mandateId IS NOT NULL\nLIMIT 10;",
+  "rows": [
+    {
+      "paymentId": "PM01XFJ5RBG6B8F1B3ADXJM3GB6E",
+      "confirmed_type": "payments_paid_out",
+      "mandateId": "MD01KNQZRY5WA8",
+      "userId": "60527"
+    },
+    {
+      "paymentId": "PM01XFJ5RBG6B8F1B3ADXJM3GB6E",
+      "confirmed_type": "payments_confirmed",
+      "mandateId": "MD01KNQZRY5WA8",
+      "userId": "60527"
+    },
+    {
+      "paymentId": "PM01XFJ5JSAEX6982HX7KFSJP711",
+      "confirmed_type": "payments_paid_out",
+      "mandateId": "MD01KPX0N6VP633GQ71C0DRQQQK3",
+      "userId": "1263754"
+    },
+    {
+      "paymentId": "PM01XFJ5JSAEX6982HX7KFSJP711",
+      "confirmed_type": "payments_confirmed",
+      "mandateId": "MD01KPX0N6VP633GQ71C0DRQQQK3",
+      "userId": "1263754"
+    },
+    {
+      "paymentId": "PM01XFJ5ETZ0GBDWP6SSWJFACTPF",
+      "confirmed_type": "payments_paid_out",
+      "mandateId": "MD01KNNXTNY9WD",
+      "userId": "60467"
+    },
+    {
+      "paymentId": "PM01XFJ5ETZ0GBDWP6SSWJFACTPF",
+      "confirmed_type": "payments_confirmed",
+      "mandateId": "MD01KNNXTNY9WD",
+      "userId": "60467"
+    },
+    {
+      "paymentId": "PM01XFJ59CNC6Y0ATWGNYC4CAGGX",
+      "confirmed_type": "payments_paid_out",
+      "mandateId": "MD01KPZ6NQR72Z9CBNKGKPK19EV2",
+      "userId": "1833465"
+    },
+    {
+      "paymentId": "PM01XFJ59CNC6Y0ATWGNYC4CAGGX",
+      "confirmed_type": "payments_confirmed",
+      "mandateId": "MD01KPZ6NQR72Z9CBNKGKPK19EV2",
+      "userId": "1833465"
+    },
+    {
+      "paymentId": "PM01XFJ5975CZ9KT6C218V7X132M",
+      "confirmed_type": "payments_paid_out",
+      "mandateId": "MD01KPZ5X6WGCYQ48SCX3QFS5QW5",
+      "userId": "180227"
+    },
+    {
+      "paymentId": "PM01XFJ5975CZ9KT6C218V7X132M",
+      "confirmed_type": "payments_confirmed",
+      "mandateId": "MD01KPZ5X6WGCYQ48SCX3QFS5QW5",
+      "userId": "180227"
+    }
+  ],
+  "messages": [],
+  "stdout": "paymentId\tconfirmed_type\tmandateId\tuserId\nPM01XFJ5RBG6B8F1B3ADXJM3GB6E\tpayments_paid_out\tMD01KNQZRY5WA8\t60527\nPM01XFJ5RBG6B8F1B3ADXJM3GB6E\tpayments_confirmed\tMD01KNQZRY5WA8\t60527\nPM01XFJ5JSAEX6982HX7KFSJP711\tpayments_paid_out\tMD01KPX0N6VP633GQ71C0DRQQQK3\t1263754\nPM01XFJ5JSAEX6982HX7KFSJP711\tpayments_confirmed\tMD01KPX0N6VP633GQ71C0DRQQQK3\t1263754\nPM01XFJ5ETZ0GBDWP6SSWJFACTPF\tpayments_paid_out\tMD01KNNXTNY9WD\t60467\nPM01XFJ5ETZ0GBDWP6SSWJFACTPF\tpayments_confirmed\tMD01KNNXTNY9WD\t60467\nPM01XFJ59CNC6Y0ATWGNYC4CAGGX\tpayments_paid_out\tMD01KPZ6NQR72Z9CBNKGKPK19EV2\t1833465\nPM01XFJ59CNC6Y0ATWGNYC4CAGGX\tpayments_confirmed\tMD01KPZ6NQR72Z9CBNKGKPK19EV2\t1833465\nPM01XFJ5975CZ9KT6C218V7X132M\tpayments_paid_out\tMD01KPZ5X6WGCYQ48SCX3QFS5QW5\t180227\nPM01XFJ5975CZ9KT6C218V7X132M\tpayments_confirmed\tMD01KPZ5X6WGCYQ48SCX3QFS5QW5\t180227\n",
+  "stderr": "",
+  "execution_time_ms": 268
+}

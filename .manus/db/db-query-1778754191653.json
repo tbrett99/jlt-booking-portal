@@ -1,0 +1,18 @@
+{
+  "query": "SELECT eventType, COUNT(*) as count FROM gc_payment_events WHERE userId IS NULL AND eventType IN ('payments_confirmed', 'payments_paid_out') GROUP BY eventType;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT eventType, COUNT(*) as count FROM gc_payment_events WHERE userId IS NULL AND eventType IN ('payments_confirmed', 'payments_paid_out') GROUP BY eventType;",
+  "rows": [
+    {
+      "eventType": "payments_confirmed",
+      "count": "97"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "count": "138"
+    }
+  ],
+  "messages": [],
+  "stdout": "eventType\tcount\npayments_confirmed\t97\npayments_paid_out\t138\n",
+  "stderr": "",
+  "execution_time_ms": 369
+}
