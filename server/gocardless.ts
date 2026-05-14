@@ -266,6 +266,10 @@ export interface GcPayment {
   currency: string;
   charge_date: string;
   description: string | null;
+  links?: {
+    mandate?: string;
+    subscription?: string;
+  };
 }
 
 export async function fetchPayment(paymentId: string): Promise<GcPayment | null> {

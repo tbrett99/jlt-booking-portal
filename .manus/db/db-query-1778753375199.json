@@ -1,0 +1,220 @@
+{
+  "query": "SELECT eventType, status, userId, paymentId, occurredAt FROM gc_payment_events ORDER BY occurredAt DESC LIMIT 30;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT eventType, status, userId, paymentId, occurredAt FROM gc_payment_events ORDER BY occurredAt DESC LIMIT 30;",
+  "rows": [
+    {
+      "eventType": "payments_confirmed",
+      "status": "confirmed",
+      "userId": "NULL",
+      "paymentId": "PM01XGT06D3ANPRNFBNWCCTMQYDD",
+      "occurredAt": "2026-05-13 19:05:45"
+    },
+    {
+      "eventType": "payments_confirmed",
+      "status": "confirmed",
+      "userId": "NULL",
+      "paymentId": "PM01XGSZ15XKYYC2X7VBXYGWGBCR",
+      "occurredAt": "2026-05-13 18:45:29"
+    },
+    {
+      "eventType": "payments_confirmed",
+      "status": "confirmed",
+      "userId": "NULL",
+      "paymentId": "PM01XGRWDG2WDRYWVGMNJGCCNKWR",
+      "occurredAt": "2026-05-13 08:41:18"
+    },
+    {
+      "eventType": "payments_confirmed",
+      "status": "confirmed",
+      "userId": "NULL",
+      "paymentId": "PM01XGPMKNM7XWSHX4JCZTZ57H9C",
+      "occurredAt": "2026-05-12 11:45:39"
+    },
+    {
+      "eventType": "payments_confirmed",
+      "status": "confirmed",
+      "userId": "NULL",
+      "paymentId": "PM01XF52TEJ838GCQXA0T40JNYSA",
+      "occurredAt": "2026-05-11 10:10:57"
+    },
+    {
+      "eventType": "payments_confirmed",
+      "status": "confirmed",
+      "userId": "NULL",
+      "paymentId": "PM01XFHYS66V2VXERMDRZN37TMPD",
+      "occurredAt": "2026-05-11 10:10:57"
+    },
+    {
+      "eventType": "payments_confirmed",
+      "status": "confirmed",
+      "userId": "NULL",
+      "paymentId": "PM01XFHZ68FS4N3X14D5PHA096E4",
+      "occurredAt": "2026-05-11 10:10:57"
+    },
+    {
+      "eventType": "payments_failed",
+      "status": "failed",
+      "userId": "NULL",
+      "paymentId": "PM01XFHYT6ZR533BEK7MBRN12FS6",
+      "occurredAt": "2026-05-11 07:22:27"
+    },
+    {
+      "eventType": "payments_failed",
+      "status": "failed",
+      "userId": "NULL",
+      "paymentId": "PM01XF53T3WS4TFGMSDAX4M0EB9D",
+      "occurredAt": "2026-05-11 07:22:26"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHYHFPERQHMPRDNA8TZ9REF",
+      "occurredAt": "2026-05-07 10:52:17"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHYMWEK0M9MHCZJKGMS4H23",
+      "occurredAt": "2026-05-07 10:52:17"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHZ4TPQH1JNMSV8FJ282EGX",
+      "occurredAt": "2026-05-07 10:52:17"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHYZBWCWZSNH5NTFM48QJ17",
+      "occurredAt": "2026-05-07 10:52:17"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHZ67FZQG91NJYFHK48QEP3",
+      "occurredAt": "2026-05-07 10:52:16"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFJ3DZ4MQR6EFSCNYK1B714J",
+      "occurredAt": "2026-05-07 10:52:16"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHYZDBWKGS19M7DNP9KAQW8",
+      "occurredAt": "2026-05-07 10:52:16"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHXZ1ZQNVVHJ3DEC2PDMBDR",
+      "occurredAt": "2026-05-07 10:52:16"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHZ67PMJ3F8J52K3CRT1Y7P",
+      "occurredAt": "2026-05-07 10:52:16"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHY0KCPT54YXSQHYNEBWN8F",
+      "occurredAt": "2026-05-07 10:52:16"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHZJGYMSQMQDFX92P2DS72A",
+      "occurredAt": "2026-05-07 10:52:16"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHXYR3H83952JTF6YRJARB2",
+      "occurredAt": "2026-05-07 10:52:15"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHXY95TPGNK0YBTVJ9JV5AY",
+      "occurredAt": "2026-05-07 10:52:15"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHYVE75RKAHCG5GQZD3QQ0W",
+      "occurredAt": "2026-05-07 10:52:15"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHZPB6TM7FX64FE7JF5YNZN",
+      "occurredAt": "2026-05-07 10:52:15"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHYNGFCRERMECCCMKT4TG1F",
+      "occurredAt": "2026-05-07 10:52:15"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHXZDW0SABQY28NCCT4XY62",
+      "occurredAt": "2026-05-07 10:52:15"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHYT12NKNMRNZP2G8VXX5BH",
+      "occurredAt": "2026-05-07 10:52:15"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHXXXB38W9Q3Q26E2E51YMQ",
+      "occurredAt": "2026-05-07 10:52:15"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHYH9XBP4113GVP5SVK0KZF",
+      "occurredAt": "2026-05-07 10:52:15"
+    },
+    {
+      "eventType": "payments_paid_out",
+      "status": "paid_out",
+      "userId": "NULL",
+      "paymentId": "PM01XFHYGV42MQQC6QSAYC8NWWX0",
+      "occurredAt": "2026-05-07 10:52:15"
+    }
+  ],
+  "messages": [],
+  "stdout": "eventType\tstatus\tuserId\tpaymentId\toccurredAt\npayments_confirmed\tconfirmed\tNULL\tPM01XGT06D3ANPRNFBNWCCTMQYDD\t2026-05-13 19:05:45\npayments_confirmed\tconfirmed\tNULL\tPM01XGSZ15XKYYC2X7VBXYGWGBCR\t2026-05-13 18:45:29\npayments_confirmed\tconfirmed\tNULL\tPM01XGRWDG2WDRYWVGMNJGCCNKWR\t2026-05-13 08:41:18\npayments_confirmed\tconfirmed\tNULL\tPM01XGPMKNM7XWSHX4JCZTZ57H9C\t2026-05-12 11:45:39\npayments_confirmed\tconfirmed\tNULL\tPM01XF52TEJ838GCQXA0T40JNYSA\t2026-05-11 10:10:57\npayments_confirmed\tconfirmed\tNULL\tPM01XFHYS66V2VXERMDRZN37TMPD\t2026-05-11 10:10:57\npayments_confirmed\tconfirmed\tNULL\tPM01XFHZ68FS4N3X14D5PHA096E4\t2026-05-11 10:10:57\npayments_failed\tfailed\tNULL\tPM01XFHYT6ZR533BEK7MBRN12FS6\t2026-05-11 07:22:27\npayments_failed\tfailed\tNULL\tPM01XF53T3WS4TFGMSDAX4M0EB9D\t2026-05-11 07:22:26\npayments_paid_out\tpaid_out\tNULL\tPM01XFHYHFPERQHMPRDNA8TZ9REF\t2026-05-07 10:52:17\npayments_paid_out\tpaid_out\tNULL\tPM01XFHYMWEK0M9MHCZJKGMS4H23\t2026-05-07 10:52:17\npayments_paid_out\tpaid_out\tNULL\tPM01XFHZ4TPQH1JNMSV8FJ282EGX\t2026-05-07 10:52:17\npayments_paid_out\tpaid_out\tNULL\tPM01XFHYZBWCWZSNH5NTFM48QJ17\t2026-05-07 10:52:17\npayments_paid_out\tpaid_out\tNULL\tPM01XFHZ67FZQG91NJYFHK48QEP3\t2026-05-07 10:52:16\npayments_paid_out\tpaid_out\tNULL\tPM01XFJ3DZ4MQR6EFSCNYK1B714J\t2026-05-07 10:52:16\npayments_paid_out\tpaid_out\tNULL\tPM01XFHYZDBWKGS19M7DNP9KAQW8\t2026-05-07 10:52:16\npayments_paid_out\tpaid_out\tNULL\tPM01XFHXZ1ZQNVVHJ3DEC2PDMBDR\t2026-05-07 10:52:16\npayments_paid_out\tpaid_out\tNULL\tPM01XFHZ67PMJ3F8J52K3CRT1Y7P\t2026-05-07 10:52:16\npayments_paid_out\tpaid_out\tNULL\tPM01XFHY0KCPT54YXSQHYNEBWN8F\t2026-05-07 10:52:16\npayments_paid_out\tpaid_out\tNULL\tPM01XFHZJGYMSQMQDFX92P2DS72A\t2026-05-07 10:52:16\npayments_paid_out\tpaid_out\tNULL\tPM01XFHXYR3H83952JTF6YRJARB2\t2026-05-07 10:52:15\npayments_paid_out\tpaid_out\tNULL\tPM01XFHXY95TPGNK0YBTVJ9JV5AY\t2026-05-07 10:52:15\npayments_paid_out\tpaid_out\tNULL\tPM01XFHYVE75RKAHCG5GQZD3QQ0W\t2026-05-07 10:52:15\npayments_paid_out\tpaid_out\tNULL\tPM01XFHZPB6TM7FX64FE7JF5YNZN\t2026-05-07 10:52:15\npayments_paid_out\tpaid_out\tNULL\tPM01XFHYNGFCRERMECCCMKT4TG1F\t2026-05-07 10:52:15\npayments_paid_out\tpaid_out\tNULL\tPM01XFHXZDW0SABQY28NCCT4XY62\t2026-05-07 10:52:15\npayments_paid_out\tpaid_out\tNULL\tPM01XFHYT12NKNMRNZP2G8VXX5BH\t2026-05-07 10:52:15\npayments_paid_out\tpaid_out\tNULL\tPM01XFHXXXB38W9Q3Q26E2E51YMQ\t2026-05-07 10:52:15\npayments_paid_out\tpaid_out\tNULL\tPM01XFHYH9XBP4113GVP5SVK0KZF\t2026-05-07 10:52:15\npayments_paid_out\tpaid_out\tNULL\tPM01XFHYGV42MQQC6QSAYC8NWWX0\t2026-05-07 10:52:15\n",
+  "stderr": "",
+  "execution_time_ms": 278
+}

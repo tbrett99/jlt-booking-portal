@@ -1252,9 +1252,26 @@ async function startServer() {
           ["confirmed", "paid_out", "failed", "charged_back", "cancelled"].includes(event.action)
         ) {
           const paymentId = event.links.payment;
-          const mandateId = event.links.mandate;
+          let mandateId: string | undefined = event.links.mandate;
           const subscriptionId = event.links.subscription;
           const meta = (event as any).details ?? {};
+          // Resolve amount from the payment resource if available
+          // Also resolve mandateId from the payment API if not in webhook links
+          // (GoCardless confirmed/paid_out events often omit links.mandate)
+          let amount: number | undefined;
+          let currency: string | undefined;
+          try {
+            const { fetchPayment } = await import("../gocardless");
+            if (paymentId) {
+              const gcPayment = await fetchPayment(paymentId);
+              amount = gcPayment?.amount;
+              currency = gcPayment?.currency;
+              if (!mandateId && gcPayment?.links?.mandate) {
+                mandateId = gcPayment.links.mandate;
+                console.log(`[GC Webhook] Resolved mandateId ${mandateId} from payment API for ${paymentId}`);
+              }
+            }
+          } catch { /* non-critical */ }
           // Resolve user from mandate
           let userId: number | undefined;
           if (mandateId) {
@@ -1266,17 +1283,6 @@ async function startServer() {
               if (rows[0]) userId = rows[0].userId ?? undefined;
             }
           }
-          // Resolve amount from the payment resource if available
-          let amount: number | undefined;
-          let currency: string | undefined;
-          try {
-            const { fetchPayment } = await import("../gocardless");
-            if (paymentId) {
-              const gcPayment = await fetchPayment(paymentId);
-              amount = gcPayment?.amount;
-              currency = gcPayment?.currency;
-            }
-          } catch { /* non-critical */ }
           await createPaymentEvent({
             userId,
             mandateId,

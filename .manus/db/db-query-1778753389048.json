@@ -1,0 +1,46 @@
+{
+  "query": "SELECT COUNT(*) as total_mandates FROM gc_mandates;\nSELECT mandateId, userId, status, createdAt FROM gc_mandates ORDER BY createdAt DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT COUNT(*) as total_mandates FROM gc_mandates;\nSELECT mandateId, userId, status, createdAt FROM gc_mandates ORDER BY createdAt DESC LIMIT 10;",
+  "rows": [
+    {
+      "total_mandates": "155"
+    },
+    {
+      "total_mandates": "mandateId\tuserId\tstatus\tcreatedAt"
+    },
+    {
+      "total_mandates": "MD01KRHBNZQJEHWXZCA38MFVX7RR\t8079651\tactive\t2026-05-13 19:05:51"
+    },
+    {
+      "total_mandates": "MD01KRHAH1NFSANSVZB9NPNQ19B7\t8079293\tpending_submission\t2026-05-13 18:45:32"
+    },
+    {
+      "total_mandates": "MD01KRG7YQR87S9FS0J53JX0TYQ5\t8067567\tsubmitted\t2026-05-13 08:41:29"
+    },
+    {
+      "total_mandates": "MD01KRE03J721X5FAPRYC83F29WM\t8052481\tsubmitted\t2026-05-12 11:45:50"
+    },
+    {
+      "total_mandates": "MD01KQZBT5VM1T1417N7CZS6BQQE\t6940184\tsubmitted\t2026-05-06 19:21:50"
+    },
+    {
+      "total_mandates": "MD01KQVWMK81XZJNH02WBJTTGCXH\t6661650\tactive\t2026-05-05 10:58:47"
+    },
+    {
+      "total_mandates": "MD01KQC5PY18DQWMAC4DV3WH1ZMC\t60311\tsubmitted\t2026-04-29 10:37:59"
+    },
+    {
+      "total_mandates": "MD01KQA8YVMAB213E8WGCTRKZ19S\t60217\tsubmitted\t2026-04-29 10:37:59"
+    },
+    {
+      "total_mandates": "MD01KQARJ4VY8MFTSW4HP2N3R9QN\t60294\tsubmitted\t2026-04-29 10:37:59"
+    },
+    {
+      "total_mandates": "MD01KQ9T6RPHC44D5K3YBVJBB2SR\t60504\tsubmitted\t2026-04-29 10:37:59"
+    }
+  ],
+  "messages": [],
+  "stdout": "total_mandates\n155\nmandateId\tuserId\tstatus\tcreatedAt\nMD01KRHBNZQJEHWXZCA38MFVX7RR\t8079651\tactive\t2026-05-13 19:05:51\nMD01KRHAH1NFSANSVZB9NPNQ19B7\t8079293\tpending_submission\t2026-05-13 18:45:32\nMD01KRG7YQR87S9FS0J53JX0TYQ5\t8067567\tsubmitted\t2026-05-13 08:41:29\nMD01KRE03J721X5FAPRYC83F29WM\t8052481\tsubmitted\t2026-05-12 11:45:50\nMD01KQZBT5VM1T1417N7CZS6BQQE\t6940184\tsubmitted\t2026-05-06 19:21:50\nMD01KQVWMK81XZJNH02WBJTTGCXH\t6661650\tactive\t2026-05-05 10:58:47\nMD01KQC5PY18DQWMAC4DV3WH1ZMC\t60311\tsubmitted\t2026-04-29 10:37:59\nMD01KQA8YVMAB213E8WGCTRKZ19S\t60217\tsubmitted\t2026-04-29 10:37:59\nMD01KQARJ4VY8MFTSW4HP2N3R9QN\t60294\tsubmitted\t2026-04-29 10:37:59\nMD01KQ9T6RPHC44D5K3YBVJBB2SR\t60504\tsubmitted\t2026-04-29 10:37:59\n",
+  "stderr": "",
+  "execution_time_ms": 286
+}

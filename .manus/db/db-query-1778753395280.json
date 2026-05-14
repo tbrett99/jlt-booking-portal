@@ -1,0 +1,90 @@
+{
+  "query": "SELECT e.paymentId, e.eventType, e.userId as eventUserId, e.occurredAt, m.mandateId, m.userId as mandateUserId FROM gc_payment_events e LEFT JOIN gc_mandates m ON e.mandateId = m.mandateId ORDER BY e.occurredAt DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT e.paymentId, e.eventType, e.userId as eventUserId, e.occurredAt, m.mandateId, m.userId as mandateUserId FROM gc_payment_events e LEFT JOIN gc_mandates m ON e.mandateId = m.mandateId ORDER BY e.occurredAt DESC LIMIT 10;",
+  "rows": [
+    {
+      "paymentId": "PM01XGT06D3ANPRNFBNWCCTMQYDD",
+      "eventType": "payments_confirmed",
+      "eventUserId": "NULL",
+      "occurredAt": "2026-05-13 19:05:45",
+      "mandateId": "NULL",
+      "mandateUserId": "NULL"
+    },
+    {
+      "paymentId": "PM01XGSZ15XKYYC2X7VBXYGWGBCR",
+      "eventType": "payments_confirmed",
+      "eventUserId": "NULL",
+      "occurredAt": "2026-05-13 18:45:29",
+      "mandateId": "NULL",
+      "mandateUserId": "NULL"
+    },
+    {
+      "paymentId": "PM01XGRWDG2WDRYWVGMNJGCCNKWR",
+      "eventType": "payments_confirmed",
+      "eventUserId": "NULL",
+      "occurredAt": "2026-05-13 08:41:18",
+      "mandateId": "NULL",
+      "mandateUserId": "NULL"
+    },
+    {
+      "paymentId": "PM01XGPMKNM7XWSHX4JCZTZ57H9C",
+      "eventType": "payments_confirmed",
+      "eventUserId": "NULL",
+      "occurredAt": "2026-05-12 11:45:39",
+      "mandateId": "NULL",
+      "mandateUserId": "NULL"
+    },
+    {
+      "paymentId": "PM01XF52TEJ838GCQXA0T40JNYSA",
+      "eventType": "payments_confirmed",
+      "eventUserId": "NULL",
+      "occurredAt": "2026-05-11 10:10:57",
+      "mandateId": "NULL",
+      "mandateUserId": "NULL"
+    },
+    {
+      "paymentId": "PM01XFHYS66V2VXERMDRZN37TMPD",
+      "eventType": "payments_confirmed",
+      "eventUserId": "NULL",
+      "occurredAt": "2026-05-11 10:10:57",
+      "mandateId": "NULL",
+      "mandateUserId": "NULL"
+    },
+    {
+      "paymentId": "PM01XFHZ68FS4N3X14D5PHA096E4",
+      "eventType": "payments_confirmed",
+      "eventUserId": "NULL",
+      "occurredAt": "2026-05-11 10:10:57",
+      "mandateId": "NULL",
+      "mandateUserId": "NULL"
+    },
+    {
+      "paymentId": "PM01XFHYT6ZR533BEK7MBRN12FS6",
+      "eventType": "payments_failed",
+      "eventUserId": "NULL",
+      "occurredAt": "2026-05-11 07:22:27",
+      "mandateId": "NULL",
+      "mandateUserId": "NULL"
+    },
+    {
+      "paymentId": "PM01XF53T3WS4TFGMSDAX4M0EB9D",
+      "eventType": "payments_failed",
+      "eventUserId": "NULL",
+      "occurredAt": "2026-05-11 07:22:26",
+      "mandateId": "NULL",
+      "mandateUserId": "NULL"
+    },
+    {
+      "paymentId": "PM01XFHYHFPERQHMPRDNA8TZ9REF",
+      "eventType": "payments_paid_out",
+      "eventUserId": "NULL",
+      "occurredAt": "2026-05-07 10:52:17",
+      "mandateId": "NULL",
+      "mandateUserId": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "paymentId\teventType\teventUserId\toccurredAt\tmandateId\tmandateUserId\nPM01XGT06D3ANPRNFBNWCCTMQYDD\tpayments_confirmed\tNULL\t2026-05-13 19:05:45\tNULL\tNULL\nPM01XGSZ15XKYYC2X7VBXYGWGBCR\tpayments_confirmed\tNULL\t2026-05-13 18:45:29\tNULL\tNULL\nPM01XGRWDG2WDRYWVGMNJGCCNKWR\tpayments_confirmed\tNULL\t2026-05-13 08:41:18\tNULL\tNULL\nPM01XGPMKNM7XWSHX4JCZTZ57H9C\tpayments_confirmed\tNULL\t2026-05-12 11:45:39\tNULL\tNULL\nPM01XF52TEJ838GCQXA0T40JNYSA\tpayments_confirmed\tNULL\t2026-05-11 10:10:57\tNULL\tNULL\nPM01XFHYS66V2VXERMDRZN37TMPD\tpayments_confirmed\tNULL\t2026-05-11 10:10:57\tNULL\tNULL\nPM01XFHZ68FS4N3X14D5PHA096E4\tpayments_confirmed\tNULL\t2026-05-11 10:10:57\tNULL\tNULL\nPM01XFHYT6ZR533BEK7MBRN12FS6\tpayments_failed\tNULL\t2026-05-11 07:22:27\tNULL\tNULL\nPM01XF53T3WS4TFGMSDAX4M0EB9D\tpayments_failed\tNULL\t2026-05-11 07:22:26\tNULL\tNULL\nPM01XFHYHFPERQHMPRDNA8TZ9REF\tpayments_paid_out\tNULL\t2026-05-07 10:52:17\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 264
+}

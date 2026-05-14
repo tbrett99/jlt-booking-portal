@@ -1,0 +1,62 @@
+{
+  "query": "SELECT triggerKey, toEmail, subject, status, sentAt FROM agent_emails WHERE triggerKey = 'gc_receipt' ORDER BY sentAt DESC LIMIT 20;\nSELECT triggerKey, COUNT(*) as count FROM agent_emails GROUP BY triggerKey ORDER BY count DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT triggerKey, toEmail, subject, status, sentAt FROM agent_emails WHERE triggerKey = 'gc_receipt' ORDER BY sentAt DESC LIMIT 20;\nSELECT triggerKey, COUNT(*) as count FROM agent_emails GROUP BY triggerKey ORDER BY count DESC LIMIT 20;",
+  "rows": [
+    {
+      "triggerKey": "direct",
+      "count": "1271"
+    },
+    {
+      "triggerKey": "commission_paid",
+      "count": "278"
+    },
+    {
+      "triggerKey": "added_to_pts",
+      "count": "219"
+    },
+    {
+      "triggerKey": "commission_claimable",
+      "count": "189"
+    },
+    {
+      "triggerKey": "commission_claimed",
+      "count": "137"
+    },
+    {
+      "triggerKey": "payment_received",
+      "count": "29"
+    },
+    {
+      "triggerKey": "not_on_topdog",
+      "count": "23"
+    },
+    {
+      "triggerKey": "creating_own_pts_file",
+      "count": "23"
+    },
+    {
+      "triggerKey": "reimbursement_scheduled",
+      "count": "17"
+    },
+    {
+      "triggerKey": "reimb_docs_missing",
+      "count": "11"
+    },
+    {
+      "triggerKey": "query",
+      "count": "11"
+    },
+    {
+      "triggerKey": "flight_request_update",
+      "count": "4"
+    },
+    {
+      "triggerKey": "cancelled",
+      "count": "2"
+    }
+  ],
+  "messages": [],
+  "stdout": "triggerKey\tcount\ndirect\t1271\ncommission_paid\t278\nadded_to_pts\t219\ncommission_claimable\t189\ncommission_claimed\t137\npayment_received\t29\nnot_on_topdog\t23\ncreating_own_pts_file\t23\nreimbursement_scheduled\t17\nreimb_docs_missing\t11\nquery\t11\nflight_request_update\t4\ncancelled\t2\n",
+  "stderr": "",
+  "execution_time_ms": 304
+}
