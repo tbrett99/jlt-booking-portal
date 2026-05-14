@@ -8,7 +8,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { Link, useLocation } from "wouter";
@@ -289,6 +289,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: false,
       items: [
         { label: "Package Pricing Calculator", href: "/pricing-calculator", icon: <Calculator size={16} /> },
+        { label: "My Commission Margin", href: "/my-margin", icon: <TrendingUp size={16} /> },
       ],
     },
   ];
@@ -348,6 +349,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: false,
       items: [
         { label: "Admin Reports", href: "/reports", icon: <FileText size={16} /> },
+        { label: "Commission Margin", href: "/commission-margin", icon: <TrendingUp size={16} /> },
         { label: "Agent Performance", href: "/agent-performance", icon: <BarChart2 size={16} /> },
       ],
     },

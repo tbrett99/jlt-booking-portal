@@ -2295,3 +2295,10 @@
 - [x] Explanatory note: price matching a genuine online price may allow going below the 6% threshold
 - [x] Add "Pricing Calculator" as a separate tab in the agent sidebar nav
 - [x] Wire route in App.tsx
+
+## Commission Margin Report
+- [ ] Add commissionMarginReport procedure to reports router (admin) — returns bookings with grossCost+expectedCommission, computes margin %, filters by agent/date, excludes personal bookings
+- [ ] Add agentMarginReport procedure (protected) — agent sees own bookings only
+- [ ] Build admin CommissionMarginReport page: agent filter, date filter, per-booking table with margin %, sortable, agent average summary cards, incomplete bookings count
+- [ ] Build agent-facing MarginReport page: own bookings, margin per booking, overall average, prompt/CTA for bookings missing grossCost or expectedCommission
+- [ ] Wire both routes in App.tsx and add to admin Reports nav and agent sidebar

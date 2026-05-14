@@ -2690,6 +2690,127 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           agentEmail: userMap.get(b.agentId)?.email ?? "",
         }));
       }),
+
+    // ── Commission Margin Report (admin) ──────────────────────────────────
+    commissionMargin: adminProcedure
+      .input(
+        z.object({
+          agentId: z.number().optional(),
+          fromDate: z.date().optional(),
+          toDate: z.date().optional(),
+        }).optional()
+      )
+      .query(async ({ input }) => {
+        const allBookings = await getAllBookings({
+          agentId: input?.agentId,
+          fromDate: input?.fromDate,
+          toDate: input?.toDate,
+        });
+        const allUsers = await getAllUsers();
+        const userMap = new Map(allUsers.map((u) => [u.id, u]));
+
+        const enriched = allBookings
+          .filter((b) => !b.isPersonalBooking)
+          .map((b) => {
+            const gross = b.grossCost != null ? parseFloat(String(b.grossCost)) : null;
+            const commission = b.expectedCommission != null ? parseFloat(String(b.expectedCommission)) : null;
+            const hasData = gross != null && gross > 0 && commission != null && commission >= 0;
+            // Margin = gross commission / gross cost * 100 (no VAT adjustment)
+            const marginPct = hasData ? (commission! / gross!) * 100 : null;
+            return {
+              id: b.id,
+              agentId: b.agentId,
+              agentName: userMap.get(b.agentId)?.name ?? "Unknown",
+              clientName: b.clientName,
+              destination: b.destination ?? null,
+              departureDate: b.departureDate,
+              currentStage: b.currentStage,
+              grossCost: gross,
+              expectedCommission: commission,
+              marginPct,
+              meetsThreshold: marginPct != null ? marginPct >= 6 : null,
+              hasData,
+            };
+          });
+
+        // Per-agent summaries (always over all bookings, not filtered)
+        const agentMap = new Map<number, { agentId: number; agentName: string; bookings: typeof enriched }>();
+        for (const b of enriched) {
+          if (!agentMap.has(b.agentId)) agentMap.set(b.agentId, { agentId: b.agentId, agentName: b.agentName, bookings: [] });
+          agentMap.get(b.agentId)!.bookings.push(b);
+        }
+        const agentSummaries = Array.from(agentMap.values()).map((a) => {
+          const withData = a.bookings.filter((b) => b.hasData);
+          const avgMargin = withData.length > 0
+            ? withData.reduce((sum, b) => sum + b.marginPct!, 0) / withData.length
+            : null;
+          return {
+            agentId: a.agentId,
+            agentName: a.agentName,
+            totalBookings: a.bookings.length,
+            bookingsWithData: withData.length,
+            bookingsMissingData: a.bookings.length - withData.length,
+            avgMarginPct: avgMargin,
+            belowThresholdCount: withData.filter((b) => !b.meetsThreshold).length,
+          };
+        }).sort((a, b) => (b.avgMarginPct ?? -1) - (a.avgMarginPct ?? -1));
+
+        const allAgents = allUsers
+          .filter((u) => u.role === "agent")
+          .map((u) => ({ id: u.id, name: u.name }));
+
+        return { bookings: enriched, agentSummaries, allAgents };
+      }),
+
+    // ── Agent own commission margin report (protected) ───────────────────
+    myCommissionMargin: protectedProcedure
+      .input(
+        z.object({
+          fromDate: z.date().optional(),
+          toDate: z.date().optional(),
+        }).optional()
+      )
+      .query(async ({ ctx, input }) => {
+        const myBookings = await getBookingsByAgent(ctx.user.id);
+        const filtered = myBookings
+          .filter((b) => !b.isPersonalBooking)
+          .filter((b) => {
+            if (input?.fromDate && b.departureDate < input.fromDate) return false;
+            if (input?.toDate && b.departureDate > input.toDate) return false;
+            return true;
+          });
+
+        const enriched = filtered.map((b) => {
+          const gross = b.grossCost != null ? parseFloat(String(b.grossCost)) : null;
+          const commission = b.expectedCommission != null ? parseFloat(String(b.expectedCommission)) : null;
+          const hasData = gross != null && gross > 0 && commission != null && commission >= 0;
+          const marginPct = hasData ? (commission! / gross!) * 100 : null;
+          return {
+            id: b.id,
+            clientName: b.clientName,
+            destination: b.destination ?? null,
+            departureDate: b.departureDate,
+            currentStage: b.currentStage,
+            grossCost: gross,
+            expectedCommission: commission,
+            marginPct,
+            meetsThreshold: marginPct != null ? marginPct >= 6 : null,
+            hasData,
+          };
+        });
+
+        const withData = enriched.filter((b) => b.hasData);
+        const avgMarginPct = withData.length > 0
+          ? withData.reduce((sum, b) => sum + b.marginPct!, 0) / withData.length
+          : null;
+
+        return {
+          bookings: enriched,
+          avgMarginPct,
+          missingDataCount: enriched.filter((b) => !b.hasData).length,
+          belowThresholdCount: withData.filter((b) => !b.meetsThreshold).length,
+        };
+      }),
   }),
 
   // ── System Settings ────────────────────────────────────────────────────────────────────────────────────────

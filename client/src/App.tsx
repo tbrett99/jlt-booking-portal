@@ -40,6 +40,7 @@ const OnboardingDashboard = lazy(() => import("./pages/agent/OnboardingDashboard
 const DdSetup = lazy(() => import("./pages/agent/DdSetup"));
 const DdComplete = lazy(() => import("./pages/agent/DdComplete"));
 const PackagePricingCalculator = lazy(() => import("./pages/agent/PackagePricingCalculator"));
+const MyMarginReport = lazy(() => import("./pages/agent/MyMarginReport"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminKanban = lazy(() => import("./pages/admin/AdminKanban"));
 const AdminBookingDetail = lazy(() => import("./pages/admin/AdminBookingDetail"));
@@ -50,6 +51,7 @@ const AdminAmendmentKanban = lazy(() => import("./pages/admin/AdminAmendmentKanb
 const AdminRefundKanban = lazy(() => import("./pages/admin/AdminRefundKanban"));
 const CommissionDue = lazy(() => import("./pages/admin/CommissionDue"));
 const AdminReports = lazy(() => import("./pages/admin/AdminReports"));
+const CommissionMarginReport = lazy(() => import("./pages/admin/CommissionMarginReport"));
 const NotificationTemplates = lazy(() => import("./pages/admin/NotificationTemplates"));
 const AdminFlightsPipeline = lazy(() => import("./pages/admin/AdminFlightsPipeline"));
 const AdminCommissions = lazy(() => import("./pages/admin/AdminCommissions"));
@@ -247,6 +249,7 @@ function AuthRouter() {
           <Route path="/unsubscribe" component={UnsubscribePage} />
           <Route path="/suppliers" component={SupplierDirectory} />
           <Route path="/pricing-calculator" component={PackagePricingCalculator} />
+          <Route path="/my-margin" component={MyMarginReport} />
           {/* Terms & Policies — accessible to logged-in agents */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}
@@ -295,6 +298,7 @@ function AuthRouter() {
           <Route path="/unsubscribe" component={UnsubscribePage} />
           <Route path="/suppliers" component={SupplierDirectory} />
           <Route path="/pricing-calculator" component={PackagePricingCalculator} />
+          <Route path="/my-margin" component={MyMarginReport} />
           {/* Terms & Policies — accessible to admins in agent view */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}
@@ -333,6 +337,7 @@ function AuthRouter() {
         <Route path="/remittance" component={RemittanceManagement} />
         <Route path="/flights" component={AdminFlightsPipeline} />
         <Route path="/reports" component={AdminReports} />
+        <Route path="/commission-margin" component={CommissionMarginReport} />
         <Route path="/agent-performance" component={AdminAgentPerformance} />
         <Route path="/notification-templates" component={NotificationTemplates} />
         <Route path="/import" component={AdminImport} />
