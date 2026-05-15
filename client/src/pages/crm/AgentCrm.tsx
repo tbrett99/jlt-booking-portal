@@ -1696,6 +1696,8 @@ function TeamTab({ userId, profile, onRefresh }: { userId: number; profile: CrmP
   const [teamSub, setTeamSub] = useState("");
   const [teamNotes, setTeamNotes] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [createSearchQuery, setCreateSearchQuery] = useState("");
+  const [selectedPartnerIds, setSelectedPartnerIds] = useState<number[]>([]);
 
   const teamId = profile?.teamId ?? null;
 
@@ -1705,8 +1707,8 @@ function TeamTab({ userId, profile, onRefresh }: { userId: number; profile: CrmP
     { enabled: !!teamId }
   );
 
-  // Load all agents for the add-member search
-  const { data: allAgents } = trpc.crm.agentCrm.list.useQuery(undefined, { enabled: showAddDialog });
+  // Load all agents for the add-member search (also used in create dialog)
+  const { data: allAgents } = trpc.crm.agentCrm.list.useQuery(undefined, { enabled: showAddDialog || showCreateDialog });
 
   const createTeam = trpc.crm.agentCrm.createTeam.useMutation({
     onSuccess: () => { utils.crm.agentCrm.list.invalidate(); onRefresh(); setShowCreateDialog(false); },
@@ -1831,7 +1833,7 @@ function TeamTab({ userId, profile, onRefresh }: { userId: number; profile: CrmP
       {/* Create team dialog */}
       {showCreateDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-background rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+          <div className="bg-background rounded-xl shadow-xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="font-semibold mb-4">Create New Team</h3>
             <div className="space-y-3">
               <div>
@@ -1859,12 +1861,52 @@ function TeamTab({ userId, profile, onRefresh }: { userId: number; profile: CrmP
                 <textarea className="w-full border rounded-lg px-3 py-2 text-sm mt-1 bg-background resize-none" rows={2}
                   value={teamNotes} onChange={e => setTeamNotes(e.target.value)} />
               </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Add Team Members</label>
+                <p className="text-xs text-muted-foreground mt-0.5 mb-2">Select the other agent(s) to include alongside the current agent.</p>
+                {selectedPartnerIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {selectedPartnerIds.map(pid => {
+                      const agent = (allAgents ?? []).find(a => a.id === pid);
+                      return agent ? (
+                        <span key={pid} className="inline-flex items-center gap-1 bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs font-medium">
+                          {agent.name}
+                          <button onClick={() => setSelectedPartnerIds(ids => ids.filter(id => id !== pid))} className="hover:text-destructive ml-0.5">×</button>
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+                <input
+                  className="w-full border rounded-lg px-3 py-2 text-sm mb-1 bg-background"
+                  placeholder="Search agents..."
+                  value={createSearchQuery}
+                  onChange={e => setCreateSearchQuery(e.target.value)}
+                />
+                <div className="max-h-36 overflow-y-auto space-y-0.5 border rounded-lg p-1">
+                  {(allAgents ?? []).filter(a =>
+                    a.id !== userId &&
+                    !a.crmProfile?.teamId &&
+                    !selectedPartnerIds.includes(a.id) &&
+                    (createSearchQuery === "" || a.name?.toLowerCase().includes(createSearchQuery.toLowerCase()) || a.email?.toLowerCase().includes(createSearchQuery.toLowerCase()))
+                  ).slice(0, 15).map(a => (
+                    <button key={a.id} className="w-full text-left px-3 py-2 rounded-lg hover:bg-accent text-sm"
+                      onClick={() => { setSelectedPartnerIds(ids => [...ids, a.id]); setCreateSearchQuery(""); }}>
+                      <span className="font-medium">{a.name}</span>
+                      <span className="text-muted-foreground ml-2 text-xs">{a.email}</span>
+                    </button>
+                  ))}
+                  {(allAgents ?? []).filter(a => a.id !== userId && !a.crmProfile?.teamId && !selectedPartnerIds.includes(a.id)).length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center py-3">No unassigned agents available</p>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" size="sm" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
+              <Button variant="outline" size="sm" onClick={() => { setShowCreateDialog(false); setSelectedPartnerIds([]); setCreateSearchQuery(""); }}>Cancel</Button>
               <Button size="sm" disabled={!teamName.trim() || createTeam.isPending}
-                onClick={() => createTeam.mutate({ name: teamName, membershipTier: teamTier || undefined, monthlySub: teamSub || undefined, notes: teamNotes || undefined, memberUserIds: [userId] })}>
-                {createTeam.isPending ? "Creating..." : "Create Team"}
+                onClick={() => createTeam.mutate({ name: teamName, membershipTier: teamTier || undefined, monthlySub: teamSub || undefined, notes: teamNotes || undefined, memberUserIds: [userId, ...selectedPartnerIds] })}>
+                {createTeam.isPending ? "Creating..." : `Create Team${selectedPartnerIds.length > 0 ? ` (${selectedPartnerIds.length + 1} members)` : ""}`}
               </Button>
             </div>
           </div>

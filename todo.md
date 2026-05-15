@@ -2321,3 +2321,7 @@
 
 ## Margin Colour Logic Update
 - [x] Update all margin colour coding: below 6% = red, 6% and above = green (remove amber band)
+
+## CRM Team Bidirectional Linking Fix
+- [x] Fix team membership so both members see the team on their profile and link to each other
+- [x] Add partner member picker to Create Team dialog so both agents are linked at creation time
