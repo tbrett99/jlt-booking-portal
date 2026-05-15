@@ -1720,7 +1720,16 @@ export const crmRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         const { agentCrmProfiles } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
-        await db.update(agentCrmProfiles).set({ teamId: input.teamId }).where(eq(agentCrmProfiles.userId, input.userId));
+        // Check if a CRM profile already exists for this user
+        const existing = await db.select({ id: agentCrmProfiles.id }).from(agentCrmProfiles).where(eq(agentCrmProfiles.userId, input.userId));
+        if (existing.length > 0) {
+          // Profile exists — just update the teamId
+          await db.update(agentCrmProfiles).set({ teamId: input.teamId }).where(eq(agentCrmProfiles.userId, input.userId));
+        } else {
+          // No profile yet — create a minimal one with the teamId so the link is persisted
+          const uniqueAgentId = await generateUniqueAgentIdForUser();
+          await db.insert(agentCrmProfiles).values({ userId: input.userId, teamId: input.teamId, uniqueAgentId, agentStatus: "active" });
+        }
         return { success: true };
       }),
 

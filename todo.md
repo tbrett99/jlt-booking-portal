@@ -2325,3 +2325,7 @@
 ## CRM Team Bidirectional Linking Fix
 - [x] Fix team membership so both members see the team on their profile and link to each other
 - [x] Add partner member picker to Create Team dialog so both agents are linked at creation time
+
+## CRM Team Member Search & Click Bugs
+- [x] Fix: agents already in a team are filtered out of the member picker — root cause was duplicate teams created; merged Charlotte & Michael into one team via DB
+- [x] Fix: clicking an agent name in the Add Member dropdown does nothing — addTeamMember now upserts a CRM profile row if the agent has none (was silently updating 0 rows)

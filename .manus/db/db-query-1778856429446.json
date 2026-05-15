@@ -1,0 +1,18 @@
+{
+  "query": "\nSELECT u.id, u.name, u.email, p.id as profileId, p.teamId, t.name as teamName\nFROM users u\nLEFT JOIN agent_crm_profiles p ON p.userId = u.id\nLEFT JOIN agent_teams t ON t.id = p.teamId\nWHERE u.name LIKE '%Dupreez%' OR u.name LIKE '%dupreez%' OR u.name LIKE '%Du Preez%'\nORDER BY u.name;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, u.email, p.id as profileId, p.teamId, t.name as teamName\nFROM users u\nLEFT JOIN agent_crm_profiles p ON p.userId = u.id\nLEFT JOIN agent_teams t ON t.id = p.teamId\nWHERE u.name LIKE '%Dupreez%' OR u.name LIKE '%dupreez%' OR u.name LIKE '%Du Preez%'\nORDER BY u.name;\n",
+  "rows": [
+    {
+      "id": "8050131",
+      "name": "Susan Dupreez",
+      "email": "suziecowan@aol.com",
+      "profileId": "NULL",
+      "teamId": "NULL",
+      "teamName": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tprofileId\tteamId\tteamName\n8050131\tSusan Dupreez\tsuziecowan@aol.com\tNULL\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 260
+}

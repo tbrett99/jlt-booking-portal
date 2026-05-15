@@ -1,0 +1,24 @@
+{
+  "query": "\nSELECT u.id, u.name, u.email, p.teamId, t.name as teamName\nFROM users u\nLEFT JOIN agent_crm_profiles p ON p.userId = u.id\nLEFT JOIN agent_teams t ON t.id = p.teamId\nWHERE u.name LIKE '%Matthews%' OR u.name LIKE '%matthews%'\nORDER BY u.name;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, u.email, p.teamId, t.name as teamName\nFROM users u\nLEFT JOIN agent_crm_profiles p ON p.userId = u.id\nLEFT JOIN agent_teams t ON t.id = p.teamId\nWHERE u.name LIKE '%Matthews%' OR u.name LIKE '%matthews%'\nORDER BY u.name;\n",
+  "rows": [
+    {
+      "id": "60441",
+      "name": "Charlotte Matthews",
+      "email": "charlotte.syers@hotmail.co.uk",
+      "teamId": "120002",
+      "teamName": "Whole New World Holidays"
+    },
+    {
+      "id": "60414",
+      "name": "Michael Matthews",
+      "email": "michael@wholenewworld.co.uk",
+      "teamId": "120001",
+      "teamName": "Whole New World Holidays"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tteamId\tteamName\n60441\tCharlotte Matthews\tcharlotte.syers@hotmail.co.uk\t120002\tWhole New World Holidays\n60414\tMichael Matthews\tmichael@wholenewworld.co.uk\t120001\tWhole New World Holidays\n",
+  "stderr": "",
+  "execution_time_ms": 317
+}
