@@ -282,6 +282,10 @@ export default function AgentBookingDetail() {
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
   const [editingCommission, setEditingCommission] = useState(false);
   const [commissionInput, setCommissionInput] = useState("");
+  // Gross selling price editing state
+  const [editingGrossData, setEditingGrossData] = useState(false);
+  const [grossCostInput, setGrossCostInput] = useState("");
+  const [grossCommissionInput, setGrossCommissionInput] = useState("");
   const [messageAttachments, setMessageAttachments] = useState<File[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const messageFileRef = useRef<HTMLInputElement>(null);
@@ -368,6 +372,24 @@ export default function AgentBookingDetail() {
     const val = parseFloat(commissionInput);
     if (isNaN(val) || val < 0) { toast.error("Please enter a valid amount"); return; }
     updateCommission.mutate({ bookingId, expectedCommission: val });
+  };
+
+  const updateGrossData = trpc.bookings.updateGrossData.useMutation({
+    onSuccess: () => {
+      toast.success("Gross selling price saved");
+      setEditingGrossData(false);
+      utils.bookings.byId.invalidate({ id: bookingId });
+    },
+    onError: (err: any) => toast.error(err.message || "Failed to save gross selling price"),
+  });
+
+  const handleSaveGrossData = () => {
+    const gc = parseFloat(grossCostInput);
+    const ec = parseFloat(grossCommissionInput);
+    if (isNaN(gc) || gc <= 0) { toast.error("Please enter a valid gross selling price"); return; }
+    if (isNaN(ec) || ec < 0) { toast.error("Please enter a valid commission amount"); return; }
+    if (ec >= gc) { toast.error("Commission cannot be equal to or greater than the gross selling price"); return; }
+    updateGrossData.mutate({ bookingId, grossCost: gc, expectedCommission: ec });
   };
 
   const uploadMessageDoc = trpc.bookings.uploadMessageDoc.useMutation();
@@ -753,44 +775,102 @@ export default function AgentBookingDetail() {
           </div>
         )}
 
-        <div className="rounded-xl p-3 border col-span-2 sm:col-span-1" style={{ background: booking.expectedCommission ? '#ecfdf5' : '#fffbeb' }}>
-          <p className="text-xs text-muted-foreground mb-1 flex items-center justify-between gap-1">
-            <span className="flex items-center gap-1"><TrendingUp size={11} /> My Commission</span>
-            {!editingCommission && (
+        {/* Gross Selling Price + Commission card */}
+        <div className="rounded-xl p-3 border col-span-2" style={{ background: (booking as any).grossCost ? '#ecfdf5' : '#fffbeb' }}>
+          <p className="text-xs text-muted-foreground mb-2 flex items-center justify-between gap-1">
+            <span className="flex items-center gap-1"><TrendingUp size={11} /> Gross Selling Price &amp; Commission</span>
+            {!editingGrossData && !(booking as any).grossCostLockedAt && (
               <button
-                onClick={() => { setCommissionInput(booking.expectedCommission ? String(Number(booking.expectedCommission)) : ""); setEditingCommission(true); }}
+                onClick={() => {
+                  setGrossCostInput((booking as any).grossCost ? String(Number((booking as any).grossCost)) : "");
+                  setGrossCommissionInput(booking.expectedCommission ? String(Number(booking.expectedCommission)) : "");
+                  setEditingGrossData(true);
+                }}
                 className="text-[10px] underline opacity-60 hover:opacity-100"
               >
-                {booking.expectedCommission ? "Edit" : "Add"}
+                {(booking as any).grossCost ? "Edit" : "Add"}
               </button>
             )}
+            {(booking as any).grossCostLockedAt && (
+              <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Locked — contact admin to change
+              </span>
+            )}
           </p>
-          {editingCommission ? (
-            <div className="flex items-center gap-1 mt-1">
-              <span className="text-sm font-medium">£</span>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={commissionInput}
-                onChange={(e) => setCommissionInput(e.target.value)}
-                className="h-7 text-sm px-2 py-0 w-24"
-                autoFocus
-                onKeyDown={(e) => { if (e.key === "Enter") handleSaveCommission(); if (e.key === "Escape") setEditingCommission(false); }}
-              />
-              <button onClick={handleSaveCommission} disabled={updateCommission.isPending} className="p-1 rounded hover:bg-emerald-100">
-                {updateCommission.isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} style={{ color: '#065f46' }} />}
-              </button>
-              <button onClick={() => setEditingCommission(false)} className="p-1 rounded hover:bg-red-50">
-                <X size={13} style={{ color: '#991b1b' }} />
-              </button>
+          {editingGrossData ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-44">Gross selling price (£)</span>
+                <span className="text-sm font-medium">£</span>
+                <Input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={grossCostInput}
+                  onChange={(e) => setGrossCostInput(e.target.value)}
+                  className="h-7 text-sm px-2 py-0 w-28"
+                  placeholder="e.g. 2800.00"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-44">Your commission (£)</span>
+                <span className="text-sm font-medium">£</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={grossCommissionInput}
+                  onChange={(e) => setGrossCommissionInput(e.target.value)}
+                  className="h-7 text-sm px-2 py-0 w-28"
+                  placeholder="e.g. 168.00"
+                  autoFocus
+                />
+              </div>
+              {grossCostInput && grossCommissionInput && !isNaN(parseFloat(grossCostInput)) && !isNaN(parseFloat(grossCommissionInput)) && parseFloat(grossCostInput) > 0 && (
+                <p className="text-[10px] text-muted-foreground">
+                  Margin: {((parseFloat(grossCommissionInput) / parseFloat(grossCostInput)) * 100).toFixed(2)}%
+                </p>
+              )}
+              <div className="flex items-center gap-1 pt-1">
+                <button onClick={handleSaveGrossData} disabled={updateGrossData.isPending} className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[10px] font-medium">
+                  {updateGrossData.isPending ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Save
+                </button>
+                <button onClick={() => setEditingGrossData(false)} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-red-50 text-red-600 text-[10px]">
+                  <X size={10} /> Cancel
+                </button>
+              </div>
+              <p className="text-[10px] text-amber-700 bg-amber-50 rounded p-2 mt-1">
+                Once saved, this cannot be edited without contacting an admin. Please double-check your figures.
+              </p>
             </div>
           ) : (
-            <p className="font-semibold text-sm" style={{ color: booking.expectedCommission ? '#065f46' : '#92400e' }}>
-              {booking.expectedCommission
-                ? `£${Number(booking.expectedCommission).toFixed(2)}`
-                : <span className="text-xs font-normal">Tap "Add" to enter your expected commission</span>}
-            </p>
+            <div className="space-y-1">
+              {(booking as any).grossCost ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Gross selling price</span>
+                    <span className="font-semibold text-sm" style={{ color: '#065f46' }}>£{Number((booking as any).grossCost).toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Commission</span>
+                    <span className="font-semibold text-sm" style={{ color: '#065f46' }}>
+                      {booking.expectedCommission ? `£${Number(booking.expectedCommission).toFixed(2)}` : '—'}
+                    </span>
+                  </div>
+                  {booking.expectedCommission && (booking as any).grossCost && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Margin</span>
+                      <span className="font-semibold text-sm" style={{ color: (Number(booking.expectedCommission) / Number((booking as any).grossCost) * 100) >= 6 ? '#065f46' : (Number(booking.expectedCommission) / Number((booking as any).grossCost) * 100) >= 5 ? '#92400e' : '#991b1b' }}>
+                        {((Number(booking.expectedCommission) / Number((booking as any).grossCost)) * 100).toFixed(2)}%
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs font-normal" style={{ color: '#92400e' }}>Tap "Add" to enter your gross selling price and commission — used for your margin report.</p>
+              )}
+            </div>
           )}
         </div>
       </div>

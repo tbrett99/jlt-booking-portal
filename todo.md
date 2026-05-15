@@ -2297,8 +2297,24 @@
 - [x] Wire route in App.tsx
 
 ## Commission Margin Report
-- [ ] Add commissionMarginReport procedure to reports router (admin) — returns bookings with grossCost+expectedCommission, computes margin %, filters by agent/date, excludes personal bookings
-- [ ] Add agentMarginReport procedure (protected) — agent sees own bookings only
-- [ ] Build admin CommissionMarginReport page: agent filter, date filter, per-booking table with margin %, sortable, agent average summary cards, incomplete bookings count
-- [ ] Build agent-facing MarginReport page: own bookings, margin per booking, overall average, prompt/CTA for bookings missing grossCost or expectedCommission
-- [ ] Wire both routes in App.tsx and add to admin Reports nav and agent sidebar
+- [x] Add commissionMarginReport procedure to reports router (admin) — returns bookings with grossCost+expectedCommission, computes margin %, filters by agent/date, excludes personal bookings
+- [x] Add agentMarginReport procedure (protected) — agent sees own bookings only
+- [x] Build admin CommissionMarginReport page: agent filter, date filter, per-booking table with margin %, sortable, agent average summary cards, incomplete bookings count
+- [x] Build agent-facing MarginReport page: own bookings, margin per booking, overall average, prompt/CTA for bookings missing grossCost or expectedCommission
+- [x] Wire both routes in App.tsx and add to admin Reports nav and agent sidebar
+
+## GoCardless Subscription Scheme Fix
+- [ ] Diagnose 422 scheme_doesnt_support_functionality error for Faster Payments mandates
+- [ ] Fix subscription creation to handle or skip payment day selection for non-Bacs schemes
+- [ ] Show appropriate message/fallback for mandates that don't support subscriptions
+
+## Agent Gross Selling Price on Bookings
+- [x] Add grossCostLockedAt timestamp field to bookings schema and run migration
+- [x] Add updateGrossData tRPC procedure (agent) — sets grossCost + expectedCommission, locks on first save
+- [x] Add adminUpdateGrossData tRPC procedure (admin) — bypasses lock, can always update
+- [x] Add countMissingGrossData tRPC procedure (agent) — counts non-cancelled bookings without grossCost
+- [x] Replace old single-field commission card in AgentBookingDetail with combined gross selling price + commission card
+- [x] Show lock indicator on agent booking detail once grossCostLockedAt is set
+- [x] Add dashboard alert banner on AgentDashboard when bookings are missing gross selling price data
+- [x] Add lock indicator and admin-override note to Gross Cost field in AdminBookingDetail
+- [x] updateAdminFields also sets grossCostLockedAt when admin sets grossCost for the first time

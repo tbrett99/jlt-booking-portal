@@ -1,0 +1,22 @@
+{
+  "query": "\nSELECT b.id, b.clientName, b.ptsRef, b.currentStage, b.grossCost, b.expectedCommission,\n  cc.id AS claimId, cc.status AS claimStatus, cc.claimedAt, cc.paidAt\nFROM bookings b\nLEFT JOIN commission_claims cc ON cc.bookingId = b.id\nWHERE b.id = 810001 OR b.ptsRef = '810001'\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT b.id, b.clientName, b.ptsRef, b.currentStage, b.grossCost, b.expectedCommission,\n  cc.id AS claimId, cc.status AS claimStatus, cc.claimedAt, cc.paidAt\nFROM bookings b\nLEFT JOIN commission_claims cc ON cc.bookingId = b.id\nWHERE b.id = 810001 OR b.ptsRef = '810001'\nLIMIT 5;\n",
+  "rows": [
+    {
+      "id": "810001",
+      "clientName": "James Hayden",
+      "ptsRef": "2T0121178",
+      "currentStage": "Commission Claimable",
+      "grossCost": "1680.00",
+      "expectedCommission": "181.86",
+      "claimId": "NULL",
+      "claimStatus": "NULL",
+      "claimedAt": "NULL",
+      "paidAt": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tclientName\tptsRef\tcurrentStage\tgrossCost\texpectedCommission\tclaimId\tclaimStatus\tclaimedAt\tpaidAt\n810001\tJames Hayden\t2T0121178\tCommission Claimable\t1680.00\t181.86\tNULL\tNULL\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 279
+}

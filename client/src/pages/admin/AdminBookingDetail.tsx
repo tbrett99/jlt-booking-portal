@@ -1404,7 +1404,14 @@ export default function AdminBookingDetail() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">Gross Cost (£)</Label>
+                  <Label className="text-xs flex items-center gap-1">
+                    Gross Cost (£)
+                    {(booking as any).grossCostLockedAt && (
+                      <span className="text-[9px] font-normal text-amber-600 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">
+                        Agent-locked — admin override
+                      </span>
+                    )}
+                  </Label>
                   <Input type="number" value={editGrossCost} onChange={(e) => setEditGrossCost(e.target.value)} placeholder="0.00" className="h-8 text-sm" />
                 </div>
                 <div className="space-y-1">

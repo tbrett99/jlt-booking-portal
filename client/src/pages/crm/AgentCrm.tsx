@@ -2141,18 +2141,24 @@ function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; m
                     <p className="text-xs text-muted-foreground">Paste the mandate ID from the GoCardless dashboard</p>
                   </div>
                 )}
-                <div className="flex items-center gap-3">
-                  <label className="text-muted-foreground whitespace-nowrap">Payment day:</label>
-                  <select
-                    value={createSubDay}
-                    onChange={(e) => setCreateSubDay(Number(e.target.value))}
-                    className="border rounded px-2 py-1 text-sm bg-background"
-                  >
-                    {[1, 15, 28].map((d) => (
-                      <option key={d} value={d}>{d === 1 ? "1st" : d === 15 ? "15th" : "28th"} of month</option>
-                    ))}
-                  </select>
-                </div>
+                {ddStatus?.mandate?.scheme === "faster_payments" ? (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    <strong>Faster Payments mandate</strong> — payment day selection is not supported for this mandate type. GoCardless will determine the charge date automatically.
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <label className="text-muted-foreground whitespace-nowrap">Payment day:</label>
+                    <select
+                      value={createSubDay}
+                      onChange={(e) => setCreateSubDay(Number(e.target.value))}
+                      className="border rounded px-2 py-1 text-sm bg-background"
+                    >
+                      {[1, 15, 28].map((d) => (
+                        <option key={d} value={d}>{d === 1 ? "1st" : d === 15 ? "15th" : "28th"} of month</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {createSubMutation.error && (
                   <p className="text-red-600 text-xs">{createSubMutation.error.message}</p>
                 )}

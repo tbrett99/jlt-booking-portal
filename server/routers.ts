@@ -137,6 +137,7 @@ import {
   createBillingRequestFlow,
   calcSubscriptionStartDate,
   createSubscription,
+  getMandate as getGcMandate,
 } from "./gocardless";
 import {
   createGcMandate,
@@ -1079,6 +1080,17 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         const { bookingId, ...data } = input;
+        // If admin is setting grossCost for the first time, also set grossCostLockedAt
+        if (input.grossCost !== undefined) {
+          const existingBooking = await getBookingById(bookingId);
+          if (existingBooking && existingBooking.grossCostLockedAt == null) {
+            const { getDb } = await import('./db');
+            const { bookings: bookingsTable } = await import('../drizzle/schema');
+            const { eq } = await import('drizzle-orm');
+            const db = await getDb();
+            if (db) await db.update(bookingsTable).set({ grossCostLockedAt: new Date() }).where(eq(bookingsTable.id, bookingId));
+          }
+        }
         const result = await updateBookingAdminFields(bookingId, data as any);
         const booking = await getBookingById(bookingId);
         if (booking) {
@@ -1395,6 +1407,82 @@ export const appRouter = router({
         const { url } = await storagePut(key, buffer, input.mimeType);
         return { url, fileName: input.fileName };
       }),
+    // Agent: set gross selling price + expected commission (only if not yet locked)
+    updateGrossData: protectedProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        grossCost: z.number().positive(),
+        expectedCommission: z.number().min(0),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: 'FORBIDDEN' });
+        }
+        if (ctx.user.role === 'agent' && booking.grossCostLockedAt != null) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Gross selling price is locked. Contact an admin to make changes.' });
+        }
+        const { getDb } = await import('./db');
+        const { bookings: bookingsTable } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const now = new Date();
+        await db.update(bookingsTable)
+          .set({
+            grossCost: String(input.grossCost),
+            expectedCommission: String(input.expectedCommission),
+            grossCostLockedAt: booking.grossCostLockedAt ?? now,
+          })
+          .where(eq(bookingsTable.id, input.bookingId));
+        return getBookingById(input.bookingId);
+      }),
+    // Admin: override gross selling price + expected commission (bypasses lock)
+    adminUpdateGrossData: adminProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        grossCost: z.number().positive().nullable(),
+        expectedCommission: z.number().min(0).nullable(),
+      }))
+      .mutation(async ({ input }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
+        const { getDb } = await import('./db');
+        const { bookings: bookingsTable } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const updates: Record<string, unknown> = {};
+        if (input.grossCost !== undefined) updates.grossCost = input.grossCost !== null ? String(input.grossCost) : null;
+        if (input.expectedCommission !== undefined) updates.expectedCommission = input.expectedCommission !== null ? String(input.expectedCommission) : null;
+        if (input.grossCost === null && input.expectedCommission === null) {
+          updates.grossCostLockedAt = null;
+        } else if (booking.grossCostLockedAt == null) {
+          updates.grossCostLockedAt = new Date();
+        }
+        await db.update(bookingsTable).set(updates as any).where(eq(bookingsTable.id, input.bookingId));
+        return getBookingById(input.bookingId);
+      }),
+    // Agent: count own bookings missing gross selling price (for dashboard alert)
+    countMissingGrossData: protectedProcedure.query(async ({ ctx }) => {
+      const { getDb } = await import('./db');
+      const { bookings: bookingsTable } = await import('../drizzle/schema');
+      const { eq, isNull, and, ne } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) return { count: 0 };
+      const rows = await db
+        .select({ id: bookingsTable.id })
+        .from(bookingsTable)
+        .where(
+          and(
+            eq(bookingsTable.agentId, ctx.user.id),
+            isNull(bookingsTable.grossCost),
+            ne(bookingsTable.currentStage, 'Cancelled'),
+          )
+        );
+      return { count: rows.length };
+    }),
   }),
   // ── Notes ─────────────────────────────────────────────────────────────────
   notes: router({
@@ -3509,7 +3597,15 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           const { updateGcMandate: updateMandate } = await import("./gocardless-db");
           await updateMandate(mandate.id, { preferredPaymentDay: crmProfile.preferredPaymentDay });
         }
-        return { mandate: mandate ? { ...mandate, preferredPaymentDay } : null, subscription };
+        // Fetch scheme from GoCardless if mandate exists (needed to handle Faster Payments UI)
+        let mandateScheme: string | null = null;
+        if (mandate?.mandateId) {
+          try {
+            const gcMandateInfo = await getGcMandate(mandate.mandateId);
+            mandateScheme = gcMandateInfo.scheme ?? null;
+          } catch (_) { /* non-fatal */ }
+        }
+        return { mandate: mandate ? { ...mandate, preferredPaymentDay, scheme: mandateScheme } : null, subscription };
       }),
 
     /**
@@ -3553,12 +3649,19 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           input.dayOfMonth
         );
 
+        // Fetch mandate scheme — Faster Payments mandates do not support day_of_month on subscriptions
+        let isFasterPayments = false;
+        try {
+          const gcMandateInfo = await getGcMandate(effectiveMandateId);
+          isFasterPayments = gcMandateInfo.scheme === "faster_payments";
+        } catch (_) { /* fallback: assume bacs */ }
+
         const sub = await createSubscription({
           mandateId: effectiveMandateId,
           amountPence,
           name: `JLT ${tierLabel} Membership`,
           startDate,
-          dayOfMonth: input.dayOfMonth,
+          dayOfMonth: isFasterPayments ? undefined : input.dayOfMonth,
         });
 
         await createGcSubscription({

@@ -65,6 +65,7 @@ export default function AgentDashboard() {
   const { data: earnings } = trpc.commissionClaims.myEarningsSummary.useQuery();
   const { data: outstandingSummary } = trpc.reimbursements.agentOutstandingSummary.useQuery();
   const { data: topUpRequests = [] } = trpc.commissionClaims.myTopUpRequests.useQuery();
+  const { data: missingGrossData } = trpc.bookings.countMissingGrossData.useQuery();
 
   const now = new Date();
   const next30Days = addDays(now, 30);
@@ -507,6 +508,27 @@ export default function AgentDashboard() {
               <Link href="/commissions">
                 <button className="text-xs font-semibold underline flex-shrink-0" style={{ color: '#065f46' }}>
                   Claim
+                </button>
+              </Link>
+            </div>
+          )}
+
+          {/* Missing Gross Selling Price alert */}
+          {missingGrossData && missingGrossData.count > 0 && (
+            <div className="rounded-xl border-l-4 p-4 flex items-start gap-3"
+              style={{ borderLeftColor: '#f59e0b', background: '#fffbeb' }}>
+              <TrendingUp size={16} style={{ color: '#d97706' }} className="flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm" style={{ color: '#92400e' }}>
+                  {missingGrossData.count} booking{missingGrossData.count > 1 ? 's' : ''} missing pricing data
+                </p>
+                <p className="text-xs mt-0.5 opacity-80" style={{ color: '#92400e' }}>
+                  Add your gross selling price and commission to include {missingGrossData.count > 1 ? 'them' : 'it'} in your margin report.
+                </p>
+              </div>
+              <Link href="/my-margin">
+                <button className="text-xs font-semibold underline flex-shrink-0" style={{ color: '#92400e' }}>
+                  View report
                 </button>
               </Link>
             </div>

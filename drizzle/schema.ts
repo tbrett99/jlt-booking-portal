@@ -54,6 +54,7 @@ export const bookings = mysqlTable("bookings", {
   suppliersAndDocsAddedToPts: boolean("suppliersAndDocsAddedToPts").default(false).notNull(),
   expectedCommission: decimal("expectedCommission", { precision: 10, scale: 2 }),
   grossCost: decimal("grossCost", { precision: 10, scale: 2 }),
+  grossCostLockedAt: timestamp("grossCostLockedAt"), // Set when agent first saves grossCost — after this only admins can edit
   // Admin-managed fields
   ptsRef: varchar("ptsRef", { length: 100 }),
   destination: varchar("destination", { length: 255 }), // Country/destination from PTS
