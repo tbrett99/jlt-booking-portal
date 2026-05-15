@@ -1,0 +1,27 @@
+{
+  "query": "SELECT \n  js.id AS session_id,\n  js.email,\n  js.step,\n  js.userId,\n  js.joiningFeePaidAt,\n  js.mandateId AS session_mandateId,\n  u.id AS user_id,\n  u.name AS user_name,\n  u.role,\n  u.isActive\nFROM join_sessions js\nLEFT JOIN users u ON u.id = js.userId\nWHERE js.id = 300001;\n\nSELECT id, userId, billingRequestId, mandateId, status, joiningFeePaidAt FROM gc_mandates WHERE billingRequestId = 'BRQ01KRPBQ61N5HRA1X8D36VFB1ZB';\n\nSELECT id, userId, membershipTier, agentStatus, trainingStage, personalEmail FROM agent_crm_profiles WHERE userId = 9486760;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT \n  js.id AS session_id,\n  js.email,\n  js.step,\n  js.userId,\n  js.joiningFeePaidAt,\n  js.mandateId AS session_mandateId,\n  u.id AS user_id,\n  u.name AS user_name,\n  u.role,\n  u.isActive\nFROM join_sessions js\nLEFT JOIN users u ON u.id = js.userId\nWHERE js.id = 300001;\n\nSELECT id, userId, billingRequestId, mandateId, status, joiningFeePaidAt FROM gc_mandates WHERE billingRequestId = 'BRQ01KRPBQ61N5HRA1X8D36VFB1ZB';\n\nSELECT id, userId, membershipTier, agentStatus, trainingStage, personalEmail FROM agent_crm_profiles WHERE userId = 9486760;",
+  "rows": [
+    {
+      "session_id": "300001",
+      "email": "astmeridian@outlook.com",
+      "step": "complete",
+      "userId": "9486760",
+      "joiningFeePaidAt": "2026-05-15 18:57:27",
+      "session_mandateId": "NULL",
+      "user_id": "9486760",
+      "user_name": "Abu Sufyan",
+      "role": "agent",
+      "isActive": "1"
+    }
+  ],
+  "messages": [
+    "id\tuserId\tbillingRequestId\tmandateId\tstatus\tjoiningFeePaidAt",
+    "180001\t9486760\tBRQ01KRPBQ61N5HRA1X8D36VFB1ZB\tMD01KRPBWMXTYHD4Y602KX16PC1V\tpending\t2026-05-15 18:57:28",
+    "id\tuserId\tmembershipTier\tagentStatus\ttrainingStage\tpersonalEmail",
+    "330001\t9486760\tbusiness_class\tactive\tTraining\tastmeridian@outlook.com"
+  ],
+  "stdout": "session_id\temail\tstep\tuserId\tjoiningFeePaidAt\tsession_mandateId\tuser_id\tuser_name\trole\tisActive\n300001\tastmeridian@outlook.com\tcomplete\t9486760\t2026-05-15 18:57:27\tNULL\t9486760\tAbu Sufyan\tagent\t1\nid\tuserId\tbillingRequestId\tmandateId\tstatus\tjoiningFeePaidAt\n180001\t9486760\tBRQ01KRPBQ61N5HRA1X8D36VFB1ZB\tMD01KRPBWMXTYHD4Y602KX16PC1V\tpending\t2026-05-15 18:57:28\nid\tuserId\tmembershipTier\tagentStatus\ttrainingStage\tpersonalEmail\n330001\t9486760\tbusiness_class\tactive\tTraining\tastmeridian@outlook.com\n",
+  "stderr": "",
+  "execution_time_ms": 281
+}

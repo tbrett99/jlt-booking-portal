@@ -1,0 +1,24 @@
+{
+  "query": "SELECT id, email, step, signerName, membershipTier, membershipType, billingRequestId, joiningFeePaidAt, mandateId, userId, expiresAt, contractSignedAt FROM join_sessions WHERE id = 300001;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, email, step, signerName, membershipTier, membershipType, billingRequestId, joiningFeePaidAt, mandateId, userId, expiresAt, contractSignedAt FROM join_sessions WHERE id = 300001;",
+  "rows": [
+    {
+      "id": "300001",
+      "email": "astmeridian@outlook.com",
+      "step": "payment",
+      "signerName": "Abu Sufyan",
+      "membershipTier": "business_class",
+      "membershipType": "duo",
+      "billingRequestId": "BRQ01KRPBQ61N5HRA1X8D36VFB1ZB",
+      "joiningFeePaidAt": "NULL",
+      "mandateId": "NULL",
+      "userId": "NULL",
+      "expiresAt": "2026-05-16 17:29:25",
+      "contractSignedAt": "2026-05-15 17:42:32"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\tstep\tsignerName\tmembershipTier\tmembershipType\tbillingRequestId\tjoiningFeePaidAt\tmandateId\tuserId\texpiresAt\tcontractSignedAt\n300001\tastmeridian@outlook.com\tpayment\tAbu Sufyan\tbusiness_class\tduo\tBRQ01KRPBQ61N5HRA1X8D36VFB1ZB\tNULL\tNULL\tNULL\t2026-05-16 17:29:25\t2026-05-15 17:42:32\n",
+  "stderr": "",
+  "execution_time_ms": 262
+}

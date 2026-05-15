@@ -2352,3 +2352,7 @@
 - [x] Fix campaign send: pre-insert all recipient rows as "queued" before returning (enqueueCampaignRecipients)
 - [x] Campaign status only flips to "sent" once all queued rows are processed by the scheduler
 - [x] Scheduler (processCampaignQueue) processes up to 50 queued campaign emails per tick (every 15 min)
+
+## astmeridian@outlook.com Payment Confirmation Stuck
+- [ ] Diagnose why payment is showing "Payment not yet confirmed" despite joining fee being paid
+- [ ] Fix or manually unblock so they can set password and proceed to onboarding

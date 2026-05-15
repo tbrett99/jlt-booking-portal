@@ -1,0 +1,23 @@
+{
+  "query": "\nSELECT \n  id, email, step, userId,\n  joiningFeePaidAt, mandateId, billingRequestId,\n  contractSignedAt, createdAt, updatedAt, expiresAt\nFROM join_sessions\nWHERE email = 'astmeridian@outlook.com'\nORDER BY createdAt DESC\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT \n  id, email, step, userId,\n  joiningFeePaidAt, mandateId, billingRequestId,\n  contractSignedAt, createdAt, updatedAt, expiresAt\nFROM join_sessions\nWHERE email = 'astmeridian@outlook.com'\nORDER BY createdAt DESC\nLIMIT 5;\n",
+  "rows": [
+    {
+      "id": "300001",
+      "email": "astmeridian@outlook.com",
+      "step": "payment",
+      "userId": "NULL",
+      "joiningFeePaidAt": "NULL",
+      "mandateId": "NULL",
+      "billingRequestId": "BRQ01KRPBQ61N5HRA1X8D36VFB1ZB",
+      "contractSignedAt": "2026-05-15 17:42:32",
+      "createdAt": "2026-05-15 17:29:25",
+      "updatedAt": "2026-05-15 17:42:32",
+      "expiresAt": "2026-05-16 17:29:25"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\tstep\tuserId\tjoiningFeePaidAt\tmandateId\tbillingRequestId\tcontractSignedAt\tcreatedAt\tupdatedAt\texpiresAt\n300001\tastmeridian@outlook.com\tpayment\tNULL\tNULL\tNULL\tBRQ01KRPBQ61N5HRA1X8D36VFB1ZB\t2026-05-15 17:42:32\t2026-05-15 17:29:25\t2026-05-15 17:42:32\t2026-05-16 17:29:25\n",
+  "stderr": "",
+  "execution_time_ms": 268
+}

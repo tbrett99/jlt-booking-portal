@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT \n  p.id, p.email, p.first_name, p.last_name, p.status,\n  p.payment_status, p.payment_intent_id, p.mandate_id,\n  p.joining_fee_paid, p.joining_fee_paid_at,\n  p.created_at, p.invite_token\nFROM prospects p\nWHERE p.email = 'astmeridian@outlook.com'\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT \n  p.id, p.email, p.first_name, p.last_name, p.status,\n  p.payment_status, p.payment_intent_id, p.mandate_id,\n  p.joining_fee_paid, p.joining_fee_paid_at,\n  p.created_at, p.invite_token\nFROM prospects p\nWHERE p.email = 'astmeridian@outlook.com'\nLIMIT 5;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'p.first_name' in 'field list'"
+  ]
+}
