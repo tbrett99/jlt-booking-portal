@@ -1,0 +1,31 @@
+{
+  "query": "SELECT recipientEmail FROM email_sends WHERE campaignId = 120001;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT recipientEmail FROM email_sends WHERE campaignId = 120001;",
+  "rows": [
+    {
+      "recipientEmail": "testagent@thejltgroup.co.uk"
+    },
+    {
+      "recipientEmail": "megannorton2000@gmail.com"
+    },
+    {
+      "recipientEmail": "peter@cruisefamily.co.uk"
+    },
+    {
+      "recipientEmail": "raegan.kither@gmail.com"
+    },
+    {
+      "recipientEmail": "struansmith7@gmail.com"
+    },
+    {
+      "recipientEmail": "mr.r.e.hillerby@icloud.com"
+    },
+    {
+      "recipientEmail": "ejtravels123@gmail.com"
+    }
+  ],
+  "messages": [],
+  "stdout": "recipientEmail\ntestagent@thejltgroup.co.uk\nmegannorton2000@gmail.com\npeter@cruisefamily.co.uk\nraegan.kither@gmail.com\nstruansmith7@gmail.com\nmr.r.e.hillerby@icloud.com\nejtravels123@gmail.com\n",
+  "stderr": "",
+  "execution_time_ms": 270
+}

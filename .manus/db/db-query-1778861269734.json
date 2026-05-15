@@ -1,0 +1,20 @@
+{
+  "query": "SELECT id, name, subject, status, sentAt, sentByName, totalRecipients, createdAt FROM email_campaigns WHERE id = 120001;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, subject, status, sentAt, sentByName, totalRecipients, createdAt FROM email_campaigns WHERE id = 120001;",
+  "rows": [
+    {
+      "id": "120001",
+      "name": "Update to terms",
+      "subject": "We've listened...",
+      "status": "sending",
+      "sentAt": "NULL",
+      "sentByName": "Max",
+      "totalRecipients": "415",
+      "createdAt": "2026-05-15 13:25:09"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tsubject\tstatus\tsentAt\tsentByName\ttotalRecipients\tcreatedAt\n120001\tUpdate to terms\tWe've listened...\tsending\tNULL\tMax\t415\t2026-05-15 13:25:09\n",
+  "stderr": "",
+  "execution_time_ms": 263
+}

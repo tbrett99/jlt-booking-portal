@@ -1,0 +1,150 @@
+{
+  "query": "SELECT id, recipientEmail, subject, status, createdAt FROM email_sends ORDER BY createdAt DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, recipientEmail, subject, status, createdAt FROM email_sends ORDER BY createdAt DESC LIMIT 20;",
+  "rows": [
+    {
+      "id": "150006",
+      "recipientEmail": "mr.r.e.hillerby@icloud.com",
+      "subject": "We've listened...",
+      "status": "clicked",
+      "createdAt": "2026-05-15 13:45:05"
+    },
+    {
+      "id": "150007",
+      "recipientEmail": "ejtravels123@gmail.com",
+      "subject": "We've listened...",
+      "status": "queued",
+      "createdAt": "2026-05-15 13:45:05"
+    },
+    {
+      "id": "150005",
+      "recipientEmail": "struansmith7@gmail.com",
+      "subject": "We've listened...",
+      "status": "opened",
+      "createdAt": "2026-05-15 13:45:04"
+    },
+    {
+      "id": "150004",
+      "recipientEmail": "raegan.kither@gmail.com",
+      "subject": "We've listened...",
+      "status": "opened",
+      "createdAt": "2026-05-15 13:45:04"
+    },
+    {
+      "id": "150002",
+      "recipientEmail": "megannorton2000@gmail.com",
+      "subject": "We've listened...",
+      "status": "sent",
+      "createdAt": "2026-05-15 13:45:02"
+    },
+    {
+      "id": "150003",
+      "recipientEmail": "peter@cruisefamily.co.uk",
+      "subject": "We've listened...",
+      "status": "opened",
+      "createdAt": "2026-05-15 13:45:02"
+    },
+    {
+      "id": "150001",
+      "recipientEmail": "testagent@thejltgroup.co.uk",
+      "subject": "We've listened...",
+      "status": "sent",
+      "createdAt": "2026-05-15 13:45:01"
+    },
+    {
+      "id": "120001",
+      "recipientEmail": "lilfaritravel@thejltgroup.co.uk",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "sent",
+      "createdAt": "2026-05-14 08:03:25"
+    },
+    {
+      "id": "90416",
+      "recipientEmail": "mary.chambers1991@yahoo.com",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "opened",
+      "createdAt": "2026-05-13 13:47:39"
+    },
+    {
+      "id": "90415",
+      "recipientEmail": "Emz1985@me.com",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "clicked",
+      "createdAt": "2026-05-13 13:47:37"
+    },
+    {
+      "id": "90414",
+      "recipientEmail": "gemzykins@hotmail.com",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "clicked",
+      "createdAt": "2026-05-13 13:47:36"
+    },
+    {
+      "id": "90413",
+      "recipientEmail": "wendybrowne89@gmail.com",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "opened",
+      "createdAt": "2026-05-13 13:47:35"
+    },
+    {
+      "id": "90411",
+      "recipientEmail": "mikeybach@mac.com",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "clicked",
+      "createdAt": "2026-05-13 13:47:34"
+    },
+    {
+      "id": "90412",
+      "recipientEmail": "katholidays.uk@gmail.com",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "opened",
+      "createdAt": "2026-05-13 13:47:34"
+    },
+    {
+      "id": "90408",
+      "recipientEmail": "tripialist@gmail.com",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "opened",
+      "createdAt": "2026-05-13 13:47:33"
+    },
+    {
+      "id": "90410",
+      "recipientEmail": "tabitha@tailored-escapes.co.uk",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "opened",
+      "createdAt": "2026-05-13 13:47:33"
+    },
+    {
+      "id": "90409",
+      "recipientEmail": "kennethdown35@gmail.com",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "opened",
+      "createdAt": "2026-05-13 13:47:33"
+    },
+    {
+      "id": "90405",
+      "recipientEmail": "zoe@lowennarosetravel.co.uk",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "opened",
+      "createdAt": "2026-05-13 13:47:32"
+    },
+    {
+      "id": "90407",
+      "recipientEmail": "bukiegbegi@hotmail.com",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "sent",
+      "createdAt": "2026-05-13 13:47:32"
+    },
+    {
+      "id": "90406",
+      "recipientEmail": "caroline@holirays.co.uk",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "clicked",
+      "createdAt": "2026-05-13 13:47:32"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\trecipientEmail\tsubject\tstatus\tcreatedAt\n150006\tmr.r.e.hillerby@icloud.com\tWe've listened...\tclicked\t2026-05-15 13:45:05\n150007\tejtravels123@gmail.com\tWe've listened...\tqueued\t2026-05-15 13:45:05\n150005\tstruansmith7@gmail.com\tWe've listened...\topened\t2026-05-15 13:45:04\n150004\traegan.kither@gmail.com\tWe've listened...\topened\t2026-05-15 13:45:04\n150002\tmegannorton2000@gmail.com\tWe've listened...\tsent\t2026-05-15 13:45:02\n150003\tpeter@cruisefamily.co.uk\tWe've listened...\topened\t2026-05-15 13:45:02\n150001\ttestagent@thejltgroup.co.uk\tWe've listened...\tsent\t2026-05-15 13:45:01\n120001\tlilfaritravel@thejltgroup.co.uk\tPlease read: Compulsory call follow up\tsent\t2026-05-14 08:03:25\n90416\tmary.chambers1991@yahoo.com\tPlease read: Compulsory call follow up\topened\t2026-05-13 13:47:39\n90415\tEmz1985@me.com\tPlease read: Compulsory call follow up\tclicked\t2026-05-13 13:47:37\n90414\tgemzykins@hotmail.com\tPlease read: Compulsory call follow up\tclicked\t2026-05-13 13:47:36\n90413\twendybrowne89@gmail.com\tPlease read: Compulsory call follow up\topened\t2026-05-13 13:47:35\n90411\tmikeybach@mac.com\tPlease read: Compulsory call follow up\tclicked\t2026-05-13 13:47:34\n90412\tkatholidays.uk@gmail.com\tPlease read: Compulsory call follow up\topened\t2026-05-13 13:47:34\n90408\ttripialist@gmail.com\tPlease read: Compulsory call follow up\topened\t2026-05-13 13:47:33\n90410\ttabitha@tailored-escapes.co.uk\tPlease read: Compulsory call follow up\topened\t2026-05-13 13:47:33\n90409\tkennethdown35@gmail.com\tPlease read: Compulsory call follow up\topened\t2026-05-13 13:47:33\n90405\tzoe@lowennarosetravel.co.uk\tPlease read: Compulsory call follow up\topened\t2026-05-13 13:47:32\n90407\tbukiegbegi@hotmail.com\tPlease read: Compulsory call follow up\tsent\t2026-05-13 13:47:32\n90406\tcaroline@holirays.co.uk\tPlease read: Compulsory call follow up\tclicked\t2026-05-13 13:47:32\n",
+  "stderr": "",
+  "execution_time_ms": 263
+}

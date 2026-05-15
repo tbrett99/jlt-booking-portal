@@ -388,3 +388,154 @@ export async function sendCampaignBatch(opts: {
 
   return { sent, failed, skipped };
 }
+
+/**
+ * Pre-insert all campaign recipients as 'queued' rows in email_sends.
+ * Called synchronously when a campaign is triggered — the actual sending
+ * is handled by processCampaignQueue() in the scheduler.
+ */
+export async function enqueueCampaignRecipients(opts: {
+  campaignId: number;
+  recipients: Array<{ email: string; name?: string; id?: number; type: "prospect" | "agent" }>;
+  subject: string;
+  audienceType: "prospect" | "agent";
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  if (opts.recipients.length === 0) return 0;
+
+  // Insert all recipients as queued in a single bulk insert
+  await db.insert(emailSends).values(
+    opts.recipients.map((r) => ({
+      campaignId: opts.campaignId,
+      recipientEmail: r.email,
+      recipientName: r.name ?? null,
+      recipientType: r.type,
+      recipientId: r.id ?? null,
+      subject: opts.subject,
+      status: "queued" as const,
+    }))
+  );
+
+  return opts.recipients.length;
+}
+
+/**
+ * Process up to `batchSize` queued campaign email_sends rows.
+ * Called by the scheduler every 15 minutes.
+ * Restart-safe: progress is persisted in the database.
+ */
+export async function processCampaignQueue(batchSize = 50): Promise<{ sent: number; failed: number; skipped: number }> {
+  const db = await getDb();
+  if (!db) return { sent: 0, failed: 0, skipped: 0 };
+
+  const { and, isNotNull, isNull, sql: sqlFn } = await import("drizzle-orm");
+  const { emailCampaigns } = await import("../drizzle/schema");
+
+  // Pick up to batchSize queued rows that belong to a campaign (not drip)
+  const rows = await db
+    .select()
+    .from(emailSends)
+    .where(
+      and(
+        sqlFn`${emailSends.status} = 'queued'`,
+        isNotNull(emailSends.campaignId),
+        isNull(emailSends.dripStepId)
+      )
+    )
+    .limit(batchSize);
+
+  if (rows.length === 0) return { sent: 0, failed: 0, skipped: 0 };
+
+  // Load the campaign details for each unique campaignId in this batch
+  const campaignIds = Array.from(new Set(rows.map((r) => r.campaignId!)));
+  const campaigns = await db
+    .select()
+    .from(emailCampaigns)
+    .where(sqlFn`${emailCampaigns.id} IN (${campaignIds.join(",")})`);
+  const campaignMap = new Map(campaigns.map((c) => [c.id, c]));
+
+  let sent = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const campaign = campaignMap.get(row.campaignId!);
+    if (!campaign) {
+      // Campaign deleted — mark as failed
+      await updateSendStatus(row.id, "failed", undefined, "Campaign not found");
+      failed++;
+      continue;
+    }
+
+    const audienceType = campaign.audienceType as "prospect" | "agent";
+
+    // Skip unsubscribed prospects
+    if (audienceType === "prospect") {
+      const unsub = await isUnsubscribed(row.recipientEmail);
+      if (unsub) {
+        await db.update(emailSends).set({ status: "failed", failedReason: "Unsubscribed" }).where(eq(emailSends.id, row.id));
+        skipped++;
+        continue;
+      }
+    }
+
+    // Build unsubscribe URL
+    let unsubscribeUrl: string | undefined;
+    if (audienceType === "prospect") {
+      const token = await getOrCreateUnsubscribeToken(row.recipientEmail, row.recipientId ?? undefined);
+      unsubscribeUrl = `${process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk"}/unsubscribe?token=${token}`;
+    }
+
+    const branding = await getEmailBrandingSettings();
+    const personalisedBody = applyMergeTags(campaign.bodyHtml, { name: row.recipientName, email: row.recipientEmail });
+    const personalisedSubject = applyMergeTags(campaign.subject, { name: row.recipientName, email: row.recipientEmail });
+
+    let html = wrapInBrandedTemplate({ bodyHtml: personalisedBody, audienceType, unsubscribeUrl, branding });
+    html = injectOpenPixel(html, row.id, process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk");
+    html = injectClickTracking(html, row.id, process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk");
+
+    try {
+      const resend = getResend();
+      const result = await resend.emails.send({
+        from: getFromAddress(audienceType),
+        replyTo: getReplyTo(audienceType),
+        to: row.recipientEmail,
+        subject: personalisedSubject,
+        html,
+      });
+
+      if (result.error) {
+        await updateSendStatus(row.id, "failed", undefined, result.error.message);
+        failed++;
+      } else {
+        await updateSendStatus(row.id, "sent", result.data?.id);
+        sent++;
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await updateSendStatus(row.id, "failed", undefined, msg);
+      failed++;
+    }
+
+    // 100ms delay between sends to respect Resend rate limits
+    await new Promise((res) => setTimeout(res, 100));
+  }
+
+  // After processing, check if all queued rows for each campaign are done
+  // and update campaign status accordingly
+  for (const campaignId of campaignIds) {
+    const remaining = await db
+      .select({ id: emailSends.id })
+      .from(emailSends)
+      .where(and(sqlFn`${emailSends.campaignId} = ${campaignId}`, sqlFn`${emailSends.status} = 'queued'`))
+      .limit(1);
+    if (remaining.length === 0) {
+      // All done — mark campaign as sent
+      await db.update(emailCampaigns).set({ status: "sent" }).where(sqlFn`${emailCampaigns.id} = ${campaignId}`);
+    }
+  }
+
+  return { sent, failed, skipped };
+}

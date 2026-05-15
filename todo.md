@@ -2346,3 +2346,9 @@
 - [x] X-API-Key middleware — 401 if missing/invalid
 - [x] CORS headers for Tom's CRM domain on all /api/v1/* routes
 - [x] Results ordered alphabetically; prefix matches first when search param provided
+
+## Campaign Send Architecture Fix
+- [x] Resend campaign 120001 to all 436 recipients who hadn't received it (436 sent, 0 failed)
+- [x] Fix campaign send: pre-insert all recipient rows as "queued" before returning (enqueueCampaignRecipients)
+- [x] Campaign status only flips to "sent" once all queued rows are processed by the scheduler
+- [x] Scheduler (processCampaignQueue) processes up to 50 queued campaign emails per tick (every 15 min)

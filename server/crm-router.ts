@@ -73,7 +73,7 @@ import {
 import { getAllUsers, getUserByEmail } from "./db";
 import { storagePut } from "./storage";
 import { sendDirectEmail } from "./email";
-import { sendCampaignBatch } from "./resend-email";
+import { enqueueCampaignRecipients } from "./resend-email";
 import { createInAppNotification } from "./db";
 import {
   listAgentsWithCrm,
@@ -2638,27 +2638,22 @@ export const crmRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "No recipients match the selected filters" });
         }
 
-        // Mark as sending
+        // Pre-insert all recipients as 'queued' rows — restart-safe
+        // The scheduler (processCampaignQueue) will pick these up in batches every 15 minutes
+        await enqueueCampaignRecipients({
+          campaignId: input.campaignId,
+          recipients,
+          subject: campaign.subject,
+          audienceType: campaign.audienceType as "prospect" | "agent",
+        });
+
+        // Mark as sending (scheduler will flip to 'sent' when queue is drained)
         await updateCampaign(input.campaignId, {
           status: "sending",
           sentById: ctx.user.id,
           sentByName: ctx.user.name ?? "Admin",
           totalRecipients: recipients.length,
         });
-
-        // Send in background (don't await fully — return immediately)
-        sendCampaignBatch({
-          campaignId: input.campaignId,
-          recipients,
-          subject: campaign.subject,
-          bodyHtml: campaign.bodyHtml,
-          audienceType: campaign.audienceType,
-          baseUrl: input.baseUrl,
-        }).then(async ({ sent, failed }) => {
-          await updateCampaign(input.campaignId, {
-            status: failed === recipients.length ? "failed" : "sent",
-          });
-        }).catch(console.error);
 
         return { success: true, recipientCount: recipients.length };
       }),

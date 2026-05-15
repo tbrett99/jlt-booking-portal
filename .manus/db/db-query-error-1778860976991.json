@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT id, name, subject, created_at FROM email_templates WHERE subject LIKE '%terms%' OR name LIKE '%terms%' LIMIT 20;\nSELECT id, workflow_id, step_order, subject, delay_days FROM workflow_steps WHERE subject LIKE '%terms%' LIMIT 20;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, name, subject, created_at FROM email_templates WHERE subject LIKE '%terms%' OR name LIKE '%terms%' LIMIT 20;\nSELECT id, workflow_id, step_order, subject, delay_days FROM workflow_steps WHERE subject LIKE '%terms%' LIMIT 20;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'created_at' in 'field list'"
+  ]
+}

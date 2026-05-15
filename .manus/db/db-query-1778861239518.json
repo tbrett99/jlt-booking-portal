@@ -1,0 +1,80 @@
+{
+  "query": "SELECT id, campaignId, dripStepId, enrollmentId, recipientEmail, subject, status, createdAt FROM email_sends WHERE subject LIKE '%listened%' ORDER BY createdAt DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, campaignId, dripStepId, enrollmentId, recipientEmail, subject, status, createdAt FROM email_sends WHERE subject LIKE '%listened%' ORDER BY createdAt DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "150007",
+      "campaignId": "120001",
+      "dripStepId": "NULL",
+      "enrollmentId": "NULL",
+      "recipientEmail": "ejtravels123@gmail.com",
+      "subject": "We've listened...",
+      "status": "queued",
+      "createdAt": "2026-05-15 13:45:05"
+    },
+    {
+      "id": "150006",
+      "campaignId": "120001",
+      "dripStepId": "NULL",
+      "enrollmentId": "NULL",
+      "recipientEmail": "mr.r.e.hillerby@icloud.com",
+      "subject": "We've listened...",
+      "status": "clicked",
+      "createdAt": "2026-05-15 13:45:05"
+    },
+    {
+      "id": "150005",
+      "campaignId": "120001",
+      "dripStepId": "NULL",
+      "enrollmentId": "NULL",
+      "recipientEmail": "struansmith7@gmail.com",
+      "subject": "We've listened...",
+      "status": "opened",
+      "createdAt": "2026-05-15 13:45:04"
+    },
+    {
+      "id": "150004",
+      "campaignId": "120001",
+      "dripStepId": "NULL",
+      "enrollmentId": "NULL",
+      "recipientEmail": "raegan.kither@gmail.com",
+      "subject": "We've listened...",
+      "status": "opened",
+      "createdAt": "2026-05-15 13:45:04"
+    },
+    {
+      "id": "150002",
+      "campaignId": "120001",
+      "dripStepId": "NULL",
+      "enrollmentId": "NULL",
+      "recipientEmail": "megannorton2000@gmail.com",
+      "subject": "We've listened...",
+      "status": "sent",
+      "createdAt": "2026-05-15 13:45:02"
+    },
+    {
+      "id": "150003",
+      "campaignId": "120001",
+      "dripStepId": "NULL",
+      "enrollmentId": "NULL",
+      "recipientEmail": "peter@cruisefamily.co.uk",
+      "subject": "We've listened...",
+      "status": "opened",
+      "createdAt": "2026-05-15 13:45:02"
+    },
+    {
+      "id": "150001",
+      "campaignId": "120001",
+      "dripStepId": "NULL",
+      "enrollmentId": "NULL",
+      "recipientEmail": "testagent@thejltgroup.co.uk",
+      "subject": "We've listened...",
+      "status": "sent",
+      "createdAt": "2026-05-15 13:45:01"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tcampaignId\tdripStepId\tenrollmentId\trecipientEmail\tsubject\tstatus\tcreatedAt\n150007\t120001\tNULL\tNULL\tejtravels123@gmail.com\tWe've listened...\tqueued\t2026-05-15 13:45:05\n150006\t120001\tNULL\tNULL\tmr.r.e.hillerby@icloud.com\tWe've listened...\tclicked\t2026-05-15 13:45:05\n150005\t120001\tNULL\tNULL\tstruansmith7@gmail.com\tWe've listened...\topened\t2026-05-15 13:45:04\n150004\t120001\tNULL\tNULL\traegan.kither@gmail.com\tWe've listened...\topened\t2026-05-15 13:45:04\n150002\t120001\tNULL\tNULL\tmegannorton2000@gmail.com\tWe've listened...\tsent\t2026-05-15 13:45:02\n150003\t120001\tNULL\tNULL\tpeter@cruisefamily.co.uk\tWe've listened...\topened\t2026-05-15 13:45:02\n150001\t120001\tNULL\tNULL\ttestagent@thejltgroup.co.uk\tWe've listened...\tsent\t2026-05-15 13:45:01\n",
+  "stderr": "",
+  "execution_time_ms": 259
+}

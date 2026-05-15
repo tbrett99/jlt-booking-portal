@@ -507,7 +507,22 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min) — inbox auto-import DISABLED");
+  // Campaign queue processor: every 15 minutes
+  // Picks up 'queued' email_sends rows for campaigns and sends them in batches of 50.
+  // Restart-safe: progress is persisted in the database (no fire-and-forget).
+  cron.schedule("*/15 * * * *", async () => {
+    try {
+      const { processCampaignQueue } = await import("./resend-email");
+      const result = await processCampaignQueue(50);
+      if (result.sent > 0 || result.failed > 0) {
+        console.log(`[CampaignQueue] Sent: ${result.sent}, Failed: ${result.failed}, Skipped: ${result.skipped}`);
+      }
+    } catch (err: any) {
+      console.error("[CampaignQueue] Error:", err?.message);
+    }
+  }, { timezone: "UTC" });
+
+  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min) — inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────
