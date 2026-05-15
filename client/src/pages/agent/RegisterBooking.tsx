@@ -339,7 +339,7 @@ export default function RegisterBooking() {
               {/* Live margin preview — only for non-personal */}
               {!isPersonalBooking && marginPct !== null && (
                 <div className={`flex items-center gap-2 text-sm rounded-md px-3 py-2 ${
-                  marginPct < 5
+                  marginPct < 6
                     ? "bg-red-50 text-red-700 border border-red-200"
                     : marginPct < 10
                     ? "bg-amber-50 text-amber-700 border border-amber-200"
@@ -348,7 +348,7 @@ export default function RegisterBooking() {
                   <Info size={14} />
                   <span>
                     Margin: <strong>{marginPct.toFixed(1)}%</strong>
-                    {marginPct < 5 && " — this is below the 5% minimum threshold"}
+                    {marginPct < 6 && " — below the 6% monthly average threshold"}
                   </span>
                 </div>
               )}

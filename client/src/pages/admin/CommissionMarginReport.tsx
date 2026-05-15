@@ -116,7 +116,7 @@ export default function CommissionMarginReport() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Commission Margin Report</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Margin = gross commission ÷ gross cost × 100. Green ≥ 6% · Amber 5–5.99% · Red &lt; 5%.</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Margin = gross commission ÷ gross cost × 100. Green ≥ 6% (meets monthly average threshold) · Amber 5–5.99% · Red &lt; 5%.</p>
         </div>
         <Button variant="outline" size="sm" onClick={exportCsv} className="gap-2">
           <Download className="h-4 w-4" />Export CSV

@@ -86,7 +86,7 @@ export default function MyMarginReport() {
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold text-foreground">My Commission Margin</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Your margin per booking based on gross cost and gross commission. Green ≥ 6% · Amber 5–5.99% · Red &lt; 5%.</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Your margin per booking based on gross cost and gross commission. Green ≥ 6% (meets monthly average threshold) · Amber 5–5.99% · Red &lt; 5%.</p>
       </div>
 
       {/* Summary cards */}

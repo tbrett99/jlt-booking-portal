@@ -4398,6 +4398,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         versionLabel: z.string().min(1).max(50),
         description: z.string().optional(),
         deadline: z.date().optional(),
+        documentUrl: z.string().optional(),
+        documentKey: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         if (!['admin', 'super_admin'].includes(ctx.user.role)) {
@@ -4416,6 +4418,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           sentAt: new Date(),
           sentById: ctx.user.id,
           deadline: input.deadline ?? null,
+          documentUrl: input.documentUrl ?? null,
+          documentKey: input.documentKey ?? null,
         }).$returningId();
 
         return { success: true, versionId: result.id };

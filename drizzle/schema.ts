@@ -1381,6 +1381,8 @@ export const termsVersions = mysqlTable("terms_versions", {
   sentAt: timestamp("sentAt"), // When admin pushed this version out to agents
   sentById: int("sentById"), // FK → users.id (admin who sent it)
   deadline: timestamp("deadline"), // Optional signing deadline shown to agents
+  documentUrl: text("documentUrl"), // S3 URL of the uploaded PDF agreement
+  documentKey: text("documentKey"), // S3 key for deletion
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type TermsVersion = typeof termsVersions.$inferSelect;
