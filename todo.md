@@ -2329,3 +2329,20 @@
 ## CRM Team Member Search & Click Bugs
 - [x] Fix: agents already in a team are filtered out of the member picker — root cause was duplicate teams created; merged Charlotte & Michael into one team via DB
 - [x] Fix: clicking an agent name in the Add Member dropdown does nothing — addTeamMember now upserts a CRM profile row if the agent has none (was silently updating 0 rows)
+
+## Supplier Directory Integration (Booking Products)
+- [ ] Add supplierId (int, nullable, FK to suppliers) column to booking_products table and run migration
+- [ ] Add suppliers.search tRPC procedure (query internal supplier table with name search + type filter)
+- [ ] Replace free-text supplier input in RegisterBooking form with searchable combobox
+- [ ] Replace free-text supplier input in booking detail/edit pages with searchable combobox
+- [ ] Store supplierId alongside supplierName on booking products for reporting joins
+
+## Supplier Directory REST API (for Tom's CRM)
+- [x] Add SUPPLIER_API_KEY secret to portal environment
+- [x] Build GET /api/v1/suppliers — search/list active suppliers (name, type, limit params)
+- [x] Build GET /api/v1/suppliers/:id — get single supplier by ID
+- [x] Build POST /api/v1/suppliers — create supplier (requires X-API-Key)
+- [x] Build PUT /api/v1/suppliers/:id — update supplier (requires X-API-Key)
+- [x] X-API-Key middleware — 401 if missing/invalid
+- [x] CORS headers for Tom's CRM domain on all /api/v1/* routes
+- [x] Results ordered alphabetically; prefix matches first when search param provided

@@ -28,6 +28,7 @@ import {
 import { notifyOwner } from "./notification";
 import { externalApiRouter } from "../external-api";
 import { oauth2Router } from "../oauth2-server";
+import { supplierApiRouter } from "../supplier-api";
 import { joinSessions, agentCrmProfiles } from "../../drizzle/schema";
 import { createAgentUser } from "../db";
 import { getMonthlyAmount } from "../../shared/membership";
@@ -1839,6 +1840,8 @@ async function startServer() {
   // External CRM API
   app.use("/api/external", externalApiRouter);
   app.use("/api/oauth2", oauth2Router);
+  // Supplier Directory REST API (for Tom's CRM and external integrations)
+  app.use("/api/v1", supplierApiRouter);
 
   // ── Scheduled: process recruitment workflow emails ─────────────────────────
   // Called hourly by the Manus scheduled task via session cookie auth.
