@@ -18,11 +18,6 @@ function MarginBadge({ pct }: { pct: number | null }) {
       <CheckCircle2 className="h-3 w-3" />{pct.toFixed(2)}%
     </span>
   );
-  if (pct >= 5) return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-2.5 py-0.5 text-xs font-semibold">
-      <AlertCircle className="h-3 w-3" />{pct.toFixed(2)}%
-    </span>
-  );
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-800 px-2.5 py-0.5 text-xs font-semibold">
       <AlertTriangle className="h-3 w-3" />{pct.toFixed(2)}%
@@ -86,7 +81,7 @@ export default function MyMarginReport() {
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold text-foreground">My Commission Margin</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Your margin per booking based on gross cost and gross commission. Green ≥ 6% (meets monthly average threshold) · Amber 5–5.99% · Red &lt; 5%.</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Your margin per booking based on gross cost and gross commission. Green ≥ 6% (meets monthly average threshold) · Red &lt; 6%.</p>
       </div>
 
       {/* Summary cards */}

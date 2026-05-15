@@ -2318,3 +2318,6 @@
 - [x] Add dashboard alert banner on AgentDashboard when bookings are missing gross selling price data
 - [x] Add lock indicator and admin-override note to Gross Cost field in AdminBookingDetail
 - [x] updateAdminFields also sets grossCostLockedAt when admin sets grossCost for the first time
+
+## Margin Colour Logic Update
+- [x] Update all margin colour coding: below 6% = red, 6% and above = green (remove amber band)

@@ -18,11 +18,6 @@ function MarginBadge({ pct }: { pct: number | null }) {
       <CheckCircle2 className="h-3 w-3" />{pct.toFixed(2)}%
     </span>
   );
-  if (pct >= 5) return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-2.5 py-0.5 text-xs font-semibold">
-      <AlertCircle className="h-3 w-3" />{pct.toFixed(2)}%
-    </span>
-  );
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-800 px-2.5 py-0.5 text-xs font-semibold">
       <AlertTriangle className="h-3 w-3" />{pct.toFixed(2)}%
@@ -116,7 +111,7 @@ export default function CommissionMarginReport() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Commission Margin Report</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Margin = gross commission ÷ gross cost × 100. Green ≥ 6% (meets monthly average threshold) · Amber 5–5.99% · Red &lt; 5%.</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Margin = gross commission ÷ gross cost × 100. Green ≥ 6% (meets monthly average threshold) · Red &lt; 6%.</p>
         </div>
         <Button variant="outline" size="sm" onClick={exportCsv} className="gap-2">
           <Download className="h-4 w-4" />Export CSV

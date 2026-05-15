@@ -341,8 +341,6 @@ export default function RegisterBooking() {
                 <div className={`flex items-center gap-2 text-sm rounded-md px-3 py-2 ${
                   marginPct < 6
                     ? "bg-red-50 text-red-700 border border-red-200"
-                    : marginPct < 10
-                    ? "bg-amber-50 text-amber-700 border border-amber-200"
                     : "bg-green-50 text-green-700 border border-green-200"
                 }`}>
                   <Info size={14} />

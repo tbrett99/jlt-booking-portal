@@ -861,7 +861,7 @@ export default function AgentBookingDetail() {
                   {booking.expectedCommission && (booking as any).grossCost && (
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-muted-foreground">Margin</span>
-                      <span className="font-semibold text-sm" style={{ color: (Number(booking.expectedCommission) / Number((booking as any).grossCost) * 100) >= 6 ? '#065f46' : (Number(booking.expectedCommission) / Number((booking as any).grossCost) * 100) >= 5 ? '#92400e' : '#991b1b' }}>
+                      <span className="font-semibold text-sm" style={{ color: (Number(booking.expectedCommission) / Number((booking as any).grossCost) * 100) >= 6 ? '#065f46' : '#991b1b' }}>
                         {((Number(booking.expectedCommission) / Number((booking as any).grossCost)) * 100).toFixed(2)}%
                       </span>
                     </div>
