@@ -1,0 +1,28 @@
+{
+  "query": "-- Link Muhammad Azim Ali to team 150001\nUPDATE agent_crm_profiles\nSET teamId = 150001\nWHERE id = 360001 AND userId = 9690367;\n\n-- Mark the team invite as accepted\nUPDATE team_invites\nSET status = 'accepted',\n    acceptedAt = NOW(),\n    acceptedByUserId = 9690367\nWHERE id = 1 AND teamId = 150001 AND invitedEmail = 'abusufyan511308@gmail.com';\n\n-- Verify both members are now on the team\nSELECT acp.id, acp.userId, u.name, u.email, acp.membershipTier, acp.teamId, acp.agentStatus\nFROM agent_crm_profiles acp\nLEFT JOIN users u ON u.id = acp.userId\nWHERE acp.teamId = 150001;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute -- Link Muhammad Azim Ali to team 150001\nUPDATE agent_crm_profiles\nSET teamId = 150001\nWHERE id = 360001 AND userId = 9690367;\n\n-- Mark the team invite as accepted\nUPDATE team_invites\nSET status = 'accepted',\n    acceptedAt = NOW(),\n    acceptedByUserId = 9690367\nWHERE id = 1 AND teamId = 150001 AND invitedEmail = 'abusufyan511308@gmail.com';\n\n-- Verify both members are now on the team\nSELECT acp.id, acp.userId, u.name, u.email, acp.membershipTier, acp.teamId, acp.agentStatus\nFROM agent_crm_profiles acp\nLEFT JOIN users u ON u.id = acp.userId\nWHERE acp.teamId = 150001;",
+  "rows": [
+    {
+      "id": "330001",
+      "userId": "9486760",
+      "name": "Abu Sufyan",
+      "email": "astmeridian@outlook.com",
+      "membershipTier": "business_class",
+      "teamId": "150001",
+      "agentStatus": "active"
+    },
+    {
+      "id": "360001",
+      "userId": "9690367",
+      "name": "Muhammad Azim Ali",
+      "email": "abusufyan511308@gmail.com",
+      "membershipTier": "Business Duo",
+      "teamId": "150001",
+      "agentStatus": "active"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tname\temail\tmembershipTier\tteamId\tagentStatus\n330001\t9486760\tAbu Sufyan\tastmeridian@outlook.com\tbusiness_class\t150001\tactive\n360001\t9690367\tMuhammad Azim Ali\tabusufyan511308@gmail.com\tBusiness Duo\t150001\tactive\n",
+  "stderr": "",
+  "execution_time_ms": 288
+}

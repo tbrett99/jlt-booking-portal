@@ -1,0 +1,21 @@
+{
+  "query": "-- Check for existing user\nSELECT id, name, email, role, isActive, createdAt\nFROM users\nWHERE email = 'abusufyan511308@gmail.com';\n\n-- Check for any join session\nSELECT id, email, step, userId, membershipTier, membershipType, signerName, createdAt, expiresAt\nFROM join_sessions\nWHERE email = 'abusufyan511308@gmail.com'\nORDER BY id DESC LIMIT 5;\n\n-- Check for existing CRM profile\nSELECT id, userId, personalEmail, membershipTier, teamId, agentStatus\nFROM agent_crm_profiles\nWHERE personalEmail = 'abusufyan511308@gmail.com';\n\n-- Check the team invite details again\nSELECT id, teamId, leaderId, invitedEmail, token, status, expiresAt, acceptedAt, acceptedByUserId\nFROM team_invites\nWHERE invitedEmail = 'abusufyan511308@gmail.com'\nORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute -- Check for existing user\nSELECT id, name, email, role, isActive, createdAt\nFROM users\nWHERE email = 'abusufyan511308@gmail.com';\n\n-- Check for any join session\nSELECT id, email, step, userId, membershipTier, membershipType, signerName, createdAt, expiresAt\nFROM join_sessions\nWHERE email = 'abusufyan511308@gmail.com'\nORDER BY id DESC LIMIT 5;\n\n-- Check for existing CRM profile\nSELECT id, userId, personalEmail, membershipTier, teamId, agentStatus\nFROM agent_crm_profiles\nWHERE personalEmail = 'abusufyan511308@gmail.com';\n\n-- Check the team invite details again\nSELECT id, teamId, leaderId, invitedEmail, token, status, expiresAt, acceptedAt, acceptedByUserId\nFROM team_invites\nWHERE invitedEmail = 'abusufyan511308@gmail.com'\nORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "9690367",
+      "name": "Muhammad Azim Ali",
+      "email": "abusufyan511308@gmail.com",
+      "role": "agent",
+      "isActive": "1",
+      "createdAt": "2026-05-15 21:51:39"
+    }
+  ],
+  "messages": [
+    "id\tteamId\tleaderId\tinvitedEmail\ttoken\tstatus\texpiresAt\tacceptedAt\tacceptedByUserId",
+    "1\t150001\t9486760\tabusufyan511308@gmail.com\tFZCE8D1qZyujG1KpOt8dBqmZKHmzoDEDCDxqXpXRdSZ5XysNq-D8FY4YKU_EXlNw\tpending\t2026-05-22 21:33:10\tNULL\tNULL"
+  ],
+  "stdout": "id\tname\temail\trole\tisActive\tcreatedAt\n9690367\tMuhammad Azim Ali\tabusufyan511308@gmail.com\tagent\t1\t2026-05-15 21:51:39\nid\tteamId\tleaderId\tinvitedEmail\ttoken\tstatus\texpiresAt\tacceptedAt\tacceptedByUserId\n1\t150001\t9486760\tabusufyan511308@gmail.com\tFZCE8D1qZyujG1KpOt8dBqmZKHmzoDEDCDxqXpXRdSZ5XysNq-D8FY4YKU_EXlNw\tpending\t2026-05-22 21:33:10\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 289
+}

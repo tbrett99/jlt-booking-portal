@@ -1,0 +1,20 @@
+{
+  "query": "-- All CRM profiles on team 150001\nSELECT acp.id, acp.userId, u.name, u.email, acp.personalEmail, acp.membershipTier, acp.teamId, acp.agentStatus\nFROM agent_crm_profiles acp\nLEFT JOIN users u ON u.id = acp.userId\nWHERE acp.teamId = 150001;\n\n-- Muhammad Azim Ali's CRM profile (by userId)\nSELECT acp.id, acp.userId, u.name, u.email, acp.personalEmail, acp.membershipTier, acp.teamId, acp.agentStatus\nFROM agent_crm_profiles acp\nLEFT JOIN users u ON u.id = acp.userId\nWHERE acp.userId = 9690367 OR u.email = 'abusufyan511308@gmail.com';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute -- All CRM profiles on team 150001\nSELECT acp.id, acp.userId, u.name, u.email, acp.personalEmail, acp.membershipTier, acp.teamId, acp.agentStatus\nFROM agent_crm_profiles acp\nLEFT JOIN users u ON u.id = acp.userId\nWHERE acp.teamId = 150001;\n\n-- Muhammad Azim Ali's CRM profile (by userId)\nSELECT acp.id, acp.userId, u.name, u.email, acp.personalEmail, acp.membershipTier, acp.teamId, acp.agentStatus\nFROM agent_crm_profiles acp\nLEFT JOIN users u ON u.id = acp.userId\nWHERE acp.userId = 9690367 OR u.email = 'abusufyan511308@gmail.com';",
+  "rows": [
+    {
+      "id": "330001",
+      "userId": "9486760",
+      "name": "Abu Sufyan",
+      "email": "astmeridian@outlook.com",
+      "personalEmail": "astmeridian@outlook.com",
+      "membershipTier": "business_class",
+      "teamId": "150001",
+      "agentStatus": "active"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tname\temail\tpersonalEmail\tmembershipTier\tteamId\tagentStatus\n330001\t9486760\tAbu Sufyan\tastmeridian@outlook.com\tastmeridian@outlook.com\tbusiness_class\t150001\tactive\n",
+  "stderr": "",
+  "execution_time_ms": 282
+}

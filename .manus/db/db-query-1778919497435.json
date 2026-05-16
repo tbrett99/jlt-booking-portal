@@ -1,0 +1,36 @@
+{
+  "query": "-- Check the join session\nSELECT id, email, step, userId, membershipTier, membershipType, signerName, createdAt\nFROM join_sessions\nWHERE email = 'astmeridian@outlook.com'\nORDER BY id DESC LIMIT 3;\n\n-- Check team_invites where Abu Sufyan (user 9486760) is the leader\nSELECT id, teamId, leaderId, invitedEmail, token, status, expiresAt, acceptedAt, acceptedByUserId, createdAt\nFROM team_invites\nWHERE leaderId = 9486760 OR acceptedByUserId = 9486760\nORDER BY createdAt DESC LIMIT 10;\n\n-- Check Abu Sufyan's CRM profile for teamId\nSELECT id, userId, personalEmail, membershipTier, teamId, agentStatus\nFROM agent_crm_profiles\nWHERE userId = 9486760;\n\n-- Check all agent_teams\nSELECT id, name, createdAt FROM agent_teams ORDER BY id DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute -- Check the join session\nSELECT id, email, step, userId, membershipTier, membershipType, signerName, createdAt\nFROM join_sessions\nWHERE email = 'astmeridian@outlook.com'\nORDER BY id DESC LIMIT 3;\n\n-- Check team_invites where Abu Sufyan (user 9486760) is the leader\nSELECT id, teamId, leaderId, invitedEmail, token, status, expiresAt, acceptedAt, acceptedByUserId, createdAt\nFROM team_invites\nWHERE leaderId = 9486760 OR acceptedByUserId = 9486760\nORDER BY createdAt DESC LIMIT 10;\n\n-- Check Abu Sufyan's CRM profile for teamId\nSELECT id, userId, personalEmail, membershipTier, teamId, agentStatus\nFROM agent_crm_profiles\nWHERE userId = 9486760;\n\n-- Check all agent_teams\nSELECT id, name, createdAt FROM agent_teams ORDER BY id DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "300001",
+      "email": "astmeridian@outlook.com",
+      "step": "complete",
+      "userId": "9486760",
+      "membershipTier": "business_class",
+      "membershipType": "duo",
+      "signerName": "Abu Sufyan",
+      "createdAt": "2026-05-15 17:29:25"
+    }
+  ],
+  "messages": [
+    "id\tteamId\tleaderId\tinvitedEmail\ttoken\tstatus\texpiresAt\tacceptedAt\tacceptedByUserId\tcreatedAt",
+    "1\t150001\t9486760\tabusufyan511308@gmail.com\tFZCE8D1qZyujG1KpOt8dBqmZKHmzoDEDCDxqXpXRdSZ5XysNq-D8FY4YKU_EXlNw\tpending\t2026-05-22 21:33:10\tNULL\tNULL\t2026-05-15 21:33:10",
+    "id\tuserId\tpersonalEmail\tmembershipTier\tteamId\tagentStatus",
+    "330001\t9486760\tastmeridian@outlook.com\tbusiness_class\t150001\tactive",
+    "id\tname\tcreatedAt",
+    "150001\tAbu Sufyan — Business Class Duo (2 agents)\t2026-05-15 21:33:10",
+    "120001\tWhole New World Holidays\t2026-05-15 14:31:02",
+    "90001\tMagik Escapes\t2026-05-12 08:32:21",
+    "60002\tSmart Traveller Club\t2026-05-01 13:52:25",
+    "60001\tAurora Dream Travel\t2026-05-01 13:51:33",
+    "30001\tLunara Travel\t2026-04-29 10:21:12",
+    "5\tDave & Viky\t2026-04-17 09:01:59",
+    "4\tHannah & Andrew\t2026-04-17 09:01:25",
+    "3\tButlers Travel\t2026-04-17 09:00:56",
+    "2\tHaymaker Travel\t2026-04-17 08:57:40"
+  ],
+  "stdout": "id\temail\tstep\tuserId\tmembershipTier\tmembershipType\tsignerName\tcreatedAt\n300001\tastmeridian@outlook.com\tcomplete\t9486760\tbusiness_class\tduo\tAbu Sufyan\t2026-05-15 17:29:25\nid\tteamId\tleaderId\tinvitedEmail\ttoken\tstatus\texpiresAt\tacceptedAt\tacceptedByUserId\tcreatedAt\n1\t150001\t9486760\tabusufyan511308@gmail.com\tFZCE8D1qZyujG1KpOt8dBqmZKHmzoDEDCDxqXpXRdSZ5XysNq-D8FY4YKU_EXlNw\tpending\t2026-05-22 21:33:10\tNULL\tNULL\t2026-05-15 21:33:10\nid\tuserId\tpersonalEmail\tmembershipTier\tteamId\tagentStatus\n330001\t9486760\tastmeridian@outlook.com\tbusiness_class\t150001\tactive\nid\tname\tcreatedAt\n150001\tAbu Sufyan — Business Class Duo (2 agents)\t2026-05-15 21:33:10\n120001\tWhole New World Holidays\t2026-05-15 14:31:02\n90001\tMagik Escapes\t2026-05-12 08:32:21\n60002\tSmart Traveller Club\t2026-05-01 13:52:25\n60001\tAurora Dream Travel\t2026-05-01 13:51:33\n30001\tLunara Travel\t2026-04-29 10:21:12\n5\tDave & Viky\t2026-04-17 09:01:59\n4\tHannah & Andrew\t2026-04-17 09:01:25\n3\tButlers Travel\t2026-04-17 09:00:56\n2\tHaymaker Travel\t2026-04-17 08:57:40\n",
+  "stderr": "",
+  "execution_time_ms": 289
+}

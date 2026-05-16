@@ -29,7 +29,7 @@ import { notifyOwner } from "./notification";
 import { externalApiRouter } from "../external-api";
 import { oauth2Router } from "../oauth2-server";
 import { supplierApiRouter } from "../supplier-api";
-import { joinSessions, agentCrmProfiles } from "../../drizzle/schema";
+import { joinSessions, agentCrmProfiles, teamInvites, users as usersTable } from "../../drizzle/schema";
 import { createAgentUser } from "../db";
 import { getMonthlyAmount } from "../../shared/membership";
 import bcrypt from "bcryptjs";
@@ -1019,6 +1019,83 @@ async function startServer() {
               personalEmail: session.email ?? null,
             },
           });
+
+          // Auto-link team: if this new agent was invited as a duo/trio partner, or if they are the
+          // leader and their partner already has an account, link both CRM profiles to the same team now.
+          // This ensures team linkage happens at payment confirmation, not just at invite-acceptance.
+          try {
+            const { and: andOp } = await import("drizzle-orm");
+            // Case 1: This agent was invited as a partner — find a pending invite for their email
+            const inviteForThisAgent = await db
+              .select()
+              .from(teamInvites)
+              .where(
+                andOp(
+                  eq(teamInvites.invitedEmail, session.email),
+                  eq(teamInvites.status, "pending")
+                )
+              )
+              .limit(1);
+            if (inviteForThisAgent[0]) {
+              const invite = inviteForThisAgent[0];
+              await db
+                .update(agentCrmProfiles)
+                .set({ teamId: invite.teamId })
+                .where(eq(agentCrmProfiles.userId, newUser.id));
+              await db
+                .update(teamInvites)
+                .set({ status: "accepted", acceptedAt: new Date(), acceptedByUserId: newUser.id })
+                .where(eq(teamInvites.id, invite.id));
+              console.log(`[GC Webhook] Auto-linked user ${newUser.id} (${session.email}) to team ${invite.teamId} via pending invite`);
+            }
+            // Case 2: This agent is the leader — find any pending invites they sent and link
+            // partners who already have a CRM profile (partner joined before leader's payment confirmed)
+            const leaderProfileRows = await db
+              .select({ teamId: agentCrmProfiles.teamId })
+              .from(agentCrmProfiles)
+              .where(eq(agentCrmProfiles.userId, newUser.id))
+              .limit(1);
+            const leaderTeamId = leaderProfileRows[0]?.teamId;
+            if (leaderTeamId) {
+              const pendingInvitesByLeader = await db
+                .select()
+                .from(teamInvites)
+                .where(
+                  andOp(
+                    eq(teamInvites.leaderId, newUser.id),
+                    eq(teamInvites.status, "pending")
+                  )
+                );
+              for (const invite of pendingInvitesByLeader) {
+                const partnerUserRows = await db
+                  .select({ id: usersTable.id })
+                  .from(usersTable)
+                  .where(eq(usersTable.email, invite.invitedEmail))
+                  .limit(1);
+                if (partnerUserRows[0]) {
+                  const partnerUserId = partnerUserRows[0].id;
+                  const partnerProfileRows = await db
+                    .select({ id: agentCrmProfiles.id, teamId: agentCrmProfiles.teamId })
+                    .from(agentCrmProfiles)
+                    .where(eq(agentCrmProfiles.userId, partnerUserId))
+                    .limit(1);
+                  if (partnerProfileRows[0] && !partnerProfileRows[0].teamId) {
+                    await db
+                      .update(agentCrmProfiles)
+                      .set({ teamId: leaderTeamId })
+                      .where(eq(agentCrmProfiles.userId, partnerUserId));
+                    await db
+                      .update(teamInvites)
+                      .set({ status: "accepted", acceptedAt: new Date(), acceptedByUserId: partnerUserId })
+                      .where(eq(teamInvites.id, invite.id));
+                    console.log(`[GC Webhook] Auto-linked partner ${partnerUserId} (${invite.invitedEmail}) to team ${leaderTeamId}`);
+                  }
+                }
+              }
+            }
+          } catch (teamLinkErr) {
+            console.error("[GC Webhook] Failed to auto-link team members:", teamLinkErr);
+          }
 
           // Create the gc_mandates row now that we have the real userId.
           // We do this here (not in join-router) so the insert never runs without a valid userId.

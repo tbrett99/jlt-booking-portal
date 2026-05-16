@@ -2356,3 +2356,7 @@
 ## astmeridian@outlook.com Payment Confirmation Stuck
 - [x] Diagnose why payment is showing "Payment not yet confirmed" despite joining fee being paid
 - [x] Fix or manually unblock so they can set password and proceed to onboarding
+
+## Duo/Trio Team Auto-Link Bug
+- [x] Fix: billing_request.fulfilled webhook creates leader's CRM profile but does not auto-link any pending team invites — partner's CRM profile gets teamId=NULL even after they join
+- [x] After creating the leader's CRM profile in the webhook, query team_invites for any pending invite where leaderId=newUser.id and auto-set teamId on the partner's CRM profile if they already have one

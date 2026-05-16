@@ -1,0 +1,9 @@
+{
+  "query": "-- Check his join session for membership details\nSELECT id, email, step, userId, membershipTier, membershipType, signerName, joiningFeePaidAt, createdAt\nFROM join_sessions\nWHERE userId = 9690367 OR email = 'abusufyan511308@gmail.com'\nORDER BY id DESC LIMIT 5;\n\n-- Also check gc_mandates for him\nSELECT id, userId, billingRequestId, mandateId, status, joiningFeePaidAt\nFROM gc_mandates\nWHERE userId = 9690367;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute -- Check his join session for membership details\nSELECT id, email, step, userId, membershipTier, membershipType, signerName, joiningFeePaidAt, createdAt\nFROM join_sessions\nWHERE userId = 9690367 OR email = 'abusufyan511308@gmail.com'\nORDER BY id DESC LIMIT 5;\n\n-- Also check gc_mandates for him\nSELECT id, userId, billingRequestId, mandateId, status, joiningFeePaidAt\nFROM gc_mandates\nWHERE userId = 9690367;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 294
+}

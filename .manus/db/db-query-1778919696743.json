@@ -1,0 +1,20 @@
+{
+  "query": "-- Find by linked user account\nSELECT acp.id, acp.userId, u.name, u.email, acp.personalEmail, acp.membershipTier, acp.teamId, acp.agentStatus\nFROM agent_crm_profiles acp\nLEFT JOIN users u ON u.id = acp.userId\nWHERE u.email = 'abusufyan511308@gmail.com' OR u.id = 9690367;\n\n-- Also search by name in case userId is not linked\nSELECT acp.id, acp.userId, acp.personalEmail, acp.membershipTier, acp.teamId, acp.agentStatus\nFROM agent_crm_profiles acp\nWHERE acp.personalEmail LIKE '%abusufyan%' OR acp.personalEmail LIKE '%azim%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute -- Find by linked user account\nSELECT acp.id, acp.userId, u.name, u.email, acp.personalEmail, acp.membershipTier, acp.teamId, acp.agentStatus\nFROM agent_crm_profiles acp\nLEFT JOIN users u ON u.id = acp.userId\nWHERE u.email = 'abusufyan511308@gmail.com' OR u.id = 9690367;\n\n-- Also search by name in case userId is not linked\nSELECT acp.id, acp.userId, acp.personalEmail, acp.membershipTier, acp.teamId, acp.agentStatus\nFROM agent_crm_profiles acp\nWHERE acp.personalEmail LIKE '%abusufyan%' OR acp.personalEmail LIKE '%azim%';",
+  "rows": [
+    {
+      "id": "360001",
+      "userId": "9690367",
+      "name": "Muhammad Azim Ali",
+      "email": "abusufyan511308@gmail.com",
+      "personalEmail": "NULL",
+      "membershipTier": "Business Duo",
+      "teamId": "NULL",
+      "agentStatus": "active"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tname\temail\tpersonalEmail\tmembershipTier\tteamId\tagentStatus\n360001\t9690367\tMuhammad Azim Ali\tabusufyan511308@gmail.com\tNULL\tBusiness Duo\tNULL\tactive\n",
+  "stderr": "",
+  "execution_time_ms": 283
+}
