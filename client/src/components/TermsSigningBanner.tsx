@@ -15,7 +15,6 @@ Key updates in this version include:
 • Section 43 — Minimum Margin: Updated to 6% gross (including VAT on commission). Each agent receives two Family & Friends vouchers annually permitting sales below this threshold.
 • Section 26.4.1 — Commission Eligibility: Commission may only be claimed when the client has paid in full, all suppliers have been paid, and departure is no more than 12 weeks away.
 • Section 9.2.1 — Data Protection: Agents must register with the ICO as a data controller.
-• Section 21 — Limitation of Liability: Cap reduced to 100% of membership fees paid in the preceding 12 months.
 
 The full updated terms are available in the Terms & Policies section of the portal.`;
 
