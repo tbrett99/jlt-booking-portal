@@ -2372,3 +2372,7 @@
 - [x] Fix Abu Sufyan (astmeridian@outlook.com) — billing request still fulfilling; mandates.submitted webhook will auto-store Bacs mandate ID when GC creates it (existing handler already handles this)
 - [x] Fix webhook handler: in billing_request.fulfilled, fetch the billing request from GC API and store the Bacs mandate_request_mandate ID immediately on the gc_mandates row
 - [x] Fix webhook handler: in mandates.active, add fallback lookup by mandateId (since mandates.active events do NOT include billing_request link)
+
+## Agent Terms — Minimum Margin VAT Wording
+- [x] Update TermsSigningBanner.tsx: change "excluding VAT on commission" to "including VAT on commission" in the Section 43 summary
+- [x] Check policyData.ts Section 43 and Appendix J for any similar wording to update (no VAT wording found in policyData.ts — only in TermsSigningBanner.tsx)
