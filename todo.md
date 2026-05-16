@@ -2360,3 +2360,15 @@
 ## Duo/Trio Team Auto-Link Bug
 - [x] Fix: billing_request.fulfilled webhook creates leader's CRM profile but does not auto-link any pending team invites — partner's CRM profile gets teamId=NULL even after they join
 - [x] After creating the leader's CRM profile in the webhook, query team_invites for any pending invite where leaderId=newUser.id and auto-set teamId on the partner's CRM profile if they already have one
+
+## GoCardless Faster Payments Subscription Bug
+- [x] Root cause identified: portal was storing Faster Payments mandate ID (consumed, non-recurring) instead of Bacs mandate ID
+- [x] Fix: billing_request.fulfilled now fetches GC billing request and stores Bacs mandate_request_mandate ID immediately
+- [x] Fix: mandates.active handler now falls back to lookup by mandateId when billing_request link is absent
+- [x] Naomi Gibson: gc_mandates row updated to Bacs mandate MD01KRHBP55Q70Z72PHPZ9G1WYVW (submitted); subscription will be created automatically when mandates.active fires
+
+## GoCardless Bacs Mandate ID Bug
+- [x] Fix Naomi Gibson (naomigib@sky.com) — update gc_mandates row to Bacs mandate ID MD01KRHBP55Q70Z72PHPZ9G1WYVW (status: submitted, will auto-create subscription when mandates.active fires)
+- [x] Fix Abu Sufyan (astmeridian@outlook.com) — billing request still fulfilling; mandates.submitted webhook will auto-store Bacs mandate ID when GC creates it (existing handler already handles this)
+- [x] Fix webhook handler: in billing_request.fulfilled, fetch the billing request from GC API and store the Bacs mandate_request_mandate ID immediately on the gc_mandates row
+- [x] Fix webhook handler: in mandates.active, add fallback lookup by mandateId (since mandates.active events do NOT include billing_request link)

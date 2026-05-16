@@ -1,0 +1,17 @@
+{
+  "query": "SELECT id, userId, mandateId, billingRequestId, status FROM gc_mandates WHERE userId = 8079651;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, userId, mandateId, billingRequestId, status FROM gc_mandates WHERE userId = 8079651;",
+  "rows": [
+    {
+      "id": "150004",
+      "userId": "8079651",
+      "mandateId": "MD01KRHBP55Q70Z72PHPZ9G1WYVW",
+      "billingRequestId": "BRQ01KRHB3FEMFKFFK3JNXSXJ4FMB",
+      "status": "submitted"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tmandateId\tbillingRequestId\tstatus\n150004\t8079651\tMD01KRHBP55Q70Z72PHPZ9G1WYVW\tBRQ01KRHB3FEMFKFFK3JNXSXJ4FMB\tsubmitted\n",
+  "stderr": "",
+  "execution_time_ms": 265
+}

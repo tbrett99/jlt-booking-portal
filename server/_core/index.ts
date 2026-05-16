@@ -18,9 +18,11 @@ import {
   getBillingRequest,
   createSubscription,
   calcSubscriptionStartDate,
+  getMandate,
 } from "../gocardless";
 import {
   getGcMandateByBillingRequestId,
+  getGcMandateByMandateId,
   updateGcMandate,
   createGcSubscription,
   createPaymentEvent,
@@ -1099,7 +1101,23 @@ async function startServer() {
 
           // Create the gc_mandates row now that we have the real userId.
           // We do this here (not in join-router) so the insert never runs without a valid userId.
+          // IMPORTANT: Fetch the billing request from GC to get the Bacs mandate_request_mandate ID.
+          // The billing_request.fulfilled event only gives us the billingRequestId, not the Bacs mandate ID.
+          // Storing the Bacs mandate ID now ensures the mandates.active webhook can find this row later.
           if (session.billingRequestId) {
+            // Fetch the Bacs mandate ID from GoCardless
+            let bacsMandateId: string | undefined;
+            try {
+              const brDetails = await getBillingRequest(session.billingRequestId);
+              bacsMandateId = brDetails.links?.mandate_request_mandate ?? brDetails.mandate_request?.links?.mandate;
+              if (bacsMandateId) {
+                console.log(`[GC Webhook] billing_request.fulfilled: Bacs mandate ID resolved: ${bacsMandateId}`);
+              } else {
+                console.warn(`[GC Webhook] billing_request.fulfilled: Bacs mandate ID not yet available for ${session.billingRequestId} (still fulfilling)`);
+              }
+            } catch (brFetchErr: any) {
+              console.warn(`[GC Webhook] billing_request.fulfilled: could not fetch billing request for Bacs mandate ID:`, brFetchErr.message);
+            }
             try {
               const { createGcMandate: insertMandate } = await import("../gocardless-db");
               await insertMandate({
@@ -1109,13 +1127,25 @@ async function startServer() {
                 preferredPaymentDay: 1, // default — agent updates during onboarding
                 joiningFeePaidAt: new Date(),
               });
+              // If we got the Bacs mandate ID, update the row immediately
+              if (bacsMandateId) {
+                const newRow = await getGcMandateByBillingRequestId(session.billingRequestId);
+                if (newRow) {
+                  await updateGcMandate(newRow.id, { mandateId: bacsMandateId, status: "submitted" });
+                  console.log(`[GC Webhook] billing_request.fulfilled: stored Bacs mandate ID ${bacsMandateId} on row ${newRow.id}`);
+                }
+              }
             } catch (mandateErr: any) {
               // If a row already exists (duplicate), update it instead
               if (mandateErr?.code === "ER_DUP_ENTRY" || String(mandateErr?.message).includes("duplicate")) {
                 try {
                   const existing = await getGcMandateByBillingRequestId(session.billingRequestId);
                   if (existing) {
-                    await updateGcMandate(existing.id, { userId: newUser.id, joiningFeePaidAt: new Date() });
+                    await updateGcMandate(existing.id, {
+                      userId: newUser.id,
+                      joiningFeePaidAt: new Date(),
+                      ...(bacsMandateId ? { mandateId: bacsMandateId, status: "submitted" } : {}),
+                    });
                   }
                 } catch (upErr) {
                   console.error(`[GC Webhook] Failed to upsert gc_mandate for billing request ${session.billingRequestId}:`, upErr);
@@ -1212,11 +1242,21 @@ async function startServer() {
           const mandateId = event.links.mandate;
           if (!mandateId) continue;
 
-          // Find our local record via billing_request link (if present) or mandate ID
+          // Find our local record via billing_request link (if present) or mandate ID.
+          // NOTE: mandates.active events do NOT include billing_request in links — only mandates.created does.
+          // So we first try by billingRequestId, then fall back to looking up by mandateId directly.
           const billingRequestId = event.links.billing_request ?? null;
           let localMandate = billingRequestId
             ? await getGcMandateByBillingRequestId(billingRequestId)
             : null;
+
+          // Fallback: look up by mandateId (handles cases where billing_request link is absent)
+          if (!localMandate) {
+            localMandate = await getGcMandateByMandateId(mandateId);
+            if (localMandate) {
+              console.log(`[GC Webhook] mandates.active: found local mandate by mandateId ${mandateId} (row ${localMandate.id})`);
+            }
+          }
 
           if (!localMandate) {
             // Mandate row missing — try to create it now by looking up the join session via billingRequestId
@@ -1255,10 +1295,26 @@ async function startServer() {
           // Update local mandate status
           await updateGcMandate(localMandate.id, { mandateId, status: "active" });
 
-          // Calculate subscription start date: 1 month after joining fee payment
+          // Fetch the live mandate from GoCardless to determine its scheme.
+          // Faster Payments mandates do NOT support day_of_month or a custom start_date —
+          // GoCardless determines the charge date automatically from next_possible_charge_date.
+          let mandateScheme = "bacs"; // safe default
+          let mandateNextChargeDate: string | null = null;
+          try {
+            const gcMandate = await getMandate(mandateId);
+            mandateScheme = gcMandate.scheme ?? "bacs";
+            mandateNextChargeDate = gcMandate.next_possible_charge_date ?? null;
+          } catch (schemeErr: any) {
+            console.warn(`[GC Webhook] Could not fetch mandate scheme for ${mandateId}, defaulting to bacs:`, schemeErr.message);
+          }
+          const isFasterPayments = mandateScheme === "faster_payments";
+
+          // Calculate subscription start date (Bacs only — Faster Payments ignores this)
           const joiningFeeDate = localMandate.joiningFeePaidAt ?? new Date();
           const dayOfMonth = localMandate.preferredPaymentDay ?? 1;
-          const startDate = calcSubscriptionStartDate(joiningFeeDate, dayOfMonth);
+          const startDate = isFasterPayments
+            ? (mandateNextChargeDate ?? calcSubscriptionStartDate(joiningFeeDate, dayOfMonth))
+            : calcSubscriptionStartDate(joiningFeeDate, dayOfMonth);
 
           // Look up the agent's membership tier/type to get the correct monthly amount
           let monthlyAmountPence = 3000; // fallback £30
@@ -1281,13 +1337,15 @@ async function startServer() {
             console.error("[GC Webhook] Could not resolve monthly amount, using fallback:", amtErr);
           }
 
-          // Create the GoCardless subscription
+          // Create the GoCardless subscription.
+          // For Faster Payments mandates: omit day_of_month (not supported by scheme).
+          // For Bacs mandates: pass day_of_month and start_date as normal.
           const sub = await createSubscription({
             mandateId,
             amountPence: monthlyAmountPence,
             name: "JLT Monthly Membership",
             startDate,
-            dayOfMonth,
+            ...(isFasterPayments ? {} : { dayOfMonth }),
           });
 
           // Store subscription locally
@@ -1296,8 +1354,8 @@ async function startServer() {
             mandateId,
             subscriptionId: sub.id,
             amount: sub.amount,
-            startDate,
-            dayOfMonth,
+            startDate: sub.start_date ?? startDate,
+            dayOfMonth: isFasterPayments ? undefined : dayOfMonth,
             nextChargeDate: sub.upcoming_payments?.[0]?.charge_date,
           });
 

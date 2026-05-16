@@ -1,0 +1,23 @@
+{
+  "query": "SELECT u.id, u.name, u.email, gm.id as mandate_row_id, gm.mandateId, gm.billingRequestId, gm.status as mandate_status, gm.preferredPaymentDay, gm.joiningFeePaidAt, acp.membershipTier, acp.agentStatus\nFROM users u\nJOIN gc_mandates gm ON gm.userId = u.id\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.email = 'naomigib@sky.com';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT u.id, u.name, u.email, gm.id as mandate_row_id, gm.mandateId, gm.billingRequestId, gm.status as mandate_status, gm.preferredPaymentDay, gm.joiningFeePaidAt, acp.membershipTier, acp.agentStatus\nFROM users u\nJOIN gc_mandates gm ON gm.userId = u.id\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.email = 'naomigib@sky.com';",
+  "rows": [
+    {
+      "id": "8079651",
+      "name": "Mrs Naomi Claire Gibson",
+      "email": "naomigib@sky.com",
+      "mandate_row_id": "150004",
+      "mandateId": "MD01KRHBNZQJEHWXZCA38MFVX7RR",
+      "billingRequestId": "BRQ01KRHB3FEMFKFFK3JNXSXJ4FMB",
+      "mandate_status": "active",
+      "preferredPaymentDay": "1",
+      "joiningFeePaidAt": "2026-05-13 19:05:52",
+      "membershipTier": "business_class",
+      "agentStatus": "active"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tmandate_row_id\tmandateId\tbillingRequestId\tmandate_status\tpreferredPaymentDay\tjoiningFeePaidAt\tmembershipTier\tagentStatus\n8079651\tMrs Naomi Claire Gibson\tnaomigib@sky.com\t150004\tMD01KRHBNZQJEHWXZCA38MFVX7RR\tBRQ01KRHB3FEMFKFFK3JNXSXJ4FMB\tactive\t1\t2026-05-13 19:05:52\tbusiness_class\tactive\n",
+  "stderr": "",
+  "execution_time_ms": 283
+}

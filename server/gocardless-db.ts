@@ -47,6 +47,17 @@ export async function getGcMandateByBillingRequestId(brqId: string) {
   return rows[0] ?? null;
 }
 
+export async function getGcMandateByMandateId(mandateId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(gcMandates)
+    .where(eq(gcMandates.mandateId, mandateId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function updateGcMandate(
   id: number,
   data: Partial<{
