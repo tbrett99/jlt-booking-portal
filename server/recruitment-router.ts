@@ -223,6 +223,10 @@ export const recruitmentRouter = router({
         ? `${input.origin}/apply/form?token=${appToken}`
         : `https://portal.thejltgroup.co.uk/apply/form?token=${appToken}`;
 
+      // TikTok leads are attributed to Max Kelly (user ID 760)
+      const MAX_KELLY_USER_ID = 760;
+      const isTikTokLead = (input.howHeard ?? "").toLowerCase().includes("tiktok");
+
       // Create prospect
       const id = await createRecruitmentProspect({
         firstName: input.firstName,
@@ -233,6 +237,7 @@ export const recruitmentRouter = router({
         source: input.source ?? "website",
         tierInterest: input.tierInterest ?? null,
         howHeard: input.howHeard ?? null,
+        referredById: isTikTokLead ? MAX_KELLY_USER_ID : null,
         adminNotes: encodeApplicationToken(appToken),
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -342,10 +347,16 @@ export const recruitmentRouter = router({
         ...(input.extendedData ?? {}),
       };
 
+      // If heardAbout includes TikTok and no referrer is set, attribute to Max Kelly
+      const MAX_KELLY_USER_ID = 760;
+      const heardAboutArr: string[] = input.extendedData?.heardAbout ?? [];
+      const isTikTokViaForm = heardAboutArr.some((h) => h.toLowerCase().includes("tiktok"));
+
       await updateRecruitmentProspect(prospect.id, {
         applicationData,
         applicationSubmittedAt: new Date(),
         pipelineStage: "application_received",
+        ...(isTikTokViaForm && !prospect.referredById ? { referredById: MAX_KELLY_USER_ID } : {}),
       });
       // Sync CRM prospect stage to "AR Submitted" if a matching CRM prospect exists
       try {

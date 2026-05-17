@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, name, email, role FROM users WHERE name LIKE '%Max%' OR email LIKE '%max%' LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, email, role FROM users WHERE name LIKE '%Max%' OR email LIKE '%max%' LIMIT 5;",
+  "rows": [
+    {
+      "id": "47",
+      "name": "Max",
+      "email": "max@thejltgroup.co.uk",
+      "role": "super_admin"
+    },
+    {
+      "id": "760",
+      "name": "Max Kelly",
+      "email": "max@thejltgroup.co.uk",
+      "role": "super_admin"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\trole\n47\tMax\tmax@thejltgroup.co.uk\tsuper_admin\n760\tMax Kelly\tmax@thejltgroup.co.uk\tsuper_admin\n",
+  "stderr": "",
+  "execution_time_ms": 263
+}

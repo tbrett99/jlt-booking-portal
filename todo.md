@@ -2376,3 +2376,8 @@
 ## Agent Terms — Minimum Margin VAT Wording
 - [x] Update TermsSigningBanner.tsx: change "excluding VAT on commission" to "including VAT on commission" in the Section 43 summary
 - [x] Check policyData.ts Section 43 and Appendix J for any similar wording to update (no VAT wording found in policyData.ts — only in TermsSigningBanner.tsx)
+
+## TikTok Lead Source → Referred by Max
+- [x] In createProspect: if howHeard contains "TikTok", auto-set referredById = 760 (Max Kelly)
+- [x] In submitApplication: if extendedData.heardAbout contains "TikTok", auto-set referredById = 760 (Max Kelly)
+- [x] Backfill existing 7 TikTok prospects (applicationData.heardAbout) with referredById = 760

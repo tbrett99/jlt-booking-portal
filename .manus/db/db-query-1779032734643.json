@@ -1,0 +1,66 @@
+{
+  "query": "\nSELECT id, firstName, lastName, howHeard, referredById, \n       JSON_EXTRACT(applicationData, '$.heardAbout') as heardAbout\nFROM recruitment_prospects \nWHERE applicationData IS NOT NULL\n  AND JSON_EXTRACT(applicationData, '$.heardAbout') LIKE '%iktok%'\nLIMIT 10;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, firstName, lastName, howHeard, referredById, \n       JSON_EXTRACT(applicationData, '$.heardAbout') as heardAbout\nFROM recruitment_prospects \nWHERE applicationData IS NOT NULL\n  AND JSON_EXTRACT(applicationData, '$.heardAbout') LIKE '%iktok%'\nLIMIT 10;\n",
+  "rows": [
+    {
+      "id": "1",
+      "firstName": "Charles",
+      "lastName": "Test",
+      "howHeard": "social_media",
+      "referredById": "NULL",
+      "heardAbout": "[\"TikTok\"]"
+    },
+    {
+      "id": "30005",
+      "firstName": "Kirsty",
+      "lastName": "Again",
+      "howHeard": "NULL",
+      "referredById": "NULL",
+      "heardAbout": "[\"TikTok\"]"
+    },
+    {
+      "id": "90024",
+      "firstName": "Ismaeel",
+      "lastName": "Zaman",
+      "howHeard": "NULL",
+      "referredById": "NULL",
+      "heardAbout": "[\"TikTok\"]"
+    },
+    {
+      "id": "90074",
+      "firstName": "Channelle",
+      "lastName": "Lawrence",
+      "howHeard": "NULL",
+      "referredById": "NULL",
+      "heardAbout": "[\"TikTok\"]"
+    },
+    {
+      "id": "210017",
+      "firstName": "Lauren",
+      "lastName": "Charlton",
+      "howHeard": "",
+      "referredById": "NULL",
+      "heardAbout": "[\"TikTok\"]"
+    },
+    {
+      "id": "210020",
+      "firstName": "Neil",
+      "lastName": "Todd",
+      "howHeard": "",
+      "referredById": "NULL",
+      "heardAbout": "[\"TikTok\"]"
+    },
+    {
+      "id": "510001",
+      "firstName": "Kiera",
+      "lastName": "Webb",
+      "howHeard": "",
+      "referredById": "NULL",
+      "heardAbout": "[\"TikTok\"]"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tlastName\thowHeard\treferredById\theardAbout\n1\tCharles\tTest\tsocial_media\tNULL\t[\"TikTok\"]\n30005\tKirsty\tAgain\tNULL\tNULL\t[\"TikTok\"]\n90024\tIsmaeel\tZaman\tNULL\tNULL\t[\"TikTok\"]\n90074\tChannelle\tLawrence\tNULL\tNULL\t[\"TikTok\"]\n210017\tLauren\tCharlton\t\tNULL\t[\"TikTok\"]\n210020\tNeil\tTodd\t\tNULL\t[\"TikTok\"]\n510001\tKiera\tWebb\t\tNULL\t[\"TikTok\"]\n",
+  "stderr": "",
+  "execution_time_ms": 264
+}

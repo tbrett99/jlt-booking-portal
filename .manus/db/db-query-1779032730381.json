@@ -1,0 +1,17 @@
+{
+  "query": "\nSELECT id, firstName, lastName, howHeard, referredById \nFROM recruitment_prospects \nWHERE howHeard IS NOT NULL AND howHeard != ''\nORDER BY createdAt DESC\nLIMIT 10;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, firstName, lastName, howHeard, referredById \nFROM recruitment_prospects \nWHERE howHeard IS NOT NULL AND howHeard != ''\nORDER BY createdAt DESC\nLIMIT 10;\n",
+  "rows": [
+    {
+      "id": "1",
+      "firstName": "Charles",
+      "lastName": "Test",
+      "howHeard": "social_media",
+      "referredById": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tlastName\thowHeard\treferredById\n1\tCharles\tTest\tsocial_media\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 271
+}
