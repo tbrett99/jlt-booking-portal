@@ -1,0 +1,9 @@
+{
+  "query": "\n-- Re-point all prospects referred by user 47 to user 760\nUPDATE recruitment_prospects SET referredById = 760 WHERE referredById = 47;\n\n-- Update user 47's name to match\nUPDATE users SET name = 'Max Kelly' WHERE id = 47;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \n-- Re-point all prospects referred by user 47 to user 760\nUPDATE recruitment_prospects SET referredById = 760 WHERE referredById = 47;\n\n-- Update user 47's name to match\nUPDATE users SET name = 'Max Kelly' WHERE id = 47;\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 283
+}

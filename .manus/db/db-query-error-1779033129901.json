@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT \n  b.id as portalBookingId,\n  b.ptsRef,\n  b.bookingRef,\n  b.clientName,\n  b.clientEmail,\n  b.destination,\n  b.departureDate,\n  b.returnDate,\n  b.totalValue,\n  b.depositAmount,\n  b.status,\n  b.paymentStatus,\n  b.numTravellers,\n  b.packageType,\n  b.supplierName,\n  b.notes,\n  b.createdAt,\n  b.bookingDate\nFROM bookings b\nWHERE b.userId = 60600\nORDER BY b.departureDate DESC\nLIMIT 100;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT \n  b.id as portalBookingId,\n  b.ptsRef,\n  b.bookingRef,\n  b.clientName,\n  b.clientEmail,\n  b.destination,\n  b.departureDate,\n  b.returnDate,\n  b.totalValue,\n  b.depositAmount,\n  b.status,\n  b.paymentStatus,\n  b.numTravellers,\n  b.packageType,\n  b.supplierName,\n  b.notes,\n  b.createdAt,\n  b.bookingDate\nFROM bookings b\nWHERE b.userId = 60600\nORDER BY b.departureDate DESC\nLIMIT 100;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'b.userid' in 'where clause'"
+  ]
+}

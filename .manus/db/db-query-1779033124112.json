@@ -1,0 +1,31 @@
+{
+  "query": "\nSELECT u.id, u.name, u.email, a.id as crmId, a.membershipTier\nFROM users u\nLEFT JOIN agent_crm_profiles a ON a.userId = u.id\nWHERE u.name LIKE '%Rick%' OR u.name LIKE '%Berry%' OR u.name LIKE '%Shah%'\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, u.email, a.id as crmId, a.membershipTier\nFROM users u\nLEFT JOIN agent_crm_profiles a ON a.userId = u.id\nWHERE u.name LIKE '%Rick%' OR u.name LIKE '%Berry%' OR u.name LIKE '%Shah%'\nLIMIT 5;\n",
+  "rows": [
+    {
+      "id": "60488",
+      "name": "Lloyd Fitzpatrick",
+      "email": "lloyd@fitzthebill.co.uk",
+      "crmId": "258",
+      "membershipTier": "Business Class"
+    },
+    {
+      "id": "60548",
+      "name": "Roshni Shah",
+      "email": "shah_rosh@hotmail.com",
+      "crmId": "351",
+      "membershipTier": "Business Class"
+    },
+    {
+      "id": "60600",
+      "name": "Ricky Berry-shah",
+      "email": "ricky@thejltgroup.co.uk",
+      "crmId": "344",
+      "membershipTier": "Business Class"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tcrmId\tmembershipTier\n60488\tLloyd Fitzpatrick\tlloyd@fitzthebill.co.uk\t258\tBusiness Class\n60548\tRoshni Shah\tshah_rosh@hotmail.com\t351\tBusiness Class\n60600\tRicky Berry-shah\tricky@thejltgroup.co.uk\t344\tBusiness Class\n",
+  "stderr": "",
+  "execution_time_ms": 273
+}

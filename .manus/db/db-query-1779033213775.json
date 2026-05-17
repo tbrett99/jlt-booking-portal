@@ -1,0 +1,70 @@
+{
+  "query": "\nSELECT id, ptsRef, topdogRef, clientName, clientEmail, destination, departureDate, numberOfNights, grossCost, expectedCommission, passengers, currentStage, bookedDate\nFROM bookings\nWHERE agentId = 60600 AND id NOT IN (32215,30914,32234,31843,30268,990004,2400046,30598,660010,1290004,660008,660009,660007,1290005,660005,32400,1290006,1290007,31406,1080006)\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, ptsRef, topdogRef, clientName, clientEmail, destination, departureDate, numberOfNights, grossCost, expectedCommission, passengers, currentStage, bookedDate\nFROM bookings\nWHERE agentId = 60600 AND id NOT IN (32215,30914,32234,31843,30268,990004,2400046,30598,660010,1290004,660008,660009,660007,1290005,660005,32400,1290006,1290007,31406,1080006)\nLIMIT 5;\n",
+  "rows": [
+    {
+      "id": "30384",
+      "ptsRef": "2T0116201",
+      "topdogRef": "PE144",
+      "clientName": "Sharon Davis",
+      "clientEmail": "NULL",
+      "destination": "Malta",
+      "departureDate": "2026-08-24 00:00:00",
+      "numberOfNights": "NULL",
+      "grossCost": "4190.00",
+      "expectedCommission": "303.17",
+      "passengers": "NULL",
+      "currentStage": "Added to PTS",
+      "bookedDate": "NULL"
+    },
+    {
+      "id": "31900",
+      "ptsRef": "2T0105273",
+      "topdogRef": "PE140",
+      "clientName": "Loren Allen",
+      "clientEmail": "NULL",
+      "destination": "Egypt",
+      "departureDate": "2026-08-13 00:00:00",
+      "numberOfNights": "NULL",
+      "grossCost": "2990.00",
+      "expectedCommission": "108.70",
+      "passengers": "NULL",
+      "currentStage": "Added to PTS",
+      "bookedDate": "NULL"
+    },
+    {
+      "id": "1290003",
+      "ptsRef": "NULL",
+      "topdogRef": "PE119",
+      "clientName": "Ricky Berry-Shah",
+      "clientEmail": "NULL",
+      "destination": "Italy",
+      "departureDate": "2026-08-02 00:00:00",
+      "numberOfNights": "5",
+      "grossCost": "1525.00",
+      "expectedCommission": "28.06",
+      "passengers": "2",
+      "currentStage": "Added to PTS",
+      "bookedDate": "2025-08-06 00:00:00"
+    },
+    {
+      "id": "1770007",
+      "ptsRef": "2T0123643",
+      "topdogRef": "PE151",
+      "clientName": "Michelle Bell",
+      "clientEmail": "NULL",
+      "destination": "Maldives",
+      "departureDate": "2026-08-12 00:00:00",
+      "numberOfNights": "15",
+      "grossCost": "7620.00",
+      "expectedCommission": "743.90",
+      "passengers": "2",
+      "currentStage": "Added to PTS",
+      "bookedDate": "2026-05-03 00:00:00"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tptsRef\ttopdogRef\tclientName\tclientEmail\tdestination\tdepartureDate\tnumberOfNights\tgrossCost\texpectedCommission\tpassengers\tcurrentStage\tbookedDate\n30384\t2T0116201\tPE144\tSharon Davis\tNULL\tMalta\t2026-08-24 00:00:00\tNULL\t4190.00\t303.17\tNULL\tAdded to PTS\tNULL\n31900\t2T0105273\tPE140\tLoren Allen\tNULL\tEgypt\t2026-08-13 00:00:00\tNULL\t2990.00\t108.70\tNULL\tAdded to PTS\tNULL\n1290003\tNULL\tPE119\tRicky Berry-Shah\tNULL\tItaly\t2026-08-02 00:00:00\t5\t1525.00\t28.06\t2\tAdded to PTS\t2025-08-06 00:00:00\n1770007\t2T0123643\tPE151\tMichelle Bell\tNULL\tMaldives\t2026-08-12 00:00:00\t15\t7620.00\t743.90\t2\tAdded to PTS\t2026-05-03 00:00:00\n",
+  "stderr": "",
+  "execution_time_ms": 269
+}

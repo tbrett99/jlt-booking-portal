@@ -1,0 +1,52 @@
+{
+  "query": "\nSELECT id, name, email, role FROM users WHERE name LIKE '%Max%' OR name LIKE '%Kelly%' LIMIT 10;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, name, email, role FROM users WHERE name LIKE '%Max%' OR name LIKE '%Kelly%' LIMIT 10;\n",
+  "rows": [
+    {
+      "id": "47",
+      "name": "Max",
+      "email": "max@thejltgroup.co.uk",
+      "role": "super_admin"
+    },
+    {
+      "id": "760",
+      "name": "Max Kelly",
+      "email": "max@thejltgroup.co.uk",
+      "role": "super_admin"
+    },
+    {
+      "id": "60364",
+      "name": "Kelly Wells",
+      "email": "kellyritchie@hotmail.com",
+      "role": "agent"
+    },
+    {
+      "id": "60467",
+      "name": "Kelly Neves",
+      "email": "kellyneves@thejltgroup.co.uk",
+      "role": "agent"
+    },
+    {
+      "id": "60551",
+      "name": "Kelly Wheeler",
+      "email": "kelly@arewethereyettravel.co.uk",
+      "role": "agent"
+    },
+    {
+      "id": "60582",
+      "name": "Kelly White",
+      "email": "kelly.white@thoughtfultravel.co.uk",
+      "role": "agent"
+    },
+    {
+      "id": "1411330",
+      "name": "Charles Kelly",
+      "email": "charles@thejltgroup.co.uk",
+      "role": "admin"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\trole\n47\tMax\tmax@thejltgroup.co.uk\tsuper_admin\n760\tMax Kelly\tmax@thejltgroup.co.uk\tsuper_admin\n60364\tKelly Wells\tkellyritchie@hotmail.com\tagent\n60467\tKelly Neves\tkellyneves@thejltgroup.co.uk\tagent\n60551\tKelly Wheeler\tkelly@arewethereyettravel.co.uk\tagent\n60582\tKelly White\tkelly.white@thoughtfultravel.co.uk\tagent\n1411330\tCharles Kelly\tcharles@thejltgroup.co.uk\tadmin\n",
+  "stderr": "",
+  "execution_time_ms": 277
+}

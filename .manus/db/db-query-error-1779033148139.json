@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT \n  b.id as portalBookingId,\n  b.ptsRef,\n  b.topdogRef,\n  b.clientName,\n  b.clientEmail,\n  b.destination,\n  b.departureDate,\n  b.numberOfNights,\n  b.grossCost,\n  b.expectedCommission,\n  b.commissionVat,\n  b.passengers,\n  b.currentStage,\n  b.bookedDate,\n  b.createdAt,\n  b.supplierName,\n  b.crmRef,\n  u.name as agentName,\n  u.email as agentEmail\nFROM bookings b\nJOIN users u ON u.id = b.agentId\nWHERE b.agentId = 60600\nORDER BY b.departureDate DESC\nLIMIT 200;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT \n  b.id as portalBookingId,\n  b.ptsRef,\n  b.topdogRef,\n  b.clientName,\n  b.clientEmail,\n  b.destination,\n  b.departureDate,\n  b.numberOfNights,\n  b.grossCost,\n  b.expectedCommission,\n  b.commissionVat,\n  b.passengers,\n  b.currentStage,\n  b.bookedDate,\n  b.createdAt,\n  b.supplierName,\n  b.crmRef,\n  u.name as agentName,\n  u.email as agentEmail\nFROM bookings b\nJOIN users u ON u.id = b.agentId\nWHERE b.agentId = 60600\nORDER BY b.departureDate DESC\nLIMIT 200;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'b.suppliername' in 'field list'"
+  ]
+}

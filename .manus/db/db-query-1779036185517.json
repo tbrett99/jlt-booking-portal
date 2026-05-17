@@ -1,0 +1,20 @@
+{
+  "query": "\nSELECT u.id, u.name, COUNT(rp.id) as prospectCount\nFROM users u\nLEFT JOIN recruitment_prospects rp ON rp.referredById = u.id\nWHERE u.id IN (47, 760)\nGROUP BY u.id, u.name;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, COUNT(rp.id) as prospectCount\nFROM users u\nLEFT JOIN recruitment_prospects rp ON rp.referredById = u.id\nWHERE u.id IN (47, 760)\nGROUP BY u.id, u.name;\n",
+  "rows": [
+    {
+      "id": "47",
+      "name": "Max Kelly",
+      "prospectCount": "0"
+    },
+    {
+      "id": "760",
+      "name": "Max Kelly",
+      "prospectCount": "68"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tprospectCount\n47\tMax Kelly\t0\n760\tMax Kelly\t68\n",
+  "stderr": "",
+  "execution_time_ms": 275
+}

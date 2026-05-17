@@ -2381,3 +2381,7 @@
 - [x] In createProspect: if howHeard contains "TikTok", auto-set referredById = 760 (Max Kelly)
 - [x] In submitApplication: if extendedData.heardAbout contains "TikTok", auto-set referredById = 760 (Max Kelly)
 - [x] Backfill existing 7 TikTok prospects (applicationData.heardAbout) with referredById = 760
+
+## Duplicate Max Referrer Fix
+- [x] Update all recruitment_prospects with referredById = 47 to referredById = 760 (Max Kelly)
+- [x] Update user ID 47 name from "Max" to "Max Kelly" for consistency
