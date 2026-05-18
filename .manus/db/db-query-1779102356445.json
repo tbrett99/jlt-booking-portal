@@ -1,0 +1,22 @@
+{
+  "query": "\nSELECT u.id, u.name, u.email, js.id as sessionId, js.step, js.joiningFeePaidAt,\n       gm.id as mandateRowId, gm.mandateId, gm.billingRequestId, gm.status as mandateStatus\nFROM users u\nLEFT JOIN join_sessions js ON js.userId = u.id\nLEFT JOIN gc_mandates gm ON gm.userId = u.id\nWHERE u.name LIKE '%Adam%Griffith%' OR u.email LIKE '%adam%griffith%'\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, u.email, js.id as sessionId, js.step, js.joiningFeePaidAt,\n       gm.id as mandateRowId, gm.mandateId, gm.billingRequestId, gm.status as mandateStatus\nFROM users u\nLEFT JOIN join_sessions js ON js.userId = u.id\nLEFT JOIN gc_mandates gm ON gm.userId = u.id\nWHERE u.name LIKE '%Adam%Griffith%' OR u.email LIKE '%adam%griffith%'\nLIMIT 5;\n",
+  "rows": [
+    {
+      "id": "60213",
+      "name": "Adam Griffiths",
+      "email": "agriffiths1987@googlemail.com",
+      "sessionId": "NULL",
+      "step": "NULL",
+      "joiningFeePaidAt": "NULL",
+      "mandateRowId": "20",
+      "mandateId": "MD01KP04RQV3K3",
+      "billingRequestId": "NULL",
+      "mandateStatus": "submitted"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tsessionId\tstep\tjoiningFeePaidAt\tmandateRowId\tmandateId\tbillingRequestId\tmandateStatus\n60213\tAdam Griffiths\tagriffiths1987@googlemail.com\tNULL\tNULL\tNULL\t20\tMD01KP04RQV3K3\tNULL\tsubmitted\n",
+  "stderr": "",
+  "execution_time_ms": 267
+}

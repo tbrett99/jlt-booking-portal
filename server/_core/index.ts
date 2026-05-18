@@ -1556,8 +1556,9 @@ async function startServer() {
               console.error("[GC Webhook] Failed to send support payment failed email:", supportEmailErr);
             }
           }
-          // ── Send receipt email to agent on confirmed/paid_out ──────────────
-          if (["confirmed", "paid_out"].includes(event.action) && userId) {
+          // ── Send receipt email to agent on confirmed only ──────────────
+          // paid_out fires separately when funds settle — sending on both caused duplicate receipts
+          if (event.action === "confirmed" && userId) {
             try {
               const db2 = await getDb();
               let agentEmail: string | null = null;

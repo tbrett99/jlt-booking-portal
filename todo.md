@@ -2385,3 +2385,7 @@
 ## Duplicate Max Referrer Fix
 - [x] Update all recruitment_prospects with referredById = 47 to referredById = 760 (Max Kelly)
 - [x] Update user ID 47 name from "Max" to "Max Kelly" for consistency
+
+## Duplicate GoCardless Payment Receipts
+- [x] Diagnose why agents receive multiple receipts for the same GoCardless payment (reported by Adam Griffith)
+- [x] Fix: receipt was sent on both 'confirmed' AND 'paid_out' events — changed to 'confirmed' only
