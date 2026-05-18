@@ -1,0 +1,88 @@
+{
+  "query": "\nSELECT id, recipientEmail, recipientName, recipientId\nFROM email_sends\nWHERE campaignId = 120001 AND DATE(createdAt) = '2026-05-18' AND status = 'failed'\nORDER BY id\nLIMIT 13 OFFSET 60;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, recipientEmail, recipientName, recipientId\nFROM email_sends\nWHERE campaignId = 120001 AND DATE(createdAt) = '2026-05-18' AND status = 'failed'\nORDER BY id\nLIMIT 13 OFFSET 60;\n",
+  "rows": [
+    {
+      "id": "180370",
+      "recipientEmail": "mrsleanneburnett@hotmail.com",
+      "recipientName": "Leanne Burnett",
+      "recipientId": "60605"
+    },
+    {
+      "id": "180376",
+      "recipientEmail": "charlotte@clva.co.uk",
+      "recipientName": "Charlotte Murrell",
+      "recipientId": "60615"
+    },
+    {
+      "id": "180382",
+      "recipientEmail": "iliana@thejltgroup.co.uk",
+      "recipientName": "Iliana Baughan",
+      "recipientId": "180219"
+    },
+    {
+      "id": "180388",
+      "recipientEmail": "izzi.rixx@gmail.com",
+      "recipientName": "Izzy Rix",
+      "recipientId": "180225"
+    },
+    {
+      "id": "180389",
+      "recipientEmail": "owen.lauren@hotmail.com",
+      "recipientName": "Lauren Owen",
+      "recipientId": "180226"
+    },
+    {
+      "id": "180395",
+      "recipientEmail": "kieran.tench@hotmail.co.uk",
+      "recipientName": "Kieran Tench",
+      "recipientId": "180232"
+    },
+    {
+      "id": "180401",
+      "recipientEmail": "danielgreenall90@gmail.com",
+      "recipientName": "Daniel Greenall",
+      "recipientId": "180238"
+    },
+    {
+      "id": "180407",
+      "recipientEmail": "tobywinn@hotmail.com",
+      "recipientName": "Toby Winn",
+      "recipientId": "180244"
+    },
+    {
+      "id": "180413",
+      "recipientEmail": "poonam.arora99@gmail.com",
+      "recipientName": "Poonam Arora",
+      "recipientId": "180250"
+    },
+    {
+      "id": "180419",
+      "recipientEmail": "amanda.wakefield73@ntlworld.com",
+      "recipientName": "Amanda Wakefield",
+      "recipientId": "1263754"
+    },
+    {
+      "id": "180425",
+      "recipientEmail": "kennethdown35@gmail.com",
+      "recipientName": "Kenneth Down",
+      "recipientId": "4530488"
+    },
+    {
+      "id": "180431",
+      "recipientEmail": "josephgowens@hotmail.co.uk",
+      "recipientName": "Joe Gowens",
+      "recipientId": "8049634"
+    },
+    {
+      "id": "180437",
+      "recipientEmail": "georginabobb@gmail.com",
+      "recipientName": "Georgina Anne Bobb",
+      "recipientId": "8079293"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\trecipientEmail\trecipientName\trecipientId\n180370\tmrsleanneburnett@hotmail.com\tLeanne Burnett\t60605\n180376\tcharlotte@clva.co.uk\tCharlotte Murrell\t60615\n180382\tiliana@thejltgroup.co.uk\tIliana Baughan\t180219\n180388\tizzi.rixx@gmail.com\tIzzy Rix\t180225\n180389\towen.lauren@hotmail.com\tLauren Owen\t180226\n180395\tkieran.tench@hotmail.co.uk\tKieran Tench\t180232\n180401\tdanielgreenall90@gmail.com\tDaniel Greenall\t180238\n180407\ttobywinn@hotmail.com\tToby Winn\t180244\n180413\tpoonam.arora99@gmail.com\tPoonam Arora\t180250\n180419\tamanda.wakefield73@ntlworld.com\tAmanda Wakefield\t1263754\n180425\tkennethdown35@gmail.com\tKenneth Down\t4530488\n180431\tjosephgowens@hotmail.co.uk\tJoe Gowens\t8049634\n180437\tgeorginabobb@gmail.com\tGeorgina Anne Bobb\t8079293\n",
+  "stderr": "",
+  "execution_time_ms": 270
+}

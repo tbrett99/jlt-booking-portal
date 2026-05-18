@@ -1,0 +1,190 @@
+{
+  "query": "\nSELECT id, campaignId, recipientEmail, status, failedReason, sentAt, createdAt\nFROM email_sends\nWHERE campaignId = 120001\nORDER BY createdAt DESC\nLIMIT 20;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, campaignId, recipientEmail, status, failedReason, sentAt, createdAt\nFROM email_sends\nWHERE campaignId = 120001\nORDER BY createdAt DESC\nLIMIT 20;\n",
+  "rows": [
+    {
+      "id": "180439",
+      "campaignId": "120001",
+      "recipientEmail": "ejtravels123@gmail.com",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:36",
+      "createdAt": "2026-05-18 16:13:35"
+    },
+    {
+      "id": "180437",
+      "campaignId": "120001",
+      "recipientEmail": "georginabobb@gmail.com",
+      "status": "failed",
+      "failedReason": "Too many requests. You can only make 5 requests per second. See rate limit response headers for more information. Or contact support to increase rate limit.",
+      "sentAt": "NULL",
+      "createdAt": "2026-05-18 16:13:35"
+    },
+    {
+      "id": "180436",
+      "campaignId": "120001",
+      "recipientEmail": "laurawindle@hotmail.co.uk",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:35",
+      "createdAt": "2026-05-18 16:13:35"
+    },
+    {
+      "id": "180438",
+      "campaignId": "120001",
+      "recipientEmail": "naomigib@sky.com",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:36",
+      "createdAt": "2026-05-18 16:13:35"
+    },
+    {
+      "id": "180431",
+      "campaignId": "120001",
+      "recipientEmail": "josephgowens@hotmail.co.uk",
+      "status": "failed",
+      "failedReason": "Too many requests. You can only make 5 requests per second. See rate limit response headers for more information. Or contact support to increase rate limit.",
+      "sentAt": "NULL",
+      "createdAt": "2026-05-18 16:13:34"
+    },
+    {
+      "id": "180433",
+      "campaignId": "120001",
+      "recipientEmail": "suziecowan@aol.com",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:35",
+      "createdAt": "2026-05-18 16:13:34"
+    },
+    {
+      "id": "180434",
+      "campaignId": "120001",
+      "recipientEmail": "Emz1985@me.com",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:35",
+      "createdAt": "2026-05-18 16:13:34"
+    },
+    {
+      "id": "180435",
+      "campaignId": "120001",
+      "recipientEmail": "mary.chambers1991@yahoo.com",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:35",
+      "createdAt": "2026-05-18 16:13:34"
+    },
+    {
+      "id": "180430",
+      "campaignId": "120001",
+      "recipientEmail": "partnerships@thejltgroup.co.uk",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:34",
+      "createdAt": "2026-05-18 16:13:34"
+    },
+    {
+      "id": "180432",
+      "campaignId": "120001",
+      "recipientEmail": "gemzykins@hotmail.com",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:35",
+      "createdAt": "2026-05-18 16:13:34"
+    },
+    {
+      "id": "180427",
+      "campaignId": "120001",
+      "recipientEmail": "mikeybach@mac.com",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:34",
+      "createdAt": "2026-05-18 16:13:33"
+    },
+    {
+      "id": "180425",
+      "campaignId": "120001",
+      "recipientEmail": "kennethdown35@gmail.com",
+      "status": "failed",
+      "failedReason": "Too many requests. You can only make 5 requests per second. See rate limit response headers for more information. Or contact support to increase rate limit.",
+      "sentAt": "NULL",
+      "createdAt": "2026-05-18 16:13:33"
+    },
+    {
+      "id": "180428",
+      "campaignId": "120001",
+      "recipientEmail": "katholidays.uk@gmail.com",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:34",
+      "createdAt": "2026-05-18 16:13:33"
+    },
+    {
+      "id": "180429",
+      "campaignId": "120001",
+      "recipientEmail": "wendybrowne89@gmail.com",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:34",
+      "createdAt": "2026-05-18 16:13:33"
+    },
+    {
+      "id": "180426",
+      "campaignId": "120001",
+      "recipientEmail": "tabitha@tailored-escapes.co.uk",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:33",
+      "createdAt": "2026-05-18 16:13:33"
+    },
+    {
+      "id": "180422",
+      "campaignId": "120001",
+      "recipientEmail": "caroline@holirays.co.uk",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:33",
+      "createdAt": "2026-05-18 16:13:32"
+    },
+    {
+      "id": "180420",
+      "campaignId": "120001",
+      "recipientEmail": "liannedymond@hotmail.co.uk",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:32",
+      "createdAt": "2026-05-18 16:13:32"
+    },
+    {
+      "id": "180419",
+      "campaignId": "120001",
+      "recipientEmail": "amanda.wakefield73@ntlworld.com",
+      "status": "failed",
+      "failedReason": "Too many requests. You can only make 5 requests per second. See rate limit response headers for more information. Or contact support to increase rate limit.",
+      "sentAt": "NULL",
+      "createdAt": "2026-05-18 16:13:32"
+    },
+    {
+      "id": "180424",
+      "campaignId": "120001",
+      "recipientEmail": "tripialist@gmail.com",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:33",
+      "createdAt": "2026-05-18 16:13:32"
+    },
+    {
+      "id": "180421",
+      "campaignId": "120001",
+      "recipientEmail": "zoe@lowennarosetravel.co.uk",
+      "status": "sent",
+      "failedReason": "NULL",
+      "sentAt": "2026-05-18 16:13:33",
+      "createdAt": "2026-05-18 16:13:32"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tcampaignId\trecipientEmail\tstatus\tfailedReason\tsentAt\tcreatedAt\n180439\t120001\tejtravels123@gmail.com\tsent\tNULL\t2026-05-18 16:13:36\t2026-05-18 16:13:35\n180437\t120001\tgeorginabobb@gmail.com\tfailed\tToo many requests. You can only make 5 requests per second. See rate limit response headers for more information. Or contact support to increase rate limit.\tNULL\t2026-05-18 16:13:35\n180436\t120001\tlaurawindle@hotmail.co.uk\tsent\tNULL\t2026-05-18 16:13:35\t2026-05-18 16:13:35\n180438\t120001\tnaomigib@sky.com\tsent\tNULL\t2026-05-18 16:13:36\t2026-05-18 16:13:35\n180431\t120001\tjosephgowens@hotmail.co.uk\tfailed\tToo many requests. You can only make 5 requests per second. See rate limit response headers for more information. Or contact support to increase rate limit.\tNULL\t2026-05-18 16:13:34\n180433\t120001\tsuziecowan@aol.com\tsent\tNULL\t2026-05-18 16:13:35\t2026-05-18 16:13:34\n180434\t120001\tEmz1985@me.com\tsent\tNULL\t2026-05-18 16:13:35\t2026-05-18 16:13:34\n180435\t120001\tmary.chambers1991@yahoo.com\tsent\tNULL\t2026-05-18 16:13:35\t2026-05-18 16:13:34\n180430\t120001\tpartnerships@thejltgroup.co.uk\tsent\tNULL\t2026-05-18 16:13:34\t2026-05-18 16:13:34\n180432\t120001\tgemzykins@hotmail.com\tsent\tNULL\t2026-05-18 16:13:35\t2026-05-18 16:13:34\n180427\t120001\tmikeybach@mac.com\tsent\tNULL\t2026-05-18 16:13:34\t2026-05-18 16:13:33\n180425\t120001\tkennethdown35@gmail.com\tfailed\tToo many requests. You can only make 5 requests per second. See rate limit response headers for more information. Or contact support to increase rate limit.\tNULL\t2026-05-18 16:13:33\n180428\t120001\tkatholidays.uk@gmail.com\tsent\tNULL\t2026-05-18 16:13:34\t2026-05-18 16:13:33\n180429\t120001\twendybrowne89@gmail.com\tsent\tNULL\t2026-05-18 16:13:34\t2026-05-18 16:13:33\n180426\t120001\ttabitha@tailored-escapes.co.uk\tsent\tNULL\t2026-05-18 16:13:33\t2026-05-18 16:13:33\n180422\t120001\tcaroline@holirays.co.uk\tsent\tNULL\t2026-05-18 16:13:33\t2026-05-18 16:13:32\n180420\t120001\tliannedymond@hotmail.co.uk\tsent\tNULL\t2026-05-18 16:13:32\t2026-05-18 16:13:32\n180419\t120001\tamanda.wakefield73@ntlworld.com\tfailed\tToo many requests. You can only make 5 requests per second. See rate limit response headers for more information. Or contact support to increase rate limit.\tNULL\t2026-05-18 16:13:32\n180424\t120001\ttripialist@gmail.com\tsent\tNULL\t2026-05-18 16:13:33\t2026-05-18 16:13:32\n180421\t120001\tzoe@lowennarosetravel.co.uk\tsent\tNULL\t2026-05-18 16:13:33\t2026-05-18 16:13:32\n",
+  "stderr": "",
+  "execution_time_ms": 263
+}

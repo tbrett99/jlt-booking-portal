@@ -1,0 +1,328 @@
+{
+  "query": "\nSELECT id, recipientEmail, recipientName, recipientId\nFROM email_sends\nWHERE campaignId = 120001 AND DATE(createdAt) = '2026-05-18' AND status = 'failed'\nORDER BY id\nLIMIT 53 OFFSET 20;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, recipientEmail, recipientName, recipientId\nFROM email_sends\nWHERE campaignId = 120001 AND DATE(createdAt) = '2026-05-18' AND status = 'failed'\nORDER BY id\nLIMIT 53 OFFSET 20;\n",
+  "rows": [
+    {
+      "id": "180145",
+      "recipientEmail": "sheel@4wardtravel.com",
+      "recipientName": "Sheel Purba",
+      "recipientId": "60348"
+    },
+    {
+      "id": "180151",
+      "recipientEmail": "rspencer@sky.com",
+      "recipientName": "Robert Spencer",
+      "recipientId": "60356"
+    },
+    {
+      "id": "180152",
+      "recipientEmail": "emmaleadbeater@thejltgroup.co.uk",
+      "recipientName": "Emma Leadbeater",
+      "recipientId": "60357"
+    },
+    {
+      "id": "180158",
+      "recipientEmail": "kellyritchie@hotmail.com",
+      "recipientName": "Kelly Wells",
+      "recipientId": "60364"
+    },
+    {
+      "id": "180164",
+      "recipientEmail": "abigail@acescapes.co.uk",
+      "recipientName": "Abigail Crooks",
+      "recipientId": "60371"
+    },
+    {
+      "id": "180170",
+      "recipientEmail": "lars@wanderwhirl.travel",
+      "recipientName": "Lars Swann",
+      "recipientId": "60377"
+    },
+    {
+      "id": "180176",
+      "recipientEmail": "emmacaseby@gmail.com",
+      "recipientName": "Emma Caseby",
+      "recipientId": "60383"
+    },
+    {
+      "id": "180182",
+      "recipientEmail": "brookes@thejltgroup.co.uk",
+      "recipientName": "Leanne Brookes",
+      "recipientId": "60389"
+    },
+    {
+      "id": "180183",
+      "recipientEmail": "will.rowell@haymakertravel.com",
+      "recipientName": "Will Rowell",
+      "recipientId": "60390"
+    },
+    {
+      "id": "180189",
+      "recipientEmail": "twinnytravelsstephanie@thejltgroup.co.uk",
+      "recipientName": "Stephanie Boughey",
+      "recipientId": "60398"
+    },
+    {
+      "id": "180195",
+      "recipientEmail": "evison_uk@yahoo.co.uk",
+      "recipientName": "Mark Evison",
+      "recipientId": "60404"
+    },
+    {
+      "id": "180211",
+      "recipientEmail": "shaaista.latif@hotmail.com",
+      "recipientName": "Shaaista Latif",
+      "recipientId": "60423"
+    },
+    {
+      "id": "180217",
+      "recipientEmail": "peter@jackamantravel.co.uk",
+      "recipientName": "Peter Jackaman",
+      "recipientId": "60429"
+    },
+    {
+      "id": "180223",
+      "recipientEmail": "cassypro@gmail.com",
+      "recipientName": "Cassandra Brown",
+      "recipientId": "60436"
+    },
+    {
+      "id": "180229",
+      "recipientEmail": "alicia.baker1992@gmail.com",
+      "recipientName": "Alicia Baker",
+      "recipientId": "60443"
+    },
+    {
+      "id": "180235",
+      "recipientEmail": "khopew7@gmail.com",
+      "recipientName": "Kate Williams",
+      "recipientId": "60449"
+    },
+    {
+      "id": "180241",
+      "recipientEmail": "shickman@travelplatino.co.uk",
+      "recipientName": "Sam Hickman",
+      "recipientId": "60456"
+    },
+    {
+      "id": "180242",
+      "recipientEmail": "amy.plumb282@gmail.com",
+      "recipientName": "Amy Plumb",
+      "recipientId": "60457"
+    },
+    {
+      "id": "180248",
+      "recipientEmail": "stuart@toogoodtravel.co.uk",
+      "recipientName": "Stuart Toogood",
+      "recipientId": "60463"
+    },
+    {
+      "id": "180254",
+      "recipientEmail": "sandi@sandwelltravel.co.uk",
+      "recipientName": "Sandi Puddefoot",
+      "recipientId": "60469"
+    },
+    {
+      "id": "180260",
+      "recipientEmail": "chriswhitaker81@hotmail.com",
+      "recipientName": "Chris Whitaker",
+      "recipientId": "60476"
+    },
+    {
+      "id": "180266",
+      "recipientEmail": "ehsanyadollahi@hotmail.com",
+      "recipientName": "Ehsan Yadollahi",
+      "recipientId": "60482"
+    },
+    {
+      "id": "180277",
+      "recipientEmail": "ciareim1@aol.com",
+      "recipientName": "Nichola Mcmullan",
+      "recipientId": "60494"
+    },
+    {
+      "id": "180283",
+      "recipientEmail": "travelmorewithmegan@thejltgroup.co.uk",
+      "recipientName": "Megan Still",
+      "recipientId": "60500"
+    },
+    {
+      "id": "180289",
+      "recipientEmail": "clairelouise617@gmail.com",
+      "recipientName": "Claire Owen",
+      "recipientId": "60506"
+    },
+    {
+      "id": "180290",
+      "recipientEmail": "paula.pbescapes@thejltgroup.co.uk",
+      "recipientName": "Paula Rodgers",
+      "recipientId": "60508"
+    },
+    {
+      "id": "180296",
+      "recipientEmail": "alistair@am-travel.co.uk",
+      "recipientName": "Alistair Mckay",
+      "recipientId": "60514"
+    },
+    {
+      "id": "180302",
+      "recipientEmail": "courtneyking_00@hotmail.co.uk",
+      "recipientName": "Courtney King",
+      "recipientId": "60521"
+    },
+    {
+      "id": "180308",
+      "recipientEmail": "emmalacey.endlessadventures@outlook.com",
+      "recipientName": "Emma Lacey",
+      "recipientId": "60527"
+    },
+    {
+      "id": "180314",
+      "recipientEmail": "admin@siyakatravels.com",
+      "recipientName": "Gareth Katsande",
+      "recipientId": "60533"
+    },
+    {
+      "id": "180315",
+      "recipientEmail": "palmtreesinparadise@outlook.com",
+      "recipientName": "Peter Boulstridge",
+      "recipientId": "60534"
+    },
+    {
+      "id": "180321",
+      "recipientEmail": "charlotteharrison@thejltgroup.co.uk",
+      "recipientName": "Charlotte Harrison",
+      "recipientId": "60540"
+    },
+    {
+      "id": "180327",
+      "recipientEmail": "simone_barry@hotmail.co.uk",
+      "recipientName": "Simone Garbutt",
+      "recipientId": "60547"
+    },
+    {
+      "id": "180333",
+      "recipientEmail": "sales@chasingjets.co.uk",
+      "recipientName": "Ammaar Bobat",
+      "recipientId": "60553"
+    },
+    {
+      "id": "180339",
+      "recipientEmail": "leebutler@thejltgroup.co.uk",
+      "recipientName": "Lee Butler",
+      "recipientId": "60561"
+    },
+    {
+      "id": "180345",
+      "recipientEmail": "jill@thepersonaltravelplanners.co.uk",
+      "recipientName": "Jill Hosy",
+      "recipientId": "60567"
+    },
+    {
+      "id": "180346",
+      "recipientEmail": "louissawilliams@thejltgroup.co.uk",
+      "recipientName": "Louissa Williams",
+      "recipientId": "60568"
+    },
+    {
+      "id": "180352",
+      "recipientEmail": "thom@parksandwaves.com",
+      "recipientName": "Thom Barr",
+      "recipientId": "60578"
+    },
+    {
+      "id": "180353",
+      "recipientEmail": "judith@hamilton-horizons.com",
+      "recipientName": "Judith Hamilton",
+      "recipientId": "60579"
+    },
+    {
+      "id": "180364",
+      "recipientEmail": "charlottebull@thejltgroup.co.uk",
+      "recipientName": "Charlotte Bull",
+      "recipientId": "60596"
+    },
+    {
+      "id": "180370",
+      "recipientEmail": "mrsleanneburnett@hotmail.com",
+      "recipientName": "Leanne Burnett",
+      "recipientId": "60605"
+    },
+    {
+      "id": "180376",
+      "recipientEmail": "charlotte@clva.co.uk",
+      "recipientName": "Charlotte Murrell",
+      "recipientId": "60615"
+    },
+    {
+      "id": "180382",
+      "recipientEmail": "iliana@thejltgroup.co.uk",
+      "recipientName": "Iliana Baughan",
+      "recipientId": "180219"
+    },
+    {
+      "id": "180388",
+      "recipientEmail": "izzi.rixx@gmail.com",
+      "recipientName": "Izzy Rix",
+      "recipientId": "180225"
+    },
+    {
+      "id": "180389",
+      "recipientEmail": "owen.lauren@hotmail.com",
+      "recipientName": "Lauren Owen",
+      "recipientId": "180226"
+    },
+    {
+      "id": "180395",
+      "recipientEmail": "kieran.tench@hotmail.co.uk",
+      "recipientName": "Kieran Tench",
+      "recipientId": "180232"
+    },
+    {
+      "id": "180401",
+      "recipientEmail": "danielgreenall90@gmail.com",
+      "recipientName": "Daniel Greenall",
+      "recipientId": "180238"
+    },
+    {
+      "id": "180407",
+      "recipientEmail": "tobywinn@hotmail.com",
+      "recipientName": "Toby Winn",
+      "recipientId": "180244"
+    },
+    {
+      "id": "180413",
+      "recipientEmail": "poonam.arora99@gmail.com",
+      "recipientName": "Poonam Arora",
+      "recipientId": "180250"
+    },
+    {
+      "id": "180419",
+      "recipientEmail": "amanda.wakefield73@ntlworld.com",
+      "recipientName": "Amanda Wakefield",
+      "recipientId": "1263754"
+    },
+    {
+      "id": "180425",
+      "recipientEmail": "kennethdown35@gmail.com",
+      "recipientName": "Kenneth Down",
+      "recipientId": "4530488"
+    },
+    {
+      "id": "180431",
+      "recipientEmail": "josephgowens@hotmail.co.uk",
+      "recipientName": "Joe Gowens",
+      "recipientId": "8049634"
+    },
+    {
+      "id": "180437",
+      "recipientEmail": "georginabobb@gmail.com",
+      "recipientName": "Georgina Anne Bobb",
+      "recipientId": "8079293"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\trecipientEmail\trecipientName\trecipientId\n180145\tsheel@4wardtravel.com\tSheel Purba\t60348\n180151\trspencer@sky.com\tRobert Spencer\t60356\n180152\temmaleadbeater@thejltgroup.co.uk\tEmma Leadbeater\t60357\n180158\tkellyritchie@hotmail.com\tKelly Wells\t60364\n180164\tabigail@acescapes.co.uk\tAbigail Crooks\t60371\n180170\tlars@wanderwhirl.travel\tLars Swann\t60377\n180176\temmacaseby@gmail.com\tEmma Caseby\t60383\n180182\tbrookes@thejltgroup.co.uk\tLeanne Brookes\t60389\n180183\twill.rowell@haymakertravel.com\tWill Rowell\t60390\n180189\ttwinnytravelsstephanie@thejltgroup.co.uk\tStephanie Boughey\t60398\n180195\tevison_uk@yahoo.co.uk\tMark Evison\t60404\n180211\tshaaista.latif@hotmail.com\tShaaista Latif\t60423\n180217\tpeter@jackamantravel.co.uk\tPeter Jackaman\t60429\n180223\tcassypro@gmail.com\tCassandra Brown\t60436\n180229\talicia.baker1992@gmail.com\tAlicia Baker\t60443\n180235\tkhopew7@gmail.com\tKate Williams\t60449\n180241\tshickman@travelplatino.co.uk\tSam Hickman\t60456\n180242\tamy.plumb282@gmail.com\tAmy Plumb\t60457\n180248\tstuart@toogoodtravel.co.uk\tStuart Toogood\t60463\n180254\tsandi@sandwelltravel.co.uk\tSandi Puddefoot\t60469\n180260\tchriswhitaker81@hotmail.com\tChris Whitaker\t60476\n180266\tehsanyadollahi@hotmail.com\tEhsan Yadollahi\t60482\n180277\tciareim1@aol.com\tNichola Mcmullan\t60494\n180283\ttravelmorewithmegan@thejltgroup.co.uk\tMegan Still\t60500\n180289\tclairelouise617@gmail.com\tClaire Owen\t60506\n180290\tpaula.pbescapes@thejltgroup.co.uk\tPaula Rodgers\t60508\n180296\talistair@am-travel.co.uk\tAlistair Mckay\t60514\n180302\tcourtneyking_00@hotmail.co.uk\tCourtney King\t60521\n180308\temmalacey.endlessadventures@outlook.com\tEmma Lacey\t60527\n180314\tadmin@siyakatravels.com\tGareth Katsande\t60533\n180315\tpalmtreesinparadise@outlook.com\tPeter Boulstridge\t60534\n180321\tcharlotteharrison@thejltgroup.co.uk\tCharlotte Harrison\t60540\n180327\tsimone_barry@hotmail.co.uk\tSimone Garbutt\t60547\n180333\tsales@chasingjets.co.uk\tAmmaar Bobat\t60553\n180339\tleebutler@thejltgroup.co.uk\tLee Butler\t60561\n180345\tjill@thepersonaltravelplanners.co.uk\tJill Hosy\t60567\n180346\tlouissawilliams@thejltgroup.co.uk\tLouissa Williams\t60568\n180352\tthom@parksandwaves.com\tThom Barr\t60578\n180353\tjudith@hamilton-horizons.com\tJudith Hamilton\t60579\n180364\tcharlottebull@thejltgroup.co.uk\tCharlotte Bull\t60596\n180370\tmrsleanneburnett@hotmail.com\tLeanne Burnett\t60605\n180376\tcharlotte@clva.co.uk\tCharlotte Murrell\t60615\n180382\tiliana@thejltgroup.co.uk\tIliana Baughan\t180219\n180388\tizzi.rixx@gmail.com\tIzzy Rix\t180225\n180389\towen.lauren@hotmail.com\tLauren Owen\t180226\n180395\tkieran.tench@hotmail.co.uk\tKieran Tench\t180232\n180401\tdanielgreenall90@gmail.com\tDaniel Greenall\t180238\n180407\ttobywinn@hotmail.com\tToby Winn\t180244\n180413\tpoonam.arora99@gmail.com\tPoonam Arora\t180250\n180419\tamanda.wakefield73@ntlworld.com\tAmanda Wakefield\t1263754\n180425\tkennethdown35@gmail.com\tKenneth Down\t4530488\n180431\tjosephgowens@hotmail.co.uk\tJoe Gowens\t8049634\n180437\tgeorginabobb@gmail.com\tGeorgina Anne Bobb\t8079293\n",
+  "stderr": "",
+  "execution_time_ms": 265
+}

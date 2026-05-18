@@ -1,0 +1,20 @@
+{
+  "query": "\nSELECT status, COUNT(*) as count, MIN(failedReason) as sampleReason\nFROM email_sends\nWHERE campaignId = 120001 AND DATE(createdAt) = '2026-05-18'\nGROUP BY status;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT status, COUNT(*) as count, MIN(failedReason) as sampleReason\nFROM email_sends\nWHERE campaignId = 120001 AND DATE(createdAt) = '2026-05-18'\nGROUP BY status;\n",
+  "rows": [
+    {
+      "status": "sent",
+      "count": "366",
+      "sampleReason": "NULL"
+    },
+    {
+      "status": "failed",
+      "count": "73",
+      "sampleReason": "Too many requests. You can only make 5 requests per second. See rate limit response headers for more information. Or contact support to increase rate limit."
+    }
+  ],
+  "messages": [],
+  "stdout": "status\tcount\tsampleReason\nsent\t366\tNULL\nfailed\t73\tToo many requests. You can only make 5 requests per second. See rate limit response headers for more information. Or contact support to increase rate limit.\n",
+  "stderr": "",
+  "execution_time_ms": 267
+}

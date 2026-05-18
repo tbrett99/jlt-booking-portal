@@ -1,0 +1,73 @@
+{
+  "query": "\nSELECT id, name, subject, status, sentAt, totalRecipients, createdAt\nFROM email_campaigns\nORDER BY createdAt DESC\nLIMIT 15;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, name, subject, status, sentAt, totalRecipients, createdAt\nFROM email_campaigns\nORDER BY createdAt DESC\nLIMIT 15;\n",
+  "rows": [
+    {
+      "id": "120001",
+      "name": "Update to terms",
+      "subject": "We've listened...",
+      "status": "sent",
+      "sentAt": "NULL",
+      "totalRecipients": "415",
+      "createdAt": "2026-05-15 13:25:09"
+    },
+    {
+      "id": "90001",
+      "name": "Compulsory Call Follow Up",
+      "subject": "Please read: Compulsory call follow up",
+      "status": "sent",
+      "sentAt": "NULL",
+      "totalRecipients": "416",
+      "createdAt": "2026-05-13 13:40:17"
+    },
+    {
+      "id": "60001",
+      "name": "Compulsory call reminder",
+      "subject": "REMINDER",
+      "status": "sent",
+      "sentAt": "NULL",
+      "totalRecipients": "414",
+      "createdAt": "2026-05-09 11:22:52"
+    },
+    {
+      "id": "30001",
+      "name": "Bank Holiday Hours",
+      "subject": "JLT Bank Holiday Hours",
+      "status": "sent",
+      "sentAt": "NULL",
+      "totalRecipients": "416",
+      "createdAt": "2026-05-01 15:25:40"
+    },
+    {
+      "id": "3",
+      "name": "Test3",
+      "subject": "Test3",
+      "status": "sent",
+      "sentAt": "NULL",
+      "totalRecipients": "1",
+      "createdAt": "2026-04-30 17:06:39"
+    },
+    {
+      "id": "2",
+      "name": "Test2",
+      "subject": "Test",
+      "status": "sent",
+      "sentAt": "NULL",
+      "totalRecipients": "1",
+      "createdAt": "2026-04-30 14:45:29"
+    },
+    {
+      "id": "1",
+      "name": "Test Email",
+      "subject": "Test JLT Email",
+      "status": "sent",
+      "sentAt": "NULL",
+      "totalRecipients": "1",
+      "createdAt": "2026-04-30 14:14:18"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tsubject\tstatus\tsentAt\ttotalRecipients\tcreatedAt\n120001\tUpdate to terms\tWe've listened...\tsent\tNULL\t415\t2026-05-15 13:25:09\n90001\tCompulsory Call Follow Up\tPlease read: Compulsory call follow up\tsent\tNULL\t416\t2026-05-13 13:40:17\n60001\tCompulsory call reminder\tREMINDER\tsent\tNULL\t414\t2026-05-09 11:22:52\n30001\tBank Holiday Hours\tJLT Bank Holiday Hours\tsent\tNULL\t416\t2026-05-01 15:25:40\n3\tTest3\tTest3\tsent\tNULL\t1\t2026-04-30 17:06:39\n2\tTest2\tTest\tsent\tNULL\t1\t2026-04-30 14:45:29\n1\tTest Email\tTest JLT Email\tsent\tNULL\t1\t2026-04-30 14:14:18\n",
+  "stderr": "",
+  "execution_time_ms": 258
+}

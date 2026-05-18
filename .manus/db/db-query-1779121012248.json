@@ -1,0 +1,19 @@
+{
+  "query": "\nSELECT id, name, subject, status, sentAt, totalRecipients, createdAt\nFROM email_campaigns\nWHERE name LIKE '%listened%' OR name LIKE '%Update to terms%' OR name LIKE '%resend%' OR name LIKE '%Resend%'\nORDER BY createdAt DESC\nLIMIT 10;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, name, subject, status, sentAt, totalRecipients, createdAt\nFROM email_campaigns\nWHERE name LIKE '%listened%' OR name LIKE '%Update to terms%' OR name LIKE '%resend%' OR name LIKE '%Resend%'\nORDER BY createdAt DESC\nLIMIT 10;\n",
+  "rows": [
+    {
+      "id": "120001",
+      "name": "Update to terms",
+      "subject": "We've listened...",
+      "status": "sent",
+      "sentAt": "NULL",
+      "totalRecipients": "415",
+      "createdAt": "2026-05-15 13:25:09"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tsubject\tstatus\tsentAt\ttotalRecipients\tcreatedAt\n120001\tUpdate to terms\tWe've listened...\tsent\tNULL\t415\t2026-05-15 13:25:09\n",
+  "stderr": "",
+  "execution_time_ms": 289
+}

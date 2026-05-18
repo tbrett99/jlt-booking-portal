@@ -2707,7 +2707,11 @@ export const crmRouter = router({
         if (unopened.length === 0) return { success: true, count: 0 };
         const { sendMarketingEmail } = await import("./resend-email");
         let sent = 0;
-        for (const s of unopened) {
+        // Throttle to max 3 sends/sec to stay within Resend's 5 req/sec rate limit
+        const BATCH_SIZE = 3;
+        const BATCH_DELAY_MS = 1100;
+        for (let i = 0; i < unopened.length; i++) {
+          const s = unopened[i];
           try {
             await sendMarketingEmail({
               to: s.recipientEmail,
@@ -2722,6 +2726,10 @@ export const crmRouter = router({
             });
             sent++;
           } catch { /* continue on individual failure */ }
+          // Pause after every BATCH_SIZE sends to respect rate limit
+          if ((i + 1) % BATCH_SIZE === 0 && i + 1 < unopened.length) {
+            await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+          }
         }
         return { success: true, count: sent };
       }),

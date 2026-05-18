@@ -2389,3 +2389,7 @@
 ## Duplicate GoCardless Payment Receipts
 - [x] Diagnose why agents receive multiple receipts for the same GoCardless payment (reported by Adam Griffith)
 - [x] Fix: receipt was sent on both 'confirmed' AND 'paid_out' events — changed to 'confirmed' only
+
+## Campaign Resend Rate Limit Bug
+- [x] Fix resendUnopenedAll to add rate-limit delay between sends (max 3/sec)
+- [x] Resend to the 73 failed recipients from the "We've listened" campaign (campaign 120001) — all 73 sent successfully
