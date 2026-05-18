@@ -1558,9 +1558,29 @@ async function startServer() {
           }
           // ── Send receipt email to agent on confirmed only ──────────────
           // paid_out fires separately when funds settle — sending on both caused duplicate receipts
+          // Deduplication: GoCardless retries webhooks on slow responses, which can fire confirmed multiple times.
+          // Guard against this by checking if a receipt was already sent for this exact GC payment ID.
           if (event.action === "confirmed" && userId) {
             try {
               const db2 = await getDb();
+              // Check for existing receipt for this paymentId before sending
+              let alreadySentReceipt = false;
+              if (db2 && paymentId) {
+                const { agentEmails: agentEmailsT } = await import("../../drizzle/schema");
+                const { and: andOp, eq: eqOp2, like: likeOp } = await import("drizzle-orm");
+                const existing = await db2.select({ id: agentEmailsT.id })
+                  .from(agentEmailsT)
+                  .where(andOp(
+                    eqOp2(agentEmailsT.triggerKey, "gc_receipt"),
+                    likeOp(agentEmailsT.subject, `%${paymentId}%`)
+                  ))
+                  .limit(1);
+                if (existing.length > 0) {
+                  alreadySentReceipt = true;
+                  console.log(`[GC Webhook] Receipt already sent for payment ${paymentId} — skipping duplicate (webhook retry)`);
+                }
+              }
+              if (!alreadySentReceipt) {
               let agentEmail: string | null = null;
               let agentName: string | null = null;
               let membershipTier: string | null = null;
@@ -1578,6 +1598,7 @@ async function startServer() {
                 const receiptHtml = `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);"><div style="background:#70FFE8;padding:28px 32px;"><h1 style="margin:0;font-size:22px;font-weight:700;color:#1a1a2e;">JLT Group</h1><p style="margin:4px 0 0;font-size:13px;color:#1a1a2e;opacity:0.7;">Membership Payment Receipt</p></div><div style="padding:32px;"><p style="color:#414141;margin:0 0 20px;">Hi ${agentName ?? "there"},</p><p style="color:#414141;margin:0 0 20px;">Your JLT Group membership payment has been successfully collected.</p><table style="width:100%;border-collapse:collapse;margin:0 0 24px;"><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Amount</td><td style="padding:10px 0;color:#414141;font-weight:700;font-size:16px;text-align:right;">${amountFormatted}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Membership</td><td style="padding:10px 0;color:#414141;font-weight:600;text-align:right;">${tierLabel}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Date</td><td style="padding:10px 0;color:#414141;text-align:right;">${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</td></tr><tr><td style="padding:10px 0;color:#6b7280;font-size:14px;">Reference</td><td style="padding:10px 0;color:#414141;font-family:monospace;text-align:right;">${paymentId ?? "\u2014"}</td></tr></table><p style="color:#6b7280;font-size:13px;margin:0;">For queries contact <a href="mailto:memberships@thejltgroup.co.uk" style="color:#02E6D2;">memberships@thejltgroup.co.uk</a>.</p></div><div style="background:#f9fafb;padding:20px 32px;border-top:1px solid #f0f0f0;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">JLT Group &bull; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p></div></div>`;
                 await sendDirectEmail({ toEmail: agentEmail, toName: agentName ?? "Agent", subject: `Membership Payment Receipt \u2014 ${amountFormatted}`, html: receiptHtml, ...(({ triggerKey: "gc_receipt", userId } as any)) });
               }
+              } // end if (!alreadySentReceipt)
               // Reset consecutive failure counter on successful payment
               if (db2) {
                 const { gcPaymentFailures: gcPF } = await import("../../drizzle/schema");

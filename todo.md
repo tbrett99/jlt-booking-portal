@@ -2393,3 +2393,7 @@
 ## Campaign Resend Rate Limit Bug
 - [x] Fix resendUnopenedAll to add rate-limit delay between sends (max 3/sec)
 - [x] Resend to the 73 failed recipients from the "We've listened" campaign (campaign 120001) — all 73 sent successfully
+
+## Email Open Tracking Broken
+- [ ] Fix: tracking pixel base URL uses VITE_OAUTH_PORTAL_URL (https://manus.im) instead of portal.thejltgroup.co.uk — opens never recorded
+- [ ] Add PORTAL_BASE_URL env var and use it for all tracking pixel and click tracking URLs

@@ -1,0 +1,58 @@
+{
+  "query": "\nSELECT ae.id, ae.toEmail, ae.subject, ae.triggerKey, ae.sentAt, ae.status\nFROM agent_emails ae\nJOIN users u ON u.id = ae.userId\nWHERE u.name LIKE '%Griffith%' OR ae.toEmail LIKE '%griffith%' OR ae.toEmail LIKE '%adam%'\nORDER BY ae.sentAt DESC\nLIMIT 20;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT ae.id, ae.toEmail, ae.subject, ae.triggerKey, ae.sentAt, ae.status\nFROM agent_emails ae\nJOIN users u ON u.id = ae.userId\nWHERE u.name LIKE '%Griffith%' OR ae.toEmail LIKE '%griffith%' OR ae.toEmail LIKE '%adam%'\nORDER BY ae.sentAt DESC\nLIMIT 20;\n",
+  "rows": [
+    {
+      "id": "2430164",
+      "toEmail": "agriffiths1987@googlemail.com",
+      "subject": "Membership Payment Receipt — £87.00",
+      "triggerKey": "gc_receipt",
+      "sentAt": "2026-05-18 17:53:46",
+      "status": "sent"
+    },
+    {
+      "id": "2430076",
+      "toEmail": "agriffiths1987@googlemail.com",
+      "subject": "Membership Payment Receipt — £87.00",
+      "triggerKey": "gc_receipt",
+      "sentAt": "2026-05-18 11:53:21",
+      "status": "sent"
+    },
+    {
+      "id": "2430031",
+      "toEmail": "agriffiths1987@googlemail.com",
+      "subject": "Membership Payment Receipt — £87.00",
+      "triggerKey": "gc_receipt",
+      "sentAt": "2026-05-18 10:52:21",
+      "status": "sent"
+    },
+    {
+      "id": "2430006",
+      "toEmail": "agriffiths1987@googlemail.com",
+      "subject": "Membership Payment Receipt — £87.00",
+      "triggerKey": "gc_receipt",
+      "sentAt": "2026-05-18 10:39:57",
+      "status": "sent"
+    },
+    {
+      "id": "2400005",
+      "toEmail": "agriffiths1987@googlemail.com",
+      "subject": "Membership Payment Receipt — £87.00",
+      "triggerKey": "gc_receipt",
+      "sentAt": "2026-05-18 10:27:10",
+      "status": "sent"
+    },
+    {
+      "id": "2340096",
+      "toEmail": "agriffiths1987@googlemail.com",
+      "subject": "Membership Payment Receipt — £87.00",
+      "triggerKey": "gc_receipt",
+      "sentAt": "2026-05-18 10:11:54",
+      "status": "sent"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttoEmail\tsubject\ttriggerKey\tsentAt\tstatus\n2430164\tagriffiths1987@googlemail.com\tMembership Payment Receipt — £87.00\tgc_receipt\t2026-05-18 17:53:46\tsent\n2430076\tagriffiths1987@googlemail.com\tMembership Payment Receipt — £87.00\tgc_receipt\t2026-05-18 11:53:21\tsent\n2430031\tagriffiths1987@googlemail.com\tMembership Payment Receipt — £87.00\tgc_receipt\t2026-05-18 10:52:21\tsent\n2430006\tagriffiths1987@googlemail.com\tMembership Payment Receipt — £87.00\tgc_receipt\t2026-05-18 10:39:57\tsent\n2400005\tagriffiths1987@googlemail.com\tMembership Payment Receipt — £87.00\tgc_receipt\t2026-05-18 10:27:10\tsent\n2340096\tagriffiths1987@googlemail.com\tMembership Payment Receipt — £87.00\tgc_receipt\t2026-05-18 10:11:54\tsent\n",
+  "stderr": "",
+  "execution_time_ms": 283
+}
