@@ -2397,3 +2397,7 @@
 ## Email Open Tracking Broken
 - [ ] Fix: tracking pixel base URL uses VITE_OAUTH_PORTAL_URL (https://manus.im) instead of portal.thejltgroup.co.uk — opens never recorded
 - [ ] Add PORTAL_BASE_URL env var and use it for all tracking pixel and click tracking URLs
+
+## Auto-Assign Agent ID (JLT-XXXX)
+- [x] Fix webhook handler: auto-generate uniqueAgentId when creating CRM profile at payment confirmation
+- [x] Backfill all 455 existing agents with NULL uniqueAgentId — all assigned successfully (0 failures)

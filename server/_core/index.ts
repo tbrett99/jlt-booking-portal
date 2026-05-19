@@ -33,6 +33,7 @@ import { oauth2Router } from "../oauth2-server";
 import { supplierApiRouter } from "../supplier-api";
 import { joinSessions, agentCrmProfiles, teamInvites, users as usersTable } from "../../drizzle/schema";
 import { createAgentUser } from "../db";
+import { generateUniqueAgentIdForUser } from "../agent-crm-db";
 import { getMonthlyAmount } from "../../shared/membership";
 import bcrypt from "bcryptjs";
 
@@ -1006,8 +1007,10 @@ async function startServer() {
             .where(eq(joinSessions.id, session.id));
 
           // Create CRM profile with membership tier and personal email from sign-up
+          const newAgentUniqueId = await generateUniqueAgentIdForUser();
           await db.insert(agentCrmProfiles).values({
             userId: newUser.id,
+            uniqueAgentId: newAgentUniqueId,
             membershipTier: session.membershipTier ?? "business_class",
             dateJoined: new Date().toISOString().slice(0, 10),
             agentStatus: "active",
@@ -1019,6 +1022,7 @@ async function startServer() {
               dateJoined: new Date().toISOString().slice(0, 10),
               trainingStage: "Training",
               personalEmail: session.email ?? null,
+              // Only set uniqueAgentId if not already assigned
             },
           });
 
