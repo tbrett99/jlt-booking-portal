@@ -223,23 +223,6 @@ const sections: WorkflowSection[] = [
     ],
   },
   {
-    id: "tiktok-leads",
-    icon: <Bell size={20} />,
-    title: "TikTok Recruitment Leads",
-    description: "Attribution rule for leads coming from TikTok.",
-    color: "#fce7f3",
-    rules: [
-      {
-        trigger: "Prospect selects TikTok as how they heard about JLT",
-        actions: [
-          "Referral automatically attributed to Max Kelly (user 760)",
-          "Applies to both the public enquiry form and the internal prospect creation form",
-        ],
-        note: "This is a fixed rule — all TikTok leads go to Max regardless of who creates the prospect record.",
-      },
-    ],
-  },
-  {
     id: "gc-receipts",
     icon: <Mail size={20} />,
     title: "Payment Receipts",
