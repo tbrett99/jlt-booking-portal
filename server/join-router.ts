@@ -24,6 +24,7 @@ import {
   agentCrmProfiles,
 } from "../drizzle/schema";
 import { getActiveContractTemplate } from "./crm-db";
+import { generateUniqueAgentIdForUser } from "./agent-crm-db";
 import { createJoinBillingRequest, createBillingRequestFlow } from "./gocardless";
 import {
   MEMBERSHIP_TIERS,
@@ -599,9 +600,12 @@ export const joinRouter = router({
           .set({ teamId: invite.teamId })
           .where(eq(agentCrmProfiles.userId, input.userId));
       } else {
+        // Auto-assign a unique Agent ID (JLT-XXXX) for team members who join via invite (no payment path)
+        const uniqueAgentId = await generateUniqueAgentIdForUser();
         await db.insert(agentCrmProfiles).values({
           userId: input.userId,
           teamId: invite.teamId,
+          uniqueAgentId,
         } as any);
       }
 

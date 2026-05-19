@@ -2401,3 +2401,4 @@
 ## Auto-Assign Agent ID (JLT-XXXX)
 - [x] Fix webhook handler: auto-generate uniqueAgentId when creating CRM profile at payment confirmation
 - [x] Backfill all 455 existing agents with NULL uniqueAgentId — all assigned successfully (0 failures)
+- [x] Fix acceptInvite (duo/trio partner invite path): auto-assign uniqueAgentId when creating a new CRM profile for an invited team member (no payment path)
