@@ -12,7 +12,7 @@ import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { eq, and } from "drizzle-orm";
 import { getDb, createBooking, updateBookingAdminFields, getBookingById } from "./db";
-import { apiKeys, users, ssoTokens } from "../drizzle/schema";
+import { apiKeys, users, ssoTokens, agentCrmProfiles } from "../drizzle/schema";
 
 const router = Router();
 
@@ -300,6 +300,14 @@ router.get("/sso/verify", async (req: Request, res: Response) => {
     const agent = agentResults[0];
     if (!agent) return res.status(404).json({ valid: false, error: "Agent not found" });
 
+    // Get Agent ID (JLT-XXXX) from CRM profile so Orbit can link the account
+    const profileResults = await db
+      .select({ uniqueAgentId: agentCrmProfiles.uniqueAgentId })
+      .from(agentCrmProfiles)
+      .where(eq(agentCrmProfiles.userId, record.userId))
+      .limit(1);
+    const uniqueAgentId = profileResults[0]?.uniqueAgentId ?? null;
+
     return res.status(200).json({
       valid: true,
       userId: agent.id,
@@ -307,6 +315,7 @@ router.get("/sso/verify", async (req: Request, res: Response) => {
       name: agent.name,
       role: agent.role,
       phone: agent.phone ?? null,
+      uniqueAgentId,
     });
   } catch (err: any) {
     console.error("[external-api] sso/verify error:", err);

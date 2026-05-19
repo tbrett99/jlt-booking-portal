@@ -2402,3 +2402,7 @@
 - [x] Fix webhook handler: auto-generate uniqueAgentId when creating CRM profile at payment confirmation
 - [x] Backfill all 455 existing agents with NULL uniqueAgentId — all assigned successfully (0 failures)
 - [x] Fix acceptInvite (duo/trio partner invite path): auto-assign uniqueAgentId when creating a new CRM profile for an invited team member (no payment path)
+
+## SSO / Orbit Integration
+- [x] Add uniqueAgentId (JLT-XXXX) to /api/external/sso/verify response so Orbit receives it at login and can link the agent account
+- [x] Rename "Open CRM" button to "Open Orbit" in sidebar

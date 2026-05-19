@@ -42,7 +42,7 @@ function OpenCrmButton({ collapsed }: { collapsed: boolean }) {
       window.open(ssoUrl, "_blank", "noopener,noreferrer");
     } catch (err) {
       console.error("SSO token generation failed", err);
-      alert("Could not open CRM. Please try again.");
+      alert("Could not open Orbit. Please try again.");
     }
   }, [generateToken]);
 
@@ -51,7 +51,7 @@ function OpenCrmButton({ collapsed }: { collapsed: boolean }) {
       <button
         onClick={handleClick}
         disabled={generateToken.isPending}
-        title="Open JLT Dashboard CRM"
+        title="Open Orbit"
         className={`flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 ${collapsed ? "justify-center" : ""}`}
         style={{ color: "#70FFE8", background: "rgba(112,255,232,0.08)" }}
       >
@@ -60,7 +60,7 @@ function OpenCrmButton({ collapsed }: { collapsed: boolean }) {
         ) : (
           <ExternalLink size={16} />
         )}
-        {!collapsed && <span>{generateToken.isPending ? "Opening..." : "Open CRM"}</span>}
+        {!collapsed && <span>{generateToken.isPending ? "Opening..." : "Open Orbit"}</span>}
       </button>
     </div>
   );
