@@ -1,0 +1,66 @@
+{
+  "query": "\nSELECT ae.id, ae.subject, ae.sentAt, ae.triggerKey, u.email, u.name\nFROM agent_emails ae\nJOIN users u ON ae.userId = u.id\nWHERE u.name LIKE '%Peter%Stamford%' OR u.email LIKE '%stamford%' OR u.name LIKE '%Stamford%'\nORDER BY ae.sentAt DESC\nLIMIT 20;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT ae.id, ae.subject, ae.sentAt, ae.triggerKey, u.email, u.name\nFROM agent_emails ae\nJOIN users u ON ae.userId = u.id\nWHERE u.name LIKE '%Peter%Stamford%' OR u.email LIKE '%stamford%' OR u.name LIKE '%Stamford%'\nORDER BY ae.sentAt DESC\nLIMIT 20;\n",
+  "rows": [
+    {
+      "id": "2430239",
+      "subject": "Membership Payment Receipt — £87.00",
+      "sentAt": "2026-05-19 05:59:02",
+      "triggerKey": "gc_receipt",
+      "email": "peter@cruisefamily.co.uk",
+      "name": "Peter Stamford"
+    },
+    {
+      "id": "2430180",
+      "subject": "Membership Payment Receipt — £87.00",
+      "sentAt": "2026-05-18 17:53:57",
+      "triggerKey": "gc_receipt",
+      "email": "peter@cruisefamily.co.uk",
+      "name": "Peter Stamford"
+    },
+    {
+      "id": "2430095",
+      "subject": "Membership Payment Receipt — £87.00",
+      "sentAt": "2026-05-18 11:53:32",
+      "triggerKey": "gc_receipt",
+      "email": "peter@cruisefamily.co.uk",
+      "name": "Peter Stamford"
+    },
+    {
+      "id": "2430048",
+      "subject": "Membership Payment Receipt — £87.00",
+      "sentAt": "2026-05-18 10:52:33",
+      "triggerKey": "gc_receipt",
+      "email": "peter@cruisefamily.co.uk",
+      "name": "Peter Stamford"
+    },
+    {
+      "id": "2430025",
+      "subject": "Membership Payment Receipt — £87.00",
+      "sentAt": "2026-05-18 10:40:09",
+      "triggerKey": "gc_receipt",
+      "email": "peter@cruisefamily.co.uk",
+      "name": "Peter Stamford"
+    },
+    {
+      "id": "2400023",
+      "subject": "Membership Payment Receipt — £87.00",
+      "sentAt": "2026-05-18 10:27:22",
+      "triggerKey": "gc_receipt",
+      "email": "peter@cruisefamily.co.uk",
+      "name": "Peter Stamford"
+    },
+    {
+      "id": "2340116",
+      "subject": "Membership Payment Receipt — £87.00",
+      "sentAt": "2026-05-18 10:12:07",
+      "triggerKey": "gc_receipt",
+      "email": "peter@cruisefamily.co.uk",
+      "name": "Peter Stamford"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tsubject\tsentAt\ttriggerKey\temail\tname\n2430239\tMembership Payment Receipt — £87.00\t2026-05-19 05:59:02\tgc_receipt\tpeter@cruisefamily.co.uk\tPeter Stamford\n2430180\tMembership Payment Receipt — £87.00\t2026-05-18 17:53:57\tgc_receipt\tpeter@cruisefamily.co.uk\tPeter Stamford\n2430095\tMembership Payment Receipt — £87.00\t2026-05-18 11:53:32\tgc_receipt\tpeter@cruisefamily.co.uk\tPeter Stamford\n2430048\tMembership Payment Receipt — £87.00\t2026-05-18 10:52:33\tgc_receipt\tpeter@cruisefamily.co.uk\tPeter Stamford\n2430025\tMembership Payment Receipt — £87.00\t2026-05-18 10:40:09\tgc_receipt\tpeter@cruisefamily.co.uk\tPeter Stamford\n2400023\tMembership Payment Receipt — £87.00\t2026-05-18 10:27:22\tgc_receipt\tpeter@cruisefamily.co.uk\tPeter Stamford\n2340116\tMembership Payment Receipt — £87.00\t2026-05-18 10:12:07\tgc_receipt\tpeter@cruisefamily.co.uk\tPeter Stamford\n",
+  "stderr": "",
+  "execution_time_ms": 313
+}
