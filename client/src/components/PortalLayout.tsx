@@ -185,6 +185,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const { isAgentView, setViewMode } = useViewMode();
 
   const isAdminUser = user?.role === "admin" || user?.role === "super_admin";
+  const isAgent = user?.role === "agent";
+
+  // Orbit beta access — only fetch for agents (admins always see it)
+  const { data: myProfile } = trpc.crm.agentCrm.getMyProfile.useQuery(undefined, {
+    enabled: !!user && isAgent,
+    staleTime: 60000,
+  });
+  const orbitEnabled = isAdminUser || (myProfile?.profile as any)?.orbitEnabled === true;
 
   const { data: unreadCount = 0, refetch: refetchCount } = trpc.notifications.unreadCount.useQuery(undefined, {
     refetchInterval: 30000,
@@ -542,10 +550,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           ))}
         </nav>
 
-        {/* Open CRM button — admins/super admins always; agents only if crmAccess is enabled */}
-        {(isAdminUser || (user as any)?.crmAccess) && (
-          <OpenCrmButton collapsed={collapsed} />
-        )}
+        {/* Open Orbit button — admins always; agents only if orbitEnabled is true */}
+        {orbitEnabled && <OpenCrmButton collapsed={collapsed} />}
 
         {/* View switcher */}
         {isAdminUser && (

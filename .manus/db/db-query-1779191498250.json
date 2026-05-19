@@ -1,0 +1,15 @@
+{
+  "query": "SELECT id, name, email FROM users WHERE name LIKE '%Lars%Swan%' OR name LIKE '%Lars%Swans%' LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, name, email FROM users WHERE name LIKE '%Lars%Swan%' OR name LIKE '%Lars%Swans%' LIMIT 5;",
+  "rows": [
+    {
+      "id": "60377",
+      "name": "Lars Swann",
+      "email": "lars@wanderwhirl.travel"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\n60377\tLars Swann\tlars@wanderwhirl.travel\n",
+  "stderr": "",
+  "execution_time_ms": 301
+}

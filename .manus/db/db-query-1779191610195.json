@@ -1,0 +1,19 @@
+{
+  "query": "\nSELECT u.id, u.name, u.email,\n       m.id AS mandate_db_id, m.mandateId, m.status AS mandate_status, m.joiningFeePaidAt\nFROM users u\nLEFT JOIN gc_mandates m ON m.userId = u.id\nWHERE u.name LIKE '%Naomi%Gibson%'\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, u.email,\n       m.id AS mandate_db_id, m.mandateId, m.status AS mandate_status, m.joiningFeePaidAt\nFROM users u\nLEFT JOIN gc_mandates m ON m.userId = u.id\nWHERE u.name LIKE '%Naomi%Gibson%'\nLIMIT 5;\n",
+  "rows": [
+    {
+      "id": "8079651",
+      "name": "Mrs Naomi Claire Gibson",
+      "email": "naomigib@sky.com",
+      "mandate_db_id": "150004",
+      "mandateId": "MD01KRHBNZQJEHWXZCA38MFVX7RR",
+      "mandate_status": "active",
+      "joiningFeePaidAt": "2026-05-13 19:05:52"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tmandate_db_id\tmandateId\tmandate_status\tjoiningFeePaidAt\n8079651\tMrs Naomi Claire Gibson\tnaomigib@sky.com\t150004\tMD01KRHBNZQJEHWXZCA38MFVX7RR\tactive\t2026-05-13 19:05:52\n",
+  "stderr": "",
+  "execution_time_ms": 261
+}

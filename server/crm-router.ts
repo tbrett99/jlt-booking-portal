@@ -1038,12 +1038,21 @@ export const crmRouter = router({
           monthlySub: z.string().optional().nullable(),
           internalNotes: z.string().optional().nullable(),
           trainingStage: z.string().optional().nullable(),
+          orbitEnabled: z.boolean().optional(),
         })
       )
       .mutation(async ({ input }) => {
         const { userId, ...data } = input;
         await upsertAgentCrmProfile(userId, data as any);
         return { success: true };
+      }),
+
+    // Admin: toggle Orbit access for a specific agent
+    toggleOrbitAccess: adminProcedure
+      .input(z.object({ userId: z.number().int(), enabled: z.boolean() }))
+      .mutation(async ({ input }) => {
+        await upsertAgentCrmProfile(input.userId, { orbitEnabled: input.enabled });
+        return { success: true, orbitEnabled: input.enabled };
       }),
 
     assignAgentId: adminProcedure

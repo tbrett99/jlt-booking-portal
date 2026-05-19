@@ -687,6 +687,13 @@
       "when": 1778852398327,
       "tag": "0097_clumsy_santa_claus",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "5",
+      "when": 1779198045480,
+      "tag": "0098_loose_rafael_vega",
+      "breakpoints": true
     }
   ]
 }

@@ -19,7 +19,7 @@ import {
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
   ChevronDown, X, Pencil, Clock, ArrowRight, CheckCircle2,
-  Shield, ExternalLink, FileSignature, ScrollText, Printer
+  Shield, ExternalLink, FileSignature, ScrollText, Printer, Zap
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -91,6 +91,7 @@ type CrmProfile = {
   proofOfAddressUrl?: string | null;
   bankSortCode?: string | null;
   bankAccountNumber?: string | null;
+  orbitEnabled?: boolean | null;
 };
 
 type AgentRow = {
@@ -319,6 +320,14 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   const { data: agentDdStatus } = trpc.gocardless.adminListMandates.useQuery(undefined, { enabled: open });
   const agentMandate = agentDdStatus?.find((m: any) => m.userId === agent.id);
 
+  const toggleOrbitAccess = trpc.crm.agentCrm.toggleOrbitAccess.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.orbitEnabled ? "Orbit access enabled" : "Orbit access disabled");
+      refresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const activatePortal = trpc.users.activatePortalAccess.useMutation({
     onSuccess: () => {
       toast.success(`Portal access activated for ${agent.name}`);
@@ -358,6 +367,12 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
                     Portal Active
                   </span>
                 )}
+                {/* Orbit beta access badge */}
+                {profile?.orbitEnabled ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-800">
+                    <Zap size={10} /> Orbit Access
+                  </span>
+                ) : null}
                 {/* DD mandate status badge */}
                 {agentMandate ? (
                   agentMandate.status === "active" ? (
@@ -387,21 +402,36 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
         <div className="px-6 pt-4">
           {/* Portal access + delete actions */}
           <div className="flex justify-between items-center mb-3">
-            {/* Activate Portal Access — shown when agent is still in onboarding */}
-            {isOnboarding ? (
-              <Button
-                size="sm"
-                className="h-7 text-xs gap-1.5"
-                style={{ background: "#70FFE8", color: "#414141" }}
-                disabled={activatePortal.isPending}
-                onClick={() => activatePortal.mutate({ userId: agent.id })}
-              >
-                <UserCheck size={12} />
-                {activatePortal.isPending ? "Activating..." : "Activate Portal Access"}
-              </Button>
-            ) : (
-              <span className="text-xs text-muted-foreground">Portal access is active</span>
-            )}
+            <div className="flex items-center gap-4">
+              {/* Activate Portal Access — shown when agent is still in onboarding */}
+              {isOnboarding ? (
+                <Button
+                  size="sm"
+                  className="h-7 text-xs gap-1.5"
+                  style={{ background: "#70FFE8", color: "#414141" }}
+                  disabled={activatePortal.isPending}
+                  onClick={() => activatePortal.mutate({ userId: agent.id })}
+                >
+                  <UserCheck size={12} />
+                  {activatePortal.isPending ? "Activating..." : "Activate Portal Access"}
+                </Button>
+              ) : (
+                <span className="text-xs text-muted-foreground">Portal access is active</span>
+              )}
+              {/* Orbit beta access toggle */}
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="orbit-toggle"
+                  checked={!!profile?.orbitEnabled}
+                  disabled={toggleOrbitAccess.isPending}
+                  onCheckedChange={(checked) => toggleOrbitAccess.mutate({ userId: agent.id, enabled: checked })}
+                />
+                <label htmlFor="orbit-toggle" className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer select-none">
+                  <Zap size={11} className={profile?.orbitEnabled ? "text-violet-600" : ""} />
+                  Orbit Access
+                </label>
+              </div>
+            </div>
             {/* Delete record — super_admin only */}
             {isSuperAdmin && (
               <Button

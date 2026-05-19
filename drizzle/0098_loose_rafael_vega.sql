@@ -1,0 +1,1 @@
+ALTER TABLE `agent_crm_profiles` ADD `orbitEnabled` boolean DEFAULT false NOT NULL;

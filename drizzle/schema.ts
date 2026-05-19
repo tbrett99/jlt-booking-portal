@@ -762,6 +762,8 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   preferredPaymentDay: int("preferredPaymentDay"),
   // JLT email address preference (collected during onboarding)
   jltEmailPreference: varchar("jltEmailPreference", { length: 320 }),
+  // Orbit beta access — admin-controlled toggle
+  orbitEnabled: boolean("orbitEnabled").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

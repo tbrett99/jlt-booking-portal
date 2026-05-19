@@ -1,0 +1,9 @@
+{
+  "query": "\nINSERT INTO gc_subscriptions (userId, mandateId, subscriptionId, status, amount, currency, startDate, dayOfMonth, nextChargeDate)\nVALUES (8079651, 'MD01KRHBP55Q70Z72PHPZ9G1WYVW', 'SB01KRZJHZ53FT11PA8FRGH57E87', 'active', 8700, 'GBP', '2026-06-01', 1, '2026-06-01');\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nINSERT INTO gc_subscriptions (userId, mandateId, subscriptionId, status, amount, currency, startDate, dayOfMonth, nextChargeDate)\nVALUES (8079651, 'MD01KRHBP55Q70Z72PHPZ9G1WYVW', 'SB01KRZJHZ53FT11PA8FRGH57E87', 'active', 8700, 'GBP', '2026-06-01', 1, '2026-06-01');\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 273
+}

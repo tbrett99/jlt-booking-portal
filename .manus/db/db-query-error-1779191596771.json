@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT u.id, u.name, u.email, u.role,\n       m.id AS mandate_db_id, m.mandate_id, m.status AS mandate_status, m.subscription_id, m.created_at\nFROM users u\nLEFT JOIN gc_mandates m ON m.user_id = u.id\nWHERE u.name LIKE '%Naomi%Gibson%'\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, u.email, u.role,\n       m.id AS mandate_db_id, m.mandate_id, m.status AS mandate_status, m.subscription_id, m.created_at\nFROM users u\nLEFT JOIN gc_mandates m ON m.user_id = u.id\nWHERE u.name LIKE '%Naomi%Gibson%'\nLIMIT 5;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'm.user_id' in 'on clause'"
+  ]
+}

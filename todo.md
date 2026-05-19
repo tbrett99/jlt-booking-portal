@@ -2410,3 +2410,15 @@
 ## System Workflows Reference Page
 - [x] Build admin-facing System Workflows page at /admin/system-workflows showing all automated rules (DD failures, mandate events, portal access states, agent onboarding, Agent IDs, TikTok attribution, receipts)
 - [x] Add "System Workflows" link to Admin section of sidebar
+
+## Orbit Beta Access Toggle
+- [ ] Add orbitEnabled boolean column to agent_crm_profiles (default false)
+- [ ] Expose orbitEnabled in auth.me response so sidebar can read it
+- [ ] Add toggle in agent CRM profile page for admins to enable/disable Orbit access per agent
+- [ ] Conditionally show Open Orbit button in sidebar only when orbitEnabled is true for the logged-in agent
+
+## Orbit Beta Access Toggle
+- [x] Add orbitEnabled boolean column to agent_crm_profiles schema and migrate
+- [x] Add toggleOrbitAccess admin mutation in crm-router.ts
+- [x] Add Orbit toggle switch to AgentCrmSheet (visible at top of every agent's CRM sheet)
+- [x] Conditionally show Open Orbit button in sidebar — admins always see it; agents only if orbitEnabled = true
