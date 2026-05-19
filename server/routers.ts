@@ -4305,7 +4305,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
 
       await db.insert(ssoTokens).values({ token, userId: user.id, expiresAt });
 
-      const crmBase = 'https://jlt-dashboard-c4pzyiw4.manus.space';
+      const crmBase = 'https://orbit.thejltgroup.co.uk';
       const ssoUrl = `${crmBase}/api/auth/jlt/magic?token=${token}`;
       return { ssoUrl };
     }),

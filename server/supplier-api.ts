@@ -45,7 +45,7 @@ function requireApiKey(req: Request, res: Response, next: NextFunction) {
 // ── CORS middleware ────────────────────────────────────────────────────────────
 function supplierApiCors(req: Request, res: Response, next: NextFunction) {
   const allowedOrigins = [
-    "https://jlt-dashboard-c4pzyiw4.manus.space",
+    "https://orbit.thejltgroup.co.uk",
     "https://portal.thejltgroup.co.uk",
     ...(process.env.SUPPLIER_API_ALLOWED_ORIGINS
       ? process.env.SUPPLIER_API_ALLOWED_ORIGINS.split(",").map((o) => o.trim())

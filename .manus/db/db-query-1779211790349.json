@@ -1,0 +1,42 @@
+{
+  "query": "\nSELECT name, email FROM users \nWHERE email IN (\n  'hello@jdmtravel.co.uk',\n  'wayne@onpointtravel.co.uk',\n  'shanesholidaydreams@thejltgroup.co.uk',\n  'jessicafisher@thejltgroup.co.uk',\n  'arrowslin@gmail.com',\n  'malcolmmunroe@googlemail.com',\n  'kayleigh@dreamscape-travel.co.uk',\n  'amore.travel@thejltgroup.co.uk'\n)\nUNION\nSELECT name, email FROM users WHERE name IN (\n  'Mark Clayton', 'Wayne Coffer', 'Shane Bland', 'Jessica Fisher',\n  'Linda Arrowsmith', 'Malcolm Munroe', 'Kayleigh Browne', 'Kirsty Dowden'\n);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT name, email FROM users \nWHERE email IN (\n  'hello@jdmtravel.co.uk',\n  'wayne@onpointtravel.co.uk',\n  'shanesholidaydreams@thejltgroup.co.uk',\n  'jessicafisher@thejltgroup.co.uk',\n  'arrowslin@gmail.com',\n  'malcolmmunroe@googlemail.com',\n  'kayleigh@dreamscape-travel.co.uk',\n  'amore.travel@thejltgroup.co.uk'\n)\nUNION\nSELECT name, email FROM users WHERE name IN (\n  'Mark Clayton', 'Wayne Coffer', 'Shane Bland', 'Jessica Fisher',\n  'Linda Arrowsmith', 'Malcolm Munroe', 'Kayleigh Browne', 'Kirsty Dowden'\n);\n",
+  "rows": [
+    {
+      "name": "Kayleigh Browne",
+      "email": "kayleighb@thejltgroup.co.uk"
+    },
+    {
+      "name": "Kirsty Dowden",
+      "email": "kirstydowden2207@hotmail.co.uk"
+    },
+    {
+      "name": "Linda Arrowsmith",
+      "email": "arrowslin@gmail.com"
+    },
+    {
+      "name": "Malcolm Munroe",
+      "email": "malcolmmunroe@gmail.com"
+    },
+    {
+      "name": "Wayne Coffer",
+      "email": "wayne@cityandcountygroup.com"
+    },
+    {
+      "name": "Mark Clayton",
+      "email": "claytgroup@outlook.com"
+    },
+    {
+      "name": "Shane Bland",
+      "email": "shanesholidaydreams@thejltgroup.co.uk"
+    },
+    {
+      "name": "Jessica Fisher",
+      "email": "jessicamilln@btinternet.com"
+    }
+  ],
+  "messages": [],
+  "stdout": "name\temail\nKayleigh Browne\tkayleighb@thejltgroup.co.uk\nKirsty Dowden\tkirstydowden2207@hotmail.co.uk\nLinda Arrowsmith\tarrowslin@gmail.com\nMalcolm Munroe\tmalcolmmunroe@gmail.com\nWayne Coffer\twayne@cityandcountygroup.com\nMark Clayton\tclaytgroup@outlook.com\nShane Bland\tshanesholidaydreams@thejltgroup.co.uk\nJessica Fisher\tjessicamilln@btinternet.com\n",
+  "stderr": "",
+  "execution_time_ms": 269
+}

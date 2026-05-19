@@ -1,0 +1,13 @@
+{
+  "query": "\nSELECT COUNT(*) as bookingCount FROM bookings b\nJOIN users u ON u.id = b.agentId\nWHERE u.email = 'malcolmmunroe@gmail.com';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT COUNT(*) as bookingCount FROM bookings b\nJOIN users u ON u.id = b.agentId\nWHERE u.email = 'malcolmmunroe@gmail.com';\n",
+  "rows": [
+    {
+      "bookingCount": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "bookingCount\n0\n",
+  "stderr": "",
+  "execution_time_ms": 287
+}
