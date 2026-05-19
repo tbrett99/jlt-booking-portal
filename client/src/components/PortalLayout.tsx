@@ -192,7 +192,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const { data: myProfile } = trpc.crm.agentCrm.getMyProfile.useQuery(undefined, {
     enabled: !!user && isAgent,
   });
-  const orbitEnabled = isAdminUser || (myProfile?.profile as any)?.orbitEnabled === true;
+  const orbitEnabled = isAdminUser || myProfile?.orbitEnabled === true;
 
   const { data: unreadCount = 0, refetch: refetchCount } = trpc.notifications.unreadCount.useQuery(undefined, {
     refetchInterval: 30000,

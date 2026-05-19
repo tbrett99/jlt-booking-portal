@@ -1306,6 +1306,8 @@ export const crmRouter = router({
         profile,
         tags: tags,
         suppliers: supplierLogins.map(s => s.supplierName),
+        // Hoisted to top level to avoid SuperJSON depth truncation in PortalLayout
+        orbitEnabled: profile?.orbitEnabled ?? false,
       };
     }),
 

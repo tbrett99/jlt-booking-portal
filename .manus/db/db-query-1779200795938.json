@@ -1,0 +1,17 @@
+{
+  "query": "\nSELECT u.id, u.name, u.email, acp.orbitEnabled, acp.uniqueAgentId\nFROM users u\nJOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.name LIKE '%Laura%Rogers%';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, u.email, acp.orbitEnabled, acp.uniqueAgentId\nFROM users u\nJOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.name LIKE '%Laura%Rogers%';\n",
+  "rows": [
+    {
+      "id": "180220",
+      "name": "Laura Rogers",
+      "email": "lrogers_89@outlook.com",
+      "orbitEnabled": "0",
+      "uniqueAgentId": "JLT-0239"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\torbitEnabled\tuniqueAgentId\n180220\tLaura Rogers\tlrogers_89@outlook.com\t0\tJLT-0239\n",
+  "stderr": "",
+  "execution_time_ms": 270
+}
