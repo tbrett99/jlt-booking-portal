@@ -4289,10 +4289,16 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
-      // Only agents/admins with crmAccess (or admins/super_admins) can generate SSO tokens
+      // Only agents/admins with crmAccess OR orbitEnabled (or admins/super_admins) can generate SSO tokens
       const user = ctx.user as any;
-      const canAccess = ['admin', 'super_admin'].includes(user.role) || user.crmAccess === true;
-      if (!canAccess) throw new TRPCError({ code: 'FORBIDDEN', message: 'CRM access not enabled for this account' });
+      const isAdminRole = ['admin', 'super_admin'].includes(user.role);
+      if (!isAdminRole) {
+        // Check either legacy crmAccess flag or the new orbitEnabled flag on the CRM profile
+        const { getAgentCrmProfile } = await import('./agent-crm-db');
+        const profile = await getAgentCrmProfile(user.id);
+        const canAccess = user.crmAccess === true || profile?.orbitEnabled === true;
+        if (!canAccess) throw new TRPCError({ code: 'FORBIDDEN', message: 'Orbit access not enabled for this account' });
+      }
 
       const token = crypto.randomBytes(48).toString('hex'); // 96-char hex token
       const expiresAt = new Date(Date.now() + 90_000); // 90 seconds
