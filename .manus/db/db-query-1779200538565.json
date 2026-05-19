@@ -1,0 +1,18 @@
+{
+  "query": "SHOW COLUMNS FROM agent_crm_profiles LIKE 'orbitEnabled';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SHOW COLUMNS FROM agent_crm_profiles LIKE 'orbitEnabled';",
+  "rows": [
+    {
+      "Field": "orbitEnabled",
+      "Type": "tinyint(1)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\norbitEnabled\ttinyint(1)\tNO\t\t0\t\n",
+  "stderr": "",
+  "execution_time_ms": 261
+}

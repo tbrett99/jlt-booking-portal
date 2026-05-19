@@ -1,0 +1,9 @@
+{
+  "query": "\nINSERT INTO agent_crm_profiles (userId, uniqueAgentId, agentStatus)\nVALUES \n  (8050131, 'JLT-0457', 'active'),\n  (8049634, 'JLT-0458', 'active'),\n  (6660865, 'JLT-0459', 'active'),\n  (60573,   'JLT-0460', 'active');\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nINSERT INTO agent_crm_profiles (userId, uniqueAgentId, agentStatus)\nVALUES \n  (8050131, 'JLT-0457', 'active'),\n  (8049634, 'JLT-0458', 'active'),\n  (6660865, 'JLT-0459', 'active'),\n  (60573,   'JLT-0460', 'active');\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 293
+}

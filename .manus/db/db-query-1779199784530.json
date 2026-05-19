@@ -1,0 +1,25 @@
+{
+  "query": "\nSELECT uniqueAgentId \nFROM agent_crm_profiles \nWHERE uniqueAgentId IS NOT NULL AND uniqueAgentId != ''\nORDER BY uniqueAgentId DESC\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT uniqueAgentId \nFROM agent_crm_profiles \nWHERE uniqueAgentId IS NOT NULL AND uniqueAgentId != ''\nORDER BY uniqueAgentId DESC\nLIMIT 5;\n",
+  "rows": [
+    {
+      "uniqueAgentId": "JLT-0456"
+    },
+    {
+      "uniqueAgentId": "JLT-0455"
+    },
+    {
+      "uniqueAgentId": "JLT-0454"
+    },
+    {
+      "uniqueAgentId": "JLT-0453"
+    },
+    {
+      "uniqueAgentId": "JLT-0452"
+    }
+  ],
+  "messages": [],
+  "stdout": "uniqueAgentId\nJLT-0456\nJLT-0455\nJLT-0454\nJLT-0453\nJLT-0452\n",
+  "stderr": "",
+  "execution_time_ms": 261
+}

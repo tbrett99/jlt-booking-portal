@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT \n  u.id,\n  u.name,\n  u.email,\n  u.role,\n  u.created_at,\n  u.portal_status,\n  acp.unique_agent_id,\n  acp.agent_status,\n  acp.id AS crm_profile_id\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.user_id = u.id\nWHERE u.role = 'agent'\n  AND (acp.unique_agent_id IS NULL OR acp.unique_agent_id = '')\nORDER BY u.created_at DESC\nLIMIT 30;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT \n  u.id,\n  u.name,\n  u.email,\n  u.role,\n  u.created_at,\n  u.portal_status,\n  acp.unique_agent_id,\n  acp.agent_status,\n  acp.id AS crm_profile_id\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.user_id = u.id\nWHERE u.role = 'agent'\n  AND (acp.unique_agent_id IS NULL OR acp.unique_agent_id = '')\nORDER BY u.created_at DESC\nLIMIT 30;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'acp.user_id' in 'on clause'"
+  ]
+}

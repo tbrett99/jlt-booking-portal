@@ -188,9 +188,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const isAgent = user?.role === "agent";
 
   // Orbit beta access — only fetch for agents (admins always see it)
+  // No staleTime so the flag is always fresh on page load/navigation
   const { data: myProfile } = trpc.crm.agentCrm.getMyProfile.useQuery(undefined, {
     enabled: !!user && isAgent,
-    staleTime: 60000,
   });
   const orbitEnabled = isAdminUser || (myProfile?.profile as any)?.orbitEnabled === true;
 

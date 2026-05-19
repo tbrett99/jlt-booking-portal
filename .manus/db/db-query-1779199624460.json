@@ -1,0 +1,70 @@
+{
+  "query": "\nSELECT \n  u.id,\n  u.name,\n  u.email,\n  u.portalStatus,\n  acp.uniqueAgentId,\n  acp.agentStatus,\n  acp.id AS crm_profile_id,\n  CASE \n    WHEN acp.id IS NULL THEN 'no_crm_profile'\n    ELSE 'crm_profile_exists_no_id'\n  END AS reason\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.role = 'agent'\n  AND (acp.uniqueAgentId IS NULL OR acp.uniqueAgentId = '')\nORDER BY u.createdAt DESC\nLIMIT 50;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT \n  u.id,\n  u.name,\n  u.email,\n  u.portalStatus,\n  acp.uniqueAgentId,\n  acp.agentStatus,\n  acp.id AS crm_profile_id,\n  CASE \n    WHEN acp.id IS NULL THEN 'no_crm_profile'\n    ELSE 'crm_profile_exists_no_id'\n  END AS reason\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.role = 'agent'\n  AND (acp.uniqueAgentId IS NULL OR acp.uniqueAgentId = '')\nORDER BY u.createdAt DESC\nLIMIT 50;\n",
+  "rows": [
+    {
+      "id": "8050131",
+      "name": "Susan Dupreez",
+      "email": "suziecowan@aol.com",
+      "portalStatus": "active",
+      "uniqueAgentId": "NULL",
+      "agentStatus": "NULL",
+      "crm_profile_id": "NULL",
+      "reason": "no_crm_profile"
+    },
+    {
+      "id": "8049634",
+      "name": "Joe Gowens",
+      "email": "josephgowens@hotmail.co.uk",
+      "portalStatus": "active",
+      "uniqueAgentId": "NULL",
+      "agentStatus": "NULL",
+      "crm_profile_id": "NULL",
+      "reason": "no_crm_profile"
+    },
+    {
+      "id": "7086309",
+      "name": "Charles Test",
+      "email": "partnerships@thejltgroup.co.uk",
+      "portalStatus": "active",
+      "uniqueAgentId": "NULL",
+      "agentStatus": "NULL",
+      "crm_profile_id": "NULL",
+      "reason": "no_crm_profile"
+    },
+    {
+      "id": "6660865",
+      "name": "Emma Hille",
+      "email": "ejtravels123@gmail.com",
+      "portalStatus": "onboarding",
+      "uniqueAgentId": "NULL",
+      "agentStatus": "NULL",
+      "crm_profile_id": "NULL",
+      "reason": "no_crm_profile"
+    },
+    {
+      "id": "60573",
+      "name": "Daniel Brown",
+      "email": "danbrown370@gmail.com",
+      "portalStatus": "active",
+      "uniqueAgentId": "NULL",
+      "agentStatus": "NULL",
+      "crm_profile_id": "NULL",
+      "reason": "no_crm_profile"
+    },
+    {
+      "id": "60258",
+      "name": "Marco Walker",
+      "email": "marcoinit@gmail.com",
+      "portalStatus": "active",
+      "uniqueAgentId": "NULL",
+      "agentStatus": "NULL",
+      "crm_profile_id": "NULL",
+      "reason": "no_crm_profile"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tportalStatus\tuniqueAgentId\tagentStatus\tcrm_profile_id\treason\n8050131\tSusan Dupreez\tsuziecowan@aol.com\tactive\tNULL\tNULL\tNULL\tno_crm_profile\n8049634\tJoe Gowens\tjosephgowens@hotmail.co.uk\tactive\tNULL\tNULL\tNULL\tno_crm_profile\n7086309\tCharles Test\tpartnerships@thejltgroup.co.uk\tactive\tNULL\tNULL\tNULL\tno_crm_profile\n6660865\tEmma Hille\tejtravels123@gmail.com\tonboarding\tNULL\tNULL\tNULL\tno_crm_profile\n60573\tDaniel Brown\tdanbrown370@gmail.com\tactive\tNULL\tNULL\tNULL\tno_crm_profile\n60258\tMarco Walker\tmarcoinit@gmail.com\tactive\tNULL\tNULL\tNULL\tno_crm_profile\n",
+  "stderr": "",
+  "execution_time_ms": 271
+}
