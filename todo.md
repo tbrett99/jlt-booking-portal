@@ -2406,3 +2406,7 @@
 ## SSO / Orbit Integration
 - [x] Add uniqueAgentId (JLT-XXXX) to /api/external/sso/verify response so Orbit receives it at login and can link the agent account
 - [x] Rename "Open CRM" button to "Open Orbit" in sidebar
+
+## System Workflows Reference Page
+- [x] Build admin-facing System Workflows page at /admin/system-workflows showing all automated rules (DD failures, mandate events, portal access states, agent onboarding, Agent IDs, TikTok attribution, receipts)
+- [x] Add "System Workflows" link to Admin section of sidebar

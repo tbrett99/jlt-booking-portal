@@ -100,6 +100,7 @@ const MyProfile = lazy(() => import("./pages/MyProfile"));
 const TermsAndPolicies = lazy(() => import("./pages/TermsAndPolicies"));
 const SupplierDirectory = lazy(() => import("./pages/SupplierDirectory"));
 const AdminSuppliers = lazy(() => import("./pages/admin/AdminSuppliers"));
+const SystemWorkflows = lazy(() => import("./pages/admin/SystemWorkflows"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -377,6 +378,7 @@ function AuthRouter() {
         {/* Supplier Directory */}
         <Route path="/suppliers" component={SupplierDirectory} />
         <Route path="/admin/suppliers" component={AdminSuppliers} />
+        <Route path="/admin/system-workflows" component={SystemWorkflows} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/unsubscribe" component={UnsubscribePage} />
         {/* Terms & Policies — accessible to logged-in admins */}

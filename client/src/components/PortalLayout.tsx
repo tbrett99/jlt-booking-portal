@@ -8,7 +8,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { Link, useLocation } from "wouter";
@@ -405,6 +405,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           ? [{ label: "Notification Templates", href: "/notification-templates", icon: <Bell size={16} /> }]
           : []),
         { label: "Notif. Preferences", href: "/notif-prefs", icon: <BellRing size={16} /> },
+        { label: "System Workflows", href: "/admin/system-workflows", icon: <Zap size={16} /> },
         { label: "Inbox Config", href: "/admin/inbox-config", icon: <Settings size={16} /> },
         { label: "Inbox Search History", href: "/admin/inbox-audit", icon: <Mail size={16} /> },
         { label: "Agent Email Log", href: "/admin/agent-email-log", icon: <Mail size={16} /> },
