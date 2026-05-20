@@ -280,6 +280,21 @@ export const flightRequestsRouter = router({
       return updated;
     }),
 
+  // ─── Admin: delete a flight request ──────────────────────────────────────
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [req] = await db
+        .select({ id: flightRequests.id })
+        .from(flightRequests)
+        .where(eq(flightRequests.id, input.id));
+      if (!req) throw new TRPCError({ code: "NOT_FOUND", message: "Flight request not found" });
+      await db.delete(flightRequests).where(eq(flightRequests.id, input.id));
+      return { success: true };
+    }),
+
   // ─── Admin: toggle invoice checkbox ─────────────────────────────────────
   toggleInvoice: adminProcedure
     .input(z.object({ id: z.number(), invoiceAddedToPts: z.boolean() }))

@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plane, Loader2, Search, AlertTriangle, Clock, CheckCircle2 } from "lucide-react";
+import { Plane, Loader2, Search, AlertTriangle, Clock, CheckCircle2, Trash2 } from "lucide-react";
 import { format, differenceInHours } from "date-fns";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -81,6 +81,16 @@ export default function AdminFlightsPipeline() {
 
   const toggleInvoice = trpc.flightRequests.toggleInvoice.useMutation({
     onSuccess: () => utils.flightRequests.adminList.invalidate(),
+    onError: (err) => toast.error(err.message),
+  });
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const deleteRequest = trpc.flightRequests.delete.useMutation({
+    onSuccess: () => {
+      utils.flightRequests.adminList.invalidate();
+      setConfirmDeleteId(null);
+      toast.success("Flight request deleted");
+    },
     onError: (err) => toast.error(err.message),
   });
 
@@ -326,6 +336,17 @@ export default function AdminFlightsPipeline() {
                 </>
               )}
 
+              {/* Delete button */}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs px-2 text-red-500 hover:text-red-700 hover:bg-red-50 ml-auto"
+                onClick={() => setConfirmDeleteId(r.id)}
+              >
+                <Trash2 className="h-3 w-3 mr-1" />
+                Delete
+              </Button>
+
               {/* Link to booking */}
               {r.bookingId && (
                 <Link href={`/bookings/${r.bookingId}`}>
@@ -442,6 +463,31 @@ export default function AdminFlightsPipeline() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={confirmDeleteId !== null} onOpenChange={(v) => !v && setConfirmDeleteId(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Flight Request</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to permanently delete this flight request? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setConfirmDeleteId(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => confirmDeleteId !== null && deleteRequest.mutate({ id: confirmDeleteId })}
+              disabled={deleteRequest.isPending}
+            >
+              {deleteRequest.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Query Message Dialog */}
       <Dialog open={queryDialogOpen} onOpenChange={setQueryDialogOpen}>
