@@ -1,0 +1,50 @@
+{
+  "query": "\nSELECT u.id, u.name, u.email, u.crmAccess, acp.orbitEnabled, acp.uniqueAgentId\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.name LIKE '%Harri%' OR u.email LIKE '%harri%' OR u.name LIKE '%Cowan%'\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, u.email, u.crmAccess, acp.orbitEnabled, acp.uniqueAgentId\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.name LIKE '%Harri%' OR u.email LIKE '%harri%' OR u.name LIKE '%Cowan%'\nLIMIT 5;\n",
+  "rows": [
+    {
+      "id": "60384",
+      "name": "Daniel Harris-west",
+      "email": "daniel@danieljamestravel.co.uk",
+      "crmAccess": "0",
+      "orbitEnabled": "0",
+      "uniqueAgentId": "JLT-0099"
+    },
+    {
+      "id": "60445",
+      "name": "Harriet Cowan",
+      "email": "holidayswithharri@outlook.com",
+      "crmAccess": "1",
+      "orbitEnabled": "0",
+      "uniqueAgentId": "JLT-0155"
+    },
+    {
+      "id": "60540",
+      "name": "Charlotte Harrison",
+      "email": "charlotteharrison@thejltgroup.co.uk",
+      "crmAccess": "0",
+      "orbitEnabled": "0",
+      "uniqueAgentId": "JLT-0067"
+    },
+    {
+      "id": "60566",
+      "name": "Faye Harrison",
+      "email": "info@fayeharrisontravel.com",
+      "crmAccess": "0",
+      "orbitEnabled": "0",
+      "uniqueAgentId": "JLT-0133"
+    },
+    {
+      "id": "180240",
+      "name": "Kim Harrison",
+      "email": "kh198410@gmail.com",
+      "crmAccess": "0",
+      "orbitEnabled": "0",
+      "uniqueAgentId": "JLT-0227"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tcrmAccess\torbitEnabled\tuniqueAgentId\n60384\tDaniel Harris-west\tdaniel@danieljamestravel.co.uk\t0\t0\tJLT-0099\n60445\tHarriet Cowan\tholidayswithharri@outlook.com\t1\t0\tJLT-0155\n60540\tCharlotte Harrison\tcharlotteharrison@thejltgroup.co.uk\t0\t0\tJLT-0067\n60566\tFaye Harrison\tinfo@fayeharrisontravel.com\t0\t0\tJLT-0133\n180240\tKim Harrison\tkh198410@gmail.com\t0\t0\tJLT-0227\n",
+  "stderr": "",
+  "execution_time_ms": 264
+}

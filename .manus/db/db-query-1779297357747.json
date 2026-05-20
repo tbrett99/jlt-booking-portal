@@ -1,0 +1,18 @@
+{
+  "query": "\nSELECT u.id, u.name, u.email, u.crmAccess, acp.orbitEnabled, acp.uniqueAgentId\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.name LIKE '%Luke%Lister%' OR u.name LIKE '%Lister%Luke%'\nLIMIT 3;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, u.email, u.crmAccess, acp.orbitEnabled, acp.uniqueAgentId\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.name LIKE '%Luke%Lister%' OR u.name LIKE '%Lister%Luke%'\nLIMIT 3;\n",
+  "rows": [
+    {
+      "id": "60455",
+      "name": "Luke Lister",
+      "email": "sales@alisterstravel.co.uk",
+      "crmAccess": "1",
+      "orbitEnabled": "0",
+      "uniqueAgentId": "JLT-0268"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tcrmAccess\torbitEnabled\tuniqueAgentId\n60455\tLuke Lister\tsales@alisterstravel.co.uk\t1\t0\tJLT-0268\n",
+  "stderr": "",
+  "execution_time_ms": 323
+}

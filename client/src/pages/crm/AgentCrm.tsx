@@ -320,12 +320,31 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   const { data: agentDdStatus } = trpc.gocardless.adminListMandates.useQuery(undefined, { enabled: open });
   const agentMandate = agentDdStatus?.find((m: any) => m.userId === agent.id);
 
+  const profile = crmData?.profile as CrmProfile | null ?? null;
+
+  const [orbitChecked, setOrbitChecked] = useState<boolean | null>(null);
+  // Sync local state from server when profile loads
+  useEffect(() => {
+    if (profile !== null && orbitChecked === null) {
+      setOrbitChecked(!!profile?.orbitEnabled);
+    }
+  }, [profile]);
+  // Reset local state when sheet closes
+  useEffect(() => {
+    if (!open) setOrbitChecked(null);
+  }, [open]);
+
   const toggleOrbitAccess = trpc.crm.agentCrm.toggleOrbitAccess.useMutation({
     onSuccess: (data) => {
       toast.success(data.orbitEnabled ? "Orbit access enabled" : "Orbit access disabled");
+      setOrbitChecked(data.orbitEnabled);
       refresh();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      toast.error(e.message);
+      // Revert local state on error
+      setOrbitChecked(!!profile?.orbitEnabled);
+    },
   });
 
   const activatePortal = trpc.users.activatePortalAccess.useMutation({
@@ -337,8 +356,6 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   });
 
   const isOnboarding = agent.portalStatus === "onboarding";
-
-  const profile = crmData?.profile as CrmProfile | null ?? null;
 
   return (
     <>
@@ -422,12 +439,15 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <div className="flex items-center gap-2">
                 <Switch
                   id="orbit-toggle"
-                  checked={!!profile?.orbitEnabled}
-                  disabled={toggleOrbitAccess.isPending}
-                  onCheckedChange={(checked) => toggleOrbitAccess.mutate({ userId: agent.id, enabled: checked })}
+                  checked={orbitChecked ?? !!profile?.orbitEnabled}
+                  disabled={toggleOrbitAccess.isPending || orbitChecked === null}
+                  onCheckedChange={(checked) => {
+                    setOrbitChecked(checked);
+                    toggleOrbitAccess.mutate({ userId: agent.id, enabled: checked });
+                  }}
                 />
                 <label htmlFor="orbit-toggle" className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer select-none">
-                  <Zap size={11} className={profile?.orbitEnabled ? "text-violet-600" : ""} />
+                  <Zap size={11} className={(orbitChecked ?? !!profile?.orbitEnabled) ? "text-violet-600" : ""} />
                   Orbit Access
                 </label>
               </div>
