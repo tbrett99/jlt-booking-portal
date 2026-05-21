@@ -1,0 +1,17 @@
+{
+  "query": "SELECT id, versionLabel, isActive, sentAt, deadline FROM terms_versions WHERE isActive = 1 LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT id, versionLabel, isActive, sentAt, deadline FROM terms_versions WHERE isActive = 1 LIMIT 5;",
+  "rows": [
+    {
+      "id": "30002",
+      "versionLabel": "V4 — May 2026",
+      "isActive": "1",
+      "sentAt": "2026-05-15 13:43:54",
+      "deadline": "2026-06-13 00:00:00"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tversionLabel\tisActive\tsentAt\tdeadline\n30002\tV4 — May 2026\t1\t2026-05-15 13:43:54\t2026-06-13 00:00:00\n",
+  "stderr": "",
+  "execution_time_ms": 263
+}

@@ -4329,6 +4329,15 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
 
       if (!active) return { hasActiveTerm: false, hasSigned: false, activeVersion: null, signedAt: null };
 
+      // Agents who joined on or after the terms were sent don't need to sign —
+      // they agreed to current terms as part of their onboarding.
+      const { users } = await import('../drizzle/schema');
+      const [agentRow] = await db.select({ createdAt: users.createdAt }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+      const sentAt = active.sentAt ? new Date(active.sentAt) : null;
+      if (agentRow?.createdAt && sentAt && new Date(agentRow.createdAt) >= sentAt) {
+        return { hasActiveTerm: false, hasSigned: true, activeVersion: null, signedAt: null };
+      }
+
       const [signing] = await db
         .select()
         .from(termsSignings)
