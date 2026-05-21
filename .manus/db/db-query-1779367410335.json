@@ -1,0 +1,26 @@
+{
+  "query": "\nSELECT u.id, u.name, u.email, u.portalStatus, acp.orbitEnabled, acp.uniqueAgentId\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.name LIKE '%Daniel%Harris%' OR u.name LIKE '%Harris%West%'\n   OR u.name LIKE '%Melissa%O%Neill%' OR u.name LIKE '%Meilissa%O%Neill%'\n   OR u.email LIKE '%harris%west%' OR u.email LIKE '%oneill%' OR u.email LIKE '%o%neill%';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, u.email, u.portalStatus, acp.orbitEnabled, acp.uniqueAgentId\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.name LIKE '%Daniel%Harris%' OR u.name LIKE '%Harris%West%'\n   OR u.name LIKE '%Melissa%O%Neill%' OR u.name LIKE '%Meilissa%O%Neill%'\n   OR u.email LIKE '%harris%west%' OR u.email LIKE '%oneill%' OR u.email LIKE '%o%neill%';\n",
+  "rows": [
+    {
+      "id": "60368",
+      "name": "Melissa O'neill",
+      "email": "hello@monaracollective.com",
+      "portalStatus": "active",
+      "orbitEnabled": "0",
+      "uniqueAgentId": "JLT-0293"
+    },
+    {
+      "id": "60384",
+      "name": "Daniel Harris-west",
+      "email": "daniel@danieljamestravel.co.uk",
+      "portalStatus": "active",
+      "orbitEnabled": "0",
+      "uniqueAgentId": "JLT-0099"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tportalStatus\torbitEnabled\tuniqueAgentId\n60368\tMelissa O'neill\thello@monaracollective.com\tactive\t0\tJLT-0293\n60384\tDaniel Harris-west\tdaniel@danieljamestravel.co.uk\tactive\t0\tJLT-0099\n",
+  "stderr": "",
+  "execution_time_ms": 926
+}

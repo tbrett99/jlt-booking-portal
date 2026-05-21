@@ -1,0 +1,18 @@
+{
+  "query": "\nUPDATE agent_crm_profiles SET orbitEnabled = 1 WHERE userId IN (60368, 60384);\nSELECT u.name, acp.orbitEnabled FROM users u JOIN agent_crm_profiles acp ON acp.userId = u.id WHERE u.id IN (60368, 60384);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nUPDATE agent_crm_profiles SET orbitEnabled = 1 WHERE userId IN (60368, 60384);\nSELECT u.name, acp.orbitEnabled FROM users u JOIN agent_crm_profiles acp ON acp.userId = u.id WHERE u.id IN (60368, 60384);\n",
+  "rows": [
+    {
+      "name": "Melissa O'neill",
+      "orbitEnabled": "1"
+    },
+    {
+      "name": "Daniel Harris-west",
+      "orbitEnabled": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "name\torbitEnabled\nMelissa O'neill\t1\nDaniel Harris-west\t1\n",
+  "stderr": "",
+  "execution_time_ms": 288
+}

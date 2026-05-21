@@ -440,7 +440,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
                 <Switch
                   id="orbit-toggle"
                   checked={orbitChecked ?? !!profile?.orbitEnabled}
-                  disabled={toggleOrbitAccess.isPending || orbitChecked === null}
+                  disabled={toggleOrbitAccess.isPending}
                   onCheckedChange={(checked) => {
                     setOrbitChecked(checked);
                     toggleOrbitAccess.mutate({ userId: agent.id, enabled: checked });
