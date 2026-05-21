@@ -143,6 +143,30 @@
 }
 
 /* ─── Supplier description HTML rendering ─────────────────────────────────── */
+.supplier-description {
+  overflow-x: hidden;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.supplier-description table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  margin-bottom: 0.75rem;
+}
+.supplier-description table td,
+.supplier-description table th {
+  border: 1px solid var(--border);
+  padding: 0.375rem 0.625rem;
+  vertical-align: top;
+  white-space: normal;
+}
+.supplier-description table th {
+  background: var(--muted);
+  font-weight: 600;
+}
 .supplier-description p {
   margin-bottom: 0.5rem;
   line-height: 1.6;
