@@ -304,7 +304,7 @@ function SupplierModal({
   if (isLoading) {
     return (
       <Dialog open onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <div className="space-y-4">
             <Skeleton className="h-8 w-3/4" />
             <Skeleton className="h-32 w-full" />
@@ -325,7 +325,7 @@ function SupplierModal({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <div className="flex items-start gap-4">
             {supplier.imageUrl && (
@@ -358,7 +358,7 @@ function SupplierModal({
           </div>
         </DialogHeader>
 
-        <div className="space-y-5 mt-2">
+        <div className="space-y-5 mt-2 min-w-0 w-full overflow-hidden">
           {/* AI Summary */}
           {supplier.aiSummary && (
             <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
@@ -389,7 +389,7 @@ function SupplierModal({
             <div className="space-y-2">
               <h4 className="text-sm font-semibold">About</h4>
               <div
-                className="supplier-description text-sm text-muted-foreground"
+                className="supplier-description text-sm text-muted-foreground w-full max-w-full"
                 dangerouslySetInnerHTML={{ __html: cleanSupplierHtml(supplier.description) }}
               />
             </div>
