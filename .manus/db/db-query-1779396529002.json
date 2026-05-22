@@ -1,0 +1,17 @@
+{
+  "query": "\nSELECT u.id, u.name, u.email, acp.id as crmId, acp.orbitEnabled\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.name LIKE '%Nickie%' OR u.name LIKE '%McGregor%' OR u.email LIKE '%nickie%' OR u.email LIKE '%mcgregor%'\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT u.id, u.name, u.email, acp.id as crmId, acp.orbitEnabled\nFROM users u\nLEFT JOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE u.name LIKE '%Nickie%' OR u.name LIKE '%McGregor%' OR u.email LIKE '%nickie%' OR u.email LIKE '%mcgregor%'\nLIMIT 5;\n",
+  "rows": [
+    {
+      "id": "60299",
+      "name": "Nickie Mcgregor",
+      "email": "daretodreamtravel@thejltgroup.co.uk",
+      "crmId": "310",
+      "orbitEnabled": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tcrmId\torbitEnabled\n60299\tNickie Mcgregor\tdaretodreamtravel@thejltgroup.co.uk\t310\t0\n",
+  "stderr": "",
+  "execution_time_ms": 286
+}

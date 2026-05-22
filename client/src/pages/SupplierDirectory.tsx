@@ -162,7 +162,8 @@ function cleanSupplierHtml(raw: string): string {
   return raw
     // Remove HTML comments (WordPress block comments like <!-- wp:paragraph -->)
     .replace(/<!--[\s\S]*?-->/g, "")
-    // Fix CSV separator artifact: "; <" should just be "<"
+    // Fix CSV separator artifact: HTML fragments joined with "; " — strip all "; " between tags
+    .replace(/>\s*;\s*</g, "><")
     .replace(/;\s*(<\/?)/g, "$1")
     // Remove WordPress block wrapper divs but keep their content
     .replace(/<div[^>]*class="[^"]*wp-block[^"]*"[^>]*>/gi, "")

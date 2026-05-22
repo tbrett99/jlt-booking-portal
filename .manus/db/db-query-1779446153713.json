@@ -1,0 +1,31 @@
+{
+  "query": "\nSELECT name, \n  CASE WHEN description LIKE '%<table%' THEN 'HAS TABLE' ELSE 'no table' END as has_table,\n  CASE WHEN description LIKE '%<pre%' THEN 'HAS PRE' ELSE 'no pre' END as has_pre,\n  CASE WHEN description LIKE '%style=%' THEN 'HAS INLINE STYLE' ELSE 'no style' END as has_style,\n  CASE WHEN description LIKE '%width:%' THEN 'HAS WIDTH' ELSE 'no width' END as has_width\nFROM suppliers WHERE name LIKE '%Gold Medal%' OR name LIKE '%Celebrity%' OR name LIKE '%Royal Caribbean%';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT name, \n  CASE WHEN description LIKE '%<table%' THEN 'HAS TABLE' ELSE 'no table' END as has_table,\n  CASE WHEN description LIKE '%<pre%' THEN 'HAS PRE' ELSE 'no pre' END as has_pre,\n  CASE WHEN description LIKE '%style=%' THEN 'HAS INLINE STYLE' ELSE 'no style' END as has_style,\n  CASE WHEN description LIKE '%width:%' THEN 'HAS WIDTH' ELSE 'no width' END as has_width\nFROM suppliers WHERE name LIKE '%Gold Medal%' OR name LIKE '%Celebrity%' OR name LIKE '%Royal Caribbean%';\n",
+  "rows": [
+    {
+      "name": "Gold Medal",
+      "has_table": "no table",
+      "has_pre": "no pre",
+      "has_style": "no style",
+      "has_width": "no width"
+    },
+    {
+      "name": "Royal Caribbean | Celebrity Cruises",
+      "has_table": "no table",
+      "has_pre": "no pre",
+      "has_style": "no style",
+      "has_width": "no width"
+    },
+    {
+      "name": "Celebrity + Royal Caribbean Cruises",
+      "has_table": "no table",
+      "has_pre": "no pre",
+      "has_style": "no style",
+      "has_width": "no width"
+    }
+  ],
+  "messages": [],
+  "stdout": "name\thas_table\thas_pre\thas_style\thas_width\nGold Medal\tno table\tno pre\tno style\tno width\nRoyal Caribbean | Celebrity Cruises\tno table\tno pre\tno style\tno width\nCelebrity + Royal Caribbean Cruises\tno table\tno pre\tno style\tno width\n",
+  "stderr": "",
+  "execution_time_ms": 268
+}
