@@ -389,7 +389,7 @@ function SupplierModal({
             <div className="space-y-2">
               <h4 className="text-sm font-semibold">About</h4>
               <div
-                className="supplier-description text-sm text-muted-foreground prose prose-sm max-w-none"
+                className="supplier-description text-sm text-muted-foreground"
                 dangerouslySetInnerHTML={{ __html: cleanSupplierHtml(supplier.description) }}
               />
             </div>
