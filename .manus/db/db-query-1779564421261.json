@@ -1,0 +1,37 @@
+{
+  "query": "\n-- Count paid this week using paidAt (correct column)\nSELECT COUNT(*) as paid_this_week_paidAt\nFROM reimbursement_items\nWHERE status = 'paid'\n  AND paidAt >= DATE_SUB(NOW(), INTERVAL 7 DAY);\n\n-- Also count using createdAt and updatedAt for comparison\nSELECT COUNT(*) as paid_this_week_updatedAt\nFROM reimbursement_items\nWHERE status = 'paid'\n  AND updatedAt >= DATE_SUB(NOW(), INTERVAL 7 DAY);\n\n-- Total paid\nSELECT COUNT(*) as total_paid FROM reimbursement_items WHERE status = 'paid';\n\n-- Status breakdown\nSELECT status, COUNT(*) as cnt FROM reimbursement_items GROUP BY status;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \n-- Count paid this week using paidAt (correct column)\nSELECT COUNT(*) as paid_this_week_paidAt\nFROM reimbursement_items\nWHERE status = 'paid'\n  AND paidAt >= DATE_SUB(NOW(), INTERVAL 7 DAY);\n\n-- Also count using createdAt and updatedAt for comparison\nSELECT COUNT(*) as paid_this_week_updatedAt\nFROM reimbursement_items\nWHERE status = 'paid'\n  AND updatedAt >= DATE_SUB(NOW(), INTERVAL 7 DAY);\n\n-- Total paid\nSELECT COUNT(*) as total_paid FROM reimbursement_items WHERE status = 'paid';\n\n-- Status breakdown\nSELECT status, COUNT(*) as cnt FROM reimbursement_items GROUP BY status;\n",
+  "rows": [
+    {
+      "paid_this_week_paidAt": "49"
+    },
+    {
+      "paid_this_week_paidAt": "paid_this_week_updatedAt"
+    },
+    {
+      "paid_this_week_paidAt": "49"
+    },
+    {
+      "paid_this_week_paidAt": "total_paid"
+    },
+    {
+      "paid_this_week_paidAt": "224"
+    },
+    {
+      "paid_this_week_paidAt": "status\tcnt"
+    },
+    {
+      "paid_this_week_paidAt": "scheduled\t79"
+    },
+    {
+      "paid_this_week_paidAt": "pending\t18"
+    },
+    {
+      "paid_this_week_paidAt": "paid\t224"
+    }
+  ],
+  "messages": [],
+  "stdout": "paid_this_week_paidAt\n49\npaid_this_week_updatedAt\n49\ntotal_paid\n224\nstatus\tcnt\nscheduled\t79\npending\t18\npaid\t224\n",
+  "stderr": "",
+  "execution_time_ms": 285
+}

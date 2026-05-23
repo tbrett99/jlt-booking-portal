@@ -736,7 +736,7 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
   const postIds = posts.map((p) => p.id);
 
   // Stats snapshot — count from weekStarting to now
-  const { bookings, commissionClaims, refunds } = await import("../drizzle/schema");
+  const { bookings, commissionClaims, reimbursementItems } = await import("../drizzle/schema");
   const [bookingCount] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(bookings)
@@ -760,10 +760,18 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     0
   );
 
+  // Count reimbursement items marked as paid this week (using paidAt timestamp)
+  const weekStartDate = new Date(weekStarting);
   const [reimbCount] = await db
     .select({ count: sql<number>`COUNT(*)` })
-    .from(refunds)
-    .where(and(gt(refunds.createdAt, weekStarting), lt(refunds.createdAt, now)));
+    .from(reimbursementItems)
+    .where(
+      and(
+        sql`${reimbursementItems.status} = 'paid'`,
+        sql`${reimbursementItems.paidAt} >= ${weekStartDate.toISOString().slice(0, 19).replace('T', ' ')}`,
+        sql`${reimbursementItems.paidAt} <= NOW()`
+      )
+    );
 
   const statsSnapshot = {
     // Use field names the frontend expects

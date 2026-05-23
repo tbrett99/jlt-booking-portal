@@ -1,0 +1,8 @@
+{
+  "query": "\n-- Check reimbursement_items table (what the digest currently counts)\nSELECT COUNT(*) as reimbursement_items_paid_this_week\nFROM reimbursement_items\nWHERE status = 'paid'\n  AND updated_at >= UNIX_TIMESTAMP(DATE_SUB(NOW(), INTERVAL 7 DAY)) * 1000;\n\n-- Check all reimbursement-related tables\nSELECT COUNT(*) as reimbursement_items_total FROM reimbursement_items;\n\n-- Check what statuses exist\nSELECT status, COUNT(*) as cnt FROM reimbursement_items GROUP BY status;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \n-- Check reimbursement_items table (what the digest currently counts)\nSELECT COUNT(*) as reimbursement_items_paid_this_week\nFROM reimbursement_items\nWHERE status = 'paid'\n  AND updated_at >= UNIX_TIMESTAMP(DATE_SUB(NOW(), INTERVAL 7 DAY)) * 1000;\n\n-- Check all reimbursement-related tables\nSELECT COUNT(*) as reimbursement_items_total FROM reimbursement_items;\n\n-- Check what statuses exist\nSELECT status, COUNT(*) as cnt FROM reimbursement_items GROUP BY status;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 3: Unknown column 'updated_at' in 'where clause'"
+  ]
+}
