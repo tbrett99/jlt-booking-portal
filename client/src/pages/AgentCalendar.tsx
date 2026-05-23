@@ -13,6 +13,7 @@ import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addMonths, subMonths, addWeeks, subWeeks, eachDayOfInterval,
   isSameMonth, isSameDay, isToday, addDays, addYears, differenceInDays,
+  startOfDay, endOfDay,
 } from "date-fns";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -261,7 +262,9 @@ export default function AgentCalendar() {
   }, [allOccurrences, categoryFilter]);
 
   function eventsOnDay(day: Date): AgentEventOccurrence[] {
-    return events.filter(ev => day >= ev.occurrenceStart && day <= ev.occurrenceEnd);
+    const dayStart = startOfDay(day);
+    const dayEnd = endOfDay(day);
+    return events.filter(ev => ev.occurrenceStart <= dayEnd && ev.occurrenceEnd >= dayStart);
   }
 
   function handlePrev() {
