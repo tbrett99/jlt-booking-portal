@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE community_digests \nSET statsSnapshot = JSON_OBJECT(\n  'bookingsThisWeek', (SELECT COUNT(*) FROM bookings WHERE createdAt >= '2026-05-19 00:00:00'),\n  'totalCommissionClaimed', (SELECT COALESCE(SUM(grossAmount), 0) FROM commission_claims WHERE claimedAt >= '2026-05-19 00:00:00' AND status IN ('paid','awaiting_payment')),\n  'reimbursementsCount', (SELECT COUNT(*) FROM refunds WHERE createdAt >= '2026-05-19 00:00:00')\n)\nWHERE id = 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute UPDATE community_digests \nSET statsSnapshot = JSON_OBJECT(\n  'bookingsThisWeek', (SELECT COUNT(*) FROM bookings WHERE createdAt >= '2026-05-19 00:00:00'),\n  'totalCommissionClaimed', (SELECT COALESCE(SUM(grossAmount), 0) FROM commission_claims WHERE claimedAt >= '2026-05-19 00:00:00' AND status IN ('paid','awaiting_payment')),\n  'reimbursementsCount', (SELECT COUNT(*) FROM refunds WHERE createdAt >= '2026-05-19 00:00:00')\n)\nWHERE id = 1;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 285
+}
