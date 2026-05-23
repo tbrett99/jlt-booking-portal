@@ -40,7 +40,7 @@ export const dashboardRouter = router({
           SUM(CASE WHEN currentStage IN ('Query', 'Reimb Docs Missing', 'Urgent/Reimb') THEN 1 ELSE 0 END) AS urgent,
           SUM(CASE WHEN currentStage NOT IN ('Cancelled') AND finalSupplierPaymentDate IS NULL AND paymentDateDismissed = 0 AND currentStage != 'Commission Claimable' THEN 1 ELSE 0 END) AS missingPaymentDateCount,
           SUM(CASE WHEN currentStage = 'Commission Claimable' AND finalSupplierPaymentDate IS NULL AND paymentDateDismissed = 0 THEN 1 ELSE 0 END) AS commissionClaimableMissingDateCount,
-          SUM(CASE WHEN currentStage IN ('New Booking', 'Creating own PTS file', 'Not on Topdog', 'Query', 'Reimb Docs Missing', 'Urgent/Reimb', 'T/O Package', 'DP', 'Holding Accounts') THEN 1 ELSE 0 END) AS filesToAddToPts
+          SUM(CASE WHEN currentStage IN ('New Booking', 'Not on Topdog', 'Query', 'Reimb Docs Missing', 'Urgent/Reimb', 'T/O Package', 'DP') THEN 1 ELSE 0 END) AS filesToAddToPts
         FROM bookings
       `),
       // Amendment counts
@@ -234,7 +234,7 @@ export const dashboardRouter = router({
       await Promise.all([
         db.execute(sql`
           SELECT
-            SUM(CASE WHEN currentStage IN ('New Booking','Creating own PTS file','Not on Topdog','Query','Reimb Docs Missing','Urgent/Reimb','T/O Package','DP','Holding Accounts') THEN 1 ELSE 0 END) AS filesToAddToPts
+            SUM(CASE WHEN currentStage IN ('New Booking','Not on Topdog','Query','Reimb Docs Missing','Urgent/Reimb','T/O Package','DP') THEN 1 ELSE 0 END) AS filesToAddToPts
           FROM bookings
         `),
         db.execute(sql`
