@@ -777,8 +777,8 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     await db
       .update(communityDigests)
       .set({
-        includedPostIds: JSON.stringify(postIds),
-        statsSnapshot: JSON.stringify(statsSnapshot),
+        includedPostIds: postIds,
+        statsSnapshot: statsSnapshot,
       } as any)
       .where(eq(communityDigests.id, existing.id));
     const [refreshed] = await db
@@ -791,9 +791,9 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
   const [result] = await db.insert(communityDigests).values({
     weekStarting,
     status: "draft",
-    includedPostIds: JSON.stringify(postIds),
+    includedPostIds: postIds,
     includeBookingHighlights: true,
-    statsSnapshot: JSON.stringify(statsSnapshot),
+    statsSnapshot: statsSnapshot,
   } as any);
 
   const insertId = (result as any).insertId as number;
@@ -816,14 +816,8 @@ export async function updateDigest(
 ) {
   const db = await getDb();
   const updateData: any = { ...data };
-  if (data.includedPostIds !== undefined)
-    updateData.includedPostIds = JSON.stringify(data.includedPostIds);
-  if (data.bookingHighlightsOverride !== undefined)
-    updateData.bookingHighlightsOverride = JSON.stringify(
-      data.bookingHighlightsOverride
-    );
-  if (data.statsSnapshot !== undefined)
-    updateData.statsSnapshot = JSON.stringify(data.statsSnapshot);
+  // JSON columns — Drizzle serialises them automatically, do not double-stringify
+  // (includedPostIds, bookingHighlightsOverride, statsSnapshot are json() columns in schema)
   if (!db) return;
   await db
     .update(communityDigests)

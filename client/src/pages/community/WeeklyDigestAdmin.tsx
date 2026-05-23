@@ -63,8 +63,6 @@ export default function WeeklyDigestAdmin() {
   const highlights = draft?.bookingHighlightsOverride as any[];
   const includedPostIds: number[] = Array.isArray(draft?.includedPostIds)
     ? (draft.includedPostIds as number[])
-    : typeof draft?.includedPostIds === "string"
-    ? (() => { try { return JSON.parse(draft.includedPostIds); } catch { return []; } })()
     : [];
 
   if (digestsLoading) {
