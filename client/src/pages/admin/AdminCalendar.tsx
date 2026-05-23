@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -12,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, List, LayoutGrid,
-  Pencil, Trash2, X, Check, ChevronsUpDown, User, RefreshCw, Clock
+  Pencil, Trash2, X, Check, ChevronsUpDown, User, RefreshCw, Clock, BellOff
 } from "lucide-react";
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -437,10 +438,12 @@ interface EventDetailProps {
   event: CalEventOccurrence;
   onEdit: () => void;
   onDelete: () => void;
+  onCancelAndNotify?: () => void;
+  isCancelling?: boolean;
   onClose: () => void;
 }
 
-function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
+function EventDetail({ event, onEdit, onDelete, onCancelAndNotify, isCancelling, onClose }: EventDetailProps) {
   const colors = TYPE_COLORS[event.type];
   const start = event.occurrenceStart;
   const end   = event.occurrenceEnd;
@@ -507,9 +510,16 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
           <p className="italic">No RSVPs yet</p>
         )}
       </div>
-      <div className="flex gap-2 pt-1">
-        <Button size="sm" variant="outline" onClick={onEdit} className="flex-1 gap-1"><Pencil size={12} />Edit</Button>
-        <Button size="sm" variant="outline" onClick={onDelete} className="flex-1 gap-1 text-destructive hover:text-destructive"><Trash2 size={12} />Delete</Button>
+      <div className="flex flex-col gap-2 pt-1">
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={onEdit} className="flex-1 gap-1"><Pencil size={12} />Edit</Button>
+          <Button size="sm" variant="outline" onClick={onDelete} className="flex-1 gap-1 text-destructive hover:text-destructive"><Trash2 size={12} />Delete</Button>
+        </div>
+        {onCancelAndNotify && (
+          <Button size="sm" variant="outline" onClick={onCancelAndNotify} disabled={isCancelling} className="w-full gap-1 text-orange-600 hover:text-orange-700 border-orange-300">
+            <BellOff size={12} />{isCancelling ? "Cancelling..." : "Cancel Event & Notify Agents"}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -562,6 +572,14 @@ export default function AdminCalendar() {
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
 
   const deleteMutation = trpc.calendar.delete.useMutation({ onSuccess: () => { refetch(); setSelectedEvent(null); } });
+  const cancelAndNotifyMutation = trpc.calendar.cancelAndNotify.useMutation({
+    onSuccess: (res) => {
+      toast.success(`Event cancelled. ${res.notified} agent${res.notified !== 1 ? 's' : ''} notified.`);
+      refetch();
+      setSelectedEvent(null);
+    },
+    onError: () => toast.error("Failed to cancel event."),
+  });
 
   function handlePrev() {
     if (viewMode === "month") setCurrentDate(subMonths(currentDate, 1));
@@ -589,6 +607,11 @@ export default function AdminCalendar() {
   function handleDelete(ev: CalEventOccurrence) {
     if (confirm(`Delete "${ev.title}"?${ev.isRecurring ? "\n\nThis will delete all occurrences of this recurring event." : ""}`)) {
       deleteMutation.mutate({ id: ev.id });
+    }
+  }
+  function handleCancelAndNotify(ev: CalEventOccurrence) {
+    if (confirm(`Cancel "${ev.title}" and send a cancellation email to all active agents?`)) {
+      cancelAndNotifyMutation.mutate({ id: ev.id });
     }
   }
 
@@ -736,6 +759,22 @@ export default function AdminCalendar() {
         />
       )}
 
+      {/* Event Detail Dialog */}
+      {selectedEvent && (
+        <Dialog open onOpenChange={(v) => !v && setSelectedEvent(null)}>
+          <DialogContent className="max-w-sm">
+            <EventDetail
+              event={selectedEvent}
+              onEdit={() => openEdit(selectedEvent)}
+              onDelete={() => handleDelete(selectedEvent)}
+              onCancelAndNotify={selectedEvent.agentFacing ? () => handleCancelAndNotify(selectedEvent) : undefined}
+              isCancelling={cancelAndNotifyMutation.isPending}
+              onClose={() => setSelectedEvent(null)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Event Form Dialog */}
       {formOpen && (
         <EventFormDialog
@@ -801,7 +840,7 @@ function MonthView({ currentDate, eventsOnDay, onDayClick, onEventClick, selecte
                     <div
                       key={`${ev.id}-${i}`}
                       className={`text-xs px-1 rounded truncate cursor-pointer ${colors.bg} ${colors.text} font-medium flex items-center gap-0.5`}
-                      onClick={e => { e.stopPropagation(); onEditEvent(ev); }}
+                      onClick={e => { e.stopPropagation(); onEventClick(ev); }}
                     >
                       {ev.isRecurring && <RefreshCw size={9} className="shrink-0 opacity-70" />}
                       {ev.dueDate && ev.type === "task" && <Clock size={9} className="shrink-0 opacity-70" />}
@@ -866,7 +905,7 @@ function WeekView({ currentDate, eventsOnDay, onDayClick, onEventClick, selected
                   <div
                     key={`${ev.id}-${i}`}
                     className={`text-xs px-2 py-1 rounded-md cursor-pointer ${colors.bg} ${colors.text} font-medium flex items-center gap-1`}
-                    onClick={e => { e.stopPropagation(); onEditEvent(ev); }}
+                    onClick={e => { e.stopPropagation(); onEventClick(ev); }}
                   >
                     {ev.isRecurring && <RefreshCw size={9} className="shrink-0 opacity-70" />}
                     {ev.dueDate && ev.type === "task" && <Clock size={9} className="shrink-0 opacity-70" />}
@@ -937,7 +976,7 @@ function AgendaView({ from, to, events, onEventClick, selectedEvent, onEditEvent
                   <div
                     key={`${ev.id}-${i}`}
                     className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer hover:opacity-90 ${colors.bg}`}
-                    onClick={() => onEditEvent(ev)}
+                    onClick={() => onEventClick(ev)}
                   >
                     <div className="flex-1 min-w-0">
                       <p className={`text-sm font-semibold truncate flex items-center gap-1 ${colors.text}`}>

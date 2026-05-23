@@ -3158,6 +3158,41 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         return { success: true };
       }),
 
+    // Cancel an agent-facing event, delete it, and email all active agents
+    cancelAndNotify: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await (await import("./db")).getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const { calendarEvents: calEventsTable, users: usersTable } = await import("../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+        // Fetch event details before deletion
+        const [ev] = await db.select().from(calEventsTable).where(eq(calEventsTable.id, input.id)).limit(1);
+        if (!ev) throw new TRPCError({ code: "NOT_FOUND", message: "Event not found" });
+        // Delete the event
+        await deleteCalendarEvent(input.id);
+        // Only notify if it was agent-facing
+        let notified = 0;
+        if (ev.agentFacing) {
+          const agents = await db
+            .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email })
+            .from(usersTable)
+            .where(and(eq(usersTable.role, "agent"), eq(usersTable.isActive, true)));
+          const eventDateStr = ev.startDate
+            ? new Date(ev.startDate).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+            : "";
+          const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head><body style="margin:0;padding:0;background:#f5f5f5;font-family:'Poppins',Arial,sans-serif;"><div style="max-width:600px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><div style="background:#70FFE8;padding:24px 40px;text-align:center;"><span style="font-size:22px;font-weight:700;color:#414141;">JLT Group</span></div><div style="padding:32px 40px;color:#414141;font-size:15px;line-height:1.7;"><p>Hi there,</p><p>We wanted to let you know that the following event has been <strong>cancelled</strong>:</p><p style="background:#FFF3CD;border-left:4px solid #FFC107;padding:12px 16px;border-radius:4px;margin:16px 0;"><strong>${ev.title}</strong>${eventDateStr ? `<br/><span style="font-size:13px;color:#666;">${eventDateStr}</span>` : ""}</p><p>We apologise for any inconvenience. Please check the Events Calendar for upcoming events.</p><p style="text-align:center;margin:28px 0;"><a href="${process.env.PORTAL_BASE_URL ?? 'https://portal.thejltgroup.co.uk'}/events" style="background:#70FFE8;color:#414141;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">View Events Calendar</a></p></div><div style="padding:20px 40px;text-align:center;background:#fafafa;font-size:12px;color:#888;">&copy; ${new Date().getFullYear()} JLT Group. All rights reserved.</div></div></body></html>`;
+          for (const agent of agents) {
+            if (!agent.email) continue;
+            try {
+              await sendDirectEmail({ toEmail: agent.email, toName: agent.name ?? "Agent", subject: `Event Cancelled: ${ev.title}`, html });
+              notified++;
+            } catch { /* continue */ }
+          }
+        }
+        return { success: true, notified };
+      }),
+
     // Called by a scheduled job (or manually) to send due-date reminders for tasks due tomorrow
     sendTaskReminders: adminProcedure.mutation(async () => {
       const tasks = await getTasksDueForReminder();
