@@ -8,7 +8,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { Link, useLocation } from "wouter";
@@ -268,6 +268,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
+      label: "Community",
+      icon: <Newspaper size={16} />,
+      defaultOpen: false,
+      items: [
+        { label: "Community Hub", href: "/community", icon: <Newspaper size={16} /> },
+      ],
+    },
+    {
       label: "Supplier Directory",
       icon: <Building2 size={16} />,
       defaultOpen: false,
@@ -390,6 +398,15 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Email Workflows", href: "/crm/workflows", icon: <Mail size={16} /> },
         { label: "Prospects", href: "/crm/prospects", icon: <Users size={16} /> },
         { label: "Email Marketing", href: "/crm/email-marketing", icon: <Megaphone size={16} /> },
+      ],
+    },
+    {
+      label: "Community",
+      icon: <Newspaper size={16} />,
+      defaultOpen: false,
+      items: [
+        { label: "Community Hub", href: "/community", icon: <Newspaper size={16} /> },
+        { label: "Weekly Digest", href: "/admin/weekly-digest", icon: <Mail size={16} /> },
       ],
     },
     {

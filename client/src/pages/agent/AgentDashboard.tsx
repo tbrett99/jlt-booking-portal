@@ -10,7 +10,8 @@ import {
   BookOpen, XCircle, Bell, Plus, TrendingUp, Search,
   Calendar, ChevronRight, AlertCircle, CheckCircle2, Clock,
   Sparkles, Filter, Plane, Zap, RefreshCw, FileText,
-  ArrowRight, Banknote, Activity, ReceiptText, Edit3, RotateCcw, Wallet
+  ArrowRight, Banknote, Activity, ReceiptText, Edit3, RotateCcw, Wallet,
+  ShieldAlert, Newspaper
 } from "lucide-react";
 import { format, differenceInDays, isPast, isWithinInterval, addDays } from "date-fns";
 
@@ -66,6 +67,13 @@ export default function AgentDashboard() {
   const { data: outstandingSummary } = trpc.reimbursements.agentOutstandingSummary.useQuery();
   const { data: topUpRequests = [] } = trpc.commissionClaims.myTopUpRequests.useQuery();
   const { data: missingGrossData } = trpc.bookings.countMissingGrossData.useQuery();
+
+  // Community hub data
+  const { data: unconfirmedUpdates = [], refetch: refetchUnconfirmed } = trpc.community.unconfirmedUpdates.useQuery();
+  const { data: communityPosts = [] } = trpc.community.dashboardPosts.useQuery();
+  const confirmPost = trpc.community.confirm.useMutation({
+    onSuccess: () => refetchUnconfirmed(),
+  });
 
   const now = new Date();
   const next30Days = addDays(now, 30);
@@ -162,6 +170,81 @@ export default function AgentDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* ── Business Update Action Required Banner ─────────────────────────── */}
+      {unconfirmedUpdates.length > 0 && (
+        <div className="rounded-xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-500 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+            <h3 className="font-semibold text-amber-800 dark:text-amber-300 text-sm">
+              Action Required — {unconfirmedUpdates.length} Business Update{unconfirmedUpdates.length !== 1 ? "s" : ""} to Confirm
+            </h3>
+          </div>
+          <div className="space-y-2">
+            {(unconfirmedUpdates as any[]).map((update) => (
+              <div key={update.id} className="flex items-start justify-between gap-3 bg-white dark:bg-amber-900/20 rounded-lg px-3 py-2.5 border border-amber-200 dark:border-amber-700">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{update.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Posted {new Date(update.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link href={`/community?postId=${update.id}`}>
+                    <Button variant="outline" size="sm" className="text-xs h-7 px-2.5">Read</Button>
+                  </Link>
+                  <Button
+                    size="sm"
+                    className="text-xs h-7 px-2.5 bg-amber-500 hover:bg-amber-600 text-white border-0"
+                    onClick={() => confirmPost.mutate({ postId: update.id })}
+                    disabled={confirmPost.isPending}
+                  >
+                    <CheckCircle2 className="w-3 h-3 mr-1" /> Confirm
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── What's New in Community ─────────────────────────────────────────── */}
+      {communityPosts.length > 0 && (
+        <div className="rounded-xl border border-border bg-card p-4 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Newspaper className="w-4 h-4 text-muted-foreground" />
+              <h3 className="font-semibold text-sm text-foreground">What's New</h3>
+            </div>
+            <Link href="/community">
+              <Button variant="ghost" size="sm" className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground">
+                View all <ArrowRight className="w-3 h-3 ml-1" />
+              </Button>
+            </Link>
+          </div>
+          <div className="space-y-1.5">
+            {(communityPosts as any[]).slice(0, 4).map((post) => (
+              <Link key={post.id} href={`/community?postId=${post.id}`}>
+                <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+                  <span className="text-base shrink-0">
+                    {post.category === "Agent Win" ? "🏆" :
+                     post.category === "JLT Stay & Story" ? "⭐" :
+                     post.category === "Supplier News & Deals" ? "✈️" :
+                     post.category === "Events" ? "🎉" :
+                     post.category === "Training & Webinars" ? "🎓" :
+                     post.category === "Mindset" ? "💡" :
+                     post.category === "First Class Lounge" ? "👑" : "📢"}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{post.title}</p>
+                    <p className="text-xs text-muted-foreground">{post.category} · {new Date(post.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</p>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

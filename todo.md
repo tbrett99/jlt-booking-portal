@@ -2426,4 +2426,25 @@
 ## Database Backup (S3)
 - [x] Implement db-backup.ts: full SQL dump → gzip → S3 upload with 30-day retention pruning
 - [x] Mount /api/scheduled/db-backup endpoint in _core/index.ts
-- [ ] Register 4-hourly Heartbeat cron via CLI (requires checkpoint + deploy first)
+- [x] Register 4-hourly backup as in-process node-cron job (Heartbeat CLI returning internal server error — raised with Manus support)
+
+## Community & Communications Hub
+- [x] Database schema: community_posts, community_reactions, community_comments, community_confirmations, community_confirmation_reminders, community_digests tables
+- [x] Backend community router: list/get/create/edit/delete posts, pin, hide, feature
+- [x] Backend: reactions (5 emoji), comments, post views
+- [x] Backend: Business Update read confirmation tracking per agent
+- [x] Backend: compliance report — who confirmed / who hasn't
+- [x] Backend: First Class Lounge gating (membership tier check)
+- [x] Backend: weekly digest draft generation with booking highlights (first booking, >12% margin, commission claimed)
+- [x] Backend: digest send with mandatory email to all active agents
+- [x] Frontend: Community Hub page — unified feed with category filter tabs
+- [x] Frontend: PostComposer — rich text (Tiptap), image upload, attachments, Loom embed, sub-tags
+- [x] Frontend: Post cards with reactions, comments, pin/feature badges
+- [x] Frontend: Business Update confirmation button on post cards
+- [x] Frontend: ComplianceLog admin view — confirmed/unconfirmed agents per post
+- [x] Frontend: WeeklyDigestAdmin page — preview, edit highlights, send
+- [x] Agent dashboard: Action Required amber banner for unconfirmed Business Updates
+- [x] Agent dashboard: What's New community widget (latest 4 posts)
+- [x] Scheduler: daily 08:00 UTC confirmation reminder emails (14-day threshold)
+- [x] Community hub navigation added to PortalLayout sidebar (agents + admins)
+- [x] 17 vitest tests covering category access, reactions, First Class gating, booking highlights, reminder scheduling, digest stats

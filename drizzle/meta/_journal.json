@@ -694,6 +694,13 @@
       "when": 1779198045480,
       "tag": "0098_loose_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "5",
+      "when": 1779530761461,
+      "tag": "0099_heavy_juggernaut",
+      "breakpoints": true
     }
   ]
 }

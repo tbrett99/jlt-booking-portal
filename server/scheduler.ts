@@ -538,7 +538,48 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), DB backup (every 4h), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min) — inbox auto-import DISABLED");
+  // Business update confirmation reminders: daily at 08:00 UTC
+  // Sends email to agents who have unconfirmed Business Updates older than 14 days.
+  cron.schedule("0 8 * * *", async () => {
+    try {
+      const { getAgentsNeedingConfirmationReminder, recordConfirmationReminder } = await import("./community-db");
+      const { sendDirectEmail } = await import("./email");
+      const pairs = await getAgentsNeedingConfirmationReminder();
+      // Group by agent so each agent gets one email listing all unconfirmed posts
+      const byAgent = new Map<number, { name: string; email: string; postIds: number[]; postCount: number }>();
+      for (const { post, agent } of pairs) {
+        const existing = byAgent.get(agent.id);
+        if (existing) {
+          existing.postIds.push(post.id);
+          existing.postCount++;
+        } else {
+          byAgent.set(agent.id, { name: agent.name ?? "", email: agent.email ?? "", postIds: [post.id], postCount: 1 });
+        }
+      }
+      let sent = 0;
+      for (const [agentId, agentData] of Array.from(byAgent.entries())) {
+        try {
+          await sendDirectEmail({
+            toEmail: agentData.email,
+            toName: agentData.name,
+            subject: "Action Required \u2014 Business Update Awaiting Your Confirmation",
+            html: `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head><body style="margin:0;padding:0;background:#f5f5f5;font-family:'Poppins',Arial,sans-serif;"><div style="max-width:600px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><div style="background:#70FFE8;padding:24px 40px;text-align:center;"><span style="font-size:22px;font-weight:700;color:#414141;">JLT Group</span></div><div style="padding:32px 40px;color:#414141;font-size:15px;line-height:1.7;"><p>Hi ${agentData.name},</p><p>You have <strong>${agentData.postCount} Business Update${agentData.postCount !== 1 ? 's' : ''}</strong> in the JLT Portal that require your confirmation.</p><p>Please log in and confirm you have read and understood them.</p><p style="text-align:center;margin:28px 0;"><a href="${process.env.PORTAL_BASE_URL ?? 'https://portal.thejltgroup.co.uk'}/community" style="background:#70FFE8;color:#414141;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">View Business Updates</a></p></div><div style="padding:20px 40px;text-align:center;background:#fafafa;font-size:12px;color:#888;">&copy; ${new Date().getFullYear()} JLT Group. All rights reserved.</div></div></body></html>`,
+          });
+          for (const postId of agentData.postIds) {
+            await recordConfirmationReminder(postId, agentId);
+          }
+          sent++;
+        } catch (e: any) {
+          console.error(`[ConfirmReminder] Failed to send to ${agentData.email}:`, e?.message);
+        }
+      }
+      if (sent > 0) console.log(`[ConfirmReminder] Sent ${sent} confirmation reminder email(s)`);
+    } catch (err: any) {
+      console.error("[ConfirmReminder] Fatal error:", err?.message);
+    }
+  }, { timezone: "UTC" });
+
+  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), DB backup (every 4h), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC) — inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────

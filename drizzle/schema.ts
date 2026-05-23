@@ -1521,3 +1521,108 @@ export const supplierAttachments = mysqlTable("supplier_attachments", {
 });
 export type SupplierAttachment = typeof supplierAttachments.$inferSelect;
 export type InsertSupplierAttachment = typeof supplierAttachments.$inferInsert;
+
+// ─── Community Hub ────────────────────────────────────────────────────────────
+
+export const communityPosts = mysqlTable("community_posts", {
+  id: int("id").autoincrement().primaryKey(),
+  authorId: int("authorId").notNull(),                                    // FK → users.id
+  authorName: varchar("authorName", { length: 255 }).notNull(),
+  category: mysqlEnum("category", [
+    "business_update",
+    "supplier_news_deals",
+    "news_announcements",
+    "agent_win",
+    "jlt_stay_story",
+    "events",
+    "training_webinars",
+    "mindset",
+    "first_class_lounge",
+  ]).notNull(),
+  supplierSubCategory: varchar("supplierSubCategory", { length: 100 }),   // cruise|disney|tour_operators|flights|hotels|other (supplier_news_deals only)
+  supplierPostType: mysqlEnum("supplierPostType", ["news", "deal"]),       // news or deal (supplier_news_deals only)
+  title: varchar("title", { length: 500 }).notNull(),
+  bodyHtml: longtext("bodyHtml").notNull(),                                // Rich text HTML (admin) or plain text (agent)
+  loomUrl: varchar("loomUrl", { length: 500 }),                           // Loom embed URL (admin only)
+  imageUrls: json("imageUrls"),                                            // string[] of S3 URLs
+  attachmentUrls: json("attachmentUrls"),                                  // { name, url, key }[] of S3 attachments
+  isPinned: boolean("isPinned").default(false).notNull(),
+  isHidden: boolean("isHidden").default(false).notNull(),                  // soft-hide by admin
+  isDraft: boolean("isDraft").default(false).notNull(),
+  requiresConfirmation: boolean("requiresConfirmation").default(false).notNull(), // true for business_update
+  expiresAt: timestamp("expiresAt"),                                       // optional auto-hide date
+  viewCount: int("viewCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CommunityPost = typeof communityPosts.$inferSelect;
+export type InsertCommunityPost = typeof communityPosts.$inferInsert;
+
+// ─── Community: Reactions ─────────────────────────────────────────────────────
+export const communityReactions = mysqlTable("community_reactions", {
+  id: int("id").autoincrement().primaryKey(),
+  postId: int("postId").notNull(),                                         // FK → community_posts.id
+  userId: int("userId").notNull(),                                         // FK → users.id
+  emoji: mysqlEnum("emoji", ["thumbs_up", "heart", "celebrate", "fire", "plane"]).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type CommunityReaction = typeof communityReactions.$inferSelect;
+
+// ─── Community: Comments ──────────────────────────────────────────────────────
+export const communityComments = mysqlTable("community_comments", {
+  id: int("id").autoincrement().primaryKey(),
+  postId: int("postId").notNull(),                                         // FK → community_posts.id
+  authorId: int("authorId").notNull(),                                     // FK → users.id
+  authorName: varchar("authorName", { length: 255 }).notNull(),
+  content: text("content").notNull(),
+  isDeleted: boolean("isDeleted").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CommunityComment = typeof communityComments.$inferSelect;
+
+// ─── Community: Read Confirmations (Business Updates) ────────────────────────
+export const communityConfirmations = mysqlTable("community_confirmations", {
+  id: int("id").autoincrement().primaryKey(),
+  postId: int("postId").notNull(),                                         // FK → community_posts.id
+  userId: int("userId").notNull(),                                         // FK → users.id
+  confirmedAt: timestamp("confirmedAt").defaultNow().notNull(),
+});
+export type CommunityConfirmation = typeof communityConfirmations.$inferSelect;
+
+// ─── Community: Post Views (for "unread" tracking) ────────────────────────────
+export const communityPostViews = mysqlTable("community_post_views", {
+  id: int("id").autoincrement().primaryKey(),
+  postId: int("postId").notNull(),                                         // FK → community_posts.id
+  userId: int("userId").notNull(),                                         // FK → users.id
+  viewedAt: timestamp("viewedAt").defaultNow().notNull(),
+});
+export type CommunityPostView = typeof communityPostViews.$inferSelect;
+
+// ─── Community: Confirmation Reminder Log ────────────────────────────────────
+// Tracks when automated 14-day reminder emails were sent to prevent re-spamming
+export const communityConfirmationReminders = mysqlTable("community_confirmation_reminders", {
+  id: int("id").autoincrement().primaryKey(),
+  postId: int("postId").notNull(),                                         // FK → community_posts.id
+  userId: int("userId").notNull(),                                         // FK → users.id
+  sentAt: timestamp("sentAt").defaultNow().notNull(),
+});
+export type CommunityConfirmationReminder = typeof communityConfirmationReminders.$inferSelect;
+
+// ─── Community: Weekly Digests ────────────────────────────────────────────────
+export const communityDigests = mysqlTable("community_digests", {
+  id: int("id").autoincrement().primaryKey(),
+  weekStarting: timestamp("weekStarting").notNull(),                       // Monday 00:00 UTC of the week covered
+  status: mysqlEnum("status", ["draft", "sent"]).default("draft").notNull(),
+  introText: text("introText"),                                            // Optional custom intro from admin
+  includedPostIds: json("includedPostIds"),                                 // int[] — curated list of post IDs
+  includeBookingHighlights: boolean("includeBookingHighlights").default(true).notNull(),
+  bookingHighlightsOverride: json("bookingHighlightsOverride"),            // manual overrides to auto-generated highlights
+  statsSnapshot: json("statsSnapshot"),                                    // { bookingsCount, commissionTotal, reimbursementsCount }
+  sentAt: timestamp("sentAt"),
+  sentById: int("sentById"),                                               // FK → users.id
+  recipientCount: int("recipientCount"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CommunityDigest = typeof communityDigests.$inferSelect;
