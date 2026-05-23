@@ -2448,3 +2448,17 @@
 - [x] Scheduler: daily 08:00 UTC confirmation reminder emails (14-day threshold)
 - [x] Community hub navigation added to PortalLayout sidebar (agents + admins)
 - [x] 17 vitest tests covering category access, reactions, First Class gating, booking highlights, reminder scheduling, digest stats
+
+## Events Calendar (Agent-Facing)
+- [x] Schema: extend calendar_events (agentFacing, eventUrl, eventCategory, duration) + event_registrations table
+- [x] Backend: agent calendar list procedure (public-facing events only)
+- [x] Backend: RSVP register/unregister procedure + attendee list for admins
+- [x] Backend: .ics file generation endpoint
+- [x] Backend: auto-populate community hub Events category from agent-facing calendar events
+- [x] Backend: extend calendar create/update/delete to sync community posts
+- [x] Frontend: AdminCalendar — agent-facing toggle, URL field, category, duration, attendance badge
+- [x] Frontend: AgentCalendar page — month/week/agenda views, filters, RSVP, Add to Calendar
+- [x] Frontend: Add to Calendar (.ics download) on event cards
+- [x] Frontend: Events Calendar nav item added to Community section in sidebar
+- [x] Scheduler: day-of 07:00 UTC email reminder to all active agents for that day's events
+- [x] Tests for RSVP, .ics generation, agent visibility gating, duration defaulting (16 tests pass)

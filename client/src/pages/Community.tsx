@@ -84,6 +84,8 @@ export default function Community() {
   const [compliancePostId, setCompliancePostId] = useState<number | null>(null);
   const [expandedPostId, setExpandedPostId] = useState<number | null>(null);
   const [offset, setOffset] = useState(0);
+  const [supplierSubCategory, setSupplierSubCategory] = useState<string | undefined>(undefined);
+  const [supplierPostType, setSupplierPostType] = useState<"news" | "deal" | undefined>(undefined);
   const LIMIT = 15;
 
   // Sync search with debounce
@@ -93,13 +95,22 @@ export default function Community() {
   }, [searchInput]);
 
   // Reset offset on filter change
-  useEffect(() => { setOffset(0); }, [selectedCategory, search]);
+  useEffect(() => { setOffset(0); }, [selectedCategory, search, supplierSubCategory, supplierPostType]);
+  // Reset supplier filters when leaving supplier category
+  useEffect(() => {
+    if (selectedCategory !== "supplier_news_deals") {
+      setSupplierSubCategory(undefined);
+      setSupplierPostType(undefined);
+    }
+  }, [selectedCategory]);
 
   const categories = selectedCategory === "all" ? undefined : [selectedCategory];
 
   const { data, isLoading, refetch } = trpc.community.list.useQuery({
     categories,
     search: search || undefined,
+    supplierSubCategory: selectedCategory === "supplier_news_deals" ? supplierSubCategory : undefined,
+    supplierPostType: selectedCategory === "supplier_news_deals" ? supplierPostType : undefined,
     limit: LIMIT,
     offset,
   });
@@ -204,6 +215,51 @@ export default function Community() {
             <p className="text-sm text-muted-foreground mt-0.5">{total} post{total !== 1 ? "s" : ""}</p>
           )}
         </div>
+
+        {/* Supplier sub-tag filters */}
+        {selectedCategory === "supplier_news_deals" && (
+          <div className="px-4 lg:px-6 pb-3 flex flex-wrap gap-2">
+            {/* Post type chips */}
+            {(["news", "deal"] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => setSupplierPostType(supplierPostType === type ? undefined : type)}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-semibold border transition-colors",
+                  supplierPostType === type
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                )}
+              >
+                {type === "news" ? "📰 News" : "🏷️ Deals"}
+              </button>
+            ))}
+            <div className="w-px h-5 bg-border self-center mx-1" />
+            {/* Sub-category chips */}
+            {["cruise", "disney", "tour_operators", "flights", "hotels", "other"].map((sub) => (
+              <button
+                key={sub}
+                onClick={() => setSupplierSubCategory(supplierSubCategory === sub ? undefined : sub)}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-semibold border transition-colors capitalize",
+                  supplierSubCategory === sub
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                )}
+              >
+                {sub === "tour_operators" ? "Tour Operators" : sub.charAt(0).toUpperCase() + sub.slice(1)}
+              </button>
+            ))}
+            {(supplierSubCategory || supplierPostType) && (
+              <button
+                onClick={() => { setSupplierSubCategory(undefined); setSupplierPostType(undefined); }}
+                className="px-3 py-1 rounded-full text-xs font-semibold border border-dashed border-muted-foreground text-muted-foreground hover:bg-muted transition-colors flex items-center gap-1"
+              >
+                <X className="w-3 h-3" /> Clear filters
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Posts */}
         <div className="flex-1 px-4 lg:px-6 pb-8 space-y-4">
@@ -334,8 +390,8 @@ function PostCard({
     }
   }
 
-  const needsConfirmation = post.requiresConfirmation && !post.confirmedByMe;
-  const confirmedByMe = post.confirmedByMe;
+  const needsConfirmation = post.requiresConfirmation && !post.isConfirmed;
+  const confirmedByMe = post.isConfirmed;
 
   return (
     <article

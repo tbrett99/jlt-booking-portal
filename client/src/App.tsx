@@ -102,6 +102,7 @@ const SupplierDirectory = lazy(() => import("./pages/SupplierDirectory"));
 const AdminSuppliers = lazy(() => import("./pages/admin/AdminSuppliers"));
 const SystemWorkflows = lazy(() => import("./pages/admin/SystemWorkflows"));
 const Community = lazy(() => import("./pages/Community"));
+const AgentCalendar = lazy(() => import("./pages/AgentCalendar"));
 const WeeklyDigestAdmin = lazy(() => import("./pages/community/WeeklyDigestAdmin"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
@@ -254,6 +255,7 @@ function AuthRouter() {
           <Route path="/pricing-calculator" component={PackagePricingCalculator} />
           <Route path="/my-margin" component={MyMarginReport} />
           <Route path="/community" component={Community} />
+          <Route path="/events" component={AgentCalendar} />
           {/* Terms & Policies — accessible to logged-in agents */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}
@@ -304,6 +306,7 @@ function AuthRouter() {
           <Route path="/pricing-calculator" component={PackagePricingCalculator} />
           <Route path="/my-margin" component={MyMarginReport} />
           <Route path="/community" component={Community} />
+          <Route path="/events" component={AgentCalendar} />
           {/* Terms & Policies — accessible to admins in agent view */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}

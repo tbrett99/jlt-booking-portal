@@ -26,6 +26,14 @@ import {
 type EventType = "holiday" | "event" | "task";
 type RecurrenceRule = "none" | "daily" | "weekly" | "monthly" | "yearly";
 
+type EventCategory = "training" | "webinar" | "supplier_event";
+
+const CATEGORY_LABELS: Record<EventCategory, string> = {
+  training: "Training",
+  webinar: "Webinar",
+  supplier_event: "Supplier Event",
+};
+
 interface CalEvent {
   id: number;
   title: string;
@@ -42,6 +50,12 @@ interface CalEvent {
   recurrenceEndDate: Date | null;
   dueDate: Date | null;
   reminderSentAt: Date | null;
+  // Agent-facing fields
+  agentFacing: boolean | null;
+  eventUrl: string | null;
+  eventCategory: EventCategory | null;
+  duration: number | null;
+  registrationEnabled: boolean | null;
 }
 
 // A virtual occurrence of a recurring event (has a base event id + shifted dates)
@@ -159,6 +173,9 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
     event ? (event.allDay ? toLocalDateString(new Date(event.endDate)) : toLocalDateTimeString(new Date(event.endDate)))
           : toLocalDateString(today)
   );
+  const [startTime, setStartTime] = useState(
+    event && !event.allDay ? format(new Date(event.startDate), "HH:mm") : "09:00"
+  );
   const [assigneeId, setAssigneeId] = useState<number | null>(event?.assigneeId ?? null);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [recurrenceRule, setRecurrenceRule] = useState<RecurrenceRule>(event?.recurrenceRule ?? "none");
@@ -168,6 +185,12 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
   const [dueDate, setDueDate] = useState(
     event?.dueDate ? toLocalDateString(new Date(event.dueDate)) : ""
   );
+  // Agent-facing fields
+  const [agentFacing, setAgentFacing] = useState(event?.agentFacing ?? false);
+  const [eventUrl, setEventUrl] = useState(event?.eventUrl ?? "");
+  const [eventCategory, setEventCategory] = useState<EventCategory | "">(event?.eventCategory ?? "");
+  const [duration, setDuration] = useState<string>(String(event?.duration ?? 60));
+  const [registrationEnabled, setRegistrationEnabled] = useState(event?.registrationEnabled ?? false);
 
   const createMutation = trpc.calendar.create.useMutation({ onSuccess: () => { onSaved(); onClose(); } });
   const updateMutation = trpc.calendar.update.useMutation({ onSuccess: () => { onSaved(); onClose(); } });
@@ -176,22 +199,42 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
 
   function handleSubmit() {
     if (!title.trim()) return;
-    const start = allDay ? new Date(startDate + "T00:00:00") : new Date(startDate);
-    const end   = allDay ? new Date(endDate   + "T23:59:59") : new Date(endDate);
+    let start: Date;
+    let end: Date;
+    if (allDay) {
+      start = new Date(startDate + "T00:00:00");
+      end   = new Date(endDate   + "T23:59:59");
+    } else {
+      // Use startDate + startTime; end = start + duration
+      start = new Date(startDate + "T" + startTime + ":00");
+      const durationMins = parseInt(duration) || 60;
+      end = new Date(start.getTime() + durationMins * 60 * 1000);
+    }
     const recEnd = recurrenceRule !== "none" && recurrenceEndDate ? new Date(recurrenceEndDate + "T23:59:59") : null;
     const due = type === "task" && dueDate ? new Date(dueDate + "T23:59:59") : null;
+    const durationVal = agentFacing && !allDay ? (parseInt(duration) || 60) : null;
 
     if (event) {
       updateMutation.mutate({
         id: event.id, title, description: description || null, type,
         startDate: start, endDate: end, allDay, assigneeId,
         recurrenceRule, recurrenceEndDate: recEnd, dueDate: due,
+        agentFacing,
+        eventUrl: agentFacing && eventUrl ? eventUrl : null,
+        eventCategory: agentFacing && eventCategory ? eventCategory as EventCategory : null,
+        duration: durationVal,
+        registrationEnabled: agentFacing ? registrationEnabled : false,
       });
     } else {
       createMutation.mutate({
         title, description: description || undefined, type,
         startDate: start, endDate: end, allDay, assigneeId,
         recurrenceRule, recurrenceEndDate: recEnd, dueDate: due,
+        agentFacing,
+        eventUrl: agentFacing && eventUrl ? eventUrl : undefined,
+        eventCategory: agentFacing && eventCategory ? eventCategory as EventCategory : undefined,
+        duration: durationVal,
+        registrationEnabled: agentFacing ? registrationEnabled : false,
       });
     }
   }
@@ -231,16 +274,29 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
           </div>
 
           {/* Start / End */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Start {allDay ? "Date" : "Date & Time"}</Label>
-              <Input type={allDay ? "date" : "datetime-local"} value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1" />
+          {allDay ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Start Date</Label>
+                <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label>End Date</Label>
+                <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1" />
+              </div>
             </div>
-            <div>
-              <Label>End {allDay ? "Date" : "Date & Time"}</Label>
-              <Input type={allDay ? "date" : "datetime-local"} value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1" />
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Date</Label>
+                <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label>Start Time</Label>
+                <Input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="mt-1" />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Assignee */}
           {(type === "holiday" || type === "task") && (
@@ -305,11 +361,64 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
             )}
           </div>
 
+          {/* Duration (for timed events) */}
+          {!allDay && (
+            <div>
+              <Label className="flex items-center gap-1"><Clock size={13} /> Duration (minutes)</Label>
+              <Input
+                type="number" min={1} value={duration}
+                onChange={e => setDuration(e.target.value)}
+                className="mt-1 w-32"
+                placeholder="60"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Default: 60 minutes</p>
+            </div>
+          )}
+
           {/* Description */}
           <div>
             <Label>Description (optional)</Label>
             <Textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="mt-1" placeholder="Add details..." />
           </div>
+
+          {/* Agent-facing section */}
+          {type === "event" && (
+            <div className="border rounded-lg p-3 space-y-3 bg-[#70FFE8]/10">
+              <div className="flex items-center gap-3">
+                <Switch id="agentfacing" checked={!!agentFacing} onCheckedChange={setAgentFacing} />
+                <Label htmlFor="agentfacing" className="font-semibold">Visible to Agents</Label>
+              </div>
+              {agentFacing && (
+                <>
+                  <p className="text-xs text-muted-foreground">This event will appear on the agent community calendar and trigger a day-of email reminder to all agents.</p>
+                  <div>
+                    <Label>Category</Label>
+                    <Select value={eventCategory} onValueChange={v => setEventCategory(v as EventCategory | "")}>
+                      <SelectTrigger className="mt-1"><SelectValue placeholder="Select category" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="training">Training</SelectItem>
+                        <SelectItem value="webinar">Webinar</SelectItem>
+                        <SelectItem value="supplier_event">Supplier Event</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Join / Registration URL (optional)</Label>
+                    <Input
+                      value={eventUrl}
+                      onChange={e => setEventUrl(e.target.value)}
+                      className="mt-1"
+                      placeholder="https://zoom.us/j/..."
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Switch id="regenabled" checked={!!registrationEnabled} onCheckedChange={setRegistrationEnabled} />
+                    <Label htmlFor="regenabled">Enable RSVP (agents can mark attendance)</Label>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isLoading}>Cancel</Button>
@@ -335,13 +444,23 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
   const colors = TYPE_COLORS[event.type];
   const start = event.occurrenceStart;
   const end   = event.occurrenceEnd;
+  const { data: attendees } = trpc.calendar.attendees.useQuery(
+    { eventId: event.id },
+    { enabled: event.type === "event" && !!event.registrationEnabled }
+  );
   return (
-    <div className="p-4 space-y-3 min-w-[260px]">
+    <div className="p-4 space-y-3 min-w-[280px]">
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-semibold text-sm">{event.title}</p>
           <div className="flex items-center gap-1 mt-1 flex-wrap">
             <Badge className={`text-xs ${colors.badge}`}>{TYPE_LABELS[event.type]}</Badge>
+            {event.agentFacing && (
+              <Badge className="text-xs bg-[#02E6D2] text-[#414141]">Agent Visible</Badge>
+            )}
+            {event.eventCategory && (
+              <Badge variant="outline" className="text-xs">{CATEGORY_LABELS[event.eventCategory]}</Badge>
+            )}
             {event.isRecurring && (
               <Badge variant="outline" className="text-xs gap-1"><RefreshCw size={10} />{RECURRENCE_LABELS[event.recurrenceRule]}</Badge>
             )}
@@ -355,7 +474,7 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
             ? isSameDay(start, end)
               ? format(start, "d MMM yyyy")
               : `${format(start, "d MMM")} – ${format(end, "d MMM yyyy")}`
-            : `${format(start, "d MMM yyyy HH:mm")} – ${format(end, "HH:mm")}`
+            : `${format(start, "d MMM yyyy, HH:mm")}${event.duration ? ` (${event.duration} min)` : ""}`
           }
         </p>
         {event.assigneeName && (
@@ -366,7 +485,27 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
             <Clock size={12} /> Due: {format(new Date(event.dueDate), "d MMM yyyy")}
           </p>
         )}
+        {event.eventUrl && (
+          <p className="flex items-center gap-1">
+            <span className="text-[#02E6D2] font-medium">Join:</span>
+            <a href={event.eventUrl} target="_blank" rel="noopener noreferrer" className="underline truncate max-w-[200px]">{event.eventUrl}</a>
+          </p>
+        )}
         {event.description && <p className="text-foreground/80">{event.description}</p>}
+        {attendees && attendees.length > 0 && (
+          <div>
+            <p className="font-medium text-foreground/80 mb-1">RSVPs ({attendees.length}):</p>
+            <div className="flex flex-wrap gap-1">
+              {attendees.slice(0, 8).map(a => (
+                <Badge key={a.userId} variant="outline" className="text-xs">{a.name ?? a.email ?? `User ${a.userId}`}</Badge>
+              ))}
+              {attendees.length > 8 && <Badge variant="outline" className="text-xs">+{attendees.length - 8} more</Badge>}
+            </div>
+          </div>
+        )}
+        {event.registrationEnabled && (!attendees || attendees.length === 0) && (
+          <p className="italic">No RSVPs yet</p>
+        )}
       </div>
       <div className="flex gap-2 pt-1">
         <Button size="sm" variant="outline" onClick={onEdit} className="flex-1 gap-1"><Pencil size={12} />Edit</Button>

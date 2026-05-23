@@ -68,8 +68,8 @@ export function ComplianceLog({ postId, onClose }: ComplianceLogProps) {
                   {unconfirmed.map((r: any) => (
                     <div key={r.userId} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100">
                       <XCircle className="w-4 h-4 text-amber-500 shrink-0" />
-                      <span className="text-sm text-foreground flex-1">{r.agentName}</span>
-                      <span className="text-xs text-muted-foreground">{r.agentEmail}</span>
+                      <span className="text-sm text-foreground flex-1">{r.name}</span>
+                      <span className="text-xs text-muted-foreground">{r.email}</span>
                     </div>
                   ))}
                 </div>
@@ -84,7 +84,7 @@ export function ComplianceLog({ postId, onClose }: ComplianceLogProps) {
                   {confirmed.map((r: any) => (
                     <div key={r.userId} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-green-50 border border-green-100">
                       <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-                      <span className="text-sm text-foreground flex-1">{r.agentName}</span>
+                      <span className="text-sm text-foreground flex-1">{r.name}</span>
                       <span className="text-xs text-muted-foreground">
                         {r.confirmedAt
                           ? new Date(r.confirmedAt).toLocaleDateString("en-GB", {

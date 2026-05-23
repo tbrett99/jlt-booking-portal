@@ -701,6 +701,13 @@
       "when": 1779530761461,
       "tag": "0099_heavy_juggernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "5",
+      "when": 1779539022889,
+      "tag": "0100_milky_pet_avengers",
+      "breakpoints": true
     }
   ]
 }

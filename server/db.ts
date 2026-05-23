@@ -7,6 +7,7 @@ import {
   amendments,
   bookings,
   calendarEvents,
+  eventRegistrations,
   cancellations,
   commissionClaims,
   inAppNotifications,
@@ -1477,6 +1478,12 @@ export async function getCalendarEvents(from: Date, to: Date) {
       recurrenceEndDate: calendarEvents.recurrenceEndDate,
       dueDate: calendarEvents.dueDate,
       reminderSentAt: calendarEvents.reminderSentAt,
+      // Agent-facing fields
+      agentFacing: calendarEvents.agentFacing,
+      eventUrl: calendarEvents.eventUrl,
+      eventCategory: calendarEvents.eventCategory,
+      duration: calendarEvents.duration,
+      registrationEnabled: calendarEvents.registrationEnabled,
     })
     .from(calendarEvents)
     .leftJoin(users, eq(calendarEvents.assigneeId, users.id))
@@ -1515,6 +1522,12 @@ export async function createCalendarEvent(data: {
   recurrenceRule?: "none" | "daily" | "weekly" | "monthly" | "yearly";
   recurrenceEndDate?: Date | null;
   dueDate?: Date | null;
+  // Agent-facing fields
+  agentFacing?: boolean;
+  eventUrl?: string | null;
+  eventCategory?: "training" | "webinar" | "supplier_event" | null;
+  duration?: number | null;
+  registrationEnabled?: boolean;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -1530,7 +1543,12 @@ export async function createCalendarEvent(data: {
     recurrenceRule: data.recurrenceRule ?? "none",
     recurrenceEndDate: data.recurrenceEndDate ?? null,
     dueDate: data.dueDate ?? null,
-  });
+    agentFacing: data.agentFacing ?? false,
+    eventUrl: data.eventUrl ?? null,
+    eventCategory: data.eventCategory ?? null,
+    duration: data.duration ?? 60,
+    registrationEnabled: data.registrationEnabled ?? false,
+  } as any);
   return result;
 }
 
@@ -1547,6 +1565,12 @@ export async function updateCalendarEvent(
     recurrenceRule: "none" | "daily" | "weekly" | "monthly" | "yearly";
     recurrenceEndDate: Date | null;
     dueDate: Date | null;
+    // Agent-facing fields
+    agentFacing: boolean;
+    eventUrl: string | null;
+    eventCategory: "training" | "webinar" | "supplier_event" | null;
+    duration: number | null;
+    registrationEnabled: boolean;
   }>
 ) {
   const db = await getDb();
@@ -1593,6 +1617,192 @@ export async function deleteCalendarEvent(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.delete(calendarEvents).where(eq(calendarEvents.id, id));
+}
+
+// ─── Agent Calendar Events ───────────────────────────────────────────────────
+
+/** Return all agent-facing events in a date range, with registration counts. */
+export async function getAgentCalendarEvents(from: Date, to: Date, userId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: calendarEvents.id,
+      title: calendarEvents.title,
+      description: calendarEvents.description,
+      type: calendarEvents.type,
+      startDate: calendarEvents.startDate,
+      endDate: calendarEvents.endDate,
+      allDay: calendarEvents.allDay,
+      createdById: calendarEvents.createdById,
+      createdAt: calendarEvents.createdAt,
+      recurrenceRule: calendarEvents.recurrenceRule,
+      recurrenceEndDate: calendarEvents.recurrenceEndDate,
+      agentFacing: calendarEvents.agentFacing,
+      eventUrl: calendarEvents.eventUrl,
+      eventCategory: calendarEvents.eventCategory,
+      duration: calendarEvents.duration,
+      registrationEnabled: calendarEvents.registrationEnabled,
+    })
+    .from(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.agentFacing, true),
+        or(
+          and(
+            eq(calendarEvents.recurrenceRule, "none"),
+            lte(calendarEvents.startDate, to),
+            gte(calendarEvents.endDate, from)
+          ),
+          and(
+            not(eq(calendarEvents.recurrenceRule, "none")),
+            lte(calendarEvents.startDate, to),
+            or(
+              sql`${calendarEvents.recurrenceEndDate} IS NULL`,
+              gte(calendarEvents.recurrenceEndDate, from)
+            )
+          )
+        )
+      )
+    )
+    .orderBy(calendarEvents.startDate);
+
+  // Enrich with registration counts and isRegistered flag
+  const enriched = await Promise.all(
+    rows.map(async (ev) => {
+      const [countRow] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(eventRegistrations)
+        .where(eq(eventRegistrations.eventId, ev.id));
+      const registrationCount = Number(countRow?.count ?? 0);
+
+      let isRegistered = false;
+      if (userId) {
+        const [reg] = await db
+          .select({ id: eventRegistrations.id })
+          .from(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.eventId, ev.id),
+              eq(eventRegistrations.userId, userId)
+            )
+          );
+        isRegistered = !!reg;
+      }
+      return { ...ev, registrationCount, isRegistered };
+    })
+  );
+  return enriched;
+}
+
+/** Register a user for an agent-facing event. Idempotent. */
+export async function registerForEvent(eventId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  // Check already registered
+  const [existing] = await db
+    .select({ id: eventRegistrations.id })
+    .from(eventRegistrations)
+    .where(and(eq(eventRegistrations.eventId, eventId), eq(eventRegistrations.userId, userId)));
+  if (existing) return { alreadyRegistered: true };
+  await db.insert(eventRegistrations).values({ eventId, userId });
+  return { alreadyRegistered: false };
+}
+
+/** Unregister a user from an agent-facing event. */
+export async function unregisterFromEvent(eventId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .delete(eventRegistrations)
+    .where(and(eq(eventRegistrations.eventId, eventId), eq(eventRegistrations.userId, userId)));
+}
+
+/** Get the full attendee list for an event (admin-only). */
+export async function getEventAttendees(eventId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      userId: eventRegistrations.userId,
+      registeredAt: eventRegistrations.registeredAt,
+      name: users.name,
+      email: users.email,
+    })
+    .from(eventRegistrations)
+    .leftJoin(users, eq(eventRegistrations.userId, users.id))
+    .where(eq(eventRegistrations.eventId, eventId))
+    .orderBy(eventRegistrations.registeredAt);
+}
+
+/** Return agent-facing events happening today (for day-of reminder job). */
+export async function getAgentEventsTodayForReminder() {
+  const db = await getDb();
+  if (!db) return [];
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+  return db
+    .select({
+      id: calendarEvents.id,
+      title: calendarEvents.title,
+      description: calendarEvents.description,
+      startDate: calendarEvents.startDate,
+      endDate: calendarEvents.endDate,
+      allDay: calendarEvents.allDay,
+      eventUrl: calendarEvents.eventUrl,
+      eventCategory: calendarEvents.eventCategory,
+      duration: calendarEvents.duration,
+      agentReminderSentAt: calendarEvents.agentReminderSentAt,
+    })
+    .from(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.agentFacing, true),
+        gte(calendarEvents.startDate, todayStart),
+        lte(calendarEvents.startDate, todayEnd),
+        sql`${calendarEvents.agentReminderSentAt} IS NULL`
+      )
+    );
+}
+
+/** Mark the day-of agent reminder as sent for an event. */
+export async function markAgentEventReminderSent(eventId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(calendarEvents)
+    .set({ agentReminderSentAt: new Date() })
+    .where(eq(calendarEvents.id, eventId));
+}
+
+/** Return upcoming agent-facing events in the next N days (for digest). */
+export async function getUpcomingAgentEvents(days = 14) {
+  const db = await getDb();
+  if (!db) return [];
+  const now = new Date();
+  const future = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  return db
+    .select({
+      id: calendarEvents.id,
+      title: calendarEvents.title,
+      startDate: calendarEvents.startDate,
+      endDate: calendarEvents.endDate,
+      eventUrl: calendarEvents.eventUrl,
+      eventCategory: calendarEvents.eventCategory,
+      duration: calendarEvents.duration,
+      description: calendarEvents.description,
+    })
+    .from(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.agentFacing, true),
+        gte(calendarEvents.startDate, now),
+        lte(calendarEvents.startDate, future)
+      )
+    )
+    .orderBy(calendarEvents.startDate);
 }
 
 // ─── Delete Reimbursement Doc ─────────────────────────────────────────────────

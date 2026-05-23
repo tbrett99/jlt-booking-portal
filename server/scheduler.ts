@@ -579,7 +579,48 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), DB backup (every 4h), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC) — inbox auto-import DISABLED");
+  // Agent event day-of reminders: runs at 07:00 UTC daily
+  // Sends an email to ALL active agents for any agent-facing events happening today.
+  cron.schedule("0 7 * * *", async () => {
+    try {
+      const { getAgentEventsTodayForReminder, markAgentEventReminderSent } = await import("./db");
+      const { sendDirectEmail } = await import("./email");
+      const db = await import("./db").then((m) => m.getDb());
+      if (!db) return;
+      const { users: usersTable } = await import("../drizzle/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const events = await getAgentEventsTodayForReminder();
+      if (events.length === 0) return;
+      const agents = await db
+        .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email })
+        .from(usersTable)
+        .where(and(eq(usersTable.role, "agent"), eq(usersTable.isActive, true)));
+      let sent = 0;
+      for (const ev of events) {
+        const timeStr = ev.allDay
+          ? "All day"
+          : new Date(ev.startDate).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
+        const durationStr = ev.duration ? ` (${ev.duration} min)` : "";
+        const urlLine = ev.eventUrl
+          ? `<p style="margin:8px 0;"><strong>Join link:</strong> <a href="${ev.eventUrl}" style="color:#02E6D2;">${ev.eventUrl}</a></p>`
+          : "";
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head><body style="margin:0;padding:0;background:#f5f5f5;font-family:'Poppins',Arial,sans-serif;"><div style="max-width:600px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><div style="background:#70FFE8;padding:24px 40px;text-align:center;"><span style="font-size:22px;font-weight:700;color:#414141;">JLT Group</span></div><div style="padding:32px 40px;color:#414141;font-size:15px;line-height:1.7;"><p>Hi there,</p><p>This is a reminder that <strong>${ev.title}</strong> is happening today.</p><p><strong>Time:</strong> ${timeStr}${durationStr}</p>${ev.description ? `<p>${ev.description}</p>` : ""}${urlLine}<p style="text-align:center;margin:28px 0;"><a href="${process.env.PORTAL_BASE_URL ?? 'https://portal.thejltgroup.co.uk'}/events" style="background:#70FFE8;color:#414141;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">View Events Calendar</a></p></div><div style="padding:20px 40px;text-align:center;background:#fafafa;font-size:12px;color:#888;">&copy; ${new Date().getFullYear()} JLT Group. All rights reserved.</div></div></body></html>`;
+        for (const agent of agents) {
+          if (!agent.email) continue;
+          try {
+            await sendDirectEmail({ toEmail: agent.email, toName: agent.name ?? "Agent", subject: `Today: ${ev.title}`, html });
+            sent++;
+          } catch { /* continue */ }
+        }
+        await markAgentEventReminderSent(ev.id);
+      }
+      if (sent > 0) console.log(`[AgentEventReminder] Sent ${sent} reminder email(s) for ${events.length} event(s)`);
+    } catch (err: any) {
+      console.error("[AgentEventReminder] Error:", err?.message);
+    }
+  }, { timezone: "UTC" });
+
+  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), DB backup (every 4h), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC) — inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────

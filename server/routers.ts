@@ -93,6 +93,13 @@ import {
   getTasksDueForReminder,
   markCalendarReminderSent,
   deleteCalendarEvent,
+  getAgentCalendarEvents,
+  registerForEvent,
+  unregisterFromEvent,
+  getEventAttendees,
+  getAgentEventsTodayForReminder,
+  markAgentEventReminderSent,
+  getUpcomingAgentEvents,
   createReimbursementItems,
   getReimbursementsByBooking,
   getReimbursementsAdmin,
@@ -3073,10 +3080,47 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           recurrenceRule: z.enum(["none", "daily", "weekly", "monthly", "yearly"]).default("none"),
           recurrenceEndDate: z.date().nullable().optional(),
           dueDate: z.date().nullable().optional(),
+          // Agent-facing fields
+          agentFacing: z.boolean().default(false).optional(),
+          eventUrl: z.string().url().nullable().optional(),
+          eventCategory: z.enum(["training", "webinar", "supplier_event"]).nullable().optional(),
+          duration: z.number().int().min(1).nullable().optional(),
+          registrationEnabled: z.boolean().default(false).optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
-        return createCalendarEvent({ ...input, createdById: ctx.user.id });
+        const event = await createCalendarEvent({ ...input, createdById: ctx.user.id });
+        // Auto-create a community post when the event is agent-facing
+        if (input.agentFacing && input.type === "event") {
+          try {
+            const { createCommunityPost } = await import("./community-db");
+            const categoryMap: Record<string, string> = {
+              training: "training_webinars",
+              webinar: "training_webinars",
+              supplier_event: "events",
+            };
+            const communityCategory = input.eventCategory ? (categoryMap[input.eventCategory] ?? "events") : "events";
+            const dateStr = input.allDay
+              ? new Date(input.startDate).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+              : new Date(input.startDate).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
+            const durationStr = input.duration ? ` (${input.duration} min)` : "";
+            const urlLine = input.eventUrl ? `\n\n<a href="${input.eventUrl}">Join / Register here</a>` : "";
+            const bodyHtml = `<p><strong>${input.title}</strong></p><p>📅 ${dateStr}${durationStr}</p>${input.description ? `<p>${input.description}</p>` : ""}${urlLine}`;
+            await createCommunityPost({
+              authorId: ctx.user.id,
+              authorName: ctx.user.name ?? "JLT Group",
+              category: communityCategory as any,
+              title: input.title,
+              bodyHtml,
+              imageUrls: [],
+              isPinned: false,
+              requiresConfirmation: false,
+            });
+          } catch (e: any) {
+            console.error("[Calendar] Failed to auto-create community post:", e?.message);
+          }
+        }
+        return event;
       }),
 
     update: adminProcedure
@@ -3093,6 +3137,12 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           recurrenceRule: z.enum(["none", "daily", "weekly", "monthly", "yearly"]).optional(),
           recurrenceEndDate: z.date().nullable().optional(),
           dueDate: z.date().nullable().optional(),
+          // Agent-facing fields
+          agentFacing: z.boolean().optional(),
+          eventUrl: z.string().url().nullable().optional(),
+          eventCategory: z.enum(["training", "webinar", "supplier_event"]).nullable().optional(),
+          duration: z.number().int().min(1).nullable().optional(),
+          registrationEnabled: z.boolean().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -3125,6 +3175,131 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           await markCalendarReminderSent(task.id);
           sent++;
         }
+      }
+      return { sent };
+    }),
+
+    // ─── Agent-facing event procedures ───────────────────────────────────────
+
+    // Agent: list agent-facing events in a date range
+    listAgentEvents: protectedProcedure
+      .input(z.object({ from: z.date(), to: z.date() }))
+      .query(async ({ input, ctx }) => {
+        return getAgentCalendarEvents(input.from, input.to, ctx.user.id);
+      }),
+
+    // Agent: RSVP to an event
+    register: protectedProcedure
+      .input(z.object({ eventId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        return registerForEvent(input.eventId, ctx.user.id);
+      }),
+
+    // Agent: cancel RSVP
+    unregister: protectedProcedure
+      .input(z.object({ eventId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await unregisterFromEvent(input.eventId, ctx.user.id);
+        return { success: true };
+      }),
+
+    // Admin: get full attendee list for an event
+    attendees: adminProcedure
+      .input(z.object({ eventId: z.number() }))
+      .query(async ({ input }) => {
+        return getEventAttendees(input.eventId);
+      }),
+
+    // Any authenticated user: generate .ics content for an event
+    generateIcs: protectedProcedure
+      .input(z.object({ eventId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await import("./db").then((m) => m.getDb());
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { calendarEvents: ce } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const [ev] = await db.select().from(ce).where(eq(ce.id, input.eventId));
+        if (!ev) throw new TRPCError({ code: "NOT_FOUND" });
+
+        const dtFormat = (d: Date) =>
+          d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+
+        const start = new Date(ev.startDate);
+        const end = ev.duration
+          ? new Date(start.getTime() + ev.duration * 60 * 1000)
+          : new Date(ev.endDate);
+
+        const uid = `event-${ev.id}@thejltgroup.co.uk`;
+        const location = ev.eventUrl ?? "";
+        const description = [
+          ev.description ?? "",
+          ev.eventUrl ? `Join: ${ev.eventUrl}` : "",
+        ].filter(Boolean).join("\n");
+
+        const ics = [
+          "BEGIN:VCALENDAR",
+          "VERSION:2.0",
+          "PRODID:-//JLT Group//Agent Portal//EN",
+          "CALSCALE:GREGORIAN",
+          "METHOD:PUBLISH",
+          "BEGIN:VEVENT",
+          `UID:${uid}`,
+          `DTSTAMP:${dtFormat(new Date())}Z`,
+          `DTSTART:${dtFormat(start)}Z`,
+          `DTEND:${dtFormat(end)}Z`,
+          `SUMMARY:${ev.title}`,
+          description ? `DESCRIPTION:${description.replace(/\n/g, "\\n")}` : "",
+          location ? `LOCATION:${location}` : "",
+          "END:VEVENT",
+          "END:VCALENDAR",
+        ].filter(Boolean).join("\r\n");
+
+        return { ics, filename: `${ev.title.replace(/[^a-z0-9]/gi, "_")}.ics` };
+      }),
+
+    // Admin: send day-of reminders for today's agent events (also called by scheduler)
+    sendAgentEventReminders: adminProcedure.mutation(async () => {
+      const events = await getAgentEventsTodayForReminder();
+      const db = await import("./db").then((m) => m.getDb());
+      if (!db) return { sent: 0 };
+      const { users: usersTable } = await import("../drizzle/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const agents = await db
+        .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email })
+        .from(usersTable)
+        .where(and(eq(usersTable.role, "agent"), eq(usersTable.isActive, true)));
+
+      let sent = 0;
+      for (const ev of events) {
+        const timeStr = new Date(ev.startDate).toLocaleTimeString("en-GB", {
+          hour: "2-digit", minute: "2-digit", timeZone: "Europe/London",
+        });
+        const durationStr = ev.duration ? ` (${ev.duration} min)` : "";
+        const urlLine = ev.eventUrl
+          ? `<p><strong>Join link:</strong> <a href="${ev.eventUrl}">${ev.eventUrl}</a></p>`
+          : "";
+        const html = `
+          <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;">
+            <h2 style="color:#414141;">Reminder: ${ev.title} is today</h2>
+            <p><strong>Time:</strong> ${timeStr}${durationStr}</p>
+            ${ev.description ? `<p>${ev.description}</p>` : ""}
+            ${urlLine}
+            <p style="color:#6b7280;font-size:12px;margin-top:24px;">JLT Group Agent Portal</p>
+          </div>
+        `;
+        for (const agent of agents) {
+          if (!agent.email) continue;
+          try {
+            await sendDirectEmail({
+              toEmail: agent.email,
+              toName: agent.name ?? "Agent",
+              subject: `Today: ${ev.title}`,
+              html,
+            });
+            sent++;
+          } catch { /* continue */ }
+        }
+        await markAgentEventReminderSent(ev.id);
       }
       return { sent };
     }),

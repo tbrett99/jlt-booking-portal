@@ -273,6 +273,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: false,
       items: [
         { label: "Community Hub", href: "/community", icon: <Newspaper size={16} /> },
+        { label: "Events Calendar", href: "/events", icon: <CalendarDays size={16} /> },
       ],
     },
     {
@@ -406,6 +407,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: false,
       items: [
         { label: "Community Hub", href: "/community", icon: <Newspaper size={16} /> },
+        { label: "Events Calendar", href: "/events", icon: <CalendarDays size={16} /> },
         { label: "Weekly Digest", href: "/admin/weekly-digest", icon: <Mail size={16} /> },
       ],
     },

@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `event_registrations` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`eventId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`registeredAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `event_registrations_id` PRIMARY KEY(`id`)\n);\nALTER TABLE `calendar_events` ADD `agentFacing` boolean DEFAULT false NOT NULL;\nALTER TABLE `calendar_events` ADD `eventUrl` varchar(500);\nALTER TABLE `calendar_events` ADD `eventCategory` enum('training','webinar','supplier_event');\nALTER TABLE `calendar_events` ADD `duration` int DEFAULT 60;\nALTER TABLE `calendar_events` ADD `registrationEnabled` boolean DEFAULT false NOT NULL;\nALTER TABLE `calendar_events` ADD `agentReminderSentAt` timestamp;\nALTER TABLE `calendar_events` ADD `communityPostId` int;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute CREATE TABLE `event_registrations` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`eventId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`registeredAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `event_registrations_id` PRIMARY KEY(`id`)\n);\nALTER TABLE `calendar_events` ADD `agentFacing` boolean DEFAULT false NOT NULL;\nALTER TABLE `calendar_events` ADD `eventUrl` varchar(500);\nALTER TABLE `calendar_events` ADD `eventCategory` enum('training','webinar','supplier_event');\nALTER TABLE `calendar_events` ADD `duration` int DEFAULT 60;\nALTER TABLE `calendar_events` ADD `registrationEnabled` boolean DEFAULT false NOT NULL;\nALTER TABLE `calendar_events` ADD `agentReminderSentAt` timestamp;\nALTER TABLE `calendar_events` ADD `communityPostId` int;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 2512
+}

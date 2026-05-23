@@ -341,12 +341,30 @@ export const calendarEvents = mysqlTable("calendar_events", {
   // Task-specific
   dueDate: timestamp("dueDate"), // for tasks: the due date
   reminderSentAt: timestamp("reminderSentAt"), // set when reminder notification was sent
+  // Agent-facing event fields
+  agentFacing: boolean("agentFacing").default(false).notNull(),
+  eventUrl: varchar("eventUrl", { length: 500 }), // Zoom/Teams/Meet link
+  eventCategory: mysqlEnum("eventCategory", ["training", "webinar", "supplier_event"]),
+  duration: int("duration").default(60), // duration in minutes
+  registrationEnabled: boolean("registrationEnabled").default(false).notNull(),
+  agentReminderSentAt: timestamp("agentReminderSentAt"), // set when day-of agent reminder was sent
+  communityPostId: int("communityPostId"), // FK → community_posts.id (auto-created post)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type CalendarEvent = typeof calendarEvents.$inferSelect;
 export type InsertCalendarEvent = typeof calendarEvents.$inferInsert;
+
+// ─── Event Registrations ─────────────────────────────────────────────────────
+export const eventRegistrations = mysqlTable("event_registrations", {
+  id: int("id").autoincrement().primaryKey(),
+  eventId: int("eventId").notNull(), // FK → calendar_events.id
+  userId: int("userId").notNull(),   // FK → users.id
+  registeredAt: timestamp("registeredAt").defaultNow().notNull(),
+});
+export type EventRegistration = typeof eventRegistrations.$inferSelect;
+export type InsertEventRegistration = typeof eventRegistrations.$inferInsert;
 
 // ─── Reimbursement Items ─────────────────────────────────────────────────────
 export const reimbursementItems = mysqlTable("reimbursement_items", {
