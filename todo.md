@@ -2422,3 +2422,8 @@
 - [x] Add toggleOrbitAccess admin mutation in crm-router.ts
 - [x] Add Orbit toggle switch to AgentCrmSheet (visible at top of every agent's CRM sheet)
 - [x] Conditionally show Open Orbit button in sidebar — admins always see it; agents only if orbitEnabled = true
+
+## Database Backup (S3)
+- [x] Implement db-backup.ts: full SQL dump → gzip → S3 upload with 30-day retention pruning
+- [x] Mount /api/scheduled/db-backup endpoint in _core/index.ts
+- [ ] Register 4-hourly Heartbeat cron via CLI (requires checkpoint + deploy first)

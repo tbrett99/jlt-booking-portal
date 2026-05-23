@@ -1,0 +1,18 @@
+{
+  "query": "\nSELECT stage, COUNT(*) as count FROM prospects GROUP BY stage ORDER BY count DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT stage, COUNT(*) as count FROM prospects GROUP BY stage ORDER BY count DESC;\n",
+  "rows": [
+    {
+      "stage": "New Enquiry",
+      "count": "10"
+    },
+    {
+      "stage": "AR Submitted",
+      "count": "3"
+    }
+  ],
+  "messages": [],
+  "stdout": "stage\tcount\nNew Enquiry\t10\nAR Submitted\t3\n",
+  "stderr": "",
+  "execution_time_ms": 277
+}

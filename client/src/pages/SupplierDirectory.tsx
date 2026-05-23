@@ -162,8 +162,7 @@ function cleanSupplierHtml(raw: string): string {
   return raw
     // Remove HTML comments (WordPress block comments like <!-- wp:paragraph -->)
     .replace(/<!--[\s\S]*?-->/g, "")
-    // Fix CSV separator artifact: HTML fragments joined with "; " — strip all "; " between tags
-    .replace(/>\s*;\s*</g, "><")
+    // Fix CSV separator artifact: "; <" should just be "<"
     .replace(/;\s*(<\/?)/g, "$1")
     // Remove WordPress block wrapper divs but keep their content
     .replace(/<div[^>]*class="[^"]*wp-block[^"]*"[^>]*>/gi, "")
@@ -304,7 +303,7 @@ function SupplierModal({
   if (isLoading) {
     return (
       <Dialog open onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <div className="space-y-4">
             <Skeleton className="h-8 w-3/4" />
             <Skeleton className="h-32 w-full" />
@@ -325,7 +324,7 @@ function SupplierModal({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-start gap-4">
             {supplier.imageUrl && (
@@ -358,7 +357,7 @@ function SupplierModal({
           </div>
         </DialogHeader>
 
-        <div className="space-y-5 mt-2 min-w-0 w-full overflow-hidden">
+        <div className="space-y-5 mt-2">
           {/* AI Summary */}
           {supplier.aiSummary && (
             <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
@@ -389,7 +388,7 @@ function SupplierModal({
             <div className="space-y-2">
               <h4 className="text-sm font-semibold">About</h4>
               <div
-                className="supplier-description text-sm text-muted-foreground w-full max-w-full"
+                className="supplier-description text-sm text-muted-foreground prose prose-sm max-w-none"
                 dangerouslySetInnerHTML={{ __html: cleanSupplierHtml(supplier.description) }}
               />
             </div>

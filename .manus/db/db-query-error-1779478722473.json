@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT p.id, p.name, p.email, p.status, p.createdAt,\n       i.id as invite_id, i.token, i.email as invite_email, i.createdAt as invite_created, i.expiresAt, i.usedAt\nFROM prospects p\nLEFT JOIN agent_invites i ON i.email = p.email\nWHERE p.email = 'lulusharris@yahoo.com'\nORDER BY i.createdAt DESC\nLIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT p.id, p.name, p.email, p.status, p.createdAt,\n       i.id as invite_id, i.token, i.email as invite_email, i.createdAt as invite_created, i.expiresAt, i.usedAt\nFROM prospects p\nLEFT JOIN agent_invites i ON i.email = p.email\nWHERE p.email = 'lulusharris@yahoo.com'\nORDER BY i.createdAt DESC\nLIMIT 5;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1146 (42S02) at line 2: Table 'pdcdvqrp8zc2fzsywbwptw.agent_invites' doesn't exist"
+  ]
+}

@@ -1,0 +1,194 @@
+{
+  "query": "\nSHOW COLUMNS FROM join_sessions;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSHOW COLUMNS FROM join_sessions;\n",
+  "rows": [
+    {
+      "Field": "id",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "PRI",
+      "Default": "NULL",
+      "Extra": "auto_increment"
+    },
+    {
+      "Field": "sessionToken",
+      "Type": "varchar(128)",
+      "Null": "NO",
+      "Key": "UNI",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "email",
+      "Type": "varchar(320)",
+      "Null": "NO",
+      "Key": "MUL",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "membershipTier",
+      "Type": "varchar(50)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "membershipType",
+      "Type": "varchar(20)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "step",
+      "Type": "varchar(30)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "plan",
+      "Extra": ""
+    },
+    {
+      "Field": "contractSignedAt",
+      "Type": "timestamp",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "signatureDataUrl",
+      "Type": "mediumtext",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "signerName",
+      "Type": "varchar(255)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "signerAddress",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "billingRequestId",
+      "Type": "varchar(100)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "billingRequestFlowUrl",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "joiningFeePaidAt",
+      "Type": "timestamp",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "mandateId",
+      "Type": "varchar(100)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "userId",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "MUL",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "ipAddress",
+      "Type": "varchar(64)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "createdAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": ""
+    },
+    {
+      "Field": "updatedAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP"
+    },
+    {
+      "Field": "expiresAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "signingUserAgent",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "consentConfirmed",
+      "Type": "tinyint(1)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "contractTextSnapshot",
+      "Type": "longtext",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "contractHash",
+      "Type": "varchar(128)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nid\tint\tNO\tPRI\tNULL\tauto_increment\nsessionToken\tvarchar(128)\tNO\tUNI\tNULL\t\nemail\tvarchar(320)\tNO\tMUL\tNULL\t\nmembershipTier\tvarchar(50)\tYES\t\tNULL\t\nmembershipType\tvarchar(20)\tYES\t\tNULL\t\nstep\tvarchar(30)\tNO\t\tplan\t\ncontractSignedAt\ttimestamp\tYES\t\tNULL\t\nsignatureDataUrl\tmediumtext\tYES\t\tNULL\t\nsignerName\tvarchar(255)\tYES\t\tNULL\t\nsignerAddress\ttext\tYES\t\tNULL\t\nbillingRequestId\tvarchar(100)\tYES\t\tNULL\t\nbillingRequestFlowUrl\ttext\tYES\t\tNULL\t\njoiningFeePaidAt\ttimestamp\tYES\t\tNULL\t\nmandateId\tvarchar(100)\tYES\t\tNULL\t\nuserId\tint\tYES\tMUL\tNULL\t\nipAddress\tvarchar(64)\tYES\t\tNULL\t\ncreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\t\nupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\tDEFAULT_GENERATED on update CURRENT_TIMESTAMP\nexpiresAt\ttimestamp\tNO\t\tNULL\t\nsigningUserAgent\ttext\tYES\t\tNULL\t\nconsentConfirmed\ttinyint(1)\tYES\t\t0\t\ncontractTextSnapshot\tlongtext\tYES\t\tNULL\t\ncontractHash\tvarchar(128)\tYES\t\tNULL\t\n",
+  "stderr": "",
+  "execution_time_ms": 265
+}

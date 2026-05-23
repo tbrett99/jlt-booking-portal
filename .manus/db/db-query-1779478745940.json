@@ -1,0 +1,13 @@
+{
+  "query": "\nSHOW TABLES LIKE '%join%';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSHOW TABLES LIKE '%join%';\n",
+  "rows": [
+    {
+      "Tables_in_PdcDVQRp8zC2FzsyWBWptW (%join%)": "join_sessions"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_PdcDVQRp8zC2FzsyWBWptW (%join%)\njoin_sessions\n",
+  "stderr": "",
+  "execution_time_ms": 254
+}

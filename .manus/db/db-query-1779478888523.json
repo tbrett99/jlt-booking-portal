@@ -1,0 +1,120 @@
+{
+  "query": "\nSELECT id, email, step, membershipTier, membershipType, contractSignedAt, joiningFeePaidAt, expiresAt, createdAt \nFROM join_sessions \nORDER BY createdAt DESC \nLIMIT 10;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, email, step, membershipTier, membershipType, contractSignedAt, joiningFeePaidAt, expiresAt, createdAt \nFROM join_sessions \nORDER BY createdAt DESC \nLIMIT 10;\n",
+  "rows": [
+    {
+      "id": "570001",
+      "email": "lynniecampbell16@gmail.com",
+      "step": "complete",
+      "membershipTier": "business_class",
+      "membershipType": "solo",
+      "contractSignedAt": "2026-05-22 18:46:25",
+      "joiningFeePaidAt": "2026-05-22 18:56:27",
+      "expiresAt": "2026-05-23 18:44:55",
+      "createdAt": "2026-05-22 18:44:54"
+    },
+    {
+      "id": "540001",
+      "email": "jasminephilogene91@gmail.com",
+      "step": "contract",
+      "membershipTier": "business_class",
+      "membershipType": "solo",
+      "contractSignedAt": "NULL",
+      "joiningFeePaidAt": "NULL",
+      "expiresAt": "2026-05-22 17:34:13",
+      "createdAt": "2026-05-21 17:34:12"
+    },
+    {
+      "id": "510001",
+      "email": "jasminephilogene91@gmail.com",
+      "step": "complete",
+      "membershipTier": "business_class",
+      "membershipType": "solo",
+      "contractSignedAt": "2026-05-21 11:37:30",
+      "joiningFeePaidAt": "2026-05-21 11:42:22",
+      "expiresAt": "2026-05-22 11:30:41",
+      "createdAt": "2026-05-21 11:30:40"
+    },
+    {
+      "id": "480002",
+      "email": "neil8935@gmail.com",
+      "step": "contract",
+      "membershipTier": "business_class",
+      "membershipType": "duo",
+      "contractSignedAt": "NULL",
+      "joiningFeePaidAt": "NULL",
+      "expiresAt": "2026-05-21 18:54:52",
+      "createdAt": "2026-05-20 18:54:51"
+    },
+    {
+      "id": "480001",
+      "email": "millieandoliver@yahoo.co.uk",
+      "step": "complete",
+      "membershipTier": "business_class",
+      "membershipType": "solo",
+      "contractSignedAt": "2026-05-21 07:43:47",
+      "joiningFeePaidAt": "2026-05-21 20:49:50",
+      "expiresAt": "2026-05-21 18:54:44",
+      "createdAt": "2026-05-20 18:54:44"
+    },
+    {
+      "id": "450001",
+      "email": "joemowgli3a@gmail.com",
+      "step": "complete",
+      "membershipTier": "business_class",
+      "membershipType": "solo",
+      "contractSignedAt": "2026-05-19 18:53:50",
+      "joiningFeePaidAt": "2026-05-19 18:55:29",
+      "expiresAt": "2026-05-20 18:41:55",
+      "createdAt": "2026-05-19 18:41:54"
+    },
+    {
+      "id": "420001",
+      "email": "myhomeglobe@gmail.com",
+      "step": "complete",
+      "membershipTier": "business_class",
+      "membershipType": "solo",
+      "contractSignedAt": "2026-05-19 10:19:37",
+      "joiningFeePaidAt": "2026-05-19 10:23:18",
+      "expiresAt": "2026-05-20 09:58:03",
+      "createdAt": "2026-05-19 09:58:03"
+    },
+    {
+      "id": "390001",
+      "email": "clareangus@live.com",
+      "step": "complete",
+      "membershipTier": "business_class",
+      "membershipType": "solo",
+      "contractSignedAt": "2026-05-18 08:22:02",
+      "joiningFeePaidAt": "2026-05-18 08:23:48",
+      "expiresAt": "2026-05-19 08:20:11",
+      "createdAt": "2026-05-18 08:20:11"
+    },
+    {
+      "id": "360001",
+      "email": "tazpritchard@gmail.com",
+      "step": "contract",
+      "membershipTier": "business_class",
+      "membershipType": "solo",
+      "contractSignedAt": "NULL",
+      "joiningFeePaidAt": "NULL",
+      "expiresAt": "2026-05-18 22:18:53",
+      "createdAt": "2026-05-17 22:18:53"
+    },
+    {
+      "id": "330001",
+      "email": "anaughton02@gmail.com",
+      "step": "complete",
+      "membershipTier": "business_class",
+      "membershipType": "solo",
+      "contractSignedAt": "2026-05-16 12:38:15",
+      "joiningFeePaidAt": "2026-05-16 14:17:32",
+      "expiresAt": "2026-05-17 11:58:24",
+      "createdAt": "2026-05-16 11:58:23"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\tstep\tmembershipTier\tmembershipType\tcontractSignedAt\tjoiningFeePaidAt\texpiresAt\tcreatedAt\n570001\tlynniecampbell16@gmail.com\tcomplete\tbusiness_class\tsolo\t2026-05-22 18:46:25\t2026-05-22 18:56:27\t2026-05-23 18:44:55\t2026-05-22 18:44:54\n540001\tjasminephilogene91@gmail.com\tcontract\tbusiness_class\tsolo\tNULL\tNULL\t2026-05-22 17:34:13\t2026-05-21 17:34:12\n510001\tjasminephilogene91@gmail.com\tcomplete\tbusiness_class\tsolo\t2026-05-21 11:37:30\t2026-05-21 11:42:22\t2026-05-22 11:30:41\t2026-05-21 11:30:40\n480002\tneil8935@gmail.com\tcontract\tbusiness_class\tduo\tNULL\tNULL\t2026-05-21 18:54:52\t2026-05-20 18:54:51\n480001\tmillieandoliver@yahoo.co.uk\tcomplete\tbusiness_class\tsolo\t2026-05-21 07:43:47\t2026-05-21 20:49:50\t2026-05-21 18:54:44\t2026-05-20 18:54:44\n450001\tjoemowgli3a@gmail.com\tcomplete\tbusiness_class\tsolo\t2026-05-19 18:53:50\t2026-05-19 18:55:29\t2026-05-20 18:41:55\t2026-05-19 18:41:54\n420001\tmyhomeglobe@gmail.com\tcomplete\tbusiness_class\tsolo\t2026-05-19 10:19:37\t2026-05-19 10:23:18\t2026-05-20 09:58:03\t2026-05-19 09:58:03\n390001\tclareangus@live.com\tcomplete\tbusiness_class\tsolo\t2026-05-18 08:22:02\t2026-05-18 08:23:48\t2026-05-19 08:20:11\t2026-05-18 08:20:11\n360001\ttazpritchard@gmail.com\tcontract\tbusiness_class\tsolo\tNULL\tNULL\t2026-05-18 22:18:53\t2026-05-17 22:18:53\n330001\tanaughton02@gmail.com\tcomplete\tbusiness_class\tsolo\t2026-05-16 12:38:15\t2026-05-16 14:17:32\t2026-05-17 11:58:24\t2026-05-16 11:58:23\n",
+  "stderr": "",
+  "execution_time_ms": 276
+}

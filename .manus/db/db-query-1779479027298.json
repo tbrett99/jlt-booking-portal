@@ -1,0 +1,37 @@
+{
+  "query": "\nSELECT p.id, p.userId, p.jltEmail, p.personalEmail, p.uniqueAgentId, p.membershipTier, p.agentStatus\nFROM agent_crm_profiles p\nWHERE p.jltEmail LIKE '%lulu%' OR p.personalEmail LIKE '%lulu%' \n   OR p.jltEmail LIKE '%harris%' OR p.personalEmail LIKE '%harris%';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT p.id, p.userId, p.jltEmail, p.personalEmail, p.uniqueAgentId, p.membershipTier, p.agentStatus\nFROM agent_crm_profiles p\nWHERE p.jltEmail LIKE '%lulu%' OR p.personalEmail LIKE '%lulu%' \n   OR p.jltEmail LIKE '%harris%' OR p.personalEmail LIKE '%harris%';\n",
+  "rows": [
+    {
+      "id": "67",
+      "userId": "60540",
+      "jltEmail": "NULL",
+      "personalEmail": "charli.harrison@hotmail.com",
+      "uniqueAgentId": "JLT-0067",
+      "membershipTier": "Business Class",
+      "agentStatus": "active"
+    },
+    {
+      "id": "133",
+      "userId": "60566",
+      "jltEmail": "NULL",
+      "personalEmail": "info@fayeharrisontravel.com",
+      "uniqueAgentId": "JLT-0133",
+      "membershipTier": "NULL",
+      "agentStatus": "cancelled"
+    },
+    {
+      "id": "227",
+      "userId": "180240",
+      "jltEmail": "theharrisontravelcollection@thejltgroup.co.uk",
+      "personalEmail": "kh198410@gmail.com",
+      "uniqueAgentId": "JLT-0227",
+      "membershipTier": "Business Class",
+      "agentStatus": "in_notice"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tjltEmail\tpersonalEmail\tuniqueAgentId\tmembershipTier\tagentStatus\n67\t60540\tNULL\tcharli.harrison@hotmail.com\tJLT-0067\tBusiness Class\tactive\n133\t60566\tNULL\tinfo@fayeharrisontravel.com\tJLT-0133\tNULL\tcancelled\n227\t180240\ttheharrisontravelcollection@thejltgroup.co.uk\tkh198410@gmail.com\tJLT-0227\tBusiness Class\tin_notice\n",
+  "stderr": "",
+  "execution_time_ms": 263
+}

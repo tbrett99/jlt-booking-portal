@@ -2022,6 +2022,35 @@ async function startServer() {
     }
   });
 
+  // ── Scheduled: 4-hourly database backup to S3 ───────────────────────────────
+  // Triggered by Manus Heartbeat cron every 4 hours.
+  // Auth: EXPORT_TRIGGER_TOKEN bearer token (same pattern as /api/export/nightly).
+  app.post("/api/scheduled/db-backup", async (req, res) => {
+    const authHeader = req.headers["authorization"] ?? "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    const cronTaskUid = req.headers["x-manus-cron-task-uid"] as string | undefined;
+    // Accept either Heartbeat cron calls (x-manus-cron-task-uid present) or bearer token
+    const isHeartbeat = !!cronTaskUid;
+    const isTokenAuth = token && token === ENV.exportTriggerToken;
+    if (!isHeartbeat && !isTokenAuth) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    try {
+      const { runDatabaseBackup } = await import("../db-backup");
+      const result = await runDatabaseBackup();
+      if (result.success) {
+        console.log(`[DBBackup] Scheduled backup complete: ${result.tables} tables, ${result.rows} rows, ${result.compressedBytes} bytes, ${result.durationMs}ms`);
+        return res.json({ ok: true, ...result });
+      } else {
+        console.error(`[DBBackup] Scheduled backup failed: ${result.error}`);
+        return res.status(500).json({ ok: false, error: result.error });
+      }
+    } catch (err: any) {
+      console.error("[DBBackup] Unexpected error:", err?.message);
+      return res.status(500).json({ ok: false, error: err?.message ?? "Unknown error", stack: err?.stack, context: { url: req.originalUrl, cronTaskUid }, timestamp: new Date().toISOString() });
+    }
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",

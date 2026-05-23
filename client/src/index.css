@@ -144,13 +144,9 @@
 
 /* ─── Supplier description HTML rendering ─────────────────────────────────── */
 .supplier-description {
-  overflow: hidden;
-  contain: layout;
+  overflow-x: hidden;
   word-break: break-word;
   overflow-wrap: break-word;
-  max-width: 100%;
-  width: 100%;
-  box-sizing: border-box;
 }
 .supplier-description table {
   display: block;

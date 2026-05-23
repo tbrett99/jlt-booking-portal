@@ -1,0 +1,258 @@
+{
+  "query": "\nSHOW COLUMNS FROM prospects;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSHOW COLUMNS FROM prospects;\n",
+  "rows": [
+    {
+      "Field": "id",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "PRI",
+      "Default": "NULL",
+      "Extra": "auto_increment"
+    },
+    {
+      "Field": "firstName",
+      "Type": "varchar(100)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "lastName",
+      "Type": "varchar(100)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "email",
+      "Type": "varchar(320)",
+      "Null": "NO",
+      "Key": "MUL",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "phone",
+      "Type": "varchar(30)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "marketingConsent",
+      "Type": "tinyint(1)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "stage",
+      "Type": "enum('New Enquiry','AR Submitted','AR Approved','Discovery Call Booked','Approved','Rejected','Lost','Won')",
+      "Null": "NO",
+      "Key": "MUL",
+      "Default": "New Enquiry",
+      "Extra": ""
+    },
+    {
+      "Field": "uniqueAgentId",
+      "Type": "varchar(20)",
+      "Null": "YES",
+      "Key": "UNI",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "personalEmail",
+      "Type": "varchar(320)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "jltEmail",
+      "Type": "varchar(320)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "mobile",
+      "Type": "varchar(30)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "addressLine1",
+      "Type": "varchar(255)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "addressLine2",
+      "Type": "varchar(255)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "city",
+      "Type": "varchar(100)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "postcode",
+      "Type": "varchar(20)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "ukRegion",
+      "Type": "varchar(100)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "idDocUrl",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "idDocKey",
+      "Type": "varchar(500)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "proofOfAddressUrl",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "proofOfAddressKey",
+      "Type": "varchar(500)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "bankAccountName",
+      "Type": "varchar(255)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "bankSortCode",
+      "Type": "varchar(512)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "bankAccountNumber",
+      "Type": "varchar(512)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "wonPortalAccess",
+      "Type": "tinyint(1)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "fullPortalAccess",
+      "Type": "tinyint(1)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "linkedUserId",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "adminNotes",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "source",
+      "Type": "varchar(100)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "enquiry_form",
+      "Extra": ""
+    },
+    {
+      "Field": "createdById",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "createdAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": ""
+    },
+    {
+      "Field": "updatedAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP"
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nid\tint\tNO\tPRI\tNULL\tauto_increment\nfirstName\tvarchar(100)\tNO\t\tNULL\t\nlastName\tvarchar(100)\tNO\t\tNULL\t\nemail\tvarchar(320)\tNO\tMUL\tNULL\t\nphone\tvarchar(30)\tYES\t\tNULL\t\nmarketingConsent\ttinyint(1)\tNO\t\t0\t\nstage\tenum('New Enquiry','AR Submitted','AR Approved','Discovery Call Booked','Approved','Rejected','Lost','Won')\tNO\tMUL\tNew Enquiry\t\nuniqueAgentId\tvarchar(20)\tYES\tUNI\tNULL\t\npersonalEmail\tvarchar(320)\tYES\t\tNULL\t\njltEmail\tvarchar(320)\tYES\t\tNULL\t\nmobile\tvarchar(30)\tYES\t\tNULL\t\naddressLine1\tvarchar(255)\tYES\t\tNULL\t\naddressLine2\tvarchar(255)\tYES\t\tNULL\t\ncity\tvarchar(100)\tYES\t\tNULL\t\npostcode\tvarchar(20)\tYES\t\tNULL\t\nukRegion\tvarchar(100)\tYES\t\tNULL\t\nidDocUrl\ttext\tYES\t\tNULL\t\nidDocKey\tvarchar(500)\tYES\t\tNULL\t\nproofOfAddressUrl\ttext\tYES\t\tNULL\t\nproofOfAddressKey\tvarchar(500)\tYES\t\tNULL\t\nbankAccountName\tvarchar(255)\tYES\t\tNULL\t\nbankSortCode\tvarchar(512)\tYES\t\tNULL\t\nbankAccountNumber\tvarchar(512)\tYES\t\tNULL\t\nwonPortalAccess\ttinyint(1)\tNO\t\t0\t\nfullPortalAccess\ttinyint(1)\tNO\t\t0\t\nlinkedUserId\tint\tYES\t\tNULL\t\nadminNotes\ttext\tYES\t\tNULL\t\nsource\tvarchar(100)\tYES\t\tenquiry_form\t\ncreatedById\tint\tYES\t\tNULL\t\ncreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\t\nupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\tDEFAULT_GENERATED on update CURRENT_TIMESTAMP\n",
+  "stderr": "",
+  "execution_time_ms": 262
+}

@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT 'users' as tbl, id, email, role, createdAt FROM users WHERE email LIKE '%lulu%' OR email LIKE '%harris%'\nUNION ALL\nSELECT 'prospects' as tbl, id, email, portalStatus, createdAt FROM prospects WHERE email LIKE '%lulu%' OR email LIKE '%harris%';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT 'users' as tbl, id, email, role, createdAt FROM users WHERE email LIKE '%lulu%' OR email LIKE '%harris%'\nUNION ALL\nSELECT 'prospects' as tbl, id, email, portalStatus, createdAt FROM prospects WHERE email LIKE '%lulu%' OR email LIKE '%harris%';\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'portalstatus' in 'field list'"
+  ]
+}

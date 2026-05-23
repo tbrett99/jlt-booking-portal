@@ -1,0 +1,22 @@
+{
+  "query": "\nSELECT id, email, role, createdAt FROM users WHERE email LIKE '%lulu%' OR email LIKE '%harris%';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT id, email, role, createdAt FROM users WHERE email LIKE '%lulu%' OR email LIKE '%harris%';\n",
+  "rows": [
+    {
+      "id": "60540",
+      "email": "charlotteharrison@thejltgroup.co.uk",
+      "role": "agent",
+      "createdAt": "2026-04-09 20:05:59"
+    },
+    {
+      "id": "60566",
+      "email": "info@fayeharrisontravel.com",
+      "role": "agent",
+      "createdAt": "2026-04-09 20:06:13"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\trole\tcreatedAt\n60540\tcharlotteharrison@thejltgroup.co.uk\tagent\t2026-04-09 20:05:59\n60566\tinfo@fayeharrisontravel.com\tagent\t2026-04-09 20:06:13\n",
+  "stderr": "",
+  "execution_time_ms": 258
+}
