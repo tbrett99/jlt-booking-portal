@@ -396,6 +396,8 @@ export const communityRouter = router({
         z.object({
           digestId: z.number(),
           origin: z.string().url(),
+          customSubject: z.string().optional(),
+          customIntro: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -520,7 +522,7 @@ export const communityRouter = router({
               <h1 style="font-size:22px;color:#111827;">JLT Group Weekly Update</h1>
               <p style="color:#6b7280;font-size:14px;">Week of ${weekLabel}</p>
             </div>
-            ${digest.introText ? `<p style="color:#374151;margin-bottom:24px;">${digest.introText}</p>` : ""}
+            ${input.customIntro ? `<p style="color:#374151;margin-bottom:24px;">${input.customIntro}</p>` : digest.introText ? `<p style="color:#374151;margin-bottom:24px;">${digest.introText}</p>` : ""}
             ${statsHtml}
             ${highlightsHtml}
             <h2 style="font-size:18px;color:#111827;margin-bottom:16px;">This Week in the Community</h2>
@@ -544,7 +546,7 @@ export const communityRouter = router({
             await sendDirectEmail({
               toEmail: agent.email,
               toName: agent.name ?? "Agent",
-              subject: `JLT Group Weekly Update — ${weekLabel}`,
+              subject: input.customSubject || `JLT Group Weekly Update — ${weekLabel}`,
               html: emailHtml,
             });
             sent++;
@@ -554,7 +556,7 @@ export const communityRouter = router({
         }
 
         await markDigestSent(input.digestId, ctx.user.id, sent);
-        return { sent };
+        return { sent, sentCount: sent };
       }),
 
     // Get booking highlights for digest preview

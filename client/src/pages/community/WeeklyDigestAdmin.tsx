@@ -14,7 +14,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 
 export default function WeeklyDigestAdmin() {
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -22,7 +21,7 @@ export default function WeeklyDigestAdmin() {
   const [customSubject, setCustomSubject] = useState("");
   const [customIntro, setCustomIntro] = useState("");
 
-  // Stable week start (Monday of current week)
+  // Stable week start (Monday of current week, midnight UTC)
   const weekStart = useMemo(() => {
     const d = new Date();
     const day = d.getDay();
@@ -35,15 +34,15 @@ export default function WeeklyDigestAdmin() {
   const createDraft = trpc.community.digest.getOrCreateDraft.useMutation();
   const { data: digests, isLoading: digestsLoading, refetch: refetchDigests } = trpc.community.digest.list.useQuery();
 
-  // Get the current week's draft from the list
+  // Match using weekStarting (the correct DB field name)
   const draft = digests?.find((d: any) => {
-    const dStart = new Date(d.weekStart);
+    const dStart = new Date(d.weekStarting);
     return dStart.toDateString() === weekStart.toDateString();
   });
 
   const sendDigest = trpc.community.digest.send.useMutation({
     onSuccess: (result: any) => {
-      toast.success(`Digest sent to ${result.sentCount} agents`);
+      toast.success(`Digest sent to ${result.sentCount ?? result.sent ?? 0} agents`);
       setSendConfirmOpen(false);
       refetchDigests();
     },
@@ -64,6 +63,8 @@ export default function WeeklyDigestAdmin() {
   const highlights = draft?.bookingHighlightsOverride as any[];
   const includedPostIds: number[] = Array.isArray(draft?.includedPostIds)
     ? (draft.includedPostIds as number[])
+    : typeof draft?.includedPostIds === "string"
+    ? (() => { try { return JSON.parse(draft.includedPostIds); } catch { return []; } })()
     : [];
 
   if (digestsLoading) {
@@ -109,7 +110,7 @@ export default function WeeklyDigestAdmin() {
           {draft.status === "sent" && (
             <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm font-medium">
               <CheckCircle2 className="w-4 h-4" />
-              This week's digest was sent to {(draft as any).sentCount ?? 0} agents
+              This week's digest was sent to {(draft as any).recipientCount ?? 0} agents
               {(draft as any).sentAt && ` on ${new Date((draft as any).sentAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}
             </div>
           )}
@@ -211,11 +212,11 @@ export default function WeeklyDigestAdmin() {
                   : <Clock className="w-4 h-4 text-amber-500 shrink-0" />}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground">
-                    Week of {new Date(d.weekStart).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    Week of {new Date(d.weekStarting).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {d.status === "sent"
-                      ? `Sent to ${d.sentCount ?? 0} agents on ${new Date(d.sentAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
+                      ? `Sent to ${d.recipientCount ?? 0} agents on ${new Date(d.sentAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
                       : "Draft"}
                   </p>
                 </div>
@@ -284,6 +285,8 @@ export default function WeeklyDigestAdmin() {
                 onClick={() => sendDigest.mutate({
                   digestId: draft!.id,
                   origin: window.location.origin,
+                  customSubject: customSubject || undefined,
+                  customIntro: customIntro || undefined,
                 })}
                 disabled={sendDigest.isPending}
               >
