@@ -18,7 +18,7 @@ import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addMonths, subMonths, addWeeks, subWeeks, eachDayOfInterval,
   isSameMonth, isSameDay, isToday, addDays, addYears,
-  differenceInDays, isBefore, isAfter
+  differenceInDays, isBefore, isAfter, startOfDay, endOfDay
 } from "date-fns";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -594,20 +594,17 @@ export default function AdminCalendar() {
 
   // Events that overlap a given day
   function eventsOnDay(day: Date): CalEventOccurrence[] {
-    return events.filter(ev => {
-      const start = ev.occurrenceStart;
-      const end   = ev.occurrenceEnd;
-      return day >= start && day <= end;
-    });
+    const dayStart = startOfDay(day);
+    const dayEnd = endOfDay(day);
+    return events.filter(ev => ev.occurrenceStart <= dayEnd && ev.occurrenceEnd >= dayStart);
   }
 
   // Who's away today
   const todayAway = events.filter(ev => {
     if (ev.type !== "holiday") return false;
-    const start = ev.occurrenceStart;
-    const end   = ev.occurrenceEnd;
-    const today = new Date();
-    return today >= start && today <= end;
+    const todayStart = startOfDay(new Date());
+    const todayEnd = endOfDay(new Date());
+    return ev.occurrenceStart <= todayEnd && ev.occurrenceEnd >= todayStart;
   });
 
   // Tasks due soon (within 3 days)
@@ -904,9 +901,11 @@ interface AgendaViewProps {
 function AgendaView({ from, to, events, onEventClick, selectedEvent, onEditEvent, onDeleteEvent, onCloseDetail }: AgendaViewProps) {
   const days = eachDayOfInterval({ start: from, end: to });
 
-  const daysWithEvents = days.filter(day =>
-    events.some(ev => day >= ev.occurrenceStart && day <= ev.occurrenceEnd)
-  );
+  const daysWithEvents = days.filter(day => {
+    const ds = startOfDay(day);
+    const de = endOfDay(day);
+    return events.some(ev => ev.occurrenceStart <= de && ev.occurrenceEnd >= ds);
+  });
 
   if (daysWithEvents.length === 0) {
     return (
@@ -921,7 +920,9 @@ function AgendaView({ from, to, events, onEventClick, selectedEvent, onEditEvent
   return (
     <div className="border rounded-xl overflow-hidden divide-y">
       {daysWithEvents.map(day => {
-        const dayEvents = events.filter(ev => day >= ev.occurrenceStart && day <= ev.occurrenceEnd);
+        const ds = startOfDay(day);
+        const de = endOfDay(day);
+        const dayEvents = events.filter(ev => ev.occurrenceStart <= de && ev.occurrenceEnd >= ds);
         return (
           <div key={day.toISOString()} className="flex gap-0">
             <div className={`w-24 shrink-0 p-3 text-center border-r ${isToday(day) ? "bg-[#02E6D2]/20" : "bg-muted/10"}`}>
