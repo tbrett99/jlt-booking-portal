@@ -716,10 +716,10 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
         eq(communityDigests.status, "draft")
       )
     );
-  if (existing) return existing;
-
-  // Auto-generate: collect posts from the past 7 days
+  // If a draft already exists, refresh its stats and posts so Regenerate works
+  // Auto-generate: collect posts from weekStarting up to now (current week)
   const weekAgo = new Date(weekStarting.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const now = new Date();
   const posts = await db
     .select({ id: communityPosts.id })
     .from(communityPosts)
@@ -727,27 +727,28 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
       and(
         eq(communityPosts.isDraft, false),
         eq(communityPosts.isHidden, false),
-        gt(communityPosts.createdAt, weekAgo),
-        lt(communityPosts.createdAt, weekStarting)
+        gt(communityPosts.createdAt, weekStarting),
+        lt(communityPosts.createdAt, now)
       )
     )
     .orderBy(desc(communityPosts.createdAt));
 
   const postIds = posts.map((p) => p.id);
 
-  // Stats snapshot
+  // Stats snapshot — count from weekStarting to now
   const { bookings, commissionClaims, refunds } = await import("../drizzle/schema");
   const [bookingCount] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(bookings)
-    .where(gt(bookings.createdAt, weekAgo));
+    .where(and(gt(bookings.createdAt, weekStarting), lt(bookings.createdAt, now)));
 
   const claimedThisWeek = await db
     .select({ grossAmount: commissionClaims.grossAmount })
     .from(commissionClaims)
     .where(
       and(
-        gt(commissionClaims.claimedAt, weekAgo),
+        gt(commissionClaims.claimedAt, weekStarting),
+        lt(commissionClaims.claimedAt, now),
         or(
           eq(commissionClaims.status, "paid"),
           eq(commissionClaims.status, "awaiting_payment")
@@ -762,13 +763,30 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
   const [reimbCount] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(refunds)
-    .where(gt(refunds.createdAt, weekAgo));
+    .where(and(gt(refunds.createdAt, weekStarting), lt(refunds.createdAt, now)));
 
   const statsSnapshot = {
-    bookingsCount: Number(bookingCount.count),
-    commissionTotal: commissionTotal,
+    // Use field names the frontend expects
+    bookingsThisWeek: Number(bookingCount.count),
+    totalCommissionClaimed: commissionTotal,
     reimbursementsCount: Number(reimbCount.count),
   };
+
+  if (existing) {
+    // Refresh stats and posts on the existing draft
+    await db
+      .update(communityDigests)
+      .set({
+        includedPostIds: JSON.stringify(postIds),
+        statsSnapshot: JSON.stringify(statsSnapshot),
+      } as any)
+      .where(eq(communityDigests.id, existing.id));
+    const [refreshed] = await db
+      .select()
+      .from(communityDigests)
+      .where(eq(communityDigests.id, existing.id));
+    return refreshed;
+  }
 
   const [result] = await db.insert(communityDigests).values({
     weekStarting,
