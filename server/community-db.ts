@@ -772,13 +772,18 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     reimbursementsCount: Number(reimbCount.count),
   };
 
+  // Always fetch fresh booking highlights (first bookings, high margin, commission paid)
+  const highlights = await getBookingHighlights(weekStarting);
+
   if (existing) {
-    // Refresh stats and posts on the existing draft
+    // Refresh stats, posts, and highlights on the existing draft
     await db
       .update(communityDigests)
       .set({
         includedPostIds: postIds,
         statsSnapshot: statsSnapshot,
+        bookingHighlightsOverride: highlights,
+        includeBookingHighlights: true,
       } as any)
       .where(eq(communityDigests.id, existing.id));
     const [refreshed] = await db
@@ -793,6 +798,7 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     status: "draft",
     includedPostIds: postIds,
     includeBookingHighlights: true,
+    bookingHighlightsOverride: highlights,
     statsSnapshot: statsSnapshot,
   } as any);
 

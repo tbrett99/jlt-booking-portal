@@ -60,7 +60,25 @@ export default function WeeklyDigestAdmin() {
   };
 
   const stats = draft?.statsSnapshot as any;
-  const highlights = draft?.bookingHighlightsOverride as any[];
+  const highlightsRaw = draft?.bookingHighlightsOverride as any;
+  // Backend stores a structured object { firstBookings, highMargin, commissionClaimed }
+  const highlights = highlightsRaw && typeof highlightsRaw === 'object' && !Array.isArray(highlightsRaw)
+    ? highlightsRaw
+    : null;
+  const highlightItems: { emoji: string; message: string }[] = [];
+  if (highlights) {
+    for (const h of highlights.firstBookings ?? []) {
+      highlightItems.push({ emoji: '🎉', message: `${h.agentName} registered their first ever booking — welcome to the journey!` });
+    }
+    for (const h of highlights.highMargin ?? []) {
+      highlightItems.push({ emoji: '💰', message: `${h.agentName} secured a high-margin booking this week — great work!` });
+    }
+    if ((highlights.commissionClaimed?.agentNames?.length ?? 0) > 0) {
+      const names = highlights.commissionClaimed.agentNames.join(', ');
+      const total = Number(highlights.commissionClaimed.totalAmount ?? 0);
+      highlightItems.push({ emoji: '🏆', message: `Commission paid out to ${names} — total: £${total.toLocaleString('en-GB', { maximumFractionDigits: 0 })}` });
+    }
+  }
   const includedPostIds: number[] = Array.isArray(draft?.includedPostIds)
     ? (draft.includedPostIds as number[])
     : [];
@@ -136,13 +154,13 @@ export default function WeeklyDigestAdmin() {
           )}
 
           {/* Agent highlights */}
-          {highlights && highlights.length > 0 && (
+          {highlightItems.length > 0 && (
             <div className="bg-card border border-border rounded-xl p-4">
               <h3 className="font-semibold text-sm text-foreground mb-3 flex items-center gap-2">
                 <Award className="w-4 h-4 text-amber-500" /> Agent Highlights
               </h3>
               <div className="space-y-2">
-                {highlights.map((h: any, i: number) => (
+                {highlightItems.map((h, i) => (
                   <div key={i} className="flex items-center gap-2.5 text-sm">
                     <span className="text-base">{h.emoji}</span>
                     <span className="text-foreground">{h.message}</span>
@@ -247,11 +265,11 @@ export default function WeeklyDigestAdmin() {
                   <li>🔄 {stats.reimbursementsCount ?? 0} reimbursements processed</li>
                 </ul>
               )}
-              {highlights && highlights.length > 0 && (
+              {highlightItems.length > 0 && (
                 <>
                   <h3>Celebrating Our Agents</h3>
                   <ul>
-                    {highlights.map((h: any, i: number) => (
+                    {highlightItems.map((h, i) => (
                       <li key={i}>{h.emoji} {h.message}</li>
                     ))}
                   </ul>
