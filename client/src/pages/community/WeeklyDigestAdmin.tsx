@@ -18,6 +18,8 @@ import { Textarea } from "@/components/ui/textarea";
 export default function WeeklyDigestAdmin() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [sendConfirmOpen, setSendConfirmOpen] = useState(false);
+  const [testEmailOpen, setTestEmailOpen] = useState(false);
+  const [testEmailAddress, setTestEmailAddress] = useState("");
   const [customSubject, setCustomSubject] = useState("");
   const [customIntro, setCustomIntro] = useState("");
 
@@ -39,6 +41,25 @@ export default function WeeklyDigestAdmin() {
     const dStart = new Date(d.weekStarting);
     return dStart.toDateString() === weekStart.toDateString();
   });
+
+  const sendTest = trpc.community.digest.sendTest.useMutation({
+    onSuccess: () => {
+      toast.success(`Test email sent to ${testEmailAddress}`);
+      setTestEmailOpen(false);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleSendTest = async () => {
+    if (!draft || !testEmailAddress) return;
+    await sendTest.mutateAsync({
+      digestId: draft.id,
+      origin: window.location.origin,
+      toEmail: testEmailAddress,
+      customSubject: customSubject || undefined,
+      customIntro: customIntro || undefined,
+    });
+  };
 
   const sendDigest = trpc.community.digest.send.useMutation({
     onSuccess: (result: any) => {
@@ -204,9 +225,12 @@ export default function WeeklyDigestAdmin() {
 
           {/* Actions */}
           {draft.status !== "sent" && (
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               <Button variant="outline" onClick={() => setPreviewOpen(true)} className="flex-1">
                 <Eye className="w-4 h-4 mr-2" /> Preview
+              </Button>
+              <Button variant="outline" onClick={() => setTestEmailOpen(true)} className="flex-1">
+                <Mail className="w-4 h-4 mr-2" /> Send Test Email
               </Button>
               <Button onClick={() => setSendConfirmOpen(true)} className="flex-1">
                 <Send className="w-4 h-4 mr-2" /> Send to All Agents
@@ -281,6 +305,41 @@ export default function WeeklyDigestAdmin() {
                 </p>
               )}
             </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Test Email Dialog */}
+      {testEmailOpen && draft && (
+        <Dialog open onOpenChange={() => setTestEmailOpen(false)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Send Test Email</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Send a preview of this digest to a single email address. It will be marked <strong>[TEST]</strong> in the subject line.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Email address</Label>
+              <Input
+                type="email"
+                placeholder="you@example.com"
+                value={testEmailAddress}
+                onChange={(e) => setTestEmailAddress(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSendTest()}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setTestEmailOpen(false)}>Cancel</Button>
+              <Button
+                onClick={handleSendTest}
+                disabled={sendTest.isPending || !testEmailAddress}
+              >
+                {sendTest.isPending
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Sending...</>
+                  : <><Mail className="w-4 h-4 mr-2" /> Send Test</>}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       )}

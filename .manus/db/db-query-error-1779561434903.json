@@ -1,0 +1,12 @@
+{
+  "query": "\n-- First bookings this week (agents whose FIRST booking was created this week)\nSELECT u.name AS agentName, COUNT(b2.id) AS priorBookings, MIN(b.createdAt) AS firstBookingDate\nFROM bookings b\nJOIN users u ON u.id = b.agentId\nLEFT JOIN bookings b2 ON b2.agentId = b.agentId AND b2.createdAt < DATE_FORMAT(NOW() - INTERVAL ((DAYOFWEEK(NOW()) + 5) % 7) DAY, '%Y-%m-%d 00:00:00')\nWHERE b.createdAt >= DATE_FORMAT(NOW() - INTERVAL ((DAYOFWEEK(NOW()) + 5) % 7) DAY, '%Y-%m-%d 00:00:00')\nGROUP BY b.agentId, u.name\nHAVING priorBookings = 0\nLIMIT 10;\n\n-- Community post categories available\nSELECT category, COUNT(*) AS cnt FROM community_posts WHERE createdAt >= DATE_FORMAT(NOW() - INTERVAL ((DAYOFWEEK(NOW()) + 5) % 7) DAY, '%Y-%m-%d 00:00:00') GROUP BY category ORDER BY cnt DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \n-- First bookings this week (agents whose FIRST booking was created this week)\nSELECT u.name AS agentName, COUNT(b2.id) AS priorBookings, MIN(b.createdAt) AS firstBookingDate\nFROM bookings b\nJOIN users u ON u.id = b.agentId\nLEFT JOIN bookings b2 ON b2.agentId = b.agentId AND b2.createdAt < DATE_FORMAT(NOW() - INTERVAL ((DAYOFWEEK(NOW()) + 5) % 7) DAY, '%Y-%m-%d 00:00:00')\nWHERE b.createdAt >= DATE_FORMAT(NOW() - INTERVAL ((DAYOFWEEK(NOW()) + 5) % 7) DAY, '%Y-%m-%d 00:00:00')\nGROUP BY b.agentId, u.name\nHAVING priorBookings = 0\nLIMIT 10;\n\n-- Community post categories available\nSELECT category, COUNT(*) AS cnt FROM community_posts WHERE createdAt >= DATE_FORMAT(NOW() - INTERVAL ((DAYOFWEEK(NOW()) + 5) % 7) DAY, '%Y-%m-%d 00:00:00') GROUP BY category ORDER BY cnt DESC;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1064 (42000) at line 3: You have an error in your SQL syntax; check the manual that corresponds to your TiDB version for the right syntax to use line 4 column 129 near \"DAY, '%Y-%m-%d 00:00:00')",
+    "WHERE b.createdAt >= DATE_FORMAT(NOW() - INTERVAL ((DAYOFWEEK(NOW()) + 5) % 7) DAY, '%Y-%m-%d 00:00:00')",
+    "GROUP BY b.agentId, u.name",
+    "HAVING priorBookings = 0",
+    "LIMIT 10\""
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "query": "SELECT u.name AS agentName, b.agentId, COUNT(b2.id) AS priorBookings FROM bookings b JOIN users u ON u.id = b.agentId LEFT JOIN bookings b2 ON b2.agentId = b.agentId AND b2.createdAt < '2026-05-18 00:00:00' WHERE b.createdAt >= '2026-05-18 00:00:00' GROUP BY b.agentId, u.name HAVING priorBookings = 0 LIMIT 10",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT u.name AS agentName, b.agentId, COUNT(b2.id) AS priorBookings FROM bookings b JOIN users u ON u.id = b.agentId LEFT JOIN bookings b2 ON b2.agentId = b.agentId AND b2.createdAt < '2026-05-18 00:00:00' WHERE b.createdAt >= '2026-05-18 00:00:00' GROUP BY b.agentId, u.name HAVING priorBookings = 0 LIMIT 10",
+  "rows": [
+    {
+      "agentName": "Leanne Burnett",
+      "agentId": "60605",
+      "priorBookings": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "agentName\tagentId\tpriorBookings\nLeanne Burnett\t60605\t0\n",
+  "stderr": "",
+  "execution_time_ms": 284
+}

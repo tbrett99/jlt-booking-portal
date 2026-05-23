@@ -1,0 +1,26 @@
+{
+  "query": "SELECT category, COUNT(*) AS cnt FROM community_posts WHERE createdAt >= '2026-05-18 00:00:00' GROUP BY category ORDER BY cnt DESC",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT category, COUNT(*) AS cnt FROM community_posts WHERE createdAt >= '2026-05-18 00:00:00' GROUP BY category ORDER BY cnt DESC",
+  "rows": [
+    {
+      "category": "supplier_news_deals",
+      "cnt": "45"
+    },
+    {
+      "category": "training_webinars",
+      "cnt": "13"
+    },
+    {
+      "category": "news_announcements",
+      "cnt": "2"
+    },
+    {
+      "category": "business_update",
+      "cnt": "2"
+    }
+  ],
+  "messages": [],
+  "stdout": "category\tcnt\nsupplier_news_deals\t45\ntraining_webinars\t13\nnews_announcements\t2\nbusiness_update\t2\n",
+  "stderr": "",
+  "execution_time_ms": 262
+}

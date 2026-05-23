@@ -909,7 +909,7 @@ export async function getBookingHighlights(weekAgo: Date) {
     }
   }
 
-  // 2. High margin bookings (>12%) this week
+  // 2. High margin bookings (tiered: 10%+, 12%+, 15%+, 20%+) this week
   const db3 = await getDb();
   if (!db3) return { firstBookings: firstBookingHighlights, highMargin: [], commissionClaimed: { agentNames: [], totalAmount: 0 } };
   const highMarginBookings = await db3
@@ -929,18 +929,28 @@ export async function getBookingHighlights(weekAgo: Date) {
       )
     );
 
-  const highMarginHighlights: { type: "high_margin"; agentName: string; bookingId: number }[] = [];
+  const highMarginHighlights: { type: "high_margin"; agentName: string; bookingId: number; marginPct: number; tier: string }[] = [];
   for (const b of highMarginBookings) {
     const gross = Number(b.grossCost ?? 0);
     const commission = Number(b.expectedCommission ?? 0);
-    if (gross > 0 && (commission / gross) * 100 > 12) {
+    const marginPct = gross > 0 ? (commission / gross) * 100 : 0;
+    if (marginPct >= 10) {
+      let tier: string;
+      if (marginPct >= 20) tier = "20%+";
+      else if (marginPct >= 15) tier = "15–20%";
+      else if (marginPct >= 12) tier = "12–15%";
+      else tier = "10–12%";
       highMarginHighlights.push({
         type: "high_margin",
         agentName: b.agentName ?? "An agent",
         bookingId: b.bookingId,
+        marginPct: Math.round(marginPct * 10) / 10,
+        tier,
       });
     }
   }
+  // Sort by margin descending
+  highMarginHighlights.sort((a, b) => b.marginPct - a.marginPct);
 
   // 3. Commission claimed this week
   const db4 = await getDb();
