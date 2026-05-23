@@ -1,0 +1,62 @@
+{
+  "query": "SELECT DISTINCT currentStage, COUNT(*) as count FROM bookings GROUP BY currentStage ORDER BY count DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT DISTINCT currentStage, COUNT(*) as count FROM bookings GROUP BY currentStage ORDER BY count DESC;",
+  "rows": [
+    {
+      "currentStage": "Added to PTS",
+      "count": "2062"
+    },
+    {
+      "currentStage": "Commission Claimed",
+      "count": "1049"
+    },
+    {
+      "currentStage": "Commission Claimable",
+      "count": "481"
+    },
+    {
+      "currentStage": "Cancelled",
+      "count": "84"
+    },
+    {
+      "currentStage": "Creating own PTS file",
+      "count": "35"
+    },
+    {
+      "currentStage": "Holding Accounts",
+      "count": "14"
+    },
+    {
+      "currentStage": "Urgent/Reimb",
+      "count": "13"
+    },
+    {
+      "currentStage": "DP",
+      "count": "9"
+    },
+    {
+      "currentStage": "Not on Topdog",
+      "count": "8"
+    },
+    {
+      "currentStage": "T/O Package",
+      "count": "7"
+    },
+    {
+      "currentStage": "Query",
+      "count": "5"
+    },
+    {
+      "currentStage": "Reimb Docs Missing",
+      "count": "2"
+    },
+    {
+      "currentStage": "New Booking",
+      "count": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "currentStage\tcount\nAdded to PTS\t2062\nCommission Claimed\t1049\nCommission Claimable\t481\nCancelled\t84\nCreating own PTS file\t35\nHolding Accounts\t14\nUrgent/Reimb\t13\nDP\t9\nNot on Topdog\t8\nT/O Package\t7\nQuery\t5\nReimb Docs Missing\t2\nNew Booking\t1\n",
+  "stderr": "",
+  "execution_time_ms": 316
+}

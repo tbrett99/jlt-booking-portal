@@ -1,0 +1,15 @@
+{
+  "query": "SELECT \n  SUM(CASE WHEN currentStage IN ('New Booking','Not on Topdog','Query','Reimb Docs Missing','Urgent/Reimb','T/O Package','DP','Holding Accounts') THEN 1 ELSE 0 END) AS current_query_count,\n  SUM(CASE WHEN currentStage IN ('New Booking','Creating own PTS file','Not on Topdog','Query','Reimb Docs Missing','Urgent/Reimb','T/O Package','DP','Holding Accounts') THEN 1 ELSE 0 END) AS with_creating_own_pts,\n  SUM(CASE WHEN currentStage NOT IN ('Added to PTS','Commission Claimable','Commission Claimed','Cancelled') THEN 1 ELSE 0 END) AS not_yet_added\nFROM bookings;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute SELECT \n  SUM(CASE WHEN currentStage IN ('New Booking','Not on Topdog','Query','Reimb Docs Missing','Urgent/Reimb','T/O Package','DP','Holding Accounts') THEN 1 ELSE 0 END) AS current_query_count,\n  SUM(CASE WHEN currentStage IN ('New Booking','Creating own PTS file','Not on Topdog','Query','Reimb Docs Missing','Urgent/Reimb','T/O Package','DP','Holding Accounts') THEN 1 ELSE 0 END) AS with_creating_own_pts,\n  SUM(CASE WHEN currentStage NOT IN ('Added to PTS','Commission Claimable','Commission Claimed','Cancelled') THEN 1 ELSE 0 END) AS not_yet_added\nFROM bookings;",
+  "rows": [
+    {
+      "current_query_count": "59",
+      "with_creating_own_pts": "94",
+      "not_yet_added": "94"
+    }
+  ],
+  "messages": [],
+  "stdout": "current_query_count\twith_creating_own_pts\tnot_yet_added\n59\t94\t94\n",
+  "stderr": "",
+  "execution_time_ms": 282
+}
