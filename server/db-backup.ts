@@ -85,11 +85,15 @@ async function buildSqlDump(): Promise<{ sql: string; tables: number; rows: numb
   if (!db) throw new Error("Database unavailable");
 
   // Get list of all tables
-  const tableRows = await db.execute<{ TABLE_NAME: string }>(
+  const tableRows = await db.execute(
     // @ts-ignore — raw SQL
     `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME`
   );
-  const tables: string[] = (tableRows as any[]).map((r: any) => r.TABLE_NAME ?? r.table_name);
+  // Drizzle returns rows as array; handle both array-of-objects and [rows, fields] formats
+  const rawRows: any[] = Array.isArray((tableRows as any)[0]) ? (tableRows as any)[0] : (tableRows as any);
+  const tables: string[] = rawRows
+    .map((r: any) => r.TABLE_NAME ?? r.table_name ?? Object.values(r)[0])
+    .filter(Boolean) as string[];
 
   const lines: string[] = [
     "-- JLT Group Booking Portal — Full SQL Backup",
