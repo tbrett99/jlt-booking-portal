@@ -1,0 +1,74 @@
+{
+  "query": "\n-- Find cancelled agents whose isActive is still 1 or portalStatus is not cancelled\nSELECT u.id, u.name, u.email, u.isActive, u.portalStatus, acp.agentStatus\nFROM users u\nJOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE acp.agentStatus = 'cancelled'\n  AND (u.isActive = 1 OR u.portalStatus != 'cancelled')\nORDER BY u.name;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \n-- Find cancelled agents whose isActive is still 1 or portalStatus is not cancelled\nSELECT u.id, u.name, u.email, u.isActive, u.portalStatus, acp.agentStatus\nFROM users u\nJOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE acp.agentStatus = 'cancelled'\n  AND (u.isActive = 1 OR u.portalStatus != 'cancelled')\nORDER BY u.name;\n",
+  "rows": [
+    {
+      "id": "60325",
+      "name": "Amanda Glenister",
+      "email": "amandaglenister@icloud.com",
+      "isActive": "1",
+      "portalStatus": "cancelled",
+      "agentStatus": "cancelled"
+    },
+    {
+      "id": "60566",
+      "name": "Faye Harrison",
+      "email": "info@fayeharrisontravel.com",
+      "isActive": "1",
+      "portalStatus": "cancelled",
+      "agentStatus": "cancelled"
+    },
+    {
+      "id": "60538",
+      "name": "Lorraine Donnelly",
+      "email": "andbreathetravel@gmail.com",
+      "isActive": "1",
+      "portalStatus": "active",
+      "agentStatus": "cancelled"
+    },
+    {
+      "id": "60351",
+      "name": "Mairi Nash",
+      "email": "mairinash12@gmail.com",
+      "isActive": "1",
+      "portalStatus": "cancelled",
+      "agentStatus": "cancelled"
+    },
+    {
+      "id": "60529",
+      "name": "Philip Day",
+      "email": "swphild@gmail.com",
+      "isActive": "1",
+      "portalStatus": "active",
+      "agentStatus": "cancelled"
+    },
+    {
+      "id": "60245",
+      "name": "Priya Mistry",
+      "email": "priya_desai12@hotmail.com",
+      "isActive": "1",
+      "portalStatus": "cancelled",
+      "agentStatus": "cancelled"
+    },
+    {
+      "id": "60324",
+      "name": "Sarah Hughes",
+      "email": "sarahlhughes63@gmail.com",
+      "isActive": "1",
+      "portalStatus": "cancelled",
+      "agentStatus": "cancelled"
+    },
+    {
+      "id": "60218",
+      "name": "Victoria Bevan-jones",
+      "email": "vichy@bigcloudit.co.uk",
+      "isActive": "1",
+      "portalStatus": "cancelled",
+      "agentStatus": "cancelled"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tisActive\tportalStatus\tagentStatus\n60325\tAmanda Glenister\tamandaglenister@icloud.com\t1\tcancelled\tcancelled\n60566\tFaye Harrison\tinfo@fayeharrisontravel.com\t1\tcancelled\tcancelled\n60538\tLorraine Donnelly\tandbreathetravel@gmail.com\t1\tactive\tcancelled\n60351\tMairi Nash\tmairinash12@gmail.com\t1\tcancelled\tcancelled\n60529\tPhilip Day\tswphild@gmail.com\t1\tactive\tcancelled\n60245\tPriya Mistry\tpriya_desai12@hotmail.com\t1\tcancelled\tcancelled\n60324\tSarah Hughes\tsarahlhughes63@gmail.com\t1\tcancelled\tcancelled\n60218\tVictoria Bevan-jones\tvichy@bigcloudit.co.uk\t1\tcancelled\tcancelled\n",
+  "stderr": "",
+  "execution_time_ms": 266
+}

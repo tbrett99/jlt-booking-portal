@@ -1520,7 +1520,9 @@ export const crmRouter = router({
           cancelled: 'cancelled',
         };
         const newPortalStatus = portalStatusMap[input.newStatus] ?? 'active';
-        await db.update(users).set({ portalStatus: newPortalStatus as any }).where(eq(users.id, input.userId));
+        // isActive must be false for cancelled/suspended agents so they are excluded from all email sends
+        const newIsActive = (input.newStatus === 'cancelled' || input.newStatus === 'suspended') ? false : true;
+        await db.update(users).set({ portalStatus: newPortalStatus as any, isActive: newIsActive }).where(eq(users.id, input.userId));
 
         // Log the status event
         await db.insert(agentStatusEvents).values({

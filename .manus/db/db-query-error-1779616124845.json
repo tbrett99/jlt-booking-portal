@@ -1,0 +1,8 @@
+{
+  "query": "\n-- Check agentProfiles table for status field\nSELECT ap.userId, ap.agentStatus, u.email, u.isActive, u.portalStatus\nFROM agent_profiles ap\nJOIN users u ON u.id = ap.userId\nWHERE ap.agentStatus = 'cancelled' AND (u.isActive = 1 OR u.portalStatus != 'cancelled')\nLIMIT 20;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \n-- Check agentProfiles table for status field\nSELECT ap.userId, ap.agentStatus, u.email, u.isActive, u.portalStatus\nFROM agent_profiles ap\nJOIN users u ON u.id = ap.userId\nWHERE ap.agentStatus = 'cancelled' AND (u.isActive = 1 OR u.portalStatus != 'cancelled')\nLIMIT 20;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1146 (42S02) at line 3: Table 'pdcdvqrp8zc2fzsywbwptw.agent_profiles' doesn't exist"
+  ]
+}
