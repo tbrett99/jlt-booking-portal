@@ -1,0 +1,34 @@
+{
+  "query": "\nSELECT acp.agentStatus, u.isActive, u.portalStatus, COUNT(*) as cnt\nFROM users u\nJOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE acp.agentStatus IN ('paused', 'suspended')\nGROUP BY acp.agentStatus, u.isActive, u.portalStatus\nORDER BY acp.agentStatus;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4PycK9Y631tLhJa.0110aa12e67a --database PdcDVQRp8zC2FzsyWBWptW --execute \nSELECT acp.agentStatus, u.isActive, u.portalStatus, COUNT(*) as cnt\nFROM users u\nJOIN agent_crm_profiles acp ON acp.userId = u.id\nWHERE acp.agentStatus IN ('paused', 'suspended')\nGROUP BY acp.agentStatus, u.isActive, u.portalStatus\nORDER BY acp.agentStatus;\n",
+  "rows": [
+    {
+      "agentStatus": "paused",
+      "isActive": "1",
+      "portalStatus": "active",
+      "cnt": "3"
+    },
+    {
+      "agentStatus": "paused",
+      "isActive": "1",
+      "portalStatus": "paused",
+      "cnt": "1"
+    },
+    {
+      "agentStatus": "suspended",
+      "isActive": "1",
+      "portalStatus": "active",
+      "cnt": "4"
+    },
+    {
+      "agentStatus": "suspended",
+      "isActive": "1",
+      "portalStatus": "suspended",
+      "cnt": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "agentStatus\tisActive\tportalStatus\tcnt\npaused\t1\tactive\t3\npaused\t1\tpaused\t1\nsuspended\t1\tactive\t4\nsuspended\t1\tsuspended\t1\n",
+  "stderr": "",
+  "execution_time_ms": 302
+}
