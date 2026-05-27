@@ -2869,5 +2869,56 @@ export const crmRouter = router({
         const [row] = await db.select().from(agentEmails).where(eq(agentEmails.id, input.id)).limit(1);
         return row ?? null;
       }),
+    resend: adminProcedure
+      .input(z.object({
+        // The original email log entry to resend
+        sourceEmailId: z.number().int(),
+        // User IDs of agents to resend to
+        recipientUserIds: z.array(z.number().int()).min(1).max(100),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await (await import("./db")).getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const { agentEmails, users } = await import("../drizzle/schema");
+        const { eq, inArray } = await import("drizzle-orm");
+
+        // Fetch the original email
+        const [original] = await db.select().from(agentEmails).where(eq(agentEmails.id, input.sourceEmailId)).limit(1);
+        if (!original) throw new TRPCError({ code: "NOT_FOUND", message: "Email not found" });
+        if (!original.bodyHtml) throw new TRPCError({ code: "BAD_REQUEST", message: "Email has no HTML body to resend" });
+
+        // Fetch recipient agents
+        const recipients = await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, input.recipientUserIds));
+
+        if (!recipients.length) throw new TRPCError({ code: "BAD_REQUEST", message: "No valid recipients found" });
+
+        const { sendDirectEmail } = await import("./email");
+        const results: Array<{ userId: number; email: string; success: boolean; error?: string }> = [];
+
+        for (const recipient of recipients) {
+          if (!recipient.email) {
+            results.push({ userId: recipient.id, email: "", success: false, error: "No email address" });
+            continue;
+          }
+          const result = await sendDirectEmail({
+            toEmail: recipient.email,
+            toName: recipient.name ?? recipient.email,
+            subject: original.subject,
+            html: original.bodyHtml,
+            ...({
+              userId: recipient.id,
+              triggerKey: `resend:${original.triggerKey ?? "direct"}`,
+            } as any),
+          });
+          results.push({ userId: recipient.id, email: recipient.email, success: result.success, error: result.error });
+        }
+
+        const sent = results.filter((r) => r.success).length;
+        const failed = results.filter((r) => !r.success).length;
+        return { sent, failed, results };
+      }),
   }),
 });

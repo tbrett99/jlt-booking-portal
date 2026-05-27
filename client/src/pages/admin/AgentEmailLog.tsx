@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -17,7 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Mail, Search, Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { Mail, Search, Eye, ChevronLeft, ChevronRight, Send, X, CheckCircle, AlertCircle, Users } from "lucide-react";
+import { toast } from "sonner";
 
 const TRIGGER_LABELS: Record<string, string> = {
   gc_receipt: "Membership Receipt",
@@ -28,6 +30,9 @@ const TRIGGER_LABELS: Record<string, string> = {
   password_reset: "Password Reset",
   nudge: "Abandoned Sign-Up Nudge",
   campaign: "Email Campaign",
+  weekly_digest: "Weekly Digest",
+  event_reminder: "Event Reminder",
+  confirmation_reminder: "Confirmation Reminder",
 };
 
 const TRIGGER_COLORS: Record<string, string> = {
@@ -39,6 +44,9 @@ const TRIGGER_COLORS: Record<string, string> = {
   password_reset: "bg-orange-100 text-orange-800",
   nudge: "bg-cyan-100 text-cyan-800",
   campaign: "bg-indigo-100 text-indigo-800",
+  weekly_digest: "bg-teal-100 text-teal-800",
+  event_reminder: "bg-violet-100 text-violet-800",
+  confirmation_reminder: "bg-pink-100 text-pink-800",
 };
 
 const PAGE_SIZE = 50;
@@ -49,6 +57,12 @@ export default function AgentEmailLog() {
   const [triggerFilter, setTriggerFilter] = useState<string>("all");
   const [page, setPage] = useState(0);
   const [previewId, setPreviewId] = useState<number | null>(null);
+
+  // Resend state
+  const [resendSourceId, setResendSourceId] = useState<number | null>(null);
+  const [agentSearch, setAgentSearch] = useState("");
+  const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([]);
+  const [resendResult, setResendResult] = useState<{ sent: number; failed: number } | null>(null);
 
   // Debounce search
   const handleSearchChange = (val: string) => {
@@ -72,6 +86,61 @@ export default function AgentEmailLog() {
     { id: previewId! },
     { enabled: previewId !== null }
   );
+  const { data: resendSourceData } = trpc.crm.agentEmailLog.getBody.useQuery(
+    { id: resendSourceId! },
+    { enabled: resendSourceId !== null }
+  );
+
+  // Agents list for resend dialog
+  const { data: agentsList } = trpc.users.listAgents.useQuery(undefined, {
+    enabled: resendSourceId !== null,
+  });
+
+  const filteredAgents = useMemo(() => {
+    if (!agentsList) return [];
+    const q = agentSearch.toLowerCase();
+    if (!q) return agentsList;
+    return agentsList.filter(
+      (a) => a.name.toLowerCase().includes(q) || (a.email ?? "").toLowerCase().includes(q)
+    );
+  }, [agentsList, agentSearch]);
+
+  const resendMutation = trpc.crm.agentEmailLog.resend.useMutation({
+    onSuccess: (data) => {
+      setResendResult({ sent: data.sent, failed: data.failed });
+    },
+    onError: (err) => {
+      toast.error(`Resend failed: ${err.message}`);
+    },
+  });
+
+  const handleResendOpen = (emailId: number) => {
+    setResendSourceId(emailId);
+    setSelectedAgentIds([]);
+    setAgentSearch("");
+    setResendResult(null);
+  };
+
+  const handleResendClose = () => {
+    setResendSourceId(null);
+    setSelectedAgentIds([]);
+    setAgentSearch("");
+    setResendResult(null);
+  };
+
+  const toggleAgent = (id: number) => {
+    setSelectedAgentIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleResendConfirm = () => {
+    if (!resendSourceId || selectedAgentIds.length === 0) return;
+    resendMutation.mutate({
+      sourceEmailId: resendSourceId,
+      recipientUserIds: selectedAgentIds,
+    });
+  };
 
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
 
@@ -83,7 +152,7 @@ export default function AgentEmailLog() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-foreground">Agent Email Log</h1>
-          <p className="text-sm text-muted-foreground">All emails sent to agents from the portal</p>
+          <p className="text-sm text-muted-foreground">All emails sent to agents from the portal. Use Resend to forward any email to specific agents.</p>
         </div>
       </div>
 
@@ -177,15 +246,26 @@ export default function AgentEmailLog() {
                         })}
                       </td>
                       <td className="px-4 py-3">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setPreviewId(row.id)}
-                          className="h-7 px-2"
-                        >
-                          <Eye className="h-3.5 w-3.5 mr-1" />
-                          Preview
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setPreviewId(row.id)}
+                            className="h-7 px-2"
+                          >
+                            <Eye className="h-3.5 w-3.5 mr-1" />
+                            Preview
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleResendOpen(row.id)}
+                            className="h-7 px-2 text-[#02E6D2] hover:text-[#02E6D2] hover:bg-[#70FFE8]/20"
+                          >
+                            <Send className="h-3.5 w-3.5 mr-1" />
+                            Resend
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -253,6 +333,147 @@ export default function AgentEmailLog() {
             </div>
           ) : (
             <div className="p-8 text-center text-muted-foreground">No preview available</div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Resend Dialog */}
+      <Dialog open={resendSourceId !== null} onOpenChange={(open) => !open && handleResendClose()}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5 text-[#02E6D2]" />
+              Resend Email to Agents
+            </DialogTitle>
+            {resendSourceData && (
+              <p className="text-sm text-muted-foreground mt-1">
+                <span className="font-medium text-foreground">{resendSourceData.subject}</span>
+                <br />
+                Originally sent to {resendSourceData.toName ?? resendSourceData.toEmail} on{" "}
+                {new Date(resendSourceData.sentAt).toLocaleString("en-GB", {
+                  day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+                })}
+              </p>
+            )}
+          </DialogHeader>
+
+          {resendResult ? (
+            /* Result screen */
+            <div className="flex-1 flex flex-col items-center justify-center py-8 gap-4">
+              {resendResult.failed === 0 ? (
+                <CheckCircle className="h-12 w-12 text-emerald-500" />
+              ) : (
+                <AlertCircle className="h-12 w-12 text-amber-500" />
+              )}
+              <div className="text-center">
+                <p className="text-lg font-semibold">
+                  {resendResult.sent} email{resendResult.sent !== 1 ? "s" : ""} sent successfully
+                </p>
+                {resendResult.failed > 0 && (
+                  <p className="text-sm text-red-600 mt-1">
+                    {resendResult.failed} failed to send
+                  </p>
+                )}
+              </div>
+              <Button onClick={handleResendClose} className="mt-2">
+                Done
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex-1 overflow-hidden flex flex-col gap-3 min-h-0">
+                {/* Agent search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search agents by name or email..."
+                    value={agentSearch}
+                    onChange={(e) => setAgentSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+
+                {/* Selected agents chips */}
+                {selectedAgentIds.length > 0 && (
+                  <div className="flex flex-wrap gap-2 p-3 bg-[#70FFE8]/10 rounded-lg border border-[#70FFE8]/30">
+                    <span className="text-xs font-medium text-muted-foreground self-center mr-1">
+                      <Users className="h-3.5 w-3.5 inline mr-1" />
+                      {selectedAgentIds.length} selected:
+                    </span>
+                    {selectedAgentIds.map((id) => {
+                      const agent = agentsList?.find((a) => a.id === id);
+                      if (!agent) return null;
+                      return (
+                        <span
+                          key={id}
+                          className="inline-flex items-center gap-1 bg-white border rounded-full px-2.5 py-0.5 text-xs font-medium"
+                        >
+                          {agent.name}
+                          <button
+                            onClick={() => toggleAgent(id)}
+                            className="ml-0.5 hover:text-red-500 transition-colors"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Agent list */}
+                <div className="flex-1 overflow-y-auto border rounded-lg divide-y min-h-0">
+                  {!agentsList ? (
+                    <div className="p-4 text-center text-muted-foreground text-sm">Loading agents...</div>
+                  ) : filteredAgents.length === 0 ? (
+                    <div className="p-4 text-center text-muted-foreground text-sm">No agents found</div>
+                  ) : (
+                    filteredAgents.map((agent) => {
+                      const isSelected = selectedAgentIds.includes(agent.id);
+                      return (
+                        <button
+                          key={agent.id}
+                          onClick={() => toggleAgent(agent.id)}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-muted/30 transition-colors ${isSelected ? "bg-[#70FFE8]/10" : ""}`}
+                        >
+                          <div className={`h-4 w-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${isSelected ? "bg-[#02E6D2] border-[#02E6D2]" : "border-muted-foreground/40"}`}>
+                            {isSelected && (
+                              <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm truncate">{agent.name}</div>
+                            <div className="text-xs text-muted-foreground truncate">{agent.email}</div>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter className="pt-3 border-t mt-3">
+                <Button variant="outline" onClick={handleResendClose}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleResendConfirm}
+                  disabled={selectedAgentIds.length === 0 || resendMutation.isPending}
+                  className="bg-[#02E6D2] text-[#414141] hover:bg-[#70FFE8]"
+                >
+                  {resendMutation.isPending ? (
+                    "Sending..."
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4 mr-2" />
+                      Send to {selectedAgentIds.length > 0 ? `${selectedAgentIds.length} agent${selectedAgentIds.length !== 1 ? "s" : ""}` : "selected agents"}
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </>
           )}
         </DialogContent>
       </Dialog>

@@ -2462,3 +2462,8 @@
 - [x] Frontend: Events Calendar nav item added to Community section in sidebar
 - [x] Scheduler: day-of 07:00 UTC email reminder to all active agents for that day's events
 - [x] Tests for RSVP, .ics generation, agent visibility gating, duration defaulting (16 tests pass)
+
+## Resend Email to Agents
+- [x] Backend: crm.agentEmailLog.resend procedure — takes sourceEmailId + recipientUserIds, re-sends same subject/body via SMTP, logs each resend to agent_emails
+- [x] Frontend: Resend button on every row in Agent Email Log — opens dialog with agent search/multi-select, confirmation, and success/failure result screen
+- [x] Tests: 6 vitest tests covering admin-only access, Zod validation (empty list, >100 recipients), list/getBody access control
