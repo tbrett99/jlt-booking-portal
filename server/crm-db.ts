@@ -841,7 +841,12 @@ export async function getAgentEmailLog(params: {
     conditions.push(or(like(agentEmails.toEmail, s), like(agentEmails.toName as any, s), like(agentEmails.subject, s)));
   }
   if (params.triggerKey) {
-    conditions.push(eq(agentEmails.triggerKey, params.triggerKey));
+    // campaign:N keys are stored as "campaign:123" — prefix match covers all campaign emails
+    if (params.triggerKey === "campaign") {
+      conditions.push(like(agentEmails.triggerKey, "campaign%"));
+    } else {
+      conditions.push(eq(agentEmails.triggerKey, params.triggerKey));
+    }
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;

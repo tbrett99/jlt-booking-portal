@@ -6,11 +6,42 @@
 import { Resend } from "resend";
 import { ENV } from "./_core/env";
 import { getDb } from "./db";
-import { emailSends, emailUnsubscribes } from "../drizzle/schema";
+import { emailSends, emailUnsubscribes, agentEmails } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
 import { getEmailBrandingSettings } from "./crm-db";
 import type { EmailBrandingSettings } from "../drizzle/schema";
+
+/**
+ * Log a campaign email sent to an agent into the agent_emails audit table.
+ * Non-blocking — never throws.
+ */
+async function logCampaignEmailToAudit(params: {
+  recipientEmail: string;
+  recipientName?: string | null;
+  recipientId?: number | null;
+  subject: string;
+  bodyHtml: string;
+  campaignId?: number | null;
+  status: string;
+}): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await db.insert(agentEmails).values({
+      userId: params.recipientId ?? null,
+      toEmail: params.recipientEmail,
+      toName: params.recipientName ?? null,
+      subject: params.subject,
+      triggerKey: params.campaignId ? `campaign:${params.campaignId}` : "campaign",
+      bodyHtml: params.bodyHtml,
+      status: params.status,
+      sentAt: new Date(),
+    });
+  } catch (e) {
+    console.error("[Email] Failed to log campaign email to audit:", e);
+  }
+}
 
 /**
  * Replace {{first_name}}, {{full_name}}, {{email}} merge tags with real values.
@@ -337,10 +368,33 @@ export async function sendMarketingEmail(opts: {
     }
 
     await updateSendStatus(sendId, "sent", result.data?.id);
+    // Log agent-audience campaign emails to the agent_emails audit table
+    if (opts.audienceType === "agent") {
+      await logCampaignEmailToAudit({
+        recipientEmail: opts.to,
+        recipientName: opts.toName,
+        recipientId: opts.recipientId,
+        subject: personalisedSubject,
+        bodyHtml: html,
+        campaignId: opts.campaignId ?? null,
+        status: "sent",
+      });
+    }
     return { sendId, success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     await updateSendStatus(sendId, "failed", undefined, msg);
+    if (opts.audienceType === "agent") {
+      await logCampaignEmailToAudit({
+        recipientEmail: opts.to,
+        recipientName: opts.toName,
+        recipientId: opts.recipientId,
+        subject: opts.subject,
+        bodyHtml: opts.bodyHtml,
+        campaignId: opts.campaignId ?? null,
+        status: "failed",
+      });
+    }
     return { sendId, success: false, error: msg };
   }
 }
@@ -509,14 +563,47 @@ export async function processCampaignQueue(batchSize = 50): Promise<{ sent: numb
       if (result.error) {
         await updateSendStatus(row.id, "failed", undefined, result.error.message);
         failed++;
+        if (audienceType === "agent") {
+          await logCampaignEmailToAudit({
+            recipientEmail: row.recipientEmail,
+            recipientName: row.recipientName,
+            recipientId: row.recipientId,
+            subject: personalisedSubject,
+            bodyHtml: html,
+            campaignId: row.campaignId,
+            status: "failed",
+          });
+        }
       } else {
         await updateSendStatus(row.id, "sent", result.data?.id);
         sent++;
+        if (audienceType === "agent") {
+          await logCampaignEmailToAudit({
+            recipientEmail: row.recipientEmail,
+            recipientName: row.recipientName,
+            recipientId: row.recipientId,
+            subject: personalisedSubject,
+            bodyHtml: html,
+            campaignId: row.campaignId,
+            status: "sent",
+          });
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       await updateSendStatus(row.id, "failed", undefined, msg);
       failed++;
+      if (audienceType === "agent") {
+        await logCampaignEmailToAudit({
+          recipientEmail: row.recipientEmail,
+          recipientName: row.recipientName,
+          recipientId: row.recipientId,
+          subject: personalisedSubject,
+          bodyHtml: html,
+          campaignId: row.campaignId,
+          status: "failed",
+        });
+      }
     }
 
     // 100ms delay between sends to respect Resend rate limits
