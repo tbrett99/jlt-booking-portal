@@ -104,6 +104,7 @@ const SystemWorkflows = lazy(() => import("./pages/admin/SystemWorkflows"));
 const Community = lazy(() => import("./pages/Community"));
 const AgentCalendar = lazy(() => import("./pages/AgentCalendar"));
 const WeeklyDigestAdmin = lazy(() => import("./pages/community/WeeklyDigestAdmin"));
+const SuperAdminDashboard = lazy(() => import("./pages/admin/SuperAdminDashboard"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -344,6 +345,7 @@ function AuthRouter() {
         <Route path="/commissions-admin" component={AdminCommissions} />
         <Route path="/remittance" component={RemittanceManagement} />
         <Route path="/flights" component={AdminFlightsPipeline} />
+        <Route path="/super-admin" component={SuperAdminDashboard} />
         <Route path="/reports" component={AdminReports} />
         <Route path="/commission-margin" component={CommissionMarginReport} />
         <Route path="/agent-performance" component={AdminAgentPerformance} />

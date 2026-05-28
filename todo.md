@@ -2467,3 +2467,18 @@
 - [x] Backend: crm.agentEmailLog.resend procedure — takes sourceEmailId + recipientUserIds, re-sends same subject/body via SMTP, logs each resend to agent_emails
 - [x] Frontend: Resend button on every row in Agent Email Log — opens dialog with agent search/multi-select, confirmation, and success/failure result screen
 - [x] Tests: 6 vitest tests covering admin-only access, Zod validation (empty list, >100 recipients), list/getBody access control
+
+## Super Admin Business Intelligence Dashboard
+- [x] super-admin-router.ts: weeklyStats procedure — all 7 sections (Membership, DD Revenue, Bookings, Financials, Recruitment, Staff Productivity, Communications)
+- [x] Section 1: Membership & Retention (active agents, new sign-ups, cancellations, net growth, tier breakdown, paused/notice counts, WoW)
+- [x] Section 2: DD Revenue (MRR, collections, failed payments, new/cancelled mandates, consecutive failures, WoW)
+- [x] Section 3: Bookings & Pipeline (new bookings, pipeline moves, amendments, refunds, flight requests, stage distribution, WoW)
+- [x] Section 4: Financials (JLT revenue, agent payouts, commission claims, reimbursements, WoW)
+- [x] Section 5: Recruitment (new prospects, won, stage moves, funnel breakdown, WoW)
+- [x] Section 6: Staff Productivity (per-admin: pipeline moves, tasks, commissions paid, reimbursements, status changes, CRM notes, recruitment moves, total — sortable)
+- [x] Section 7: Communications (email volume, campaign open/bounce rates, campaigns sent, email type breakdown)
+- [x] Overview tab with 8 headline KPIs + staff summary table
+- [x] Week selector with WoW comparisons throughout
+- [x] Route /super-admin registered in App.tsx
+- [x] "Business Intelligence" nav item added to Reports section (super_admin only)
+- [x] 18 unit tests passing

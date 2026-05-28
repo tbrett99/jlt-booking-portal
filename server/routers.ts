@@ -140,6 +140,7 @@ import { recruitmentWorkflowRouter } from "./recruitment-workflow-router";
 import { dashboardRouter } from "./dashboard-router";
 import { suppliersRouter } from "./suppliers-router";
 import { communityRouter } from "./community-router";
+import { superAdminRouter } from "./super-admin-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -3713,8 +3714,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
   dashboard: dashboardRouter,
   suppliers: suppliersRouter,
   community: communityRouter,
-
-  // ─── GoCardless Direct Debit ───────────────────────────────────────────────
+  superAdmin: superAdminRouter,
+  // ─── GoCardless Direct Debitt ───────────────────────────────────────────────
   gocardless: router({
     /**
      * Initiate DD setup: creates a GoCardless Billing Request + Flow and returns
