@@ -2482,3 +2482,17 @@
 - [x] Route /super-admin registered in App.tsx
 - [x] "Business Intelligence" nav item added to Reports section (super_admin only)
 - [x] 18 unit tests passing
+
+## Super Admin Dashboard — Bug Fixes & Enhancements (Round 2)
+- [x] Fix: New sign-ups always 0 — now counts recruitmentStageHistory moves to "won" in the week
+- [x] Fix: Active subscriptions — now shows active+paused combined; clarified 168 is correct GC count
+- [x] Fix: Active subscriptions 168 vs 200+ — confirmed 168 is GC subscriptions; added active+paused total
+- [x] Fix: CRM notes always 0 — renamed to Booking Notes, counts admin-authored notes from notes table
+- [x] Fix: Collected this week — now shows both Confirmed (submitted to bank) and Paid Out (landed in account) separately
+- [x] Add: Amendments section in Bookings tab (new amendments, actioned, pending)
+- [x] Add: Refunds section in Bookings tab (new refunds, by stage)
+- [x] Add: Pipeline dwell time — avg days per stage from pipeline_history
+- [x] Add: Staff productivity — reimbursements marked as scheduled
+- [x] Add: Staff productivity — messages/notes written (shared notes authored by admin)
+- [x] Add: Drill-down modal for Memberships section (list of new sign-ups, cancellations, tier breakdown)
+- [x] Add: Drill-down modal for DD Revenue section (list of failed payments, new mandates, collections detail)

@@ -41,7 +41,7 @@ export const superAdminRouter = router({
         gcPaymentEvents,
         gcPaymentFailures,
         adminTasks,
-        agentCrmNotes,
+        notes,
         emailCampaigns,
         emailSends,
         agentEmails,
@@ -50,9 +50,9 @@ export const superAdminRouter = router({
         recruitmentStageHistory,
       } = await import("../drizzle/schema");
 
-      const { gte, lt, lte, and, eq, sql, isNotNull, inArray, or, ne } = await import("drizzle-orm");
+      const { gte, lt, and, eq, sql, isNotNull, inArray, or, ne } = await import("drizzle-orm");
 
-      const weekStartDate = new Date(input.weekStart);
+      const weekStartDate = new Date(input.weekStart + "T00:00:00.000Z");
       const weekEndDate = new Date(weekStartDate);
       weekEndDate.setDate(weekEndDate.getDate() + 7);
 
@@ -63,23 +63,24 @@ export const superAdminRouter = router({
 
       // ─── SECTION 1: Membership & Retention ────────────────────────────────
 
-      // New sign-ups this week (portalStatus changed to active this week via agentStatusEvents)
+      // New sign-ups: agents who moved to "won" in recruitment this week
+      // (this is when an agent joins — the recruitment stage history records it)
       const newSignupsThisWeek = await db
         .select({ count: sql<number>`COUNT(*)` })
-        .from(agentStatusEvents)
+        .from(recruitmentStageHistory)
         .where(and(
-          eq(agentStatusEvents.toStatus, "active"),
-          gte(agentStatusEvents.createdAt, weekStartDate),
-          lt(agentStatusEvents.createdAt, weekEndDate),
+          eq(recruitmentStageHistory.toStage, "won"),
+          gte(recruitmentStageHistory.changedAt, weekStartDate),
+          lt(recruitmentStageHistory.changedAt, weekEndDate),
         ));
 
       const newSignupsPrevWeek = await db
         .select({ count: sql<number>`COUNT(*)` })
-        .from(agentStatusEvents)
+        .from(recruitmentStageHistory)
         .where(and(
-          eq(agentStatusEvents.toStatus, "active"),
-          gte(agentStatusEvents.createdAt, prevWeekStart),
-          lt(agentStatusEvents.createdAt, prevWeekEnd),
+          eq(recruitmentStageHistory.toStage, "won"),
+          gte(recruitmentStageHistory.changedAt, prevWeekStart),
+          lt(recruitmentStageHistory.changedAt, prevWeekEnd),
         ));
 
       // Cancellations / churn this week
@@ -101,11 +102,17 @@ export const superAdminRouter = router({
           lt(agentStatusEvents.createdAt, prevWeekEnd),
         ));
 
-      // Total active agents (snapshot at end of week)
+      // Total active agents (current snapshot)
       const totalActiveAgents = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(agentCrmProfiles)
         .where(eq(agentCrmProfiles.agentStatus, "active"));
+
+      // Total active + paused (paying members)
+      const totalPayingAgents = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(agentCrmProfiles)
+        .where(inArray(agentCrmProfiles.agentStatus, ["active", "paused"]));
 
       // Membership tier breakdown
       const tierBreakdown = await db
@@ -114,7 +121,7 @@ export const superAdminRouter = router({
           count: sql<number>`COUNT(*)`,
         })
         .from(agentCrmProfiles)
-        .where(eq(agentCrmProfiles.agentStatus, "active"))
+        .where(inArray(agentCrmProfiles.agentStatus, ["active", "paused"]))
         .groupBy(agentCrmProfiles.membershipTier);
 
       // Agents in notice / paused
@@ -130,7 +137,7 @@ export const superAdminRouter = router({
 
       // ─── SECTION 2: DD Revenue (GoCardless) ───────────────────────────────
 
-      // Active subscriptions & MRR
+      // Active GC subscriptions & MRR (active only for MRR)
       const activeSubscriptions = await db
         .select({
           count: sql<number>`COUNT(*)`,
@@ -139,7 +146,13 @@ export const superAdminRouter = router({
         .from(gcSubscriptions)
         .where(eq(gcSubscriptions.status, "active"));
 
-      // Payments confirmed this week (actual collections)
+      // Active + paused subscriptions count
+      const totalGcSubscriptions = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(gcSubscriptions)
+        .where(inArray(gcSubscriptions.status, ["active", "paused"]));
+
+      // Payments confirmed this week (submitted to bank by GC)
       const paymentsConfirmedThisWeek = await db
         .select({
           count: sql<number>`COUNT(*)`,
@@ -163,6 +176,20 @@ export const superAdminRouter = router({
           eq(gcPaymentEvents.eventType, "payments_confirmed"),
           gte(gcPaymentEvents.occurredAt, prevWeekStart),
           lt(gcPaymentEvents.occurredAt, prevWeekEnd),
+          isNotNull(gcPaymentEvents.amount),
+        ));
+
+      // Payments paid out this week (funds actually landed in your bank account)
+      const paymentsPaidOutThisWeek = await db
+        .select({
+          count: sql<number>`COUNT(*)`,
+          totalPence: sql<number>`SUM(amount)`,
+        })
+        .from(gcPaymentEvents)
+        .where(and(
+          eq(gcPaymentEvents.eventType, "payments_paid_out"),
+          gte(gcPaymentEvents.occurredAt, weekStartDate),
+          lt(gcPaymentEvents.occurredAt, weekEndDate),
           isNotNull(gcPaymentEvents.amount),
         ));
 
@@ -254,7 +281,18 @@ export const superAdminRouter = router({
           lt(amendments.createdAt, weekEndDate),
         ));
 
-      // Refunds this week
+      // Amendments actioned this week
+      const amendmentsActionedThisWeek = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(amendments)
+        .where(and(
+          eq(amendments.status, "actioned"),
+          isNotNull(amendments.actionedAt),
+          gte(amendments.actionedAt, weekStartDate),
+          lt(amendments.actionedAt, weekEndDate),
+        ));
+
+      // Refunds this week (created)
       const refundsThisWeek = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(refunds)
@@ -262,6 +300,17 @@ export const superAdminRouter = router({
           gte(refunds.createdAt, weekStartDate),
           lt(refunds.createdAt, weekEndDate),
         ));
+
+      // Refunds by stage (current snapshot)
+      const refundsByStage = await db
+        .select({
+          stage: refunds.pipelineStage,
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(refunds)
+        .where(ne(refunds.status, "completed"))
+        .groupBy(refunds.pipelineStage)
+        .orderBy(sql`COUNT(*) DESC`);
 
       // Flight requests this week
       const flightRequestsThisWeek = await db
@@ -276,6 +325,24 @@ export const superAdminRouter = router({
         .select({ count: sql<number>`COUNT(*)` })
         .from(flightRequests)
         .where(eq(flightRequests.status, "pending"));
+
+      // Pipeline dwell time: avg days per stage (calculated from pipeline_history)
+      // For each stage, find the avg time between entering and leaving that stage
+      const pipelineDwellRaw = await db.execute(sql`
+        SELECT 
+          ph1.toStage AS stage,
+          AVG(TIMESTAMPDIFF(HOUR, ph1.movedAt, COALESCE(ph2.movedAt, NOW()))) / 24.0 AS avgDays,
+          COUNT(*) AS bookingCount
+        FROM pipeline_history ph1
+        LEFT JOIN pipeline_history ph2 ON ph2.bookingId = ph1.bookingId 
+          AND ph2.id = (
+            SELECT MIN(id) FROM pipeline_history 
+            WHERE bookingId = ph1.bookingId AND id > ph1.id
+          )
+        GROUP BY ph1.toStage
+        ORDER BY avgDays DESC
+        LIMIT 20
+      `);
 
       // ─── SECTION 4: Financials ─────────────────────────────────────────────
 
@@ -351,7 +418,16 @@ export const superAdminRouter = router({
           lt(reimbursementItems.paidAt, weekEndDate),
         ));
 
-      // Reimbursements pending
+      // Reimbursements scheduled (approved, awaiting payment)
+      const reimbursementsScheduled = await db
+        .select({
+          count: sql<number>`COUNT(*)`,
+          total: sql<number>`SUM(amount)`,
+        })
+        .from(reimbursementItems)
+        .where(eq(reimbursementItems.status, "scheduled"));
+
+      // Reimbursements pending (not yet approved)
       const reimbursementsPending = await db
         .select({
           count: sql<number>`COUNT(*)`,
@@ -379,14 +455,14 @@ export const superAdminRouter = router({
           lt(recruitmentProspects.createdAt, prevWeekEnd),
         ));
 
-      // Won prospects this week
+      // Won prospects this week (stage moved to "won" this week)
       const wonProspectsThisWeek = await db
         .select({ count: sql<number>`COUNT(*)` })
-        .from(recruitmentProspects)
+        .from(recruitmentStageHistory)
         .where(and(
-          eq(recruitmentProspects.pipelineStage, "won"),
-          gte(recruitmentProspects.updatedAt, weekStartDate),
-          lt(recruitmentProspects.updatedAt, weekEndDate),
+          eq(recruitmentStageHistory.toStage, "won"),
+          gte(recruitmentStageHistory.changedAt, weekStartDate),
+          lt(recruitmentStageHistory.changedAt, weekEndDate),
         ));
 
       // Current funnel snapshot
@@ -424,17 +500,18 @@ export const superAdminRouter = router({
       const adminIds = adminUsers.map((u) => u.id);
 
       if (adminIds.length === 0) {
-        // Return empty staff productivity
         return buildResponse({
           newSignupsThisWeek, newSignupsPrevWeek, cancellationsThisWeek, cancellationsPrevWeek,
-          totalActiveAgents, tierBreakdown, inNoticeCount, pausedCount,
-          activeSubscriptions, paymentsConfirmedThisWeek, paymentsConfirmedPrevWeek,
+          totalActiveAgents, totalPayingAgents, tierBreakdown, inNoticeCount, pausedCount,
+          activeSubscriptions, totalGcSubscriptions,
+          paymentsConfirmedThisWeek, paymentsConfirmedPrevWeek, paymentsPaidOutThisWeek,
           failedPaymentsThisWeek, agentsWithFailures, newMandatesThisWeek, cancelledMandatesThisWeek,
           newBookingsThisWeek, newBookingsPrevWeek, pipelineStageDistribution, pipelineMovesThisWeek,
-          amendmentsThisWeek, refundsThisWeek, flightRequestsThisWeek, flightRequestsPendingCount,
+          amendmentsThisWeek, amendmentsActionedThisWeek, refundsThisWeek, refundsByStage,
+          flightRequestsThisWeek, flightRequestsPendingCount, pipelineDwellRaw,
           jltRevenueThisWeek, jltRevenuePrevWeek, agentPayoutsThisWeek,
           commissionClaimsThisWeek, commissionClaimsPaidThisWeek,
-          reimbursementsPaidThisWeek, reimbursementsPending,
+          reimbursementsPaidThisWeek, reimbursementsScheduled, reimbursementsPending,
           newProspectsThisWeek, newProspectsPrevWeek, wonProspectsThisWeek,
           recruitmentFunnel, recruitmentStageMovesThisWeek,
           staffProductivity: [],
@@ -522,6 +599,23 @@ export const superAdminRouter = router({
         ))
         .groupBy(reimbursementItems.paidById);
 
+      // Reimbursements scheduled per admin (marked as scheduled this week)
+      const reimbursementsScheduledByAdmin = await db
+        .select({
+          adminId: reimbursementItems.assignedToId,
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(reimbursementItems)
+        .where(and(
+          eq(reimbursementItems.status, "scheduled"),
+          isNotNull(reimbursementItems.scheduledAt),
+          gte(reimbursementItems.scheduledAt, weekStartDate),
+          lt(reimbursementItems.scheduledAt, weekEndDate),
+          isNotNull(reimbursementItems.assignedToId),
+          inArray(reimbursementItems.assignedToId, adminIds),
+        ))
+        .groupBy(reimbursementItems.assignedToId);
+
       // Agent status changes per admin
       const statusChangesByAdmin = await db
         .select({
@@ -536,19 +630,36 @@ export const superAdminRouter = router({
         ))
         .groupBy(agentStatusEvents.adminId);
 
-      // CRM notes written per admin
+      // Booking notes written per admin (admin-authored notes in the notes table)
       const notesByAdmin = await db
         .select({
-          adminId: agentCrmNotes.authorId,
+          adminId: notes.authorId,
           count: sql<number>`COUNT(*)`,
         })
-        .from(agentCrmNotes)
+        .from(notes)
         .where(and(
-          gte(agentCrmNotes.createdAt, weekStartDate),
-          lt(agentCrmNotes.createdAt, weekEndDate),
-          inArray(agentCrmNotes.authorId, adminIds),
+          gte(notes.createdAt, weekStartDate),
+          lt(notes.createdAt, weekEndDate),
+          inArray(notes.authorId, adminIds),
         ))
-        .groupBy(agentCrmNotes.authorId);
+        .groupBy(notes.authorId);
+
+      // Amendments actioned per admin
+      const amendmentsActionedByAdmin = await db
+        .select({
+          adminId: amendments.actionedById,
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(amendments)
+        .where(and(
+          eq(amendments.status, "actioned"),
+          isNotNull(amendments.actionedAt),
+          gte(amendments.actionedAt, weekStartDate),
+          lt(amendments.actionedAt, weekEndDate),
+          isNotNull(amendments.actionedById),
+          inArray(amendments.actionedById, adminIds),
+        ))
+        .groupBy(amendments.actionedById);
 
       // Recruitment stage moves per admin
       const recruitmentMovesByAdmin = await db
@@ -574,8 +685,10 @@ export const superAdminRouter = router({
         const commissionsTotal = commissionsPaidByAdmin.find((r) => r.adminId === admin.id)?.total ?? 0;
         const reimbPaid = reimbursementsPaidByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
         const reimbTotal = reimbursementsPaidByAdmin.find((r) => r.adminId === admin.id)?.total ?? 0;
+        const reimbScheduled = reimbursementsScheduledByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
         const statusChanges = statusChangesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
-        const crmNotes = notesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
+        const bookingNotes = notesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
+        const amendmentsActioned = amendmentsActionedByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
         const recruitmentMoves = recruitmentMovesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
 
         return {
@@ -589,16 +702,20 @@ export const superAdminRouter = router({
           commissionsTotal: Number(commissionsTotal),
           reimbursementsPaid: Number(reimbPaid),
           reimbursementsTotal: Number(reimbTotal),
+          reimbursementsScheduled: Number(reimbScheduled),
           statusChanges: Number(statusChanges),
-          crmNotes: Number(crmNotes),
+          bookingNotes: Number(bookingNotes),
+          amendmentsActioned: Number(amendmentsActioned),
           recruitmentMoves: Number(recruitmentMoves),
           totalActions:
             Number(pipelineMoves) +
             Number(tasksCompleted) +
             Number(commissionsPaid) +
             Number(reimbPaid) +
+            Number(reimbScheduled) +
             Number(statusChanges) +
-            Number(crmNotes) +
+            Number(bookingNotes) +
+            Number(amendmentsActioned) +
             Number(recruitmentMoves),
         };
       }).sort((a, b) => b.totalActions - a.totalActions);
@@ -695,14 +812,16 @@ export const superAdminRouter = router({
 
       return buildResponse({
         newSignupsThisWeek, newSignupsPrevWeek, cancellationsThisWeek, cancellationsPrevWeek,
-        totalActiveAgents, tierBreakdown, inNoticeCount, pausedCount,
-        activeSubscriptions, paymentsConfirmedThisWeek, paymentsConfirmedPrevWeek,
+        totalActiveAgents, totalPayingAgents, tierBreakdown, inNoticeCount, pausedCount,
+        activeSubscriptions, totalGcSubscriptions,
+        paymentsConfirmedThisWeek, paymentsConfirmedPrevWeek, paymentsPaidOutThisWeek,
         failedPaymentsThisWeek, agentsWithFailures, newMandatesThisWeek, cancelledMandatesThisWeek,
         newBookingsThisWeek, newBookingsPrevWeek, pipelineStageDistribution, pipelineMovesThisWeek,
-        amendmentsThisWeek, refundsThisWeek, flightRequestsThisWeek, flightRequestsPendingCount,
+        amendmentsThisWeek, amendmentsActionedThisWeek, refundsThisWeek, refundsByStage,
+        flightRequestsThisWeek, flightRequestsPendingCount, pipelineDwellRaw,
         jltRevenueThisWeek, jltRevenuePrevWeek, agentPayoutsThisWeek,
         commissionClaimsThisWeek, commissionClaimsPaidThisWeek,
-        reimbursementsPaidThisWeek, reimbursementsPending,
+        reimbursementsPaidThisWeek, reimbursementsScheduled, reimbursementsPending,
         newProspectsThisWeek, newProspectsPrevWeek, wonProspectsThisWeek,
         recruitmentFunnel, recruitmentStageMovesThisWeek,
         staffProductivity,
@@ -714,7 +833,7 @@ export const superAdminRouter = router({
    * 13-week trend data for sparklines / charts
    */
   weeklyTrend: superAdminProcedure
-    .input(z.object({ metric: z.enum(["newSignups", "cancellations", "newBookings", "ddCollected", "newProspects", "jltRevenue"]) }))
+    .input(z.object({ metric: z.enum(["newSignups", "cancellations", "newBookings", "ddConfirmed", "ddPaidOut", "newProspects", "jltRevenue"]) }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
       const db = await getDb();
@@ -725,6 +844,7 @@ export const superAdminRouter = router({
         bookings,
         gcPaymentEvents,
         recruitmentProspects,
+        recruitmentStageHistory,
         remittanceLines,
         remittanceBatches,
       } = await import("../drizzle/schema");
@@ -732,7 +852,6 @@ export const superAdminRouter = router({
 
       const weeks: Array<{ label: string; start: Date; end: Date }> = [];
       const now = new Date();
-      // Get Monday of current week
       const dayOfWeek = now.getDay();
       const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
       const thisMonday = new Date(now);
@@ -754,8 +873,8 @@ export const superAdminRouter = router({
         let value = 0;
         if (input.metric === "newSignups") {
           const r = await db.select({ count: sql<number>`COUNT(*)` })
-            .from(agentStatusEvents)
-            .where(and(eq(agentStatusEvents.toStatus, "active"), gte(agentStatusEvents.createdAt, week.start), lt(agentStatusEvents.createdAt, week.end)));
+            .from(recruitmentStageHistory)
+            .where(and(eq(recruitmentStageHistory.toStage, "won"), gte(recruitmentStageHistory.changedAt, week.start), lt(recruitmentStageHistory.changedAt, week.end)));
           value = Number(r[0]?.count ?? 0);
         } else if (input.metric === "cancellations") {
           const r = await db.select({ count: sql<number>`COUNT(*)` })
@@ -767,10 +886,15 @@ export const superAdminRouter = router({
             .from(bookings)
             .where(and(gte(bookings.createdAt, week.start), lt(bookings.createdAt, week.end)));
           value = Number(r[0]?.count ?? 0);
-        } else if (input.metric === "ddCollected") {
+        } else if (input.metric === "ddConfirmed") {
           const r = await db.select({ total: sql<number>`SUM(amount)` })
             .from(gcPaymentEvents)
             .where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, week.start), lt(gcPaymentEvents.occurredAt, week.end), isNotNull(gcPaymentEvents.amount)));
+          value = Math.round(Number(r[0]?.total ?? 0) / 100);
+        } else if (input.metric === "ddPaidOut") {
+          const r = await db.select({ total: sql<number>`SUM(amount)` })
+            .from(gcPaymentEvents)
+            .where(and(eq(gcPaymentEvents.eventType, "payments_paid_out"), gte(gcPaymentEvents.occurredAt, week.start), lt(gcPaymentEvents.occurredAt, week.end), isNotNull(gcPaymentEvents.amount)));
           value = Math.round(Number(r[0]?.total ?? 0) / 100);
         } else if (input.metric === "newProspects") {
           const r = await db.select({ count: sql<number>`COUNT(*)` })
@@ -789,15 +913,244 @@ export const superAdminRouter = router({
 
       return results;
     }),
+
+  /**
+   * Drill-down: list of agents who signed up (moved to won) in a given week
+   */
+  drillDownSignups: superAdminProcedure
+    .input(z.object({ weekStart: z.string() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { recruitmentStageHistory, recruitmentProspects } = await import("../drizzle/schema");
+      const { gte, lt, and, eq } = await import("drizzle-orm");
+      const weekStartDate = new Date(input.weekStart + "T00:00:00.000Z");
+      const weekEndDate = new Date(weekStartDate);
+      weekEndDate.setDate(weekEndDate.getDate() + 7);
+      return db
+        .select({
+          id: recruitmentStageHistory.id,
+          prospectId: recruitmentStageHistory.prospectId,
+          firstName: recruitmentProspects.firstName,
+          lastName: recruitmentProspects.lastName,
+          email: recruitmentProspects.email,
+          tierInterest: recruitmentProspects.tierInterest,
+          changedAt: recruitmentStageHistory.changedAt,
+          changedByName: recruitmentStageHistory.changedByName,
+        })
+        .from(recruitmentStageHistory)
+        .innerJoin(recruitmentProspects, eq(recruitmentStageHistory.prospectId, recruitmentProspects.id))
+        .where(and(
+          eq(recruitmentStageHistory.toStage, "won"),
+          gte(recruitmentStageHistory.changedAt, weekStartDate),
+          lt(recruitmentStageHistory.changedAt, weekEndDate),
+        ))
+        .orderBy(recruitmentStageHistory.changedAt);
+    }),
+
+  /**
+   * Drill-down: list of cancellations in a given week
+   */
+  drillDownCancellations: superAdminProcedure
+    .input(z.object({ weekStart: z.string() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { agentStatusEvents, users } = await import("../drizzle/schema");
+      const { gte, lt, and, inArray, eq } = await import("drizzle-orm");
+      const weekStartDate = new Date(input.weekStart + "T00:00:00.000Z");
+      const weekEndDate = new Date(weekStartDate);
+      weekEndDate.setDate(weekEndDate.getDate() + 7);
+      return db
+        .select({
+          id: agentStatusEvents.id,
+          userId: agentStatusEvents.userId,
+          agentName: users.name,
+          agentEmail: users.email,
+          toStatus: agentStatusEvents.toStatus,
+          notes: agentStatusEvents.notes,
+          createdAt: agentStatusEvents.createdAt,
+        })
+        .from(agentStatusEvents)
+        .innerJoin(users, eq(agentStatusEvents.userId, users.id))
+        .where(and(
+          inArray(agentStatusEvents.toStatus, ["cancelled", "in_notice"]),
+          gte(agentStatusEvents.createdAt, weekStartDate),
+          lt(agentStatusEvents.createdAt, weekEndDate),
+        ))
+        .orderBy(agentStatusEvents.createdAt);
+    }),
+
+  /**
+   * Drill-down: DD payment events for a given week
+   */
+  drillDownDdPayments: superAdminProcedure
+    .input(z.object({ weekStart: z.string(), eventType: z.enum(["payments_confirmed", "payments_paid_out", "payments_failed"]).optional() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { gcPaymentEvents, users } = await import("../drizzle/schema");
+      const { gte, lt, and, eq, isNotNull } = await import("drizzle-orm");
+      const weekStartDate = new Date(input.weekStart + "T00:00:00.000Z");
+      const weekEndDate = new Date(weekStartDate);
+      weekEndDate.setDate(weekEndDate.getDate() + 7);
+      return db
+        .select({
+          id: gcPaymentEvents.id,
+          userId: gcPaymentEvents.userId,
+          agentName: users.name,
+          agentEmail: users.email,
+          paymentId: gcPaymentEvents.paymentId,
+          amount: gcPaymentEvents.amount,
+          currency: gcPaymentEvents.currency,
+          failureReason: gcPaymentEvents.failureReason,
+          failureDescription: gcPaymentEvents.failureDescription,
+          occurredAt: gcPaymentEvents.occurredAt,
+        })
+        .from(gcPaymentEvents)
+        .leftJoin(users, eq(gcPaymentEvents.userId, users.id))
+        .where(and(
+          input.eventType ? eq(gcPaymentEvents.eventType, input.eventType) : undefined,
+          gte(gcPaymentEvents.occurredAt, weekStartDate),
+          lt(gcPaymentEvents.occurredAt, weekEndDate),
+          isNotNull(gcPaymentEvents.amount),
+        ))
+        .orderBy(gcPaymentEvents.occurredAt);
+    }),
+
+  /**
+   * Drill-down: active GC subscriptions with agent details
+   */
+  drillDownSubscriptions: superAdminProcedure
+    .input(z.object({ status: z.enum(["active", "paused", "cancelled"]).optional() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { gcSubscriptions, users, agentCrmProfiles } = await import("../drizzle/schema");
+      const { eq, sql: sqlDrizzle, and: andDrizzle, or: orDrizzle } = await import("drizzle-orm");
+      const statusFilter = input.status ? [input.status] : ["active", "paused"];
+      const statusCond = statusFilter.length === 1
+        ? eq(gcSubscriptions.status, statusFilter[0] as "active" | "paused" | "cancelled")
+        : orDrizzle(
+            eq(gcSubscriptions.status, statusFilter[0] as "active" | "paused" | "cancelled"),
+            eq(gcSubscriptions.status, statusFilter[1] as "active" | "paused" | "cancelled"),
+          );
+      return db
+        .select({
+          id: gcSubscriptions.id,
+          userId: gcSubscriptions.userId,
+          agentName: users.name,
+          agentEmail: users.email,
+          membershipTier: agentCrmProfiles.membershipTier,
+          status: gcSubscriptions.status,
+          amount: gcSubscriptions.amount,
+          currency: gcSubscriptions.currency,
+          nextChargeDate: gcSubscriptions.nextChargeDate,
+          createdAt: gcSubscriptions.createdAt,
+        })
+        .from(gcSubscriptions)
+        .innerJoin(users, eq(gcSubscriptions.userId, users.id))
+        .leftJoin(agentCrmProfiles, eq(gcSubscriptions.userId, agentCrmProfiles.userId))
+        .where(statusCond)
+        .orderBy(gcSubscriptions.createdAt);
+    }),
 });
 
-function buildResponse(data: any) {
-  const n = (v: any) => Number(v ?? 0);
+function buildResponse(data: {
+  newSignupsThisWeek: Array<{ count: number }>;
+  newSignupsPrevWeek: Array<{ count: number }>;
+  cancellationsThisWeek: Array<{ count: number }>;
+  cancellationsPrevWeek: Array<{ count: number }>;
+  totalActiveAgents: Array<{ count: number }>;
+  totalPayingAgents: Array<{ count: number }>;
+  tierBreakdown: Array<{ tier: string | null; count: number }>;
+  inNoticeCount: Array<{ count: number }>;
+  pausedCount: Array<{ count: number }>;
+  activeSubscriptions: Array<{ count: number; totalAmountPence: number }>;
+  totalGcSubscriptions: Array<{ count: number }>;
+  paymentsConfirmedThisWeek: Array<{ count: number; totalPence: number }>;
+  paymentsConfirmedPrevWeek: Array<{ count: number; totalPence: number }>;
+  paymentsPaidOutThisWeek: Array<{ count: number; totalPence: number }>;
+  failedPaymentsThisWeek: Array<{ count: number; totalPence: number }>;
+  agentsWithFailures: Array<{ count: number; totalFailures: number }>;
+  newMandatesThisWeek: Array<{ count: number }>;
+  cancelledMandatesThisWeek: Array<{ count: number }>;
+  newBookingsThisWeek: Array<{ count: number }>;
+  newBookingsPrevWeek: Array<{ count: number }>;
+  pipelineStageDistribution: Array<{ stage: string | null; count: number }>;
+  pipelineMovesThisWeek: Array<{ count: number }>;
+  amendmentsThisWeek: Array<{ count: number }>;
+  amendmentsActionedThisWeek: Array<{ count: number }>;
+  refundsThisWeek: Array<{ count: number }>;
+  refundsByStage: Array<{ stage: string | null; count: number }>;
+  flightRequestsThisWeek: Array<{ count: number }>;
+  flightRequestsPendingCount: Array<{ count: number }>;
+  pipelineDwellRaw: unknown;
+  jltRevenueThisWeek: Array<{ total: number | null }>;
+  jltRevenuePrevWeek: Array<{ total: number | null }>;
+  agentPayoutsThisWeek: Array<{ total: number | null }>;
+  commissionClaimsThisWeek: Array<{ count: number; totalGross: number }>;
+  commissionClaimsPaidThisWeek: Array<{ count: number; totalGross: number }>;
+  reimbursementsPaidThisWeek: Array<{ count: number; total: number }>;
+  reimbursementsScheduled: Array<{ count: number; total: number }>;
+  reimbursementsPending: Array<{ count: number; total: number }>;
+  newProspectsThisWeek: Array<{ count: number }>;
+  newProspectsPrevWeek: Array<{ count: number }>;
+  wonProspectsThisWeek: Array<{ count: number }>;
+  recruitmentFunnel: Array<{ stage: string | null; count: number }>;
+  recruitmentStageMovesThisWeek: Array<{ count: number }>;
+  staffProductivity: Array<{
+    adminId: number;
+    adminName: string | null;
+    adminRole: string;
+    pipelineMoves: number;
+    tasksCompleted: number;
+    tasksCreated: number;
+    commissionsPaid: number;
+    commissionsTotal: number;
+    reimbursementsPaid: number;
+    reimbursementsTotal: number;
+    reimbursementsScheduled: number;
+    statusChanges: number;
+    bookingNotes: number;
+    amendmentsActioned: number;
+    recruitmentMoves: number;
+    totalActions: number;
+  }>;
+  emailStats: {
+    emailsSentThisWeek: number;
+    emailsSentPrevWeek: number;
+    campaignEmailsThisWeek: number;
+    campaignOpenRate: number;
+    campaignClickRate: number;
+    campaignBounceRate: number;
+    campaignsSentThisWeek: Array<{
+      id: number;
+      name: string;
+      audienceType: string | null;
+      totalRecipients: number | null;
+      sentAt: Date | null;
+      sentByName: string | null;
+    }>;
+    emailTypeBreakdown: Array<{ triggerKey: string; count: number }>;
+  } | null;
+}) {
+  const n = (v: unknown) => Number(v ?? 0);
+
+  // Parse pipeline dwell time from raw SQL result
+  const dwellRows = Array.isArray(data.pipelineDwellRaw)
+    ? (data.pipelineDwellRaw as Array<{ stage: string; avgDays: number; bookingCount: number }>)
+    : [];
 
   return {
     // Section 1: Membership
     membership: {
       totalActiveAgents: n(data.totalActiveAgents[0]?.count),
+      totalPayingAgents: n(data.totalPayingAgents[0]?.count),
       newSignupsThisWeek: n(data.newSignupsThisWeek[0]?.count),
       newSignupsPrevWeek: n(data.newSignupsPrevWeek[0]?.count),
       cancellationsThisWeek: n(data.cancellationsThisWeek[0]?.count),
@@ -805,7 +1158,7 @@ function buildResponse(data: any) {
       netGrowthThisWeek: n(data.newSignupsThisWeek[0]?.count) - n(data.cancellationsThisWeek[0]?.count),
       inNoticeCount: n(data.inNoticeCount[0]?.count),
       pausedCount: n(data.pausedCount[0]?.count),
-      tierBreakdown: (data.tierBreakdown as any[]).map((r) => ({
+      tierBreakdown: data.tierBreakdown.map((r) => ({
         tier: r.tier ?? "Unknown",
         count: n(r.count),
       })),
@@ -814,13 +1167,17 @@ function buildResponse(data: any) {
     // Section 2: DD Revenue
     ddRevenue: {
       activeSubscriptions: n(data.activeSubscriptions[0]?.count),
+      totalGcSubscriptions: n(data.totalGcSubscriptions[0]?.count),
       mrrPence: n(data.activeSubscriptions[0]?.totalAmountPence),
       mrrGbp: Math.round(n(data.activeSubscriptions[0]?.totalAmountPence) / 100),
+      // Confirmed = submitted to bank by GoCardless
       paymentsConfirmedThisWeek: n(data.paymentsConfirmedThisWeek[0]?.count),
       paymentsConfirmedPrevWeek: n(data.paymentsConfirmedPrevWeek[0]?.count),
-      collectedThisWeekPence: n(data.paymentsConfirmedThisWeek[0]?.totalPence),
-      collectedThisWeekGbp: Math.round(n(data.paymentsConfirmedThisWeek[0]?.totalPence) / 100),
-      collectedPrevWeekGbp: Math.round(n(data.paymentsConfirmedPrevWeek[0]?.totalPence) / 100),
+      confirmedThisWeekGbp: Math.round(n(data.paymentsConfirmedThisWeek[0]?.totalPence) / 100),
+      confirmedPrevWeekGbp: Math.round(n(data.paymentsConfirmedPrevWeek[0]?.totalPence) / 100),
+      // Paid out = funds landed in your bank account
+      paymentsPaidOutThisWeek: n(data.paymentsPaidOutThisWeek[0]?.count),
+      paidOutThisWeekGbp: Math.round(n(data.paymentsPaidOutThisWeek[0]?.totalPence) / 100),
       failedPaymentsThisWeek: n(data.failedPaymentsThisWeek[0]?.count),
       failedAmountGbp: Math.round(n(data.failedPaymentsThisWeek[0]?.totalPence) / 100),
       agentsWithConsecutiveFailures: n(data.agentsWithFailures[0]?.count),
@@ -834,12 +1191,22 @@ function buildResponse(data: any) {
       newBookingsPrevWeek: n(data.newBookingsPrevWeek[0]?.count),
       pipelineMovesThisWeek: n(data.pipelineMovesThisWeek[0]?.count),
       amendmentsThisWeek: n(data.amendmentsThisWeek[0]?.count),
+      amendmentsActionedThisWeek: n(data.amendmentsActionedThisWeek[0]?.count),
       refundsThisWeek: n(data.refundsThisWeek[0]?.count),
       flightRequestsThisWeek: n(data.flightRequestsThisWeek[0]?.count),
       flightRequestsPending: n(data.flightRequestsPendingCount[0]?.count),
-      pipelineStageDistribution: (data.pipelineStageDistribution as any[]).map((r) => ({
+      pipelineStageDistribution: data.pipelineStageDistribution.map((r) => ({
         stage: r.stage ?? "Unknown",
         count: n(r.count),
+      })),
+      refundsByStage: data.refundsByStage.map((r) => ({
+        stage: r.stage ?? "Unknown",
+        count: n(r.count),
+      })),
+      pipelineDwellTime: dwellRows.map((r) => ({
+        stage: r.stage,
+        avgDays: Math.round(Number(r.avgDays) * 10) / 10,
+        bookingCount: Number(r.bookingCount),
       })),
     },
 
@@ -854,6 +1221,8 @@ function buildResponse(data: any) {
       commissionClaimsPaidGrossThisWeek: Number(data.commissionClaimsPaidThisWeek[0]?.totalGross ?? 0),
       reimbursementsPaidThisWeek: n(data.reimbursementsPaidThisWeek[0]?.count),
       reimbursementsPaidTotalThisWeek: Number(data.reimbursementsPaidThisWeek[0]?.total ?? 0),
+      reimbursementsScheduledCount: n(data.reimbursementsScheduled[0]?.count),
+      reimbursementsScheduledTotal: Number(data.reimbursementsScheduled[0]?.total ?? 0),
       reimbursementsPendingCount: n(data.reimbursementsPending[0]?.count),
       reimbursementsPendingTotal: Number(data.reimbursementsPending[0]?.total ?? 0),
     },
@@ -864,7 +1233,7 @@ function buildResponse(data: any) {
       newProspectsPrevWeek: n(data.newProspectsPrevWeek[0]?.count),
       wonProspectsThisWeek: n(data.wonProspectsThisWeek[0]?.count),
       stageMovesThisWeek: n(data.recruitmentStageMovesThisWeek[0]?.count),
-      funnel: (data.recruitmentFunnel as any[]).map((r) => ({
+      funnel: data.recruitmentFunnel.map((r) => ({
         stage: r.stage ?? "unknown",
         count: n(r.count),
       })),
