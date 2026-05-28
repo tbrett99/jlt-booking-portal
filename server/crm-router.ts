@@ -2571,30 +2571,22 @@ export const crmRouter = router({
         let recipients: Array<{ email: string; name?: string; id?: number; type: "prospect" | "agent" }> = [];
 
         if (campaign.audienceType === "prospect") {
-          const all = await (await import("./crm-db")).getAllProspects();
+          // Use recruitment_prospects — the main pipeline table (900+ records)
+          const { getAllRecruitmentProspects } = await import("./recruitment-db");
+          const all = await getAllRecruitmentProspects();
           let filtered = all;
           if (filters.stages?.length) {
-            filtered = filtered.filter((p) => filters.stages.includes(p.stage));
-          }
-          if (filters.tags?.length) {
-            const { getDb } = await import("./db");
-            const db = await getDb();
-            if (db) {
-              const { prospectTags } = await import("../drizzle/schema");
-              const tagRows = await db.select().from(prospectTags);
-              const tagMap = new Map<number, string[]>();
-              for (const t of tagRows) {
-                if (!tagMap.has(t.prospectId)) tagMap.set(t.prospectId, []);
-                tagMap.get(t.prospectId)!.push(t.tag);
-              }
-              filtered = filtered.filter((p) =>
-                filters.tags.some((tag: string) => tagMap.get(p.id)?.includes(tag))
-              );
-            }
+            // Allow filtering by specific pipeline stages
+            filtered = filtered.filter((p) => filters.stages.includes(p.pipelineStage));
+          } else {
+            // By default exclude archived and declined prospects
+            filtered = filtered.filter(
+              (p) => !['archived', 'onboarding_declined', 'won'].includes(p.pipelineStage)
+            );
           }
           recipients = filtered
             .filter((p) => p.email)
-            .map((p) => ({ email: p.email!, name: `${p.firstName} ${p.lastName}`, id: p.id, type: "prospect" as const }));
+            .map((p) => ({ email: p.email!, name: `${p.firstName} ${p.lastName}`.trim(), id: p.id, type: "prospect" as const }));
         } else {
           // Agents — join with agentCrmProfiles and agentTags for segmentation
           const { getDb } = await import("./db");
