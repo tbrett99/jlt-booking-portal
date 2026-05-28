@@ -327,19 +327,20 @@ export const superAdminRouter = router({
         .where(eq(flightRequests.status, "pending"));
 
       // Pipeline dwell time: avg days per stage (calculated from pipeline_history)
-      // For each stage, find the avg time between entering and leaving that stage
+      // Uses LEAD() window function — TiDB does not support correlated subqueries in ON clauses.
       const pipelineDwellRaw = await db.execute(sql`
         SELECT 
-          ph1.toStage AS stage,
-          AVG(TIMESTAMPDIFF(HOUR, ph1.movedAt, COALESCE(ph2.movedAt, NOW()))) / 24.0 AS avgDays,
+          stage,
+          AVG(hoursInStage) / 24.0 AS avgDays,
           COUNT(*) AS bookingCount
-        FROM pipeline_history ph1
-        LEFT JOIN pipeline_history ph2 ON ph2.bookingId = ph1.bookingId 
-          AND ph2.id = (
-            SELECT MIN(id) FROM pipeline_history 
-            WHERE bookingId = ph1.bookingId AND id > ph1.id
-          )
-        GROUP BY ph1.toStage
+        FROM (
+          SELECT 
+            toStage AS stage,
+            TIMESTAMPDIFF(HOUR, movedAt, LEAD(movedAt) OVER (PARTITION BY bookingId ORDER BY id)) AS hoursInStage
+          FROM pipeline_history
+        ) t
+        WHERE hoursInStage IS NOT NULL
+        GROUP BY stage
         ORDER BY avgDays DESC
         LIMIT 20
       `);
