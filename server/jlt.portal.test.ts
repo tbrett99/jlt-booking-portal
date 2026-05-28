@@ -721,3 +721,75 @@ describe("users.activatePortalAccess", () => {
     await expect(caller.users.activatePortalAccess({ userId: 1 })).rejects.toThrow();
   });
 });
+
+// ─── Portal access welcome email tests ───────────────────────────────────────
+describe("users.activatePortalAccess — welcome email", () => {
+  it("sends a portal access welcome email to the agent when portal is activated", async () => {
+    const { activatePortalAccess, getUserById } = await import("./db");
+    const { sendDirectEmail } = await import("./email");
+    vi.mocked(getUserById).mockResolvedValueOnce({
+      id: 42,
+      name: "Sarah Jones",
+      email: "sarah@example.com",
+      role: "agent",
+    } as any);
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.users.activatePortalAccess({ userId: 42 });
+    expect(result).toMatchObject({ success: true });
+    expect(vi.mocked(activatePortalAccess)).toHaveBeenCalledWith(42);
+    // Allow the void promise to settle
+    await new Promise((r) => setTimeout(r, 10));
+    expect(vi.mocked(sendDirectEmail)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toEmail: "sarah@example.com",
+        toName: "Sarah Jones",
+        subject: expect.stringContaining("Portal Access"),
+        html: expect.stringContaining("Supplier Database"),
+      })
+    );
+  });
+
+  it("includes the training sign-off note about supplier passwords in the email body", async () => {
+    const { getUserById } = await import("./db");
+    const { sendDirectEmail } = await import("./email");
+    vi.mocked(sendDirectEmail).mockClear();
+    vi.mocked(getUserById).mockResolvedValueOnce({
+      id: 55,
+      name: "Tom Smith",
+      email: "tom@example.com",
+      role: "agent",
+    } as any);
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    await caller.users.activatePortalAccess({ userId: 55 });
+    await new Promise((r) => setTimeout(r, 10));
+    const call = vi.mocked(sendDirectEmail).mock.calls.find(
+      (c) => c[0].toEmail === "tom@example.com"
+    );
+    expect(call).toBeDefined();
+    expect(call![0].html).toContain("signed off from your training");
+    expect(call![0].html).toContain("left-hand sidebar");
+  });
+
+  it("does not throw if the agent has no email address", async () => {
+    const { getUserById } = await import("./db");
+    vi.mocked(getUserById).mockResolvedValueOnce({
+      id: 99,
+      name: "No Email Agent",
+      email: null,
+      role: "agent",
+    } as any);
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.users.activatePortalAccess({ userId: 99 })).resolves.toMatchObject({ success: true });
+  });
+
+  it("does not throw if getUserById returns undefined", async () => {
+    const { getUserById } = await import("./db");
+    vi.mocked(getUserById).mockResolvedValueOnce(undefined);
+    const ctx = makeCtx("admin");
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.users.activatePortalAccess({ userId: 88 })).resolves.toMatchObject({ success: true });
+  });
+});

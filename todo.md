@@ -2496,3 +2496,8 @@
 - [x] Add: Staff productivity — messages/notes written (shared notes authored by admin)
 - [x] Add: Drill-down modal for Memberships section (list of new sign-ups, cancellations, tier breakdown)
 - [x] Add: Drill-down modal for DD Revenue section (list of failed payments, new mandates, collections detail)
+## Portal Access Welcome Email
+- [x] Auto-send welcome email when admin approves portal access (activatePortalAccess procedure)
+- [x] Email covers: all portal features, Supplier Database location (left-hand sidebar), training sign-off requirement for supplier trade portal passwords
+- [x] Email is non-blocking (void + try/catch) so activation never fails due to email errors
+- [x] 4 vitest tests: sends email with correct content, includes training note, handles missing email, handles missing user
