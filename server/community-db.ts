@@ -878,37 +878,37 @@ export async function getBookingHighlights(weekAgo: Date) {
   if (!db) return { firstBookings: [], highMargin: [], commissionClaimed: { agentNames: [], totalAmount: 0 } };
   const { bookings, users, commissionClaims } = await import("../drizzle/schema");
 
-  // 1. First-ever bookings this week
-  const firstBookings = await db
+  // 1. "First real booking" this week — agents whose 2nd booking (skipping training holding account) falls this week
+  const recentBookings = await db
     .select({
       agentId: bookings.agentId,
       agentName: users.name,
       bookingId: bookings.id,
-      clientName: bookings.clientName,
       createdAt: bookings.createdAt,
     })
     .from(bookings)
     .innerJoin(users, eq(bookings.agentId, users.id))
     .where(gt(bookings.createdAt, weekAgo));
 
-  // Filter to agents whose first booking is within this week
-  const agentFirstBooking = new Map<number, typeof firstBookings[0]>();
-  for (const b of firstBookings) {
-    if (!agentFirstBooking.has(b.agentId)) {
-      agentFirstBooking.set(b.agentId, b);
+  // Collect the earliest booking this week per agent
+  const agentBookingThisWeek = new Map<number, typeof recentBookings[0]>();
+  for (const b of recentBookings) {
+    if (!agentBookingThisWeek.has(b.agentId)) {
+      agentBookingThisWeek.set(b.agentId, b);
     }
   }
-  // Check if this is truly their first ever booking
+  // Celebrate agents whose total booking count (including this week) is exactly 2
+  // (1 training holding account + 1 real booking = 2 total)
   const firstBookingHighlights: { type: "first_booking"; agentName: string; bookingId: number }[] = [];
-  for (const entry of Array.from(agentFirstBooking.entries())) {
+  for (const entry of Array.from(agentBookingThisWeek.entries())) {
     const [agentId, booking] = entry;
     const db2 = await getDb();
     if (!db2) continue;
     const [{ count }] = await db2
       .select({ count: sql<number>`COUNT(*)` })
       .from(bookings)
-      .where(and(eq(bookings.agentId, agentId), lt(bookings.createdAt, weekAgo)));
-    if (Number(count) === 0) {
+      .where(eq(bookings.agentId, agentId));
+    if (Number(count) === 2) {
       firstBookingHighlights.push({
         type: "first_booking",
         agentName: booking.agentName ?? "An agent",
