@@ -986,7 +986,7 @@ export type GcMandate = typeof gcMandates.$inferSelect;
 
 export const gcSubscriptions = mysqlTable("gc_subscriptions", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(), // FK → users.id
+  userId: int("userId"), // FK → users.id (nullable — pre-portal agents may not have a matched user)
   mandateId: varchar("mandateId", { length: 100 }).notNull(), // GoCardless mandate ID
   subscriptionId: varchar("subscriptionId", { length: 100 }), // GoCardless subscription ID (SB...)
   status: mysqlEnum("status", ["active", "paused", "cancelled", "finished"]).default("active").notNull(),
