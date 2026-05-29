@@ -377,8 +377,15 @@ function PostCard({
   const catColour = CATEGORY_COLOURS[post.category] ?? "bg-gray-100 text-gray-700 border-gray-200";
   const catLabel = CATEGORIES.find((c) => c.id === post.category)?.label ?? post.category;
   const catEmoji = CATEGORIES.find((c) => c.id === post.category)?.emoji ?? "";
-  const imageUrls: string[] = Array.isArray(post.imageUrls) ? post.imageUrls : [];
-  const attachments: { name: string; url: string }[] = Array.isArray(post.attachmentUrls) ? post.attachmentUrls : [];
+  function parseJsonField<T>(val: unknown): T[] {
+    if (Array.isArray(val)) return val as T[];
+    if (typeof val === "string" && val.trim().startsWith("[")) {
+      try { const p = JSON.parse(val); return Array.isArray(p) ? p : []; } catch { return []; }
+    }
+    return [];
+  }
+  const imageUrls: string[] = parseJsonField<string>(post.imageUrls);
+  const attachments: { name: string; url: string }[] = parseJsonField<{ name: string; url: string }>(post.attachmentUrls);
 
   // Reaction totals
   const reactionTotals: Record<string, number> = {};
