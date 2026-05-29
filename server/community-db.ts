@@ -735,19 +735,20 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
 
   const postIds = posts.map((p) => p.id);
 
-  // Stats snapshot — count from weekStarting to now
+  // Stats snapshot — count from last 7 days (rolling window ending now)
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const { bookings, commissionClaims, reimbursementItems } = await import("../drizzle/schema");
   const [bookingCount] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(bookings)
-    .where(and(gt(bookings.createdAt, weekStarting), lt(bookings.createdAt, now)));
+    .where(and(gt(bookings.createdAt, sevenDaysAgo), lt(bookings.createdAt, now)));
 
   const claimedThisWeek = await db
     .select({ grossAmount: commissionClaims.grossAmount })
     .from(commissionClaims)
     .where(
       and(
-        gt(commissionClaims.claimedAt, weekStarting),
+        gt(commissionClaims.claimedAt, sevenDaysAgo),
         lt(commissionClaims.claimedAt, now),
         or(
           eq(commissionClaims.status, "paid"),
@@ -760,16 +761,15 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     0
   );
 
-  // Count reimbursement items marked as paid this week (using paidAt timestamp)
-  const weekStartDate = new Date(weekStarting);
+  // Count reimbursement items moved to scheduled status in the last 7 days
   const [reimbCount] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(reimbursementItems)
     .where(
       and(
-        sql`${reimbursementItems.status} = 'paid'`,
-        sql`${reimbursementItems.paidAt} >= ${weekStartDate.toISOString().slice(0, 19).replace('T', ' ')}`,
-        sql`${reimbursementItems.paidAt} <= NOW()`
+        eq(reimbursementItems.status, "scheduled"),
+        gt(reimbursementItems.scheduledAt, sevenDaysAgo),
+        lt(reimbursementItems.scheduledAt, now)
       )
     );
 
@@ -917,52 +917,9 @@ export async function getBookingHighlights(weekAgo: Date) {
     }
   }
 
-  // 2. High margin bookings (tiered: 10%+, 12%+, 15%+, 20%+) this week
-  const db3 = await getDb();
-  if (!db3) return { firstBookings: firstBookingHighlights, highMargin: [], commissionClaimed: { agentNames: [], totalAmount: 0 } };
-  const highMarginBookings = await db3
-    .select({
-      agentName: users.name,
-      bookingId: bookings.id,
-      expectedCommission: bookings.expectedCommission,
-      grossCost: bookings.grossCost,
-    })
-    .from(bookings)
-    .innerJoin(users, eq(bookings.agentId, users.id))
-    .where(
-      and(
-        gt(bookings.createdAt, weekAgo),
-        not(isNull(bookings.expectedCommission)),
-        not(isNull(bookings.grossCost))
-      )
-    );
-
-  const highMarginHighlights: { type: "high_margin"; agentName: string; bookingId: number; marginPct: number; tier: string }[] = [];
-  for (const b of highMarginBookings) {
-    const gross = Number(b.grossCost ?? 0);
-    const commission = Number(b.expectedCommission ?? 0);
-    const marginPct = gross > 0 ? (commission / gross) * 100 : 0;
-    if (marginPct >= 10) {
-      let tier: string;
-      if (marginPct >= 20) tier = "20%+";
-      else if (marginPct >= 15) tier = "15–20%";
-      else if (marginPct >= 12) tier = "12–15%";
-      else tier = "10–12%";
-      highMarginHighlights.push({
-        type: "high_margin",
-        agentName: b.agentName ?? "An agent",
-        bookingId: b.bookingId,
-        marginPct: Math.round(marginPct * 10) / 10,
-        tier,
-      });
-    }
-  }
-  // Sort by margin descending
-  highMarginHighlights.sort((a, b) => b.marginPct - a.marginPct);
-
-  // 3. Commission claimed this week
+  // 2. Commission claimed this week
   const db4 = await getDb();
-  if (!db4) return { firstBookings: firstBookingHighlights, highMargin: highMarginHighlights, commissionClaimed: { agentNames: [], totalAmount: 0 } };
+  if (!db4) return { firstBookings: firstBookingHighlights, commissionClaimed: { agentNames: [], totalAmount: 0 } };
   const claimedThisWeek = await db4
     .select({
       agentName: users.name,
@@ -988,7 +945,6 @@ export async function getBookingHighlights(weekAgo: Date) {
 
   return {
     firstBookings: firstBookingHighlights,
-    highMargin: highMarginHighlights,
     commissionClaimed: {
       agentNames,
       totalAmount: commissionTotal,
