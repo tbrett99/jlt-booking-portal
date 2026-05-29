@@ -741,20 +741,23 @@ export const communityRouter = router({
 </body>
 </html>`;
 
+        // Send in parallel batches of 20 to avoid sequential timeout
+        const BATCH_SIZE = 20;
         let sent = 0;
-        for (const agent of agents) {
-          if (!agent.email) continue;
-          try {
-            await sendDirectEmail({
-              toEmail: agent.email,
-              toName: agent.name ?? "Agent",
-              subject: input.customSubject || `JLT Group Weekly Update — ${weekLabel}`,
-              html: emailHtml,
-            });
-            sent++;
-          } catch {
-            // Continue sending to others even if one fails
-          }
+        const eligibleAgents = agents.filter((a) => !!a.email);
+        for (let i = 0; i < eligibleAgents.length; i += BATCH_SIZE) {
+          const batch = eligibleAgents.slice(i, i + BATCH_SIZE);
+          const results = await Promise.allSettled(
+            batch.map((agent) =>
+              sendDirectEmail({
+                toEmail: agent.email!,
+                toName: agent.name ?? "Agent",
+                subject: input.customSubject || `JLT Group Weekly Update — ${weekLabel}`,
+                html: emailHtml,
+              })
+            )
+          );
+          sent += results.filter((r) => r.status === "fulfilled").length;
         }
 
         await markDigestSent(input.digestId, ctx.user.id, sent);
