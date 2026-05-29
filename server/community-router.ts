@@ -637,24 +637,6 @@ export const communityRouter = router({
             items.push(`<tr style="background:#f0fff8;"><td style="padding:10px 14px;font-size:13px;color:#414141;font-family:'Poppins',sans-serif;border-bottom:1px solid #e8f8f0;">🎉 <strong>${h.agentName}</strong> registered their <strong>first ever booking</strong> — welcome to the JLT journey!</td></tr>`);
           }
 
-          // Tiered high-margin bookings — grouped by tier
-          const tierOrder = ["20%+", "15–20%", "12–15%", "10–12%"];
-          const tierEmoji: Record<string, string> = { "20%+": "🥇", "15–20%": "🥈", "12–15%": "🥉", "10–12%": "🎯" };
-          const tierColor: Record<string, string> = { "20%+": "#FFD700", "15–20%": "#C0C0C0", "12–15%": "#CD7F32", "10–12%": "#02E6D2" };
-          const byTier: Record<string, Array<{ type: string; agentName: string; bookingId: number; marginPct: number; tier: string }>> = {};
-          for (const h of highlights.highMargin ?? []) {
-            if (!byTier[h.tier]) byTier[h.tier] = [];
-            byTier[h.tier].push(h);
-          }
-          for (const tier of tierOrder) {
-            const group = byTier[tier];
-            if (!group || group.length === 0) continue;
-            const emoji = tierEmoji[tier] ?? "💰";
-            const color = tierColor[tier] ?? "#70FFE8";
-            const names = group.map(h => `<strong>${h.agentName}</strong> (${h.marginPct}%)`).join(", ");
-            items.push(`<tr><td style="padding:10px 14px;font-size:13px;color:#414141;font-family:'Poppins',sans-serif;border-bottom:1px solid #f5f5f5;border-left:4px solid ${color};">${emoji} <span style="font-size:11px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:0.06em;">${tier} margin</span><br/>${names}</td></tr>`);
-          }
-
           // Commission paid out
           if ((highlights.commissionClaimed?.agentNames?.length ?? 0) > 0) {
             const names = highlights.commissionClaimed.agentNames.join(", ");
@@ -861,17 +843,6 @@ export const communityRouter = router({
           const items: string[] = [];
           for (const h of (highlights as any).firstBookings ?? []) {
             items.push(`<tr style="background:#f0fff8;"><td style="padding:10px 14px;font-size:13px;color:#414141;font-family:'Poppins',sans-serif;border-bottom:1px solid #e8f8f0;">\uD83C\uDF89 <strong>${(h as any).agentName}</strong> registered their <strong>first ever booking</strong> \u2014 welcome to the JLT journey!</td></tr>`);
-          }
-          const tierOrder2 = ["20%+", "15\u201320%", "12\u201315%", "10\u201312%"];
-          const tierEmoji2: Record<string, string> = { "20%+": "\uD83E\uDD47", "15\u201320%": "\uD83E\uDD48", "12\u201315%": "\uD83E\uDD49", "10\u201312%": "\uD83C\uDFAF" };
-          const tierColor2: Record<string, string> = { "20%+": "#FFD700", "15\u201320%": "#C0C0C0", "12\u201315%": "#CD7F32", "10\u201312%": "#02E6D2" };
-          const byTier2: Record<string, Array<{ agentName: string; marginPct: number; tier: string }>> = {};
-          for (const h of (highlights as any).highMargin ?? []) { if (!byTier2[(h as any).tier]) byTier2[(h as any).tier] = []; byTier2[(h as any).tier].push(h as any); }
-          for (const tier of tierOrder2) {
-            const group = byTier2[tier];
-            if (!group?.length) continue;
-            const names = group.map(h => `<strong>${h.agentName}</strong> (${h.marginPct}%)`).join(", ");
-            items.push(`<tr><td style="padding:10px 14px;font-size:13px;color:#414141;font-family:'Poppins',sans-serif;border-bottom:1px solid #f5f5f5;border-left:4px solid ${tierColor2[tier]};">${tierEmoji2[tier]} <span style="font-size:11px;font-weight:700;color:${tierColor2[tier]};text-transform:uppercase;letter-spacing:0.06em;">${tier} margin</span><br/>${names}</td></tr>`);
           }
           const cc = (highlights as any).commissionClaimed;
           if ((cc?.agentNames?.length ?? 0) > 0) {
