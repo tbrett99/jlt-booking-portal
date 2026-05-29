@@ -780,8 +780,8 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     reimbursementsCount: Number(reimbCount.count),
   };
 
-  // Always fetch fresh booking highlights (first bookings, high margin, commission paid)
-  const highlights = await getBookingHighlights(weekStarting);
+  // Always fetch fresh booking highlights using rolling 7-day window (not week boundary)
+  const highlights = await getBookingHighlights(sevenDaysAgo);
 
   if (existing) {
     // Refresh stats, posts, and highlights on the existing draft
