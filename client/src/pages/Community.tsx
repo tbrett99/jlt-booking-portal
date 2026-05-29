@@ -512,7 +512,14 @@ function PostCard({
         {imageUrls.length > 0 && (
           <div className={cn("mt-3 grid gap-2", imageUrls.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
             {imageUrls.slice(0, expanded ? undefined : 2).map((url, i) => (
-              <img key={i} src={url} alt="" className="rounded-lg object-cover w-full max-h-64" />
+              <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                <img
+                  src={url}
+                  alt=""
+                  className="rounded-lg w-full object-contain bg-muted cursor-zoom-in"
+                  style={{ maxHeight: "480px" }}
+                />
+              </a>
             ))}
           </div>
         )}
