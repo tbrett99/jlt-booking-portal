@@ -511,9 +511,16 @@ export const communityRouter = router({
           return plain.length > len ? plain.slice(0, len).trimEnd() + "…" : plain;
         };
 
-        // Build categorised posts HTML
+        // Build categorised posts HTML — priority order: business_update, news_announcements, training_webinars, supplier_news_deals, then others
+        const DIGEST_CATEGORY_ORDER = ["business_update", "news_announcements", "training_webinars", "supplier_news_deals", "agent_win", "jlt_stay_story", "mindset", "first_class_lounge", "events"];
+        const orderedCategories = [
+          ...DIGEST_CATEGORY_ORDER.filter(c => postsByCategory[c]?.length > 0),
+          ...Object.keys(postsByCategory).filter(c => !DIGEST_CATEGORY_ORDER.includes(c)),
+        ];
         let postsHtml = "";
-        for (const [cat, catPosts] of Object.entries(postsByCategory)) {
+        for (const cat of orderedCategories) {
+          const catPosts = postsByCategory[cat];
+          if (!catPosts?.length) continue;
           const label = categoryLabel[cat] ?? cat;
           const emoji = categoryEmoji[cat] ?? "📌";
           const accentColor = categoryColor[cat] ?? "#70FFE8";
@@ -805,8 +812,15 @@ export const communityRouter = router({
         const stripHtml = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
         const excerpt = (html: string, len = 160) => { const p = stripHtml(html); return p.length > len ? p.slice(0, len).trimEnd() + "\u2026" : p; };
 
+        const DIGEST_CATEGORY_ORDER2 = ["business_update", "news_announcements", "training_webinars", "supplier_news_deals", "agent_win", "jlt_stay_story", "mindset", "first_class_lounge", "events"];
+        const orderedCategories2 = [
+          ...DIGEST_CATEGORY_ORDER2.filter(c => postsByCategory[c]?.length > 0),
+          ...Object.keys(postsByCategory).filter(c => !DIGEST_CATEGORY_ORDER2.includes(c)),
+        ];
         let postsHtml = "";
-        for (const [cat, catPosts] of Object.entries(postsByCategory)) {
+        for (const cat of orderedCategories2) {
+          const catPosts = postsByCategory[cat];
+          if (!catPosts?.length) continue;
           const accentColor = categoryColor[cat] ?? "#70FFE8";
           postsHtml += `<div style="margin-bottom:28px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;border-bottom:2px solid ${accentColor};padding-bottom:6px;"><span style="font-size:18px;">${categoryEmoji[cat] ?? "📌"}</span><h3 style="margin:0;font-size:15px;font-weight:700;color:#414141;font-family:'Poppins',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">${categoryLabel[cat] ?? cat}</h3></div>${catPosts.map(p => `<div style="background:#ffffff;border:1px solid #e8e8e8;border-left:4px solid ${accentColor};border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:10px;"><p style="margin:0 0 4px;font-size:15px;font-weight:600;color:#414141;font-family:'Poppins',sans-serif;">${p.title}</p><p style="margin:0 0 8px;font-size:12px;color:#888;font-family:'Poppins',sans-serif;">By ${p.authorName}</p><p style="margin:0 0 10px;font-size:13px;color:#555;line-height:1.5;font-family:'Poppins',sans-serif;">${excerpt(p.bodyHtml ?? "")}</p><a href="${input.origin}/community?postId=${p.id}" style="font-size:12px;font-weight:600;color:#02E6D2;text-decoration:none;font-family:'Poppins',sans-serif;">Read full post \u2192</a></div>`).join("")}</div>`;
         }
