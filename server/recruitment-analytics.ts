@@ -1,5 +1,14 @@
 /**
  * Recruitment Analytics — aggregated stats for the performance dashboard
+ *
+ * Key design decision:
+ * - totalWon counts prospects whose stage was moved to "won" within the selected
+ *   date range (using stage history), NOT prospects created in that range who
+ *   happen to currently be at "won". This gives accurate weekly/monthly sign-up
+ *   counts regardless of when the prospect first enquired.
+ * - weeklyVolume counts won conversions per week (same logic).
+ * - totalProspects, funnel, and conversion rates are still based on enquiry
+ *   createdAt so the funnel remains meaningful.
  */
 import { getDb } from "./db";
 import {
@@ -22,7 +31,7 @@ export interface RecruitmentAnalytics {
   // Lead source breakdown
   sourceBreakdown: { source: string; count: number; wonCount: number; conversionRate: number }[];
 
-  // Weekly new enquiry volume (last 52 weeks)
+  // Weekly won conversions (last 52 weeks)
   weeklyVolume: { week: string; count: number }[];
 
   // Conversion rates between key stages
@@ -72,22 +81,64 @@ export async function getRecruitmentAnalytics(opts?: {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
 
-  const whereClause = opts?.dateFrom
-    ? gte(recruitmentProspects.createdAt, opts.dateFrom)
-    : undefined;
+  const dateFrom = opts?.dateFrom;
 
-  // ── Fetch all prospects (within date range) ──────────────────────────────
-  const allProspects: any[] = await (whereClause
-    ? (db.select().from(recruitmentProspects).where(whereClause) as any)
-    : (db.select().from(recruitmentProspects) as any));
+  // ── Fetch ALL prospects (no date filter) for funnel/conversion accuracy ──
+  const allProspects: any[] = await (db.select().from(recruitmentProspects) as any);
 
-  const total = allProspects.length;
-  const totalApplications = allProspects.filter((p) => p.applicationSubmittedAt).length;
-  const totalWon = allProspects.filter((p) => p.pipelineStage === "won").length;
-  const totalArchived = allProspects.filter((p) => p.pipelineStage === "archived").length;
+  // ── Fetch ALL stage history ───────────────────────────────────────────────
+  let stageHistory: any[] = [];
+  try {
+    stageHistory = await (db.select().from(recruitmentStageHistory).orderBy(
+      recruitmentStageHistory.prospectId,
+      recruitmentStageHistory.changedAt
+    ) as any);
+  } catch {}
+
+  // ── Won conversions: prospects moved to "won" within the date range ───────
+  // For each prospect, find the earliest stage history entry where toStage = "won"
+  // If no history entry exists (direct sign-up without pipeline), fall back to
+  // the prospect's createdAt (which equals the agent's sign-up time for auto-created records)
+  const wonProspectIds = new Set(
+    allProspects.filter((p) => p.pipelineStage === "won").map((p) => p.id)
+  );
+
+  // Build a map of prospectId → earliest won date (from history or createdAt)
+  const wonDateByProspect = new Map<number, Date>();
+  for (const row of stageHistory) {
+    if (row.toStage === "won" && wonProspectIds.has(row.prospectId)) {
+      const existing = wonDateByProspect.get(row.prospectId);
+      const rowDate = new Date(row.changedAt);
+      if (!existing || rowDate < existing) {
+        wonDateByProspect.set(row.prospectId, rowDate);
+      }
+    }
+  }
+  // For won prospects with no history entry, use their createdAt as the won date
+  for (const p of allProspects) {
+    if (p.pipelineStage === "won" && !wonDateByProspect.has(p.id) && p.createdAt) {
+      wonDateByProspect.set(p.id, new Date(p.createdAt));
+    }
+  }
+
+  // Filter won prospects by date range
+  const wonInPeriod = Array.from(wonDateByProspect.entries()).filter(([, wonDate]) => {
+    if (!dateFrom) return true;
+    return wonDate >= dateFrom;
+  });
+  const totalWon = wonInPeriod.length;
+
+  // ── Prospects within date range (for funnel/totals) ───────────────────────
+  const prospectsInPeriod = dateFrom
+    ? allProspects.filter((p) => p.createdAt && new Date(p.createdAt) >= dateFrom)
+    : allProspects;
+
+  const total = prospectsInPeriod.length;
+  const totalApplications = prospectsInPeriod.filter((p) => p.applicationSubmittedAt).length;
+  const totalArchived = prospectsInPeriod.filter((p) => p.pipelineStage === "archived").length;
   const overallConversionRate = total > 0 ? Math.round((totalWon / total) * 100) : 0;
 
-  // ── Stage funnel ─────────────────────────────────────────────────────────
+  // ── Stage funnel (based on all prospects, current stage) ─────────────────
   const stageCounts: Record<string, number> = {};
   for (const p of allProspects) {
     stageCounts[p.pipelineStage] = (stageCounts[p.pipelineStage] ?? 0) + 1;
@@ -98,9 +149,10 @@ export async function getRecruitmentAnalytics(opts?: {
     count: stageCounts[stage] ?? 0,
   }));
 
-  // ── Lead source breakdown ─────────────────────────────────────────────────
+  // ── Lead source breakdown (based on prospects in period) ─────────────────
+  const wonProspectIdSet = new Set(wonInPeriod.map(([id]) => id));
   const sourceMap: Record<string, { count: number; wonCount: number }> = {};
-  for (const p of allProspects) {
+  for (const p of prospectsInPeriod) {
     let sources: string[] = [];
     try {
       const ad = typeof p.applicationData === "string"
@@ -114,7 +166,7 @@ export async function getRecruitmentAnalytics(opts?: {
     for (const src of sources) {
       if (!sourceMap[src]) sourceMap[src] = { count: 0, wonCount: 0 };
       sourceMap[src].count++;
-      if (p.pipelineStage === "won") sourceMap[src].wonCount++;
+      if (wonProspectIdSet.has(p.id)) sourceMap[src].wonCount++;
     }
   }
   const sourceBreakdown = Object.entries(sourceMap)
@@ -126,7 +178,7 @@ export async function getRecruitmentAnalytics(opts?: {
     }))
     .sort((a, b) => b.count - a.count);
 
-  // ── Weekly volume (last 52 weeks) ─────────────────────────────────────────
+  // ── Weekly volume: won conversions per week (last 52 weeks) ──────────────
   const weeklyMap: Record<string, number> = {};
   const now = new Date();
   for (let i = 51; i >= 0; i--) {
@@ -135,32 +187,26 @@ export async function getRecruitmentAnalytics(opts?: {
     const weekKey = getWeekKey(d);
     weeklyMap[weekKey] = 0;
   }
-  for (const p of allProspects) {
-    if (p.createdAt) {
-      const weekKey = getWeekKey(new Date(p.createdAt));
-      if (weekKey in weeklyMap) weeklyMap[weekKey]++;
-    }
+  for (const [, wonDate] of Array.from(wonDateByProspect.entries())) {
+    const weekKey = getWeekKey(wonDate);
+    if (weekKey in weeklyMap) weeklyMap[weekKey]++;
   }
   const weeklyVolume = Object.entries(weeklyMap).map(([week, count]) => ({ week, count }));
 
-  // ── Conversion rates ─────────────────────────────────────────────────────
-  const countInStageOrBeyond = (stages: string[]) =>
-    allProspects.filter((p) => stages.includes(p.pipelineStage)).length;
-
-  // "Ever reached" counts — use applicationSubmittedAt as proxy for application_received
-  const everApplied = allProspects.filter((p) => p.applicationSubmittedAt).length;
-  const everArApproved = allProspects.filter((p) =>
+  // ── Conversion rates (based on prospects in period) ───────────────────────
+  const everApplied = prospectsInPeriod.filter((p) => p.applicationSubmittedAt).length;
+  const everArApproved = prospectsInPeriod.filter((p) =>
     ["ar_approved", "discovery_call_booked", "rebook_required", "did_not_turn_up",
      "discovery_call_complete", "onboarding_approved", "onboarding_declined", "won", "waitlisted"].includes(p.pipelineStage)
   ).length;
-  const everCallBooked = allProspects.filter((p) =>
+  const everCallBooked = prospectsInPeriod.filter((p) =>
     ["discovery_call_booked", "rebook_required", "did_not_turn_up",
      "discovery_call_complete", "onboarding_approved", "onboarding_declined", "won"].includes(p.pipelineStage)
   ).length;
-  const everCallComplete = allProspects.filter((p) =>
+  const everCallComplete = prospectsInPeriod.filter((p) =>
     ["discovery_call_complete", "onboarding_approved", "onboarding_declined", "won"].includes(p.pipelineStage)
   ).length;
-  const everOnboardingApproved = allProspects.filter((p) =>
+  const everOnboardingApproved = prospectsInPeriod.filter((p) =>
     ["onboarding_approved", "won"].includes(p.pipelineStage)
   ).length;
 
@@ -177,16 +223,6 @@ export async function getRecruitmentAnalytics(opts?: {
   };
 
   // ── Average days in each stage ────────────────────────────────────────────
-  // Use stage history to compute average time spent in each stage
-  let stageHistory: any[] = [];
-  try {
-    stageHistory = await (db.select().from(recruitmentStageHistory).orderBy(
-      recruitmentStageHistory.prospectId,
-      recruitmentStageHistory.changedAt
-    ) as any);
-  } catch {}
-
-  // Group by prospectId, compute time between consecutive stage entries
   const stageDurations: Record<string, number[]> = {};
   const byProspect: Record<number, any[]> = {};
   for (const row of stageHistory) {
