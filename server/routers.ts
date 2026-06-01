@@ -284,6 +284,50 @@ const DEFAULT_TEMPLATES = [
   },
 ];
 
+// ─── Recruitment pipeline helper ─────────────────────────────────────────────
+/**
+ * After an agent account is created, ensure the recruitment pipeline has a
+ * 'won' record for that email. If a prospect already exists, advance it to
+ * 'won'. If no prospect exists, create one at 'won' stage.
+ * Errors are swallowed so they never block account creation.
+ */
+async function ensureProspectWon(email: string, name: string, userId: number): Promise<void> {
+  try {
+    const { getRecruitmentProspectByEmail, moveRecruitmentProspectStage, createRecruitmentProspect } =
+      await import("./recruitment-db");
+    const existing = await getRecruitmentProspectByEmail(email);
+    if (existing) {
+      if (existing.pipelineStage !== "won") {
+        await moveRecruitmentProspectStage({
+          prospectId: existing.id,
+          toStage: "won",
+          changedByName: "System (account created)",
+          note: `Agent account created (user #${userId}) — pipeline advanced to won`,
+        });
+      }
+    } else {
+      const nameParts = name.trim().split(" ");
+      const firstName = nameParts[0] || email.split("@")[0];
+      const lastName = nameParts.slice(1).join(" ") || "";
+      const newId = await createRecruitmentProspect({
+        firstName,
+        lastName,
+        email: email.toLowerCase().trim(),
+        pipelineStage: "won",
+        source: "direct_signup",
+      });
+      await moveRecruitmentProspectStage({
+        prospectId: newId,
+        toStage: "won",
+        changedByName: "System (account created)",
+        note: `Agent account created (user #${userId}) — prospect record created automatically`,
+      });
+    }
+  } catch (err: any) {
+    console.error("[ensureProspectWon] Non-fatal error:", err?.message);
+  }
+}
+
 // ─── App Router ───────────────────────────────────────────────────────────────
 
 export const appRouter = router({
@@ -312,6 +356,8 @@ export const appRouter = router({
         }
         const hashed = await bcrypt.hash(input.password, 12);
         const newUser = await createAgentUser({ name: input.name, email: input.email, hashedPassword: hashed });
+        // Ensure recruitment pipeline is updated to 'won'
+        await ensureProspectWon(input.email, input.name, newUser.id);
         // Immediately log them in
         const token = await sdk.createSessionToken(newUser.openId, { name: newUser.name ?? newUser.email ?? "" });
         const cookieOptions = getSessionCookieOptions(ctx.req);
@@ -460,6 +506,8 @@ export const appRouter = router({
           email: input.email,
           hashedPassword: hashed,
         });
+        // Ensure recruitment pipeline is updated to 'won'
+        if (user?.id) await ensureProspectWon(input.email, input.name, user.id);
         // Send credentials email
         await sendCredentialsEmail({
           toEmail: input.email,
