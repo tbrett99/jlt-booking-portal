@@ -11,7 +11,7 @@ import {
   Calendar, ChevronRight, AlertCircle, CheckCircle2, Clock,
   Sparkles, Filter, Plane, Zap, RefreshCw, FileText,
   ArrowRight, Banknote, Activity, ReceiptText, Edit3, RotateCcw, Wallet,
-  ShieldAlert, Newspaper
+  ShieldAlert, Newspaper, Users
 } from "lucide-react";
 import { format, differenceInDays, isPast, isWithinInterval, addDays } from "date-fns";
 
@@ -67,6 +67,32 @@ export default function AgentDashboard() {
   const { data: outstandingSummary } = trpc.reimbursements.agentOutstandingSummary.useQuery();
   const { data: topUpRequests = [] } = trpc.commissionClaims.myTopUpRequests.useQuery();
   const { data: missingGrossData } = trpc.bookings.countMissingGrossData.useQuery();
+  const { data: teamInviteStatus } = trpc.join.getMyTeamInviteStatus.useQuery();
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [inviteSuccess, setInviteSuccess] = useState("");
+  const utils = trpc.useUtils();
+  const agentSendInvite = trpc.join.agentSendTeamInvite.useMutation({
+    onSuccess: () => {
+      setInviteSuccess(`Invitation sent to ${inviteEmail}`);
+      setInviteEmail("");
+      setInviteError("");
+      utils.join.getMyTeamInviteStatus.invalidate();
+    },
+    onError: (err) => {
+      setInviteError(err.message ?? "Failed to send invite");
+    },
+  });
+
+  const handleAgentInvite = () => {
+    setInviteError("");
+    setInviteSuccess("");
+    if (!inviteEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail)) {
+      setInviteError("Please enter a valid email address");
+      return;
+    }
+    agentSendInvite.mutate({ invitedEmail: inviteEmail, origin: window.location.origin });
+  };
 
   // Community hub data
   const { data: unconfirmedUpdates = [], refetch: refetchUnconfirmed } = trpc.community.unconfirmedUpdates.useQuery();
@@ -204,6 +230,71 @@ export default function AgentDashboard() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── Team Member Invite Banner ─────────────────────────────────────── */}
+      {teamInviteStatus?.isTeam && teamInviteStatus.remainingSlots > 0 && (
+        <div className="rounded-xl border-2 border-[#70FFE8] bg-[#f0fffb] dark:bg-[#0a2e2a] dark:border-[#70FFE8]/60 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-[#059669] shrink-0" />
+            <h3 className="font-semibold text-[#065f46] dark:text-[#70FFE8] text-sm">
+              Invite Your Team {teamInviteStatus.remainingSlots === 1 ? "Member" : "Members"}
+            </h3>
+            <span className="ml-auto text-xs bg-[#70FFE8] text-[#414141] font-semibold px-2 py-0.5 rounded-full">
+              {teamInviteStatus.remainingSlots} slot{teamInviteStatus.remainingSlots !== 1 ? "s" : ""} remaining
+            </span>
+          </div>
+          <p className="text-sm text-[#065f46] dark:text-[#70FFE8]/80">
+            You signed up as a {teamInviteStatus.maxMembers === 2 ? "Duo" : "Trio"} — send an invitation to your team member{teamInviteStatus.maxMembers > 2 ? "s" : ""}. They'll sign their own contract at no extra cost.
+          </p>
+          {/* Already sent invites */}
+          {teamInviteStatus.invitesSent.length > 0 && (
+            <div className="space-y-1">
+              {teamInviteStatus.invitesSent.map((inv) => (
+                <div key={inv.email} className="flex items-center gap-2 text-xs">
+                  {inv.status === "accepted" ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[#059669]" />
+                  ) : inv.expired ? (
+                    <XCircle className="w-3.5 h-3.5 text-red-400" />
+                  ) : (
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                  )}
+                  <span className="text-muted-foreground">{inv.email}</span>
+                  <span className={`font-medium ${
+                    inv.status === "accepted" ? "text-[#059669]" :
+                    inv.expired ? "text-red-400" : "text-amber-600"
+                  }`}>
+                    {inv.status === "accepted" ? "Joined" : inv.expired ? "Expired" : "Invite sent"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Invite form */}
+          <div className="flex gap-2">
+            <Input
+              placeholder="teammate@example.com"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAgentInvite()}
+              className={`bg-white dark:bg-white/10 ${inviteError ? "border-red-400" : "border-[#70FFE8]"}`}
+            />
+            <Button
+              onClick={handleAgentInvite}
+              disabled={agentSendInvite.isPending}
+              style={{ background: "#70FFE8", color: "#414141" }}
+              className="shrink-0 font-semibold"
+            >
+              {agentSendInvite.isPending ? <RefreshCw className="animate-spin w-4 h-4" /> : "Send Invite"}
+            </Button>
+          </div>
+          {inviteError && <p className="text-xs text-red-500">{inviteError}</p>}
+          {inviteSuccess && (
+            <div className="flex items-center gap-1.5 text-xs text-[#059669] font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5" /> {inviteSuccess}
+            </div>
+          )}
         </div>
       )}
 

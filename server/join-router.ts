@@ -955,6 +955,200 @@ export const joinRouter = router({
       return { ok: true };
     }),
 
+  // ── Agent: get own team invite status (for portal UI) ──────────────────────
+  getMyTeamInviteStatus: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const { eq: eqOp } = await import('drizzle-orm');
+
+    // Get the agent's join session to find their membership type
+    const sessionRows = await db
+      .select({ membershipType: joinSessions.membershipType })
+      .from(joinSessions)
+      .where(eqOp(joinSessions.userId, ctx.user.id))
+      .limit(1);
+
+    const membershipType = sessionRows[0]?.membershipType as 'solo' | 'duo' | 'trio' | null | undefined;
+
+    // Solo agents or agents with no session don't get the invite feature
+    if (!membershipType || membershipType === 'solo') {
+      return { isTeam: false, maxMembers: 0, invitesSent: [], remainingSlots: 0 };
+    }
+
+    const maxMembers = MEMBER_COUNTS[membershipType] ?? 1;
+    const maxInvites = maxMembers - 1; // leader doesn't count as an invite
+
+    // Get the leader's team
+    const profileRows = await db
+      .select({ teamId: agentCrmProfiles.teamId })
+      .from(agentCrmProfiles)
+      .where(eqOp(agentCrmProfiles.userId, ctx.user.id))
+      .limit(1);
+
+    const teamId = profileRows[0]?.teamId;
+    if (!teamId) {
+      // Team not yet created — they haven't sent any invites
+      return { isTeam: true, maxMembers, invitesSent: [], remainingSlots: maxInvites };
+    }
+
+    // Get all invites sent by this leader for their team
+    const invites = await db
+      .select({
+        invitedEmail: teamInvites.invitedEmail,
+        status: teamInvites.status,
+        expiresAt: teamInvites.expiresAt,
+      })
+      .from(teamInvites)
+      .where(eqOp(teamInvites.leaderId, ctx.user.id));
+
+    // Count how many slots are filled (accepted invites or pending non-expired)
+    const activeInvites = invites.filter(
+      (i) => i.status === 'accepted' || (i.status === 'pending' && i.expiresAt > new Date())
+    );
+
+    const remainingSlots = Math.max(0, maxInvites - activeInvites.length);
+
+    return {
+      isTeam: true,
+      maxMembers,
+      invitesSent: invites.map((i) => ({
+        email: i.invitedEmail,
+        status: i.status,
+        expired: i.status === 'pending' && i.expiresAt <= new Date(),
+      })),
+      remainingSlots,
+    };
+  }),
+
+  // ── Agent: send team invite from inside the portal ────────────────────────
+  agentSendTeamInvite: protectedProcedure
+    .input(z.object({
+      invitedEmail: z.string().email(),
+      origin: z.string().url(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const { eq: eqOp, and: andOp } = await import('drizzle-orm');
+      const { nanoid: nano } = await import('nanoid');
+
+      // Verify this agent is a team leader with remaining slots
+      const sessionRows = await db
+        .select({ membershipType: joinSessions.membershipType, membershipTier: joinSessions.membershipTier })
+        .from(joinSessions)
+        .where(eqOp(joinSessions.userId, ctx.user.id))
+        .limit(1);
+
+      const membershipType = sessionRows[0]?.membershipType as 'solo' | 'duo' | 'trio' | null | undefined;
+      if (!membershipType || membershipType === 'solo') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo membership does not support team members' });
+      }
+
+      const maxInvites = (MEMBER_COUNTS[membershipType] ?? 1) - 1;
+
+      // Get or create team
+      const profileRows = await db
+        .select({ teamId: agentCrmProfiles.teamId })
+        .from(agentCrmProfiles)
+        .where(eqOp(agentCrmProfiles.userId, ctx.user.id))
+        .limit(1);
+
+      const leaderUser = await db
+        .select({ name: users.name })
+        .from(users)
+        .where(eqOp(users.id, ctx.user.id))
+        .limit(1);
+
+      let teamId = profileRows[0]?.teamId;
+      if (!teamId) {
+        const tierLabel = TIER_LABELS[(sessionRows[0]?.membershipTier ?? 'business_class') as typeof MEMBERSHIP_TIERS[number]];
+        const typeLabel = TYPE_LABELS[membershipType];
+        const [teamResult] = await db.insert(agentTeams).values({
+          name: `${leaderUser[0]?.name ?? ctx.user.email} — ${tierLabel} ${typeLabel}`,
+          membershipTier: sessionRows[0]?.membershipTier ?? undefined,
+        });
+        teamId = (teamResult as any).insertId as number;
+        await db.update(agentCrmProfiles).set({ teamId }).where(eqOp(agentCrmProfiles.userId, ctx.user.id));
+      }
+
+      // Check remaining slots
+      const existingInvites = await db
+        .select({ status: teamInvites.status, expiresAt: teamInvites.expiresAt })
+        .from(teamInvites)
+        .where(eqOp(teamInvites.leaderId, ctx.user.id));
+
+      const activeCount = existingInvites.filter(
+        (i) => i.status === 'accepted' || (i.status === 'pending' && i.expiresAt > new Date())
+      ).length;
+
+      if (activeCount >= maxInvites) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No remaining team member slots' });
+      }
+
+      // Check not already invited
+      const alreadyInvited = await db
+        .select({ id: teamInvites.id, status: teamInvites.status, expiresAt: teamInvites.expiresAt })
+        .from(teamInvites)
+        .where(andOp(eqOp(teamInvites.teamId, teamId), eqOp(teamInvites.invitedEmail, input.invitedEmail)))
+        .limit(1);
+
+      if (alreadyInvited[0] && alreadyInvited[0].status === 'pending' && alreadyInvited[0].expiresAt > new Date()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'An active invite has already been sent to this email' });
+      }
+
+      // Create invite
+      const token = nano(64);
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      await db.insert(teamInvites).values({
+        teamId,
+        leaderId: ctx.user.id,
+        invitedEmail: input.invitedEmail,
+        token,
+        status: 'pending',
+        expiresAt,
+      });
+
+      // Send invite email
+      const inviteUrl = `${input.origin}/join/accept?token=${token}`;
+      const tierLabel = TIER_LABELS[(sessionRows[0]?.membershipTier ?? 'business_class') as typeof MEMBERSHIP_TIERS[number]];
+      const typeLabel = TYPE_LABELS[membershipType];
+      const leaderName = leaderUser[0]?.name ?? 'Your team leader';
+
+      await sendDirectEmail({
+        toEmail: input.invitedEmail,
+        toName: input.invitedEmail,
+        subject: `You've been invited to join JLT Group — ${tierLabel} ${typeLabel}`,
+        html: `
+          <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
+            <div style="text-align:center;margin-bottom:24px;">
+              <div style="background:#70FFE8;border-radius:50%;width:56px;height:56px;display:inline-flex;align-items:center;justify-content:center;">
+                <span style="font-weight:700;color:#414141;font-size:1rem">JLT</span>
+              </div>
+              <h1 style="color:#414141;font-size:1.4rem;margin:16px 0 4px;">You're invited to join JLT Group</h1>
+              <p style="color:#6b7280;font-size:.9rem;margin:0;">${leaderName} has invited you to join their ${tierLabel} ${typeLabel} membership.</p>
+            </div>
+            <div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;">
+              <p style="color:#414141;margin:0 0 16px;">As a team member, you'll need to:</p>
+              <ol style="color:#414141;padding-left:20px;margin:0;">
+                <li style="margin-bottom:8px;">Review and sign the JLT Group membership contract</li>
+                <li style="margin-bottom:8px;">Complete your agent profile</li>
+                <li style="margin-bottom:8px;">Upload your ID and proof of address</li>
+              </ol>
+              <p style="color:#6b7280;font-size:.85rem;margin:16px 0 0;"><strong>No payment required</strong> — your team leader covers the joining fee and monthly subscription.</p>
+            </div>
+            <div style="text-align:center;">
+              <a href="${inviteUrl}" style="display:inline-block;background:#70FFE8;color:#414141;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:1rem;">Accept Invitation</a>
+              <p style="color:#9ca3af;font-size:.75rem;margin:16px 0 0;">This invitation expires in 7 days. If you did not expect this email, please ignore it.</p>
+            </div>
+          </div>
+        `,
+      });
+
+      return { ok: true };
+    }),
+
   // ── Admin: delete a join session (abandoned or application) ───────────────
   deleteJoinSession: protectedProcedure
     .input(z.object({ sessionId: z.number().int() }))
