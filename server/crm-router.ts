@@ -1334,6 +1334,7 @@ export const crmRouter = router({
         // JLT email address preference
         jltEmailPreference: z.string().max(320).optional().nullable(),
         notifyOnComplete: z.boolean().optional(),
+        ukRegion: z.string().max(100).optional().nullable(),
       }))
       .mutation(async ({ input, ctx }) => {
         const { getDb } = await import("./db");

@@ -92,6 +92,8 @@ type CrmProfile = {
   bankSortCode?: string | null;
   bankAccountNumber?: string | null;
   orbitEnabled?: boolean | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
 };
 
 type AgentRow = {
@@ -919,6 +921,16 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
               </div>
             )}
           </Section>
+
+          {/* Emergency Contact */}
+          {(profile?.emergencyContactName || profile?.emergencyContactPhone) && (
+            <Section title="Emergency Contact">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Name" value={profile?.emergencyContactName} icon={<User className="h-3.5 w-3.5" />} />
+                <Field label="Phone" value={profile?.emergencyContactPhone} icon={<Phone className="h-3.5 w-3.5" />} />
+              </div>
+            </Section>
+          )}
 
           {/* Business Details */}
           <Section title="Business Details">

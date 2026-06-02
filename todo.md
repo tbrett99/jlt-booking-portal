@@ -2511,3 +2511,8 @@
 ## Bug Fixes — June 2026 (cont.)
 
 - [x] Fix: CRM profile sheet shows blank data when agentCrm.get query fails (transient network error) — fall back to list-level crmProfile data, add retry logic (2 retries, 1s delay), and show amber error banner with Retry button
+
+## Features — June 2026
+
+- [x] CRM Profile tab: show emergency contact name and phone in Contact Details section
+- [x] Onboarding questionnaire: add UK region dropdown (Personal Details step) — save to ukRegion field

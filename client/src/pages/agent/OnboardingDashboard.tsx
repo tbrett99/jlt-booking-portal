@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
   CheckCircle2, Upload, Clock, User,
@@ -85,6 +86,7 @@ export default function OnboardingDashboard() {
 
   const [emergencyContactName, setEmergencyContactName] = useState("");
   const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
+  const [ukRegion, setUkRegion] = useState("");
 
   const [preferredPaymentDay, setPreferredPaymentDay] = useState<1 | 15 | 28 | null>(null);
 
@@ -138,6 +140,7 @@ export default function OnboardingDashboard() {
       setBankAccountNumber((profile as any)?.bankAccountNumber ? "••••••••" : "");
       setEmergencyContactName((profile as any)?.emergencyContactName ?? "");
       setEmergencyContactPhone((profile as any)?.emergencyContactPhone ?? "");
+      setUkRegion((profile as any)?.ukRegion ?? "");
       const d = (profile as any)?.preferredPaymentDay;
       if (d === 1 || d === 15 || d === 28) setPreferredPaymentDay(d);
       // Restore JLT email preference
@@ -216,7 +219,9 @@ export default function OnboardingDashboard() {
         name, personalEmail: personalEmail || null, mobile: mobile || null,
         businessName: businessName || null,
         addressLine1: addressLine1 || null, addressLine2: addressLine2 || null,
-        city: city || null, postcode: postcode || null, notifyOnComplete: false,
+        city: city || null, postcode: postcode || null,
+        ukRegion: ukRegion || null,
+        notifyOnComplete: false,
       });
       toast.success("Personal details saved");
       setOpenSection("bank");
@@ -458,6 +463,28 @@ export default function OnboardingDashboard() {
                 <Label className="text-xs">Postcode *</Label>
                 <Input value={postcode} onChange={e => setPostcode(e.target.value)} placeholder="Postcode" className="h-9 text-sm" />
               </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">UK Region <span className="text-muted-foreground">(optional)</span></Label>
+              <Select value={ukRegion} onValueChange={setUkRegion}>
+                <SelectTrigger className="h-9 text-sm w-full">
+                  <SelectValue placeholder="Select your region" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="East Midlands">East Midlands</SelectItem>
+                  <SelectItem value="East of England">East of England</SelectItem>
+                  <SelectItem value="London">London</SelectItem>
+                  <SelectItem value="North East England">North East England</SelectItem>
+                  <SelectItem value="North West England">North West England</SelectItem>
+                  <SelectItem value="Northern Ireland">Northern Ireland</SelectItem>
+                  <SelectItem value="Scotland">Scotland</SelectItem>
+                  <SelectItem value="South East England">South East England</SelectItem>
+                  <SelectItem value="South West England">South West England</SelectItem>
+                  <SelectItem value="Wales">Wales</SelectItem>
+                  <SelectItem value="West Midlands">West Midlands</SelectItem>
+                  <SelectItem value="Yorkshire and the Humber">Yorkshire and the Humber</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button onClick={handleSavePersonal} disabled={saving === "personal"} className="w-full h-9 text-sm font-semibold" style={{ background: "#70FFE8", color: "#0d1a26" }}>
               {saving === "personal" ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
