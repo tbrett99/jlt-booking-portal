@@ -88,7 +88,9 @@ type CrmProfile = {
   postcode?: string | null;
   adminNotes?: string | null;
   idDocUrl?: string | null;
+  idDocKey?: string | null;
   proofOfAddressUrl?: string | null;
+  proofOfAddressKey?: string | null;
   bankSortCode?: string | null;
   bankAccountNumber?: string | null;
   orbitEnabled?: boolean | null;
@@ -1477,7 +1479,7 @@ function DocsTab({ userId, profile, contractData, onRefresh }: { userId: number;
         <DocUploadRow
           label="ID Document"
           description="Passport, driving licence, or national ID"
-          url={profile?.idDocUrl}
+          url={profile?.idDocKey ? `/api/doc-proxy?key=${encodeURIComponent(profile.idDocKey)}` : profile?.idDocUrl}
           inputRef={idRef}
           onUpload={(f) => handleUpload("id", f)}
           loading={uploadDoc.isPending}
@@ -1486,7 +1488,7 @@ function DocsTab({ userId, profile, contractData, onRefresh }: { userId: number;
         <DocUploadRow
           label="Proof of Address"
           description="Utility bill or bank statement (within 3 months)"
-          url={profile?.proofOfAddressUrl}
+          url={profile?.proofOfAddressKey ? `/api/doc-proxy?key=${encodeURIComponent(profile.proofOfAddressKey)}` : profile?.proofOfAddressUrl}
           inputRef={poaRef}
           onUpload={(f) => handleUpload("proof_of_address", f)}
           loading={uploadDoc.isPending}

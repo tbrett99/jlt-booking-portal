@@ -1736,6 +1736,56 @@ async function startServer() {
     }
   });
 
+  // ── Document Proxy ─────────────────────────────────────────────────────────
+  // Proxies private Manus-storage documents through the server so the browser
+  // doesn't need direct CloudFront access. Requires an authenticated session.
+  // Usage: GET /api/doc-proxy?key=onboarding/123/id-abc.jpeg
+  app.get("/api/doc-proxy", async (req, res) => {
+    try {
+      // Auth check — must be a logged-in user
+      const { sdk } = await import("./sdk");
+      let user = null;
+      try { user = await sdk.authenticateRequest(req); } catch { /* not logged in */ }
+      if (!user) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      const key = req.query.key as string | undefined;
+      if (!key || typeof key !== "string" || key.includes("..")) {
+        res.status(400).json({ error: "Invalid key" });
+        return;
+      }
+
+      const CLOUDFRONT_BASE = "https://d2xsxph8kpxj0f.cloudfront.net/310419663026820811/PdcDVQRp8zC2FzsyWBWptW";
+      const docUrl = `${CLOUDFRONT_BASE}/${key.replace(/^\/+/, "")}`;
+
+      const forgeKey = process.env.BUILT_IN_FORGE_API_KEY;
+      const headers: Record<string, string> = {};
+      if (forgeKey) headers["X-Api-Key"] = forgeKey;
+
+      const upstream = await fetch(docUrl, { headers });
+      if (!upstream.ok) {
+        res.status(upstream.status).json({ error: "Could not retrieve document" });
+        return;
+      }
+
+      const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
+      const buffer = Buffer.from(await upstream.arrayBuffer());
+
+      // Derive a safe filename from the key
+      const filename = key.split("/").pop() ?? "document";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.setHeader("Content-Length", buffer.length);
+      res.end(buffer);
+    } catch (e) {
+      console.error("[DocProxy] Error:", e);
+      res.status(500).json({ error: "Error loading document" });
+    }
+  });
+
   // ── Email Unsubscribe ─────────────────────────────────────────────────────
   app.get("/api/unsubscribe", async (req, res) => {
     const token = req.query.token as string;
