@@ -167,12 +167,10 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
   const [type, setType] = useState<EventType>(event?.type ?? "event");
   const [allDay, setAllDay] = useState(event?.allDay ?? true);
   const [startDate, setStartDate] = useState(
-    event ? (event.allDay ? toLocalDateString(new Date(event.startDate)) : toLocalDateTimeString(new Date(event.startDate)))
-          : toLocalDateString(today)
+    event ? toLocalDateString(new Date(event.startDate)) : toLocalDateString(today)
   );
   const [endDate, setEndDate] = useState(
-    event ? (event.allDay ? toLocalDateString(new Date(event.endDate)) : toLocalDateTimeString(new Date(event.endDate)))
-          : toLocalDateString(today)
+    event ? toLocalDateString(new Date(event.endDate)) : toLocalDateString(today)
   );
   const [startTime, setStartTime] = useState(
     event && !event.allDay ? format(new Date(event.startDate), "HH:mm") : "09:00"
@@ -193,8 +191,14 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
   const [duration, setDuration] = useState<string>(String(event?.duration ?? 60));
   const [registrationEnabled, setRegistrationEnabled] = useState(event?.registrationEnabled ?? false);
 
-  const createMutation = trpc.calendar.create.useMutation({ onSuccess: () => { onSaved(); onClose(); } });
-  const updateMutation = trpc.calendar.update.useMutation({ onSuccess: () => { onSaved(); onClose(); } });
+  const createMutation = trpc.calendar.create.useMutation({
+    onSuccess: () => { onSaved(); onClose(); },
+    onError: (err) => { toast.error(err.message || "Failed to save event."); },
+  });
+  const updateMutation = trpc.calendar.update.useMutation({
+    onSuccess: () => { onSaved(); onClose(); },
+    onError: (err) => { toast.error(err.message || "Failed to save event."); },
+  });
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
 
