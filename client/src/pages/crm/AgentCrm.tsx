@@ -418,8 +418,8 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
           </div>
         </div>
 
-        {/* Error banner when detailed query fails */}
-        {crmError && !crmLoading && (
+        {/* Error banner when detailed query fails — only show if error AND not yet successfully loaded */}
+        {crmError && !crmLoading && !crmData && (
           <div className="mx-6 mt-3 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
             <span className="flex-1">Could not load full profile data — showing cached data. Some fields may be incomplete.</span>
             <button onClick={() => refetchCrm()} className="shrink-0 font-medium underline hover:no-underline">Retry</button>
@@ -1132,15 +1132,24 @@ function SupplierAccessTab({ userId, supplierLogins, onRefresh }: {
   const [optimisticEnabled, setOptimisticEnabled] = useState<Set<string>>(() => new Set(supplierLogins.map(l => l.supplierName)));
   const [optimisticLogins, setOptimisticLogins] = useState(supplierLogins);
 
-  // Sync from server when supplierLogins prop changes (after refetch)
+  // Track whether a mutation is in-flight so we don't overwrite optimistic state mid-request
+  const mutationPendingRef = useRef(false);
+
+  // Sync from server when supplierLogins prop changes (after refetch) — but not while a mutation is pending
   useEffect(() => {
-    setOptimisticEnabled(new Set(supplierLogins.map(l => l.supplierName)));
-    setOptimisticLogins(supplierLogins);
+    if (!mutationPendingRef.current) {
+      setOptimisticEnabled(new Set(supplierLogins.map(l => l.supplierName)));
+      setOptimisticLogins(supplierLogins);
+    }
   }, [supplierLogins]);
 
   const addLogin = trpc.crm.agentCrm.addSupplierLogin.useMutation({
-    onSuccess: onRefresh,
+    onSuccess: () => {
+      mutationPendingRef.current = false;
+      onRefresh();
+    },
     onError: (e) => {
+      mutationPendingRef.current = false;
       toast.error(e.message);
       // Revert optimistic update on error
       setOptimisticEnabled(new Set(supplierLogins.map(l => l.supplierName)));
@@ -1148,8 +1157,12 @@ function SupplierAccessTab({ userId, supplierLogins, onRefresh }: {
     },
   });
   const deleteLogin = trpc.crm.agentCrm.deleteSupplierLogin.useMutation({
-    onSuccess: onRefresh,
+    onSuccess: () => {
+      mutationPendingRef.current = false;
+      onRefresh();
+    },
     onError: (e) => {
+      mutationPendingRef.current = false;
       toast.error(e.message);
       // Revert optimistic update on error
       setOptimisticEnabled(new Set(supplierLogins.map(l => l.supplierName)));
@@ -1158,6 +1171,7 @@ function SupplierAccessTab({ userId, supplierLogins, onRefresh }: {
   });
 
   function toggle(supplier: string) {
+    mutationPendingRef.current = true;
     if (optimisticEnabled.has(supplier)) {
       // Optimistically remove
       const newEnabled = new Set(optimisticEnabled);
