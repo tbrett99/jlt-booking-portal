@@ -6,14 +6,15 @@
  *
  * R2 URLs (pub-*.r2.dev) are publicly accessible and returned as-is.
  */
-export function resolveDocUrl(url: string | null | undefined, key?: string | null): string | null {
+export function resolveDocUrl(url: string | null | undefined, _key?: string | null): string | null {
   if (!url) return null;
 
   // Manus CloudFront URLs need to go through the proxy
+  // Always extract the full path from the URL (e.g. "310419663026820811/PdcDVQRp8zC2FzsyWBWptW/filename")
+  // The stored fileKey is often just the filename, not the full path
   if (url.includes('d2xsxph8kpxj0f.cloudfront.net')) {
-    // Prefer the key if available (cleaner), otherwise extract from URL
-    const fileKey = key ?? url.split('/').slice(3).join('/');
-    return `/api/doc-proxy?key=${encodeURIComponent(fileKey)}`;
+    const fullPath = url.split('cloudfront.net/')[1];
+    return `/api/doc-proxy?key=${encodeURIComponent(fullPath)}`;
   }
 
   // R2 and other public URLs are fine as-is

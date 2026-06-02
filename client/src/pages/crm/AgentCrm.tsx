@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { resolveDocUrl } from "@/lib/docUrl";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1479,7 +1480,7 @@ function DocsTab({ userId, profile, contractData, onRefresh }: { userId: number;
         <DocUploadRow
           label="ID Document"
           description="Passport, driving licence, or national ID"
-          url={profile?.idDocKey ? `/api/doc-proxy?key=${encodeURIComponent(profile.idDocKey)}` : profile?.idDocUrl}
+          url={resolveDocUrl(profile?.idDocUrl)}
           inputRef={idRef}
           onUpload={(f) => handleUpload("id", f)}
           loading={uploadDoc.isPending}
@@ -1488,7 +1489,7 @@ function DocsTab({ userId, profile, contractData, onRefresh }: { userId: number;
         <DocUploadRow
           label="Proof of Address"
           description="Utility bill or bank statement (within 3 months)"
-          url={profile?.proofOfAddressKey ? `/api/doc-proxy?key=${encodeURIComponent(profile.proofOfAddressKey)}` : profile?.proofOfAddressUrl}
+          url={resolveDocUrl(profile?.proofOfAddressUrl)}
           inputRef={poaRef}
           onUpload={(f) => handleUpload("proof_of_address", f)}
           loading={uploadDoc.isPending}

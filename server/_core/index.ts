@@ -1757,8 +1757,16 @@ async function startServer() {
         return;
       }
 
-      const CLOUDFRONT_BASE = "https://d2xsxph8kpxj0f.cloudfront.net/310419663026820811/PdcDVQRp8zC2FzsyWBWptW";
-      const docUrl = `${CLOUDFRONT_BASE}/${key.replace(/^\/+/, "")}`;
+      // key may be either:
+      //   (a) full path: "310419663026820811/PdcDVQRp8zC2FzsyWBWptW/filename"
+      //   (b) short key: "filename"
+      // Always build the full CloudFront URL from the key as-is if it already
+      // starts with the tenant prefix, otherwise prepend it.
+      const CLOUDFRONT_ROOT = "https://d2xsxph8kpxj0f.cloudfront.net";
+      const TENANT_PREFIX = "310419663026820811/PdcDVQRp8zC2FzsyWBWptW";
+      const cleanKey = key.replace(/^\/+/, "");
+      const fullPath = cleanKey.startsWith(TENANT_PREFIX) ? cleanKey : `${TENANT_PREFIX}/${cleanKey}`;
+      const docUrl = `${CLOUDFRONT_ROOT}/${fullPath}`;
 
       const forgeKey = process.env.BUILT_IN_FORGE_API_KEY;
       const headers: Record<string, string> = {};
