@@ -6,10 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Eye, EyeOff, Loader2, CheckCircle2, ArrowLeft } from "lucide-react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 
 export default function RegisterPage() {
   const [, navigate] = useLocation();
+  const search = useSearch();
+  const returnTo = new URLSearchParams(search).get("returnTo");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,8 +26,8 @@ export default function RegisterPage() {
     onSuccess: async () => {
       await utils.auth.me.invalidate();
       setDone(true);
-      // Small delay then redirect to onboarding
-      setTimeout(() => navigate("/onboarding"), 1500);
+      // If a returnTo param is present (e.g. from a team invite link), redirect there after a short delay
+      setTimeout(() => { window.location.href = returnTo ?? "/onboarding"; }, 1500);
     },
     onError: (err) => {
       toast.error(err.message || "Registration failed. Please try again.");
@@ -71,7 +73,7 @@ export default function RegisterPage() {
               <CheckCircle2 size={48} className="text-green-500" />
               <div>
                 <p className="font-semibold text-lg">Account created!</p>
-                <p className="text-sm text-muted-foreground mt-1">Taking you to your onboarding profile…</p>
+                <p className="text-sm text-muted-foreground mt-1">{returnTo ? "Taking you back to your invite…" : "Taking you to your onboarding profile…"}</p>
               </div>
             </CardContent>
           </Card>

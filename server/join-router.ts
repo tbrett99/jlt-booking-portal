@@ -1175,4 +1175,41 @@ export const joinRouter = router({
       await db.delete(joinSessions).where(eqOp(joinSessions.id, input.sessionId));
       return { ok: true };
     }),
+
+  /**
+   * Admin: get any pending (unsigned) team invite for a given agent userId.
+   * Used in the CRM onboarding tab to surface a "Resend Invite" button.
+   */
+  adminGetPendingInviteForAgent: protectedProcedure
+    .input(z.object({ userId: z.number().int() }))
+    .query(async ({ ctx, input }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      // Look up the agent's email
+      const userRows = await db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, input.userId))
+        .limit(1);
+      const email = userRows[0]?.email;
+      if (!email) return null;
+      // Find a pending invite for this email
+      const inviteRows = await db
+        .select({
+          id: teamInvites.id,
+          invitedEmail: teamInvites.invitedEmail,
+          leaderId: teamInvites.leaderId,
+          teamId: teamInvites.teamId,
+          expiresAt: teamInvites.expiresAt,
+          status: teamInvites.status,
+        })
+        .from(teamInvites)
+        .where(and(eq(teamInvites.invitedEmail, email), eq(teamInvites.status, 'pending')))
+        .orderBy(desc(teamInvites.expiresAt))
+        .limit(1);
+      return inviteRows[0] ?? null;
+    }),
 });

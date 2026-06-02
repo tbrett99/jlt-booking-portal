@@ -171,8 +171,8 @@ export default function JoinAccept() {
           {!user && (
             <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
               <strong>Note:</strong> You need to be logged in to accept this invitation. Please{" "}
-              <a href="/login" className="underline">log in</a> or{" "}
-              <a href="/register" className="underline">create an account</a> first.
+              <a href={`/login?returnTo=${encodeURIComponent(`/join/accept?token=${token}`)}`} className="underline">log in</a> or{" "}
+              <a href={`/register?returnTo=${encodeURIComponent(`/join/accept?token=${token}`)}`} className="underline">create an account</a> first.
             </div>
           )}
         </div>

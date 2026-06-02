@@ -2501,3 +2501,9 @@
 - [x] Email covers: all portal features, Supplier Database location (left-hand sidebar), training sign-off requirement for supplier trade portal passwords
 - [x] Email is non-blocking (void + try/catch) so activation never fails due to email errors
 - [x] 4 vitest tests: sends email with correct content, includes training note, handles missing email, handles missing user
+
+## Bug Fixes — June 2026
+
+- [x] Fix: Team invitee (Claire Douglas) not prompted to sign contract — add "Resend Invite" button in CRM Onboarding tab + fix invite flow to preserve return URL after login/register
+- [x] Fix: CRM missing data (trainingStage, membershipTier) — manually patched Claire's record in DB (Business Class, Training, teamId 150002)
+- [x] Fix: Supplier access toggles not clickable — added optimistic state updates and loading guard to prevent stale re-render

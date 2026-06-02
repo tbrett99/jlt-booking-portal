@@ -509,7 +509,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <DirectDebitTab userId={agent.id} mandate={agentMandate} />
             </TabsContent>
             <TabsContent value="onboarding" className="mt-5 pb-8">
-              <AdminOnboardingChecklistTab userId={agent.id} agentName={agent.name ?? ""} open={open} onRefresh={refresh} />
+              <AdminOnboardingChecklistTab userId={agent.id} agentName={agent.name ?? ""} agentEmail={agent.email ?? ""} open={open} onRefresh={refresh} />
             </TabsContent>
             <TabsContent value="notes" className="mt-5 pb-8">
               <AgentNotesTab userId={agent.id} />
@@ -1107,41 +1107,71 @@ function SupplierAccessTab({ userId, supplierLogins, onRefresh }: {
   supplierLogins: Array<{ id: number; supplierName: string; notes?: string | null }>;
   onRefresh: () => void;
 }) {
+  // Optimistic local state — mirrors server state but updates immediately on click
+  const [optimisticEnabled, setOptimisticEnabled] = useState<Set<string>>(() => new Set(supplierLogins.map(l => l.supplierName)));
+  const [optimisticLogins, setOptimisticLogins] = useState(supplierLogins);
+
+  // Sync from server when supplierLogins prop changes (after refetch)
+  useEffect(() => {
+    setOptimisticEnabled(new Set(supplierLogins.map(l => l.supplierName)));
+    setOptimisticLogins(supplierLogins);
+  }, [supplierLogins]);
+
   const addLogin = trpc.crm.agentCrm.addSupplierLogin.useMutation({
     onSuccess: onRefresh,
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      toast.error(e.message);
+      // Revert optimistic update on error
+      setOptimisticEnabled(new Set(supplierLogins.map(l => l.supplierName)));
+      setOptimisticLogins(supplierLogins);
+    },
   });
   const deleteLogin = trpc.crm.agentCrm.deleteSupplierLogin.useMutation({
     onSuccess: onRefresh,
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      toast.error(e.message);
+      // Revert optimistic update on error
+      setOptimisticEnabled(new Set(supplierLogins.map(l => l.supplierName)));
+      setOptimisticLogins(supplierLogins);
+    },
   });
 
-  const enabledSuppliers = new Set(supplierLogins.map(l => l.supplierName));
-
   function toggle(supplier: string) {
-    if (enabledSuppliers.has(supplier)) {
-      const login = supplierLogins.find(l => l.supplierName === supplier);
+    if (optimisticEnabled.has(supplier)) {
+      // Optimistically remove
+      const newEnabled = new Set(optimisticEnabled);
+      newEnabled.delete(supplier);
+      setOptimisticEnabled(newEnabled);
+      const login = optimisticLogins.find(l => l.supplierName === supplier);
       if (login) deleteLogin.mutate({ id: login.id });
     } else {
+      // Optimistically add
+      const newEnabled = new Set(optimisticEnabled);
+      newEnabled.add(supplier);
+      setOptimisticEnabled(newEnabled);
       addLogin.mutate({ userId, supplierName: supplier });
     }
   }
+
+  const isPending = addLogin.isPending || deleteLogin.isPending;
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">Select which supplier portals this agent has access to.</p>
       <div className="grid grid-cols-1 gap-2">
         {SUPPLIERS.map((supplier) => {
-          const enabled = enabledSuppliers.has(supplier);
+          const enabled = optimisticEnabled.has(supplier);
           return (
             <div
               key={supplier}
-              className={`flex items-center justify-between p-3.5 rounded-lg border cursor-pointer transition-colors ${
+              className={`flex items-center justify-between p-3.5 rounded-lg border transition-colors ${
+                isPending ? "cursor-wait opacity-80" : "cursor-pointer"
+              } ${
                 enabled
                   ? "border-primary/40 bg-primary/5"
                   : "border-border bg-muted/20 hover:bg-muted/40"
               }`}
-              onClick={() => toggle(supplier)}
+              onClick={() => !isPending && toggle(supplier)}
             >
               <div className="flex items-center gap-3">
                 <div className={`w-5 h-5 rounded flex items-center justify-center border ${
@@ -2368,8 +2398,8 @@ const ONBOARDING_STEPS = [
 
 type ChecklistKey = typeof ONBOARDING_STEPS[number]["key"];
 
-function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
-  userId: number; agentName: string; open: boolean; onRefresh: () => void;
+function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, open, onRefresh }: {
+  userId: number; agentName: string; agentEmail: string; open: boolean; onRefresh: () => void;
 }) {
   const utils = trpc.useUtils();
   const { data: checklist, isLoading } = trpc.crm.agentCrm.getOnboardingChecklist.useQuery(
@@ -2380,6 +2410,15 @@ function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
     { userId },
     { enabled: open }
   );
+  // Check for pending team invites for this agent
+  const { data: pendingInvite } = trpc.join.adminGetPendingInviteForAgent.useQuery(
+    { userId },
+    { enabled: open }
+  );
+  const resendInvite = trpc.join.adminResendTeamInvite.useMutation({
+    onSuccess: () => toast.success(`Invite resent to ${agentEmail}`),
+    onError: (e) => toast.error(e.message),
+  });
   const [subPaymentDay, setSubPaymentDay] = useState<string>("1");
   const [showSubForm, setShowSubForm] = useState(false);
   const createSub = trpc.gocardless.adminCreateSubscription.useMutation({
@@ -2482,6 +2521,37 @@ function AdminOnboardingChecklistTab({ userId, agentName, open, onRefresh }: {
 
   return (
     <div className="space-y-5">
+      {/* Pending invite banner */}
+      {pendingInvite && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-400 flex items-center gap-2">
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                Team invite not yet signed
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-500 mt-1">
+                {agentName} was invited as a team member but has not yet signed their contract.
+                Expires {new Date(pendingInvite.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 border-amber-400 text-amber-800 hover:bg-amber-100 dark:text-amber-400 dark:border-amber-600 dark:hover:bg-amber-900/30"
+              disabled={resendInvite.isPending}
+              onClick={() => resendInvite.mutate({
+                userId: pendingInvite.leaderId,
+                invitedEmail: agentEmail,
+                origin: window.location.origin,
+              })}
+            >
+              {resendInvite.isPending ? "Sending..." : "Resend Invite"}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Progress header */}
       <div className={`rounded-xl p-4 ${allComplete ? "bg-emerald-50 border border-emerald-200" : "bg-muted/50 border border-border"}`}>
         <div className="flex items-center justify-between mb-2">
