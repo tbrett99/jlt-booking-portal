@@ -305,7 +305,7 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const { data: crmData, refetch: refetchCrm, isLoading: crmLoading, isError: crmError } = trpc.crm.agentCrm.get.useQuery(
     { userId: agent.id },
-    { enabled: open, retry: 2, retryDelay: 1000 }
+    { enabled: open, retry: 2, retryDelay: 1000, placeholderData: (prev: any) => prev }
   );
   function refresh() { refetchCrm(); onRefresh(); }
 
