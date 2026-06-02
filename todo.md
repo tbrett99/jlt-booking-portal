@@ -2507,3 +2507,7 @@
 - [x] Fix: Team invitee (Claire Douglas) not prompted to sign contract — add "Resend Invite" button in CRM Onboarding tab + fix invite flow to preserve return URL after login/register
 - [x] Fix: CRM missing data (trainingStage, membershipTier) — manually patched Claire's record in DB (Business Class, Training, teamId 150002)
 - [x] Fix: Supplier access toggles not clickable — added optimistic state updates and loading guard to prevent stale re-render
+
+## Bug Fixes — June 2026 (cont.)
+
+- [x] Fix: CRM profile sheet shows blank data when agentCrm.get query fails (transient network error) — fall back to list-level crmProfile data, add retry logic (2 retries, 1s delay), and show amber error banner with Retry button

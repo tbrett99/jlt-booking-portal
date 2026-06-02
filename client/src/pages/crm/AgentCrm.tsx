@@ -301,9 +301,9 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const { data: crmData, refetch: refetchCrm } = trpc.crm.agentCrm.get.useQuery(
+  const { data: crmData, refetch: refetchCrm, isLoading: crmLoading, isError: crmError } = trpc.crm.agentCrm.get.useQuery(
     { userId: agent.id },
-    { enabled: open }
+    { enabled: open, retry: 2, retryDelay: 1000 }
   );
   function refresh() { refetchCrm(); onRefresh(); }
 
@@ -320,7 +320,8 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   const { data: agentDdStatus } = trpc.gocardless.adminListMandates.useQuery(undefined, { enabled: open });
   const agentMandate = agentDdStatus?.find((m: any) => m.userId === agent.id);
 
-  const profile = crmData?.profile as CrmProfile | null ?? null;
+  // Fall back to the list-level crmProfile while the detailed query is loading
+  const profile = (crmData?.profile ?? agent.crmProfile) as CrmProfile | null ?? null;
 
   const [orbitChecked, setOrbitChecked] = useState<boolean | null>(null);
   // Sync local state from server when profile loads
@@ -414,6 +415,14 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             </div>
           </div>
         </div>
+
+        {/* Error banner when detailed query fails */}
+        {crmError && !crmLoading && (
+          <div className="mx-6 mt-3 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+            <span className="flex-1">Could not load full profile data — showing cached data. Some fields may be incomplete.</span>
+            <button onClick={() => refetchCrm()} className="shrink-0 font-medium underline hover:no-underline">Retry</button>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="px-6 pt-4">
