@@ -2139,6 +2139,15 @@ async function startServer() {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
+  // Warn if Cloudflare R2 / S3 environment variables are missing — uploads will fail at runtime
+  const s3Vars = ["S3_ENDPOINT", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_BUCKET", "S3_PUBLIC_URL"];
+  const missingS3 = s3Vars.filter((v) => !process.env[v]);
+  if (missingS3.length > 0) {
+    console.warn(`[Storage] WARNING: Missing S3/R2 environment variables: ${missingS3.join(", ")}. Document uploads will fail until these are set.`);
+  } else {
+    console.log(`[Storage] Cloudflare R2 configured — bucket: ${process.env.S3_BUCKET}`);
+  }
+
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
     startScheduler();

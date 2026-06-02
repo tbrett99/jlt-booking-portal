@@ -2516,3 +2516,4 @@
 
 - [x] CRM Profile tab: show emergency contact name and phone in Contact Details section
 - [x] Onboarding questionnaire: add UK region dropdown (Personal Details step) — save to ukRegion field
+- [x] Fix: document upload shows "Unable to transform response from server" — wrap all storagePut calls in try/catch and throw TRPCError with readable message; add S3 env var startup warning

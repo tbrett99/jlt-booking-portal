@@ -19,8 +19,11 @@ function getS3Client(): S3Client {
   const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
 
   if (!endpoint || !accessKeyId || !secretAccessKey) {
+    const missing = ["S3_ENDPOINT", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"]
+      .filter((v) => !process.env[v])
+      .join(", ");
     throw new Error(
-      "Cloudflare R2 credentials missing: set S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY"
+      `Document storage is not configured on this server (missing: ${missing}). Please contact support.`
     );
   }
 

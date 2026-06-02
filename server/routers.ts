@@ -912,7 +912,16 @@ export const appRouter = router({
         // Upload to S3 and store in reimbursement_docs table (multi-doc support)
         const buffer = Buffer.from(input.fileBase64, "base64");
         const key = `reimb-docs/${input.bookingId}-${nanoid(8)}-${input.fileName}`;
-        const { url } = await storagePut(key, buffer, input.mimeType);
+        let url: string;
+        try {
+          ({ url } = await storagePut(key, buffer, input.mimeType));
+        } catch (storageErr: any) {
+          console.error("[uploadReimbDoc] storagePut failed:", storageErr?.message);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: storageErr?.message ?? "Failed to upload document — please try again or contact support",
+          });
+        }
         await addReimbursementDoc({
           bookingId: input.bookingId,
           uploadedById: ctx.user.id,
@@ -1513,7 +1522,16 @@ export const appRouter = router({
         }
         const buffer = Buffer.from(input.fileBase64, "base64");
         const key = `msg-attachments/${input.bookingId}-${nanoid(8)}-${input.fileName}`;
-        const { url } = await storagePut(key, buffer, input.mimeType);
+        let url: string;
+        try {
+          ({ url } = await storagePut(key, buffer, input.mimeType));
+        } catch (storageErr: any) {
+          console.error("[uploadMessageDoc] storagePut failed:", storageErr?.message);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: storageErr?.message ?? "Failed to upload attachment — please try again or contact support",
+          });
+        }
         return { url, fileName: input.fileName };
       }),
     // Agent: set gross selling price + expected commission (only if not yet locked)
@@ -3576,8 +3594,16 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           if (!matches) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid file data" });
           const [, mimeType, b64] = matches;
           const buffer = Buffer.from(b64, "base64");
-          const { url } = await storagePut(input.fileKey, buffer, mimeType);
-          finalUrl = url;
+          try {
+            const { url } = await storagePut(input.fileKey, buffer, mimeType);
+            finalUrl = url;
+          } catch (storageErr: any) {
+            console.error("[uploadItemDoc] storagePut failed:", storageErr?.message);
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: storageErr?.message ?? "Failed to upload document — please try again or contact support",
+            });
+          }
         }
         const docs = await addReimbursementItemDoc({
           reimbursementItemId: input.reimbursementItemId,
@@ -4429,7 +4455,16 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         const buffer = Buffer.from(input.fileBase64, 'base64');
         const ext = input.filename.split('.').pop() ?? 'bin';
         const fileKey = `booking-docs/${input.bookingId}/${nanoid(12)}-${Date.now()}.${ext}`;
-        const { url } = await storagePut(fileKey, buffer, input.mimeType);
+        let url: string;
+        try {
+          ({ url } = await storagePut(fileKey, buffer, input.mimeType));
+        } catch (storageErr: any) {
+          console.error('[uploadBookingDoc] storagePut failed:', storageErr?.message);
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: storageErr?.message ?? 'Failed to upload document — please try again or contact support',
+          });
+        }
         await db.insert(bookingDocuments).values({
           bookingId: input.bookingId,
           uploadedById: ctx.user.id,
