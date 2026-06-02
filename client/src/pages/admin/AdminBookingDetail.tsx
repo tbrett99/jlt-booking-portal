@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { resolveDocUrl } from "@/lib/docUrl";
 import { useParams, Link, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1192,7 +1193,7 @@ export default function AdminBookingDetail() {
                 {(reimbDocs as any[]).map((doc: any) => (
                   <div key={doc.id} className="flex items-center gap-2 text-sm">
                     <FileText size={13} style={{ color: '#02E6D2' }} className="flex-shrink-0" />
-                    <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer"
+                    <a href={resolveDocUrl(doc.fileUrl, doc.fileKey) ?? '#'} target="_blank" rel="noopener noreferrer"
                       className="underline truncate flex-1" style={{ color: '#02E6D2' }}>
                       {doc.fileName || 'View document'}
                     </a>
@@ -1319,7 +1320,7 @@ export default function AdminBookingDetail() {
                           docs.map((doc: any) => (
                             <div key={doc.id} className="flex items-center gap-2 text-xs">
                               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#065f46" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                              <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="underline truncate flex-1" style={{ color: '#065f46' }}>{doc.fileName}</a>
+                              <a href={resolveDocUrl(doc.fileUrl, doc.fileKey) ?? '#'} target="_blank" rel="noopener noreferrer" className="underline truncate flex-1" style={{ color: '#065f46' }}>{doc.fileName}</a>
                               <span className="text-muted-foreground flex-shrink-0">{doc.createdAt ? new Date(doc.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : ''}</span>
                             </div>
                           ))
@@ -2259,7 +2260,7 @@ function AdminBookingDocumentsSection({ bookingId }: { bookingId: number }) {
                   <span style={{ ...docTypeBadgeStyle(doc.docType), borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: 700 }}>
                     {docTypeLabel(doc.docType)}
                   </span>
-                  <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
+                  <a href={resolveDocUrl(doc.fileUrl, doc.fileKey) ?? '#'} target="_blank" rel="noopener noreferrer">
                     <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Download">
                       <Download className="h-3.5 w-3.5" />
                     </Button>

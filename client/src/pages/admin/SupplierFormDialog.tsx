@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
+import { resolveDocUrl } from "@/lib/docUrl";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -705,7 +706,7 @@ export function SupplierFormDialog({
                       <div className="flex items-center gap-2 min-w-0">
                         <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                         <a
-                          href={att.fileUrl}
+                          href={resolveDocUrl(att.fileUrl, att.fileKey) ?? '#'}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary hover:underline truncate"

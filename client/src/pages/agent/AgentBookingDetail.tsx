@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import CopyableRef from "@/components/CopyableRef";
 import { FlightRequestForm } from "@/components/FlightRequestForm";
 import { trpc } from "@/lib/trpc";
+import { resolveDocUrl } from "@/lib/docUrl";
 import { useParams, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1015,7 +1016,7 @@ export default function AgentBookingDetail() {
                       {(item.docs ?? []).map((doc: any) => (
                         <div key={doc.id} className="flex items-center gap-2 text-xs">
                           <CheckCircle2 size={12} style={{ color: '#065f46' }} />
-                          <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="underline truncate flex-1" style={{ color: '#065f46' }}>{doc.fileName}</a>
+                          <a href={resolveDocUrl(doc.fileUrl, doc.fileKey) ?? '#'} target="_blank" rel="noopener noreferrer" className="underline truncate flex-1" style={{ color: '#065f46' }}>{doc.fileName}</a>
                           <span className="text-muted-foreground flex-shrink-0">{format(new Date(doc.createdAt), 'dd MMM')}</span>
                         </div>
                       ))}
@@ -1675,7 +1676,7 @@ function BookingDocumentsSection({ bookingId }: { bookingId: number }) {
                   <span style={{ ...docTypeBadgeStyle(doc.docType), borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: 700 }}>
                     {docTypeLabel(doc.docType)}
                   </span>
-                  <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
+                  <a href={resolveDocUrl(doc.fileUrl, doc.fileKey) ?? '#'} target="_blank" rel="noopener noreferrer">
                     <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
                       <Download className="h-3.5 w-3.5" />
                     </Button>
