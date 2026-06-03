@@ -305,7 +305,6 @@ export default function AgentCrm() {
 
 function OrbitAccessList({ agents, onViewAgent }: { agents: AgentRow[]; onViewAgent: (agent: AgentRow) => void }) {
   const orbitAgents = agents.filter((a) => a.crmProfile?.orbitEnabled === true);
-  if (orbitAgents.length === 0) return null;
   return (
     <Card>
       <CardContent className="p-0">
@@ -327,6 +326,13 @@ function OrbitAccessList({ agents, onViewAgent }: { agents: AgentRow[]; onViewAg
             </TableRow>
           </TableHeader>
           <TableBody>
+            {orbitAgents.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                  No agents currently have Orbit access enabled. Open an agent's CRM profile and toggle Orbit Access on the Suppliers tab.
+                </TableCell>
+              </TableRow>
+            )}
             {orbitAgents.map((agent) => (
               <TableRow key={agent.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onViewAgent(agent)}>
                 <TableCell>
