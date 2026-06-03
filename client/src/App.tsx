@@ -86,6 +86,7 @@ const MembershipSelection = lazy(() => import("./pages/crm/MembershipSelection")
 const WonAgentPortal = lazy(() => import("./pages/crm/WonAgentPortal"));
 const MembershipSuccess = lazy(() => import("./pages/crm/MembershipSuccess"));
 const AgentCrm = lazy(() => import("./pages/crm/AgentCrm"));
+const OrbitAccess = lazy(() => import("./pages/crm/OrbitAccess"));
 const ContractEvidenceViewer = lazy(() => import("./pages/crm/ContractEvidenceViewer"));
 const JoinSessions = lazy(() => import("./pages/crm/JoinSessions"));
 const CrmChangeRequests = lazy(() => import("./pages/crm/CrmChangeRequests"));
@@ -375,6 +376,7 @@ function AuthRouter() {
         <Route path="/crm/payment-config" component={CrmPaymentConfig} />
         <Route path="/crm/agents" component={AgentCrm} />
         <Route path="/crm/agents/:userId/contract-evidence" component={ContractEvidenceViewer} />
+        <Route path="/crm/orbit-access" component={OrbitAccess} />
         <Route path="/crm/join-sessions" component={JoinSessions} />
         <Route path="/crm/abandoned-signups" component={AbandonedSignups} />
         <Route path="/crm/change-requests" component={CrmChangeRequests} />
