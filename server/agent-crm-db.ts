@@ -44,11 +44,19 @@ export async function upsertAgentCrmProfile(
 }
 
 export async function decryptAgentBankDetails(profile: AgentCrmProfile): Promise<AgentCrmProfile> {
-  return {
-    ...profile,
-    bankSortCode: profile.bankSortCode ? decrypt(profile.bankSortCode) : profile.bankSortCode,
-    bankAccountNumber: profile.bankAccountNumber ? decrypt(profile.bankAccountNumber) : profile.bankAccountNumber,
-  };
+  let bankSortCode = profile.bankSortCode;
+  let bankAccountNumber = profile.bankAccountNumber;
+  try {
+    if (profile.bankSortCode) bankSortCode = decrypt(profile.bankSortCode);
+    if (profile.bankAccountNumber) bankAccountNumber = decrypt(profile.bankAccountNumber);
+  } catch (err) {
+    // Decryption failure usually means JWT_SECRET differs between environments.
+    // Return the profile with bank fields nulled rather than crashing the whole procedure.
+    console.error("[CRM] Bank detail decryption failed — JWT_SECRET mismatch?", err);
+    bankSortCode = null;
+    bankAccountNumber = null;
+  }
+  return { ...profile, bankSortCode, bankAccountNumber };
 }
 
 // ─── Tag helpers ──────────────────────────────────────────────────────────────

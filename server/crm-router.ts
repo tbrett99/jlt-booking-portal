@@ -965,19 +965,24 @@ export const crmRouter = router({
     get: adminProcedure
       .input(z.object({ userId: z.number().int() }))
       .query(async ({ input }) => {
+        // Run DB queries in parallel — any failure here is a hard error
         const [profile, tags, supplierLogins] = await Promise.all([
           getAgentCrmProfile(input.userId),
           getAgentTags(input.userId),
           getAgentSupplierLogins(input.userId),
         ]);
+
+        // Decrypt bank details — wrapped so a JWT_SECRET mismatch between environments
+        // doesn't crash the whole procedure (bank fields will be null instead)
         const decryptedProfile = profile ? await decryptAgentBankDetails(profile) : null;
+
+        // Decrypt supplier passwords — already safe (try/catch inside decryptSupplierPassword)
         const decryptedLogins = supplierLogins.map((l) => ({
           ...l,
           password: decryptSupplierPassword(l),
         }));
-        // Fetch join session contract data
-        const { getDb } = await import("./db");
-        const db = await getDb();
+
+        // Fetch join session contract data — optional, failure returns null
         let contractData: {
           signatureDataUrl?: string | null;
           signerName?: string | null;
@@ -989,26 +994,33 @@ export const crmRouter = router({
           contractTextSnapshot?: string | null;
           contractHash?: string | null;
         } | null = null;
-        if (db) {
-          const { joinSessions } = await import("../drizzle/schema");
-          const { eq } = await import("drizzle-orm");
-          const sessions = await db
-            .select({
-              signerName: joinSessions.signerName,
-              signerAddress: joinSessions.signerAddress,
-              contractSignedAt: joinSessions.contractSignedAt,
-              signatureDataUrl: joinSessions.signatureDataUrl,
-              ipAddress: joinSessions.ipAddress,
-              signingUserAgent: joinSessions.signingUserAgent,
-              consentConfirmed: joinSessions.consentConfirmed,
-              contractTextSnapshot: joinSessions.contractTextSnapshot,
-              contractHash: joinSessions.contractHash,
-            })
-            .from(joinSessions)
-            .where(eq(joinSessions.userId, input.userId))
-            .limit(1);
-          if (sessions[0]) contractData = sessions[0];
+        try {
+          const { getDb } = await import("./db");
+          const db = await getDb();
+          if (db) {
+            const { joinSessions } = await import("../drizzle/schema");
+            const { eq } = await import("drizzle-orm");
+            const sessions = await db
+              .select({
+                signerName: joinSessions.signerName,
+                signerAddress: joinSessions.signerAddress,
+                contractSignedAt: joinSessions.contractSignedAt,
+                signatureDataUrl: joinSessions.signatureDataUrl,
+                ipAddress: joinSessions.ipAddress,
+                signingUserAgent: joinSessions.signingUserAgent,
+                consentConfirmed: joinSessions.consentConfirmed,
+                contractTextSnapshot: joinSessions.contractTextSnapshot,
+                contractHash: joinSessions.contractHash,
+              })
+              .from(joinSessions)
+              .where(eq(joinSessions.userId, input.userId))
+              .limit(1);
+            if (sessions[0]) contractData = sessions[0];
+          }
+        } catch (err) {
+          console.error("[CRM] Failed to fetch contract data for user", input.userId, err);
         }
+
         return { profile: decryptedProfile, tags, supplierLogins: decryptedLogins, contractData };
       }),
 
