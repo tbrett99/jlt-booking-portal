@@ -196,16 +196,21 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
   const { data: unreadCount = 0, refetch: refetchCount } = trpc.notifications.unreadCount.useQuery(undefined, {
     refetchInterval: 30000,
+    // staleTime matches the poll interval so React Query won't re-render subscribers
+    // unless the data actually changes between polls.
+    staleTime: 30000,
   });
 
   const { data: unreadMessageCount = 0 } = trpc.notes.totalUnreadCount.useQuery(undefined, {
     enabled: isAdminUser && !isAgentView,
     refetchInterval: 30000,
+    staleTime: 30000,
   });
 
   const { data: overdueData } = trpc.crm.agentCrm.getOverdueCount.useQuery(undefined, {
     enabled: isAdminUser && !isAgentView,
     refetchInterval: 120000,
+    staleTime: 120000,
   });
   const overdueCount = overdueData?.count ?? 0;
 
@@ -222,6 +227,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const { data: urgentCounts } = trpc.dashboard.urgentCounts.useQuery(undefined, {
     enabled: isAdminUser && !isAgentView,
     refetchInterval: 60000,
+    staleTime: 60000,
   });
 
   const filesToAddToPts = urgentCounts?.filesToAddToPts ?? 0;
