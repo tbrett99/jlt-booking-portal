@@ -2148,6 +2148,13 @@ async function startServer() {
     console.log(`[Storage] Cloudflare R2 configured — bucket: ${process.env.S3_BUCKET}`);
   }
 
+  // Warn if Manus Forge API key is missing — AI features (supplier search, chat) will fail at runtime
+  if (!process.env.BUILT_IN_FORGE_API_KEY) {
+    console.warn("[AI] WARNING: BUILT_IN_FORGE_API_KEY is not set. AI supplier search and chat will be unavailable.");
+  } else {
+    console.log("[AI] Forge API key configured — AI features enabled.");
+  }
+
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
     startScheduler();

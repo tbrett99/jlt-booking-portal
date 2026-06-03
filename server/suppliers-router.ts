@@ -631,11 +631,13 @@ export const suppliersRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       // Step 1: LLM extracts structured intent from the query
-      const intentResult = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `You are a travel supplier search assistant. Extract search intent from a travel agent's query. Return ONLY valid JSON:
+      let intentResult: Awaited<ReturnType<typeof invokeLLM>>;
+      try {
+        intentResult = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a travel supplier search assistant. Extract search intent from a travel agent's query. Return ONLY valid JSON:
 {
   "destinations": string[] (countries/regions mentioned or implied),
   "tripTypes": string[] (e.g. honeymoon, family, adventure, luxury, group, cruise, safari, ski, beach, city break),
@@ -644,11 +646,18 @@ export const suppliersRouter = router({
   "keywords": string[] (other important keywords for matching),
   "searchSummary": string (1 sentence describing what the agent is looking for)
 }`,
-          },
-          { role: "user", content: input.query },
-        ],
-        response_format: { type: "json_object" },
-      });
+            },
+            { role: "user", content: input.query },
+          ],
+          response_format: { type: "json_object" },
+        });
+      } catch (llmErr: any) {
+        console.error("[aiSearch] LLM intent extraction failed:", llmErr?.message);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "AI search is temporarily unavailable. Please try the keyword search instead, or contact support if this persists.",
+        });
+      }
 
       let intent: { destinations?: string[]; tripTypes?: string[]; clientType?: string; priceTier?: string; keywords?: string[]; searchSummary?: string } = {};
       try {
@@ -676,25 +685,34 @@ export const suppliersRouter = router({
         description: (s.description ?? "").replace(/<[^>]+>/g, " ").slice(0, 200),
       }));
 
-      const rankResult = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `You are a travel supplier matching expert. Given a search intent and a list of suppliers, return the IDs of the best matching suppliers in order of relevance. Return ONLY valid JSON:
+      let rankResult: Awaited<ReturnType<typeof invokeLLM>>;
+      try {
+        rankResult = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a travel supplier matching expert. Given a search intent and a list of suppliers, return the IDs of the best matching suppliers in order of relevance. Return ONLY valid JSON:
 {
   "matches": [
     { "id": number, "relevanceScore": number (0-100), "reason": string (1 sentence why this supplier matches) }
   ]
 }
 Return at most ${input.limit} matches. Only include suppliers that are genuinely relevant.`,
-          },
-          {
-            role: "user",
-            content: `Search intent: ${JSON.stringify(intent)}\n\nAvailable suppliers:\n${JSON.stringify(supplierSummaries)}`,
-          },
-        ],
-        response_format: { type: "json_object" },
-      });
+            },
+            {
+              role: "user",
+              content: `Search intent: ${JSON.stringify(intent)}\n\nAvailable suppliers:\n${JSON.stringify(supplierSummaries)}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+        });
+      } catch (llmErr: any) {
+        console.error("[aiSearch] LLM ranking failed:", llmErr?.message);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "AI search is temporarily unavailable. Please try the keyword search instead, or contact support if this persists.",
+        });
+      }
 
       let matches: { id: number; relevanceScore: number; reason: string }[] = [];
       try {
@@ -860,15 +878,24 @@ Return at most ${input.limit} matches. Only include suppliers that are genuinely
           allSuppliers.map(s => `- ${s.name} (${s.categories ?? ""}) | ${s.locations ?? ""} | ${s.priceTier ?? ""} | ${s.aiSummary ?? s.shortDescription ?? ""}`).join("\n").slice(0, 6000);
       }
 
-      const result = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `You are a knowledgeable travel industry assistant for JLT Group travel agents. Help agents find the right suppliers for their client enquiries. Be concise, practical, and specific. When recommending suppliers, explain why they're a good fit.${supplierContext}`,
-          },
-          ...input.messages,
-        ],
-      });
+      let result: Awaited<ReturnType<typeof invokeLLM>>;
+      try {
+        result = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a knowledgeable travel industry assistant for JLT Group travel agents. Help agents find the right suppliers for their client enquiries. Be concise, practical, and specific. When recommending suppliers, explain why they're a good fit.${supplierContext}`,
+            },
+            ...input.messages,
+          ],
+        });
+      } catch (llmErr: any) {
+        console.error("[supplierChat] invokeLLM failed:", llmErr?.message);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "AI assistant is temporarily unavailable. Please try again later or contact support if this persists.",
+        });
+      }
 
       return {
         reply: result.choices[0]?.message?.content ?? "Sorry, I couldn't generate a response.",

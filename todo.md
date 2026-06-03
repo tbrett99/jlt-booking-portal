@@ -2517,3 +2517,4 @@
 - [x] CRM Profile tab: show emergency contact name and phone in Contact Details section
 - [x] Onboarding questionnaire: add UK region dropdown (Personal Details step) — save to ukRegion field
 - [x] Fix: document upload shows "Unable to transform response from server" — wrap all storagePut calls in try/catch and throw TRPCError with readable message; add S3 env var startup warning
+- [x] Fix: AI supplier search broken on Railway — BUILT_IN_FORGE_API_KEY not set; fixed default fallback URL (forge.manus.im → forge.manus.ai), improved error messages, wrapped all invokeLLM calls in TRPCError handlers, added startup warning
