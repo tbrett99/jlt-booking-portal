@@ -1171,6 +1171,37 @@ export const crmRouter = router({
                   <div style="background:#fff;border:2px solid #70FFE8;border-radius:8px;padding:16px 24px;margin:20px 0;text-align:center;">
                     <span style="font-size:20px;font-weight:700;color:#414141;letter-spacing:1px;">${login.username}</span>
                   </div>
+
+                  <!-- Password setup instructions -->
+                  <div style="background:#fff3cd;border:2px solid #f59e0b;border-radius:8px;padding:20px 24px;margin:24px 0;">
+                    <p style="color:#92400e;font-weight:700;font-size:15px;margin:0 0 12px;">&#9888;&#65039; Important: Password Setup Instructions</p>
+                    <p style="color:#414141;margin:0 0 12px;">To set your password for <strong>Travel Innovation Group access (Aviate, Lime &amp; VA Flight Store)</strong>, you <strong>must</strong> follow the instructions below exactly:</p>
+                    <table style="width:100%;border-collapse:collapse;">
+                      <tr style="background:#fef9c3;">
+                        <td style="padding:10px 14px;border-bottom:1px solid #fde68a;font-size:14px;color:#414141;">&#10003;&nbsp; Minimum <strong>8 characters</strong></td>
+                      </tr>
+                      <tr>
+                        <td style="padding:10px 14px;border-bottom:1px solid #fde68a;font-size:14px;color:#414141;">&#10003;&nbsp; Must <strong>start with @</strong></td>
+                      </tr>
+                      <tr style="background:#fef9c3;">
+                        <td style="padding:10px 14px;border-bottom:1px solid #fde68a;font-size:14px;color:#414141;">&#10003;&nbsp; Followed by a <strong>capital letter</strong></td>
+                      </tr>
+                      <tr>
+                        <td style="padding:10px 14px;border-bottom:1px solid #fde68a;font-size:14px;color:#414141;">&#10003;&nbsp; Must include <strong>2 numbers</strong></td>
+                      </tr>
+                      <tr style="background:#fef9c3;">
+                        <td style="padding:10px 14px;font-size:14px;color:#414141;">&#10003;&nbsp; Must <strong>end with a special character</strong> (e.g. <strong>!</strong>)</td>
+                      </tr>
+                    </table>
+                    <div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:6px;padding:12px 16px;margin-top:14px;">
+                      <p style="color:#065f46;font-weight:700;margin:0 0 4px;">&#128994; Example of a valid password:</p>
+                      <p style="color:#065f46;font-family:monospace;font-size:16px;margin:0;">@Capital12!</p>
+                    </div>
+                    <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:12px 16px;margin-top:10px;">
+                      <p style="color:#991b1b;font-weight:700;margin:0;">&#128308; The strength bar must go <u>fully green</u> before you can save your password. If the bar is not fully green, your password will not be accepted.</p>
+                    </div>
+                  </div>
+
                   <div style="color:#414141;margin-top:16px;">${instructionsHtml}</div>
                   <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
                   <p style="color:#888;font-size:12px;text-align:center;">JLT Group Booking Portal &mdash; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p>
