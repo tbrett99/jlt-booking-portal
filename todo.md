@@ -2518,3 +2518,4 @@
 - [x] Onboarding questionnaire: add UK region dropdown (Personal Details step) — save to ukRegion field
 - [x] Fix: document upload shows "Unable to transform response from server" — wrap all storagePut calls in try/catch and throw TRPCError with readable message; add S3 env var startup warning
 - [x] Fix: AI supplier search broken on Railway — BUILT_IN_FORGE_API_KEY not set; fixed default fallback URL (forge.manus.im → forge.manus.ai), improved error messages, wrapped all invokeLLM calls in TRPCError handlers, added startup warning
+- [x] Fix: commission due claims jumping back after being cleared — root cause was refetchOnWindowFocus:true (React Query default) re-fetching all queries when admin returns to tab after opening a document link. Fixed by setting refetchOnWindowFocus:false globally in QueryClient.

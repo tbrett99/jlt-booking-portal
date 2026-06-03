@@ -8,7 +8,19 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Disable refetch-on-window-focus globally.
+      // Without this, every time the admin opens a document in a new tab and returns,
+      // React Query re-fetches all active queries — including commissionDue.list and
+      // bookings lists — which makes recently-actioned items reappear if the mutation
+      // cache has already been cleared. Individual queries that genuinely need fresh
+      // data on focus can opt back in with refetchOnWindowFocus: true.
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 // Paths that are intentionally public — never redirect to Manus OAuth from these.
 const PUBLIC_PATHS = [
