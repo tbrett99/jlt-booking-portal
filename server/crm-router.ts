@@ -1067,6 +1067,52 @@ export const crmRouter = router({
         return { success: true, orbitEnabled: input.enabled };
       }),
 
+    // Returns all orbit-enabled agents with a flag for whether they have an Aviate supplier login
+    listOrbitAgents: adminProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return [] as { userId: number; hasAviate: boolean }[];
+      const { agentCrmProfiles, agentSupplierLogins } = await import("../drizzle/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const orbitProfiles = await db
+        .select({ userId: agentCrmProfiles.userId })
+        .from(agentCrmProfiles)
+        .where(eq(agentCrmProfiles.orbitEnabled, true));
+      const orbitUserIds = orbitProfiles.map((p) => p.userId);
+      if (orbitUserIds.length === 0) return [];
+      const aviateLogins = await db
+        .select({ userId: agentSupplierLogins.userId })
+        .from(agentSupplierLogins)
+        .where(eq(agentSupplierLogins.supplierName, "Aviate"));
+      const aviateSet = new Set(aviateLogins.map((l) => l.userId));
+      return orbitUserIds.map((userId) => ({ userId, hasAviate: aviateSet.has(userId) }));
+    }),
+
+    toggleAviateLogin: adminProcedure
+      .input(z.object({ userId: z.number().int(), enabled: z.boolean() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const { agentSupplierLogins } = await import("../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+        if (input.enabled) {
+          // Only add if not already present
+          const existing = await db
+            .select({ id: agentSupplierLogins.id })
+            .from(agentSupplierLogins)
+            .where(and(eq(agentSupplierLogins.userId, input.userId), eq(agentSupplierLogins.supplierName, "Aviate")));
+          if (existing.length === 0) {
+            await db.insert(agentSupplierLogins).values({ userId: input.userId, supplierName: "Aviate" });
+          }
+        } else {
+          await db
+            .delete(agentSupplierLogins)
+            .where(and(eq(agentSupplierLogins.userId, input.userId), eq(agentSupplierLogins.supplierName, "Aviate")));
+        }
+        return { success: true, enabled: input.enabled };
+      }),
+
     assignAgentId: adminProcedure
       .input(z.object({ userId: z.number().int() }))
       .mutation(async ({ input }) => {
