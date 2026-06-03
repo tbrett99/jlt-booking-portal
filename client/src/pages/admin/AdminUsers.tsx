@@ -126,7 +126,8 @@ export default function AdminUsers() {
     return { background: "#FFF6ED", color: "#414141" };
   };
 
-  const isSuperAdmin = me?.role === "super_admin";
+  const isAdmin = me?.role === "admin" || me?.role === "super_admin";
+  const isSuperAdmin = me?.role === "super_admin"; // kept for role assignment UI only
 
   return (
     <div className="space-y-6">
@@ -372,7 +373,7 @@ export default function AdminUsers() {
                                 <UserCheck size={12} />
                               </Button>
                             )}
-                            {isSuperAdmin && (
+                            {isAdmin && (
                               <Button
                                 size="sm"
                                 variant="outline"

@@ -775,7 +775,7 @@ export default function AdminBookingDetail() {
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [mergeTarget, setMergeTarget] = useState<{ id: number; clientName: string } | null>(null);
   const [mergeSearchQuery, setMergeSearchQuery] = useState("");
-  const isSuperAdmin = user?.role === "super_admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
   // @mention state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -1073,7 +1073,7 @@ export default function AdminBookingDetail() {
               <AlertTriangle size={10} /> Payment date missing
             </Badge>
           )}
-          {isSuperAdmin && (
+          {isAdmin && (
             <>
               <Button
                 variant="outline"

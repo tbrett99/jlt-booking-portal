@@ -1996,7 +1996,7 @@ export const crmRouter = router({
     }),
 
     // ─── Status History for agent sheet timeline ───────────────────────────────────────
-    deleteRecord: superAdminProcedure
+    deleteRecord: adminProcedure
       .input(z.object({ userId: z.number().int() }))
       .mutation(async ({ input }) => {
         const { getDb } = await import("./db");

@@ -931,7 +931,7 @@ export const remittanceRouter = router({
   deleteBatch: protectedProcedure
     .input(z.object({ batchId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "super_admin") {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       const db = await getDb();

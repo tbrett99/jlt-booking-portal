@@ -286,6 +286,9 @@ export default function AgentCrm() {
         </CardContent>
       </Card>
 
+      {/* Orbit Access List */}
+      <OrbitAccessList agents={agents as AgentRow[]} onViewAgent={(agent) => { setSelectedAgent(agent); setSheetOpen(true); }} />
+
       {selectedAgent && (
         <AgentCrmSheet
           agent={selectedAgent}
@@ -298,13 +301,69 @@ export default function AgentCrm() {
   );
 }
 
+// ─── Orbit Access List ──────────────────────────────────────────────────────
+
+function OrbitAccessList({ agents, onViewAgent }: { agents: AgentRow[]; onViewAgent: (agent: AgentRow) => void }) {
+  const orbitAgents = agents.filter((a) => a.crmProfile?.orbitEnabled === true);
+  if (orbitAgents.length === 0) return null;
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <div className="flex items-center gap-2 px-4 py-3 border-b">
+          <Zap size={15} className="text-violet-600" />
+          <h2 className="text-sm font-semibold">Orbit Access</h2>
+          <Badge variant="secondary" className="text-xs ml-1">{orbitAgents.length}</Badge>
+          <span className="text-xs text-muted-foreground ml-1">agents with Orbit enabled</span>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Agent</TableHead>
+              <TableHead>Agent ID</TableHead>
+              <TableHead>JLT Email</TableHead>
+              <TableHead>Membership</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="w-16"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {orbitAgents.map((agent) => (
+              <TableRow key={agent.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onViewAgent(agent)}>
+                <TableCell>
+                  <div className="font-medium text-sm">{agent.name ?? "—"}</div>
+                  <div className="text-xs text-muted-foreground">{agent.email}</div>
+                </TableCell>
+                <TableCell>
+                  {agent.crmProfile?.uniqueAgentId
+                    ? <Badge variant="outline" className="font-mono text-xs">{agent.crmProfile.uniqueAgentId}</Badge>
+                    : <span className="text-muted-foreground text-xs">—</span>}
+                </TableCell>
+                <TableCell className="text-sm">{agent.crmProfile?.jltEmail ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                <TableCell>
+                  {agent.crmProfile?.membershipTier
+                    ? <Badge variant="secondary" className="text-xs">{agent.crmProfile.membershipTier}</Badge>
+                    : <span className="text-muted-foreground text-xs">—</span>}
+                </TableCell>
+                <TableCell><StatusBadge status={agent.crmProfile?.agentStatus} /></TableCell>
+                <TableCell>
+                  <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onViewAgent(agent); }}>View</Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Agent CRM Sheet ──────────────────────────────────────────────────────────
 
 function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   agent: AgentRow; open: boolean; onClose: () => void; onRefresh: () => void;
 }) {
   const { user } = useAuth();
-  const isSuperAdmin = user?.role === "super_admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
   const [confirmDelete, setConfirmDelete] = useState(false);
   const { data: crmData, refetch: refetchCrm, isLoading: crmLoading, isError: crmError } = trpc.crm.agentCrm.get.useQuery(
     { userId: agent.id },
@@ -466,8 +525,8 @@ function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
                 </label>
               </div>
             </div>
-            {/* Delete record — super_admin only */}
-            {isSuperAdmin && (
+            {/* Delete record — admin only */}
+            {isAdmin && (
               <Button
                 size="sm"
                 variant="outline"

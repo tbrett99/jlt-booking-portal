@@ -620,7 +620,17 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), DB backup (every 4h), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC) — inbox auto-import DISABLED");
+  // Weekly calendar summary: every Friday at 08:00 UTC
+  // Sends a summary of next week's training, webinars, and supplier events to support@thejltgroup.co.uk
+  cron.schedule("0 8 * * 5", async () => {
+    try {
+      await runWeeklyCalendarSummary();
+    } catch (err: any) {
+      console.error("[WeeklyCalendar] Error:", err?.message);
+    }
+  }, { timezone: "UTC" });
+
+  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), DB backup (every 4h), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────
@@ -754,4 +764,157 @@ async function runRecruitmentFollowUp(): Promise<void> {
   } catch (err: any) {
     console.error("[RecruitmentFollowUp] Fatal error:", err?.message);
   }
+}
+
+// ─── Weekly calendar summary email ───────────────────────────────────────────
+/**
+ * Runs every Friday at 08:00 UTC.
+ * Fetches all training, webinar, and supplier_event calendar events for the
+ * following Monday–Sunday and emails a formatted summary to support@thejltgroup.co.uk.
+ * Staff holidays (type = "holiday") and staff tasks (type = "task") are excluded.
+ */
+export async function runWeeklyCalendarSummary(): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    console.log("[WeeklyCalendar] DB unavailable — skipping");
+    return;
+  }
+
+  // Calculate next Monday 00:00 UTC → next Sunday 23:59:59 UTC
+  const now = new Date();
+  const dayOfWeek = now.getUTCDay(); // 0=Sun, 5=Fri
+  const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+  const nextMonday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + daysUntilMonday, 0, 0, 0));
+  const nextSunday = new Date(nextMonday.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+
+  const { calendarEvents } = await import("../drizzle/schema");
+  const { and, gte, lte, inArray } = await import("drizzle-orm");
+
+  const events = await db
+    .select()
+    .from(calendarEvents)
+    .where(
+      and(
+        inArray(calendarEvents.type, ["event"]),
+        inArray(calendarEvents.eventCategory, ["training", "webinar", "supplier_event"]),
+        gte(calendarEvents.startDate, nextMonday),
+        lte(calendarEvents.startDate, nextSunday)
+      )
+    )
+    .orderBy(calendarEvents.startDate);
+
+  const weekLabel = `${nextMonday.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" })} – ${nextSunday.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}`;
+
+  const categoryLabel = (cat: string | null) => {
+    if (cat === "training") return "Training";
+    if (cat === "webinar") return "Webinar";
+    if (cat === "supplier_event") return "Supplier Event";
+    return "Event";
+  };
+
+  const categoryColour = (cat: string | null) => {
+    if (cat === "training") return "#4F46E5";
+    if (cat === "webinar") return "#0891B2";
+    if (cat === "supplier_event") return "#059669";
+    return "#6B7280";
+  };
+
+  const formatEventTime = (ev: typeof events[0]) => {
+    if (ev.allDay) return "All day";
+    return new Date(ev.startDate).toLocaleTimeString("en-GB", {
+      hour: "2-digit", minute: "2-digit", timeZone: "Europe/London"
+    }) + " (UK time)";
+  };
+
+  const formatEventDate = (ev: typeof events[0]) =>
+    new Date(ev.startDate).toLocaleDateString("en-GB", {
+      weekday: "long", day: "numeric", month: "long", timeZone: "UTC"
+    });
+
+  let eventRows = "";
+  if (events.length === 0) {
+    eventRows = `<tr><td colspan="4" style="padding:24px;text-align:center;color:#888;font-size:14px;">No training, webinars, or supplier events scheduled for this week.</td></tr>`;
+  } else {
+    for (const ev of events) {
+      const cat = ev.eventCategory ?? null;
+      const colour = categoryColour(cat);
+      const label = categoryLabel(cat);
+      const urlCell = ev.eventUrl
+        ? `<a href="${ev.eventUrl}" style="color:#02E6D2;font-size:12px;">Join link</a>`
+        : `<span style="color:#aaa;font-size:12px;">—</span>`;
+      const durationCell = ev.duration ? `${ev.duration} min` : "—";
+      eventRows += `
+        <tr style="border-bottom:1px solid #f0f0f0;">
+          <td style="padding:12px 16px;font-size:14px;color:#414141;">
+            <strong>${ev.title}</strong>
+            ${ev.description ? `<div style="font-size:12px;color:#666;margin-top:2px;">${ev.description.slice(0, 120)}${ev.description.length > 120 ? "…" : ""}</div>` : ""}
+          </td>
+          <td style="padding:12px 16px;font-size:13px;color:#555;white-space:nowrap;">${formatEventDate(ev)}<br/><span style="color:#888;">${formatEventTime(ev)}</span></td>
+          <td style="padding:12px 16px;">
+            <span style="background:${colour}18;color:${colour};border:1px solid ${colour}40;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">${label}</span>
+          </td>
+          <td style="padding:12px 16px;text-align:center;">${urlCell}</td>
+        </tr>`;
+    }
+  }
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:'Poppins',Arial,sans-serif;">
+  <div style="max-width:700px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+    <div style="background:#70FFE8;padding:24px 40px;text-align:center;">
+      <span style="font-size:22px;font-weight:700;color:#414141;">JLT Group</span>
+      <div style="font-size:13px;color:#414141;margin-top:4px;">Weekly Events Summary</div>
+    </div>
+    <div style="padding:32px 40px;color:#414141;">
+      <h2 style="font-size:18px;font-weight:700;margin:0 0 4px;">Next Week's Events</h2>
+      <p style="font-size:14px;color:#666;margin:0 0 24px;">${weekLabel}</p>
+      <p style="font-size:14px;color:#555;margin:0 0 20px;">
+        This is your weekly summary of upcoming <strong>training sessions</strong>, <strong>webinars</strong>, and <strong>supplier events</strong> scheduled for next week.
+      </p>
+      <table style="width:100%;border-collapse:collapse;border:1px solid #e8e8e8;border-radius:8px;overflow:hidden;">
+        <thead>
+          <tr style="background:#f8f8f8;">
+            <th style="padding:10px 16px;text-align:left;font-size:12px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Event</th>
+            <th style="padding:10px 16px;text-align:left;font-size:12px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Date &amp; Time</th>
+            <th style="padding:10px 16px;text-align:left;font-size:12px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Type</th>
+            <th style="padding:10px 16px;text-align:center;font-size:12px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Link</th>
+          </tr>
+        </thead>
+        <tbody>${eventRows}</tbody>
+      </table>
+      <p style="font-size:13px;color:#888;margin:24px 0 0;">
+        Total: <strong>${events.length} event${events.length !== 1 ? "s" : ""}</strong> scheduled for next week.
+        Staff holidays and internal tasks are not included in this summary.
+      </p>
+      <p style="text-align:center;margin:28px 0 0;">
+        <a href="${process.env.PORTAL_BASE_URL ?? "https://portal.thejltgroup.co.uk"}/admin/calendar"
+           style="background:#70FFE8;color:#414141;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">
+          View Full Calendar
+        </a>
+      </p>
+    </div>
+    <div style="padding:20px 40px;text-align:center;background:#fafafa;font-size:12px;color:#888;">
+      &copy; ${new Date().getFullYear()} JLT Group. All rights reserved.
+    </div>
+  </div>
+</body></html>`;
+
+  const port = Number(process.env.SMTP_PORT ?? 465);
+  const secure = port === 465 || process.env.SMTP_SECURE === "true";
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? "mail.thejltgroup.co.uk",
+    port,
+    secure,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+
+  await transporter.sendMail({
+    from: `"JLT Group Portal" <${process.env.SMTP_USER ?? "portal@thejltgroup.co.uk"}>`,
+    to: "support@thejltgroup.co.uk",
+    subject: `Weekly Events Summary — ${weekLabel}`,
+    html,
+  });
+
+  console.log(`[WeeklyCalendar] Summary sent for ${weekLabel} — ${events.length} event(s)`);
 }

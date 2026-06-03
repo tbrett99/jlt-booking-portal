@@ -1463,8 +1463,8 @@ export const appRouter = router({
          const succeeded = results.filter((r) => r.success).length;
         return { results, total: input.bookingIds.length, succeeded };
       }),
-    // Super admin: hard delete a booking and all related records
-    delete: superAdminProcedure
+    // Admin: hard delete a booking and all related records
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.id);
@@ -1472,8 +1472,8 @@ export const appRouter = router({
         await deleteBooking(input.id);
         return { success: true, deletedId: input.id, clientName: booking.clientName };
       }),
-    // Super admin: merge source booking into target booking
-    merge: superAdminProcedure
+    // Admin: merge source booking into target booking
+    merge: adminProcedure
       .input(z.object({ sourceId: z.number(), targetId: z.number() }))
       .mutation(async ({ input, ctx }) => {
         if (input.sourceId === input.targetId) {
