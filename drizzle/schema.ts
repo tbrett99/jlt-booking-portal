@@ -805,6 +805,7 @@ export const agentSupplierLogins = mysqlTable("agent_supplier_logins", {
   username: varchar("username", { length: 255 }),
   passwordEncrypted: varchar("passwordEncrypted", { length: 512 }), // AES-256 encrypted
   notes: text("notes"),
+  welcomeEmailSentAt: timestamp("welcomeEmailSentAt"), // when the Aviate welcome email was sent
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

@@ -2524,3 +2524,7 @@
 - [x] Feature: Orbit access list — add a view in admin CRM showing all agents with orbitEnabled toggled on
 - [x] Feature: Admin delete permissions — open delete rights (amendments, refunds, booking files, etc.) to all admins, not just super_admins
 - [x] Feature: Weekly Friday calendar summary email — scheduled job sends next week's training/webinar/supplier events to support@thejltgroup.co.uk every Friday (excludes staff holidays and staff events)
+- [x] Feature: Aviate onboarding — schema: add username + welcomeEmailSentAt to agentSupplierLogins
+- [x] Feature: Aviate onboarding — server procedures: updateAviateUsername, bulkSendAviateWelcome, enhanced listOrbitAgents
+- [x] Feature: Aviate onboarding — Orbit Access page: filter tabs, inline username entry, export CSV, bulk send welcome email
+- [x] Feature: Aviate onboarding — show Aviate username on CRM agent list and CRM sheet Suppliers tab

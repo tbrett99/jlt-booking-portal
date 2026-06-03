@@ -566,7 +566,7 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
 
 // ─── Profile Tab ────────────────────────────────────────────────────────────────────────────────
 
-type SupplierLoginRow = { id: number; supplierName: string; notes?: string | null };
+type SupplierLoginRow = { id: number; supplierName: string; notes?: string | null; username?: string | null };
 
 function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
   userId: number;
@@ -1130,7 +1130,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
 
 function SupplierAccessTab({ userId, supplierLogins, onRefresh }: {
   userId: number;
-  supplierLogins: Array<{ id: number; supplierName: string; notes?: string | null }>;
+  supplierLogins: Array<{ id: number; supplierName: string; notes?: string | null; username?: string | null }>;
   onRefresh: () => void;
 }) {
   // Optimistic local state — mirrors server state but updates immediately on click
@@ -1219,7 +1219,15 @@ function SupplierAccessTab({ userId, supplierLogins, onRefresh }: {
                 }`}>
                   {enabled && <svg className="w-3 h-3 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                 </div>
-                <span className={`text-sm font-medium ${enabled ? "text-foreground" : "text-muted-foreground"}`}>{supplier}</span>
+                <div>
+                  <span className={`text-sm font-medium ${enabled ? "text-foreground" : "text-muted-foreground"}`}>{supplier}</span>
+                  {enabled && supplier === "Aviate" && (() => {
+                    const login = optimisticLogins.find(l => l.supplierName === "Aviate");
+                    return login?.username ? (
+                      <div className="text-xs text-muted-foreground mt-0.5 font-mono">{login.username}</div>
+                    ) : null;
+                  })()}
+                </div>
               </div>
               {enabled && (
                 <Badge variant="secondary" className="text-xs">Access granted</Badge>

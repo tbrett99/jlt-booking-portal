@@ -1068,12 +1068,13 @@ export const crmRouter = router({
       }),
 
     // Returns all orbit-enabled agents with a flag for whether they have an Aviate supplier login
+    // Returns orbit-enabled agents with full Aviate login details (id, username, welcomeEmailSentAt)
     listOrbitAgents: adminProcedure.query(async () => {
       const { getDb } = await import("./db");
       const db = await getDb();
-      if (!db) return [] as { userId: number; hasAviate: boolean }[];
+      if (!db) return [] as { userId: number; hasAviate: boolean; aviateLoginId: number | null; aviateUsername: string | null; welcomeEmailSentAt: Date | null }[];
       const { agentCrmProfiles, agentSupplierLogins } = await import("../drizzle/schema");
-      const { eq, and } = await import("drizzle-orm");
+      const { eq } = await import("drizzle-orm");
       const orbitProfiles = await db
         .select({ userId: agentCrmProfiles.userId })
         .from(agentCrmProfiles)
@@ -1081,12 +1082,111 @@ export const crmRouter = router({
       const orbitUserIds = orbitProfiles.map((p) => p.userId);
       if (orbitUserIds.length === 0) return [];
       const aviateLogins = await db
-        .select({ userId: agentSupplierLogins.userId })
+        .select({ id: agentSupplierLogins.id, userId: agentSupplierLogins.userId, username: agentSupplierLogins.username, welcomeEmailSentAt: agentSupplierLogins.welcomeEmailSentAt })
         .from(agentSupplierLogins)
         .where(eq(agentSupplierLogins.supplierName, "Aviate"));
-      const aviateSet = new Set(aviateLogins.map((l) => l.userId));
-      return orbitUserIds.map((userId) => ({ userId, hasAviate: aviateSet.has(userId) }));
+      const aviateMap = new Map(aviateLogins.map((l) => [l.userId, l]));
+      return orbitUserIds.map((userId) => {
+        const login = aviateMap.get(userId) ?? null;
+        return {
+          userId,
+          hasAviate: !!login,
+          aviateLoginId: login?.id ?? null,
+          aviateUsername: login?.username ?? null,
+          welcomeEmailSentAt: login?.welcomeEmailSentAt ?? null,
+        };
+      });
     }),
+
+    updateAviateUsername: adminProcedure
+      .input(z.object({ loginId: z.number().int(), username: z.string() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const { agentSupplierLogins } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(agentSupplierLogins).set({ username: input.username || null }).where(eq(agentSupplierLogins.id, input.loginId));
+        return { success: true };
+      }),
+
+    bulkSendAviateWelcome: adminProcedure
+      .input(z.object({ instructions: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const { agentSupplierLogins, users: usersTable } = await import("../drizzle/schema");
+        const { eq, and, isNull, isNotNull } = await import("drizzle-orm");
+        // Find all Aviate logins with a username set but welcome email not yet sent
+        const pending = await db
+          .select({
+            id: agentSupplierLogins.id,
+            userId: agentSupplierLogins.userId,
+            username: agentSupplierLogins.username,
+          })
+          .from(agentSupplierLogins)
+          .where(
+            and(
+              eq(agentSupplierLogins.supplierName, "Aviate"),
+              isNotNull(agentSupplierLogins.username),
+              isNull(agentSupplierLogins.welcomeEmailSentAt)
+            )
+          );
+        if (pending.length === 0) return { sent: 0, skipped: 0 };
+        // Fetch agent details
+        const userIds = pending.map((p) => p.userId);
+        const agentRows = await db.select({ id: usersTable.id, name: usersTable.name, email: usersTable.email }).from(usersTable);
+        const agentMap = new Map(agentRows.map((a) => [a.id, a]));
+        // Build transporter
+        const smtpPort = Number(process.env.SMTP_PORT ?? 465);
+        const secure = smtpPort === 465 || process.env.SMTP_SECURE === "true";
+        const nodemailer = await import("nodemailer");
+        const transporter = nodemailer.default.createTransport({
+          host: process.env.SMTP_HOST ?? "mail.thejltgroup.co.uk",
+          port: smtpPort,
+          secure,
+          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        });
+        let sent = 0;
+        let skipped = 0;
+        const now = new Date();
+        for (const login of pending) {
+          const agent = agentMap.get(login.userId);
+          if (!agent?.email) { skipped++; continue; }
+          const instructionsHtml = input.instructions.replace(/\n/g, "<br>");
+          try {
+            await transporter.sendMail({
+              from: `"JLT Group" <support@thejltgroup.co.uk>`,
+              to: agent.email,
+              subject: "Your Aviate Login Details",
+              html: `
+                <div style="font-family:'Poppins',Arial,sans-serif;max-width:620px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:12px;">
+                  <div style="text-align:center;margin-bottom:24px;">
+                    <h1 style="color:#414141;font-size:22px;margin:0;">JLT Group</h1>
+                    <div style="width:60px;height:4px;background:#70FFE8;margin:10px auto 0;"></div>
+                  </div>
+                  <p style="color:#414141;">Hi ${agent.name ?? "there"},</p>
+                  <p style="color:#414141;">Your Aviate login has been set up. Your username is:</p>
+                  <div style="background:#fff;border:2px solid #70FFE8;border-radius:8px;padding:16px 24px;margin:20px 0;text-align:center;">
+                    <span style="font-size:20px;font-weight:700;color:#414141;letter-spacing:1px;">${login.username}</span>
+                  </div>
+                  <div style="color:#414141;margin-top:16px;">${instructionsHtml}</div>
+                  <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
+                  <p style="color:#888;font-size:12px;text-align:center;">JLT Group Booking Portal &mdash; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p>
+                </div>
+              `,
+            });
+            // Mark as sent
+            await db.update(agentSupplierLogins).set({ welcomeEmailSentAt: now }).where(eq(agentSupplierLogins.id, login.id));
+            sent++;
+          } catch (err) {
+            console.error(`[Aviate] Failed to send welcome email to ${agent.email}:`, err);
+            skipped++;
+          }
+        }
+        return { sent, skipped };
+      }),
 
     toggleAviateLogin: adminProcedure
       .input(z.object({ userId: z.number().int(), enabled: z.boolean() }))
