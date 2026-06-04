@@ -52,7 +52,8 @@ export const superAdminRouter = router({
 
       const { gte, lt, and, eq, sql, isNotNull, inArray, or, ne } = await import("drizzle-orm");
 
-      const weekStartDate = new Date(input.weekStart + "T00:00:00.000Z");
+      const [wsYear, wsMon, wsDay] = input.weekStart.split("-").map(Number);
+      const weekStartDate = new Date(wsYear, wsMon - 1, wsDay, 0, 0, 0, 0);
       const weekEndDate = new Date(weekStartDate);
       weekEndDate.setDate(weekEndDate.getDate() + 7);
 
@@ -888,7 +889,7 @@ export const superAdminRouter = router({
         } else if (input.metric === "newBookings") {
           const r = await db.select({ count: sql<number>`COUNT(*)` })
             .from(bookings)
-            .where(and(gte(bookings.createdAt, week.start), lt(bookings.createdAt, week.end)));
+            .where(and(gte(bookings.bookedDate, week.start), lt(bookings.bookedDate, week.end)));
           value = Number(r[0]?.count ?? 0);
         } else if (input.metric === "ddConfirmed") {
           const r = await db.select({ total: sql<number>`SUM(amount)` })
@@ -929,7 +930,8 @@ export const superAdminRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
       const { recruitmentStageHistory, recruitmentProspects } = await import("../drizzle/schema");
       const { gte, lt, and, eq } = await import("drizzle-orm");
-      const weekStartDate = new Date(input.weekStart + "T00:00:00.000Z");
+      const [wsYear, wsMon, wsDay] = input.weekStart.split("-").map(Number);
+      const weekStartDate = new Date(wsYear, wsMon - 1, wsDay, 0, 0, 0, 0);
       const weekEndDate = new Date(weekStartDate);
       weekEndDate.setDate(weekEndDate.getDate() + 7);
       return db
@@ -964,7 +966,8 @@ export const superAdminRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
       const { agentStatusEvents, users } = await import("../drizzle/schema");
       const { gte, lt, and, inArray, eq } = await import("drizzle-orm");
-      const weekStartDate = new Date(input.weekStart + "T00:00:00.000Z");
+      const [wsYear, wsMon, wsDay] = input.weekStart.split("-").map(Number);
+      const weekStartDate = new Date(wsYear, wsMon - 1, wsDay, 0, 0, 0, 0);
       const weekEndDate = new Date(weekStartDate);
       weekEndDate.setDate(weekEndDate.getDate() + 7);
       return db
@@ -998,7 +1001,8 @@ export const superAdminRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
       const { gcPaymentEvents, users } = await import("../drizzle/schema");
       const { gte, lt, and, eq, isNotNull } = await import("drizzle-orm");
-      const weekStartDate = new Date(input.weekStart + "T00:00:00.000Z");
+      const [wsYear, wsMon, wsDay] = input.weekStart.split("-").map(Number);
+      const weekStartDate = new Date(wsYear, wsMon - 1, wsDay, 0, 0, 0, 0);
       const weekEndDate = new Date(weekStartDate);
       weekEndDate.setDate(weekEndDate.getDate() + 7);
       return db

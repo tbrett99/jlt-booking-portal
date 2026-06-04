@@ -2549,3 +2549,10 @@
 - [x] Fix: Search is slow — currently re-downloads and re-parses every PDF from S3 on every search; persist extracted PDF text at import time instead
 - [x] Fix: Zero results — search qualification is too strict (requires name+date match); relax to allow name-only or reference-only matches
 - [x] Fix: getCachedEmailCount loads all rows into memory — replace with COUNT(*) SQL query
+
+## BI Dashboard Audit (June 2026)
+- [ ] Audit every metric in weeklyStats query — check field used, date range logic, and timezone handling
+- [ ] Fix new bookings count — verify bookedDate is populated and query is correct
+- [ ] Fix sign-ups count — verify users.createdAt date range matches the selected week
+- [ ] Fix any other metrics found to be wrong during audit
+- [ ] Verify all fixed figures match raw SQL counts
