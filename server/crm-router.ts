@@ -2943,12 +2943,17 @@ export const crmRouter = router({
           let agentRows = rows;
 
           // Filter by active GoCardless mandate
+          // Treat 'active' AND 'submitted' as having an active mandate:
+          // GoCardless uses 'submitted' for mandates that have been successfully submitted
+          // and are collecting — they are functionally active even before the status
+          // transitions to 'active' in our local sync.
           if (filters.hasActiveMandate != null) {
             const { gcMandates } = await import("../drizzle/schema");
+            const { inArray } = await import("drizzle-orm");
             const mandateRows = await db
               .select({ userId: gcMandates.userId })
               .from(gcMandates)
-              .where(eq(gcMandates.status, "active"));
+              .where(inArray(gcMandates.status, ["active", "submitted"]));
             const agentIdsWithMandate = new Set(mandateRows.map((m) => m.userId).filter(Boolean) as number[]);
             if (filters.hasActiveMandate === true) {
               agentRows = agentRows.filter((u) => agentIdsWithMandate.has(u.id));
