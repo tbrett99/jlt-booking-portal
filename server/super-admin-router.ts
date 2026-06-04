@@ -236,21 +236,24 @@ export const superAdminRouter = router({
 
       // ─── SECTION 3: Bookings & Pipeline ───────────────────────────────────
 
-      // New bookings this week
+      // New bookings this week — use bookedDate (the date the booking was made with the supplier)
+      // NOT createdAt (when it was registered in the portal, which can be a bulk-import date)
       const newBookingsThisWeek = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(bookings)
         .where(and(
-          gte(bookings.createdAt, weekStartDate),
-          lt(bookings.createdAt, weekEndDate),
+          isNotNull(bookings.bookedDate),
+          gte(bookings.bookedDate, weekStartDate),
+          lt(bookings.bookedDate, weekEndDate),
         ));
 
       const newBookingsPrevWeek = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(bookings)
         .where(and(
-          gte(bookings.createdAt, prevWeekStart),
-          lt(bookings.createdAt, prevWeekEnd),
+          isNotNull(bookings.bookedDate),
+          gte(bookings.bookedDate, prevWeekStart),
+          lt(bookings.bookedDate, prevWeekEnd),
         ));
 
       // Pipeline stage distribution (current snapshot)
