@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link } from "wouter";
 import {
@@ -322,6 +323,15 @@ export default function SuperAdminDashboard() {
     return currentMonday.getTime() === thisMonday.getTime();
   }, [currentMonday]);
 
+  const mandateSyncMutation = trpc.crm.mandateSync.sync.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Mandate sync complete: ${result.updated} updated, ${result.unchanged} unchanged${result.failed > 0 ? `, ${result.failed} failed` : ""}`);
+      mandateSummaryQ.refetch();
+    },
+    onError: (e) => toast.error(`Sync failed: ${e.message}`),
+  });
+  const mandateSummaryQ = trpc.crm.mandateSync.summary.useQuery();
+
   const { data, isLoading, error } = trpc.superAdmin.weeklyStats.useQuery(
     { weekStart: weekStartStr },
     { staleTime: 60_000 }
@@ -563,6 +573,20 @@ export default function SuperAdminDashboard() {
                   accent={data.ddRevenue.agentsWithConsecutiveFailures > 0 ? "amber" : undefined}
                   link="/crm/memberships"
                 />
+              </div>
+              {/* Mandate Sync */}
+              <div className="flex items-center justify-between bg-muted/50 rounded-lg p-3">
+                <div className="text-sm">
+                  <span className="font-medium">Mandate Status Sync</span>
+                  {mandateSummaryQ.data && (
+                    <span className="text-muted-foreground ml-2 text-xs">
+                      {mandateSummaryQ.data.total} mandates — {mandateSummaryQ.data.active} active · {mandateSummaryQ.data.pending} pending · {mandateSummaryQ.data.cancelled} cancelled · {mandateSummaryQ.data.failed} failed
+                    </span>
+                  )}
+                </div>
+                <Button size="sm" variant="outline" onClick={() => mandateSyncMutation.mutate()} disabled={mandateSyncMutation.isPending}>
+                  {mandateSyncMutation.isPending ? "Syncing..." : "Sync Mandates from GoCardless"}
+                </Button>
               </div>
               <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground">
                 <strong>Confirmed vs Paid Out:</strong> "Confirmed" = GoCardless has submitted the payment to the bank (usually 3–5 business days before settlement). "Paid Out" = funds have actually landed in your JLT bank account. These will differ week-to-week due to settlement timing.

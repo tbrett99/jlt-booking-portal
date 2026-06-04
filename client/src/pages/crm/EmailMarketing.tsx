@@ -60,12 +60,13 @@ interface CampaignFormData {
   trainingStages: string[];
   agentTags: string[];
   agentStatus: string[];
+  hasActiveMandate?: boolean | null; // null = no filter, true = has mandate, false = no mandate
   templateId?: number;
 }
 
 const defaultCampaignForm: CampaignFormData = {
   name: "", subject: "", bodyHtml: "", audienceType: "prospect",
-  stages: [], membershipTiers: [], trainingStages: [], agentTags: [], agentStatus: [],
+  stages: [], membershipTiers: [], trainingStages: [], agentTags: [], agentStatus: [], hasActiveMandate: null,
 };
 
 function CampaignFormDialog({
@@ -193,13 +194,30 @@ function CampaignFormDialog({
                 </div>
               )}
 
-              {(form.membershipTiers.length > 0 || form.trainingStages.length > 0 || form.agentTags.length > 0 || form.agentStatus.length > 0) && (
+              <div>
+                <Label className="text-xs">Direct Debit (GoCardless Mandate)</Label>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {([{ label: "Has Active Mandate", value: true }, { label: "No Active Mandate", value: false }] as const).map(({ label, value }) => (
+                    <button key={label} type="button"
+                      onClick={() => setForm((f) => ({ ...f, hasActiveMandate: f.hasActiveMandate === value ? null : value }))}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                        form.hasActiveMandate === value ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {(form.membershipTiers.length > 0 || form.trainingStages.length > 0 || form.agentTags.length > 0 || form.agentStatus.length > 0 || form.hasActiveMandate != null) && (
                 <p className="text-xs text-muted-foreground">
                   Filters: {[
                     form.membershipTiers.length > 0 && `Tier: ${form.membershipTiers.join(", ")}`,
                     form.trainingStages.length > 0 && `Training: ${form.trainingStages.join(", ")}`,
                     form.agentStatus.length > 0 && `Status: ${form.agentStatus.join(", ")}`,
                     form.agentTags.length > 0 && `Tags: ${form.agentTags.join(", ")}`,
+                    form.hasActiveMandate === true && "Has Active Direct Debit",
+                    form.hasActiveMandate === false && "No Active Direct Debit",
                   ].filter(Boolean).join(" · ")}
                 </p>
               )}
@@ -628,12 +646,13 @@ export default function EmailMarketing() {
   });
 
   function handleSaveCampaign(form: CampaignFormData) {
-    const filters: Record<string, string[]> = {};
+    const filters: Record<string, any> = {};
     if (form.stages.length > 0) filters.stages = form.stages;
     if (form.membershipTiers.length > 0) filters.membershipTiers = form.membershipTiers;
     if (form.trainingStages.length > 0) filters.trainingStages = form.trainingStages;
     if (form.agentTags.length > 0) filters.tags = form.agentTags;
     if (form.agentStatus.length > 0) filters.agentStatus = form.agentStatus;
+    if (form.hasActiveMandate != null) filters.hasActiveMandate = form.hasActiveMandate;
     const segmentFilters = Object.keys(filters).length > 0 ? JSON.stringify(filters) : undefined;
     if (campaignDialog === "create") {
       createCampaign.mutate({ ...form, segmentFilters });
@@ -706,6 +725,8 @@ export default function EmailMarketing() {
                   if (filters.trainingStages?.length) agentParts.push(`Training: ${filters.trainingStages.join(", ")}`);
                   if (filters.tags?.length) agentParts.push(`Tags: ${filters.tags.join(", ")}`);
                   if (filters.agentStatus?.length) agentParts.push(`Status: ${filters.agentStatus.join(", ")}`);
+                  if (filters.hasActiveMandate === true) agentParts.push("Has Active DD");
+                  if (filters.hasActiveMandate === false) agentParts.push("No Active DD");
                 }
                 const audience = c.audienceType === "agent"
                   ? agentParts.length > 0 ? agentParts.join(" | ") : "All Active Agents"
@@ -919,6 +940,7 @@ export default function EmailMarketing() {
               trainingStages: f.trainingStages ?? [],
               agentTags: f.tags ?? [],
               agentStatus: f.agentStatus ?? [],
+              hasActiveMandate: f.hasActiveMandate != null ? f.hasActiveMandate : null,
             } as CampaignFormData;
           })() : undefined}
           templates={templates}
@@ -957,6 +979,8 @@ export default function EmailMarketing() {
                 if (f.trainingStages?.length) parts.push(`training: ${f.trainingStages.join(", ")}`);
                 if (f.tags?.length) parts.push(`tags: ${f.tags.join(", ")}`);
                 if (f.agentStatus?.length) parts.push(`status: ${f.agentStatus.join(", ")}`);
+                if (f.hasActiveMandate === true) parts.push("has active direct debit");
+                if (f.hasActiveMandate === false) parts.push("no active direct debit");
                 return parts.length > 0 ? `agents filtered by ${parts.join(" | ")}` : "all active agents";
               })() : (() => {
                 const f = parseFilters(sendConfirm?.segmentFilters);

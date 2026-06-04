@@ -2537,3 +2537,9 @@
 - [x] Add inbox.searchForBooking tRPC procedure — scoped search by bookingId with agent ownership check
 - [x] Rewrite BookingDocuments page with booking dropdown and agent-scoped search results
 - [x] Save checkpoint, publish, and create Heartbeat scheduled job
+
+## June 2026 — Aviate Email, Orbit Access Email, GoCardless CRM
+- [x] Add Aviate password reset instructions to welcome email (go to aviateworld.com → Login → Aviate Flights Login → Forgotten Password)
+- [x] Add automated email when Orbit access is toggled ON — advise agent their Orbit account is live, accessible via "Open Orbit" in the left sidebar, and that it is a live booking system
+- [x] Backfill GoCardless mandate status into CRM — query GoCardless API for all active mandates and mark matching CRM users accordingly
+- [x] Add "Has Active Direct Debit" filter to email marketing campaign audience builder

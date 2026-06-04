@@ -948,6 +948,73 @@ export const crmRouter = router({
       }),
   }),
 
+  // ─── GoCardless Mandate Sync ─────────────────────────────────────────────
+  mandateSync: router({
+    // Sync all local gc_mandates rows against the live GoCardless API
+    // Updates status for any mandate that has a mandateId stored
+    sync: adminProcedure.mutation(async () => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { gcMandates } = await import("../drizzle/schema");
+      const { isNotNull, eq } = await import("drizzle-orm");
+      const { getMandate } = await import("./gocardless");
+
+      // Fetch all local mandate rows that have a GoCardless mandateId
+      const rows = await db
+        .select({ id: gcMandates.id, mandateId: gcMandates.mandateId, status: gcMandates.status })
+        .from(gcMandates)
+        .where(isNotNull(gcMandates.mandateId));
+
+      let updated = 0;
+      let unchanged = 0;
+      let failed = 0;
+
+      for (const row of rows) {
+        if (!row.mandateId) continue;
+        try {
+          const live = await getMandate(row.mandateId);
+          if (live.status !== row.status) {
+            await db
+              .update(gcMandates)
+              .set({ status: live.status as any, updatedAt: new Date() })
+              .where(eq(gcMandates.id, row.id));
+            updated++;
+          } else {
+            unchanged++;
+          }
+        } catch (err) {
+          console.error(`[MandateSync] Failed for ${row.mandateId}:`, err);
+          failed++;
+        }
+      }
+
+      return { total: rows.length, updated, unchanged, failed };
+    }),
+
+    // Get a summary of mandate statuses across all agents
+    summary: adminProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return { total: 0, active: 0, pending: 0, cancelled: 0, failed: 0, other: 0 };
+      const { gcMandates } = await import("../drizzle/schema");
+      const { isNotNull } = await import("drizzle-orm");
+      const rows = await db
+        .select({ status: gcMandates.status })
+        .from(gcMandates)
+        .where(isNotNull(gcMandates.mandateId));
+      const counts = { total: rows.length, active: 0, pending: 0, cancelled: 0, failed: 0, other: 0 };
+      for (const r of rows) {
+        if (r.status === "active") counts.active++;
+        else if (r.status === "pending" || r.status === "pending_submission" || r.status === "submitted") counts.pending++;
+        else if (r.status === "cancelled" || r.status === "expired") counts.cancelled++;
+        else if (r.status === "failed") counts.failed++;
+        else counts.other++;
+      }
+      return counts;
+    }),
+  }),
+
   // ─── Agent CRM (registered portal agents) ────────────────────────────────
   agentCrm: router({
     list: adminProcedure.query(async () => {
@@ -1064,6 +1131,59 @@ export const crmRouter = router({
       .input(z.object({ userId: z.number().int(), enabled: z.boolean() }))
       .mutation(async ({ input }) => {
         await upsertAgentCrmProfile(input.userId, { orbitEnabled: input.enabled });
+
+        // Send automated email when Orbit access is turned ON
+        if (input.enabled) {
+          try {
+            const { getDb } = await import("./db");
+            const db = await getDb();
+            if (db) {
+              const { users: usersTable } = await import("../drizzle/schema");
+              const { eq } = await import("drizzle-orm");
+              const [agent] = await db
+                .select({ name: usersTable.name, email: usersTable.email })
+                .from(usersTable)
+                .where(eq(usersTable.id, input.userId))
+                .limit(1);
+              if (agent?.email) {
+                await sendDirectEmail({
+                  toEmail: agent.email,
+                  toName: agent.name ?? "Agent",
+                  subject: "Your Orbit Account is Now Live",
+                  html: `
+                    <div style="font-family:'Poppins',Arial,sans-serif;max-width:620px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:12px;">
+                      <div style="text-align:center;margin-bottom:24px;">
+                        <h1 style="color:#414141;font-size:22px;margin:0;">JLT Group</h1>
+                        <div style="width:60px;height:4px;background:#70FFE8;margin:10px auto 0;"></div>
+                      </div>
+                      <p style="color:#414141;">Hi ${agent.name ?? "there"},</p>
+                      <p style="color:#414141;">Great news &mdash; your <strong>Orbit account is now live</strong> and ready to use.</p>
+
+                      <div style="background:#fff;border:2px solid #70FFE8;border-radius:8px;padding:20px 24px;margin:24px 0;">
+                        <p style="color:#414141;font-weight:700;font-size:15px;margin:0 0 12px;">&#128196; How to Access Orbit</p>
+                        <p style="color:#414141;margin:0 0 8px;">Log in to the JLT Group Booking Portal and look for the <strong>&ldquo;Open Orbit&rdquo;</strong> button in the <strong>left-hand sidebar</strong>.</p>
+                        <p style="color:#414141;margin:0;">Clicking it will open Orbit directly in your browser.</p>
+                      </div>
+
+                      <div style="background:#fee2e2;border:2px solid #f87171;border-radius:8px;padding:20px 24px;margin:24px 0;">
+                        <p style="color:#991b1b;font-weight:700;font-size:15px;margin:0 0 8px;">&#9888;&#65039; Important &mdash; Live Booking System</p>
+                        <p style="color:#991b1b;margin:0;">Orbit is a <strong>live booking system</strong>. Any bookings, quotes, or changes you make are real and will be processed immediately. Please ensure you are confident before confirming any transactions.</p>
+                      </div>
+
+                      <p style="color:#414141;">If you have any questions or need assistance getting started, please don&rsquo;t hesitate to contact the JLT Group team.</p>
+                      <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
+                      <p style="color:#888;font-size:12px;text-align:center;">JLT Group Booking Portal &mdash; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p>
+                    </div>
+                  `,
+                });
+              }
+            }
+          } catch (emailErr) {
+            console.error("[Orbit] Failed to send Orbit access email:", emailErr);
+            // Non-fatal — access is still granted even if email fails
+          }
+        }
+
         return { success: true, orbitEnabled: input.enabled };
       }),
 
@@ -1200,6 +1320,17 @@ export const crmRouter = router({
                     <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:12px 16px;margin-top:10px;">
                       <p style="color:#991b1b;font-weight:700;margin:0;">&#128308; The strength bar must go <u>fully green</u> before you can save your password. If the bar is not fully green, your password will not be accepted.</p>
                     </div>
+                  </div>
+
+                  <!-- How to set your password -->
+                  <div style="background:#f0f9ff;border:2px solid #38bdf8;border-radius:8px;padding:20px 24px;margin:24px 0;">
+                    <p style="color:#0c4a6e;font-weight:700;font-size:15px;margin:0 0 12px;">&#128274; How to Set Your Password</p>
+                    <ol style="color:#414141;margin:0;padding-left:20px;line-height:1.8;">
+                      <li>Go to <a href="https://www.aviateworld.com/" style="color:#0284c7;font-weight:600;">www.aviateworld.com</a></li>
+                      <li>Click <strong>Login</strong></li>
+                      <li>Click <strong>Aviate Flights Login</strong></li>
+                      <li>Click <strong>Forgotten Password</strong> and follow the prompts</li>
+                    </ol>
                   </div>
 
                   ${instructionsHtml ? `<div style="color:#414141;margin-top:16px;">${instructionsHtml}</div>` : ""}
@@ -2810,6 +2941,21 @@ export const crmRouter = router({
             .where(and(...conditions));
 
           let agentRows = rows;
+
+          // Filter by active GoCardless mandate
+          if (filters.hasActiveMandate != null) {
+            const { gcMandates } = await import("../drizzle/schema");
+            const mandateRows = await db
+              .select({ userId: gcMandates.userId })
+              .from(gcMandates)
+              .where(eq(gcMandates.status, "active"));
+            const agentIdsWithMandate = new Set(mandateRows.map((m) => m.userId).filter(Boolean) as number[]);
+            if (filters.hasActiveMandate === true) {
+              agentRows = agentRows.filter((u) => agentIdsWithMandate.has(u.id));
+            } else {
+              agentRows = agentRows.filter((u) => !agentIdsWithMandate.has(u.id));
+            }
+          }
 
           // Filter by tags (post-query)
           if (filters.tags?.length) {
