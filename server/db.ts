@@ -2241,6 +2241,7 @@ export async function upsertCachedEmail(data: {
   hasAttachments: boolean;
   attachmentNames?: string | null;
   s3Keys?: string | null;
+  pdfText?: string | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
@@ -2260,6 +2261,7 @@ export async function upsertCachedEmail(data: {
         hasAttachments: data.hasAttachments,
         attachmentNames: data.attachmentNames ?? null,
         s3Keys: data.s3Keys ?? null,
+        pdfText: data.pdfText ?? null,
         importedAt: new Date(),
       },
     });
@@ -2287,7 +2289,7 @@ export async function searchCachedEmailsByKeywords(
   const { cachedEmails } = await import("../drizzle/schema");
   const { sql, or } = await import("drizzle-orm");
 
-  // Build LIKE conditions for name tokens (check subject, bodyText, bodyHtml, snippet, attachmentNames)
+  // Build LIKE conditions for name tokens (check subject, bodyText, bodyHtml, snippet, attachmentNames, pdfText)
   const nameConds = nameTokens
     .filter((t) => t.length >= 3)
     .flatMap((t) => [
@@ -2296,6 +2298,7 @@ export async function searchCachedEmailsByKeywords(
       sql`LOWER(COALESCE(${cachedEmails.bodyHtml}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
       sql`LOWER(COALESCE(${cachedEmails.snippet}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
       sql`LOWER(COALESCE(${cachedEmails.attachmentNames}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(COALESCE(${cachedEmails.pdfText}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
     ]);
 
   // Build LIKE conditions for date tokens (e.g. "22 jul", "22/07", "2026-07-22", "20 May")
@@ -2307,6 +2310,7 @@ export async function searchCachedEmailsByKeywords(
       sql`LOWER(COALESCE(${cachedEmails.bodyText}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
       sql`LOWER(COALESCE(${cachedEmails.bodyHtml}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
       sql`LOWER(COALESCE(${cachedEmails.attachmentNames}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
+      sql`LOWER(COALESCE(${cachedEmails.pdfText}, '')) LIKE ${`%${t.toLowerCase()}%`}`,
     ]);
 
   // Booking reference condition
@@ -2316,6 +2320,7 @@ export async function searchCachedEmailsByKeywords(
         sql`LOWER(COALESCE(${cachedEmails.bodyText}, '')) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
         sql`LOWER(COALESCE(${cachedEmails.bodyHtml}, '')) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
         sql`LOWER(COALESCE(${cachedEmails.attachmentNames}, '')) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
+        sql`LOWER(COALESCE(${cachedEmails.pdfText}, '')) LIKE ${`%${bookingReference.toLowerCase()}%`}`,
       ]
     : [];
 
@@ -2341,8 +2346,9 @@ export async function getCachedEmailCount() {
   const db = await getDb();
   if (!db) return 0;
   const { cachedEmails } = await import("../drizzle/schema");
-  const result = await db.select({ id: cachedEmails.id }).from(cachedEmails);
-  return result.length;
+  const { sql } = await import("drizzle-orm");
+  const result = await db.select({ count: sql<number>`COUNT(*)` }).from(cachedEmails);
+  return Number(result[0]?.count ?? 0);
 }
 
 export async function getLastImportTime() {

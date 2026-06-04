@@ -438,6 +438,7 @@ export const cachedEmails = mysqlTable("cached_emails", {
   hasAttachments: boolean("hasAttachments").notNull().default(false),
   attachmentNames: text("attachmentNames"),   // JSON array of filenames
   s3Keys: text("s3Keys"),                     // JSON array of {filename, contentType, s3Key, s3Url, size}
+  pdfText: mediumtext("pdfText"),             // Extracted text from all PDF attachments (persisted at import time)
   importedAt: timestamp("importedAt").defaultNow().notNull(),
 });
 export type CachedEmail = typeof cachedEmails.$inferSelect;

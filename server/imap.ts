@@ -260,13 +260,19 @@ function scoreEmail(
     totalScore += nameScoreAtt * 20;
   }
 
-  // Must qualify: name+date, reference alone, name+reference, or strong name alone (score >= 40)
-  // The strong-name-alone path catches emails where the date is expressed in an unexpected format
-  // (e.g. "Wed 20 May 2026" when agent typed "20/05/2026") but the name is a clear match.
+  // Qualification rules (in order of confidence):
+  // 1. Name + date match — highest confidence
+  // 2. Name + reference match
+  // 3. Reference alone (score >= 20) — unique enough to trust
+  // 4. Strong name alone (score >= 25) — catches emails where the date is in an unexpected
+  //    format (e.g. "Wednesday 20th July 2026" vs "20/07/2026") but the name is clear
+  // Threshold lowered from 40 → 25 because supplier confirmation emails often have the
+  // departure date in the PDF attachment (now searched via persisted pdfText) rather than
+  // the email body, so name-only matches in the body are still highly relevant.
   const hasName = matchReasons.some((r) => ["name","attachment_content","attachment_name"].includes(r));
   const hasDate = matchReasons.includes("date");
   const hasRef = matchReasons.includes("reference");
-  const qualifies = (hasName && hasDate) || (hasRef && totalScore >= 20) || (hasName && hasRef) || (hasName && totalScore >= 40);
+  const qualifies = (hasName && hasDate) || (hasName && hasRef) || (hasRef && totalScore >= 20) || (hasName && totalScore >= 25);
   if (!qualifies) return null;
 
   return {
@@ -293,16 +299,26 @@ export async function searchCachedEmails(params: SearchParams): Promise<EmailRes
   const dateTokens: string[] = [];
   for (const d of dateWindow) {
     const day = String(d.getDate()).padStart(2, "0");
+    const dayNopad = String(d.getDate()); // e.g. "5" not "05"
     const month = String(d.getMonth() + 1).padStart(2, "0");
     const year = String(d.getFullYear());
     const monthNames = ["january","february","march","april","may","june",
       "july","august","september","october","november","december"];
     const monthName = monthNames[d.getMonth()] ?? "";
+    const monthShort = monthName.slice(0, 3); // e.g. "jul"
     dateTokens.push(
-      `${year}-${month}-${day}`,
-      `${day}/${month}`,
-      `${day} ${monthName.slice(0, 3)}`,
-      `${day} ${monthName}`,
+      `${year}-${month}-${day}`,           // 2026-07-20
+      `${day}/${month}`,                    // 20/07
+      `${day} ${monthShort}`,               // 20 jul
+      `${day} ${monthName}`,                // 20 july
+      `${dayNopad} ${monthShort}`,          // 5 jul (no leading zero)
+      `${dayNopad} ${monthName}`,           // 5 july
+      `${monthShort} ${year}`,              // jul 2026 (month+year for broad match)
+      `${monthName} ${year}`,               // july 2026
+      `${day}/${month}/${year}`,            // 20/07/2026
+      `${day}-${month}-${year}`,            // 20-07-2026
+      `${monthName} ${dayNopad}`,           // july 20 (US format)
+      `${monthShort} ${dayNopad}`,          // jul 20
     );
   }
   // Deduplicate tokens
@@ -312,54 +328,22 @@ export async function searchCachedEmails(params: SearchParams): Promise<EmailRes
   const results: EmailResult[] = [];
 
   for (const row of rows) {
-    // Use S3 keys (new path) or fall back to legacy base64 attachmentData
     type S3KeyEntry = { filename: string; contentType: string; s3Key: string; s3Url: string; size: number };
-    type LegacyEntry = { filename: string; contentType: string; dataBase64: string };
 
     const s3KeysData: S3KeyEntry[] = row.s3Keys ? JSON.parse(row.s3Keys) : [];
-    const legacyData: LegacyEntry[] = []; // portal schema uses s3Keys only
-
-    // Re-extract PDF texts from S3 attachments (fetch and parse)
-    const pdfTexts: string[] = [];
-    for (const att of s3KeysData) {
-      if (att.contentType.includes("pdf") || att.filename.toLowerCase().endsWith(".pdf")) {
-        try {
-          const resp = await fetch(att.s3Url);
-          if (resp.ok) {
-            const buf = Buffer.from(await resp.arrayBuffer());
-            const text = await extractPdfText(buf);
-            if (text) pdfTexts.push(text);
-          }
-        } catch { /* skip */ }
-      }
-    }
-    // Also check legacy base64 PDFs
-    for (const att of legacyData) {
-      if (att.contentType.includes("pdf") || att.filename.toLowerCase().endsWith(".pdf")) {
-        const buf = Buffer.from(att.dataBase64, "base64");
-        const text = await extractPdfText(buf);
-        if (text) pdfTexts.push(text);
-      }
-    }
-
     const attachmentNames: string[] = row.attachmentNames ? JSON.parse(row.attachmentNames) : [];
 
-    // Build AttachmentMeta from S3 keys (preferred) or legacy base64
-    const attachments: AttachmentMeta[] = s3KeysData.length > 0
-      ? s3KeysData.map((a) => ({
-          id: Buffer.from(`${row.uid}::${a.filename}`).toString("base64url"),
-          filename: a.filename,
-          contentType: a.contentType,
-          size: a.size,
-          s3Key: a.s3Key,
-          s3Url: a.s3Url,
-        }))
-      : legacyData.map((a) => ({
-          id: Buffer.from(`${row.uid}::${a.filename}`).toString("base64url"),
-          filename: a.filename,
-          contentType: a.contentType,
-          size: Buffer.from(a.dataBase64, "base64").length,
-        }));
+    // Use persisted pdfText — no S3 fetch needed at search time
+    const pdfTexts: string[] = row.pdfText ? [row.pdfText] : [];
+
+    const attachments: AttachmentMeta[] = s3KeysData.map((a) => ({
+      id: Buffer.from(`${row.uid}::${a.filename}`).toString("base64url"),
+      filename: a.filename,
+      contentType: a.contentType,
+      size: a.size,
+      s3Key: a.s3Key,
+      s3Url: a.s3Url,
+    }));
 
     const raw: RawEmailData = {
       uid: row.uid,
@@ -445,11 +429,20 @@ async function processOneMessage(
 
   const attachmentNames: string[] = [];
   const s3Keys: Array<{ filename: string; contentType: string; s3Key: string; s3Url: string; size: number }> = [];
+  const pdfTextParts: string[] = [];
 
   for (const att of parsed.attachments ?? []) {
     const fn = att.filename ?? "attachment";
     attachmentNames.push(fn);
     if (att.content && att.content.length > 0) {
+      // Extract PDF text at import time so searches don't need to re-fetch from S3
+      const isPdf = (att.contentType ?? "").includes("pdf") || fn.toLowerCase().endsWith(".pdf");
+      if (isPdf) {
+        try {
+          const extracted = await extractPdfText(att.content);
+          if (extracted) pdfTextParts.push(extracted);
+        } catch { /* skip — PDF may be scanned/image-only */ }
+      }
       try {
         const safeName = fn.replace(/[^a-zA-Z0-9._-]/g, "_");
         const s3Path = `email-attachments/${uid}/${safeName}`;
@@ -479,6 +472,7 @@ async function processOneMessage(
     hasAttachments: attachmentNames.length > 0,
     attachmentNames: JSON.stringify(attachmentNames),
     s3Keys: JSON.stringify(s3Keys),
+    pdfText: pdfTextParts.length > 0 ? pdfTextParts.join("\n\n") : null,
   });
 
   stats.imported++;

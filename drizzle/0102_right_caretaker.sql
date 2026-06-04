@@ -1,0 +1,1 @@
+ALTER TABLE `cached_emails` ADD `pdfText` mediumtext;

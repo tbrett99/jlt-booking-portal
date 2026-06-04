@@ -715,6 +715,13 @@
       "when": 1780498565231,
       "tag": "0101_unusual_fallen_one",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "5",
+      "when": 1780586658704,
+      "tag": "0102_right_caretaker",
+      "breakpoints": true
     }
   ]
 }

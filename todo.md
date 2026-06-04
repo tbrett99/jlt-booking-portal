@@ -2543,3 +2543,9 @@
 - [x] Add automated email when Orbit access is toggled ON — advise agent their Orbit account is live, accessible via "Open Orbit" in the left sidebar, and that it is a live booking system
 - [x] Backfill GoCardless mandate status into CRM — query GoCardless API for all active mandates and mark matching CRM users accordingly
 - [x] Add "Has Active Direct Debit" filter to email marketing campaign audience builder
+
+## Booking Documents Search Fixes (June 2026)
+- [x] Fix: Import is only fetching ~747 emails — mailbox likely has thousands; remove any fetch cap and ensure full import runs
+- [x] Fix: Search is slow — currently re-downloads and re-parses every PDF from S3 on every search; persist extracted PDF text at import time instead
+- [x] Fix: Zero results — search qualification is too strict (requires name+date match); relax to allow name-only or reference-only matches
+- [x] Fix: getCachedEmailCount loads all rows into memory — replace with COUNT(*) SQL query
