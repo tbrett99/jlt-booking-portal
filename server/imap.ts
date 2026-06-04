@@ -394,6 +394,11 @@ async function safeConnect(config: ImapConnectionConfig): Promise<imaps.ImapSimp
       tlsOptions: { rejectUnauthorized: false },
       authTimeout: 10000,
       connTimeout: 15000,
+      // Force PLAIN auth — node-imap sometimes fails to negotiate AUTH=PLAIN/LOGIN
+      // when SASL-IR is also advertised in the server capability string (Dovecot).
+      // Explicitly setting authMethod bypasses the auto-detection bug.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...(({ authMethod: "PLAIN" }) as any),
     },
   });
   // Attach a no-op error listener on the underlying imap Connection so that
