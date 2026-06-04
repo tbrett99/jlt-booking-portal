@@ -50,7 +50,7 @@ export const superAdminRouter = router({
         recruitmentStageHistory,
       } = await import("../drizzle/schema");
 
-      const { gte, lt, and, eq, sql, isNotNull, inArray, or, ne } = await import("drizzle-orm");
+      const { gte, lt, and, eq, sql, isNotNull, inArray, or, ne, notLike } = await import("drizzle-orm");
 
       const [wsYear, wsMon, wsDay] = input.weekStart.split("-").map(Number);
       const weekStartDate = new Date(wsYear, wsMon - 1, wsDay, 0, 0, 0, 0);
@@ -64,8 +64,8 @@ export const superAdminRouter = router({
 
       // ─── SECTION 1: Membership & Retention ────────────────────────────────
 
-      // New sign-ups: confirmed GoCardless payments (all one-off joining fee payments)
-      // Every payments_confirmed event in GC is a joining fee — no amount filter needed
+      // New sign-ups: confirmed GoCardless one-off joining fee payments only
+      // Exclude subscription (monthly DD) payments by filtering out rawPayload containing "subscription"
       const newSignupsThisWeek = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(gcPaymentEvents)
@@ -73,6 +73,7 @@ export const superAdminRouter = router({
           eq(gcPaymentEvents.eventType, "payments_confirmed"),
           gte(gcPaymentEvents.occurredAt, weekStartDate),
           lt(gcPaymentEvents.occurredAt, weekEndDate),
+          notLike(gcPaymentEvents.rawPayload, '%"subscription"%'),
         ));
 
       const newSignupsPrevWeek = await db
@@ -82,6 +83,7 @@ export const superAdminRouter = router({
           eq(gcPaymentEvents.eventType, "payments_confirmed"),
           gte(gcPaymentEvents.occurredAt, prevWeekStart),
           lt(gcPaymentEvents.occurredAt, prevWeekEnd),
+          notLike(gcPaymentEvents.rawPayload, '%"subscription"%'),
         ));
 
       // Cancellations / churn this week
@@ -153,7 +155,7 @@ export const superAdminRouter = router({
         .from(gcSubscriptions)
         .where(inArray(gcSubscriptions.status, ["active", "paused"]));
 
-      // Payments confirmed this week (submitted to bank by GC)
+      // Payments confirmed this week (one-off joining fees only — excludes subscription/monthly DD)
       const paymentsConfirmedThisWeek = await db
         .select({
           count: sql<number>`COUNT(*)`,
@@ -165,6 +167,7 @@ export const superAdminRouter = router({
           gte(gcPaymentEvents.occurredAt, weekStartDate),
           lt(gcPaymentEvents.occurredAt, weekEndDate),
           isNotNull(gcPaymentEvents.amount),
+          notLike(gcPaymentEvents.rawPayload, '%"subscription"%'),
         ));
 
       const paymentsConfirmedPrevWeek = await db
@@ -178,6 +181,7 @@ export const superAdminRouter = router({
           gte(gcPaymentEvents.occurredAt, prevWeekStart),
           lt(gcPaymentEvents.occurredAt, prevWeekEnd),
           isNotNull(gcPaymentEvents.amount),
+          notLike(gcPaymentEvents.rawPayload, '%"subscription"%'),
         ));
 
       // Payments paid out this week (funds actually landed in your bank account)
@@ -853,7 +857,7 @@ export const superAdminRouter = router({
         remittanceLines,
         remittanceBatches,
       } = await import("../drizzle/schema");
-      const { gte, lt, and, eq, sql, isNotNull, inArray } = await import("drizzle-orm");
+      const { gte, lt, and, eq, sql, isNotNull, inArray, notLike } = await import("drizzle-orm");
 
       const weeks: Array<{ label: string; start: Date; end: Date }> = [];
       const now = new Date();
@@ -879,7 +883,7 @@ export const superAdminRouter = router({
         if (input.metric === "newSignups") {
           const r = await db.select({ count: sql<number>`COUNT(*)` })
             .from(gcPaymentEvents)
-            .where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, week.start), lt(gcPaymentEvents.occurredAt, week.end)));
+            .where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, week.start), lt(gcPaymentEvents.occurredAt, week.end), notLike(gcPaymentEvents.rawPayload, '%"subscription"%')));
           value = Number(r[0]?.count ?? 0);
         } else if (input.metric === "cancellations") {
           const r = await db.select({ count: sql<number>`COUNT(*)` })
@@ -894,7 +898,7 @@ export const superAdminRouter = router({
         } else if (input.metric === "ddConfirmed") {
           const r = await db.select({ total: sql<number>`SUM(amount)` })
             .from(gcPaymentEvents)
-            .where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, week.start), lt(gcPaymentEvents.occurredAt, week.end), isNotNull(gcPaymentEvents.amount)));
+            .where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, week.start), lt(gcPaymentEvents.occurredAt, week.end), isNotNull(gcPaymentEvents.amount), notLike(gcPaymentEvents.rawPayload, '%"subscription"%')));
           value = Math.round(Number(r[0]?.total ?? 0) / 100);
         } else if (input.metric === "ddPaidOut") {
           const r = await db.select({ total: sql<number>`SUM(amount)` })
