@@ -2529,3 +2529,11 @@
 - [x] Feature: Aviate onboarding — Orbit Access page: filter tabs, inline username entry, export CSV, bulk send welcome email
 - [x] Feature: Aviate onboarding — show Aviate username on CRM agent list and CRM sheet Suppliers tab
 - [x] Fix: Recruitment pipeline Won stage date filter — when filtering by "Won" stage with a date range, now filters by changedAt from recruitment_stage_history (when prospect moved to "won") instead of createdAt (enquiry date). Uses inArray subquery on recruitmentStageHistory.
+
+## Booking Documents (IMAP Inbox Search) Fix — June 2026
+- [x] Add /api/scheduled/inbox-import Heartbeat endpoint for incremental IMAP import
+- [x] Fix manual import to run fire-and-forget (avoid 180s Cloud Run timeout)
+- [x] Add inbox.listAgentBookings tRPC procedure — returns agent's own bookings for dropdown
+- [x] Add inbox.searchForBooking tRPC procedure — scoped search by bookingId with agent ownership check
+- [x] Rewrite BookingDocuments page with booking dropdown and agent-scoped search results
+- [x] Save checkpoint, publish, and create Heartbeat scheduled job

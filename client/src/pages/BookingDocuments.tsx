@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,11 +11,17 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
 } from "@/components/ui/dialog";
 import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
   Mail, Search, Paperclip, Calendar, User, FileText,
-  ChevronDown, ChevronUp, AlertCircle, Info, Download, Link2, CheckCircle2
+  ChevronDown, ChevronUp, AlertCircle, Info, Download, Link2, CheckCircle2,
+  ChevronsUpDown, Check, MapPin
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 type MatchReason = "name" | "date" | "reference" | "attachment_name" | "attachment_content";
 
@@ -78,91 +84,75 @@ function LinkToBookingDialog({ emailUid, emailSubject, open, onClose }: LinkDial
   const [note, setNote] = useState("");
 
   const searchBookings = trpc.bookings.quickSearch.useQuery(
-    { query: query.trim() },
-    { enabled: query.trim().length >= 2 }
+    { query },
+    { enabled: query.length >= 2 }
   );
 
   const linkEmail = trpc.inbox.linkEmail.useMutation({
     onSuccess: () => {
-      toast.success("Email linked to booking.");
+      toast.success("Email linked to booking");
       onClose();
-      setQuery("");
-      setSelectedBookingId(null);
-      setNote("");
     },
-    onError: (e) => {
-      toast.error(`Link failed: ${e.message}`);
-    },
+    onError: (e) => toast.error(e.message),
   });
 
-  function handleLink() {
-    if (!selectedBookingId) return;
-    linkEmail.mutate({ bookingId: selectedBookingId, emailUid, note: note || undefined });
-  }
-
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-lg">
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Link2 className="h-4 w-4" />
-            Link Email to Booking
-          </DialogTitle>
-          <DialogDescription className="text-xs truncate">
-            {emailSubject}
+          <DialogTitle>Link to Booking</DialogTitle>
+          <DialogDescription>
+            Link "<span className="font-medium">{emailSubject}</span>" to a booking for easy reference.
           </DialogDescription>
         </DialogHeader>
-
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Search for a booking</Label>
+            <Label>Search Booking</Label>
             <Input
-              placeholder="Guest name, Topdog ref, or destination…"
+              placeholder="Client name or PTS ref…"
               value={query}
               onChange={(e) => { setQuery(e.target.value); setSelectedBookingId(null); }}
             />
           </div>
-
           {searchBookings.data && searchBookings.data.length > 0 && (
-            <div className="border rounded-md divide-y max-h-52 overflow-auto">
+            <div className="border rounded-md max-h-40 overflow-auto divide-y text-sm">
               {searchBookings.data.map((b) => (
                 <button
                   key={b.id}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors flex items-center justify-between gap-2 ${selectedBookingId === b.id ? "bg-primary/10 font-medium" : ""}`}
+                  className={cn(
+                    "w-full text-left px-3 py-2 hover:bg-muted transition-colors",
+                    selectedBookingId === b.id && "bg-primary/10 font-medium"
+                  )}
                   onClick={() => setSelectedBookingId(b.id)}
                 >
-                  <span className="truncate">{b.clientName}</span>
-                  <span className="text-xs text-muted-foreground shrink-0">
-                    {b.topdogRef ?? ""} · {b.departureDate ? format(new Date(b.departureDate), "d MMM yyyy") : ""}
-                  </span>
-                  {selectedBookingId === b.id && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
+                  <span className="font-medium">{b.clientName}</span>
+                  {b.ptsRef && <span className="text-muted-foreground ml-2 text-xs">{b.ptsRef}</span>}
+                  {b.departureDate && (
+                    <span className="text-muted-foreground ml-2 text-xs">
+                      {format(new Date(b.departureDate), "d MMM yyyy")}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
           )}
-
-          {query.trim().length >= 2 && searchBookings.data?.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-2">No bookings found.</p>
-          )}
-
           <div className="space-y-1.5">
             <Label>Note <span className="text-muted-foreground text-xs">(optional)</span></Label>
             <Input
-              placeholder="e.g. Jet2 confirmation for lead passenger"
+              placeholder="e.g. Hotel confirmation"
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={500}
             />
           </div>
         </div>
-
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
-            onClick={handleLink}
             disabled={!selectedBookingId || linkEmail.isPending}
+            onClick={() => selectedBookingId && linkEmail.mutate({ bookingId: selectedBookingId, emailUid, note: note || undefined })}
           >
-            {linkEmail.isPending ? "Linking…" : "Link to Booking"}
+            {linkEmail.isPending ? "Linking…" : "Link Email"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -170,9 +160,13 @@ function LinkToBookingDialog({ emailUid, emailSubject, open, onClose }: LinkDial
   );
 }
 
-// ─── Email Card ───────────────────────────────────────────────────────────────
+// ─── Email Result Card ────────────────────────────────────────────────────────
 
-function EmailCard({ result }: { result: EmailResult }) {
+interface EmailCardProps {
+  result: EmailResult;
+}
+
+function EmailCard({ result }: EmailCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
@@ -181,10 +175,8 @@ function EmailCard({ result }: { result: EmailResult }) {
     result.score >= 40 ? "bg-amber-100 text-amber-800 border-amber-200" :
     "bg-gray-100 text-gray-600 border-gray-200";
 
-  // Download email as a plain-text .txt file (body text)
   const handleDownloadEmail = useCallback(() => {
     const dateStr = result.date ? format(new Date(result.date), "d MMM yyyy HH:mm") : "";
-    // Use HTML body if available, otherwise fall back to plain text wrapped in <pre>
     const bodyContent = result.bodyHtml
       ? result.bodyHtml
       : `<pre style="font-family:sans-serif;white-space:pre-wrap;">${result.bodyText || "(no body)"}</pre>`;
@@ -218,32 +210,14 @@ function EmailCard({ result }: { result: EmailResult }) {
     }
     printWin.document.write(html);
     printWin.document.close();
-    // Wait for images/styles to load before triggering print
-    printWin.onload = () => {
-      setTimeout(() => {
-        printWin.focus();
-        printWin.print();
-      }, 400);
-    };
-    // Fallback if onload doesn't fire (e.g. no external resources)
-    setTimeout(() => {
-      if (!printWin.closed) {
-        printWin.focus();
-        printWin.print();
-      }
-    }, 1200);
+    printWin.onload = () => { setTimeout(() => { printWin.focus(); printWin.print(); }, 400); };
+    setTimeout(() => { if (!printWin.closed) { printWin.focus(); printWin.print(); } }, 1200);
     toast.success("Email opened — use your browser's Save as PDF option.");
   }, [result]);
 
-  // Download an attachment directly from its S3 URL
   const handleDownloadAttachment = useCallback((att: AttachmentMeta) => {
-    // Use s3Url directly if available (public S3 bucket)
     const url = att.s3Url;
-    if (!url) {
-      toast.error("Attachment URL not available. Please try again.");
-      return;
-    }
-    // Open in new tab — browser will download if Content-Disposition is set, otherwise display
+    if (!url) { toast.error("Attachment URL not available. Please try again."); return; }
     const a = document.createElement("a");
     a.href = url;
     a.download = att.filename;
@@ -259,7 +233,6 @@ function EmailCard({ result }: { result: EmailResult }) {
     <>
       <Card className="border border-border">
         <CardContent className="p-4 space-y-3">
-          {/* Header row */}
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
@@ -289,41 +262,24 @@ function EmailCard({ result }: { result: EmailResult }) {
                 )}
               </div>
             </div>
-
-            {/* Action buttons */}
             <div className="flex items-center gap-1 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 px-2 text-xs gap-1"
-                onClick={() => setLinkDialogOpen(true)}
-                title="Link to a booking"
-              >
+              <Button variant="outline" size="sm" className="h-8 px-2 text-xs gap-1"
+                onClick={() => setLinkDialogOpen(true)} title="Link to a booking">
                 <Link2 className="h-3.5 w-3.5" />
                 Link
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 px-2 text-xs gap-1"
-                onClick={handleDownloadEmail}
-                title="Download email as text"
-              >
+              <Button variant="outline" size="sm" className="h-8 px-2 text-xs gap-1"
+                onClick={handleDownloadEmail} title="Download email as PDF">
                 <Download className="h-3.5 w-3.5" />
                 Email
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                onClick={() => setExpanded(!expanded)}
-              >
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
+                onClick={() => setExpanded(!expanded)}>
                 {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </Button>
             </div>
           </div>
 
-          {/* Match reasons */}
           <div className="flex flex-wrap gap-1.5">
             {result.matchReasons.map((reason) => (
               <Badge key={reason} className={`text-xs border ${REASON_COLORS[reason]}`}>
@@ -332,12 +288,10 @@ function EmailCard({ result }: { result: EmailResult }) {
             ))}
           </div>
 
-          {/* Snippet */}
           {!expanded && result.snippet && (
             <p className="text-xs text-muted-foreground line-clamp-2">{result.snippet}</p>
           )}
 
-          {/* Expanded body */}
           {expanded && (
             <div className="space-y-3">
               <Separator />
@@ -351,8 +305,6 @@ function EmailCard({ result }: { result: EmailResult }) {
                   {result.bodyText || "(no body)"}
                 </pre>
               )}
-
-              {/* Attachments */}
               {result.attachments.length > 0 && (
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Attachments</p>
@@ -362,13 +314,8 @@ function EmailCard({ result }: { result: EmailResult }) {
                         <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         <span className="font-medium truncate flex-1">{att.filename}</span>
                         <span className="text-muted-foreground shrink-0">{formatBytes(att.size)}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-xs gap-1 shrink-0"
-                          onClick={() => handleDownloadAttachment(att)}
-                          title={`Download ${att.filename}`}
-                        >
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs gap-1 shrink-0"
+                          onClick={() => handleDownloadAttachment(att)}>
                           <Download className="h-3 w-3" />
                           Download
                         </Button>
@@ -392,6 +339,127 @@ function EmailCard({ result }: { result: EmailResult }) {
   );
 }
 
+// ─── Booking Combobox ─────────────────────────────────────────────────────────
+
+interface BookingOption {
+  id: number;
+  clientName: string;
+  departureDate: string | null;
+  destination: string | null;
+  topdogRef: string | null;
+  crmRef: string | null;
+  agentName: string | null;
+}
+
+interface BookingComboboxProps {
+  bookings: BookingOption[];
+  selectedId: number | null;
+  onSelect: (id: number | null) => void;
+  isAdmin: boolean;
+}
+
+function BookingCombobox({ bookings, selectedId, onSelect, isAdmin }: BookingComboboxProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const selected = bookings.find((b) => b.id === selectedId);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return bookings;
+    const q = search.toLowerCase();
+    return bookings.filter((b) =>
+      b.clientName.toLowerCase().includes(q) ||
+      (b.destination ?? "").toLowerCase().includes(q) ||
+      (b.topdogRef ?? "").toLowerCase().includes(q) ||
+      (b.crmRef ?? "").toLowerCase().includes(q) ||
+      (b.agentName ?? "").toLowerCase().includes(q)
+    );
+  }, [bookings, search]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal h-auto min-h-10 py-2"
+        >
+          {selected ? (
+            <div className="text-left">
+              <div className="font-medium text-sm">{selected.clientName}</div>
+              <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
+                {selected.departureDate && (
+                  <span className="flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {format(new Date(selected.departureDate), "d MMM yyyy")}
+                  </span>
+                )}
+                {selected.destination && (
+                  <span className="flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    {selected.destination}
+                  </span>
+                )}
+                {isAdmin && selected.agentName && (
+                  <span className="flex items-center gap-1">
+                    <User className="h-3 w-3" />
+                    {selected.agentName}
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <span className="text-muted-foreground">Select a booking…</span>
+          )}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Search by client name, destination, or reference…"
+            value={search}
+            onValueChange={setSearch}
+          />
+          <CommandList className="max-h-64">
+            <CommandEmpty>No bookings found.</CommandEmpty>
+            <CommandGroup>
+              {filtered.slice(0, 100).map((b) => (
+                <CommandItem
+                  key={b.id}
+                  value={String(b.id)}
+                  onSelect={() => {
+                    onSelect(b.id === selectedId ? null : b.id);
+                    setOpen(false);
+                    setSearch("");
+                  }}
+                  className="flex items-start gap-2 py-2"
+                >
+                  <Check className={cn("h-4 w-4 mt-0.5 shrink-0", selectedId === b.id ? "opacity-100" : "opacity-0")} />
+                  <div className="min-w-0">
+                    <div className="font-medium text-sm">{b.clientName}</div>
+                    <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                      {b.departureDate && (
+                        <span>{format(new Date(b.departureDate), "d MMM yyyy")}</span>
+                      )}
+                      {b.destination && <span>{b.destination}</span>}
+                      {(b.topdogRef || b.crmRef) && (
+                        <span className="font-mono">{b.topdogRef ?? b.crmRef}</span>
+                      )}
+                      {isAdmin && b.agentName && <span className="text-primary/70">{b.agentName}</span>}
+                    </div>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BookingDocuments() {
@@ -399,33 +467,40 @@ export default function BookingDocuments() {
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
   const { data: isAvailable, isLoading: checkingAccess } = trpc.inbox.isAvailable.useQuery();
+  const { data: agentBookings = [], isLoading: loadingBookings } = trpc.inbox.listAgentBookings.useQuery(
+    undefined,
+    { enabled: !!isAvailable || isAdmin }
+  );
 
-  const [guestName, setGuestName] = useState("");
-  const [departureDate, setDepartureDate] = useState("");
-  const [bookingRef, setBookingRef] = useState("");
+  const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
+  const [extraRef, setExtraRef] = useState("");
   const [results, setResults] = useState<EmailResult[] | null>(null);
   const [searched, setSearched] = useState(false);
+  const [cachedCount, setCachedCount] = useState<number | null>(null);
 
-  const search = trpc.inbox.search.useMutation({
+  const selectedBooking = agentBookings.find((b) => b.id === selectedBookingId);
+
+  const search = trpc.inbox.searchForBooking.useMutation({
     onSuccess: (data) => {
-      setResults(data as EmailResult[]);
+      setResults(data.results as EmailResult[]);
+      setCachedCount(data.cachedCount);
       setSearched(true);
     },
-    onError: () => {
+    onError: (e) => {
       setResults([]);
       setSearched(true);
+      toast.error(e.message);
     },
   });
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (!guestName.trim() || !departureDate) return;
+    if (!selectedBookingId) return;
     setResults(null);
     setSearched(false);
     search.mutate({
-      guestName: guestName.trim(),
-      departureDate,
-      bookingReference: bookingRef.trim() || undefined,
+      bookingId: selectedBookingId,
+      extraRef: extraRef.trim() || undefined,
     });
   }
 
@@ -458,7 +533,7 @@ export default function BookingDocuments() {
           Booking Documents
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Search the confirmations inbox for emails and documents related to a booking.
+          Search the confirmations inbox for supplier emails and documents related to one of your bookings.
         </p>
       </div>
 
@@ -467,10 +542,8 @@ export default function BookingDocuments() {
         <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
           <Info className="h-4 w-4 shrink-0 mt-0.5" />
           <div>
-            <strong>Admin mode.</strong> You are searching the full email cache.
-            {!isAvailable && " Agents cannot currently access this feature — enable it in the "}
-            {!isAvailable && <a href="/admin/inbox-config" className="underline">Inbox Configuration</a>}
-            {!isAvailable && " page once testing is complete."}
+            <strong>Admin mode.</strong> You can search across all agents' bookings.
+            {!isAvailable && " Agents cannot currently access this feature — it will auto-enable once IMAP is configured."}
           </div>
         </div>
       )}
@@ -478,45 +551,69 @@ export default function BookingDocuments() {
       {/* Search Form */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Search</CardTitle>
+          <CardTitle className="text-base">Find Documents</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSearch} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="guestName">Guest Name <span className="text-destructive">*</span></Label>
-                <Input
-                  id="guestName"
-                  value={guestName}
-                  onChange={(e) => setGuestName(e.target.value)}
-                  placeholder="e.g. John Smith"
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="departureDate">Departure Date <span className="text-destructive">*</span></Label>
-                <Input
-                  id="departureDate"
-                  type="date"
-                  value={departureDate}
-                  onChange={(e) => setDepartureDate(e.target.value)}
-                  required
-                />
-                <p className="text-xs text-muted-foreground">A ±3 day window is applied automatically.</p>
-              </div>
-            </div>
+            {/* Booking selector */}
             <div className="space-y-1.5">
-              <Label htmlFor="bookingRef">Supplier Reference <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Label>Select Booking <span className="text-destructive">*</span></Label>
+              {loadingBookings ? (
+                <div className="h-10 bg-muted animate-pulse rounded-md" />
+              ) : agentBookings.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">
+                  No bookings found. Bookings are synced from Orbit automatically.
+                </p>
+              ) : (
+                <BookingCombobox
+                  bookings={agentBookings}
+                  selectedId={selectedBookingId}
+                  onSelect={setSelectedBookingId}
+                  isAdmin={isAdmin}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                The search will use the client name and departure date from the selected booking.
+                A ±3 day window is applied to the departure date automatically.
+              </p>
+            </div>
+
+            {/* Selected booking summary */}
+            {selectedBooking && (
+              <div className="bg-muted/40 rounded-md px-3 py-2 text-xs text-muted-foreground space-y-1">
+                <div className="flex items-center gap-4 flex-wrap">
+                  <span><strong className="text-foreground">Client:</strong> {selectedBooking.clientName}</span>
+                  {selectedBooking.departureDate && (
+                    <span><strong className="text-foreground">Departure:</strong> {format(new Date(selectedBooking.departureDate), "d MMM yyyy")}</span>
+                  )}
+                  {selectedBooking.destination && (
+                    <span><strong className="text-foreground">Destination:</strong> {selectedBooking.destination}</span>
+                  )}
+                  {(selectedBooking.topdogRef || selectedBooking.crmRef) && (
+                    <span><strong className="text-foreground">Ref:</strong> {selectedBooking.topdogRef ?? selectedBooking.crmRef}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Optional extra reference */}
+            <div className="space-y-1.5">
+              <Label htmlFor="extraRef">
+                Supplier Reference <span className="text-muted-foreground text-xs">(optional)</span>
+              </Label>
               <Input
-                id="bookingRef"
-                value={bookingRef}
-                onChange={(e) => setBookingRef(e.target.value)}
+                id="extraRef"
+                value={extraRef}
+                onChange={(e) => setExtraRef(e.target.value)}
                 placeholder="e.g. supplier confirmation number"
                 className="max-w-xs"
               />
-              <p className="text-xs text-muted-foreground">Enter the supplier's own reference number, not a Topdog or PTS reference.</p>
+              <p className="text-xs text-muted-foreground">
+                Add the supplier's own reference to narrow results further.
+              </p>
             </div>
-            <Button type="submit" disabled={search.isPending || !guestName.trim() || !departureDate}>
+
+            <Button type="submit" disabled={search.isPending || !selectedBookingId}>
               {search.isPending ? (
                 <>
                   <Search className="h-4 w-4 mr-2 animate-pulse" />
@@ -533,13 +630,14 @@ export default function BookingDocuments() {
         </CardContent>
       </Card>
 
-      {/* Results */}
+      {/* Searching indicator */}
       {search.isPending && (
         <div className="text-center py-8 text-muted-foreground text-sm">
           Searching the email cache…
         </div>
       )}
 
+      {/* Results */}
       {searched && !search.isPending && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -558,12 +656,22 @@ export default function BookingDocuments() {
               <CardContent className="p-6 text-center space-y-2">
                 <Mail className="h-10 w-10 text-muted-foreground mx-auto" />
                 <p className="text-sm text-muted-foreground">
-                  No emails matched <strong>{guestName}</strong> with a departure date around{" "}
-                  <strong>{departureDate ? format(new Date(departureDate), "d MMM yyyy") : ""}</strong>.
+                  No emails matched <strong>{selectedBooking?.clientName}</strong>
+                  {selectedBooking?.departureDate && (
+                    <> with a departure date around <strong>{format(new Date(selectedBooking.departureDate), "d MMM yyyy")}</strong></>
+                  )}.
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  Try a different spelling or date. If the import is still running, try again in a few minutes.
-                </p>
+                {cachedCount !== null && cachedCount > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {cachedCount.toLocaleString()} emails are cached. Try adding a supplier reference above to narrow results,
+                    or check that the client name in the portal matches how it appears in the supplier confirmation.
+                  </p>
+                )}
+                {cachedCount === 0 && (
+                  <p className="text-xs text-amber-600">
+                    The email cache is empty. Please ask an administrator to run an import from the Inbox Configuration page.
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}
@@ -572,15 +680,6 @@ export default function BookingDocuments() {
             <EmailCard key={r.uid} result={r} />
           ))}
         </div>
-      )}
-
-      {search.error && (
-        <Card className="border-destructive">
-          <CardContent className="p-4 flex items-start gap-2 text-destructive text-sm">
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-            {search.error.message}
-          </CardContent>
-        </Card>
       )}
     </div>
   );

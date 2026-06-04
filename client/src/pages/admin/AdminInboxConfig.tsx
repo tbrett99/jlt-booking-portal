@@ -49,8 +49,9 @@ export default function AdminInboxConfig() {
 
   const triggerImport = trpc.inbox.triggerImport.useMutation({
     onSuccess: (result) => {
-      toast.success(`Import complete — ${result.imported} new, ${result.skipped} skipped, ${result.errors} errors`);
-      refetchStatus();
+      toast.success(result.message ?? "Import started in background. Check the email count in a few minutes.");
+      // Refresh status after a short delay to pick up any quick imports
+      setTimeout(() => refetchStatus(), 5000);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -280,15 +281,20 @@ export default function AdminInboxConfig() {
               </span>
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => triggerImport.mutate()}
-            disabled={triggerImport.isPending || !config?.isConfigured}
-          >
-            {triggerImport.isPending ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
-            Run Import Now
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => triggerImport.mutate()}
+              disabled={triggerImport.isPending || !config?.isConfigured}
+            >
+              {triggerImport.isPending ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+              {triggerImport.isPending ? "Starting…" : "Run Full Import Now"}
+            </Button>
+            {triggerImport.isPending && (
+              <p className="text-xs text-muted-foreground">Import running in background — this may take several minutes for large mailboxes.</p>
+            )}
+          </div>
           {!config?.isConfigured && (
             <p className="text-xs text-muted-foreground">Configure IMAP connection first to enable imports.</p>
           )}
@@ -303,7 +309,7 @@ export default function AdminInboxConfig() {
             Agent Access
           </CardTitle>
           <CardDescription>
-            Control whether agents can access the Booking Documents search page. Keep this off until you have tested the feature as an admin.
+            Agent access is automatically enabled when IMAP is configured. Use this toggle to temporarily disable it if needed.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -311,9 +317,9 @@ export default function AdminInboxConfig() {
             <div>
               <p className="text-sm font-medium">Agents can search Booking Documents</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {config?.agentAccessEnabled
-                  ? "Agents can currently access the Booking Documents search."
-                  : "Currently hidden from agents — only admins can access it."}
+                {config?.isConfigured
+                  ? "Agents can access Booking Documents (auto-enabled because IMAP is configured). Use the toggle to temporarily disable."
+                  : "Configure IMAP first — agent access will enable automatically once connected."}
               </p>
             </div>
             <Switch

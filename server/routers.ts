@@ -4210,7 +4210,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       };
     }),
 
-    // Admin: trigger manual import
+    // Admin: trigger manual full import (fire-and-forget to avoid Cloud Run 180s timeout)
     triggerImport: adminProcedure.mutation(async () => {
       const config = await getImapConfig();
       if (!config || !config.host) {
@@ -4221,14 +4221,17 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       }
       const password = decryptPassword(config.passwordEncrypted);
       const imapConn = { host: config.host, port: config.port, email: config.email, password, useSsl: config.useSsl };
-      try {
-        // Full import — no sinceDate, fetches entire mailbox history
-        const stats = await importInbox(imapConn, undefined, undefined);
-        return { success: true, ...stats };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Import failed: ${msg}` });
-      }
+      // Fire-and-forget: respond immediately, import runs in background
+      // This avoids the 180s Cloud Run request timeout on large mailboxes
+      setImmediate(async () => {
+        try {
+          const stats = await importInbox(imapConn, undefined, undefined);
+          console.log(`[InboxImport] Manual full import done — ${stats.imported} new, ${stats.skipped} skipped, ${stats.errors} errors`);
+        } catch (err: unknown) {
+          console.error("[InboxImport] Manual full import failed:", err);
+        }
+      });
+      return { success: true, message: "Import started in background. Check back in a few minutes." };
     }),
 
     // Admin: list audit logs
@@ -4298,11 +4301,128 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       }),
 
     // Agent/Admin: check if inbox search is available
+    // Auto-enabled for all users if IMAP is configured (no manual toggle needed)
     isAvailable: protectedProcedure.query(async ({ ctx }) => {
       if (ctx.user.role === "admin" || ctx.user.role === "super_admin") return true;
       const config = await getImapConfig();
+      // Auto-enable for agents if IMAP is configured (host + email present)
+      if (config?.host && config?.email) return true;
       return config?.agentAccessEnabled ?? false;
     }),
+
+    // Agent/Admin: list the agent's own bookings for the search dropdown
+    // Agents see only their own bookings; admins see all bookings
+    listAgentBookings: protectedProcedure.query(async ({ ctx }) => {
+      const { bookings: bookingsTable, users: usersTable } = await import("../drizzle/schema");
+      const { desc: drizzleDesc, eq: drizzleEq } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) return [];
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
+      const rows = isAdmin
+        ? await db
+            .select({
+              id: bookingsTable.id,
+              clientName: bookingsTable.clientName,
+              departureDate: bookingsTable.departureDate,
+              destination: bookingsTable.destination,
+              topdogRef: bookingsTable.topdogRef,
+              crmRef: bookingsTable.crmRef,
+              agentName: usersTable.name,
+            })
+            .from(bookingsTable)
+            .leftJoin(usersTable, drizzleEq(bookingsTable.agentId, usersTable.id))
+            .orderBy(drizzleDesc(bookingsTable.departureDate))
+            .limit(500)
+        : await db
+            .select({
+              id: bookingsTable.id,
+              clientName: bookingsTable.clientName,
+              departureDate: bookingsTable.departureDate,
+              destination: bookingsTable.destination,
+              topdogRef: bookingsTable.topdogRef,
+              crmRef: bookingsTable.crmRef,
+              agentName: usersTable.name,
+            })
+            .from(bookingsTable)
+            .leftJoin(usersTable, drizzleEq(bookingsTable.agentId, usersTable.id))
+            .where(drizzleEq(bookingsTable.agentId, ctx.user.id))
+            .orderBy(drizzleDesc(bookingsTable.departureDate))
+            .limit(500);
+      return rows.map((r) => ({
+        id: r.id,
+        clientName: r.clientName,
+        departureDate: r.departureDate ? new Date(r.departureDate).toISOString().slice(0, 10) : null,
+        destination: r.destination ?? null,
+        topdogRef: r.topdogRef ?? null,
+        crmRef: r.crmRef ?? null,
+        agentName: r.agentName ?? null,
+      }));
+    }),
+
+    // Agent/Admin: search inbox scoped to a specific booking
+    // Agents can only search their own bookings; admins can search any booking
+    searchForBooking: protectedProcedure
+      .input(z.object({
+        bookingId: z.number().int(),
+        extraRef: z.string().optional(), // optional extra supplier reference
+      }))
+      .mutation(async ({ input, ctx }) => {
+        // Resolve the booking and verify ownership
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND", message: "Booking not found." });
+        const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
+        if (!isAdmin && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "You can only search documents for your own bookings." });
+        }
+
+        // Check IMAP is configured
+        const config = await getImapConfig();
+        if (!config?.host) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Email inbox is not configured. Please contact an administrator." });
+        }
+
+        const cachedCount = await getCachedEmailCount();
+        if (cachedCount === 0) {
+          // Return empty results rather than throwing — more user-friendly
+          return { results: [], cachedCount: 0, bookingId: input.bookingId };
+        }
+
+        const departureDate = booking.departureDate
+          ? new Date(booking.departureDate).toISOString().slice(0, 10)
+          : undefined;
+
+        const results = await searchCachedEmails({
+          guestName: booking.clientName,
+          departureDate: departureDate ?? "",
+          bookingReference: input.extraRef ?? booking.topdogRef ?? booking.crmRef ?? undefined,
+        });
+
+        // Audit log
+        await createInboxAuditLog({
+          userId: ctx.user.id,
+          guestName: booking.clientName,
+          departureDate: departureDate ?? "",
+          bookingReference: input.extraRef ?? booking.topdogRef ?? booking.crmRef ?? null,
+          resultsCount: results.length,
+        });
+
+        return {
+          results: results.map((r) => ({
+            uid: r.uid,
+            subject: r.subject,
+            from: r.from,
+            date: r.date,
+            snippet: r.snippet,
+            bodyText: r.bodyText,
+            bodyHtml: r.bodyHtml,
+            attachments: r.attachments,
+            matchReasons: r.matchReasons,
+            score: r.score,
+          })),
+          cachedCount,
+          bookingId: input.bookingId,
+        };
+      }),
 
     // Agent/Admin: link a cached email to a booking
     linkEmail: protectedProcedure

@@ -2117,6 +2117,45 @@ async function startServer() {
     }
   });
 
+  // ── Scheduled: incremental IMAP inbox import (every 15 minutes via Heartbeat) ──
+  // Triggered by Manus Heartbeat cron. Runs incrementally (emails since last run).
+  // Auth: x-manus-cron-task-uid header (set by Heartbeat platform) OR EXPORT_TRIGGER_TOKEN bearer.
+  app.post("/api/scheduled/inbox-import", async (req, res) => {
+    const authHeader = req.headers["authorization"] ?? "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    const cronTaskUid = req.headers["x-manus-cron-task-uid"] as string | undefined;
+    const isHeartbeat = !!cronTaskUid;
+    const isTokenAuth = token && token === ENV.exportTriggerToken;
+    if (!isHeartbeat && !isTokenAuth) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    // Respond immediately — import runs in background to avoid timeout
+    res.json({ ok: true, message: "Inbox import started" });
+    // Fire-and-forget background import
+    (async () => {
+      try {
+        const { getImapConfig } = await import("../db");
+        const { importInbox, decryptPassword } = await import("../imap");
+        const config = await getImapConfig();
+        if (!config || !config.host || !config.email) {
+          console.log("[InboxImport] IMAP not configured — skipping");
+          return;
+        }
+        const password = decryptPassword(config.passwordEncrypted);
+        // Incremental: import emails from last 20 minutes (overlapping window to avoid gaps)
+        const sinceDate = new Date(Date.now() - 20 * 60 * 1000);
+        const result = await importInbox(
+          { host: config.host, port: config.port, email: config.email, password, useSsl: config.useSsl ?? true },
+          undefined,
+          sinceDate
+        );
+        console.log(`[InboxImport] Heartbeat done — ${result.imported} new, ${result.skipped} skipped, ${result.errors} errors`);
+      } catch (err: any) {
+        console.error("[InboxImport] Heartbeat import failed:", err?.message);
+      }
+    })();
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",
