@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -99,7 +98,6 @@ export default function OrbitAccess() {
   const [selectedAgent, setSelectedAgent] = useState<any | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [bulkEmailOpen, setBulkEmailOpen] = useState(false);
-  const [instructions, setInstructions] = useState("");
 
   const utils = trpc.useUtils();
 
@@ -364,17 +362,6 @@ export default function OrbitAccess() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div>
-              <label className="text-sm font-medium">Setup Instructions</label>
-              <p className="text-xs text-muted-foreground mb-1.5">These instructions will appear in the email below the agent's username.</p>
-              <Textarea
-                placeholder="Paste the Aviate setup instructions here…"
-                value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
-                rows={8}
-                className="text-sm font-mono"
-              />
-            </div>
             <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground">
               <strong>Recipients ({readyToSend.length}):</strong>{" "}
               {readyToSend.slice(0, 5).map((a: any) => a.name ?? a.email).join(", ")}
@@ -384,8 +371,8 @@ export default function OrbitAccess() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkEmailOpen(false)}>Cancel</Button>
             <Button
-              disabled={!instructions.trim() || bulkSend.isPending}
-              onClick={() => bulkSend.mutate({ instructions })}
+              disabled={bulkSend.isPending}
+              onClick={() => bulkSend.mutate({})}
               className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
             >
               <Mail size={14} />

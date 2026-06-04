@@ -1111,7 +1111,7 @@ export const crmRouter = router({
       }),
 
     bulkSendAviateWelcome: adminProcedure
-      .input(z.object({ instructions: z.string().min(1) }))
+      .input(z.object({ instructions: z.string().optional() }))
       .mutation(async ({ input }) => {
         const { getDb } = await import("./db");
         const db = await getDb();
@@ -1154,7 +1154,7 @@ export const crmRouter = router({
         for (const login of pending) {
           const agent = agentMap.get(login.userId);
           if (!agent?.email) { skipped++; continue; }
-          const instructionsHtml = input.instructions.replace(/\n/g, "<br>");
+          const instructionsHtml = (input.instructions ?? "").replace(/\n/g, "<br>");
           try {
             await transporter.sendMail({
               from: `"JLT Group" <support@thejltgroup.co.uk>`,
@@ -1202,7 +1202,7 @@ export const crmRouter = router({
                     </div>
                   </div>
 
-                  <div style="color:#414141;margin-top:16px;">${instructionsHtml}</div>
+                  ${instructionsHtml ? `<div style="color:#414141;margin-top:16px;">${instructionsHtml}</div>` : ""}
                   <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
                   <p style="color:#888;font-size:12px;text-align:center;">JLT Group Booking Portal &mdash; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p>
                 </div>
