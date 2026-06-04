@@ -2528,3 +2528,4 @@
 - [x] Feature: Aviate onboarding — server procedures: updateAviateUsername, bulkSendAviateWelcome, enhanced listOrbitAgents
 - [x] Feature: Aviate onboarding — Orbit Access page: filter tabs, inline username entry, export CSV, bulk send welcome email
 - [x] Feature: Aviate onboarding — show Aviate username on CRM agent list and CRM sheet Suppliers tab
+- [x] Fix: Recruitment pipeline Won stage date filter — when filtering by "Won" stage with a date range, now filters by changedAt from recruitment_stage_history (when prospect moved to "won") instead of createdAt (enquiry date). Uses inArray subquery on recruitmentStageHistory.

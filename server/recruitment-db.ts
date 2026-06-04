@@ -10,7 +10,7 @@ import {
   type RecruitmentProspect,
   type InsertRecruitmentProspect,
 } from "../drizzle/schema";
-import { eq, desc, like, or, and, isNull, getTableColumns, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, like, or, and, isNull, getTableColumns, gte, lte, sql, inArray } from "drizzle-orm";
 
 // ─── Application token helpers ──────────────────────────────────────────────────
 
@@ -91,6 +91,11 @@ export async function getAllRecruitmentProspects(opts?: {
   const db = await getDb();
   if (!db) return [];
 
+  // When filtering by "won" stage with a date range, we want to filter by
+  // when the prospect moved to "won" (from stage history), not when they first enquired.
+  const isWonStageWithDateFilter =
+    opts?.stage === "won" && (opts?.dateFrom || opts?.dateTo);
+
   const conditions: any[] = [];
 
   if (opts?.stage && opts.stage !== "all") {
@@ -101,15 +106,16 @@ export async function getAllRecruitmentProspects(opts?: {
     conditions.push(eq(recruitmentProspects.referredById, opts.referredById));
   }
 
-  if (opts?.dateFrom) {
-    conditions.push(gte(recruitmentProspects.createdAt, opts.dateFrom));
-  }
-
-  if (opts?.dateTo) {
-    // Include the full end day by setting time to 23:59:59
-    const endOfDay = new Date(opts.dateTo);
-    endOfDay.setHours(23, 59, 59, 999);
-    conditions.push(lte(recruitmentProspects.createdAt, endOfDay));
+  if (!isWonStageWithDateFilter) {
+    // For non-won stages, filter by enquiry date (createdAt)
+    if (opts?.dateFrom) {
+      conditions.push(gte(recruitmentProspects.createdAt, opts.dateFrom));
+    }
+    if (opts?.dateTo) {
+      const endOfDay = new Date(opts.dateTo);
+      endOfDay.setHours(23, 59, 59, 999);
+      conditions.push(lte(recruitmentProspects.createdAt, endOfDay));
+    }
   }
 
   if (opts?.hearAboutUs && opts.hearAboutUs !== "all") {
@@ -133,6 +139,30 @@ export async function getAllRecruitmentProspects(opts?: {
         like(recruitmentProspects.phone, q)
       )
     );
+  }
+
+  // For "won" stage with date range: filter by when the prospect moved to "won"
+  // using a subquery on recruitment_stage_history.changedAt
+  if (isWonStageWithDateFilter) {
+    const endOfDay = opts!.dateTo ? new Date(opts!.dateTo) : null;
+    if (endOfDay) endOfDay.setHours(23, 59, 59, 999);
+
+    const historyConditions: any[] = [
+      eq(recruitmentStageHistory.toStage, "won"),
+    ];
+    if (opts!.dateFrom) {
+      historyConditions.push(gte(recruitmentStageHistory.changedAt, opts!.dateFrom));
+    }
+    if (endOfDay) {
+      historyConditions.push(lte(recruitmentStageHistory.changedAt, endOfDay));
+    }
+
+    const wonProspectIds = db
+      .selectDistinct({ id: recruitmentStageHistory.prospectId })
+      .from(recruitmentStageHistory)
+      .where(and(...historyConditions));
+
+    conditions.push(inArray(recruitmentProspects.id, wonProspectIds));
   }
 
   const baseQuery = db
