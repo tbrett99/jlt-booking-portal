@@ -2556,3 +2556,7 @@
 - [ ] Fix sign-ups count — verify users.createdAt date range matches the selected week
 - [ ] Fix any other metrics found to be wrong during audit
 - [ ] Verify all fixed figures match raw SQL counts
+## Sign-Ups Metric Fix (June 2026)
+- [ ] Backfill missing recruitment_stage_history 'won' entries for all prospects with pipelineStage='won' but no history record
+- [ ] Fix ensureProspectWon to log errors instead of swallowing them silently
+- [ ] Update super admin dashboard New Sign-Ups metric to use recruitment_stage_history.changedAt (toStage='won')

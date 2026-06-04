@@ -40,6 +40,7 @@ export const superAdminRouter = router({
         gcSubscriptions,
         gcPaymentEvents,
         gcPaymentFailures,
+        gcMandates,
         adminTasks,
         notes,
         emailCampaigns,
@@ -64,26 +65,25 @@ export const superAdminRouter = router({
 
       // ─── SECTION 1: Membership & Retention ────────────────────────────────
 
-      // New sign-ups: confirmed GoCardless one-off joining fee payments only
-      // Exclude subscription (monthly DD) payments by filtering out rawPayload containing "subscription"
+      // New sign-ups: count gc_mandates where joining fee was paid in the week.
+      // This is the single source of truth — one record per agent, set exactly when GoCardless
+      // confirms the one-off joining fee payment. Never includes monthly DD collections.
       const newSignupsThisWeek = await db
         .select({ count: sql<number>`COUNT(*)` })
-        .from(gcPaymentEvents)
+        .from(gcMandates)
         .where(and(
-          eq(gcPaymentEvents.eventType, "payments_confirmed"),
-          gte(gcPaymentEvents.occurredAt, weekStartDate),
-          lt(gcPaymentEvents.occurredAt, weekEndDate),
-          notLike(gcPaymentEvents.rawPayload, '%"subscription"%'),
+          isNotNull(gcMandates.joiningFeePaidAt),
+          gte(gcMandates.joiningFeePaidAt, weekStartDate),
+          lt(gcMandates.joiningFeePaidAt, weekEndDate),
         ));
 
       const newSignupsPrevWeek = await db
         .select({ count: sql<number>`COUNT(*)` })
-        .from(gcPaymentEvents)
+        .from(gcMandates)
         .where(and(
-          eq(gcPaymentEvents.eventType, "payments_confirmed"),
-          gte(gcPaymentEvents.occurredAt, prevWeekStart),
-          lt(gcPaymentEvents.occurredAt, prevWeekEnd),
-          notLike(gcPaymentEvents.rawPayload, '%"subscription"%'),
+          isNotNull(gcMandates.joiningFeePaidAt),
+          gte(gcMandates.joiningFeePaidAt, prevWeekStart),
+          lt(gcMandates.joiningFeePaidAt, prevWeekEnd),
         ));
 
       // Cancellations / churn this week
@@ -858,6 +858,7 @@ export const superAdminRouter = router({
         remittanceBatches,
       } = await import("../drizzle/schema");
       const { gte, lt, and, eq, sql, isNotNull, inArray, notLike } = await import("drizzle-orm");
+      const { gcMandates: gcMandatesTrend } = await import("../drizzle/schema");
 
       const weeks: Array<{ label: string; start: Date; end: Date }> = [];
       const now = new Date();
@@ -882,8 +883,8 @@ export const superAdminRouter = router({
         let value = 0;
         if (input.metric === "newSignups") {
           const r = await db.select({ count: sql<number>`COUNT(*)` })
-            .from(gcPaymentEvents)
-            .where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, week.start), lt(gcPaymentEvents.occurredAt, week.end), notLike(gcPaymentEvents.rawPayload, '%"subscription"%')));
+            .from(gcMandatesTrend)
+            .where(and(isNotNull(gcMandatesTrend.joiningFeePaidAt), gte(gcMandatesTrend.joiningFeePaidAt, week.start), lt(gcMandatesTrend.joiningFeePaidAt, week.end)));
           value = Number(r[0]?.count ?? 0);
         } else if (input.metric === "cancellations") {
           const r = await db.select({ count: sql<number>`COUNT(*)` })
@@ -924,7 +925,8 @@ export const superAdminRouter = router({
     }),
 
   /**
-   * Drill-down: list of agents who signed up (moved to won) in a given week
+   * Drill-down: list of agents who paid their joining fee in a given week.
+   * Uses gc_mandates.joiningFeePaidAt — the same source as the sign-ups count metric.
    */
   drillDownSignups: superAdminProcedure
     .input(z.object({ weekStart: z.string() }))
@@ -932,31 +934,32 @@ export const superAdminRouter = router({
       const { getDb } = await import("./db");
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-      const { recruitmentStageHistory, recruitmentProspects } = await import("../drizzle/schema");
-      const { gte, lt, and, eq } = await import("drizzle-orm");
+      const { gcMandates, agentCrmProfiles, users } = await import("../drizzle/schema");
+      const { gte, lt, and, eq, isNotNull } = await import("drizzle-orm");
       const [wsYear, wsMon, wsDay] = input.weekStart.split("-").map(Number);
       const weekStartDate = new Date(wsYear, wsMon - 1, wsDay, 0, 0, 0, 0);
       const weekEndDate = new Date(weekStartDate);
       weekEndDate.setDate(weekEndDate.getDate() + 7);
       return db
         .select({
-          id: recruitmentStageHistory.id,
-          prospectId: recruitmentStageHistory.prospectId,
-          firstName: recruitmentProspects.firstName,
-          lastName: recruitmentProspects.lastName,
-          email: recruitmentProspects.email,
-          tierInterest: recruitmentProspects.tierInterest,
-          changedAt: recruitmentStageHistory.changedAt,
-          changedByName: recruitmentStageHistory.changedByName,
+          id: gcMandates.id,
+          prospectId: gcMandates.id,
+          firstName: users.name,
+          lastName: agentCrmProfiles.uniqueAgentId,
+          email: users.email,
+          tierInterest: agentCrmProfiles.membershipTier,
+          changedAt: gcMandates.joiningFeePaidAt,
+          changedByName: agentCrmProfiles.uniqueAgentId,
         })
-        .from(recruitmentStageHistory)
-        .innerJoin(recruitmentProspects, eq(recruitmentStageHistory.prospectId, recruitmentProspects.id))
+        .from(gcMandates)
+        .innerJoin(users, eq(gcMandates.userId, users.id))
+        .leftJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, gcMandates.userId))
         .where(and(
-          eq(recruitmentStageHistory.toStage, "won"),
-          gte(recruitmentStageHistory.changedAt, weekStartDate),
-          lt(recruitmentStageHistory.changedAt, weekEndDate),
+          isNotNull(gcMandates.joiningFeePaidAt),
+          gte(gcMandates.joiningFeePaidAt, weekStartDate),
+          lt(gcMandates.joiningFeePaidAt, weekEndDate),
         ))
-        .orderBy(recruitmentStageHistory.changedAt);
+        .orderBy(gcMandates.joiningFeePaidAt);
     }),
 
   /**
