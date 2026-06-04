@@ -64,24 +64,24 @@ export const superAdminRouter = router({
 
       // ─── SECTION 1: Membership & Retention ────────────────────────────────
 
-      // New sign-ups: agents who moved to "won" in recruitment this week
-      // (this is when an agent joins — the recruitment stage history records it)
+      // New sign-ups: confirmed GoCardless payments (all one-off joining fee payments)
+      // Every payments_confirmed event in GC is a joining fee — no amount filter needed
       const newSignupsThisWeek = await db
         .select({ count: sql<number>`COUNT(*)` })
-        .from(recruitmentStageHistory)
+        .from(gcPaymentEvents)
         .where(and(
-          eq(recruitmentStageHistory.toStage, "won"),
-          gte(recruitmentStageHistory.changedAt, weekStartDate),
-          lt(recruitmentStageHistory.changedAt, weekEndDate),
+          eq(gcPaymentEvents.eventType, "payments_confirmed"),
+          gte(gcPaymentEvents.occurredAt, weekStartDate),
+          lt(gcPaymentEvents.occurredAt, weekEndDate),
         ));
 
       const newSignupsPrevWeek = await db
         .select({ count: sql<number>`COUNT(*)` })
-        .from(recruitmentStageHistory)
+        .from(gcPaymentEvents)
         .where(and(
-          eq(recruitmentStageHistory.toStage, "won"),
-          gte(recruitmentStageHistory.changedAt, prevWeekStart),
-          lt(recruitmentStageHistory.changedAt, prevWeekEnd),
+          eq(gcPaymentEvents.eventType, "payments_confirmed"),
+          gte(gcPaymentEvents.occurredAt, prevWeekStart),
+          lt(gcPaymentEvents.occurredAt, prevWeekEnd),
         ));
 
       // Cancellations / churn this week
@@ -878,8 +878,8 @@ export const superAdminRouter = router({
         let value = 0;
         if (input.metric === "newSignups") {
           const r = await db.select({ count: sql<number>`COUNT(*)` })
-            .from(recruitmentStageHistory)
-            .where(and(eq(recruitmentStageHistory.toStage, "won"), gte(recruitmentStageHistory.changedAt, week.start), lt(recruitmentStageHistory.changedAt, week.end)));
+            .from(gcPaymentEvents)
+            .where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, week.start), lt(gcPaymentEvents.occurredAt, week.end)));
           value = Number(r[0]?.count ?? 0);
         } else if (input.metric === "cancellations") {
           const r = await db.select({ count: sql<number>`COUNT(*)` })
