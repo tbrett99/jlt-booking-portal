@@ -279,10 +279,12 @@ export default function AmendmentForm() {
                             <div className="col-span-2 space-y-1">
                               <Label className="text-xs">
                                 Notes <span className="text-destructive">*</span>
-                                <span className="ml-1 font-bold text-amber-700">— include the exact new NET amount due to the supplier</span>
                               </Label>
+                              <p className="text-xs font-bold text-amber-800 mb-1">
+                                You must state the final balance amount due to the supplier (NET, not gross), less anything already paid to them.
+                              </p>
                               <Textarea
-                                placeholder="e.g. New NET amount due to supplier is £1,234.56. Reason: price increase from supplier."
+                                placeholder="e.g. Final balance due to supplier (NET, less deposit already paid): £1,234.56. Reason for cost change: price increase notified by supplier."
                                 value={item.notes}
                                 onChange={(e) => updateRow(item.id, "notes", e.target.value)}
                                 className="min-h-[80px] text-sm"

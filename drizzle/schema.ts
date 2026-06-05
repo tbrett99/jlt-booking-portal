@@ -99,9 +99,12 @@ export const amendments = mysqlTable("amendments", {
   isReimbursementDoc: boolean("isReimbursementDoc").default(false).notNull(), // true = created from doc upload
   pipelineStage: mysqlEnum("pipelineStage", ["To Do", "In Progress", "Actioned"]).default("To Do").notNull(),
   assignedToId: int("assignedToId"), // FK → users.id
-  status: mysqlEnum("status", ["pending", "actioned"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "actioned", "rejected"]).default("pending").notNull(),
   actionedAt: timestamp("actionedAt"),
   actionedById: int("actionedById"), // FK → users.id
+  rejectionReason: text("rejectionReason"), // populated when status = rejected
+  rejectedAt: timestamp("rejectedAt"),
+  rejectedById: int("rejectedById"), // FK → users.id
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

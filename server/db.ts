@@ -790,6 +790,15 @@ export async function updateAmendmentPipeline(amendmentId: number, data: {
   return result[0];
 }
 
+export async function rejectAmendment(amendmentId: number, adminId: number, reason: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .update(amendments)
+    .set({ status: "rejected", rejectionReason: reason, rejectedAt: new Date(), rejectedById: adminId })
+    .where(eq(amendments.id, amendmentId));
+}
+
 // ─── Cancellations ────────────────────────────────────────────────────────────
 
 export async function createCancellation(data: { bookingId: number; agentId: number }) {

@@ -1959,6 +1959,51 @@ export const appRouter = router({
         }
         return { success: true };
       }),
+    reject: adminProcedure
+      .input(z.object({
+        amendmentId: z.number(),
+        bookingId: z.number(),
+        reason: z.string().min(1, "Rejection reason is required"),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { rejectAmendment } = await import("./db");
+        await rejectAmendment(input.amendmentId, ctx.user.id, input.reason);
+        const booking = await getBookingById(input.bookingId);
+        if (booking) {
+          const agent = await getUserById(booking.agentId);
+          if (agent?.email) {
+            await sendNotificationEmail({
+              triggerKey: "amendment_actioned",
+              toEmail: agent.email,
+              toName: agent.name ?? "Agent",
+              variables: {
+                clientName: booking.clientName,
+                rejectionReason: input.reason,
+                subject: `Amendment Rejected — ${booking.clientName}`,
+              },
+              bookingId: booking.id,
+              overrideSubject: `Amendment Rejected — ${booking.clientName}`,
+              overrideBody: `Hi ${agent.name ?? "there"},\n\nYour amendment request for booking <strong>${booking.clientName}</strong> (Booking #${booking.id}) has been <strong>rejected</strong>.\n\n<strong>Reason:</strong>\n${input.reason}\n\nPlease review the reason above and resubmit your amendment with the correct information.\n\nIf you have any questions, please contact the admin team.`,
+            });
+          }
+          // In-app notification to agent
+          await createInAppNotification({
+            userId: booking.agentId,
+            bookingId: booking.id,
+            message: `Your amendment for "${booking.clientName}" has been rejected. Reason: ${input.reason.slice(0, 100)}${input.reason.length > 100 ? "..." : ""}`,
+            linkUrl: `/bookings/${booking.id}`,
+          });
+          // Audit note
+          await createNote({
+            bookingId: booking.id,
+            authorId: ctx.user.id,
+            content: `[System] Amendment rejected by ${ctx.user.name ?? "Admin"}. Reason: ${input.reason}`,
+            isInternal: true,
+          });
+        }
+        return { success: true };
+      }),
+
     updatePipeline: adminProcedure
       .input(z.object({
         amendmentId: z.number(),

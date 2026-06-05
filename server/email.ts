@@ -134,6 +134,8 @@ export async function sendNotificationEmail(params: {
   toName: string;
   variables?: Record<string, string>;
   bookingId?: number;
+  overrideSubject?: string;
+  overrideBody?: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
     // Respect global notifications kill-switch
@@ -146,8 +148,8 @@ export async function sendNotificationEmail(params: {
       return { success: false, error: "Template not found or inactive" };
     }
 
-    let subject = template.subject;
-    let body = template.bodyHtml;
+    let subject = params.overrideSubject ?? template.subject;
+    let body = params.overrideBody ?? template.bodyHtml;
 
     // Replace template variables like {{clientName}}, {{bookingId}}, etc.
     const vars: Record<string, string> = {
