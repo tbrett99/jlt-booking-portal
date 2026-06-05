@@ -1912,20 +1912,7 @@ export const appRouter = router({
         return getLineItemsByAmendment(input.amendmentId);
       }),
     all: adminProcedure.query(async () => {
-      const amendments = await getAllAmendments();
-      // Enrich with booking details
-      const enriched = await Promise.all(
-        amendments.map(async (a) => {
-          const booking = await getBookingById(a.bookingId);
-          return {
-            ...a,
-            clientName: booking?.clientName ?? null,
-            ptsRef: booking?.ptsRef ?? null,
-            topdogRef: booking?.topdogRef ?? null,
-          };
-        })
-      );
-      return enriched;
+      return getAllAmendments();
     }),
     action: adminProcedure
       .input(z.object({ amendmentId: z.number(), bookingId: z.number() }))
