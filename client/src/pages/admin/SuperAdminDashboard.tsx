@@ -445,7 +445,7 @@ export default function SuperAdminDashboard() {
                   icon={UserPlus}
                   accent="blue"
                   wow={{ current: data.membership.newSignupsThisWeek, prev: data.membership.newSignupsPrevWeek }}
-                  sub="Agents moved to Won"
+                  sub="Joining fee payments confirmed"
                   onClick={() => setDrillDown("signups")}
                 />
                 <StatCard

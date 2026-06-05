@@ -1568,7 +1568,23 @@ async function startServer() {
           // paid_out fires separately when funds settle — sending on both caused duplicate receipts
           // Deduplication: GoCardless retries webhooks on slow responses, which can fire confirmed multiple times.
           // Guard against this by checking if a receipt was already sent for this exact GC payment ID.
+          // Skip receipt for in_notice / cancelled agents — their DD may still collect during notice period
+          // but we should not send membership receipt emails to agents who are leaving.
           if (event.action === "confirmed" && userId) {
+            // Pre-check agent status — skip receipt if in_notice or cancelled
+            let agentStatusForReceipt: string | null = null;
+            try {
+              const dbStatus = await getDb();
+              if (dbStatus) {
+                const { users: usersForStatus } = await import("../../drizzle/schema");
+                const { eq: eqStatus } = await import("drizzle-orm");
+                const [statusRow] = await dbStatus.select({ agentStatus: (usersForStatus as any).agentStatus, portalStatus: (usersForStatus as any).portalStatus }).from(usersForStatus).where(eqStatus(usersForStatus.id, userId)).limit(1);
+                agentStatusForReceipt = statusRow?.agentStatus ?? statusRow?.portalStatus ?? null;
+              }
+            } catch { /* non-critical */ }
+            if (agentStatusForReceipt === "in_notice" || agentStatusForReceipt === "cancelled") {
+              console.log(`[GC Webhook] Skipping receipt email for agent ${userId} — status: ${agentStatusForReceipt}`);
+            } else {
             try {
               const db2 = await getDb();
               // Check for existing receipt for this paymentId before sending
@@ -1622,6 +1638,7 @@ async function startServer() {
             } catch (receiptErr) {
               console.error("[GC Webhook] Failed to send receipt email:", receiptErr);
             }
+            } // end else (not in_notice/cancelled)
           }
           // ── Send failure email to agent + auto-suspend after 3 failures ──
           if (["failed", "charged_back"].includes(event.action) && userId) {
