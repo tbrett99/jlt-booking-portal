@@ -103,7 +103,24 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
+async function runMigrations() {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const { migrate } = await import("drizzle-orm/mysql2/migrator");
+    const { drizzle } = await import("drizzle-orm/mysql2");
+    const mysql = await import("mysql2/promise");
+    const conn = await mysql.default.createConnection(process.env.DATABASE_URL);
+    const db = drizzle(conn);
+    await migrate(db, { migrationsFolder: "drizzle" });
+    await conn.end();
+    console.log("[DB] Migrations applied successfully.");
+  } catch (err) {
+    console.error("[DB] Migration failed:", err);
+  }
+}
+
 async function startServer() {
+  await runMigrations();
   const app = express();
   // Trust the reverse proxy (Cloud Run / load balancer) so that req.protocol
   // correctly reflects the original HTTPS scheme via x-forwarded-proto.
