@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Plus, Trash2, CheckSquare, Square } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Trash2, CheckSquare, Square, AlertTriangle, Info } from "lucide-react";
 
 type LineItemType = "add_supplier" | "remove_supplier" | "change_cost" | "other";
 
@@ -50,11 +50,9 @@ export default function AmendmentForm() {
       const next = new Set(prev);
       if (next.has(type)) {
         next.delete(type);
-        // Remove all line items of this type
         setLineItems((items) => items.filter((li) => li.type !== type));
       } else {
         next.add(type);
-        // Add a default row for this type
         setLineItems((items) => [...items, newItem(type)]);
       }
       return next;
@@ -68,7 +66,6 @@ export default function AmendmentForm() {
   const removeRow = (itemId: string) => {
     setLineItems((items) => {
       const remaining = items.filter((li) => li.id !== itemId);
-      // If no rows left for this type, deselect the type
       const removedType = items.find((li) => li.id === itemId)?.type;
       if (removedType && !remaining.some((li) => li.type === removedType)) {
         setSelectedTypes((prev) => { const next = new Set(prev); next.delete(removedType); return next; });
@@ -87,11 +84,15 @@ export default function AmendmentForm() {
 
     // Validate required fields per type
     for (const item of lineItems) {
-      if (item.type !== "other") {
+      if (item.type === "other") {
+        if (!item.notes.trim()) { toast.error("Please describe the 'Other' amendment"); return; }
+      } else {
         if (!item.supplierName.trim()) { toast.error("Please enter a supplier name for all items"); return; }
         if (!item.cost.trim()) { toast.error("Please enter a cost for all items"); return; }
-      } else {
-        if (!item.notes.trim()) { toast.error("Please describe the 'Other' amendment"); return; }
+        if (item.type === "change_cost") {
+          if (!item.oldCost.trim()) { toast.error("Please enter the old cost for all 'Change Cost' items"); return; }
+          if (!item.notes.trim()) { toast.error("Please add notes for all 'Change Cost' items — include the exact new NET amount due to the supplier"); return; }
+        }
       }
     }
 
@@ -99,7 +100,7 @@ export default function AmendmentForm() {
     const summaryLines = lineItems.map((li) => {
       const cfg = TYPE_CONFIG[li.type];
       if (li.type === "other") return `Other: ${li.notes}`;
-      if (li.type === "change_cost") return `${cfg.label}: ${li.supplierName} — Old £${li.oldCost || "?"} → New £${li.cost}${li.notes ? ` (${li.notes})` : ""}`;
+      if (li.type === "change_cost") return `${cfg.label}: ${li.supplierName} — Old £${li.oldCost} → New £${li.cost}${li.notes ? ` (${li.notes})` : ""}`;
       return `${cfg.label}: ${li.supplierName} — £${li.cost}${li.notes ? ` (${li.notes})` : ""}`;
     });
     const details = summaryLines.join("\n");
@@ -186,6 +187,33 @@ export default function AmendmentForm() {
                   <Badge style={{ background: cfg.color, color: cfg.textColor, border: "none" }}>{cfg.label}</Badge>
                   <span className="font-normal text-muted-foreground text-xs">{cfg.description}</span>
                 </CardTitle>
+
+                {/* Change Cost — instruction banner */}
+                {type === "change_cost" && (
+                  <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                    <div className="flex items-start gap-2">
+                      <Info size={15} className="mt-0.5 flex-shrink-0 text-amber-600" />
+                      <p>
+                        <strong>You must provide the exact new NET amount due to the supplier.</strong>{" "}
+                        Enter this in the Notes field below. Amendments submitted without this information will be returned to you.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Other — rejection warning */}
+                {type === "other" && (
+                  <div className="mt-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle size={15} className="mt-0.5 flex-shrink-0 text-red-600" />
+                      <p>
+                        <strong>Only use "Other" if your amendment does not fall into any of the categories above.</strong>{" "}
+                        If your change involves adding/removing a supplier or a cost change and you have not provided the required information,{" "}
+                        <strong>your amendment will be rejected</strong> and you will be asked to resubmit it correctly.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 {items.map((item, idx) => (
@@ -225,6 +253,18 @@ export default function AmendmentForm() {
                         {type === "change_cost" ? (
                           <>
                             <div className="space-y-1">
+                              <Label className="text-xs">Old Cost (£) <span className="text-destructive">*</span></Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={item.oldCost}
+                                onChange={(e) => updateRow(item.id, "oldCost", e.target.value)}
+                                className="text-sm"
+                              />
+                            </div>
+                            <div className="space-y-1">
                               <Label className="text-xs">New Cost (£) <span className="text-destructive">*</span></Label>
                               <Input
                                 type="number"
@@ -236,42 +276,44 @@ export default function AmendmentForm() {
                                 className="text-sm"
                               />
                             </div>
+                            <div className="col-span-2 space-y-1">
+                              <Label className="text-xs">
+                                Notes <span className="text-destructive">*</span>
+                                <span className="ml-1 font-bold text-amber-700">— include the exact new NET amount due to the supplier</span>
+                              </Label>
+                              <Textarea
+                                placeholder="e.g. New NET amount due to supplier is £1,234.56. Reason: price increase from supplier."
+                                value={item.notes}
+                                onChange={(e) => updateRow(item.id, "notes", e.target.value)}
+                                className="min-h-[80px] text-sm"
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <>
                             <div className="space-y-1">
-                              <Label className="text-xs">Old Cost (£)</Label>
+                              <Label className="text-xs">Cost (£) <span className="text-destructive">*</span></Label>
                               <Input
                                 type="number"
                                 step="0.01"
                                 min="0"
                                 placeholder="0.00"
-                                value={item.oldCost}
-                                onChange={(e) => updateRow(item.id, "oldCost", e.target.value)}
+                                value={item.cost}
+                                onChange={(e) => updateRow(item.id, "cost", e.target.value)}
+                                className="text-sm"
+                              />
+                            </div>
+                            <div className="col-span-2 space-y-1">
+                              <Label className="text-xs">Notes (optional)</Label>
+                              <Input
+                                placeholder="Any additional context..."
+                                value={item.notes}
+                                onChange={(e) => updateRow(item.id, "notes", e.target.value)}
                                 className="text-sm"
                               />
                             </div>
                           </>
-                        ) : (
-                          <div className="space-y-1">
-                            <Label className="text-xs">Cost (£) <span className="text-destructive">*</span></Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              placeholder="0.00"
-                              value={item.cost}
-                              onChange={(e) => updateRow(item.id, "cost", e.target.value)}
-                              className="text-sm"
-                            />
-                          </div>
                         )}
-                        <div className={`space-y-1 ${type === "change_cost" ? "col-span-2" : "col-span-2"}`}>
-                          <Label className="text-xs">Notes (optional)</Label>
-                          <Input
-                            placeholder="Any additional context..."
-                            value={item.notes}
-                            onChange={(e) => updateRow(item.id, "notes", e.target.value)}
-                            className="text-sm"
-                          />
-                        </div>
                       </div>
                     )}
                   </div>
