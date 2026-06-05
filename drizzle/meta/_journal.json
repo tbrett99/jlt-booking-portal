@@ -722,6 +722,13 @@
       "when": 1780586658704,
       "tag": "0102_right_caretaker",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "5",
+      "when": 1780681640100,
+      "tag": "0103_nice_rocket_raccoon",
+      "breakpoints": true
     }
   ]
 }
