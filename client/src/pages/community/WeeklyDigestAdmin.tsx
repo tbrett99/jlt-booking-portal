@@ -23,12 +23,13 @@ export default function WeeklyDigestAdmin() {
   const [customSubject, setCustomSubject] = useState("");
   const [customIntro, setCustomIntro] = useState("");
 
-  // Stable week start (Monday of current week, midnight UTC)
+  // Stable week start — most recent Friday (Fri–Fri window, digest sent every Friday)
   const weekStart = useMemo(() => {
     const d = new Date();
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    d.setDate(diff);
+    const day = d.getDay(); // 0=Sun,1=Mon,...,5=Fri,6=Sat
+    // Days since last Friday: Fri=0, Sat=1, Sun=2, Mon=3, Tue=4, Wed=5, Thu=6
+    const daysSinceFriday = (day + 2) % 7;
+    d.setDate(d.getDate() - daysSinceFriday);
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);

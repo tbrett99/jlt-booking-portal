@@ -885,9 +885,9 @@ export const communityRouter = router({
 
     // Get booking highlights for digest preview
     bookingHighlights: adminProcedure
-      .input(z.object({ weekAgo: z.date() }))
+      .input(z.object({ weekStart: z.date(), weekEnd: z.date() }))
       .query(async ({ input }) => {
-        return getBookingHighlights(input.weekAgo);
+        return getBookingHighlights(input.weekStart, input.weekEnd);
       }),
   }),
 });

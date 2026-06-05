@@ -3,7 +3,7 @@
  * Database helpers for the JLT Community & Communications Hub.
  */
 
-import { and, desc, eq, gt, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, not, or, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import {
   communityComments,
@@ -735,13 +735,19 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
 
   const postIds = posts.map((p) => p.id);
 
-  // Stats snapshot — count from last 7 days (rolling window ending now)
+  // Stats snapshot — count bookings by bookedDate within the Fri–Fri window
+  // weekStarting is the Friday the digest covers; weekEnd is the following Friday
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const weekEnd = new Date(weekStarting.getTime() + 7 * 24 * 60 * 60 * 1000);
   const { bookings, commissionClaims, reimbursementItems } = await import("../drizzle/schema");
   const [bookingCount] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(bookings)
-    .where(and(gt(bookings.createdAt, sevenDaysAgo), lt(bookings.createdAt, now)));
+    .where(and(
+      isNotNull(bookings.bookedDate),
+      gte(bookings.bookedDate, weekStarting),
+      lt(bookings.bookedDate, weekEnd)
+    ));
 
   const claimedThisWeek = await db
     .select({ grossAmount: commissionClaims.grossAmount })
@@ -780,8 +786,8 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     reimbursementsCount: Number(reimbCount.count),
   };
 
-  // Always fetch fresh booking highlights using rolling 7-day window (not week boundary)
-  const highlights = await getBookingHighlights(sevenDaysAgo);
+  // Fetch booking highlights using the same Mon–Sun week window
+  const highlights = await getBookingHighlights(weekStarting, weekEnd);
 
   if (existing) {
     // Refresh stats, posts, and highlights on the existing draft
@@ -873,7 +879,7 @@ export async function getDigest(digestId: number) {
 
 // ─── Booking highlights for digest ───────────────────────────────────────────
 
-export async function getBookingHighlights(weekAgo: Date) {
+export async function getBookingHighlights(weekStart: Date, weekEnd: Date) {
   const db = await getDb();
   if (!db) return { firstBookings: [], highMargin: [], commissionClaimed: { agentNames: [], totalAmount: 0 } };
   const { bookings, users, commissionClaims } = await import("../drizzle/schema");
@@ -888,7 +894,11 @@ export async function getBookingHighlights(weekAgo: Date) {
     })
     .from(bookings)
     .innerJoin(users, eq(bookings.agentId, users.id))
-    .where(gt(bookings.createdAt, weekAgo));
+    .where(and(
+      isNotNull(bookings.bookedDate),
+      gte(bookings.bookedDate, weekStart),
+      lt(bookings.bookedDate, weekEnd)
+    ));
 
   // Collect the earliest booking this week per agent
   const agentBookingThisWeek = new Map<number, typeof recentBookings[0]>();
@@ -929,7 +939,8 @@ export async function getBookingHighlights(weekAgo: Date) {
     .innerJoin(users, eq(commissionClaims.agentId, users.id))
     .where(
       and(
-        gt(commissionClaims.claimedAt, weekAgo),
+        gte(commissionClaims.claimedAt, weekStart),
+        lt(commissionClaims.claimedAt, weekEnd),
         or(
           eq(commissionClaims.status, "paid"),
           eq(commissionClaims.status, "awaiting_payment")
