@@ -20,6 +20,7 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   badge?: number;
+  external?: boolean;
 }
 
 interface NavGroup {
@@ -141,17 +142,13 @@ function SidebarGroup({
       {open && (
         <div className="space-y-0.5 pl-1">
           {group.items.map((item) => {
-            const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
+            const isActive = !item.external && (location === item.href || (item.href !== "/" && location.startsWith(item.href)));
             const badge = item.href === "/messages" && (unreadMessageCount ?? 0) > 0 ? unreadMessageCount : (item.badge ?? 0);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isActive ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground opacity-80 hover:opacity-100"
-                }`}
-                onClick={onNavigate}
-              >
+            const itemClass = `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${
+              isActive ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground opacity-80 hover:opacity-100"
+            }`;
+            const itemContent = (
+              <>
                 <span className="relative flex-shrink-0">
                   {item.icon}
                   {(badge ?? 0) > 0 && (
@@ -166,6 +163,26 @@ function SidebarGroup({
                     {(badge ?? 0) > 99 ? '99+' : badge}
                   </span>
                 )}
+              </>
+            );
+            return item.external ? (
+              <a
+                key={item.href}
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={itemClass}
+              >
+                {itemContent}
+              </a>
+            ) : (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={itemClass}
+                onClick={onNavigate}
+              >
+                {itemContent}
               </Link>
             );
           })}
@@ -271,6 +288,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       items: [
         { label: "My Commissions", href: "/commissions", icon: <Banknote size={16} /> },
         { label: "Commission Timeline", href: "/commission-timeline", icon: <CalendarDays size={16} /> },
+        { label: "My Commission Margin", href: "/my-margin", icon: <TrendingUp size={16} /> },
       ],
     },
     {
@@ -307,12 +325,13 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
-      label: "Pricing Calculator",
+      label: "Pricing & Fees",
       icon: <Calculator size={16} />,
       defaultOpen: false,
       items: [
         { label: "Package Pricing Calculator", href: "/pricing-calculator", icon: <Calculator size={16} /> },
-        { label: "My Commission Margin", href: "/my-margin", icon: <TrendingUp size={16} /> },
+        { label: "PTS Fees", href: "https://fees.thejltgroup.co.uk", icon: <ExternalLink size={16} />, external: true },
+        { label: "Card Fees", href: "https://fees.thejltgroup.co.uk/card-fees", icon: <CreditCard size={16} />, external: true },
       ],
     },
   ];
