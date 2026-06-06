@@ -788,13 +788,14 @@ export default function SupplierDirectory() {
   // AI search state
   const [aiQuery, setAiQuery] = useState("");
   const [activeAiQuery, setActiveAiQuery] = useState<string | null>(null);
+  const [showAiSearch, setShowAiSearch] = useState(false);
   const [showAiChat, setShowAiChat] = useState(false);
 
   const { data: aiSearchData, isFetching: aiSearchLoading } = trpc.suppliers.aiSearch.useQuery(
     { query: activeAiQuery ?? "", limit: 12 },
     {
       enabled: !!activeAiQuery,
-      staleTime: 0,
+      staleTime: 30 * 60 * 1000, // cache 30 min — same query won't re-call LLM
       retry: false,
     }
   );
@@ -836,6 +837,7 @@ export default function SupplierDirectory() {
   const clearAiSearch = () => {
     setActiveAiQuery(null);
     setAiQuery("");
+    setShowAiSearch(false);
   };
 
   return (
@@ -863,86 +865,114 @@ export default function SupplierDirectory() {
               className="gap-2"
             >
               <MessageSquare className="h-4 w-4" />
-              Ask AI
+              AI Chat
             </Button>
           </div>
         </div>
 
-        {/* AI Search bar */}
-        <div className="bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/20 rounded-xl p-4 space-y-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles className="h-4 w-4 text-primary" />
-            <span className="text-sm font-semibold text-primary">AI Search</span>
-            <span className="text-xs text-muted-foreground">— describe the trip and AI will find the best suppliers</span>
-          </div>
-          <div className="flex gap-2">
-            <Input
-              placeholder='e.g. "luxury honeymoon Maldives" or "family safari Kenya budget £5k"'
-              value={aiQuery}
-              onChange={(e) => setAiQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && runAiSearch()}
-              className="flex-1 bg-background"
-            />
-            <Button
-              onClick={runAiSearch}
-              disabled={!aiQuery.trim() || aiSearchLoading}
-              className="gap-2 shrink-0"
+        {/* Search area */}
+        <div className="space-y-3">
+          {/* Primary: name / keyword search — always visible when not in AI results mode */}
+          {!aiResults && (
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by supplier name..."
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  className="pl-9"
+                />
+              </div>
+              <Select
+                value={category}
+                onValueChange={(v) => {
+                  setCategory(v);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-56">
+                  <Tag className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="All categories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {categories?.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* AI Search — opt-in prompt (only shown when not already in AI mode) */}
+          {!showAiSearch && !aiResults && (
+            <button
+              onClick={() => setShowAiSearch(true)}
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group w-full text-left"
             >
-              {aiSearchLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
+              <Sparkles className="h-4 w-4 text-primary/60 group-hover:text-primary shrink-0 transition-colors" />
+              <span>Don't know the name? <span className="text-primary font-medium underline underline-offset-2">Use AI Search</span> — describe the trip and AI will find the best suppliers</span>
+            </button>
+          )}
+
+          {/* AI Search expanded panel */}
+          {(showAiSearch || aiResults) && (
+            <div className="bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/30 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-semibold text-primary">AI Search</span>
+                  <span className="text-xs text-muted-foreground hidden sm:inline">— describe the trip and AI finds the best suppliers</span>
+                </div>
+                {!aiResults && (
+                  <button
+                    onClick={() => setShowAiSearch(false)}
+                    className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                    aria-label="Close AI search"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder='e.g. "luxury honeymoon Maldives" or "family safari Kenya budget £5k"'
+                  value={aiQuery}
+                  onChange={(e) => setAiQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && runAiSearch()}
+                  className="flex-1 bg-background"
+                  autoFocus={showAiSearch && !aiResults}
+                />
+                <Button
+                  onClick={runAiSearch}
+                  disabled={!aiQuery.trim() || aiSearchLoading}
+                  className="gap-2 shrink-0"
+                >
+                  {aiSearchLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  Search
+                </Button>
+              </div>
+              {aiResults && (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground italic">{aiSearchSummary}</p>
+                  <Button variant="ghost" size="sm" onClick={clearAiSearch} className="gap-1 text-xs">
+                    <X className="h-3 w-3" /> Back to name search
+                  </Button>
+                </div>
               )}
-              Search
-            </Button>
-          </div>
-          {aiResults && (
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground italic">{aiSearchSummary}</p>
-              <Button variant="ghost" size="sm" onClick={clearAiSearch} className="gap-1 text-xs">
-                <X className="h-3 w-3" /> Clear AI results
-              </Button>
             </div>
           )}
         </div>
-
-        {/* Regular search & filter (only when not showing AI results) */}
-        {!aiResults && (
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search suppliers..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-                className="pl-9"
-              />
-            </div>
-            <Select
-              value={category}
-              onValueChange={(v) => {
-                setCategory(v);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-56">
-                <Tag className="h-4 w-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="All categories" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All categories</SelectItem>
-                {categories?.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
 
         {/* Results count */}
         {!aiResults && data && (
