@@ -522,21 +522,8 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  // Database backup to S3: every 4 hours (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
-  // Full SQL dump → gzip → S3 upload with 30-day retention pruning.
-  cron.schedule("0 */4 * * *", async () => {
-    try {
-      const { runDatabaseBackup } = await import("./db-backup");
-      const result = await runDatabaseBackup();
-      if (result.success) {
-        console.log(`[DBBackup] Backup complete: ${result.tables} tables, ${result.rows} rows, ${result.compressedBytes} bytes, ${result.durationMs}ms → ${result.key}`);
-      } else {
-        console.error(`[DBBackup] Backup failed: ${result.error}`);
-      }
-    } catch (err: any) {
-      console.error("[DBBackup] Unexpected scheduler error:", err?.message);
-    }
-  }, { timezone: "UTC" });
+  // Database backup to S3: DISABLED — Railway native backups are used instead.
+  // cron.schedule("0 */4 * * *", async () => { ... }, { timezone: "UTC" });
 
   // Business update confirmation reminders: daily at 08:00 UTC
   // Sends email to agents who have unconfirmed Business Updates older than 14 days.
@@ -630,7 +617,7 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), DB backup (every 4h), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — inbox auto-import DISABLED");
+  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────
