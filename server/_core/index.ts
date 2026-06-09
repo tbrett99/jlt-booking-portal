@@ -1195,7 +1195,8 @@ async function startServer() {
                     <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">User ID</td><td style="padding:6px 0;color:#414141;">${newUser.id}</td></tr>
                     <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Signed up</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
                   </table>
-                  <p style="margin:20px 0 0;color:#414141;">Please <strong>activate their portal access</strong> in the CRM once onboarding is complete.</p>
+                  <p style="margin:20px 0 0;"><a href="https://portal.thejltgroup.co.uk/crm/${newUser.id}" style="display:inline-block;background:#02E6D2;color:#1a1a2e;font-weight:600;padding:10px 24px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:14px;">View Agent in CRM →</a></p>
+                  <p style="margin:12px 0 0;color:#414141;">Please <strong>activate their portal access</strong> in the CRM once onboarding is complete.</p>
                   <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
                 </div>
               `,
@@ -1397,6 +1398,7 @@ async function startServer() {
                     <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">First payment date</td><td style="padding:6px 0;color:#414141;">${startDate}</td></tr>
                     <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Monthly amount</td><td style="padding:6px 0;color:#414141;">£${(monthlyAmountPence / 100).toFixed(2)}</td></tr>
                   </table>
+                  <p style="margin:20px 0 0;"><a href="https://portal.thejltgroup.co.uk/crm/${localMandate.userId}" style="display:inline-block;background:#02E6D2;color:#1a1a2e;font-weight:600;padding:10px 24px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:14px;">View Agent in CRM →</a></p>
                   <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
                 </div>
               `,
@@ -1478,7 +1480,8 @@ async function startServer() {
                       <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Status</td><td style="padding:6px 0;color:#dc2626;font-weight:600;">${event.action}</td></tr>
                       <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Time</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
                     </table>
-                    <p style="margin:20px 0 0;color:#414141;">Please check the agent's account in the CRM and take appropriate action.</p>
+                    <p style="margin:20px 0 0;"><a href="https://portal.thejltgroup.co.uk/crm/${localMandate.userId}" style="display:inline-block;background:#02E6D2;color:#1a1a2e;font-weight:600;padding:10px 24px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:14px;">View Agent in CRM →</a></p>
+                    <p style="margin:12px 0 0;color:#414141;">Please check the agent's account in the CRM and take appropriate action.</p>
                     <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
                   </div>
                 `,

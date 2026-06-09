@@ -1743,7 +1743,8 @@ export const crmRouter = router({
                     <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Preferred payment day</td><td style="padding:6px 0;color:#414141;">${input.preferredPaymentDay ?? "not set"}</td></tr>
                     <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Completed at</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
                   </table>
-                  <p style="margin:20px 0 0;color:#414141;">Please <strong>review their onboarding documents and activate their portal access</strong> in the CRM.</p>
+                  <p style="margin:20px 0 0;"><a href="https://portal.thejltgroup.co.uk/crm/${ctx.user.id}" style="display:inline-block;background:#02E6D2;color:#1a1a2e;font-weight:600;padding:10px 24px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:14px;">View Agent in CRM →</a></p>
+                  <p style="margin:12px 0 0;color:#414141;">Please <strong>review their onboarding documents and activate their portal access</strong> in the CRM.</p>
                   <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
                 </div>
               `,
