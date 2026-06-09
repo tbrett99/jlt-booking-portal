@@ -282,6 +282,13 @@ const DEFAULT_TEMPLATES = [
     bodyHtml: `<p>Hi {{agentName}},</p><p>Your JLT Group membership Direct Debit payment was <strong>unsuccessful</strong>.</p><p>This is failure <strong>{{failureCount}} of 3</strong>. If 3 consecutive payments fail, your portal access will be temporarily suspended.</p><p>Please contact us to resolve this: <a href="mailto:memberships@thejltgroup.co.uk">memberships@thejltgroup.co.uk</a>.</p><p>The JLT Group Team</p>`,
     recipientType: "agent" as const,
   },
+  {
+    triggerKey: "portal_access_approved",
+    label: "Portal Access Approved",
+    subject: "Your JLT Group Portal Access is Now Live! 🌟",
+    bodyHtml: `<p>Hi {{agentName}},</p><p>Great news — your JLT Group Booking Portal access has been approved and is now live! 🎉</p><p>You now have full access to all the features of the portal, including:</p><ul><li><strong>Booking management</strong> — create, track and manage your client bookings</li><li><strong>Commission claims</strong> — submit and track your commission</li><li><strong>Reimbursements</strong> — submit expense claims and track payouts</li><li><strong>Community Hub</strong> — stay up to date with announcements and connect with the team</li><li><strong>Supplier Database</strong> — browse our full directory of travel suppliers, complete with contact details and trade portal links</li></ul><p>💡 <strong>Supplier Trade Portals &amp; Passwords</strong><br/>You'll find the Supplier Database in the left-hand sidebar of the portal. Please note that passwords for some suppliers' trade portals will not be visible until you have been signed off from your training. Once your training is complete, these will unlock automatically.</p><p><a href="https://portal.thejltgroup.co.uk" style="display:inline-block;background:#70FFE8;color:#0d1a26;font-weight:700;padding:12px 28px;border-radius:8px;text-decoration:none;">Go to My Portal</a></p><p>If you have any questions or need help getting started, don't hesitate to reach out via the WhatsApp group or reply to this email.</p><p>Welcome aboard — we're excited to have you with us!</p><p>The JLT Team</p>`,
+    recipientType: "agent" as const,
+  },
 ];
 
 // ─── Recruitment pipeline helper ─────────────────────────────────────────────
@@ -677,52 +684,15 @@ export const appRouter = router({
       .input(z.object({ userId: z.number() }))
       .mutation(async ({ input }) => {
         await activatePortalAccess(input.userId);
-        // Send portal access welcome email
+        // Send portal access welcome email via editable notification template
         try {
           const agent = await getUserById(input.userId);
           if (agent?.email) {
-            const firstName = (agent.name ?? "").split(" ")[0] || "there";
-            const portalUrl = process.env.PORTAL_BASE_URL ?? "https://portal.thejltgroup.co.uk";
-            void sendDirectEmail({
+            void sendNotificationEmail({
+              triggerKey: "portal_access_approved",
               toEmail: agent.email,
-              toName: agent.name ?? "",
-              subject: "Your JLT Group Portal Access is Now Live! 🌟",
-              html: `
-                <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #FFF6ED; padding: 32px; border-radius: 12px;">
-                  <div style="text-align: center; margin-bottom: 28px;">
-                    <h1 style="color: #414141; font-size: 24px; margin: 0;">JLT Group</h1>
-                    <div style="width: 60px; height: 4px; background: #70FFE8; margin: 12px auto 0;"></div>
-                  </div>
-
-                  <p style="color: #414141; font-size: 15px;">Hi ${firstName},</p>
-
-                  <p style="color: #414141; font-size: 15px;">Great news &mdash; your JLT Group Booking Portal access has been approved and is now live! 🎉</p>
-
-                  <p style="color: #414141; font-size: 15px;">You now have full access to all the features of the portal, including:</p>
-
-                  <ul style="color: #414141; font-size: 15px; line-height: 1.8; padding-left: 20px;">
-                    <li><strong>Booking management</strong> &mdash; create, track and manage your client bookings</li>
-                    <li><strong>Commission claims</strong> &mdash; submit and track your commission</li>
-                    <li><strong>Reimbursements</strong> &mdash; submit expense claims and track payouts</li>
-                    <li><strong>Community Hub</strong> &mdash; stay up to date with announcements and connect with the team</li>
-                    <li><strong>Supplier Database</strong> &mdash; browse our full directory of travel suppliers, complete with contact details and trade portal links</li>
-                  </ul>
-
-                  <div style="background: #fff; border-left: 4px solid #70FFE8; border-radius: 8px; padding: 16px 20px; margin: 24px 0;">
-                    <p style="color: #414141; font-size: 14px; margin: 0;"><strong>💡 Supplier Trade Portals &amp; Passwords</strong></p>
-                    <p style="color: #414141; font-size: 14px; margin: 8px 0 0;">You&apos;ll find the Supplier Database in the left-hand sidebar of the portal. Please note that passwords for some suppliers&apos; trade portals will not be visible until you have been signed off from your training. Once your training is complete, these will unlock automatically.</p>
-                  </div>
-
-                  <div style="text-align: center; margin: 32px 0;">
-                    <a href="${portalUrl}" style="display: inline-block; background: #70FFE8; color: #414141; font-weight: 600; font-size: 15px; padding: 14px 32px; border-radius: 8px; text-decoration: none;">Go to My Portal</a>
-                  </div>
-
-                  <p style="color: #414141; font-size: 15px;">If you have any questions or need help getting started, don&apos;t hesitate to reach out via the WhatsApp group or reply to this email.</p>
-
-                  <p style="color: #414141; font-size: 15px; margin-top: 32px;">Welcome aboard &mdash; we&apos;re excited to have you with us!</p>
-                  <p style="color: #414141; font-size: 15px;"><strong>The JLT Team</strong></p>
-                </div>
-              `,
+              toName: agent.name ?? "Agent",
+              variables: {},
             });
           }
         } catch (emailErr) {
