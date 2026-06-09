@@ -18,7 +18,7 @@ import { format, differenceInDays, isPast, isWithinInterval, addDays } from "dat
 const STAGE_BADGE: Record<string, { label: string; color: string; bg: string }> = {
   "New Booking":          { label: "New",              color: "#414141", bg: "#FFF6ED" },
   "Creating own PTS file":{ label: "Creating PTS",     color: "#414141", bg: "#e0e7ff" },
-  "Not on Topdog":        { label: "Not on Topdog",    color: "#92400e", bg: "#fef3c7" },
+  "Incomplete Booking":        { label: "Incomplete Booking",    color: "#92400e", bg: "#fef3c7" },
   "Query":                { label: "Query — Action Needed", color: "#92400e", bg: "#fef9c3" },
   "Reimb Docs Missing":   { label: "Docs Missing",     color: "#991b1b", bg: "#fee2e2" },
   "Urgent/Reimb":         { label: "Urgent",           color: "#991b1b", bg: "#fecaca" },

@@ -21,7 +21,7 @@ import CountrySelect from "@/components/CountrySelect";
 import TaskFormDialog from "./TaskFormDialog";
 
 const STAGES = [
-  "New Booking", "Creating own PTS file", "Not on Topdog", "Query",
+  "New Booking", "Creating own PTS file", "Incomplete Booking", "Query",
   "Reimb Docs Missing", "Urgent/Reimb", "T/O Package", "DP",
   "Added to PTS", "Commission Claimable", "Commission Claimed",
   "Cancelled", "Holding Accounts",

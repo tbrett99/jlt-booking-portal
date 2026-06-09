@@ -179,7 +179,7 @@ const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
 const DEFAULT_TEMPLATES = [
   {
     triggerKey: "not_on_topdog",
-    label: "Not on Topdog",
+    label: "Incomplete Booking",
     subject: "Action Required: Add Booking to Topdog",
     bodyHtml: `<p>Hi {{agentName}},</p><p>Your booking for <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has not yet been added to Topdog. Please add it within 24 hours.</p><p>The JLT Group Team</p>`,
     recipientType: "agent" as const,
@@ -1074,7 +1074,7 @@ export const appRouter = router({
         // Trigger notifications based on stage
         const agent = await getUserById(booking.agentId);
         const stageToTrigger: Record<string, string> = {
-          "Not on Topdog": "not_on_topdog",
+          "Incomplete Booking": "not_on_topdog",
           Query: "query",
           "Reimb Docs Missing": "reimb_docs_missing",
           "Creating own PTS file": "creating_own_pts_file",

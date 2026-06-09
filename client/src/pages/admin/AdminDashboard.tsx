@@ -24,7 +24,7 @@ import { format, differenceInDays, addDays } from "date-fns";
 const STAGE_COLORS: Record<string, string> = {
   "New Booking": "#3b82f6",
   "Creating own PTS file": "#6366f1",
-  "Not on Topdog": "#f59e0b",
+  "Incomplete Booking": "#f59e0b",
   "Query": "#eab308",
   "Reimb Docs Missing": "#ef4444",
   "Urgent/Reimb": "#dc2626",
@@ -38,7 +38,7 @@ const STAGE_COLORS: Record<string, string> = {
 };
 
 const STAGE_ORDER = [
-  "New Booking", "Creating own PTS file", "Not on Topdog", "Query",
+  "New Booking", "Creating own PTS file", "Incomplete Booking", "Query",
   "Reimb Docs Missing", "Urgent/Reimb", "T/O Package", "DP",
   "Added to PTS", "Commission Claimable", "Commission Claimed",
   "Cancelled", "Holding Accounts",

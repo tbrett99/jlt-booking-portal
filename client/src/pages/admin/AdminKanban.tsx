@@ -14,7 +14,7 @@ import { format } from "date-fns";
 const STAGES = [
   "New Booking",
   "Creating own PTS file",
-  "Not on Topdog",
+  "Incomplete Booking",
   "Query",
   "Reimb Docs Missing",
   "Urgent/Reimb",
@@ -37,7 +37,7 @@ const STAGES_REQUIRING_PAYMENT_DATE = [
 const STAGE_COLORS: Record<string, { bg: string; border: string; dot: string }> = {
   "New Booking": { bg: "#eff6ff", border: "#bfdbfe", dot: "#3b82f6" },
   "Creating own PTS file": { bg: "#eef2ff", border: "#c7d2fe", dot: "#6366f1" },
-  "Not on Topdog": { bg: "#fff7ed", border: "#fed7aa", dot: "#f97316" },
+  "Incomplete Booking": { bg: "#fff7ed", border: "#fed7aa", dot: "#f97316" },
   "Query": { bg: "#fefce8", border: "#fef08a", dot: "#eab308" },
   "Reimb Docs Missing": { bg: "#fef2f2", border: "#fecaca", dot: "#ef4444" },
   "Urgent/Reimb": { bg: "#fff1f2", border: "#fecdd3", dot: "#e11d48" },
