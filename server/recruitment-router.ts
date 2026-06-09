@@ -29,7 +29,7 @@ import { PROSPECT_FROM, PROSPECT_REPLY_TO } from "./resend-email";
 import { sendSupportEmail } from "./email";
 import { Resend } from "resend";
 import { ENV } from "./_core/env";
-import { getEmailBrandingSettings, getProspectByEmail, moveProspectStage } from "./crm-db";
+import { getEmailBrandingSettings, getProspectByEmail, moveProspectStage, getAllProspects } from "./crm-db";
 import { enrollProspectInWorkflow } from "./recruitment-workflow-db";
 
 // ─── Bulk email background job state ────────────────────────────────────────
@@ -266,11 +266,36 @@ export const recruitmentRouter = router({
   getApplicationByToken: publicProcedure
     .input(z.object({ token: z.string() }))
     .query(async ({ input }) => {
-      // We need to find the prospect with this token in adminNotes
+      // Search recruitment_prospects first
       const prospects = await getAllRecruitmentProspects({ limit: 5000 });
-      const prospect = prospects.find(
+      let prospect = prospects.find(
         (p) => extractApplicationToken(p.adminNotes) === input.token
       );
+      // Fallback: search CRM prospects table (for enquiry-form submissions)
+      if (!prospect) {
+        const crmProspects = await getAllProspects();
+        const crmMatch = crmProspects.find(
+          (p) => extractApplicationToken(p.adminNotes) === input.token
+        );
+        if (crmMatch) {
+          // Auto-create a recruitment_prospect so future lookups work
+          const existing = await getRecruitmentProspectByEmail(crmMatch.email);
+          if (!existing) {
+            await createRecruitmentProspect({
+              firstName: crmMatch.firstName,
+              lastName: crmMatch.lastName,
+              email: crmMatch.email,
+              phone: crmMatch.phone ?? undefined,
+              pipelineStage: "new_enquiry",
+              source: crmMatch.source ?? "enquiry_form",
+              adminNotes: `APP_TOKEN:${input.token}`,
+            });
+          }
+          // Re-fetch after creation
+          const updated = await getAllRecruitmentProspects({ limit: 5000 });
+          prospect = updated.find((p) => extractApplicationToken(p.adminNotes) === input.token);
+        }
+      }
       if (!prospect) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Invalid or expired application link" });
       }
@@ -320,16 +345,37 @@ export const recruitmentRouter = router({
         }).optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      // Find prospect by token
-      const prospects = await getAllRecruitmentProspects({ limit: 5000 });
-      const prospect = prospects.find(
+        .mutation(async ({ input }) => {
+      // Find prospect by token — search recruitment_prospects first, then CRM prospects as fallback
+      let prospects = await getAllRecruitmentProspects({ limit: 5000 });
+      let prospect = prospects.find(
         (p) => extractApplicationToken(p.adminNotes) === input.token
       );
       if (!prospect) {
+        const crmProspects = await getAllProspects();
+        const crmMatch = crmProspects.find(
+          (p) => extractApplicationToken(p.adminNotes) === input.token
+        );
+        if (crmMatch) {
+          const existing = await getRecruitmentProspectByEmail(crmMatch.email);
+          if (!existing) {
+            await createRecruitmentProspect({
+              firstName: crmMatch.firstName,
+              lastName: crmMatch.lastName,
+              email: crmMatch.email,
+              phone: crmMatch.phone ?? undefined,
+              pipelineStage: "new_enquiry",
+              source: crmMatch.source ?? "enquiry_form",
+              adminNotes: `APP_TOKEN:${input.token}`,
+            });
+          }
+          const updated = await getAllRecruitmentProspects({ limit: 5000 });
+          prospect = updated.find((p) => extractApplicationToken(p.adminNotes) === input.token);
+        }
+      }
+      if (!prospect) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Invalid or expired application link" });
       }
-
       // Already submitted?
       if (prospect.applicationSubmittedAt) {
         return { success: true, alreadySubmitted: true };
