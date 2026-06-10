@@ -143,6 +143,33 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
   return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${opt.color}`}>{opt.label}</span>;
 }
 
+function SyncGcButton({ onSynced }: { onSynced: () => void }) {
+  const syncMutation = trpc.gocardless.syncSubscriptions.useMutation({
+    onSuccess: (result) => {
+      toast.success(
+        `GoCardless sync complete — ${result.activeSubscriptions} active subscriptions` +
+        (result.subscriptionsCreated > 0 ? `, ${result.subscriptionsCreated} new` : '') +
+        (result.subscriptionsUpdated > 0 ? `, ${result.subscriptionsUpdated} updated` : '') +
+        (result.mandatesUpdated > 0 ? `, ${result.mandatesUpdated} mandates refreshed` : '')
+      );
+      onSynced();
+    },
+    onError: (e) => toast.error(`Sync failed: ${e.message}`),
+  });
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => syncMutation.mutate()}
+      disabled={syncMutation.isPending}
+      className="gap-2"
+    >
+      <Zap className="h-3.5 w-3.5" />
+      {syncMutation.isPending ? 'Syncing...' : 'Sync GoCardless'}
+    </Button>
+  );
+}
+
 export default function AgentCrm() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -175,6 +202,7 @@ export default function AgentCrm() {
           <h1 className="text-2xl font-bold text-foreground">Agent CRM</h1>
           <p className="text-muted-foreground text-sm mt-0.5">{(agents as AgentRow[]).length} registered agents</p>
         </div>
+        <SyncGcButton onSynced={refetch} />
       </div>
 
       {/* Filters */}

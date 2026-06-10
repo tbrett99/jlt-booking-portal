@@ -4113,10 +4113,118 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           .update(gcMandatesTable)
           .set({ status: newStatus, mandateId: resolvedMandateId, updatedAt: new Date() })
           .where(eqFn(gcMandatesTable.id, mandate.id));
-        return { status: gcMandate.status, mandateId: resolvedMandateId };
+                return { status: gcMandate.status, mandateId: resolvedMandateId };
       }),
-  }),
 
+    /**
+     * ADMIN — Sync all GoCardless subscriptions and mandate statuses into the portal DB.
+     */
+    syncSubscriptions: adminProcedure.mutation(async () => {
+      const gcToken = process.env.GOCARDLESS_ACCESS_TOKEN;
+      if (!gcToken) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'GoCardless token not configured' });
+      const gcEnv = (process.env.GOCARDLESS_ENVIRONMENT || 'live').toUpperCase();
+      const gcBase = gcEnv === 'LIVE'
+        ? 'https://api.gocardless.com'
+        : 'https://api-sandbox.gocardless.com';
+
+      const gcHeaders = () => ({
+        'Authorization': `Bearer ${gcToken}`,
+        'GoCardless-Version': '2015-07-06',
+        'Accept': 'application/json',
+      });
+
+      async function gcGetAll(resource: string) {
+        const all: any[] = [];
+        let after: string | null = null;
+        while (true) {
+          const qs = after ? `?after=${after}&limit=200` : '?limit=200';
+          const res = await fetch(`${gcBase}/${resource}${qs}`, { headers: gcHeaders() });
+          if (!res.ok) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `GoCardless API error ${res.status}` });
+          const data = await res.json() as any;
+          all.push(...(data[resource] ?? []));
+          if (data.meta?.cursors?.after) after = data.meta.cursors.after;
+          else break;
+        }
+        return all;
+      }
+
+      const [gcSubs, gcMandatesList] = await Promise.all([
+        gcGetAll('subscriptions'),
+        gcGetAll('mandates'),
+      ]);
+
+      const { getDb } = await import('./db');
+      const dbInst = await getDb();
+      if (!dbInst) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+
+      const { gcMandates: gcMandatesTable, gcSubscriptions: gcSubsTable } = await import('../drizzle/schema');
+      const { eq: eqFn } = await import('drizzle-orm');
+
+      // Build lookup maps
+      const portalMandates = await dbInst.select().from(gcMandatesTable);
+      const mandateByGcId: Record<string, typeof portalMandates[0]> = {};
+      for (const m of portalMandates) { if (m.mandateId) mandateByGcId[m.mandateId] = m; }
+
+      const portalSubsList = await dbInst.select().from(gcSubsTable);
+      const subByGcId: Record<string, typeof portalSubsList[0]> = {};
+      for (const s of portalSubsList) { if (s.subscriptionId) subByGcId[s.subscriptionId] = s; }
+
+      let created = 0, updated = 0, mandatesUpdated = 0;
+      const validSubStatuses = ['active', 'paused', 'cancelled', 'finished'] as const;
+      type SubStatus = typeof validSubStatuses[number];
+
+      for (const gcSub of gcSubs) {
+        const mandateGcId = gcSub.links?.mandate;
+        const portalMandate = mandateByGcId[mandateGcId];
+        if (!portalMandate) continue;
+        const status: SubStatus = validSubStatuses.includes(gcSub.status) ? gcSub.status : 'cancelled';
+        const nextChargeDate = gcSub.upcoming_payments?.[0]?.charge_date ?? null;
+        const existing = subByGcId[gcSub.id];
+        if (!existing) {
+          await dbInst.insert(gcSubsTable).values({
+            userId: portalMandate.userId,
+            mandateId: portalMandate.mandateId ?? mandateGcId,
+            subscriptionId: gcSub.id,
+            amount: gcSub.amount,
+            currency: 'GBP',
+            startDate: gcSub.start_date ?? new Date().toISOString().slice(0, 10),
+            dayOfMonth: gcSub.day_of_month ?? null,
+            nextChargeDate,
+            status,
+          });
+          created++;
+        } else if (existing.status !== status || existing.nextChargeDate !== nextChargeDate || existing.amount !== gcSub.amount) {
+          await dbInst.update(gcSubsTable)
+            .set({ status, nextChargeDate, amount: gcSub.amount, updatedAt: new Date() })
+            .where(eqFn(gcSubsTable.id, existing.id));
+          updated++;
+        }
+      }
+
+      // Update mandate statuses
+      const validMandStatuses = ['pending', 'pending_submission', 'submitted', 'active', 'cancelled', 'failed', 'expired'] as const;
+      type MandStatus = typeof validMandStatuses[number];
+      for (const gcM of gcMandatesList) {
+        const portalMandate = mandateByGcId[gcM.id];
+        if (!portalMandate) continue;
+        const newStatus: MandStatus = validMandStatuses.includes(gcM.status) ? gcM.status : 'pending';
+        if (portalMandate.status !== newStatus) {
+          await dbInst.update(gcMandatesTable)
+            .set({ status: newStatus, updatedAt: new Date() })
+            .where(eqFn(gcMandatesTable.id, portalMandate.id));
+          mandatesUpdated++;
+        }
+      }
+
+      return {
+        totalGcSubscriptions: gcSubs.length,
+        activeSubscriptions: gcSubs.filter((s: any) => s.status === 'active').length,
+        subscriptionsCreated: created,
+        subscriptionsUpdated: updated,
+        mandatesUpdated,
+      };
+    }),
+  }),
   inbox: router({
     // Admin: get IMAP config (password masked)
     getConfig: adminProcedure.query(async () => {
