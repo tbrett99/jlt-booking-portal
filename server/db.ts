@@ -911,6 +911,12 @@ export async function updateRefundPipeline(refundId: number, data: {
   return result[0];
 }
 
+export async function deleteRefundById(refundId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(refunds).where(eq(refunds.id, refundId));
+}
+
 // ─── Commission Due ───────────────────────────────────────────────────────────
 
 export async function getCommissionDueBookings() {

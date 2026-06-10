@@ -38,6 +38,7 @@ import {
   getCancellationsByBooking,
   createRefund,
   getRefundsByBooking,
+  deleteRefundById,
   getAllRefunds,
   updateRefundPipeline,
   getCommissionDueBookings,
@@ -2273,10 +2274,28 @@ export const appRouter = router({
             });
           }
         }
-        return updated;
+                return updated;
+      }),
+    delete: adminProcedure
+      .input(z.object({ refundId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        // Fetch refund first so we can log which booking it belonged to
+        const allRefunds = await getAllRefunds();
+        const refund = allRefunds.find((r: any) => r.id === input.refundId);
+        if (!refund) throw new TRPCError({ code: 'NOT_FOUND', message: 'Refund not found' });
+        await deleteRefundById(input.refundId);
+        // Audit note on the booking
+        if (refund.bookingId) {
+          await createNote({
+            bookingId: refund.bookingId,
+            authorId: ctx.user.id,
+            content: `[System] Refund deleted by ${ctx.user.name ?? 'Admin'}.`,
+            isInternal: true,
+          });
+        }
+        return { success: true };
       }),
   }),
-
   // ── Commission Due ────────────────────────────────────────────────────────
   commissionDue: router({
     list: adminProcedure.query(async () => {

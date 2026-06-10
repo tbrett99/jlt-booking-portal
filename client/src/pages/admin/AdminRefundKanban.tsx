@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { User, Calendar, ArrowRight, Clock, Search, MessageSquare } from "lucide-react";
+import { User, Calendar, ArrowRight, Clock, Search, MessageSquare, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { differenceInDays } from "date-fns";
 import { Input } from "@/components/ui/input";
@@ -57,6 +57,14 @@ export default function AdminRefundKanban() {
   const [queryDialog, setQueryDialog] = useState<{ refundId: number; targetStage: Stage } | null>(null);
   const [queryMessage, setQueryMessage] = useState("");
 
+  // Delete dialog state
+  const [deleteDialog, setDeleteDialog] = useState<number | null>(null);
+
+  const deleteRefund = trpc.refunds.delete.useMutation({
+    onSuccess: () => { refetch(); toast.success("Refund deleted"); setDeleteDialog(null); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const updatePipeline = trpc.refunds.updatePipeline.useMutation({
     onSuccess: () => { refetch(); toast.success("Refund updated"); },
     onError: (e) => toast.error(e.message),
@@ -78,7 +86,6 @@ export default function AdminRefundKanban() {
 
   const moveStage = (refundId: number, stage: Stage) => {
     if (stage === "Query") {
-      // Open the query dialog instead of moving immediately
       setQueryMessage("");
       setQueryDialog({ refundId, targetStage: stage });
       return;
@@ -153,6 +160,7 @@ export default function AdminRefundKanban() {
                   adminUsers={adminUsers}
                   onMoveStage={moveStage}
                   onAssign={assignTo}
+                  onDelete={(id) => setDeleteDialog(id)}
                 />
               ))}
 
@@ -165,6 +173,28 @@ export default function AdminRefundKanban() {
           ))}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialog !== null} onOpenChange={(open) => { if (!open) setDeleteDialog(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Refund?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will permanently delete the refund request. This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialog(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteDialog !== null && deleteRefund.mutate({ refundId: deleteDialog })}
+              disabled={deleteRefund.isPending}
+            >
+              {deleteRefund.isPending ? 'Deleting...' : 'Delete Refund'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Query Dialog */}
       <Dialog open={!!queryDialog} onOpenChange={(open) => { if (!open) { setQueryDialog(null); setQueryMessage(""); } }}>
@@ -217,6 +247,7 @@ function RefundCard({
   adminUsers,
   onMoveStage,
   onAssign,
+  onDelete,
 }: {
   refund: any;
   stage: Stage;
@@ -224,6 +255,7 @@ function RefundCard({
   adminUsers: any[];
   onMoveStage: (id: number, stage: Stage) => void;
   onAssign: (id: number, userId: number | null) => void;
+  onDelete: (id: number) => void;
 }) {
   return (
     <Card className={`shadow-sm hover:shadow-md transition-shadow border-l-4 ${stage === "Query" ? "border-l-purple-400" : "border-l-[#FFC3BC]"}`}>
@@ -249,7 +281,16 @@ function RefundCard({
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <AgeBadge createdAt={refund.createdAt} />
+            <div className="flex items-center gap-1">
+              <AgeBadge createdAt={refund.createdAt} />
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(refund.id); }}
+                className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
+                title="Delete refund"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
             <Badge variant="outline" className="text-xs">#{refund.id}</Badge>
             <Badge className="text-xs bg-[#FFF6ED] text-[#414141] border border-[#FFC3BC]">
               {REFUND_TYPE_LABELS[refund.refundType] ?? refund.refundType}
