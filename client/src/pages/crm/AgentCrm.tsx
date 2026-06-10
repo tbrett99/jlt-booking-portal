@@ -62,6 +62,9 @@ const SUPPLIERS = [
   "Major Travel",
   "MSC",
   "NCL",
+  "P&O Cruises",
+  "Royal Caribbean/Celebrity",
+  "Virgin Voyages",
 ];
 
 type CrmProfile = {
