@@ -190,17 +190,19 @@ export const superAdminRouter = router({
 
       // Payments paid out this week (funds actually landed in your bank account)
       // IMPORTANT: gc_payment_events stores multiple rows per GoCardless payment (one per webhook event).
-      // We must deduplicate by paymentId to avoid counting the same payment multiple times.
+      // We must deduplicate by paymentId using a subquery — SUM(DISTINCT amount) is WRONG because
+      // it deduplicates by value, not by paymentId (two agents paying the same amount = one counted).
       const paymentsPaidOutThisWeek = ((await db.execute(sql`
-        SELECT
-          COUNT(DISTINCT paymentId) AS count,
-          SUM(DISTINCT CASE WHEN paymentId IS NOT NULL THEN amount ELSE 0 END) AS totalPence
-        FROM gc_payment_events
-        WHERE eventType = 'payments_paid_out'
-          AND occurredAt >= ${weekStartDate}
-          AND occurredAt < ${weekEndDate}
-          AND amount IS NOT NULL
-          AND paymentId IS NOT NULL
+        SELECT COUNT(*) AS count, SUM(amount) AS totalPence
+        FROM (
+          SELECT DISTINCT paymentId, amount
+          FROM gc_payment_events
+          WHERE eventType = 'payments_paid_out'
+            AND occurredAt >= ${weekStartDate}
+            AND occurredAt < ${weekEndDate}
+            AND amount IS NOT NULL
+            AND paymentId IS NOT NULL
+        ) AS deduped
       `) as unknown as [Array<{ count: number; totalPence: number }>, unknown]))[0];
 
       // Failed payments this week
@@ -1126,15 +1128,22 @@ export const superAdminRouter = router({
         db.select({ count: sql<number>`COUNT(*)`, totalAmountPence: sql<number>`SUM(amount)` }).from(gcSubscriptions).where(eq(gcSubscriptions.status, "active")),
       ]);
       // Deduplicated paid-out payments for the month
+      // Use subquery deduplication — SUM(DISTINCT amount) is wrong when two payments share the same amount.
       const paidOutThisMonthRaw = ((await db.execute(sql`
-        SELECT COUNT(DISTINCT paymentId) AS count, SUM(DISTINCT CASE WHEN paymentId IS NOT NULL THEN amount ELSE 0 END) AS totalPence
-        FROM gc_payment_events
-        WHERE eventType = 'payments_paid_out' AND occurredAt >= ${monthStartDate} AND occurredAt < ${monthEndDate} AND amount IS NOT NULL AND paymentId IS NOT NULL
+        SELECT COUNT(*) AS count, SUM(amount) AS totalPence
+        FROM (
+          SELECT DISTINCT paymentId, amount
+          FROM gc_payment_events
+          WHERE eventType = 'payments_paid_out' AND occurredAt >= ${monthStartDate} AND occurredAt < ${monthEndDate} AND amount IS NOT NULL AND paymentId IS NOT NULL
+        ) AS deduped
       `) as unknown as [Array<{ count: number; totalPence: number }>, unknown]))[0];
       const paidOutPrevMonthRaw = ((await db.execute(sql`
-        SELECT COUNT(DISTINCT paymentId) AS count, SUM(DISTINCT CASE WHEN paymentId IS NOT NULL THEN amount ELSE 0 END) AS totalPence
-        FROM gc_payment_events
-        WHERE eventType = 'payments_paid_out' AND occurredAt >= ${prevMonthStart} AND occurredAt < ${prevMonthEnd} AND amount IS NOT NULL AND paymentId IS NOT NULL
+        SELECT COUNT(*) AS count, SUM(amount) AS totalPence
+        FROM (
+          SELECT DISTINCT paymentId, amount
+          FROM gc_payment_events
+          WHERE eventType = 'payments_paid_out' AND occurredAt >= ${prevMonthStart} AND occurredAt < ${prevMonthEnd} AND amount IS NOT NULL AND paymentId IS NOT NULL
+        ) AS deduped
       `) as unknown as [Array<{ count: number; totalPence: number }>, unknown]))[0];
       // Split confirmed payments into subscription DD vs one-off joining fees (same logic as weekly)
       const confirmedThisMonthRaw = ((await db.execute(sql`
@@ -1307,11 +1316,16 @@ export const superAdminRouter = router({
           db.select({ total: sql<number>`SUM(jlt20)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, m.start), lt(remittanceBatches.createdAt, m.end), isNotNull(remittanceLines.jlt20))),
           db.select({ count: sql<number>`COUNT(*)` }).from(commissionClaims).where(and(gte(commissionClaims.createdAt, m.start), lt(commissionClaims.createdAt, m.end))),
         ]);
-        const ddRaw = await db.execute(sql`
-          SELECT SUM(DISTINCT CASE WHEN paymentId IS NOT NULL THEN amount ELSE 0 END) AS totalPence
-          FROM gc_payment_events
-          WHERE eventType = 'payments_paid_out' AND occurredAt >= ${m.start} AND occurredAt < ${m.end} AND amount IS NOT NULL AND paymentId IS NOT NULL
-        `) as unknown as Array<{ totalPence: number }>;
+        // Subquery deduplication: SUM(DISTINCT amount) is wrong when two payments share the same amount.
+        // Also: db.execute returns [rowsArray, fieldsArray] tuple — must use [0] to get rows.
+        const ddRaw = ((await db.execute(sql`
+          SELECT SUM(amount) AS totalPence
+          FROM (
+            SELECT DISTINCT paymentId, amount
+            FROM gc_payment_events
+            WHERE eventType = 'payments_paid_out' AND occurredAt >= ${m.start} AND occurredAt < ${m.end} AND amount IS NOT NULL AND paymentId IS NOT NULL
+          ) AS deduped
+        `)) as unknown as [Array<{ totalPence: number }>, unknown])[0];
         monthlyTrend.push({
           month: m.label,
           newSignups: n(sigs[0]?.count),
@@ -1367,6 +1381,8 @@ export const superAdminRouter = router({
           refundsByStage: refundsByStage.map((r) => ({ stage: r.stage ?? "Unknown", count: n(r.count) })),
         },
         financials: {
+          // Total Income = JLT 20% PTS remittance share + GoCardless paid-out funds (money in the bank)
+          totalIncomeThisMonth: n(jltRevenueThisMonth[0]?.total) + Math.round(n(paidOutThisMonthRaw[0]?.totalPence) / 100),
           jltRevenueThisMonth: n(jltRevenueThisMonth[0]?.total),
           jltRevenuePrevMonth: n(jltRevenuePrevMonth[0]?.total),
           agentPayoutsThisMonth: n(agentPayoutsThisMonth[0]?.total),
@@ -1904,6 +1920,8 @@ function buildResponse(data: {
 
     // Section 4: Financials
     financials: {
+      // Total Income = JLT 20% PTS remittance share + GoCardless paid-out funds (money in the bank)
+      totalIncomeThisWeek: Number(data.jltRevenueThisWeek[0]?.total ?? 0) + Math.round(n(data.paymentsPaidOutThisWeek[0]?.totalPence) / 100),
       jltRevenueThisWeek: Number(data.jltRevenueThisWeek[0]?.total ?? 0),
       jltRevenuePrevWeek: Number(data.jltRevenuePrevWeek[0]?.total ?? 0),
       agentPayoutsThisWeek: Number(data.agentPayoutsThisWeek[0]?.total ?? 0),

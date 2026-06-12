@@ -821,6 +821,27 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
         {/* Financials */}
         <TabsContent value="financials" className="space-y-6">
           <SectionHeader title="Financials" icon={PoundSterling} />
+          {/* Total Income — prominent top card spanning full width */}
+          <div className="grid grid-cols-1 gap-4">
+            <Card className="border-l-4 border-l-emerald-500 bg-emerald-50/30 dark:bg-emerald-950/20">
+              <CardContent className="pt-4 pb-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Income This Month</p>
+                    <p className="text-3xl font-bold mt-1 text-emerald-600 dark:text-emerald-400">{fmtGbp((financials as any).totalIncomeThisMonth ?? 0)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      PTS 20% remittance: <span className="font-semibold">{fmtGbp(financials.jltRevenueThisMonth)}</span>
+                      {" + "}
+                      GC paid out: <span className="font-semibold">{fmtGbp((financials as any).totalIncomeThisMonth - financials.jltRevenueThisMonth)}</span>
+                    </p>
+                  </div>
+                  <div className="shrink-0 w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
+                    <PoundSterling size={22} className="text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard title="JLT Revenue (Remittance)" value={fmtGbp(financials.jltRevenueThisMonth)} icon={PoundSterling} accent="green"
               wow={{ current: financials.jltRevenueThisMonth, prev: financials.jltRevenuePrevMonth }} wowLabel="MoM" sub="20% JLT share from PTS" />
@@ -1396,6 +1417,27 @@ export default function SuperAdminDashboard() {
                 {/* ── FINANCIALS TAB ── */}
                 <TabsContent value="financials" className="space-y-6">
                   <SectionHeader title="Financials" icon={PoundSterling} />
+                  {/* Total Income — prominent top card spanning full width */}
+                  <div className="grid grid-cols-1 gap-4">
+                    <Card className="border-l-4 border-l-emerald-500 bg-emerald-50/30 dark:bg-emerald-950/20">
+                      <CardContent className="pt-4 pb-3">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Income This Week</p>
+                            <p className="text-3xl font-bold mt-1 text-emerald-600 dark:text-emerald-400">{fmtGbp((data.financials as any).totalIncomeThisWeek ?? 0)}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              PTS 20% remittance: <span className="font-semibold">{fmtGbp(data.financials.jltRevenueThisWeek)}</span>
+                              {" + "}
+                              GC paid out: <span className="font-semibold">{fmtGbp((data.financials as any).totalIncomeThisWeek - data.financials.jltRevenueThisWeek)}</span>
+                            </p>
+                          </div>
+                          <div className="shrink-0 w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
+                            <PoundSterling size={22} className="text-emerald-600 dark:text-emerald-400" />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <StatCard title="JLT Revenue (Remittance)" value={fmtGbp(data.financials.jltRevenueThisWeek)} icon={PoundSterling} accent="green"
                       wow={{ current: data.financials.jltRevenueThisWeek, prev: data.financials.jltRevenuePrevWeek }} sub="20% JLT share from PTS" />
