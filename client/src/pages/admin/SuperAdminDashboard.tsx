@@ -753,10 +753,10 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard title="JLT Revenue (Remittance)" value={fmtGbp(financials.jltRevenueThisMonth)} icon={PoundSterling} accent="green"
               wow={{ current: financials.jltRevenueThisMonth, prev: financials.jltRevenuePrevMonth }} wowLabel="MoM" sub="20% JLT share from PTS" />
-            <StatCard title="Agent Payouts" value={fmtGbp(financials.agentPayoutsThisMonth)} icon={PoundSterling} accent="blue" sub="80% agent share" />
+            <StatCard title="Agent Payouts" value={fmtGbp(financials.agentPayoutsThisMonth)} icon={PoundSterling} accent="blue" sub="80% agent share from PTS remittance" />
             <StatCard title="Commission Claims (New)" value={fmt(financials.commissionClaimsThisMonth)} sub={`${fmtGbp(financials.commissionClaimsGrossThisMonth)} gross`} />
             <StatCard title="Commissions Paid" value={fmt(financials.commissionClaimsPaidThisMonth)} icon={CheckCircle2} accent="green"
-              sub={`${fmtGbp(financials.commissionClaimsPaidGrossThisMonth)} paid out`} />
+              sub={`${fmtGbp(financials.commissionClaimsPaidGrossThisMonth)} from expected commission`} />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard title="Reimbursements Paid" value={fmt(financials.reimbursementsPaidThisMonth)} icon={CheckCircle2} accent="green"
@@ -1321,11 +1321,11 @@ export default function SuperAdminDashboard() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <StatCard title="JLT Revenue (Remittance)" value={fmtGbp(data.financials.jltRevenueThisWeek)} icon={PoundSterling} accent="green"
                       wow={{ current: data.financials.jltRevenueThisWeek, prev: data.financials.jltRevenuePrevWeek }} sub="20% JLT share from PTS" />
-                    <StatCard title="Agent Payouts" value={fmtGbp(data.financials.agentPayoutsThisWeek)} icon={PoundSterling} accent="blue" sub="80% agent share paid out" />
+                    <StatCard title="Agent Payouts" value={fmtGbp(data.financials.agentPayoutsThisWeek)} icon={PoundSterling} accent="blue" sub="80% agent share from PTS remittance" />
                     <StatCard title="Commission Claims (New)" value={fmt(data.financials.commissionClaimsThisWeek)}
                       sub={`${fmtGbp(data.financials.commissionClaimsGrossThisWeek)} gross`} link="/commissions" />
                     <StatCard title="Commissions Paid" value={fmt(data.financials.commissionClaimsPaidThisWeek)} icon={CheckCircle2} accent="green"
-                      sub={`${fmtGbp(data.financials.commissionClaimsPaidGrossThisWeek)} paid out`} />
+                      sub={`${fmtGbp(data.financials.commissionClaimsPaidGrossThisWeek)} from expected commission`} />
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <StatCard title="Reimbursements Paid" value={fmt(data.financials.reimbursementsPaidThisWeek)} icon={CheckCircle2} accent="green"
