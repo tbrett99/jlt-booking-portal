@@ -159,46 +159,33 @@ export const superAdminRouter = router({
       // Split confirmed payments into subscription DD vs one-off joining fees.
       // Joining fees are identified by matching gc_payment_events.mandateId + DATE(occurredAt)
       // to gc_mandates.mandateId + DATE(joiningFeePaidAt). Everything else is a subscription collection.
-      // Joining fee = first ever payments_confirmed event per mandate (lowest id for that mandateId).
-      // All subsequent confirmed payments for the same mandate are subscription collections.
+      // Joining fee = amount > 20000 pence (£200). Subscription = amount <= 20000 pence.
       const paymentsConfirmedThisWeek = ((await db.execute(sql`
         SELECT
           COUNT(*) AS count,
-          SUM(gpe.amount) AS totalPence,
-          SUM(CASE WHEN gpe.id = first_pay.min_id THEN gpe.amount ELSE 0 END) AS joiningFeePence,
-          SUM(CASE WHEN gpe.id != first_pay.min_id THEN gpe.amount ELSE 0 END) AS subscriptionPence,
-          COUNT(CASE WHEN gpe.id = first_pay.min_id THEN 1 END) AS joiningFeeCount,
-          COUNT(CASE WHEN gpe.id != first_pay.min_id THEN 1 END) AS subscriptionCount
-        FROM gc_payment_events gpe
-        LEFT JOIN (
-          SELECT mandateId, MIN(id) AS min_id
-          FROM gc_payment_events
-          WHERE eventType = 'payments_confirmed' AND mandateId IS NOT NULL
-          GROUP BY mandateId
-        ) first_pay ON gpe.mandateId = first_pay.mandateId
-        WHERE gpe.eventType = 'payments_confirmed'
-          AND gpe.occurredAt >= ${weekStartDate}
-          AND gpe.occurredAt < ${weekEndDate}
-          AND gpe.amount IS NOT NULL
+          SUM(amount) AS totalPence,
+          SUM(CASE WHEN amount > 20000 THEN amount ELSE 0 END) AS joiningFeePence,
+          SUM(CASE WHEN amount <= 20000 THEN amount ELSE 0 END) AS subscriptionPence,
+          COUNT(CASE WHEN amount > 20000 THEN 1 END) AS joiningFeeCount,
+          COUNT(CASE WHEN amount <= 20000 THEN 1 END) AS subscriptionCount
+        FROM gc_payment_events
+        WHERE eventType = 'payments_confirmed'
+          AND occurredAt >= ${weekStartDate}
+          AND occurredAt < ${weekEndDate}
+          AND amount IS NOT NULL
       `) as unknown as [Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number; joiningFeeCount: number; subscriptionCount: number }>, unknown]))[0];
 
       const paymentsConfirmedPrevWeek = ((await db.execute(sql`
         SELECT
           COUNT(*) AS count,
-          SUM(gpe.amount) AS totalPence,
-          SUM(CASE WHEN gpe.id = first_pay.min_id THEN gpe.amount ELSE 0 END) AS joiningFeePence,
-          SUM(CASE WHEN gpe.id != first_pay.min_id THEN gpe.amount ELSE 0 END) AS subscriptionPence
-        FROM gc_payment_events gpe
-        LEFT JOIN (
-          SELECT mandateId, MIN(id) AS min_id
-          FROM gc_payment_events
-          WHERE eventType = 'payments_confirmed' AND mandateId IS NOT NULL
-          GROUP BY mandateId
-        ) first_pay ON gpe.mandateId = first_pay.mandateId
-        WHERE gpe.eventType = 'payments_confirmed'
-          AND gpe.occurredAt >= ${prevWeekStart}
-          AND gpe.occurredAt < ${prevWeekEnd}
-          AND gpe.amount IS NOT NULL
+          SUM(amount) AS totalPence,
+          SUM(CASE WHEN amount > 20000 THEN amount ELSE 0 END) AS joiningFeePence,
+          SUM(CASE WHEN amount <= 20000 THEN amount ELSE 0 END) AS subscriptionPence
+        FROM gc_payment_events
+        WHERE eventType = 'payments_confirmed'
+          AND occurredAt >= ${prevWeekStart}
+          AND occurredAt < ${prevWeekEnd}
+          AND amount IS NOT NULL
       `) as unknown as [Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number }>, unknown]))[0];
 
       // Payments paid out this week (funds actually landed in your bank account)
@@ -1153,40 +1140,28 @@ export const superAdminRouter = router({
       const confirmedThisMonthRaw = ((await db.execute(sql`
         SELECT
           COUNT(*) AS count,
-          SUM(gpe.amount) AS totalPence,
-          SUM(CASE WHEN gpe.id = first_pay.min_id THEN gpe.amount ELSE 0 END) AS joiningFeePence,
-          SUM(CASE WHEN gpe.id != first_pay.min_id THEN gpe.amount ELSE 0 END) AS subscriptionPence,
-          COUNT(CASE WHEN gpe.id = first_pay.min_id THEN 1 END) AS joiningFeeCount,
-          COUNT(CASE WHEN gpe.id != first_pay.min_id THEN 1 END) AS subscriptionCount
-        FROM gc_payment_events gpe
-        LEFT JOIN (
-          SELECT mandateId, MIN(id) AS min_id
-          FROM gc_payment_events
-          WHERE eventType = 'payments_confirmed' AND mandateId IS NOT NULL
-          GROUP BY mandateId
-        ) first_pay ON gpe.mandateId = first_pay.mandateId
-        WHERE gpe.eventType = 'payments_confirmed'
-          AND gpe.occurredAt >= ${monthStartDate}
-          AND gpe.occurredAt < ${monthEndDate}
-          AND gpe.amount IS NOT NULL
+          SUM(amount) AS totalPence,
+          SUM(CASE WHEN amount > 20000 THEN amount ELSE 0 END) AS joiningFeePence,
+          SUM(CASE WHEN amount <= 20000 THEN amount ELSE 0 END) AS subscriptionPence,
+          COUNT(CASE WHEN amount > 20000 THEN 1 END) AS joiningFeeCount,
+          COUNT(CASE WHEN amount <= 20000 THEN 1 END) AS subscriptionCount
+        FROM gc_payment_events
+        WHERE eventType = 'payments_confirmed'
+          AND occurredAt >= ${monthStartDate}
+          AND occurredAt < ${monthEndDate}
+          AND amount IS NOT NULL
       `) as unknown as [Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number; joiningFeeCount: number; subscriptionCount: number }>, unknown]))[0];
       const confirmedPrevMonthRaw = ((await db.execute(sql`
         SELECT
           COUNT(*) AS count,
-          SUM(gpe.amount) AS totalPence,
-          SUM(CASE WHEN gpe.id = first_pay.min_id THEN gpe.amount ELSE 0 END) AS joiningFeePence,
-          SUM(CASE WHEN gpe.id != first_pay.min_id THEN gpe.amount ELSE 0 END) AS subscriptionPence
-        FROM gc_payment_events gpe
-        LEFT JOIN (
-          SELECT mandateId, MIN(id) AS min_id
-          FROM gc_payment_events
-          WHERE eventType = 'payments_confirmed' AND mandateId IS NOT NULL
-          GROUP BY mandateId
-        ) first_pay ON gpe.mandateId = first_pay.mandateId
-        WHERE gpe.eventType = 'payments_confirmed'
-          AND gpe.occurredAt >= ${prevMonthStart}
-          AND gpe.occurredAt < ${prevMonthEnd}
-          AND gpe.amount IS NOT NULL
+          SUM(amount) AS totalPence,
+          SUM(CASE WHEN amount > 20000 THEN amount ELSE 0 END) AS joiningFeePence,
+          SUM(CASE WHEN amount <= 20000 THEN amount ELSE 0 END) AS subscriptionPence
+        FROM gc_payment_events
+        WHERE eventType = 'payments_confirmed'
+          AND occurredAt >= ${prevMonthStart}
+          AND occurredAt < ${prevMonthEnd}
+          AND amount IS NOT NULL
       `) as unknown as [Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number }>, unknown]))[0];
       const [confirmedThisMonth, confirmedPrevMonth, failedThisMonth] = [
         confirmedThisMonthRaw,
