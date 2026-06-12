@@ -495,7 +495,7 @@ function CommissionMarginTab() {
       search === "" || a.agentName.toLowerCase().includes(search.toLowerCase())
     );
     if (sortBy === "margin") agents = [...agents].sort((a, b) => (a.avgMarginPct ?? 999) - (b.avgMarginPct ?? 999));
-    else if (sortBy === "claims") agents = [...agents].sort((a, b) => b.totalClaims - a.totalClaims);
+    else if (sortBy === "claims") agents = [...agents].sort((a, b) => ((b as any).totalBookingsCount ?? 0) - ((a as any).totalBookingsCount ?? 0));
     else if (sortBy === "valueAtRisk") agents = [...agents].sort((a, b) => (b.valueAtRisk ?? 0) - (a.valueAtRisk ?? 0));
     else agents = [...agents].sort((a, b) => {
       const order = { red: 0, amber: 1, green: 2 };
@@ -535,7 +535,7 @@ function CommissionMarginTab() {
             )}
             {(dateFrom || dateTo) && (
               <span className="text-xs text-muted-foreground self-end pb-1.5">
-                Showing claims {dateFrom ? `from ${dateFrom}` : ""}{dateTo ? ` to ${dateTo}` : ""}
+                Showing bookings registered {dateFrom ? `from ${dateFrom}` : ""}{dateTo ? ` to ${dateTo}` : ""}
               </span>
             )}
           </div>
@@ -544,11 +544,11 @@ function CommissionMarginTab() {
 
       {/* Summary KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard title="Agents Reported" value={fmt(data.summary.totalAgentsReported)} icon={Users} accent="blue" />
+        <StatCard title="Agents Reporting" value={fmt(data.summary.totalAgentsReported)} icon={Users} accent="blue" />
         <StatCard title="Below 6% Threshold" value={fmt(data.summary.agentsBelowThreshold)} icon={AlertCircle} accent={data.summary.agentsBelowThreshold > 0 ? "red" : undefined} sub="Needs attention" />
         <StatCard title="Amber (6–8%)" value={fmt(data.summary.agentsAmber)} accent={data.summary.agentsAmber > 0 ? "amber" : undefined} />
         <StatCard title="Total Value at Risk" value={fmtGbp((data.summary as any).totalValueAtRisk)} accent={(data.summary as any).totalValueAtRisk > 0 ? "red" : "green"}
-          sub="Gross cost on sub-6% claims" />
+          sub="Gross cost on sub-6% bookings" />
       </div>
 
       {/* Agent detail table */}
@@ -585,21 +585,18 @@ function CommissionMarginTab() {
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-right">Avg Margin</TableHead>
                 <TableHead className="text-right">Trend</TableHead>
-                <TableHead className="text-right">Claims</TableHead>
                 <TableHead className="text-right">Bookings</TableHead>
+                <TableHead className="text-right">With Data</TableHead>
                 <TableHead className="text-right">Value at Risk</TableHead>
                 <TableHead className="text-right">Total Commission</TableHead>
                 <TableHead className="text-right">Gross Cost</TableHead>
-                <TableHead className="text-right">Last Claim</TableHead>
+                <TableHead className="text-right">Last Booking</TableHead>
                 <TableHead>3-Month Trend</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sorted.map((a) => {
-                const lastClaimDaysAgo = a.lastClaimDate
-                  ? Math.floor((Date.now() - new Date(a.lastClaimDate).getTime()) / 86400000)
-                  : null;
-                const lastClaimStale = lastClaimDaysAgo !== null && lastClaimDaysAgo > 60;
+
                 return (
                   <TableRow key={a.agentId} className="cursor-pointer hover:bg-muted/50"
                     onClick={() => navigate(`/crm/agents?agent=${a.agentId}`)}
@@ -621,8 +618,8 @@ function CommissionMarginTab() {
                     <TableCell className="text-right">
                       <div className="flex justify-end">{trendIcon((a as any).trendDirection ?? "flat")}</div>
                     </TableCell>
-                    <TableCell className="text-right">{fmt(a.totalClaims)}</TableCell>
                     <TableCell className="text-right">{fmt((a as any).totalBookingsCount)}</TableCell>
+                    <TableCell className="text-right">{fmt((a as any).bookingsWithMargin)}</TableCell>
                     <TableCell className="text-right">
                       {(a as any).valueAtRisk > 0
                         ? <span className="text-rose-600 font-semibold">{fmtGbp((a as any).valueAtRisk)}</span>
@@ -631,10 +628,9 @@ function CommissionMarginTab() {
                     <TableCell className="text-right">{fmtGbp(a.totalGrossCommission)}</TableCell>
                     <TableCell className="text-right">{fmtGbp(a.totalGrossCost)}</TableCell>
                     <TableCell className="text-right">
-                      {a.lastClaimDate ? (
-                        <span className={lastClaimStale ? "text-amber-600 text-xs" : "text-xs text-muted-foreground"}>
-                          {new Date(a.lastClaimDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}
-                          {lastClaimStale && <span className="block text-amber-600">{lastClaimDaysAgo}d ago</span>}
+                      {(a as any).lastBookingDate ? (
+                        <span className="text-xs text-muted-foreground">
+                          {new Date((a as any).lastBookingDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}
                         </span>
                       ) : <span className="text-muted-foreground text-xs">—</span>}
                     </TableCell>
@@ -645,7 +641,7 @@ function CommissionMarginTab() {
                             const height = Math.max(4, Math.min(32, (t.avgMarginPct / 15) * 32));
                             const color = t.avgMarginPct < 6 ? "bg-rose-400" : t.avgMarginPct < 8 ? "bg-amber-400" : "bg-emerald-400";
                             return (
-                              <div key={t.month} title={`${t.month}: ${fmtPct(t.avgMarginPct)} (${t.claimCount} claims)`}
+                              <div key={t.month} title={`${t.month}: ${fmtPct(t.avgMarginPct)} (${(t as any).bookingCount ?? 0} bookings)`}
                                 className={`w-4 rounded-sm ${color} transition-all`} style={{ height: `${height}px` }} />
                             );
                           })}
@@ -665,7 +661,7 @@ function CommissionMarginTab() {
         </CardContent>
       </Card>
       <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">
-        <strong>Margin calculation:</strong> Commission gross amount ÷ booking gross cost × 100. Red = any claim below 6%, Amber = all claims between 6–8%, Green = all claims ≥8%. <strong>Value at Risk</strong> = total gross cost on bookings where margin is below 6% — sorted highest first so the biggest problems appear at the top. Trend arrow compares most recent month to the previous month (±0.5% threshold). Click any row to view the agent in the CRM.
+        <strong>Margin calculation:</strong> Expected commission ÷ gross cost × 100, sourced from registered bookings in real time — no claim required. Red = any booking below 6%, Amber = all bookings between 6–8%, Green = all bookings ≥8%. <strong>Value at Risk</strong> = total gross cost on bookings where margin is below 6% — sorted highest first. Trend arrow compares most recent month to the previous month (±0.5% threshold). Click any row to view the agent in the CRM.
       </div>
     </div>
   );

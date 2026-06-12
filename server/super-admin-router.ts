@@ -1432,64 +1432,58 @@ export const superAdminRouter = router({
       const { getDb } = await import("./db");
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-      const { users, bookings, commissionClaims } = await import("../drizzle/schema");
+      const { users, bookings } = await import("../drizzle/schema");
       const { eq, sql, isNotNull, and, gte, lt } = await import("drizzle-orm");
 
-      // Build optional date range filter for the main query
+      // Build optional date range filter — applied to booking registration date (createdAt)
       const dateFrom = input.dateFrom ? new Date(input.dateFrom) : null;
       const dateTo = input.dateTo ? new Date(input.dateTo + "T23:59:59") : null;
-      const dateFilter = sql`
-        ${dateFrom ? sql`AND cc.claimedAt >= ${dateFrom}` : sql``}
-        ${dateTo ? sql`AND cc.claimedAt <= ${dateTo}` : sql``}
-      `;
 
-      // Per-agent margin summary with date range, last claim date, total bookings, value at risk.
-      // Uses COALESCE(cc.grossAmount, b.expectedCommission) so older claims without a
-      // grossAmount still contribute using the booking's expectedCommission as the figure.
+      // Per-agent margin summary sourced directly from bookings (real-time, no claim required).
+      // Uses b.expectedCommission as the commission figure and b.grossCost as the cost.
+      // Date filter applies to b.createdAt (booking registration date).
       const agentMargins = await db.execute(sql`
         SELECT
           u.id AS agentId,
           u.name AS agentName,
           u.email AS agentEmail,
-          COUNT(DISTINCT cc.id) AS totalClaims,
           COUNT(DISTINCT b.id) AS totalBookingsCount,
           COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL THEN cc.id END) AS claimsWithMargin,
+            AND b.expectedCommission IS NOT NULL THEN b.id END) AS bookingsWithMargin,
           AVG(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
-            THEN (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) END) AS avgMarginPct,
+            AND b.expectedCommission IS NOT NULL
+            THEN (b.expectedCommission / b.grossCost * 100) END) AS avgMarginPct,
           COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
-            AND (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) < 6 THEN cc.id END) AS claimsBelowThreshold,
+            AND b.expectedCommission IS NOT NULL
+            AND (b.expectedCommission / b.grossCost * 100) < 6 THEN b.id END) AS bookingsBelowThreshold,
           COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
-            AND (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) >= 6
-            AND (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) < 8 THEN cc.id END) AS claimsAmber,
+            AND b.expectedCommission IS NOT NULL
+            AND (b.expectedCommission / b.grossCost * 100) >= 6
+            AND (b.expectedCommission / b.grossCost * 100) < 8 THEN b.id END) AS bookingsAmber,
           COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
-            AND (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) >= 8 THEN cc.id END) AS claimsGreen,
-          SUM(COALESCE(cc.grossAmount, b.expectedCommission)) AS totalGrossCommission,
-          SUM(b.grossCost) AS totalGrossCost,
-          MAX(cc.claimedAt) AS lastClaimDate,
-          -- Value at risk: sum of gross cost on claims below 6% threshold (money exposed to low margin)
+            AND b.expectedCommission IS NOT NULL
+            AND (b.expectedCommission / b.grossCost * 100) >= 8 THEN b.id END) AS bookingsGreen,
+          SUM(CASE WHEN b.expectedCommission IS NOT NULL THEN b.expectedCommission ELSE 0 END) AS totalGrossCommission,
+          SUM(CASE WHEN b.grossCost IS NOT NULL THEN b.grossCost ELSE 0 END) AS totalGrossCost,
+          MAX(b.createdAt) AS lastBookingDate,
+          -- Value at risk: sum of gross cost on bookings below 6% threshold
           SUM(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
-            AND (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) < 6
+            AND b.expectedCommission IS NOT NULL
+            AND (b.expectedCommission / b.grossCost * 100) < 6
             THEN b.grossCost ELSE 0 END) AS valueAtRisk
-        FROM commission_claims cc
-        JOIN bookings b ON cc.bookingId = b.id
-        JOIN users u ON cc.agentId = u.id
-        WHERE 1=1
-        ${dateFrom ? sql`AND cc.claimedAt >= ${dateFrom}` : sql``}
-        ${dateTo ? sql`AND cc.claimedAt <= ${dateTo}` : sql``}
+        FROM bookings b
+        JOIN users u ON b.agentId = u.id
+        WHERE b.isPersonalBooking = 0
+        ${dateFrom ? sql`AND b.createdAt >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND b.createdAt <= ${dateTo}` : sql``}
         GROUP BY u.id, u.name, u.email
-        HAVING COUNT(DISTINCT cc.id) >= ${input.minBookings}
+        HAVING COUNT(DISTINCT b.id) >= ${input.minBookings}
         ORDER BY valueAtRisk DESC, avgMarginPct ASC
       `) as unknown as [Array<{
         agentId: number; agentName: string; agentEmail: string;
-        totalClaims: number; totalBookingsCount: number; claimsWithMargin: number; avgMarginPct: number | null;
-        claimsBelowThreshold: number; claimsAmber: number; claimsGreen: number;
-        totalGrossCommission: number; totalGrossCost: number; lastClaimDate: Date | string | null;
+        totalBookingsCount: number; bookingsWithMargin: number; avgMarginPct: number | null;
+        bookingsBelowThreshold: number; bookingsAmber: number; bookingsGreen: number;
+        totalGrossCommission: number; totalGrossCost: number; lastBookingDate: Date | string | null;
         valueAtRisk: number;
       }>, unknown];
       const agentMarginRows = agentMargins[0];
@@ -1499,28 +1493,28 @@ export const superAdminRouter = router({
       const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1, 0, 0, 0, 0);
       const monthlyMarginsRaw = await db.execute(sql`
         SELECT
-          cc.agentId,
-          DATE_FORMAT(cc.claimedAt, '%Y-%m') AS month,
+          b.agentId,
+          DATE_FORMAT(b.createdAt, '%Y-%m') AS month,
           AVG(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
-            THEN (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) END) AS avgMarginPct,
-          COUNT(cc.id) AS claimCount
-        FROM commission_claims cc
-        JOIN bookings b ON cc.bookingId = b.id
-        WHERE cc.claimedAt >= ${threeMonthsAgo}
-        GROUP BY cc.agentId, DATE_FORMAT(cc.claimedAt, '%Y-%m')
-        ORDER BY cc.agentId, month ASC
-      `) as unknown as [Array<{ agentId: number; month: string; avgMarginPct: number | null; claimCount: number }>, unknown];
+            AND b.expectedCommission IS NOT NULL
+            THEN (b.expectedCommission / b.grossCost * 100) END) AS avgMarginPct,
+          COUNT(b.id) AS bookingCount
+        FROM bookings b
+        WHERE b.isPersonalBooking = 0
+          AND b.createdAt >= ${threeMonthsAgo}
+        GROUP BY b.agentId, DATE_FORMAT(b.createdAt, '%Y-%m')
+        ORDER BY b.agentId, month ASC
+      `) as unknown as [Array<{ agentId: number; month: string; avgMarginPct: number | null; bookingCount: number }>, unknown];
       const monthlyMargins = monthlyMarginsRaw[0];
 
       // Group monthly trend by agentId and derive trend direction
-      const trendByAgent = new Map<number, Array<{ month: string; avgMarginPct: number; claimCount: number }>>();
+      const trendByAgent = new Map<number, Array<{ month: string; avgMarginPct: number; bookingCount: number }>>();
       for (const row of monthlyMargins) {
         if (!trendByAgent.has(row.agentId)) trendByAgent.set(row.agentId, []);
         trendByAgent.get(row.agentId)!.push({
           month: row.month,
           avgMarginPct: Math.round(Number(row.avgMarginPct ?? 0) * 10) / 10,
-          claimCount: Number(row.claimCount),
+          bookingCount: Number(row.bookingCount),
         });
       }
 
@@ -1540,27 +1534,26 @@ export const superAdminRouter = router({
           agentId: Number(r.agentId),
           agentName: r.agentName,
           agentEmail: r.agentEmail,
-          totalClaims: Number(r.totalClaims),
           totalBookingsCount: Number(r.totalBookingsCount),
-          claimsWithMargin: Number(r.claimsWithMargin),
+          bookingsWithMargin: Number(r.bookingsWithMargin),
           avgMarginPct: r.avgMarginPct !== null ? Math.round(Number(r.avgMarginPct) * 10) / 10 : null,
-          claimsBelowThreshold: Number(r.claimsBelowThreshold),
-          claimsAmber: Number(r.claimsAmber),
-          claimsGreen: Number(r.claimsGreen),
+          bookingsBelowThreshold: Number(r.bookingsBelowThreshold),
+          bookingsAmber: Number(r.bookingsAmber),
+          bookingsGreen: Number(r.bookingsGreen),
           totalGrossCommission: Number(r.totalGrossCommission),
           totalGrossCost: Number(r.totalGrossCost),
           valueAtRisk: Number(r.valueAtRisk),
-          lastClaimDate: r.lastClaimDate ? new Date(r.lastClaimDate).toISOString() : null,
+          lastBookingDate: r.lastBookingDate ? new Date(r.lastBookingDate).toISOString() : null,
           // Flag: red = any below threshold, amber = all in 6-8%, green = all above 8%
-          flag: Number(r.claimsBelowThreshold) > 0 ? "red" : Number(r.claimsAmber) > 0 ? "amber" : "green",
+          flag: Number(r.bookingsBelowThreshold) > 0 ? "red" : Number(r.bookingsAmber) > 0 ? "amber" : "green",
           trendDirection: getTrendDirection(Number(r.agentId)),
           trend: trendByAgent.get(Number(r.agentId)) ?? [],
         })),
         summary: {
           totalAgentsReported: agentMarginRows.length,
-          agentsBelowThreshold: agentMarginRows.filter((r) => Number(r.claimsBelowThreshold) > 0).length,
-          agentsAmber: agentMarginRows.filter((r) => Number(r.claimsBelowThreshold) === 0 && Number(r.claimsAmber) > 0).length,
-          agentsGreen: agentMarginRows.filter((r) => Number(r.claimsBelowThreshold) === 0 && Number(r.claimsAmber) === 0).length,
+          agentsBelowThreshold: agentMarginRows.filter((r) => Number(r.bookingsBelowThreshold) > 0).length,
+          agentsAmber: agentMarginRows.filter((r) => Number(r.bookingsBelowThreshold) === 0 && Number(r.bookingsAmber) > 0).length,
+          agentsGreen: agentMarginRows.filter((r) => Number(r.bookingsBelowThreshold) === 0 && Number(r.bookingsAmber) === 0).length,
           totalValueAtRisk: agentMarginRows.reduce((sum, r) => sum + Number(r.valueAtRisk), 0),
         },
       };
