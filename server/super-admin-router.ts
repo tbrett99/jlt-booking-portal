@@ -1411,17 +1411,18 @@ export const superAdminRouter = router({
         GROUP BY u.id, u.name, u.email
         HAVING COUNT(DISTINCT cc.id) >= ${input.minBookings}
         ORDER BY avgMarginPct ASC
-      `) as unknown as Array<{
+      `) as unknown as [Array<{
         agentId: number; agentName: string; agentEmail: string;
         totalClaims: number; claimsWithMargin: number; avgMarginPct: number | null;
         claimsBelowThreshold: number; claimsAmber: number; claimsGreen: number;
         totalGrossCommission: number; totalGrossCost: number;
-      }>;
+      }>, unknown];
+      const agentMarginRows = agentMargins[0];
 
       // 3-month trend per agent (last 3 calendar months)
       const now = new Date();
       const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1, 0, 0, 0, 0);
-      const monthlyMargins = await db.execute(sql`
+      const monthlyMarginsRaw = await db.execute(sql`
         SELECT
           cc.agentId,
           DATE_FORMAT(cc.claimedAt, '%Y-%m') AS month,
@@ -1434,7 +1435,8 @@ export const superAdminRouter = router({
         WHERE cc.claimedAt >= ${threeMonthsAgo}
         GROUP BY cc.agentId, DATE_FORMAT(cc.claimedAt, '%Y-%m')
         ORDER BY cc.agentId, month ASC
-      `) as unknown as Array<{ agentId: number; month: string; avgMarginPct: number | null; claimCount: number }>;
+      `) as unknown as [Array<{ agentId: number; month: string; avgMarginPct: number | null; claimCount: number }>, unknown];
+      const monthlyMargins = monthlyMarginsRaw[0];
 
       // Group monthly trend by agentId
       const trendByAgent = new Map<number, Array<{ month: string; avgMarginPct: number; claimCount: number }>>();
@@ -1448,7 +1450,7 @@ export const superAdminRouter = router({
       }
 
       return {
-        agents: agentMargins.map((r) => ({
+        agents: agentMarginRows.map((r) => ({
           agentId: Number(r.agentId),
           agentName: r.agentName,
           agentEmail: r.agentEmail,
@@ -1465,10 +1467,10 @@ export const superAdminRouter = router({
           trend: trendByAgent.get(Number(r.agentId)) ?? [],
         })),
         summary: {
-          totalAgentsReported: agentMargins.length,
-          agentsBelowThreshold: agentMargins.filter((r) => Number(r.claimsBelowThreshold) > 0).length,
-          agentsAmber: agentMargins.filter((r) => Number(r.claimsBelowThreshold) === 0 && Number(r.claimsAmber) > 0).length,
-          agentsGreen: agentMargins.filter((r) => Number(r.claimsBelowThreshold) === 0 && Number(r.claimsAmber) === 0).length,
+          totalAgentsReported: agentMarginRows.length,
+          agentsBelowThreshold: agentMarginRows.filter((r) => Number(r.claimsBelowThreshold) > 0).length,
+          agentsAmber: agentMarginRows.filter((r) => Number(r.claimsBelowThreshold) === 0 && Number(r.claimsAmber) > 0).length,
+          agentsGreen: agentMarginRows.filter((r) => Number(r.claimsBelowThreshold) === 0 && Number(r.claimsAmber) === 0).length,
         },
       };
     }),
