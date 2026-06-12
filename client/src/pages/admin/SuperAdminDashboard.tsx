@@ -697,8 +697,9 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
             <StatCard title="DD Paid Out" value={fmtGbp(ddRevenue.paidOutThisMonthGbp)} icon={CheckCircle2} accent="green"
               wow={{ current: ddRevenue.paidOutThisMonthGbp, prev: ddRevenue.paidOutPrevMonthGbp }} wowLabel="MoM"
               sub={`${fmt(ddRevenue.paidOutThisMonthCount)} payments landed`} />
-            <StatCard title="Joining Fees Confirmed" value={fmtGbp(ddRevenue.confirmedThisMonthGbp)} icon={CreditCard} accent="green"
-              wow={{ current: ddRevenue.confirmedThisMonthGbp, prev: ddRevenue.confirmedPrevMonthGbp }} wowLabel="MoM" />
+            <StatCard title="DD Confirmed (All)" value={fmtGbp(ddRevenue.confirmedThisMonthGbp)} icon={CreditCard} accent="green"
+              wow={{ current: ddRevenue.confirmedThisMonthGbp, prev: ddRevenue.confirmedPrevMonthGbp }} wowLabel="MoM"
+              sub={`${fmt(ddRevenue.confirmedThisMonthCount)} payments incl. subscriptions`} />
             <StatCard title="Failed Payments" value={fmt(ddRevenue.failedThisMonthCount)} icon={AlertCircle}
               accent={ddRevenue.failedThisMonthCount > 0 ? "red" : undefined}
               sub={`${fmtGbp(ddRevenue.failedThisMonthGbp)} at risk`} />

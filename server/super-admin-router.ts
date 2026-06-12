@@ -1748,8 +1748,14 @@ function buildResponse(data: {
   const n = (v: unknown) => Number(v ?? 0);
 
   // Parse pipeline dwell time from raw SQL result
-  const dwellRows = Array.isArray(data.pipelineDwellRaw)
-    ? (data.pipelineDwellRaw as Array<{ stage: string; avgDays: number; bookingCount: number }>)
+  // db.execute returns [rowsArray, fieldsArray] tuple — extract index [0]
+  const dwellRawTuple = data.pipelineDwellRaw as [Array<{ stage: string; avgDays: number; bookingCount: number }>, unknown];
+  const dwellRows = Array.isArray(dwellRawTuple) && Array.isArray(dwellRawTuple[0])
+    ? dwellRawTuple[0].map((r) => ({
+        stage: r.stage,
+        avgDays: Math.round(Number(r.avgDays) * 10) / 10,
+        bookingCount: Number(r.bookingCount),
+      }))
     : [];
 
   return {
