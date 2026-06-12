@@ -1545,15 +1545,15 @@ export const superAdminRouter = router({
           valueAtRisk: Number(r.valueAtRisk),
           lastBookingDate: r.lastBookingDate ? new Date(r.lastBookingDate).toISOString() : null,
           // Flag: red = any below threshold, amber = all in 6-8%, green = all above 8%
-          flag: Number(r.bookingsBelowThreshold) > 0 ? "red" : Number(r.bookingsAmber) > 0 ? "amber" : "green",
+          flag: (r.avgMarginPct !== null && Number(r.avgMarginPct) < 6) ? "red" : (r.avgMarginPct !== null && Number(r.avgMarginPct) < 8) ? "amber" : "green",
           trendDirection: getTrendDirection(Number(r.agentId)),
           trend: trendByAgent.get(Number(r.agentId)) ?? [],
         })),
         summary: {
           totalAgentsReported: agentMarginRows.length,
-          agentsBelowThreshold: agentMarginRows.filter((r) => Number(r.bookingsBelowThreshold) > 0).length,
-          agentsAmber: agentMarginRows.filter((r) => Number(r.bookingsBelowThreshold) === 0 && Number(r.bookingsAmber) > 0).length,
-          agentsGreen: agentMarginRows.filter((r) => Number(r.bookingsBelowThreshold) === 0 && Number(r.bookingsAmber) === 0).length,
+          agentsBelowThreshold: agentMarginRows.filter((r) => r.avgMarginPct !== null && Number(r.avgMarginPct) < 6).length,
+          agentsAmber: agentMarginRows.filter((r) => r.avgMarginPct !== null && Number(r.avgMarginPct) >= 6 && Number(r.avgMarginPct) < 8).length,
+          agentsGreen: agentMarginRows.filter((r) => r.avgMarginPct === null || Number(r.avgMarginPct) >= 8).length,
           totalValueAtRisk: agentMarginRows.reduce((sum, r) => sum + Number(r.valueAtRisk), 0),
         },
       };
