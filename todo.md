@@ -2562,15 +2562,15 @@
 - [ ] Update super admin dashboard New Sign-Ups metric to use recruitment_stage_history.changedAt (toStage='won')
 
 ## BI / Analytics Enhancement (Jun 12)
-- [ ] Fix duplicate payments_paid_out deduplication by paymentId
-- [ ] Add monthly stats procedure (monthlyStats) to super-admin-router
-- [ ] Add commission margin per-agent procedure (agentMarginReport)
-- [ ] Add drill-down procedures: refunds, reimbursements, amendments, flight ticketing
-- [ ] Add recruitment conversion rate and avg time-to-signup metrics
-- [ ] Expand trend charts to all key areas (refunds, reimbursements, amendments, margins)
-- [ ] Build enhanced SuperAdminDashboard frontend: weekly/monthly toggle, trend charts, drill-down modals
-- [ ] Build per-agent commission margin view with 6% threshold flagging
-- [ ] Build automated Monday morning weekly digest email (periodic-updates)
+- [x] Fix duplicate payments_paid_out deduplication by paymentId
+- [x] Add monthly stats procedure (monthlyStats) to super-admin-router
+- [x] Add commission margin per-agent procedure (agentMarginReport)
+- [x] Add drill-down procedures: refunds, reimbursements, amendments, flight ticketing
+- [x] Add recruitment conversion rate and avg time-to-signup metrics
+- [x] Expand trend charts to all key areas (refunds, reimbursements, amendments, margins)
+- [x] Build enhanced SuperAdminDashboard frontend: weekly/monthly toggle, trend charts, drill-down modals
+- [x] Build per-agent commission margin view with 6% threshold flagging
+- [x] Build automated Monday morning weekly digest email (periodic-updates)
 
 ## BI Dashboard Enhancements (Jun 12)
 - [x] Fix paymentsPaidOutThisWeek deduplication — use COUNT(DISTINCT paymentId) and SUM subquery
