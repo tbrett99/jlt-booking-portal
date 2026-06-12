@@ -6,7 +6,7 @@
  */
 import type { Request, Response } from "express";
 import { getDb } from "./db";
-import { sendSupportEmail } from "./email";
+import { sendDirectEmail } from "./email";
 import {
   agentCrmProfiles, agentStatusEvents, gcPaymentEvents, gcMandates,
   bookings, pipelineHistory, amendments, refunds, flightRequests,
@@ -204,7 +204,9 @@ export async function mondayDigestHandler(req: Request, res: Response) {
 </body>
 </html>`;
 
-    const result = await sendSupportEmail({
+    const result = await sendDirectEmail({
+      toEmail: "max@thejltgroup.co.uk",
+      toName: "Max",
       subject: `📊 JLT Weekly Digest — ${weekLabel}`,
       html,
     });
