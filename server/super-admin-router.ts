@@ -159,7 +159,7 @@ export const superAdminRouter = router({
       // Split confirmed payments into subscription DD vs one-off joining fees.
       // Joining fees are identified by matching gc_payment_events.mandateId + DATE(occurredAt)
       // to gc_mandates.mandateId + DATE(joiningFeePaidAt). Everything else is a subscription collection.
-      const paymentsConfirmedThisWeek = await db.execute(sql`
+      const paymentsConfirmedThisWeek = ((await db.execute(sql`
         SELECT
           COUNT(*) AS count,
           SUM(gpe.amount) AS totalPence,
@@ -174,9 +174,9 @@ export const superAdminRouter = router({
           AND gpe.occurredAt >= ${weekStartDate}
           AND gpe.occurredAt < ${weekEndDate}
           AND gpe.amount IS NOT NULL
-      `) as unknown as Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number; joiningFeeCount: number; subscriptionCount: number }>;
+      `) as unknown as [Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number; joiningFeeCount: number; subscriptionCount: number }>, unknown]))[0];
 
-      const paymentsConfirmedPrevWeek = await db.execute(sql`
+      const paymentsConfirmedPrevWeek = ((await db.execute(sql`
         SELECT
           COUNT(*) AS count,
           SUM(gpe.amount) AS totalPence,
@@ -189,12 +189,12 @@ export const superAdminRouter = router({
           AND gpe.occurredAt >= ${prevWeekStart}
           AND gpe.occurredAt < ${prevWeekEnd}
           AND gpe.amount IS NOT NULL
-      `) as unknown as Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number }>;
+      `) as unknown as [Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number }>, unknown]))[0];
 
       // Payments paid out this week (funds actually landed in your bank account)
       // IMPORTANT: gc_payment_events stores multiple rows per GoCardless payment (one per webhook event).
       // We must deduplicate by paymentId to avoid counting the same payment multiple times.
-      const paymentsPaidOutThisWeek = await db.execute(sql`
+      const paymentsPaidOutThisWeek = ((await db.execute(sql`
         SELECT
           COUNT(DISTINCT paymentId) AS count,
           SUM(DISTINCT CASE WHEN paymentId IS NOT NULL THEN amount ELSE 0 END) AS totalPence
@@ -204,7 +204,7 @@ export const superAdminRouter = router({
           AND occurredAt < ${weekEndDate}
           AND amount IS NOT NULL
           AND paymentId IS NOT NULL
-      `) as unknown as Array<{ count: number; totalPence: number }>;
+      `) as unknown as [Array<{ count: number; totalPence: number }>, unknown]))[0];
 
       // Failed payments this week
       const failedPaymentsThisWeek = await db
@@ -1129,18 +1129,18 @@ export const superAdminRouter = router({
         db.select({ count: sql<number>`COUNT(*)`, totalAmountPence: sql<number>`SUM(amount)` }).from(gcSubscriptions).where(eq(gcSubscriptions.status, "active")),
       ]);
       // Deduplicated paid-out payments for the month
-      const paidOutThisMonthRaw = await db.execute(sql`
+      const paidOutThisMonthRaw = ((await db.execute(sql`
         SELECT COUNT(DISTINCT paymentId) AS count, SUM(DISTINCT CASE WHEN paymentId IS NOT NULL THEN amount ELSE 0 END) AS totalPence
         FROM gc_payment_events
         WHERE eventType = 'payments_paid_out' AND occurredAt >= ${monthStartDate} AND occurredAt < ${monthEndDate} AND amount IS NOT NULL AND paymentId IS NOT NULL
-      `) as unknown as Array<{ count: number; totalPence: number }>;
-      const paidOutPrevMonthRaw = await db.execute(sql`
+      `) as unknown as [Array<{ count: number; totalPence: number }>, unknown]))[0];
+      const paidOutPrevMonthRaw = ((await db.execute(sql`
         SELECT COUNT(DISTINCT paymentId) AS count, SUM(DISTINCT CASE WHEN paymentId IS NOT NULL THEN amount ELSE 0 END) AS totalPence
         FROM gc_payment_events
         WHERE eventType = 'payments_paid_out' AND occurredAt >= ${prevMonthStart} AND occurredAt < ${prevMonthEnd} AND amount IS NOT NULL AND paymentId IS NOT NULL
-      `) as unknown as Array<{ count: number; totalPence: number }>;
+      `) as unknown as [Array<{ count: number; totalPence: number }>, unknown]))[0];
       // Split confirmed payments into subscription DD vs one-off joining fees (same logic as weekly)
-      const confirmedThisMonthRaw = await db.execute(sql`
+      const confirmedThisMonthRaw = ((await db.execute(sql`
         SELECT
           COUNT(*) AS count,
           SUM(gpe.amount) AS totalPence,
@@ -1155,8 +1155,8 @@ export const superAdminRouter = router({
           AND gpe.occurredAt >= ${monthStartDate}
           AND gpe.occurredAt < ${monthEndDate}
           AND gpe.amount IS NOT NULL
-      `) as unknown as Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number; joiningFeeCount: number; subscriptionCount: number }>;
-      const confirmedPrevMonthRaw = await db.execute(sql`
+      `) as unknown as [Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number; joiningFeeCount: number; subscriptionCount: number }>, unknown]))[0];
+      const confirmedPrevMonthRaw = ((await db.execute(sql`
         SELECT
           COUNT(*) AS count,
           SUM(gpe.amount) AS totalPence,
@@ -1169,7 +1169,7 @@ export const superAdminRouter = router({
           AND gpe.occurredAt >= ${prevMonthStart}
           AND gpe.occurredAt < ${prevMonthEnd}
           AND gpe.amount IS NOT NULL
-      `) as unknown as Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number }>;
+      `) as unknown as [Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number }>, unknown]))[0];
       const [confirmedThisMonth, confirmedPrevMonth, failedThisMonth] = [
         confirmedThisMonthRaw,
         confirmedPrevMonthRaw,
