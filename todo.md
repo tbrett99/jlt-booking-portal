@@ -2589,3 +2589,15 @@
 - [x] SuperAdminDashboard: Recruitment funnel with conversion rate and avg time-to-signup
 - [x] Monday Morning Digest: automated HTML email every Monday 08:00 UTC via Heartbeat cron
 - [x] Monday Morning Digest: covers membership, DD revenue, bookings, financials, recruitment with WoW % change
+
+## Margin Tab & DD Confirmed Enhancements (Jun 12)
+
+- [ ] agentMarginReport: add dateFrom/dateTo input for date range filtering
+- [ ] agentMarginReport: add lastClaimDate, totalBookingsCount, totalGrossCost, valueAtRisk fields
+- [ ] agentMarginReport: add trendDirection (up/down/flat) derived from 3-month trend
+- [ ] monthlyStats/weeklyStats: split DD confirmed into subscriptionConfirmedGbp + oneOffConfirmedGbp
+- [ ] Frontend: margin tab date range picker (from/to)
+- [ ] Frontend: margin table columns - bookings count, gross cost, value at risk, last claim, trend arrow
+- [ ] Frontend: margin table sort by value at risk
+- [ ] Frontend: margin agent click-through to their bookings page
+- [ ] Frontend: DD Confirmed card split into two cards (subscriptions vs one-off)

@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
   Users, CreditCard, BookOpen, PoundSterling, UserPlus, Mail,
@@ -467,9 +467,16 @@ function DrillDownDialog({
 
 // ─── Commission Margin Tab ────────────────────────────────────────────────────
 function CommissionMarginTab() {
-  const { data, isLoading } = trpc.superAdmin.agentMarginReport.useQuery({ minBookings: 1 });
-  const [sortBy, setSortBy] = useState<"margin" | "claims" | "flag">("flag");
+  const [, navigate] = useLocation();
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [sortBy, setSortBy] = useState<"valueAtRisk" | "margin" | "claims" | "flag">("valueAtRisk");
   const [search, setSearch] = useState("");
+
+  const { data, isLoading } = trpc.superAdmin.agentMarginReport.useQuery(
+    { minBookings: 1, dateFrom: dateFrom || undefined, dateTo: dateTo || undefined },
+    { staleTime: 60_000 }
+  );
 
   const sorted = useMemo(() => {
     if (!data?.agents) return [];
@@ -478,6 +485,7 @@ function CommissionMarginTab() {
     );
     if (sortBy === "margin") agents = [...agents].sort((a, b) => (a.avgMarginPct ?? 999) - (b.avgMarginPct ?? 999));
     else if (sortBy === "claims") agents = [...agents].sort((a, b) => b.totalClaims - a.totalClaims);
+    else if (sortBy === "valueAtRisk") agents = [...agents].sort((a, b) => (b.valueAtRisk ?? 0) - (a.valueAtRisk ?? 0));
     else agents = [...agents].sort((a, b) => {
       const order = { red: 0, amber: 1, green: 2 };
       return order[a.flag as keyof typeof order] - order[b.flag as keyof typeof order];
@@ -489,17 +497,50 @@ function CommissionMarginTab() {
   if (!data) return null;
 
   const flagColors = { red: "bg-rose-100 text-rose-700 border-rose-200", amber: "bg-amber-100 text-amber-700 border-amber-200", green: "bg-emerald-100 text-emerald-700 border-emerald-200" };
+  const trendIcon = (dir: string) => dir === "up" ? <TrendingUp size={14} className="text-emerald-600" /> : dir === "down" ? <TrendingDown size={14} className="text-rose-600" /> : <span className="text-xs text-muted-foreground">→</span>;
 
   return (
     <div className="space-y-6">
       <SectionHeader title="Commission Margin by Agent" icon={Percent} />
+
+      {/* Date range filter */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">From</label>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                className="text-sm border rounded-md px-3 py-1.5 bg-background h-8 focus:outline-none focus:ring-1 focus:ring-ring" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">To</label>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                className="text-sm border rounded-md px-3 py-1.5 bg-background h-8 focus:outline-none focus:ring-1 focus:ring-ring" />
+            </div>
+            {(dateFrom || dateTo) && (
+              <Button variant="outline" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); }}>
+                Clear filter
+              </Button>
+            )}
+            {(dateFrom || dateTo) && (
+              <span className="text-xs text-muted-foreground self-end pb-1.5">
+                Showing claims {dateFrom ? `from ${dateFrom}` : ""}{dateTo ? ` to ${dateTo}` : ""}
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Summary KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard title="Agents Reported" value={fmt(data.summary.totalAgentsReported)} icon={Users} accent="blue" />
         <StatCard title="Below 6% Threshold" value={fmt(data.summary.agentsBelowThreshold)} icon={AlertCircle} accent={data.summary.agentsBelowThreshold > 0 ? "red" : undefined} sub="Needs attention" />
         <StatCard title="Amber (6–8%)" value={fmt(data.summary.agentsAmber)} accent={data.summary.agentsAmber > 0 ? "amber" : undefined} />
-        <StatCard title="Healthy (≥8%)" value={fmt(data.summary.agentsGreen)} accent="green" />
+        <StatCard title="Total Value at Risk" value={fmtGbp((data.summary as any).totalValueAtRisk)} accent={(data.summary as any).totalValueAtRisk > 0 ? "red" : "green"}
+          sub="Gross cost on sub-6% claims" />
       </div>
 
+      {/* Agent detail table */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
@@ -517,6 +558,7 @@ function CommissionMarginTab() {
                 onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
                 className="text-sm border rounded-md px-2 py-1.5 bg-background h-8 focus:outline-none focus:ring-1 focus:ring-ring"
               >
+                <option value="valueAtRisk">Sort: Value at Risk</option>
                 <option value="flag">Sort: RAG Status</option>
                 <option value="margin">Sort: Lowest Margin</option>
                 <option value="claims">Sort: Most Claims</option>
@@ -531,63 +573,80 @@ function CommissionMarginTab() {
                 <TableHead>Agent</TableHead>
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-right">Avg Margin</TableHead>
-                <TableHead className="text-right">Total Claims</TableHead>
-                <TableHead className="text-right">Below 6%</TableHead>
-                <TableHead className="text-right">6–8%</TableHead>
-                <TableHead className="text-right">≥8%</TableHead>
+                <TableHead className="text-right">Trend</TableHead>
+                <TableHead className="text-right">Claims</TableHead>
+                <TableHead className="text-right">Bookings</TableHead>
+                <TableHead className="text-right">Value at Risk</TableHead>
                 <TableHead className="text-right">Total Commission</TableHead>
-                <TableHead className="text-right">Total Gross Cost</TableHead>
+                <TableHead className="text-right">Gross Cost</TableHead>
+                <TableHead className="text-right">Last Claim</TableHead>
                 <TableHead>3-Month Trend</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sorted.map((a) => (
-                <TableRow key={a.agentId}>
-                  <TableCell>
-                    <div className="font-medium text-sm">{a.agentName}</div>
-                    <div className="text-xs text-muted-foreground">{a.agentEmail}</div>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold border ${flagColors[a.flag as keyof typeof flagColors]}`}>
-                      {a.flag === "red" ? "⚠ Below 6%" : a.flag === "amber" ? "~ 6–8%" : "✓ Healthy"}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right font-semibold">
-                    <span className={a.avgMarginPct !== null && a.avgMarginPct < 6 ? "text-rose-600" : a.avgMarginPct !== null && a.avgMarginPct < 8 ? "text-amber-600" : "text-emerald-600"}>
-                      {fmtPct(a.avgMarginPct)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">{fmt(a.totalClaims)}</TableCell>
-                  <TableCell className="text-right">
-                    {a.claimsBelowThreshold > 0 ? <span className="text-rose-600 font-semibold">{a.claimsBelowThreshold}</span> : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {a.claimsAmber > 0 ? <span className="text-amber-600">{a.claimsAmber}</span> : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {a.claimsGreen > 0 ? <span className="text-emerald-600">{a.claimsGreen}</span> : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className="text-right">{fmtGbp(a.totalGrossCommission)}</TableCell>
-                  <TableCell className="text-right">{fmtGbp(a.totalGrossCost)}</TableCell>
-                  <TableCell>
-                    {a.trend.length > 0 ? (
-                      <div className="flex items-end gap-0.5 h-8">
-                        {a.trend.map((t) => {
-                          const height = Math.max(4, Math.min(32, (t.avgMarginPct / 15) * 32));
-                          const color = t.avgMarginPct < 6 ? "bg-rose-400" : t.avgMarginPct < 8 ? "bg-amber-400" : "bg-emerald-400";
-                          return (
-                            <div key={t.month} title={`${t.month}: ${fmtPct(t.avgMarginPct)} (${t.claimCount} claims)`}
-                              className={`w-4 rounded-sm ${color} transition-all`} style={{ height: `${height}px` }} />
-                          );
-                        })}
-                      </div>
-                    ) : <span className="text-xs text-muted-foreground">No data</span>}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {sorted.map((a) => {
+                const lastClaimDaysAgo = a.lastClaimDate
+                  ? Math.floor((Date.now() - new Date(a.lastClaimDate).getTime()) / 86400000)
+                  : null;
+                const lastClaimStale = lastClaimDaysAgo !== null && lastClaimDaysAgo > 60;
+                return (
+                  <TableRow key={a.agentId} className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => navigate(`/crm/agents?agent=${a.agentId}`)}
+                    title="Click to view agent in CRM">
+                    <TableCell>
+                      <div className="font-medium text-sm">{a.agentName}</div>
+                      <div className="text-xs text-muted-foreground">{a.agentEmail}</div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold border ${flagColors[a.flag as keyof typeof flagColors]}`}>
+                        {a.flag === "red" ? "⚠ Below 6%" : a.flag === "amber" ? "~ 6–8%" : "✓ Healthy"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      <span className={a.avgMarginPct !== null && a.avgMarginPct < 6 ? "text-rose-600" : a.avgMarginPct !== null && a.avgMarginPct < 8 ? "text-amber-600" : "text-emerald-600"}>
+                        {fmtPct(a.avgMarginPct)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end">{trendIcon((a as any).trendDirection ?? "flat")}</div>
+                    </TableCell>
+                    <TableCell className="text-right">{fmt(a.totalClaims)}</TableCell>
+                    <TableCell className="text-right">{fmt((a as any).totalBookingsCount)}</TableCell>
+                    <TableCell className="text-right">
+                      {(a as any).valueAtRisk > 0
+                        ? <span className="text-rose-600 font-semibold">{fmtGbp((a as any).valueAtRisk)}</span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="text-right">{fmtGbp(a.totalGrossCommission)}</TableCell>
+                    <TableCell className="text-right">{fmtGbp(a.totalGrossCost)}</TableCell>
+                    <TableCell className="text-right">
+                      {a.lastClaimDate ? (
+                        <span className={lastClaimStale ? "text-amber-600 text-xs" : "text-xs text-muted-foreground"}>
+                          {new Date(a.lastClaimDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}
+                          {lastClaimStale && <span className="block text-amber-600">{lastClaimDaysAgo}d ago</span>}
+                        </span>
+                      ) : <span className="text-muted-foreground text-xs">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      {a.trend.length > 0 ? (
+                        <div className="flex items-end gap-0.5 h-8">
+                          {a.trend.map((t) => {
+                            const height = Math.max(4, Math.min(32, (t.avgMarginPct / 15) * 32));
+                            const color = t.avgMarginPct < 6 ? "bg-rose-400" : t.avgMarginPct < 8 ? "bg-amber-400" : "bg-emerald-400";
+                            return (
+                              <div key={t.month} title={`${t.month}: ${fmtPct(t.avgMarginPct)} (${t.claimCount} claims)`}
+                                className={`w-4 rounded-sm ${color} transition-all`} style={{ height: `${height}px` }} />
+                            );
+                          })}
+                        </div>
+                      ) : <span className="text-xs text-muted-foreground">No data</span>}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
               {sorted.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground text-sm">No agents found.</TableCell>
+                  <TableCell colSpan={11} className="text-center py-8 text-muted-foreground text-sm">No agents found.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -595,7 +654,7 @@ function CommissionMarginTab() {
         </CardContent>
       </Card>
       <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">
-        <strong>Margin calculation:</strong> Commission gross amount ÷ booking gross cost × 100. Red = any claim below 6%, Amber = all claims between 6–8%, Green = all claims ≥8%. 3-month trend bars show monthly average margin over the last 3 months.
+        <strong>Margin calculation:</strong> Commission gross amount ÷ booking gross cost × 100. Red = any claim below 6%, Amber = all claims between 6–8%, Green = all claims ≥8%. <strong>Value at Risk</strong> = total gross cost on bookings where margin is below 6% — sorted highest first so the biggest problems appear at the top. Trend arrow compares most recent month to the previous month (±0.5% threshold). Click any row to view the agent in the CRM.
       </div>
     </div>
   );
@@ -697,12 +756,19 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
             <StatCard title="DD Paid Out" value={fmtGbp(ddRevenue.paidOutThisMonthGbp)} icon={CheckCircle2} accent="green"
               wow={{ current: ddRevenue.paidOutThisMonthGbp, prev: ddRevenue.paidOutPrevMonthGbp }} wowLabel="MoM"
               sub={`${fmt(ddRevenue.paidOutThisMonthCount)} payments landed`} />
-            <StatCard title="DD Confirmed (All)" value={fmtGbp(ddRevenue.confirmedThisMonthGbp)} icon={CreditCard} accent="green"
+            <StatCard title="DD Confirmed (Total)" value={fmtGbp(ddRevenue.confirmedThisMonthGbp)} icon={CreditCard} accent="green"
               wow={{ current: ddRevenue.confirmedThisMonthGbp, prev: ddRevenue.confirmedPrevMonthGbp }} wowLabel="MoM"
-              sub={`${fmt(ddRevenue.confirmedThisMonthCount)} payments incl. subscriptions`} />
+              sub={`${fmt(ddRevenue.confirmedThisMonthCount)} payments total`} />
             <StatCard title="Failed Payments" value={fmt(ddRevenue.failedThisMonthCount)} icon={AlertCircle}
               accent={ddRevenue.failedThisMonthCount > 0 ? "red" : undefined}
               sub={`${fmtGbp(ddRevenue.failedThisMonthGbp)} at risk`} />
+          </div>
+          {/* DD split: subscription vs joining fees */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard title="Subscription DD Confirmed" value={fmtGbp((ddRevenue as any).subscriptionConfirmedThisMonthGbp)} icon={CreditCard} accent="blue"
+              sub={`${fmt((ddRevenue as any).subscriptionConfirmedThisMonthCount)} monthly DD collections`} />
+            <StatCard title="Joining Fees Confirmed" value={fmtGbp((ddRevenue as any).joiningFeeConfirmedThisMonthGbp)} icon={UserPlus} accent="green"
+              sub={`${fmt((ddRevenue as any).joiningFeeConfirmedThisMonthCount)} new member joining fees`} />
           </div>
         </TabsContent>
 
@@ -1171,12 +1237,19 @@ export default function SuperAdminDashboard() {
                     <StatCard title="Active Subscriptions" value={fmt(data.ddRevenue.activeSubscriptions)} icon={CheckCircle2} accent="green"
                       sub={`${fmt(data.ddRevenue.totalGcSubscriptions)} incl. paused`} onClick={() => setDrillDown("subscriptions")} />
                     <StatCard title="Monthly Recurring Revenue" value={fmtGbp(data.ddRevenue.mrrGbp)} icon={PoundSterling} accent="blue" sub="Based on active subscriptions" />
-                    <StatCard title="Confirmed This Week" value={fmtGbp(data.ddRevenue.confirmedThisWeekGbp)} icon={CreditCard} accent="green"
+                    <StatCard title="DD Confirmed This Week" value={fmtGbp(data.ddRevenue.confirmedThisWeekGbp)} icon={CreditCard} accent="green"
                       wow={{ current: data.ddRevenue.confirmedThisWeekGbp, prev: data.ddRevenue.confirmedPrevWeekGbp }}
                       sub={`${fmt(data.ddRevenue.paymentsConfirmedThisWeek)} payments submitted to bank`}
                       onClick={() => setDrillDown("ddPayments")} />
                     <StatCard title="Paid Out This Week" value={fmtGbp(data.ddRevenue.paidOutThisWeekGbp)} icon={CheckCircle2} accent="green"
                       sub={`${fmt(data.ddRevenue.paymentsPaidOutThisWeek)} payments landed in bank`} />
+                  </div>
+                  {/* DD split: subscription vs joining fees */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <StatCard title="Subscription DD Confirmed" value={fmtGbp((data.ddRevenue as any).subscriptionConfirmedThisWeekGbp)} icon={CreditCard} accent="blue"
+                      sub={`${fmt((data.ddRevenue as any).subscriptionConfirmedThisWeekCount)} monthly DD collections`} />
+                    <StatCard title="Joining Fees Confirmed" value={fmtGbp((data.ddRevenue as any).joiningFeeConfirmedThisWeekGbp)} icon={UserPlus} accent="green"
+                      sub={`${fmt((data.ddRevenue as any).joiningFeeConfirmedThisWeekCount)} new member joining fees`} />
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <StatCard title="Failed Payments" value={fmt(data.ddRevenue.failedPaymentsThisWeek)} icon={AlertCircle}

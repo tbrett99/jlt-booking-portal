@@ -156,33 +156,40 @@ export const superAdminRouter = router({
         .where(inArray(gcSubscriptions.status, ["active", "paused"]));
 
       // Payments confirmed this week (one-off joining fees only — excludes subscription/monthly DD)
-      const paymentsConfirmedThisWeek = await db
-        .select({
-          count: sql<number>`COUNT(*)`,
-          totalPence: sql<number>`SUM(amount)`,
-        })
-        .from(gcPaymentEvents)
-        .where(and(
-          eq(gcPaymentEvents.eventType, "payments_confirmed"),
-          gte(gcPaymentEvents.occurredAt, weekStartDate),
-          lt(gcPaymentEvents.occurredAt, weekEndDate),
-          isNotNull(gcPaymentEvents.amount),
-          notLike(gcPaymentEvents.rawPayload, '%"subscription"%'),
-        ));
+      // Split confirmed payments into subscription DD vs one-off joining fees.
+      // Joining fees are identified by matching gc_payment_events.mandateId + DATE(occurredAt)
+      // to gc_mandates.mandateId + DATE(joiningFeePaidAt). Everything else is a subscription collection.
+      const paymentsConfirmedThisWeek = await db.execute(sql`
+        SELECT
+          COUNT(*) AS count,
+          SUM(gpe.amount) AS totalPence,
+          SUM(CASE WHEN gm.id IS NOT NULL THEN gpe.amount ELSE 0 END) AS joiningFeePence,
+          SUM(CASE WHEN gm.id IS NULL THEN gpe.amount ELSE 0 END) AS subscriptionPence,
+          COUNT(CASE WHEN gm.id IS NOT NULL THEN 1 END) AS joiningFeeCount,
+          COUNT(CASE WHEN gm.id IS NULL THEN 1 END) AS subscriptionCount
+        FROM gc_payment_events gpe
+        LEFT JOIN gc_mandates gm ON gpe.mandateId = gm.mandateId
+          AND DATE(gpe.occurredAt) = DATE(gm.joiningFeePaidAt)
+        WHERE gpe.eventType = 'payments_confirmed'
+          AND gpe.occurredAt >= ${weekStartDate}
+          AND gpe.occurredAt < ${weekEndDate}
+          AND gpe.amount IS NOT NULL
+      `) as unknown as Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number; joiningFeeCount: number; subscriptionCount: number }>;
 
-      const paymentsConfirmedPrevWeek = await db
-        .select({
-          count: sql<number>`COUNT(*)`,
-          totalPence: sql<number>`SUM(amount)`,
-        })
-        .from(gcPaymentEvents)
-        .where(and(
-          eq(gcPaymentEvents.eventType, "payments_confirmed"),
-          gte(gcPaymentEvents.occurredAt, prevWeekStart),
-          lt(gcPaymentEvents.occurredAt, prevWeekEnd),
-          isNotNull(gcPaymentEvents.amount),
-          notLike(gcPaymentEvents.rawPayload, '%"subscription"%'),
-        ));
+      const paymentsConfirmedPrevWeek = await db.execute(sql`
+        SELECT
+          COUNT(*) AS count,
+          SUM(gpe.amount) AS totalPence,
+          SUM(CASE WHEN gm.id IS NOT NULL THEN gpe.amount ELSE 0 END) AS joiningFeePence,
+          SUM(CASE WHEN gm.id IS NULL THEN gpe.amount ELSE 0 END) AS subscriptionPence
+        FROM gc_payment_events gpe
+        LEFT JOIN gc_mandates gm ON gpe.mandateId = gm.mandateId
+          AND DATE(gpe.occurredAt) = DATE(gm.joiningFeePaidAt)
+        WHERE gpe.eventType = 'payments_confirmed'
+          AND gpe.occurredAt >= ${prevWeekStart}
+          AND gpe.occurredAt < ${prevWeekEnd}
+          AND gpe.amount IS NOT NULL
+      `) as unknown as Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number }>;
 
       // Payments paid out this week (funds actually landed in your bank account)
       // IMPORTANT: gc_payment_events stores multiple rows per GoCardless payment (one per webhook event).
@@ -1132,11 +1139,42 @@ export const superAdminRouter = router({
         FROM gc_payment_events
         WHERE eventType = 'payments_paid_out' AND occurredAt >= ${prevMonthStart} AND occurredAt < ${prevMonthEnd} AND amount IS NOT NULL AND paymentId IS NOT NULL
       `) as unknown as Array<{ count: number; totalPence: number }>;
-      const [confirmedThisMonth, confirmedPrevMonth, failedThisMonth] = await Promise.all([
-        db.select({ count: sql<number>`COUNT(*)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, monthStartDate), lt(gcPaymentEvents.occurredAt, monthEndDate), isNotNull(gcPaymentEvents.amount), notLike(gcPaymentEvents.rawPayload, '%"subscription"%'))),
-        db.select({ count: sql<number>`COUNT(*)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, prevMonthStart), lt(gcPaymentEvents.occurredAt, prevMonthEnd), isNotNull(gcPaymentEvents.amount), notLike(gcPaymentEvents.rawPayload, '%"subscription"%'))),
-        db.select({ count: sql<number>`COUNT(*)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_failed"), gte(gcPaymentEvents.occurredAt, monthStartDate), lt(gcPaymentEvents.occurredAt, monthEndDate))),
-      ]);
+      // Split confirmed payments into subscription DD vs one-off joining fees (same logic as weekly)
+      const confirmedThisMonthRaw = await db.execute(sql`
+        SELECT
+          COUNT(*) AS count,
+          SUM(gpe.amount) AS totalPence,
+          SUM(CASE WHEN gm.id IS NOT NULL THEN gpe.amount ELSE 0 END) AS joiningFeePence,
+          SUM(CASE WHEN gm.id IS NULL THEN gpe.amount ELSE 0 END) AS subscriptionPence,
+          COUNT(CASE WHEN gm.id IS NOT NULL THEN 1 END) AS joiningFeeCount,
+          COUNT(CASE WHEN gm.id IS NULL THEN 1 END) AS subscriptionCount
+        FROM gc_payment_events gpe
+        LEFT JOIN gc_mandates gm ON gpe.mandateId = gm.mandateId
+          AND DATE(gpe.occurredAt) = DATE(gm.joiningFeePaidAt)
+        WHERE gpe.eventType = 'payments_confirmed'
+          AND gpe.occurredAt >= ${monthStartDate}
+          AND gpe.occurredAt < ${monthEndDate}
+          AND gpe.amount IS NOT NULL
+      `) as unknown as Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number; joiningFeeCount: number; subscriptionCount: number }>;
+      const confirmedPrevMonthRaw = await db.execute(sql`
+        SELECT
+          COUNT(*) AS count,
+          SUM(gpe.amount) AS totalPence,
+          SUM(CASE WHEN gm.id IS NOT NULL THEN gpe.amount ELSE 0 END) AS joiningFeePence,
+          SUM(CASE WHEN gm.id IS NULL THEN gpe.amount ELSE 0 END) AS subscriptionPence
+        FROM gc_payment_events gpe
+        LEFT JOIN gc_mandates gm ON gpe.mandateId = gm.mandateId
+          AND DATE(gpe.occurredAt) = DATE(gm.joiningFeePaidAt)
+        WHERE gpe.eventType = 'payments_confirmed'
+          AND gpe.occurredAt >= ${prevMonthStart}
+          AND gpe.occurredAt < ${prevMonthEnd}
+          AND gpe.amount IS NOT NULL
+      `) as unknown as Array<{ count: number; totalPence: number; joiningFeePence: number; subscriptionPence: number }>;
+      const [confirmedThisMonth, confirmedPrevMonth, failedThisMonth] = [
+        confirmedThisMonthRaw,
+        confirmedPrevMonthRaw,
+        await db.select({ count: sql<number>`COUNT(*)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_failed"), gte(gcPaymentEvents.occurredAt, monthStartDate), lt(gcPaymentEvents.occurredAt, monthEndDate))),
+      ];
 
       // ── Section 3: Bookings & Pipeline ──
       const [
@@ -1315,6 +1353,11 @@ export const superAdminRouter = router({
           confirmedThisMonthCount: n(confirmedThisMonth[0]?.count),
           confirmedThisMonthGbp: Math.round(n(confirmedThisMonth[0]?.totalPence) / 100),
           confirmedPrevMonthGbp: Math.round(n(confirmedPrevMonth[0]?.totalPence) / 100),
+          // Split: subscription DD collections vs one-off joining fees
+          subscriptionConfirmedThisMonthGbp: Math.round(n((confirmedThisMonth[0] as any)?.subscriptionPence) / 100),
+          subscriptionConfirmedThisMonthCount: n((confirmedThisMonth[0] as any)?.subscriptionCount),
+          joiningFeeConfirmedThisMonthGbp: Math.round(n((confirmedThisMonth[0] as any)?.joiningFeePence) / 100),
+          joiningFeeConfirmedThisMonthCount: n((confirmedThisMonth[0] as any)?.joiningFeeCount),
           failedThisMonthCount: n(failedThisMonth[0]?.count),
           failedThisMonthGbp: Math.round(n(failedThisMonth[0]?.totalPence) / 100),
         },
@@ -1371,7 +1414,11 @@ export const superAdminRouter = router({
    * Returns each agent's avg margin %, count below 6% threshold, and 3-month trend.
    */
   agentMarginReport: superAdminProcedure
-    .input(z.object({ minBookings: z.number().default(1) }))
+    .input(z.object({
+      minBookings: z.number().default(1),
+      dateFrom: z.string().optional(), // ISO date string e.g. "2026-01-01"
+      dateTo: z.string().optional(),   // ISO date string e.g. "2026-06-30"
+    }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
       const db = await getDb();
@@ -1379,7 +1426,15 @@ export const superAdminRouter = router({
       const { users, bookings, commissionClaims } = await import("../drizzle/schema");
       const { eq, sql, isNotNull, and, gte, lt } = await import("drizzle-orm");
 
-      // Per-agent margin summary.
+      // Build optional date range filter for the main query
+      const dateFrom = input.dateFrom ? new Date(input.dateFrom) : null;
+      const dateTo = input.dateTo ? new Date(input.dateTo + "T23:59:59") : null;
+      const dateFilter = sql`
+        ${dateFrom ? sql`AND cc.claimedAt >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND cc.claimedAt <= ${dateTo}` : sql``}
+      `;
+
+      // Per-agent margin summary with date range, last claim date, total bookings, value at risk.
       // Uses COALESCE(cc.grossAmount, b.expectedCommission) so older claims without a
       // grossAmount still contribute using the booking's expectedCommission as the figure.
       const agentMargins = await db.execute(sql`
@@ -1388,6 +1443,7 @@ export const superAdminRouter = router({
           u.name AS agentName,
           u.email AS agentEmail,
           COUNT(DISTINCT cc.id) AS totalClaims,
+          COUNT(DISTINCT b.id) AS totalBookingsCount,
           COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
             AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL THEN cc.id END) AS claimsWithMargin,
           AVG(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
@@ -1404,22 +1460,32 @@ export const superAdminRouter = router({
             AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
             AND (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) >= 8 THEN cc.id END) AS claimsGreen,
           SUM(COALESCE(cc.grossAmount, b.expectedCommission)) AS totalGrossCommission,
-          SUM(b.grossCost) AS totalGrossCost
+          SUM(b.grossCost) AS totalGrossCost,
+          MAX(cc.claimedAt) AS lastClaimDate,
+          -- Value at risk: sum of gross cost on claims below 6% threshold (money exposed to low margin)
+          SUM(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
+            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
+            AND (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) < 6
+            THEN b.grossCost ELSE 0 END) AS valueAtRisk
         FROM commission_claims cc
         JOIN bookings b ON cc.bookingId = b.id
         JOIN users u ON cc.agentId = u.id
+        WHERE 1=1
+        ${dateFrom ? sql`AND cc.claimedAt >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND cc.claimedAt <= ${dateTo}` : sql``}
         GROUP BY u.id, u.name, u.email
         HAVING COUNT(DISTINCT cc.id) >= ${input.minBookings}
-        ORDER BY avgMarginPct ASC
+        ORDER BY valueAtRisk DESC, avgMarginPct ASC
       `) as unknown as [Array<{
         agentId: number; agentName: string; agentEmail: string;
-        totalClaims: number; claimsWithMargin: number; avgMarginPct: number | null;
+        totalClaims: number; totalBookingsCount: number; claimsWithMargin: number; avgMarginPct: number | null;
         claimsBelowThreshold: number; claimsAmber: number; claimsGreen: number;
-        totalGrossCommission: number; totalGrossCost: number;
+        totalGrossCommission: number; totalGrossCost: number; lastClaimDate: Date | string | null;
+        valueAtRisk: number;
       }>, unknown];
       const agentMarginRows = agentMargins[0];
 
-      // 3-month trend per agent (last 3 calendar months)
+      // 3-month trend per agent (always last 3 calendar months regardless of date filter)
       const now = new Date();
       const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1, 0, 0, 0, 0);
       const monthlyMarginsRaw = await db.execute(sql`
@@ -1438,7 +1504,7 @@ export const superAdminRouter = router({
       `) as unknown as [Array<{ agentId: number; month: string; avgMarginPct: number | null; claimCount: number }>, unknown];
       const monthlyMargins = monthlyMarginsRaw[0];
 
-      // Group monthly trend by agentId
+      // Group monthly trend by agentId and derive trend direction
       const trendByAgent = new Map<number, Array<{ month: string; avgMarginPct: number; claimCount: number }>>();
       for (const row of monthlyMargins) {
         if (!trendByAgent.has(row.agentId)) trendByAgent.set(row.agentId, []);
@@ -1449,12 +1515,24 @@ export const superAdminRouter = router({
         });
       }
 
+      // Derive trend direction: compare most recent month to 2 months ago
+      const getTrendDirection = (agentId: number): "up" | "down" | "flat" => {
+        const months = trendByAgent.get(agentId) ?? [];
+        if (months.length < 2) return "flat";
+        const latest = months[months.length - 1].avgMarginPct;
+        const previous = months[months.length - 2].avgMarginPct;
+        if (latest - previous > 0.5) return "up";
+        if (previous - latest > 0.5) return "down";
+        return "flat";
+      };
+
       return {
         agents: agentMarginRows.map((r) => ({
           agentId: Number(r.agentId),
           agentName: r.agentName,
           agentEmail: r.agentEmail,
           totalClaims: Number(r.totalClaims),
+          totalBookingsCount: Number(r.totalBookingsCount),
           claimsWithMargin: Number(r.claimsWithMargin),
           avgMarginPct: r.avgMarginPct !== null ? Math.round(Number(r.avgMarginPct) * 10) / 10 : null,
           claimsBelowThreshold: Number(r.claimsBelowThreshold),
@@ -1462,8 +1540,11 @@ export const superAdminRouter = router({
           claimsGreen: Number(r.claimsGreen),
           totalGrossCommission: Number(r.totalGrossCommission),
           totalGrossCost: Number(r.totalGrossCost),
+          valueAtRisk: Number(r.valueAtRisk),
+          lastClaimDate: r.lastClaimDate ? new Date(r.lastClaimDate).toISOString() : null,
           // Flag: red = any below threshold, amber = all in 6-8%, green = all above 8%
           flag: Number(r.claimsBelowThreshold) > 0 ? "red" : Number(r.claimsAmber) > 0 ? "amber" : "green",
+          trendDirection: getTrendDirection(Number(r.agentId)),
           trend: trendByAgent.get(Number(r.agentId)) ?? [],
         })),
         summary: {
@@ -1471,6 +1552,7 @@ export const superAdminRouter = router({
           agentsBelowThreshold: agentMarginRows.filter((r) => Number(r.claimsBelowThreshold) > 0).length,
           agentsAmber: agentMarginRows.filter((r) => Number(r.claimsBelowThreshold) === 0 && Number(r.claimsAmber) > 0).length,
           agentsGreen: agentMarginRows.filter((r) => Number(r.claimsBelowThreshold) === 0 && Number(r.claimsAmber) === 0).length,
+          totalValueAtRisk: agentMarginRows.reduce((sum, r) => sum + Number(r.valueAtRisk), 0),
         },
       };
     }),
@@ -1678,8 +1760,8 @@ function buildResponse(data: {
   pausedCount: Array<{ count: number }>;
   activeSubscriptions: Array<{ count: number; totalAmountPence: number }>;
   totalGcSubscriptions: Array<{ count: number }>;
-  paymentsConfirmedThisWeek: Array<{ count: number; totalPence: number }>;
-  paymentsConfirmedPrevWeek: Array<{ count: number; totalPence: number }>;
+  paymentsConfirmedThisWeek: Array<{ count: number; totalPence: number; joiningFeePence?: number; subscriptionPence?: number; joiningFeeCount?: number; subscriptionCount?: number }>;
+  paymentsConfirmedPrevWeek: Array<{ count: number; totalPence: number; joiningFeePence?: number; subscriptionPence?: number }>;
   paymentsPaidOutThisWeek: Array<{ count: number; totalPence: number }>;
   failedPaymentsThisWeek: Array<{ count: number; totalPence: number }>;
   agentsWithFailures: Array<{ count: number; totalFailures: number }>;
@@ -1782,11 +1864,16 @@ function buildResponse(data: {
       totalGcSubscriptions: n(data.totalGcSubscriptions[0]?.count),
       mrrPence: n(data.activeSubscriptions[0]?.totalAmountPence),
       mrrGbp: Math.round(n(data.activeSubscriptions[0]?.totalAmountPence) / 100),
-      // Confirmed = submitted to bank by GoCardless
+      // Confirmed = submitted to bank by GoCardless (split into subscription DD vs joining fees)
       paymentsConfirmedThisWeek: n(data.paymentsConfirmedThisWeek[0]?.count),
       paymentsConfirmedPrevWeek: n(data.paymentsConfirmedPrevWeek[0]?.count),
       confirmedThisWeekGbp: Math.round(n(data.paymentsConfirmedThisWeek[0]?.totalPence) / 100),
       confirmedPrevWeekGbp: Math.round(n(data.paymentsConfirmedPrevWeek[0]?.totalPence) / 100),
+      // Split: subscription DD collections vs one-off joining fees
+      subscriptionConfirmedThisWeekGbp: Math.round(n(data.paymentsConfirmedThisWeek[0]?.subscriptionPence) / 100),
+      subscriptionConfirmedThisWeekCount: n(data.paymentsConfirmedThisWeek[0]?.subscriptionCount),
+      joiningFeeConfirmedThisWeekGbp: Math.round(n(data.paymentsConfirmedThisWeek[0]?.joiningFeePence) / 100),
+      joiningFeeConfirmedThisWeekCount: n(data.paymentsConfirmedThisWeek[0]?.joiningFeeCount),
       // Paid out = funds landed in your bank account
       paymentsPaidOutThisWeek: n(data.paymentsPaidOutThisWeek[0]?.count),
       paidOutThisWeekGbp: Math.round(n(data.paymentsPaidOutThisWeek[0]?.totalPence) / 100),
