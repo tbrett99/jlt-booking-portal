@@ -11,7 +11,7 @@ export const PAYMENT_DAYS = [1, 15, 28] as const;
 export type PaymentDay = (typeof PAYMENT_DAYS)[number];
 
 // Joining fee — varies by membership type
-export const JOINING_FEE_PENCE = 29700; // £297 (solo)
+export const JOINING_FEE_PENCE = 69700; // £697 (solo) — updated price
 
 // Monthly subscription amounts in pence
 export const MONTHLY_AMOUNTS: Record<MembershipTier, Record<MembershipType, number>> = {
@@ -27,8 +27,16 @@ export const MONTHLY_AMOUNTS: Record<MembershipTier, Record<MembershipType, numb
   },
 };
 
-// Joining fee amounts — vary by membership type
+// Joining fee amounts — vary by membership type (updated Jun 2026)
 export const JOINING_FEES: Record<MembershipType, number> = {
+  solo: 69700,  // £697
+  duo: 99700,   // £997
+  trio: 149700, // £1,497
+};
+
+// Legacy / honoured joining fees — used by discount codes for prospects
+// who were promised the old price before the Jun 2026 increase.
+export const LEGACY_JOINING_FEES: Record<MembershipType, number> = {
   solo: 29700,  // £297
   duo: 44700,   // £447
   trio: 59700,  // £597

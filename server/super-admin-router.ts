@@ -1756,6 +1756,88 @@ export const superAdminRouter = router({
       }));
     }),
 
+  // ─── Discount Code Management ──────────────────────────────────────────────────────
+
+  listDiscountCodes: superAdminProcedure.query(async () => {
+    const { getDb } = await import("./db");
+    const { discountCodes } = await import("../drizzle/schema");
+    const { desc } = await import("drizzle-orm");
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    return db.select().from(discountCodes).orderBy(desc(discountCodes.createdAt));
+  }),
+
+  createDiscountCode: superAdminProcedure
+    .input(z.object({
+      code: z.string().min(1).max(50),
+      description: z.string().optional(),
+      soloFeePence: z.number().int().positive().optional(),
+      duoFeePence: z.number().int().positive().optional(),
+      trioFeePence: z.number().int().positive().optional(),
+      maxUses: z.number().int().positive().optional(),
+      expiresAt: z.string().optional(), // ISO date string
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import("./db");
+      const { discountCodes } = await import("../drizzle/schema");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const code = input.code.toUpperCase().trim();
+      await db.insert(discountCodes).values({
+        code,
+        description: input.description,
+        soloFeePence: input.soloFeePence,
+        duoFeePence: input.duoFeePence,
+        trioFeePence: input.trioFeePence,
+        maxUses: input.maxUses,
+        expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
+        isActive: true,
+        createdByAdminId: ctx.user.id,
+      });
+      return { success: true, code };
+    }),
+
+  updateDiscountCode: superAdminProcedure
+    .input(z.object({
+      id: z.number().int(),
+      isActive: z.boolean().optional(),
+      maxUses: z.number().int().positive().nullable().optional(),
+      expiresAt: z.string().nullable().optional(),
+      description: z.string().optional(),
+      soloFeePence: z.number().int().positive().nullable().optional(),
+      duoFeePence: z.number().int().positive().nullable().optional(),
+      trioFeePence: z.number().int().positive().nullable().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { discountCodes } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const updates: Record<string, unknown> = {};
+      if (input.isActive !== undefined) updates.isActive = input.isActive;
+      if (input.maxUses !== undefined) updates.maxUses = input.maxUses;
+      if (input.expiresAt !== undefined) updates.expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+      if (input.description !== undefined) updates.description = input.description;
+      if (input.soloFeePence !== undefined) updates.soloFeePence = input.soloFeePence;
+      if (input.duoFeePence !== undefined) updates.duoFeePence = input.duoFeePence;
+      if (input.trioFeePence !== undefined) updates.trioFeePence = input.trioFeePence;
+      await db.update(discountCodes).set(updates).where(eq(discountCodes.id, input.id));
+      return { success: true };
+    }),
+
+  deleteDiscountCode: superAdminProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { discountCodes } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.delete(discountCodes).where(eq(discountCodes.id, input.id));
+      return { success: true };
+    }),
+
 });
 function buildResponse(data: {
   newSignupsThisWeek: Array<{ count: number }>;

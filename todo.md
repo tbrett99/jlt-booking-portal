@@ -2601,3 +2601,17 @@
 - [ ] Frontend: margin table sort by value at risk
 - [ ] Frontend: margin agent click-through to their bookings page
 - [ ] Frontend: DD Confirmed card split into two cards (subscriptions vs one-off)
+
+## Joining Fee Increase & Discount Codes (Jun 2026)
+- [x] Raise joining fees: Solo £697, Duo £997, Trio £1,497 (updated in shared/membership.ts)
+- [x] Add LEGACY_JOINING_FEES constant for old prices (Solo £297, Duo £447, Trio £597)
+- [x] Create discount_codes table in DB (code, description, soloFeePence, duoFeePence, trioFeePence, maxUses, usedCount, expiresAt, isActive)
+- [x] Add discountCode + discountedFeePence columns to join_sessions table
+- [x] Seed initial HONOUR code with legacy prices for all three membership types
+- [x] Backend: validateDiscountCode procedure (returns resolved fee, saving amount)
+- [x] Backend: applyDiscountCode procedure (stores resolved fee on session)
+- [x] Backend: initiatePayment uses discountedFeePence if set on session
+- [x] Join flow UI: payment step shows fee summary + optional discount code input field
+- [x] Join flow UI: applied code shows green confirmation with saving amount
+- [x] Super Admin: Discount Codes tab in BI dashboard (weekly + monthly views)
+- [x] Super Admin: list, create, toggle active/inactive, delete discount codes

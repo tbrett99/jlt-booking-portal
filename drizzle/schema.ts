@@ -1039,6 +1039,26 @@ export const contractSignatures = mysqlTable("contract_signatures", {
 });
 export type ContractSignature = typeof contractSignatures.$inferSelect;
 
+// ─── Discount Codes ──────────────────────────────────────────────────────────
+// Stores joining-fee discount codes. A code can override the fee for each
+// membership type. NULL fee = use LEGACY_JOINING_FEES for that type.
+export const discountCodes = mysqlTable("discount_codes", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 50 }).notNull().unique(),         // e.g. "HONOUR2024"
+  description: varchar("description", { length: 255 }),             // internal note
+  // Per-type fee overrides in pence. NULL = use LEGACY_JOINING_FEES for that type.
+  soloFeePence: int("soloFeePence"),
+  duoFeePence: int("duoFeePence"),
+  trioFeePence: int("trioFeePence"),
+  maxUses: int("maxUses"),             // NULL = unlimited
+  usedCount: int("usedCount").default(0).notNull(),
+  expiresAt: timestamp("expiresAt"),   // NULL = never expires
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  createdByAdminId: int("createdByAdminId"),
+});
+export type DiscountCode = typeof discountCodes.$inferSelect;
+
 // ─── Join Flow: Team Invites ──────────────────────────────────────────────────
 export const teamInvites = mysqlTable("team_invites", {
   id: int("id").autoincrement().primaryKey(),
@@ -1077,6 +1097,8 @@ export const joinSessions = mysqlTable("join_sessions", {
   consentConfirmed: boolean("consentConfirmed").default(false),      // Explicit "I agree" checkbox
   contractTextSnapshot: longtext("contractTextSnapshot"),            // Full contract HTML at moment of signing
   contractHash: varchar("contractHash", { length: 128 }),           // SHA-256 of (contractText+signature+timestamp)
+  discountCode: varchar("discountCode", { length: 50 }),              // discount code applied (if any)
+  discountedFeePence: int("discountedFeePence"),                      // resolved fee after discount (pence)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   expiresAt: timestamp("expiresAt").notNull(),                     // sessions expire after 24h

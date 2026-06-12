@@ -22,6 +22,7 @@ import {
   agentTeams,
   users,
   agentCrmProfiles,
+  discountCodes,
 } from "../drizzle/schema";
 import { getActiveContractTemplate } from "./crm-db";
 import { generateUniqueAgentIdForUser } from "./agent-crm-db";
@@ -35,6 +36,7 @@ import {
   TIER_LABELS,
   TYPE_LABELS,
   MEMBER_COUNTS,
+  LEGACY_JOINING_FEES,
 } from "../shared/membership";
 import { sendDirectEmail } from "./email";
 import { nanoid } from "nanoid";
@@ -275,9 +277,14 @@ export const joinRouter = router({
 
       const tier = (session.membershipTier ?? "business_class") as typeof MEMBERSHIP_TIERS[number];
       const type = (session.membershipType ?? "solo") as typeof MEMBERSHIP_TYPES[number];
-      const joiningFee = getJoiningFee(type);
       const tierLabel = TIER_LABELS[tier];
       const typeLabel = TYPE_LABELS[type];
+
+      // Resolve joining fee — use discounted fee if a valid code was applied to this session
+      let joiningFee = getJoiningFee(type);
+      if (session.discountedFeePence != null) {
+        joiningFee = session.discountedFeePence;
+      }
 
       // Build name parts from signer name
       const nameParts = (session.signerName ?? "").trim().split(/\s+/);
@@ -343,6 +350,115 @@ export const joinRouter = router({
       paymentDays: [...PAYMENT_DAYS],
     };
   }),
+
+  /**
+   * Validate a discount code for a given membership type.
+   * Returns the resolved fee if valid, or an error message if not.
+   * Does NOT apply the code yet — call applyDiscountCode to commit it.
+   */
+  validateDiscountCode: publicProcedure
+    .input(z.object({
+      code: z.string().min(1),
+      membershipType: z.enum(MEMBERSHIP_TYPES),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const rows = await db
+        .select()
+        .from(discountCodes)
+        .where(eq(discountCodes.code, input.code.toUpperCase().trim()))
+        .limit(1);
+      const dc = rows[0];
+
+      if (!dc || !dc.isActive) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Invalid or expired discount code" });
+      }
+      if (dc.expiresAt && dc.expiresAt < new Date()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This discount code has expired" });
+      }
+      if (dc.maxUses != null && dc.usedCount >= dc.maxUses) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This discount code has reached its usage limit" });
+      }
+
+      // Resolve the fee for the requested membership type
+      const feeMap: Record<string, number | null | undefined> = {
+        solo: dc.soloFeePence,
+        duo: dc.duoFeePence,
+        trio: dc.trioFeePence,
+      };
+      const overrideFee = feeMap[input.membershipType];
+      // Fall back to legacy fee if the code doesn't specify an amount for this type
+      const resolvedFee = overrideFee ?? LEGACY_JOINING_FEES[input.membershipType];
+      const standardFee = getJoiningFee(input.membershipType);
+      const savingPence = standardFee - resolvedFee;
+
+      return {
+        valid: true,
+        code: dc.code,
+        description: dc.description,
+        resolvedFeePence: resolvedFee,
+        standardFeePence: standardFee,
+        savingPence,
+      };
+    }),
+
+  /**
+   * Apply a validated discount code to a join session.
+   * Stores the resolved fee on the session so initiatePayment uses it.
+   */
+  applyDiscountCode: publicProcedure
+    .input(z.object({
+      sessionToken: z.string(),
+      code: z.string().min(1),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const session = await getSessionByToken(input.sessionToken);
+      if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
+      if (session.expiresAt < new Date()) throw new TRPCError({ code: "FORBIDDEN", message: "Session expired" });
+
+      const type = (session.membershipType ?? "solo") as typeof MEMBERSHIP_TYPES[number];
+
+      const rows = await db
+        .select()
+        .from(discountCodes)
+        .where(eq(discountCodes.code, input.code.toUpperCase().trim()))
+        .limit(1);
+      const dc = rows[0];
+
+      if (!dc || !dc.isActive) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Invalid or expired discount code" });
+      }
+      if (dc.expiresAt && dc.expiresAt < new Date()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This discount code has expired" });
+      }
+      if (dc.maxUses != null && dc.usedCount >= dc.maxUses) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This discount code has reached its usage limit" });
+      }
+
+      const feeMap: Record<string, number | null | undefined> = {
+        solo: dc.soloFeePence,
+        duo: dc.duoFeePence,
+        trio: dc.trioFeePence,
+      };
+      const resolvedFee = feeMap[type] ?? LEGACY_JOINING_FEES[type];
+
+      // Save to session
+      await db
+        .update(joinSessions)
+        .set({ discountCode: dc.code, discountedFeePence: resolvedFee })
+        .where(eq(joinSessions.id, session.id));
+
+      return {
+        success: true,
+        resolvedFeePence: resolvedFee,
+        savingPence: getJoiningFee(type) - resolvedFee,
+      };
+    }),
 
   /**
    * Send a team member invite email.

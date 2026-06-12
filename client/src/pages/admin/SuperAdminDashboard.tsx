@@ -7,8 +7,15 @@ import {
   ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
   Users, CreditCard, BookOpen, PoundSterling, UserPlus, Mail,
   AlertCircle, CheckCircle2, Clock, ArrowRight, Activity, FileEdit, RotateCcw,
-  Timer, X, BarChart2, Calendar, Target, Percent, Download,
+  Timer, X, BarChart2, Calendar, Target, Percent, Download, Tag, Plus, Trash2, Pencil,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -710,6 +717,7 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
           <TabsTrigger value="recruitment"><UserPlus size={14} className="mr-1" />Recruitment</TabsTrigger>
           <TabsTrigger value="staff"><Activity size={14} className="mr-1" />Staff</TabsTrigger>
           <TabsTrigger value="trends"><BarChart2 size={14} className="mr-1" />Trends</TabsTrigger>
+          <TabsTrigger value="discount-codes"><Tag size={14} className="mr-1" />Discount Codes</TabsTrigger>
         </TabsList>
 
         {/* Membership */}
@@ -1050,7 +1058,180 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
             <div className="text-center py-12 text-muted-foreground text-sm">No trend data available.</div>
           )}
         </TabsContent>
+
+        {/* Discount Codes (weekly view) */}
+        <TabsContent value="discount-codes">
+          <DiscountCodesTab />
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// ─── Discount Codes Management Tab ──────────────────────────────────────────────────────────────────────
+function DiscountCodesTab() {
+  const utils = trpc.useUtils();
+  const { data: codes = [], isLoading } = trpc.superAdmin.listDiscountCodes.useQuery();
+  const createMutation = trpc.superAdmin.createDiscountCode.useMutation({
+    onSuccess: () => { utils.superAdmin.listDiscountCodes.invalidate(); toast.success("Code created"); setShowCreate(false); resetForm(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateMutation = trpc.superAdmin.updateDiscountCode.useMutation({
+    onSuccess: () => { utils.superAdmin.listDiscountCodes.invalidate(); toast.success("Updated"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteMutation = trpc.superAdmin.deleteDiscountCode.useMutation({
+    onSuccess: () => { utils.superAdmin.listDiscountCodes.invalidate(); toast.success("Code deleted"); setDeleteId(null); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [form, setForm] = useState({ code: "", description: "", soloFee: "", duoFee: "", trioFee: "", maxUses: "", expiresAt: "" });
+  const resetForm = () => setForm({ code: "", description: "", soloFee: "", duoFee: "", trioFee: "", maxUses: "", expiresAt: "" });
+
+  const handleCreate = () => {
+    if (!form.code.trim()) { toast.error("Code is required"); return; }
+    createMutation.mutate({
+      code: form.code.trim(),
+      description: form.description || undefined,
+      soloFeePence: form.soloFee ? Math.round(parseFloat(form.soloFee) * 100) : undefined,
+      duoFeePence: form.duoFee ? Math.round(parseFloat(form.duoFee) * 100) : undefined,
+      trioFeePence: form.trioFee ? Math.round(parseFloat(form.trioFee) * 100) : undefined,
+      maxUses: form.maxUses ? parseInt(form.maxUses) : undefined,
+      expiresAt: form.expiresAt || undefined,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Discount Codes</h3>
+          <p className="text-sm text-muted-foreground">Manage joining fee discount codes for honoured prospects.</p>
+        </div>
+        <Button onClick={() => setShowCreate(true)} size="sm"><Plus size={14} className="mr-1" />New Code</Button>
+      </div>
+
+      {/* Info banner */}
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+        <strong>How it works:</strong> When a prospect reaches the payment step, they can enter a discount code.
+        If the code is valid, the joining fee is reduced to the amount you set here.
+        Leave a fee blank to automatically use the legacy price (Solo £297 / Duo £447 / Trio £597).
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-16 w-full" />)}</div>
+      ) : codes.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <Tag size={40} className="mx-auto mb-3 opacity-30" />
+          <p className="font-medium">No discount codes yet</p>
+          <p className="text-sm">Create one to allow honoured prospects to pay the old price.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {codes.map((dc) => (
+            <Card key={dc.id}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono font-bold text-base tracking-wide">{dc.code}</span>
+                      <Badge variant={dc.isActive ? "default" : "secondary"}>{dc.isActive ? "Active" : "Inactive"}</Badge>
+                      {dc.maxUses != null && (
+                        <Badge variant="outline" className="text-xs">{dc.usedCount}/{dc.maxUses} uses</Badge>
+                      )}
+                      {dc.maxUses == null && dc.usedCount > 0 && (
+                        <Badge variant="outline" className="text-xs">{dc.usedCount} uses</Badge>
+                      )}
+                    </div>
+                    {dc.description && <p className="text-sm text-muted-foreground mt-1">{dc.description}</p>}
+                    <div className="flex gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
+                      <span>Solo: <strong className="text-foreground">{dc.soloFeePence != null ? fmtGbp(dc.soloFeePence / 100) : "Legacy (£297)"}</strong></span>
+                      <span>Duo: <strong className="text-foreground">{dc.duoFeePence != null ? fmtGbp(dc.duoFeePence / 100) : "Legacy (£447)"}</strong></span>
+                      <span>Trio: <strong className="text-foreground">{dc.trioFeePence != null ? fmtGbp(dc.trioFeePence / 100) : "Legacy (£597)"}</strong></span>
+                      {dc.expiresAt && <span>Expires: <strong className="text-foreground">{new Date(dc.expiresAt).toLocaleDateString("en-GB")}</strong></span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Switch
+                      checked={dc.isActive}
+                      onCheckedChange={(v) => updateMutation.mutate({ id: dc.id, isActive: v })}
+                    />
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-500 hover:text-rose-600" onClick={() => setDeleteId(dc.id)}>
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Create dialog */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Create Discount Code</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Code <span className="text-rose-500">*</span></Label>
+              <Input value={form.code} onChange={e => setForm(f => ({...f, code: e.target.value.toUpperCase()}))} placeholder="e.g. HONOUR" className="mt-1 uppercase" />
+            </div>
+            <div>
+              <Label>Description (internal note)</Label>
+              <Input value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} placeholder="e.g. Legacy price for pre-June 2026 prospects" className="mt-1" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label className="text-xs">Solo fee (£)</Label>
+                <Input type="number" value={form.soloFee} onChange={e => setForm(f => ({...f, soloFee: e.target.value}))} placeholder="297" className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Duo fee (£)</Label>
+                <Input type="number" value={form.duoFee} onChange={e => setForm(f => ({...f, duoFee: e.target.value}))} placeholder="447" className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Trio fee (£)</Label>
+                <Input type="number" value={form.trioFee} onChange={e => setForm(f => ({...f, trioFee: e.target.value}))} placeholder="597" className="mt-1" />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground -mt-2">Leave blank to use legacy prices automatically.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Max uses (blank = unlimited)</Label>
+                <Input type="number" value={form.maxUses} onChange={e => setForm(f => ({...f, maxUses: e.target.value}))} placeholder="Unlimited" className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Expires on</Label>
+                <Input type="date" value={form.expiresAt} onChange={e => setForm(f => ({...f, expiresAt: e.target.value}))} className="mt-1" />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button onClick={handleCreate} disabled={createMutation.isPending} className="flex-1">
+                {createMutation.isPending ? "Creating..." : "Create Code"}
+              </Button>
+              <Button variant="outline" onClick={() => { setShowCreate(false); resetForm(); }}>Cancel</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={deleteId != null} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete discount code?</AlertDialogTitle>
+            <AlertDialogDescription>This cannot be undone. Prospects who already had this code applied to their session will still pay the discounted price.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-rose-500 hover:bg-rose-600" onClick={() => deleteId != null && deleteMutation.mutate({ id: deleteId })}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1205,6 +1386,7 @@ export default function SuperAdminDashboard() {
                   <TabsTrigger value="staff"><Activity size={14} className="mr-1" />Staff</TabsTrigger>
                   <TabsTrigger value="comms"><Mail size={14} className="mr-1" />Comms</TabsTrigger>
                   <TabsTrigger value="margin"><Percent size={14} className="mr-1" />Margins</TabsTrigger>
+                  <TabsTrigger value="discount-codes"><Tag size={14} className="mr-1" />Discount Codes</TabsTrigger>
                 </TabsList>
 
                 {/* ── MEMBERSHIP TAB ── */}
@@ -1637,6 +1819,11 @@ export default function SuperAdminDashboard() {
                 {/* ── MARGINS TAB ── */}
                 <TabsContent value="margin">
                   <CommissionMarginTab />
+                </TabsContent>
+
+                {/* ── DISCOUNT CODES TAB (monthly) ── */}
+                <TabsContent value="discount-codes">
+                  <DiscountCodesTab />
                 </TabsContent>
               </Tabs>
 

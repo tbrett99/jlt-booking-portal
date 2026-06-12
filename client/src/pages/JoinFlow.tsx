@@ -557,7 +557,24 @@ function PaymentStep({
   onBack: () => void;
 }) {
   const [redirecting, setRedirecting] = useState(false);
+  const [discountInput, setDiscountInput] = useState("");
+  const [appliedCode, setAppliedCode] = useState<{ code: string; resolvedFeePence: number; savingPence: number } | null>(null);
+  const [codeError, setCodeError] = useState("");
   const payMutation = trpc.join.initiatePayment.useMutation();
+  const applyCodeMutation = trpc.join.applyDiscountCode.useMutation();
+  const { data: session } = trpc.join.getSession.useQuery({ sessionToken });
+
+  const handleApplyCode = async () => {
+    setCodeError("");
+    if (!discountInput.trim()) return;
+    try {
+      const result = await applyCodeMutation.mutateAsync({ sessionToken, code: discountInput.trim() });
+      setAppliedCode({ code: discountInput.trim().toUpperCase(), resolvedFeePence: result.resolvedFeePence, savingPence: result.savingPence });
+      toast.success("Discount code applied!");
+    } catch (err: any) {
+      setCodeError(err.message ?? "Invalid discount code");
+    }
+  };
 
   const handlePay = useCallback(async () => {
     if (redirecting) return;
@@ -574,47 +591,96 @@ function PaymentStep({
     }
   }, [sessionToken, payMutation, redirecting]);
 
-  // Auto-initiate on mount
-  useEffect(() => {
-    handlePay();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const membershipType = session?.membershipType as "solo" | "duo" | "trio" | undefined;
+  const standardFees: Record<string, number> = { solo: 69700, duo: 99700, trio: 149700 };
+  const standardFee = membershipType ? (standardFees[membershipType] ?? 69700) : 69700;
+  const displayFee = appliedCode ? appliedCode.resolvedFeePence : standardFee;
 
   return (
-    <div className="space-y-6 text-center">
-      <div className="flex items-center gap-3 text-left">
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
         <button onClick={onBack} className="text-gray-400 hover:text-gray-600 transition-colors">
           <ArrowLeft size={20} />
         </button>
         <div>
           <h1 className="text-2xl font-bold text-[#414141]">Payment</h1>
-          <p className="text-gray-500 text-sm">You'll be redirected to GoCardless to complete payment.</p>
+          <p className="text-gray-500 text-sm">Complete your joining fee and set up your Direct Debit.</p>
         </div>
       </div>
 
-      <div className="bg-[#FFF6ED] rounded-xl p-6">
-        <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center" style={{ background: "#70FFE8" }}>
-          <Loader2 className="animate-spin text-[#414141]" size={28} />
+      {/* Fee summary */}
+      <div className="bg-[#FFF6ED] rounded-xl p-5 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600 font-medium">Joining fee</span>
+          <span className="text-lg font-bold text-[#414141]">{formatPounds(displayFee)}</span>
         </div>
-        <h2 className="text-lg font-semibold text-[#414141] mb-2">Redirecting to GoCardless...</h2>
-        <p className="text-sm text-gray-500">
-          You'll complete your joining fee payment and set up your Direct Debit in one secure step.
-        </p>
+        {appliedCode && (
+          <div className="flex items-center justify-between text-emerald-600 text-sm">
+            <span className="flex items-center gap-1">
+              <CheckCircle2 size={14} />
+              Code <strong>{appliedCode.code}</strong> applied
+            </span>
+            <span>-{formatPounds(appliedCode.savingPence)} saving</span>
+          </div>
+        )}
+        <p className="text-xs text-gray-400 pt-1">You'll also set up your monthly Direct Debit in the same secure step.</p>
       </div>
 
-      {!redirecting && (
-        <Button
-          onClick={handlePay}
-          disabled={payMutation.isPending}
-          className="w-full h-12 text-base font-semibold"
-          style={{ background: "#70FFE8", color: "#414141" }}
-        >
-          {payMutation.isPending ? (
-            <><Loader2 className="animate-spin mr-2" size={18} /> Loading...</>
-          ) : (
-            "Go to Payment"
-          )}
-        </Button>
+      {/* Discount code input — only show if no code applied yet */}
+      {!appliedCode && (
+        <div className="space-y-2">
+          <Label htmlFor="discount-code" className="text-sm font-medium text-gray-700">
+            Have a discount code?
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id="discount-code"
+              value={discountInput}
+              onChange={(e) => { setDiscountInput(e.target.value.toUpperCase()); setCodeError(""); }}
+              placeholder="Enter code"
+              className="flex-1 uppercase"
+              onKeyDown={(e) => e.key === "Enter" && handleApplyCode()}
+              disabled={applyCodeMutation.isPending}
+            />
+            <Button
+              variant="outline"
+              onClick={handleApplyCode}
+              disabled={applyCodeMutation.isPending || !discountInput.trim()}
+              className="shrink-0"
+            >
+              {applyCodeMutation.isPending ? <Loader2 className="animate-spin" size={16} /> : "Apply"}
+            </Button>
+          </div>
+          {codeError && <p className="text-sm text-red-500">{codeError}</p>}
+        </div>
       )}
+
+      {/* Remove applied code */}
+      {appliedCode && (
+        <button
+          className="text-xs text-gray-400 hover:text-gray-600 underline"
+          onClick={() => setAppliedCode(null)}
+        >
+          Remove discount code
+        </button>
+      )}
+
+      <Button
+        onClick={handlePay}
+        disabled={payMutation.isPending || redirecting}
+        className="w-full h-12 text-base font-semibold"
+        style={{ background: "#70FFE8", color: "#414141" }}
+      >
+        {payMutation.isPending || redirecting ? (
+          <><Loader2 className="animate-spin mr-2" size={18} /> Redirecting to GoCardless...</>
+        ) : (
+          `Pay ${formatPounds(displayFee)} & Set Up Direct Debit`
+        )}
+      </Button>
+
+      <p className="text-xs text-center text-gray-400">
+        Secured by GoCardless. You'll be redirected to complete payment.
+      </p>
     </div>
   );
 }
