@@ -1379,24 +1379,35 @@ export const superAdminRouter = router({
       const { users, bookings, commissionClaims } = await import("../drizzle/schema");
       const { eq, sql, isNotNull, and, gte, lt } = await import("drizzle-orm");
 
-      // Per-agent margin summary: uses commission_claims.grossAmount / bookings.grossCost
+      // Per-agent margin summary.
+      // Uses COALESCE(cc.grossAmount, b.expectedCommission) so older claims without a
+      // grossAmount still contribute using the booking's expectedCommission as the figure.
       const agentMargins = await db.execute(sql`
         SELECT
           u.id AS agentId,
           u.name AS agentName,
           u.email AS agentEmail,
           COUNT(DISTINCT cc.id) AS totalClaims,
-          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 THEN cc.id END) AS claimsWithMargin,
-          AVG(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 THEN (cc.grossAmount / b.grossCost * 100) END) AS avgMarginPct,
-          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 AND (cc.grossAmount / b.grossCost * 100) < 6 THEN cc.id END) AS claimsBelowThreshold,
-          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 AND (cc.grossAmount / b.grossCost * 100) >= 6 AND (cc.grossAmount / b.grossCost * 100) < 8 THEN cc.id END) AS claimsAmber,
-          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 AND (cc.grossAmount / b.grossCost * 100) >= 8 THEN cc.id END) AS claimsGreen,
-          SUM(cc.grossAmount) AS totalGrossCommission,
+          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
+            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL THEN cc.id END) AS claimsWithMargin,
+          AVG(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
+            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
+            THEN (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) END) AS avgMarginPct,
+          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
+            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
+            AND (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) < 6 THEN cc.id END) AS claimsBelowThreshold,
+          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
+            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
+            AND (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) >= 6
+            AND (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) < 8 THEN cc.id END) AS claimsAmber,
+          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
+            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
+            AND (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) >= 8 THEN cc.id END) AS claimsGreen,
+          SUM(COALESCE(cc.grossAmount, b.expectedCommission)) AS totalGrossCommission,
           SUM(b.grossCost) AS totalGrossCost
         FROM commission_claims cc
         JOIN bookings b ON cc.bookingId = b.id
         JOIN users u ON cc.agentId = u.id
-        WHERE cc.grossAmount IS NOT NULL
         GROUP BY u.id, u.name, u.email
         HAVING COUNT(DISTINCT cc.id) >= ${input.minBookings}
         ORDER BY avgMarginPct ASC
@@ -1414,11 +1425,13 @@ export const superAdminRouter = router({
         SELECT
           cc.agentId,
           DATE_FORMAT(cc.claimedAt, '%Y-%m') AS month,
-          AVG(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 THEN (cc.grossAmount / b.grossCost * 100) END) AS avgMarginPct,
+          AVG(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
+            AND COALESCE(cc.grossAmount, b.expectedCommission) IS NOT NULL
+            THEN (COALESCE(cc.grossAmount, b.expectedCommission) / b.grossCost * 100) END) AS avgMarginPct,
           COUNT(cc.id) AS claimCount
         FROM commission_claims cc
         JOIN bookings b ON cc.bookingId = b.id
-        WHERE cc.grossAmount IS NOT NULL AND cc.claimedAt >= ${threeMonthsAgo}
+        WHERE cc.claimedAt >= ${threeMonthsAgo}
         GROUP BY cc.agentId, DATE_FORMAT(cc.claimedAt, '%Y-%m')
         ORDER BY cc.agentId, month ASC
       `) as unknown as Array<{ agentId: number; month: string; avgMarginPct: number | null; claimCount: number }>;
