@@ -185,18 +185,19 @@ export const superAdminRouter = router({
         ));
 
       // Payments paid out this week (funds actually landed in your bank account)
-      const paymentsPaidOutThisWeek = await db
-        .select({
-          count: sql<number>`COUNT(*)`,
-          totalPence: sql<number>`SUM(amount)`,
-        })
-        .from(gcPaymentEvents)
-        .where(and(
-          eq(gcPaymentEvents.eventType, "payments_paid_out"),
-          gte(gcPaymentEvents.occurredAt, weekStartDate),
-          lt(gcPaymentEvents.occurredAt, weekEndDate),
-          isNotNull(gcPaymentEvents.amount),
-        ));
+      // IMPORTANT: gc_payment_events stores multiple rows per GoCardless payment (one per webhook event).
+      // We must deduplicate by paymentId to avoid counting the same payment multiple times.
+      const paymentsPaidOutThisWeek = await db.execute(sql`
+        SELECT
+          COUNT(DISTINCT paymentId) AS count,
+          SUM(DISTINCT CASE WHEN paymentId IS NOT NULL THEN amount ELSE 0 END) AS totalPence
+        FROM gc_payment_events
+        WHERE eventType = 'payments_paid_out'
+          AND occurredAt >= ${weekStartDate}
+          AND occurredAt < ${weekEndDate}
+          AND amount IS NOT NULL
+          AND paymentId IS NOT NULL
+      `) as unknown as Array<{ count: number; totalPence: number }>;
 
       // Failed payments this week
       const failedPaymentsThisWeek = await db
@@ -1071,10 +1072,585 @@ export const superAdminRouter = router({
         .innerJoin(users, eq(gcSubscriptions.userId, users.id))
         .leftJoin(agentCrmProfiles, eq(gcSubscriptions.userId, agentCrmProfiles.userId))
         .where(statusCond)
-        .orderBy(gcSubscriptions.createdAt);
+                .orderBy(gcSubscriptions.createdAt);
     }),
-});
 
+/**
+   * Monthly stats — same 7-section structure as weeklyStats but month-over-month.
+   * monthStart: ISO date string (first day of the month, e.g. "2026-05-01")
+   */
+  monthlyStats: superAdminProcedure
+    .input(z.object({ monthStart: z.string() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const {
+        users, agentCrmProfiles, agentStatusEvents, bookings, pipelineHistory, amendments, refunds,
+        reimbursementItems, commissionClaims, remittanceBatches, remittanceLines, gcSubscriptions,
+        gcPaymentEvents, gcMandates, notes, agentEmails, flightRequests,
+        recruitmentProspects, recruitmentStageHistory, adminTasks,
+      } = await import("../drizzle/schema");
+      const { gte, lt, and, eq, sql, isNotNull, inArray, ne, notLike } = await import("drizzle-orm");
+      const [msYear, msMon] = input.monthStart.split("-").map(Number);
+      const monthStartDate = new Date(msYear, msMon - 1, 1, 0, 0, 0, 0);
+      const monthEndDate = new Date(msYear, msMon, 1, 0, 0, 0, 0);
+      const prevMonthStart = new Date(msYear, msMon - 2, 1, 0, 0, 0, 0);
+      const prevMonthEnd = monthStartDate;
+      const n = (v: unknown) => Number(v ?? 0);
+
+      // ── Section 1: Membership ──
+      const [
+        newSignupsThisMonth, newSignupsPrevMonth,
+        cancellationsThisMonth, cancellationsPrevMonth,
+        totalActiveAgents, totalPayingAgents, tierBreakdown,
+        inNoticeCount, pausedCount,
+      ] = await Promise.all([
+        db.select({ count: sql<number>`COUNT(*)` }).from(gcMandates).where(and(isNotNull(gcMandates.joiningFeePaidAt), gte(gcMandates.joiningFeePaidAt, monthStartDate), lt(gcMandates.joiningFeePaidAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(gcMandates).where(and(isNotNull(gcMandates.joiningFeePaidAt), gte(gcMandates.joiningFeePaidAt, prevMonthStart), lt(gcMandates.joiningFeePaidAt, prevMonthEnd))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(inArray(agentStatusEvents.toStatus, ["cancelled", "in_notice"]), gte(agentStatusEvents.createdAt, monthStartDate), lt(agentStatusEvents.createdAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(inArray(agentStatusEvents.toStatus, ["cancelled", "in_notice"]), gte(agentStatusEvents.createdAt, prevMonthStart), lt(agentStatusEvents.createdAt, prevMonthEnd))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(agentCrmProfiles).where(eq(agentCrmProfiles.agentStatus, "active")),
+        db.select({ count: sql<number>`COUNT(*)` }).from(agentCrmProfiles).where(inArray(agentCrmProfiles.agentStatus, ["active", "paused"])),
+        db.select({ tier: agentCrmProfiles.membershipTier, count: sql<number>`COUNT(*)` }).from(agentCrmProfiles).where(inArray(agentCrmProfiles.agentStatus, ["active", "paused"])).groupBy(agentCrmProfiles.membershipTier),
+        db.select({ count: sql<number>`COUNT(*)` }).from(agentCrmProfiles).where(eq(agentCrmProfiles.agentStatus, "in_notice")),
+        db.select({ count: sql<number>`COUNT(*)` }).from(agentCrmProfiles).where(eq(agentCrmProfiles.agentStatus, "paused")),
+      ]);
+
+      // ── Section 2: DD Revenue ──
+      const [activeSubscriptions] = await Promise.all([
+        db.select({ count: sql<number>`COUNT(*)`, totalAmountPence: sql<number>`SUM(amount)` }).from(gcSubscriptions).where(eq(gcSubscriptions.status, "active")),
+      ]);
+      // Deduplicated paid-out payments for the month
+      const paidOutThisMonthRaw = await db.execute(sql`
+        SELECT COUNT(DISTINCT paymentId) AS count, SUM(DISTINCT CASE WHEN paymentId IS NOT NULL THEN amount ELSE 0 END) AS totalPence
+        FROM gc_payment_events
+        WHERE eventType = 'payments_paid_out' AND occurredAt >= ${monthStartDate} AND occurredAt < ${monthEndDate} AND amount IS NOT NULL AND paymentId IS NOT NULL
+      `) as unknown as Array<{ count: number; totalPence: number }>;
+      const paidOutPrevMonthRaw = await db.execute(sql`
+        SELECT COUNT(DISTINCT paymentId) AS count, SUM(DISTINCT CASE WHEN paymentId IS NOT NULL THEN amount ELSE 0 END) AS totalPence
+        FROM gc_payment_events
+        WHERE eventType = 'payments_paid_out' AND occurredAt >= ${prevMonthStart} AND occurredAt < ${prevMonthEnd} AND amount IS NOT NULL AND paymentId IS NOT NULL
+      `) as unknown as Array<{ count: number; totalPence: number }>;
+      const [confirmedThisMonth, confirmedPrevMonth, failedThisMonth] = await Promise.all([
+        db.select({ count: sql<number>`COUNT(*)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, monthStartDate), lt(gcPaymentEvents.occurredAt, monthEndDate), isNotNull(gcPaymentEvents.amount), notLike(gcPaymentEvents.rawPayload, '%"subscription"%'))),
+        db.select({ count: sql<number>`COUNT(*)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, prevMonthStart), lt(gcPaymentEvents.occurredAt, prevMonthEnd), isNotNull(gcPaymentEvents.amount), notLike(gcPaymentEvents.rawPayload, '%"subscription"%'))),
+        db.select({ count: sql<number>`COUNT(*)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_failed"), gte(gcPaymentEvents.occurredAt, monthStartDate), lt(gcPaymentEvents.occurredAt, monthEndDate))),
+      ]);
+
+      // ── Section 3: Bookings & Pipeline ──
+      const [
+        newBookingsThisMonth, newBookingsPrevMonth,
+        pipelineMovesThisMonth, amendmentsThisMonth, amendmentsActionedThisMonth,
+        refundsThisMonth, flightRequestsThisMonth, flightRequestsPending,
+        pipelineStageDistribution, refundsByStage,
+      ] = await Promise.all([
+        db.select({ count: sql<number>`COUNT(*)` }).from(bookings).where(and(isNotNull(bookings.bookedDate), gte(bookings.bookedDate, monthStartDate), lt(bookings.bookedDate, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(bookings).where(and(isNotNull(bookings.bookedDate), gte(bookings.bookedDate, prevMonthStart), lt(bookings.bookedDate, prevMonthEnd))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(pipelineHistory).where(and(gte(pipelineHistory.movedAt, monthStartDate), lt(pipelineHistory.movedAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(amendments).where(and(gte(amendments.createdAt, monthStartDate), lt(amendments.createdAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(amendments).where(and(eq(amendments.status, "actioned"), isNotNull(amendments.actionedAt), gte(amendments.actionedAt, monthStartDate), lt(amendments.actionedAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(refunds).where(and(gte(refunds.createdAt, monthStartDate), lt(refunds.createdAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(flightRequests).where(and(gte(flightRequests.createdAt, monthStartDate), lt(flightRequests.createdAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(flightRequests).where(eq(flightRequests.status, "pending")),
+        db.select({ stage: bookings.currentStage, count: sql<number>`COUNT(*)` }).from(bookings).groupBy(bookings.currentStage).orderBy(sql`COUNT(*) DESC`),
+        db.select({ stage: refunds.pipelineStage, count: sql<number>`COUNT(*)` }).from(refunds).where(ne(refunds.status, "completed")).groupBy(refunds.pipelineStage).orderBy(sql`COUNT(*) DESC`),
+      ]);
+
+      // ── Section 4: Financials ──
+      const [
+        jltRevenueThisMonth, jltRevenuePrevMonth, agentPayoutsThisMonth,
+        commissionClaimsThisMonth, commissionClaimsPaidThisMonth,
+        reimbursementsPaidThisMonth, reimbursementsScheduled, reimbursementsPending,
+      ] = await Promise.all([
+        db.select({ total: sql<number>`SUM(jlt20)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, monthStartDate), lt(remittanceBatches.createdAt, monthEndDate), isNotNull(remittanceLines.jlt20))),
+        db.select({ total: sql<number>`SUM(jlt20)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, prevMonthStart), lt(remittanceBatches.createdAt, prevMonthEnd), isNotNull(remittanceLines.jlt20))),
+        db.select({ total: sql<number>`SUM(remit80)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, monthStartDate), lt(remittanceBatches.createdAt, monthEndDate), isNotNull(remittanceLines.remit80))),
+        db.select({ count: sql<number>`COUNT(*)`, totalGross: sql<number>`SUM(grossAmount)` }).from(commissionClaims).where(and(gte(commissionClaims.createdAt, monthStartDate), lt(commissionClaims.createdAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)`, totalGross: sql<number>`SUM(grossAmount)` }).from(commissionClaims).where(and(eq(commissionClaims.status, "paid"), isNotNull(commissionClaims.paidAt), gte(commissionClaims.paidAt, monthStartDate), lt(commissionClaims.paidAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)`, total: sql<number>`SUM(amount)` }).from(reimbursementItems).where(and(eq(reimbursementItems.status, "paid"), isNotNull(reimbursementItems.paidAt), gte(reimbursementItems.paidAt, monthStartDate), lt(reimbursementItems.paidAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)`, total: sql<number>`SUM(amount)` }).from(reimbursementItems).where(eq(reimbursementItems.status, "scheduled")),
+        db.select({ count: sql<number>`COUNT(*)`, total: sql<number>`SUM(amount)` }).from(reimbursementItems).where(eq(reimbursementItems.status, "pending")),
+      ]);
+
+      // ── Section 5: Recruitment ──
+      const [
+        newProspectsThisMonth, newProspectsPrevMonth, wonProspectsThisMonth,
+        recruitmentFunnel, recruitmentStageMovesThisMonth,
+      ] = await Promise.all([
+        db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, monthStartDate), lt(recruitmentProspects.createdAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, prevMonthStart), lt(recruitmentProspects.createdAt, prevMonthEnd))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(and(eq(recruitmentStageHistory.toStage, "won"), gte(recruitmentStageHistory.changedAt, monthStartDate), lt(recruitmentStageHistory.changedAt, monthEndDate))),
+        db.select({ stage: recruitmentProspects.pipelineStage, count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(ne(recruitmentProspects.pipelineStage, "archived")).groupBy(recruitmentProspects.pipelineStage).orderBy(sql`COUNT(*) DESC`),
+        db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(and(gte(recruitmentStageHistory.changedAt, monthStartDate), lt(recruitmentStageHistory.changedAt, monthEndDate))),
+      ]);
+
+      // Recruitment conversion rate: won / total non-archived
+      const totalNonArchivedProspects = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(ne(recruitmentProspects.pipelineStage, "archived"));
+      const wonAllTime = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(eq(recruitmentStageHistory.toStage, "won"));
+      const totalEnquiries = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects);
+      const totalApplications = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(isNotNull(recruitmentProspects.applicationSubmittedAt));
+      // Avg time from enquiry to won (days)
+      const avgTimeToSignupRaw = await db.execute(sql`
+        SELECT AVG(TIMESTAMPDIFF(DAY, rp.createdAt, rsh.changedAt)) AS avgDays
+        FROM recruitment_stage_history rsh
+        JOIN recruitment_prospects rp ON rsh.prospectId = rp.id
+        WHERE rsh.toStage = 'won'
+      `) as unknown as Array<{ avgDays: number | null }>;
+
+      // ── Section 6: Staff Productivity ──
+      const adminUsers = await db.select({ id: users.id, name: users.name, role: users.role }).from(users).where(inArray(users.role, ["admin", "super_admin"]));
+      const adminIds = adminUsers.map((u) => u.id);
+      let staffProductivity: Array<{
+        adminId: number; adminName: string; role: string;
+        pipelineMoves: number; tasksCompleted: number; tasksCreated: number;
+        commissionsPaid: number; commissionsTotal: number;
+        reimbPaid: number; reimbTotal: number; reimbScheduled: number;
+        statusChanges: number; bookingNotes: number; amendmentsActioned: number;
+        recruitmentMoves: number; totalActions: number;
+      }> = [];
+      if (adminIds.length > 0) {
+        const [
+          pipelineMovesByAdmin, tasksCompletedByAdmin, tasksCreatedByAdmin,
+          commissionsPaidByAdmin, reimbursementsPaidByAdmin, reimbursementsScheduledByAdmin,
+          statusChangesByAdmin, notesByAdmin, amendmentsActionedByAdmin, recruitmentMovesByAdmin,
+        ] = await Promise.all([
+          db.select({ adminId: pipelineHistory.movedById, count: sql<number>`COUNT(*)` }).from(pipelineHistory).where(and(gte(pipelineHistory.movedAt, monthStartDate), lt(pipelineHistory.movedAt, monthEndDate), inArray(pipelineHistory.movedById, adminIds))).groupBy(pipelineHistory.movedById),
+          db.select({ adminId: adminTasks.assigneeId, count: sql<number>`COUNT(*)` }).from(adminTasks).where(and(eq(adminTasks.status, "done"), gte(adminTasks.updatedAt, monthStartDate), lt(adminTasks.updatedAt, monthEndDate), isNotNull(adminTasks.assigneeId), inArray(adminTasks.assigneeId, adminIds))).groupBy(adminTasks.assigneeId),
+          db.select({ adminId: adminTasks.createdById, count: sql<number>`COUNT(*)` }).from(adminTasks).where(and(gte(adminTasks.createdAt, monthStartDate), lt(adminTasks.createdAt, monthEndDate), inArray(adminTasks.createdById, adminIds))).groupBy(adminTasks.createdById),
+          db.select({ adminId: commissionClaims.paidById, count: sql<number>`COUNT(*)`, total: sql<number>`SUM(grossAmount)` }).from(commissionClaims).where(and(eq(commissionClaims.status, "paid"), isNotNull(commissionClaims.paidAt), gte(commissionClaims.paidAt, monthStartDate), lt(commissionClaims.paidAt, monthEndDate), isNotNull(commissionClaims.paidById), inArray(commissionClaims.paidById, adminIds))).groupBy(commissionClaims.paidById),
+          db.select({ adminId: reimbursementItems.paidById, count: sql<number>`COUNT(*)`, total: sql<number>`SUM(amount)` }).from(reimbursementItems).where(and(eq(reimbursementItems.status, "paid"), isNotNull(reimbursementItems.paidAt), gte(reimbursementItems.paidAt, monthStartDate), lt(reimbursementItems.paidAt, monthEndDate), isNotNull(reimbursementItems.paidById), inArray(reimbursementItems.paidById, adminIds))).groupBy(reimbursementItems.paidById),
+          db.select({ adminId: reimbursementItems.assignedToId, count: sql<number>`COUNT(*)` }).from(reimbursementItems).where(and(eq(reimbursementItems.status, "scheduled"), isNotNull(reimbursementItems.scheduledAt), gte(reimbursementItems.scheduledAt, monthStartDate), lt(reimbursementItems.scheduledAt, monthEndDate), isNotNull(reimbursementItems.assignedToId), inArray(reimbursementItems.assignedToId, adminIds))).groupBy(reimbursementItems.assignedToId),
+          db.select({ adminId: agentStatusEvents.adminId, count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(gte(agentStatusEvents.createdAt, monthStartDate), lt(agentStatusEvents.createdAt, monthEndDate), inArray(agentStatusEvents.adminId, adminIds))).groupBy(agentStatusEvents.adminId),
+          db.select({ adminId: notes.authorId, count: sql<number>`COUNT(*)` }).from(notes).where(and(gte(notes.createdAt, monthStartDate), lt(notes.createdAt, monthEndDate), inArray(notes.authorId, adminIds))).groupBy(notes.authorId),
+          db.select({ adminId: amendments.actionedById, count: sql<number>`COUNT(*)` }).from(amendments).where(and(eq(amendments.status, "actioned"), isNotNull(amendments.actionedAt), gte(amendments.actionedAt, monthStartDate), lt(amendments.actionedAt, monthEndDate), isNotNull(amendments.actionedById), inArray(amendments.actionedById, adminIds))).groupBy(amendments.actionedById),
+          db.select({ adminId: recruitmentStageHistory.changedById, count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(and(gte(recruitmentStageHistory.changedAt, monthStartDate), lt(recruitmentStageHistory.changedAt, monthEndDate), isNotNull(recruitmentStageHistory.changedById), inArray(recruitmentStageHistory.changedById, adminIds))).groupBy(recruitmentStageHistory.changedById),
+        ]);
+        staffProductivity = adminUsers.map((admin) => {
+          const pipelineMoves = Number(pipelineMovesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          const tasksCompleted = Number(tasksCompletedByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          const tasksCreated = Number(tasksCreatedByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          const commissionsPaid = Number(commissionsPaidByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          const commissionsTotal = Number(commissionsPaidByAdmin.find((r) => r.adminId === admin.id)?.total ?? 0);
+          const reimbPaid = Number(reimbursementsPaidByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          const reimbTotal = Number(reimbursementsPaidByAdmin.find((r) => r.adminId === admin.id)?.total ?? 0);
+          const reimbScheduled = Number(reimbursementsScheduledByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          const statusChanges = Number(statusChangesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          const bookingNotes = Number(notesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          const amendmentsActioned = Number(amendmentsActionedByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          const recruitmentMoves = Number(recruitmentMovesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          return {
+            adminId: admin.id, adminName: admin.name ?? "", role: admin.role,
+            pipelineMoves, tasksCompleted, tasksCreated, commissionsPaid, commissionsTotal,
+            reimbPaid, reimbTotal, reimbScheduled, statusChanges, bookingNotes, amendmentsActioned, recruitmentMoves,
+            totalActions: pipelineMoves + tasksCompleted + tasksCreated + commissionsPaid + Number(reimbPaid) + Number(reimbScheduled) + statusChanges + bookingNotes + amendmentsActioned + recruitmentMoves,
+          };
+        }).sort((a, b) => b.totalActions - a.totalActions);
+      }
+
+      // ── Section 7: Communications ──
+      const [emailsSentThisMonth, emailsSentPrevMonth] = await Promise.all([
+        db.select({ count: sql<number>`COUNT(*)` }).from(agentEmails).where(and(gte(agentEmails.sentAt, monthStartDate), lt(agentEmails.sentAt, monthEndDate), eq(agentEmails.status, "sent"))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(agentEmails).where(and(gte(agentEmails.sentAt, prevMonthStart), lt(agentEmails.sentAt, prevMonthEnd), eq(agentEmails.status, "sent"))),
+      ]);
+
+      // ── 12-month trend (for charts) ──
+      const months: Array<{ label: string; start: Date; end: Date }> = [];
+      for (let i = 11; i >= 0; i--) {
+        const start = new Date(msYear, msMon - 1 - i, 1, 0, 0, 0, 0);
+        const end = new Date(start.getFullYear(), start.getMonth() + 1, 1, 0, 0, 0, 0);
+        const label = start.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+        months.push({ label, start, end });
+      }
+      const monthlyTrend: Array<{
+        month: string;
+        newSignups: number; cancellations: number; newBookings: number;
+        ddPaidOut: number; commissionClaims: number; newProspects: number; jltRevenue: number;
+      }> = [];
+      for (const m of months) {
+        const [sigs, cans, bks, prospects, rev, claims] = await Promise.all([
+          db.select({ count: sql<number>`COUNT(*)` }).from(gcMandates).where(and(isNotNull(gcMandates.joiningFeePaidAt), gte(gcMandates.joiningFeePaidAt, m.start), lt(gcMandates.joiningFeePaidAt, m.end))),
+          db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(inArray(agentStatusEvents.toStatus, ["cancelled", "in_notice"]), gte(agentStatusEvents.createdAt, m.start), lt(agentStatusEvents.createdAt, m.end))),
+          db.select({ count: sql<number>`COUNT(*)` }).from(bookings).where(and(isNotNull(bookings.bookedDate), gte(bookings.bookedDate, m.start), lt(bookings.bookedDate, m.end))),
+          db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, m.start), lt(recruitmentProspects.createdAt, m.end))),
+          db.select({ total: sql<number>`SUM(jlt20)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, m.start), lt(remittanceBatches.createdAt, m.end), isNotNull(remittanceLines.jlt20))),
+          db.select({ count: sql<number>`COUNT(*)` }).from(commissionClaims).where(and(gte(commissionClaims.createdAt, m.start), lt(commissionClaims.createdAt, m.end))),
+        ]);
+        const ddRaw = await db.execute(sql`
+          SELECT SUM(DISTINCT CASE WHEN paymentId IS NOT NULL THEN amount ELSE 0 END) AS totalPence
+          FROM gc_payment_events
+          WHERE eventType = 'payments_paid_out' AND occurredAt >= ${m.start} AND occurredAt < ${m.end} AND amount IS NOT NULL AND paymentId IS NOT NULL
+        `) as unknown as Array<{ totalPence: number }>;
+        monthlyTrend.push({
+          month: m.label,
+          newSignups: n(sigs[0]?.count),
+          cancellations: n(cans[0]?.count),
+          newBookings: n(bks[0]?.count),
+          ddPaidOut: Math.round(n(ddRaw[0]?.totalPence) / 100),
+          commissionClaims: n(claims[0]?.count),
+          newProspects: n(prospects[0]?.count),
+          jltRevenue: n(rev[0]?.total),
+        });
+      }
+
+      return {
+        period: { monthStart: input.monthStart, monthLabel: monthStartDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" }) },
+        membership: {
+          totalActiveAgents: n(totalActiveAgents[0]?.count),
+          totalPayingAgents: n(totalPayingAgents[0]?.count),
+          newSignupsThisMonth: n(newSignupsThisMonth[0]?.count),
+          newSignupsPrevMonth: n(newSignupsPrevMonth[0]?.count),
+          cancellationsThisMonth: n(cancellationsThisMonth[0]?.count),
+          cancellationsPrevMonth: n(cancellationsPrevMonth[0]?.count),
+          netGrowthThisMonth: n(newSignupsThisMonth[0]?.count) - n(cancellationsThisMonth[0]?.count),
+          inNoticeCount: n(inNoticeCount[0]?.count),
+          pausedCount: n(pausedCount[0]?.count),
+          tierBreakdown: tierBreakdown.map((r) => ({ tier: r.tier ?? "Unknown", count: n(r.count) })),
+        },
+        ddRevenue: {
+          mrrGbp: Math.round(n(activeSubscriptions[0]?.totalAmountPence) / 100),
+          paidOutThisMonthCount: n(paidOutThisMonthRaw[0]?.count),
+          paidOutThisMonthGbp: Math.round(n(paidOutThisMonthRaw[0]?.totalPence) / 100),
+          paidOutPrevMonthGbp: Math.round(n(paidOutPrevMonthRaw[0]?.totalPence) / 100),
+          confirmedThisMonthCount: n(confirmedThisMonth[0]?.count),
+          confirmedThisMonthGbp: Math.round(n(confirmedThisMonth[0]?.totalPence) / 100),
+          confirmedPrevMonthGbp: Math.round(n(confirmedPrevMonth[0]?.totalPence) / 100),
+          failedThisMonthCount: n(failedThisMonth[0]?.count),
+          failedThisMonthGbp: Math.round(n(failedThisMonth[0]?.totalPence) / 100),
+        },
+        bookings: {
+          newBookingsThisMonth: n(newBookingsThisMonth[0]?.count),
+          newBookingsPrevMonth: n(newBookingsPrevMonth[0]?.count),
+          pipelineMovesThisMonth: n(pipelineMovesThisMonth[0]?.count),
+          amendmentsThisMonth: n(amendmentsThisMonth[0]?.count),
+          amendmentsActionedThisMonth: n(amendmentsActionedThisMonth[0]?.count),
+          refundsThisMonth: n(refundsThisMonth[0]?.count),
+          flightRequestsThisMonth: n(flightRequestsThisMonth[0]?.count),
+          flightRequestsPending: n(flightRequestsPending[0]?.count),
+          pipelineStageDistribution: pipelineStageDistribution.map((r) => ({ stage: r.stage ?? "Unknown", count: n(r.count) })),
+          refundsByStage: refundsByStage.map((r) => ({ stage: r.stage ?? "Unknown", count: n(r.count) })),
+        },
+        financials: {
+          jltRevenueThisMonth: n(jltRevenueThisMonth[0]?.total),
+          jltRevenuePrevMonth: n(jltRevenuePrevMonth[0]?.total),
+          agentPayoutsThisMonth: n(agentPayoutsThisMonth[0]?.total),
+          commissionClaimsThisMonth: n(commissionClaimsThisMonth[0]?.count),
+          commissionClaimsGrossThisMonth: n(commissionClaimsThisMonth[0]?.totalGross),
+          commissionClaimsPaidThisMonth: n(commissionClaimsPaidThisMonth[0]?.count),
+          commissionClaimsPaidGrossThisMonth: n(commissionClaimsPaidThisMonth[0]?.totalGross),
+          reimbursementsPaidThisMonth: n(reimbursementsPaidThisMonth[0]?.count),
+          reimbursementsPaidTotalThisMonth: n(reimbursementsPaidThisMonth[0]?.total),
+          reimbursementsScheduledCount: n(reimbursementsScheduled[0]?.count),
+          reimbursementsScheduledTotal: n(reimbursementsScheduled[0]?.total),
+          reimbursementsPendingCount: n(reimbursementsPending[0]?.count),
+          reimbursementsPendingTotal: n(reimbursementsPending[0]?.total),
+        },
+        recruitment: {
+          newProspectsThisMonth: n(newProspectsThisMonth[0]?.count),
+          newProspectsPrevMonth: n(newProspectsPrevMonth[0]?.count),
+          wonProspectsThisMonth: n(wonProspectsThisMonth[0]?.count),
+          stageMovesThisMonth: n(recruitmentStageMovesThisMonth[0]?.count),
+          funnel: recruitmentFunnel.map((r) => ({ stage: r.stage ?? "unknown", count: n(r.count) })),
+          totalEnquiries: n(totalEnquiries[0]?.count),
+          totalApplications: n(totalApplications[0]?.count),
+          totalWon: n(wonAllTime[0]?.count),
+          conversionRate: n(totalEnquiries[0]?.count) > 0 ? Math.round((n(wonAllTime[0]?.count) / n(totalEnquiries[0]?.count)) * 1000) / 10 : 0,
+          avgTimeToSignupDays: Math.round(Number(avgTimeToSignupRaw[0]?.avgDays ?? 0) * 10) / 10,
+        },
+        staffProductivity,
+        communications: {
+          emailsSentThisMonth: n(emailsSentThisMonth[0]?.count),
+          emailsSentPrevMonth: n(emailsSentPrevMonth[0]?.count),
+        },
+        monthlyTrend,
+      };
+    }),
+
+  /**
+   * Per-agent commission margin report.
+   * Returns each agent's avg margin %, count below 6% threshold, and 3-month trend.
+   */
+  agentMarginReport: superAdminProcedure
+    .input(z.object({ minBookings: z.number().default(1) }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { users, bookings, commissionClaims } = await import("../drizzle/schema");
+      const { eq, sql, isNotNull, and, gte, lt } = await import("drizzle-orm");
+
+      // Per-agent margin summary: uses commission_claims.grossAmount / bookings.grossCost
+      const agentMargins = await db.execute(sql`
+        SELECT
+          u.id AS agentId,
+          u.name AS agentName,
+          u.email AS agentEmail,
+          COUNT(DISTINCT cc.id) AS totalClaims,
+          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 THEN cc.id END) AS claimsWithMargin,
+          AVG(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 THEN (cc.grossAmount / b.grossCost * 100) END) AS avgMarginPct,
+          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 AND (cc.grossAmount / b.grossCost * 100) < 6 THEN cc.id END) AS claimsBelowThreshold,
+          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 AND (cc.grossAmount / b.grossCost * 100) >= 6 AND (cc.grossAmount / b.grossCost * 100) < 8 THEN cc.id END) AS claimsAmber,
+          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 AND (cc.grossAmount / b.grossCost * 100) >= 8 THEN cc.id END) AS claimsGreen,
+          SUM(cc.grossAmount) AS totalGrossCommission,
+          SUM(b.grossCost) AS totalGrossCost
+        FROM commission_claims cc
+        JOIN bookings b ON cc.bookingId = b.id
+        JOIN users u ON cc.agentId = u.id
+        WHERE cc.grossAmount IS NOT NULL
+        GROUP BY u.id, u.name, u.email
+        HAVING COUNT(DISTINCT cc.id) >= ${input.minBookings}
+        ORDER BY avgMarginPct ASC
+      `) as unknown as Array<{
+        agentId: number; agentName: string; agentEmail: string;
+        totalClaims: number; claimsWithMargin: number; avgMarginPct: number | null;
+        claimsBelowThreshold: number; claimsAmber: number; claimsGreen: number;
+        totalGrossCommission: number; totalGrossCost: number;
+      }>;
+
+      // 3-month trend per agent (last 3 calendar months)
+      const now = new Date();
+      const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1, 0, 0, 0, 0);
+      const monthlyMargins = await db.execute(sql`
+        SELECT
+          cc.agentId,
+          DATE_FORMAT(cc.claimedAt, '%Y-%m') AS month,
+          AVG(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 THEN (cc.grossAmount / b.grossCost * 100) END) AS avgMarginPct,
+          COUNT(cc.id) AS claimCount
+        FROM commission_claims cc
+        JOIN bookings b ON cc.bookingId = b.id
+        WHERE cc.grossAmount IS NOT NULL AND cc.claimedAt >= ${threeMonthsAgo}
+        GROUP BY cc.agentId, DATE_FORMAT(cc.claimedAt, '%Y-%m')
+        ORDER BY cc.agentId, month ASC
+      `) as unknown as Array<{ agentId: number; month: string; avgMarginPct: number | null; claimCount: number }>;
+
+      // Group monthly trend by agentId
+      const trendByAgent = new Map<number, Array<{ month: string; avgMarginPct: number; claimCount: number }>>();
+      for (const row of monthlyMargins) {
+        if (!trendByAgent.has(row.agentId)) trendByAgent.set(row.agentId, []);
+        trendByAgent.get(row.agentId)!.push({
+          month: row.month,
+          avgMarginPct: Math.round(Number(row.avgMarginPct ?? 0) * 10) / 10,
+          claimCount: Number(row.claimCount),
+        });
+      }
+
+      return {
+        agents: agentMargins.map((r) => ({
+          agentId: Number(r.agentId),
+          agentName: r.agentName,
+          agentEmail: r.agentEmail,
+          totalClaims: Number(r.totalClaims),
+          claimsWithMargin: Number(r.claimsWithMargin),
+          avgMarginPct: r.avgMarginPct !== null ? Math.round(Number(r.avgMarginPct) * 10) / 10 : null,
+          claimsBelowThreshold: Number(r.claimsBelowThreshold),
+          claimsAmber: Number(r.claimsAmber),
+          claimsGreen: Number(r.claimsGreen),
+          totalGrossCommission: Number(r.totalGrossCommission),
+          totalGrossCost: Number(r.totalGrossCost),
+          // Flag: red = any below threshold, amber = all in 6-8%, green = all above 8%
+          flag: Number(r.claimsBelowThreshold) > 0 ? "red" : Number(r.claimsAmber) > 0 ? "amber" : "green",
+          trend: trendByAgent.get(Number(r.agentId)) ?? [],
+        })),
+        summary: {
+          totalAgentsReported: agentMargins.length,
+          agentsBelowThreshold: agentMargins.filter((r) => Number(r.claimsBelowThreshold) > 0).length,
+          agentsAmber: agentMargins.filter((r) => Number(r.claimsBelowThreshold) === 0 && Number(r.claimsAmber) > 0).length,
+          agentsGreen: agentMargins.filter((r) => Number(r.claimsBelowThreshold) === 0 && Number(r.claimsAmber) === 0).length,
+        },
+      };
+    }),
+
+  /**
+   * Drill-down: open refunds with stage, agent, booking, days open, assigned admin.
+   */
+  drillDownRefunds: superAdminProcedure
+    .input(z.object({ stage: z.string().optional(), assignedToId: z.number().optional() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { refunds, bookings, users } = await import("../drizzle/schema");
+      const { eq, ne, and, sql, isNull, or } = await import("drizzle-orm");
+      const conditions: ReturnType<typeof eq>[] = [ne(refunds.status, "completed")];
+      if (input.stage) conditions.push(eq(refunds.pipelineStage, input.stage as typeof refunds.pipelineStage._.data));
+      if (input.assignedToId) conditions.push(eq(refunds.assignedToId, input.assignedToId));
+      const rows = await db
+        .select({
+          id: refunds.id,
+          bookingId: refunds.bookingId,
+          clientName: bookings.clientName,
+          ptsRef: bookings.ptsRef,
+          agentId: refunds.agentId,
+          agentName: users.name,
+          pipelineStage: refunds.pipelineStage,
+          refundType: refunds.refundType,
+          amountToClient: refunds.amountToClient,
+          assignedToId: refunds.assignedToId,
+          status: refunds.status,
+          createdAt: refunds.createdAt,
+          daysOpen: sql<number>`DATEDIFF(NOW(), ${refunds.createdAt})`,
+        })
+        .from(refunds)
+        .innerJoin(bookings, eq(refunds.bookingId, bookings.id))
+        .innerJoin(users, eq(refunds.agentId, users.id))
+        .where(and(...conditions))
+        .orderBy(sql`DATEDIFF(NOW(), ${refunds.createdAt}) DESC`);
+      // Fetch assigned admin names separately
+      const assignedIds1 = Array.from(new Set(rows.filter((r) => r.assignedToId).map((r) => r.assignedToId!)));
+      let adminMap: Record<number, string> = {};
+      if (assignedIds1.length > 0) {
+        const admins = await db.select({ id: users.id, name: users.name }).from(users).where(sql`${users.id} IN (${sql.join(assignedIds1.map((id) => sql`${id}`), sql`, `)})`);
+        adminMap = Object.fromEntries(admins.map((a) => [a.id, a.name ?? "Unknown"]));
+      }
+      return rows.map((r) => ({
+        ...r,
+        amountToClient: r.amountToClient ? Number(r.amountToClient) : null,
+        daysOpen: Number(r.daysOpen),
+        assignedAdminName: r.assignedToId ? (adminMap[r.assignedToId] ?? "Unknown") : null,
+      }));
+    }),
+
+  /**
+   * Drill-down: pending/scheduled reimbursements with agent, booking, amount, status.
+   */
+  drillDownReimbursements: superAdminProcedure
+    .input(z.object({ status: z.enum(["pending", "scheduled", "paid"]).optional() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { reimbursementItems, bookings, users } = await import("../drizzle/schema");
+      const { eq, and, inArray, sql, isNotNull } = await import("drizzle-orm");
+      const statusFilter = input.status ? [input.status] : ["pending", "scheduled"];
+      const rows = await db
+        .select({
+          id: reimbursementItems.id,
+          bookingId: reimbursementItems.bookingId,
+          clientName: bookings.clientName,
+          ptsRef: bookings.ptsRef,
+          agentId: reimbursementItems.agentId,
+          agentName: users.name,
+          supplierName: reimbursementItems.supplierName,
+          amount: reimbursementItems.amount,
+          status: reimbursementItems.status,
+          isLate: reimbursementItems.isLate,
+          jltCompanyCard: reimbursementItems.jltCompanyCard,
+          scheduledAt: reimbursementItems.scheduledAt,
+          paidAt: reimbursementItems.paidAt,
+          assignedToId: reimbursementItems.assignedToId,
+          createdAt: reimbursementItems.createdAt,
+          daysOpen: sql<number>`DATEDIFF(NOW(), ${reimbursementItems.createdAt})`,
+        })
+        .from(reimbursementItems)
+        .innerJoin(bookings, eq(reimbursementItems.bookingId, bookings.id))
+        .innerJoin(users, eq(reimbursementItems.agentId, users.id))
+        .where(inArray(reimbursementItems.status, statusFilter as Array<"pending" | "scheduled" | "paid">))
+        .orderBy(sql`DATEDIFF(NOW(), ${reimbursementItems.createdAt}) DESC`);
+      const assignedIds2 = Array.from(new Set(rows.filter((r) => r.assignedToId).map((r) => r.assignedToId!)));
+      let adminMap2: Record<number, string> = {};
+      if (assignedIds2.length > 0) {
+        const admins2 = await db.select({ id: users.id, name: users.name }).from(users).where(sql`${users.id} IN (${sql.join(assignedIds2.map((id) => sql`${id}`), sql`, `)})`);
+        adminMap2 = Object.fromEntries(admins2.map((a) => [a.id, a.name ?? "Unknown"]));
+      }
+      return rows.map((r) => ({
+        ...r,
+        amount: Number(r.amount),
+        daysOpen: Number(r.daysOpen),
+        assignedAdminName: r.assignedToId ? (adminMap2[r.assignedToId] ?? "Unknown") : null,
+      }));
+    }),
+
+  /**
+   * Drill-down: open amendments with agent, booking, assigned admin, days open.
+   */
+  drillDownAmendments: superAdminProcedure
+    .input(z.object({ stage: z.string().optional(), assignedToId: z.number().optional() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { amendments, bookings, users } = await import("../drizzle/schema");
+      const { eq, ne, and, sql } = await import("drizzle-orm");
+      const conditions: ReturnType<typeof eq>[] = [ne(amendments.status, "actioned"), ne(amendments.status, "rejected")];
+      if (input.stage) conditions.push(eq(amendments.pipelineStage, input.stage as typeof amendments.pipelineStage._.data));
+      if (input.assignedToId) conditions.push(eq(amendments.assignedToId, input.assignedToId));
+      const rows = await db
+        .select({
+          id: amendments.id,
+          bookingId: amendments.bookingId,
+          clientName: bookings.clientName,
+          ptsRef: bookings.ptsRef,
+          agentId: amendments.agentId,
+          agentName: users.name,
+          details: amendments.details,
+          pipelineStage: amendments.pipelineStage,
+          status: amendments.status,
+          assignedToId: amendments.assignedToId,
+          createdAt: amendments.createdAt,
+          daysOpen: sql<number>`DATEDIFF(NOW(), ${amendments.createdAt})`,
+        })
+        .from(amendments)
+        .innerJoin(bookings, eq(amendments.bookingId, bookings.id))
+        .innerJoin(users, eq(amendments.agentId, users.id))
+        .where(and(...conditions))
+        .orderBy(sql`DATEDIFF(NOW(), ${amendments.createdAt}) DESC`);
+      const assignedIds3 = Array.from(new Set(rows.filter((r) => r.assignedToId).map((r) => r.assignedToId!)));
+      let adminMap3: Record<number, string> = {};
+      if (assignedIds3.length > 0) {
+        const admins3 = await db.select({ id: users.id, name: users.name }).from(users).where(sql`${users.id} IN (${sql.join(assignedIds3.map((id) => sql`${id}`), sql`, `)})`);
+        adminMap3 = Object.fromEntries(admins3.map((a) => [a.id, a.name ?? "Unknown"]));
+      }
+      return rows.map((r) => ({
+        ...r,
+        daysOpen: Number(r.daysOpen),
+        assignedAdminName: r.assignedToId ? (adminMap3[r.assignedToId] ?? "Unknown") : null,
+      }));
+    }),
+
+  /**
+   * Drill-down: pending flight ticketing requests with agent, booking, days pending.
+   */
+  drillDownFlightTicketing: superAdminProcedure
+    .input(z.object({ status: z.string().optional() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { flightRequests, bookings, users } = await import("../drizzle/schema");
+      const { eq, ne, and, sql } = await import("drizzle-orm");
+      const statusFilter = input.status ?? "pending";
+      const rows = await db
+        .select({
+          id: flightRequests.id,
+          bookingId: flightRequests.bookingId,
+          clientName: bookings.clientName,
+          ptsRef: bookings.ptsRef,
+          agentId: flightRequests.agentId,
+          agentName: users.name,
+          requestType: flightRequests.requestType,
+          supplier: flightRequests.supplier,
+          pnr: flightRequests.pnr,
+          departureDate: flightRequests.departureDate,
+          ticketingDeadline: flightRequests.ticketingDeadline,
+          status: flightRequests.status,
+          invoiceAddedToPts: flightRequests.invoiceAddedToPts,
+          createdAt: flightRequests.createdAt,
+          daysPending: sql<number>`DATEDIFF(NOW(), ${flightRequests.createdAt})`,
+          daysToDeadline: sql<number>`DATEDIFF(${flightRequests.ticketingDeadline}, NOW())`,
+        })
+        .from(flightRequests)
+        .innerJoin(bookings, eq(flightRequests.bookingId, bookings.id))
+        .innerJoin(users, eq(flightRequests.agentId, users.id))
+        .where(eq(flightRequests.status, statusFilter as "pending" | "ticketed" | "cancelled" | "query"))
+        .orderBy(flightRequests.ticketingDeadline);
+      return rows.map((r) => ({
+        ...r,
+        daysPending: Number(r.daysPending),
+        daysToDeadline: Number(r.daysToDeadline),
+      }));
+    }),
+
+});
 function buildResponse(data: {
   newSignupsThisWeek: Array<{ count: number }>;
   newSignupsPrevWeek: Array<{ count: number }>;

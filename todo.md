@@ -2560,3 +2560,32 @@
 - [ ] Backfill missing recruitment_stage_history 'won' entries for all prospects with pipelineStage='won' but no history record
 - [ ] Fix ensureProspectWon to log errors instead of swallowing them silently
 - [ ] Update super admin dashboard New Sign-Ups metric to use recruitment_stage_history.changedAt (toStage='won')
+
+## BI / Analytics Enhancement (Jun 12)
+- [ ] Fix duplicate payments_paid_out deduplication by paymentId
+- [ ] Add monthly stats procedure (monthlyStats) to super-admin-router
+- [ ] Add commission margin per-agent procedure (agentMarginReport)
+- [ ] Add drill-down procedures: refunds, reimbursements, amendments, flight ticketing
+- [ ] Add recruitment conversion rate and avg time-to-signup metrics
+- [ ] Expand trend charts to all key areas (refunds, reimbursements, amendments, margins)
+- [ ] Build enhanced SuperAdminDashboard frontend: weekly/monthly toggle, trend charts, drill-down modals
+- [ ] Build per-agent commission margin view with 6% threshold flagging
+- [ ] Build automated Monday morning weekly digest email (periodic-updates)
+
+## BI Dashboard Enhancements (Jun 12)
+- [x] Fix paymentsPaidOutThisWeek deduplication — use COUNT(DISTINCT paymentId) and SUM subquery
+- [x] Add monthlyStats procedure — same 7-section structure as weeklyStats with month-over-month comparison
+- [x] Add agentMarginReport procedure — per-agent avg margin %, count below 6% threshold, 3-month trend
+- [x] Add drillDownRefunds procedure — open refunds with stage, agent, booking, days open
+- [x] Add drillDownReimbursements procedure — pending/scheduled reimbursements with agent, booking, amount
+- [x] Add drillDownAmendments procedure — open amendments with agent, booking, assigned admin, days open
+- [x] Add drillDownFlightTicketing procedure — pending flight requests with agent, booking, days pending
+- [x] Expand weeklyTrend — add refundsOpened, reimbursementsPaid, amendmentsActioned, avgCommissionMargin
+- [x] SuperAdminDashboard: Week/Month toggle with month navigation
+- [x] SuperAdminDashboard: Monthly view with full 7-tab layout (membership, DD, bookings, financials, recruitment, staff, comms)
+- [x] SuperAdminDashboard: 12-month trend charts (Recharts) for revenue, signups, bookings, pipeline moves
+- [x] SuperAdminDashboard: Commission Margin tab with per-agent RAG table and 3-month bar chart
+- [x] SuperAdminDashboard: Drill-down modals for Refunds, Reimbursements, Amendments, Flight Ticketing
+- [x] SuperAdminDashboard: Recruitment funnel with conversion rate and avg time-to-signup
+- [x] Monday Morning Digest: automated HTML email every Monday 08:00 UTC via Heartbeat cron
+- [x] Monday Morning Digest: covers membership, DD revenue, bookings, financials, recruitment with WoW % change

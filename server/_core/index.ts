@@ -2193,6 +2193,10 @@ async function startServer() {
     })();
   });
 
+  // Monday Morning Business Digest (Heartbeat cron — every Monday 08:00 UTC)
+  const { mondayDigestHandler } = await import("../monday-digest");
+  app.post("/api/scheduled/monday-digest", mondayDigestHandler);
+
   // tRPC API
   app.use(
     "/api/trpc",
