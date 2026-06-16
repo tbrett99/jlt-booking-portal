@@ -6,7 +6,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { FULL_TERMS_SECTIONS, CODE_OF_CONDUCT_SECTIONS } from "./policyData";
+import { FULL_TERMS_SECTIONS, CODE_OF_CONDUCT_SECTIONS, APPENDIX_SECTIONS } from "./policyData";
 
 // ─── Privacy Policy content (drafted for JLT Group) ──────────────────────────
 const PRIVACY_SECTIONS = [
@@ -159,6 +159,9 @@ export default function TermsAndPolicies() {
             </TabsTrigger>
             <TabsTrigger value="privacy" className="text-sm">
               Privacy Policy
+            </TabsTrigger>
+            <TabsTrigger value="appendices" className="text-sm">
+              Appendices
             </TabsTrigger>
           </TabsList>
 
@@ -381,6 +384,33 @@ export default function TermsAndPolicies() {
             <p className="text-xs text-muted-foreground mt-6 border-t border-border pt-4">
               The JLT Group is registered with the Information Commissioner's Office (ICO).
               For data queries contact <strong>support@thejltgroup.co.uk</strong>.
+            </p>
+          </TabsContent>
+
+          {/* ── Appendices Tab ── */}
+          <TabsContent value="appendices">
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                {APPENDIX_SECTIONS.length} appendices — click an appendix to expand it.
+              </p>
+            </div>
+            <Accordion type="multiple" className="space-y-2">
+              {APPENDIX_SECTIONS.map((section, i) => (
+                <AccordionItem key={i} value={`appendix-${i}`} className="border border-border rounded-lg px-4">
+                  <AccordionTrigger className="text-sm font-medium hover:no-underline py-3">
+                    {section.title}
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div
+                      className={PROSE_CLASS}
+                      dangerouslySetInnerHTML={{ __html: section.content }}
+                    />
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+            <p className="text-xs text-muted-foreground mt-6 border-t border-border pt-4">
+              These appendices form part of the JLT Group Membership Agreement. Appendix L (Code of Conduct) is available in full under the Code of Conduct tab.
             </p>
           </TabsContent>
         </Tabs>

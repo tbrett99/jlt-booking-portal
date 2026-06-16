@@ -303,3 +303,191 @@ export const CODE_OF_CONDUCT_SECTIONS: PolicySection[] = [
     "content": "<p>23.1 This Code of Conduct may be reviewed and amended by The JLT Group from time to time. Agents will be notified of any material changes.</p>"
   }
 ];
+
+// ─── Appendices A–K (Appendix L = Code of Conduct, see separate tab) ─────────
+export const APPENDIX_SECTIONS: PolicySection[] = [
+  {
+    title: "Appendix A: Membership Fees & Charges",
+    content: `<p><strong>1. Joining Fee:</strong> £697.00 (non-refundable).</p>
+<p><strong>2. Membership Fees</strong> (payable every 30 days):</p>
+<ul>
+<li>Business Class Membership: £87</li>
+<li>First Class Membership: £127</li>
+</ul>
+<p><strong>3. Fees for Adding Team Members:</strong></p>
+<ul>
+<li>Additional agent fee: £150 per agent (non-refundable)</li>
+<li>Membership fee increase: 47% for each added team member</li>
+</ul>
+<p><strong>4. Late Payment Fee:</strong> £25 per recovery attempt.</p>
+<p><strong>5. Cancellation Fee:</strong> Equivalent to the final membership fee for the last month upon notice of cancellation.</p>
+<p><strong>6. Transaction Fee for Extended Booking Management:</strong> 2% of Total Booking Value for each Active Booking requiring management beyond the 30-day notice period.</p>`,
+  },
+  {
+    title: "Appendix B: Insurance Requirements",
+    content: `<p><strong>1.</strong> The JLT Group provides insurance coverage under its Group policy. This coverage excludes Agent Error.</p>
+<p><strong>2.</strong> Agents may optionally obtain their own professional indemnity insurance throughout their Membership term to cover liabilities arising from Agent Error.</p>
+<p><strong>3.</strong> Professional indemnity insurance can be quoted and purchased directly through The JLT Group's approved insurers.</p>
+<p><strong>4.</strong> If the Agent obtains professional indemnity insurance, proof of insurance may be requested by The JLT Group.</p>`,
+  },
+  {
+    title: "Appendix C: Training and Compliance",
+    content: `<p><strong>1.</strong> Completion of training provided by The JLT Academy is mandatory before making bookings.</p>
+<p><strong>2.</strong> Agents must adhere to compliance guidelines outlined in this Appendix and PTS Trust principles.</p>
+<p><strong>3.</strong> Agents must undergo periodic training updates to ensure ongoing compliance.</p>
+<p><strong>4. Training topics include:</strong></p>
+<ul>
+<li>ATOL regulations and compliance</li>
+<li>Package Travel Regulations 2018</li>
+<li>Data protection and GDPR</li>
+<li>Customer service standards</li>
+<li>Booking procedures and systems</li>
+<li>Financial protection and client fund handling (PTS Trust)</li>
+<li>Anti-money laundering awareness</li>
+<li>Pricing and margin controls</li>
+<li>System usage requirements</li>
+<li>Invoice and documentation standards</li>
+</ul>`,
+  },
+  {
+    title: "Appendix D: ATOL Compliance",
+    content: `<p><strong>1.</strong> Agents must process ATOL-protected bookings in strict accordance with ATOL regulations.</p>
+<p><strong>2.</strong> ATOL Certificates must be issued to clients immediately upon booking confirmation as required by applicable laws.</p>
+<p><strong>3.</strong> Agents are required to attend yearly training sessions to stay updated on ATOL compliance practices.</p>
+<p><strong>4. Failure to comply with ATOL regulations may result in:</strong></p>
+<ul>
+<li>Suspension of booking privileges</li>
+<li>Termination of Membership</li>
+<li>Regulatory penalties for both the Agent and The JLT Group</li>
+</ul>`,
+  },
+  {
+    title: "Appendix E: Commission Structure",
+    content: `<p><strong>1.</strong> Agents are entitled to a commission of 80% of the Net Revenue after all applicable Deductible Charges and Fees (as defined in Appendix H).</p>
+<p><strong>2.</strong> The JLT Group retains 20% of the Net Revenue.</p>
+<p><strong>3. Payment Schedule:</strong> Commission payments are processed monthly, within 30 days of the end of each calendar month, provided that:</p>
+<ul>
+<li>The booking has been completed or final payment has been received from the client</li>
+<li>There are no outstanding disputes or chargebacks</li>
+<li>The Agent's Membership is in good standing</li>
+<li>The Agent has not breached this Agreement or the Code of Conduct</li>
+</ul>
+<p><strong>4. Commission Statements:</strong> The JLT Group shall provide a detailed commission statement with each payment, showing total revenue, itemised Deductible Charges and Fees, Net Revenue, and commission calculation.</p>
+<p><strong>5.</strong> Commission disputes must be raised within 30 days of payment receipt; otherwise, calculations will be deemed final.</p>
+<p><strong>6. Commission Forfeiture:</strong> Commission may be forfeited in the circumstances set out in Sections 14.6, 16.3.4, 16.10.2, and 49.7.</p>`,
+  },
+  {
+    title: "Appendix F: Dispute Resolution",
+    content: `<p><strong>1.</strong> In the event of disputes, the Parties shall first attempt to resolve the matter through good faith negotiation.</p>
+<p><strong>2.</strong> If negotiation fails, the Parties shall engage an independent mediation service (Wonderland People or UK Mediation) to facilitate an impartial resolution.</p>
+<p><strong>3.</strong> A fixed mediation cost of £1,500.00 has been agreed upon with Wonderland People, shared equally between the Parties unless otherwise agreed.</p>
+<p><strong>4.</strong> Any additional costs arising from the mediation process beyond the agreed amount shall be borne by the respective Parties.</p>
+<p><strong>5.</strong> If mediation fails to resolve the dispute within 60 days, either Party may commence legal proceedings in accordance with Section 19.5.</p>`,
+  },
+  {
+    title: "Appendix G: Additional Charges",
+    content: `<p><strong>1. Chargeback Administrative Fee:</strong> £50 per chargeback processed.</p>
+<p><strong>2. Late Payment Administrative Fee:</strong> £25 per recovery attempt.</p>
+<p><strong>3. Audit Costs:</strong> If an audit reveals material non-compliance, The JLT Group may recover reasonable audit costs from the Agent.</p>
+<p><strong>4. Data Breach Costs:</strong> If a data breach is caused by the Agent's negligence or breach of this Agreement, the Agent shall be liable for all reasonable costs incurred by The JLT Group in responding to and remediating the breach.</p>
+<p><strong>5. Transaction Fee for Extended Booking Management:</strong> 2% of Total Booking Value per booking as specified in Appendix A.</p>`,
+  },
+  {
+    title: "Appendix H: Deductible Charges and Fees",
+    content: `<p>"Deductible Charges and Fees" means all charges, fees, and costs deducted from total booking revenue before calculating Net Revenue and commission. These include:</p>
+<ol>
+<li><strong>Supplier Costs:</strong> The net cost charged by the travel supplier for the travel services.</li>
+<li><strong>Booking Fees:</strong> Mandatory booking fees charged to clients as required by UK law and Company policy.</li>
+<li><strong>Payment Processing Fees:</strong> Credit card, debit card, and other payment processing fees.</li>
+<li><strong>Insurance Premiums:</strong> The cost of any travel insurance purchased by the client.</li>
+<li><strong>ATOL Contribution:</strong> The per-passenger ATOL Protection Contribution (APC) required by the Civil Aviation Authority.</li>
+<li><strong>PTS Trust Charges:</strong> Charges for PTS Trust protection as required by the Package Travel Regulations 2018.</li>
+<li><strong>Regulatory Fees:</strong> Any other regulatory fees or levies required by law.</li>
+<li><strong>Refund Processing Fees:</strong> Fees incurred in processing refunds or cancellations.</li>
+<li><strong>Third-Party Service Fees:</strong> Fees charged by third-party service providers where The JLT Group acts as an intermediary.</li>
+<li><strong>Chargeback Costs:</strong> Any costs incurred as a result of chargebacks, including administrative fees and penalties.</li>
+<li><strong>Currency Conversion Fees:</strong> Fees incurred in converting foreign currency transactions.</li>
+<li><strong>Bank Charges:</strong> Bank-related charges for payment processing and fund transfers.</li>
+</ol>
+<p>The JLT Group shall provide Agents with a detailed breakdown of all Deductible Charges and Fees applicable to each booking in the commission statement.</p>`,
+  },
+  {
+    title: "Appendix I: PTS Trust Compliance Requirements",
+    content: `<p><strong>1. Overview</strong></p>
+<p>The Protected Trust Services (PTS) Trust is a financial protection scheme required under the Package Travel and Linked Travel Arrangements Regulations 2018 to safeguard client funds for package travel bookings.</p>
+<p><strong>2. Mandatory Requirements</strong></p>
+<p>2.1 All client funds for package travel bookings must be paid directly into the PTS Trust account.</p>
+<p>2.2 Agents are strictly prohibited from receiving client funds into personal or business bank accounts.</p>
+<p>2.3 All client payments must be processed through The JLT Group's approved payment methods.</p>
+<p><strong>3. Approved Payment Methods</strong></p>
+<ul>
+<li>The JLT Group's designated merchant processor (card payments)</li>
+<li>Direct bank transfer to the PTS Trust account (with prior authorisation from The JLT Group)</li>
+<li>Any other payment method explicitly approved by The JLT Group in writing</li>
+</ul>
+<p><strong>4. Payment Processing Procedures</strong></p>
+<p>4.1 The Agent must provide clients with payment instructions that direct funds to the PTS Trust account only.</p>
+<p>4.2 The Agent must not provide clients with personal or business bank account details for payment purposes.</p>
+<p>4.3 All payments must be recorded in The JLT Group's booking system within 1 business day of receipt.</p>
+<p>4.4 The Agent must issue receipts to clients for all payments received, clearly stating that funds are protected under PTS Trust.</p>
+<p><strong>5. Charges Coverage</strong></p>
+<p>5.1 All bookings must have PTS Trust protection charges covered in full. These charges must be included in the client's total payment or paid by the Agent for Personal Bookings.</p>
+<p><strong>6. Record Keeping</strong></p>
+<p>6.1 The Agent must maintain detailed records of all client payments for a minimum of 6 years, available for audit by The JLT Group or regulatory authorities.</p>
+<p><strong>7. Consequences of Breach</strong></p>
+<p>Breach of PTS Trust requirements may result in immediate suspension of booking privileges, immediate termination of Membership, reporting to regulatory bodies, legal action to recover misappropriated funds, and criminal prosecution where applicable.</p>`,
+  },
+  {
+    title: "Appendix J: Minimum Pricing and Margin Standards",
+    content: `<p><strong>1. Purpose</strong></p>
+<p>This Appendix sets out the minimum pricing and margin standards that Agents must adhere to when pricing Client Travel, designed to ensure sustainable business operations, protect The JLT Group's reputation and supplier relationships, prevent unfair competition among Agents, and ensure compliance with consumer protection laws.</p>
+<p><strong>2. Minimum Margin Requirements</strong></p>
+<ul>
+<li><strong>Standard Bookings:</strong> Minimum margin of 5% above Net Rate, or £50 per booking, whichever is greater.</li>
+<li><strong>Complex Bookings</strong> (multi-component): Minimum margin of 7% above Net Rate, or £100 per booking, whichever is greater.</li>
+<li><strong>High-Value Bookings</strong> (exceeding £10,000): Minimum margin of 3% above Net Rate, or £300 per booking, whichever is greater.</li>
+</ul>
+<p><strong>3. Exceptions</strong></p>
+<ul>
+<li><strong>Personal Bookings:</strong> May be made at Net Rate as specified in Section 44.</li>
+<li><strong>Promotional Pricing:</strong> Agents may price below standard margins for promotional purposes with prior written approval from The JLT Group.</li>
+<li><strong>Price Matching:</strong> Agents may match legitimate competitor pricing that falls below standard margins, provided the competitor price is genuine and verifiable, evidence is provided, pricing still covers all mandatory fees, and prior approval is obtained for bookings exceeding £5,000.</li>
+</ul>
+<p><strong>4. Pricing Approval Requirements</strong></p>
+<p>Prior approval from The JLT Group is required for any pricing below the Minimum Margin Requirements (except Personal Bookings), bookings exceeding £50,000 in Total Booking Value, promotional pricing campaigns, and price matching for bookings exceeding £5,000.</p>
+<p><strong>5. Consumer Protection Compliance</strong></p>
+<p>All pricing must comply with the Consumer Protection from Unfair Trading Regulations 2008. Agents must not engage in misleading pricing practices including false "sale" prices, unavailable "from" prices, hidden fees, or bait-and-switch tactics.</p>`,
+  },
+  {
+    title: "Appendix K: Required Client Information Fields",
+    content: `<p><strong>1. Mandatory Information for All Bookings</strong></p>
+<ul>
+<li><strong>Full Name:</strong> As it appears on travel documents</li>
+<li><strong>Email Address:</strong> Primary email for booking confirmations</li>
+<li><strong>Mobile Phone Number:</strong> With country code</li>
+<li><strong>Full Address:</strong> Street address, city/town, county/region, postcode, country</li>
+<li><strong>Booking Reference:</strong> Unique booking reference number</li>
+<li><strong>Travel Dates:</strong> Departure and return dates</li>
+<li><strong>Destination:</strong> Primary destination(s)</li>
+<li><strong>Supplier Reference:</strong> Booking reference from travel supplier(s)</li>
+</ul>
+<p><strong>2. Additional Information Where Applicable</strong></p>
+<ul>
+<li><strong>Date of Birth:</strong> Required for all flight bookings, cruise bookings, and where required by supplier</li>
+<li><strong>Passport Details:</strong> Required for international travel — passport number, issue date, expiry date, issuing country, nationality</li>
+<li><strong>Alternative Contact Number:</strong> Recommended for all bookings; mandatory for bookings exceeding £5,000</li>
+<li><strong>Emergency Contact:</strong> Required for long-haul travel, complex multi-destination, group, cruise, and adventure bookings — must include name, relationship, phone number, and email</li>
+<li><strong>Special Requirements:</strong> Dietary, mobility, medical, accessibility, room preferences, celebration occasions</li>
+<li><strong>Frequent Flyer/Loyalty Numbers:</strong> Where provided by client</li>
+<li><strong>Travel Insurance Details:</strong> If purchased through The JLT Group or independently</li>
+</ul>
+<p><strong>3. Data Quality Standards</strong></p>
+<p>All information must be accurate and complete, entered in the correct format, verified with the client before finalising the booking, and updated promptly if changes occur. Names must exactly match travel documents.</p>
+<p><strong>4. Consequences of Incomplete Information</strong></p>
+<p>Bookings with incomplete mandatory information may be rejected or flagged for review. The Agent is responsible for any issues arising from incomplete or inaccurate client information, including denied boarding, visa issues, inability to contact client in emergency, and failure to provide required services.</p>`,
+  },
+  {
+    title: "Appendix L: Code of Conduct",
+    content: `<p>The JLT Group Code of Conduct (Appendix L) is published in full under the <strong>Code of Conduct</strong> tab above. Please refer to that tab for the complete text.</p>`,
+  },
+];
