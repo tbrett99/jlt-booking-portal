@@ -365,7 +365,7 @@ export const APPENDIX_SECTIONS: PolicySection[] = [
     title: "Appendix E: Commission Structure",
     content: `<p><strong>1.</strong> Agents are entitled to a commission of 80% of the Net Revenue after all applicable Deductible Charges and Fees (as defined in Appendix H).</p>
 <p><strong>2.</strong> The JLT Group retains 20% of the Net Revenue.</p>
-<p><strong>3. Payment Schedule:</strong> Commission payments are processed monthly, within 30 days of the end of each calendar month, provided that:</p>
+<p><strong>3. Payment Schedule:</strong> Commission payments are processed weekly, every Friday, provided that:</p>
 <ul>
 <li>The booking has been completed or final payment has been received from the client</li>
 <li>There are no outstanding disputes or chargebacks</li>
@@ -373,7 +373,7 @@ export const APPENDIX_SECTIONS: PolicySection[] = [
 <li>The Agent has not breached this Agreement or the Code of Conduct</li>
 </ul>
 <p><strong>4. Commission Statements:</strong> The JLT Group shall provide a detailed commission statement with each payment, showing total revenue, itemised Deductible Charges and Fees, Net Revenue, and commission calculation.</p>
-<p><strong>5.</strong> Commission disputes must be raised within 30 days of payment receipt; otherwise, calculations will be deemed final.</p>
+<p><strong>5.</strong> Commission disputes must be raised within 14 days of payment receipt; otherwise, calculations will be deemed final.</p>
 <p><strong>6. Commission Forfeiture:</strong> Commission may be forfeited in the circumstances set out in Sections 14.6, 16.3.4, 16.10.2, and 49.7.</p>`,
   },
   {
