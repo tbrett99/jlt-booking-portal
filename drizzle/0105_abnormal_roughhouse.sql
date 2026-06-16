@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `commissionRatePct` int DEFAULT 80 NOT NULL;

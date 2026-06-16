@@ -29,6 +29,7 @@ export const users = mysqlTable("users", {
   portalStatus: mysqlEnum("portalStatus", ["onboarding", "active", "paused", "suspended", "in_notice", "cancelled"]).default("onboarding").notNull(),
   crmAccess: boolean("crmAccess").default(false).notNull(), // Whether this agent can access the CRM via Open CRM button
   crmEmail: varchar("crmEmail", { length: 320 }), // Optional CRM email alias (e.g. hello@loupr.com) — used to match bookings from external CRM
+  commissionRatePct: int("commissionRatePct").default(80).notNull(), // Agent's commission rate percentage (default 80, can be overridden per-agent)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

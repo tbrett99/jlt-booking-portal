@@ -118,6 +118,7 @@ export const remittanceRouter = router({
         let agentId: number | null = null;
         let agentName: string | null = null;
         let agentEmail: string | null = null;
+        let agentCommissionRate = 80; // default 80%, overridden per agent
         let isMatched = false;
         let processingClaimId: number | null = null;
         let vatFromPortalAmt: number | null = null;
@@ -129,15 +130,16 @@ export const remittanceRouter = router({
           isMatched = true;
           matchedCount++;
 
-          // Look up agent details
+          // Look up agent details (including commission rate)
           const agentRows = await db
-            .select({ name: users.name, email: users.email })
+            .select({ name: users.name, email: users.email, commissionRatePct: users.commissionRatePct })
             .from(users)
             .where(eq(users.id, agentId))
             .limit(1);
           if (agentRows.length > 0) {
             agentName = agentRows[0].name ?? null;
             agentEmail = agentRows[0].email ?? null;
+            agentCommissionRate = agentRows[0].commissionRatePct ?? 80;
           }
 
           // Check for awaiting_payment claim → auto-advance to paid (normal flow)
@@ -204,13 +206,14 @@ export const remittanceRouter = router({
           unmatchedCount++;
         }
 
-        // Calculate 80/20 split — deduct VAT from remittance first
+        // Calculate agent/JLT split — deduct VAT from remittance first
         const vatAmt = parseNum(rawRow["VAT"]);
         // Use vatFromPortal (from claim) if available, otherwise use VAT from PTS CSV
         const effectiveVat = vatFromPortalAmt !== null ? vatFromPortalAmt : (vatAmt > 0 ? vatAmt : 0);
         const netRemittance = Math.max(0, remittanceAmt - effectiveVat);
-        const remit80 = parseFloat((netRemittance * 0.8).toFixed(2));
-        const jlt20 = parseFloat((netRemittance * 0.2).toFixed(2));
+        const agentRate = agentCommissionRate / 100;
+        const remit80 = parseFloat((netRemittance * agentRate).toFixed(2));
+        const jlt20 = parseFloat((netRemittance * (1 - agentRate)).toFixed(2));
 
         lineValues.push({
           batchId,
@@ -530,18 +533,30 @@ export const remittanceRouter = router({
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
       const lineRows = await db
-        .select({ remittance: remittanceLines.remittance, vatFromPts: remittanceLines.vatFromPts })
+        .select({ remittance: remittanceLines.remittance, vatFromPts: remittanceLines.vatFromPts, agentId: remittanceLines.agentId })
         .from(remittanceLines)
         .where(eq(remittanceLines.id, input.lineId))
         .limit(1);
       if (lineRows.length === 0) throw new TRPCError({ code: 'NOT_FOUND' });
 
+      // Look up agent commission rate
+      let agentCommissionRate = 80;
+      if (lineRows[0].agentId) {
+        const agentRateRows = await db
+          .select({ commissionRatePct: users.commissionRatePct })
+          .from(users)
+          .where(eq(users.id, lineRows[0].agentId))
+          .limit(1);
+        if (agentRateRows.length > 0) agentCommissionRate = agentRateRows[0].commissionRatePct ?? 80;
+      }
+
       const remittanceAmt = parseNum(lineRows[0].remittance);
       const vatPts = lineRows[0].vatFromPts ? parseNum(lineRows[0].vatFromPts) : 0;
       const effectiveVat = input.vat !== null ? input.vat : vatPts;
       const netRemittance = Math.max(0, remittanceAmt - effectiveVat);
-      const remit80 = (netRemittance * 0.8).toFixed(2);
-      const jlt20 = (netRemittance * 0.2).toFixed(2);
+      const agentRate = agentCommissionRate / 100;
+      const remit80 = (netRemittance * agentRate).toFixed(2);
+      const jlt20 = (netRemittance * (1 - agentRate)).toFixed(2);
 
       await db
         .update(remittanceLines)
@@ -575,11 +590,12 @@ export const remittanceRouter = router({
       }
       const booking = bookingRows[0];
       const agentRows = await db
-        .select({ name: users.name, email: users.email })
+        .select({ name: users.name, email: users.email, commissionRatePct: users.commissionRatePct })
         .from(users)
         .where(eq(users.id, booking.agentId))
         .limit(1);
-      const agent = agentRows[0] ?? { name: null, email: null };
+      const agent = agentRows[0] ?? { name: null, email: null, commissionRatePct: 80 };
+      const matchLineAgentRate = (agent.commissionRatePct ?? 80) / 100;
 
       // Check claim status on this booking
       let processingClaimId: number | null = null;
@@ -638,8 +654,8 @@ export const remittanceRouter = router({
         const vatPts = lineForCalc[0].vatFromPts ? parseNum(lineForCalc[0].vatFromPts) : 0;
         const effectiveVat = vatPortal !== null ? vatPortal : vatPts;
         const netRemittance = Math.max(0, remittanceAmt - effectiveVat);
-        recalcRemit80 = netRemittance > 0 ? (netRemittance * 0.8).toFixed(2) : undefined;
-        recalcJlt20 = netRemittance > 0 ? (netRemittance * 0.2).toFixed(2) : undefined;
+        recalcRemit80 = netRemittance > 0 ? (netRemittance * matchLineAgentRate).toFixed(2) : undefined;
+        recalcJlt20 = netRemittance > 0 ? (netRemittance * (1 - matchLineAgentRate)).toFixed(2) : undefined;
       }
 
       await db
