@@ -199,7 +199,7 @@ export default function OnboardingDashboard() {
     return null;
   })();
 
-  const personalComplete = !!(name.trim() && personalEmail.trim() && mobile.trim() && addressLine1.trim() && city.trim() && postcode.trim());
+  const personalComplete = !!(name.trim() && personalEmail.trim() && mobile.trim() && addressLine1.trim() && city.trim() && postcode.trim() && ukRegion.trim());
   const bankComplete = !!((profile as any)?.bankAccountName && (profile as any)?.bankSortCode && (profile as any)?.bankAccountNumber);
   const emergencyComplete = !!((profile as any)?.emergencyContactName && (profile as any)?.emergencyContactPhone);
   const docsComplete = !!(profile?.idDocUrl && profile?.proofOfAddressUrl);
@@ -213,6 +213,7 @@ export default function OnboardingDashboard() {
     if (!personalEmail.includes("@")) { toast.error("Please enter a valid email address"); return; }
     if (!mobile.trim()) { toast.error("Mobile number is required"); return; }
     if (!addressLine1.trim() || !city.trim() || !postcode.trim()) { toast.error("Full address is required"); return; }
+    if (!ukRegion.trim()) { toast.error("Please select your UK region"); return; }
     setSaving("personal");
     try {
       await saveProfile.mutateAsync({
@@ -465,7 +466,7 @@ export default function OnboardingDashboard() {
               </div>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">UK Region <span className="text-muted-foreground">(optional)</span></Label>
+              <Label className="text-xs">UK Region <span className="text-destructive ml-0.5">*</span></Label>
               <Select value={ukRegion} onValueChange={setUkRegion}>
                 <SelectTrigger className="h-9 text-sm w-full">
                   <SelectValue placeholder="Select your region" />
