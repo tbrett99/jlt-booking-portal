@@ -2889,7 +2889,27 @@ export const crmRouter = router({
         if (campaign.status === "sent") throw new TRPCError({ code: "BAD_REQUEST", message: "Campaign already sent" });
 
         // Build recipient list from segmentFilters
-        const filters = campaign.segmentFilters ? JSON.parse(campaign.segmentFilters) : {};
+        const rawFilters = campaign.segmentFilters ? JSON.parse(campaign.segmentFilters) : {};
+        // Migrate legacy human-readable stage names to snake_case DB values
+        const LEGACY_STAGE_MAP: Record<string, string> = {
+          "New Enquiry": "new_enquiry",
+          "AR Submitted": "application_received",
+          "AR Approved": "ar_approved",
+          "AR Declined": "ar_declined",
+          "Discovery Call Booked": "discovery_call_booked",
+          "Call Complete": "discovery_call_complete",
+          "Did Not Turn Up": "did_not_turn_up",
+          "Rebook Required": "rebook_required",
+          "Approved": "onboarding_approved",
+          "Rejected": "ar_declined",
+          "Lost": "archived",
+          "Won": "won",
+          "Archived": "archived",
+        };
+        if (Array.isArray(rawFilters.stages)) {
+          rawFilters.stages = rawFilters.stages.map((s: string) => LEGACY_STAGE_MAP[s] ?? s);
+        }
+        const filters = rawFilters;
         let recipients: Array<{ email: string; name?: string; id?: number; type: "prospect" | "agent" }> = [];
 
         if (campaign.audienceType === "prospect") {

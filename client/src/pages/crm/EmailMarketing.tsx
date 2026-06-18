@@ -53,9 +53,35 @@ function statusBadge(status: string) {
   return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${map[status] ?? "bg-muted"}`}>{status}</span>;
 }
 
+// Map legacy human-readable stage names → current snake_case DB values
+const LEGACY_STAGE_MAP: Record<string, string> = {
+  "New Enquiry": "new_enquiry",
+  "AR Submitted": "application_received",
+  "AR Approved": "ar_approved",
+  "AR Declined": "ar_declined",
+  "Discovery Call Booked": "discovery_call_booked",
+  "Call Complete": "discovery_call_complete",
+  "Did Not Turn Up": "did_not_turn_up",
+  "Rebook Required": "rebook_required",
+  "Approved": "onboarding_approved",
+  "Rejected": "ar_declined",
+  "Lost": "archived",
+  "Won": "won",
+  "Archived": "archived",
+};
+
+function migrateStage(s: string): string {
+  return LEGACY_STAGE_MAP[s] ?? s;
+}
+
 function parseFilters(s?: string | null) {
   if (!s) return { stages: [] as string[], tags: [] as string[], stageLogic: "any" as "any" | "all" };
-  try { const p = JSON.parse(s); return { stages: [], tags: [], stageLogic: "any" as "any" | "all", ...p }; } catch { return { stages: [], tags: [], stageLogic: "any" as "any" | "all" }; }
+  try {
+    const p = JSON.parse(s);
+    // Migrate any legacy human-readable stage names to snake_case DB values
+    if (Array.isArray(p.stages)) p.stages = p.stages.map(migrateStage);
+    return { stages: [], tags: [], stageLogic: "any" as "any" | "all", ...p };
+  } catch { return { stages: [], tags: [], stageLogic: "any" as "any" | "all" }; }
 }
 
 // ─── Campaign Form ─────────────────────────────────────────────────────────────
