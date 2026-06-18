@@ -23,9 +23,15 @@ import {
 import EmailBrandingEditor from "./EmailBrandingEditor";
 
 // ─── Prospect pipeline stages ─────────────────────────────────────────────────
-const PROSPECT_STAGES = [
-  "New Enquiry", "AR Submitted", "AR Approved",
-  "Discovery Call Booked", "Approved", "Rejected", "Lost", "Won",
+const PROSPECT_STAGES: { value: string; label: string }[] = [
+  { value: "new_enquiry", label: "New Enquiry" },
+  { value: "application_received", label: "AR Submitted" },
+  { value: "ar_approved", label: "AR Approved" },
+  { value: "discovery_call_booked", label: "Discovery Call Booked" },
+  { value: "onboarding_approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+  { value: "lost", label: "Lost" },
+  { value: "won", label: "Won" },
 ];
 
 // ─── Agent segmentation options ───────────────────────────────────────────────
@@ -45,8 +51,8 @@ function statusBadge(status: string) {
 }
 
 function parseFilters(s?: string | null) {
-  if (!s) return { stages: [] as string[], tags: [] as string[] };
-  try { return JSON.parse(s); } catch { return { stages: [], tags: [] }; }
+  if (!s) return { stages: [] as string[], tags: [] as string[], stageLogic: "any" as "any" | "all" };
+  try { const p = JSON.parse(s); return { stages: [], tags: [], stageLogic: "any" as "any" | "all", ...p }; } catch { return { stages: [], tags: [], stageLogic: "any" as "any" | "all" }; }
 }
 
 // ─── Campaign Form ─────────────────────────────────────────────────────────────
@@ -56,6 +62,7 @@ interface CampaignFormData {
   bodyHtml: string;
   audienceType: "prospect" | "agent";
   stages: string[];
+  stageLogic: "any" | "all";
   membershipTiers: string[];
   trainingStages: string[];
   agentTags: string[];
@@ -66,7 +73,7 @@ interface CampaignFormData {
 
 const defaultCampaignForm: CampaignFormData = {
   name: "", subject: "", bodyHtml: "", audienceType: "prospect",
-  stages: [], membershipTiers: [], trainingStages: [], agentTags: [], agentStatus: [], hasActiveMandate: null,
+  stages: [], stageLogic: "any", membershipTiers: [], trainingStages: [], agentTags: [], agentStatus: [], hasActiveMandate: null,
 };
 
 function CampaignFormDialog({
@@ -112,26 +119,51 @@ function CampaignFormDialog({
 
           {form.audienceType === "prospect" && (
             <div>
-              <Label>Filter by Pipeline Stage <span className="text-muted-foreground font-normal">(leave empty for all prospects)</span></Label>
-              <div className="flex flex-wrap gap-2 mt-1.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <Label>Filter by Pipeline Stage <span className="text-muted-foreground font-normal">(leave empty for all prospects)</span></Label>
+                {form.stages.length > 0 && (
+                  <div className="flex items-center gap-1 text-xs border rounded-full overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, stageLogic: "any" }))}
+                      className={`px-2.5 py-1 transition-colors ${
+                        form.stageLogic === "any" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
+                      }`}
+                    >ANY</button>
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, stageLogic: "all" }))}
+                      className={`px-2.5 py-1 transition-colors ${
+                        form.stageLogic === "all" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
+                      }`}
+                    >ALL</button>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
                 {PROSPECT_STAGES.map((s) => (
                   <button
-                    key={s}
+                    key={s.value}
                     type="button"
                     onClick={() => setForm((f) => ({
                       ...f,
-                      stages: f.stages.includes(s) ? f.stages.filter((x) => x !== s) : [...f.stages, s],
+                      stages: f.stages.includes(s.value) ? f.stages.filter((x) => x !== s.value) : [...f.stages, s.value],
                     }))}
                     className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                      form.stages.includes(s) ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"
+                      form.stages.includes(s.value) ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"
                     }`}
                   >
-                    {s}
+                    {s.label}
                   </button>
                 ))}
               </div>
               {form.stages.length > 0 && (
-                <p className="text-xs text-muted-foreground mt-1">Sending to: {form.stages.join(", ")}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {form.stageLogic === "any"
+                    ? `Sending to prospects in any of: ${form.stages.map((v) => PROSPECT_STAGES.find((s) => s.value === v)?.label ?? v).join(", ")}`
+                    : `Sending to prospects matching all of: ${form.stages.map((v) => PROSPECT_STAGES.find((s) => s.value === v)?.label ?? v).join(", ")}`
+                  }
+                </p>
               )}
             </div>
           )}
@@ -1042,7 +1074,7 @@ export default function EmailMarketing() {
                   <SelectTrigger><SelectValue placeholder="Manual enrolment only" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_none">Manual enrolment only</SelectItem>
-                    {PROSPECT_STAGES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    {PROSPECT_STAGES.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">If set, prospects will be auto-enrolled when they move to this stage.</p>
