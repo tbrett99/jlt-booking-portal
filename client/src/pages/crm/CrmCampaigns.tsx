@@ -78,7 +78,7 @@ function StageFilter({
           Filter by Pipeline Stage{" "}
           <span className="text-muted-foreground font-normal">(leave blank for all prospects)</span>
         </Label>
-        {stages.length > 1 && (
+        {stages.length > 0 && (
           <div className="flex items-center gap-1 text-xs border rounded-full overflow-hidden">
             <button
               type="button"
@@ -97,7 +97,7 @@ function StageFilter({
           </div>
         )}
       </div>
-      {stages.length > 1 && (
+      {stages.length > 0 && (
         <p className="text-xs text-muted-foreground">
           {stageLogic === "any"
             ? "Sending to prospects who match any of the selected stages."
