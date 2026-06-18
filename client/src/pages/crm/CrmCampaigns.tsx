@@ -10,8 +10,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Plus, Send, Eye, Pencil } from "lucide-react";
 
-const PROSPECT_STAGES = [
-  "New Enquiry", "AR Submitted", "AR Approved", "Discovery Call Booked", "Approved", "Won",
+const PROSPECT_STAGES: { value: string; label: string }[] = [
+  { value: "new_enquiry", label: "New Enquiry" },
+  { value: "application_received", label: "AR Submitted" },
+  { value: "ar_approved", label: "AR Approved" },
+  { value: "discovery_call_booked", label: "Discovery Call Booked" },
+  { value: "onboarding_approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+  { value: "lost", label: "Lost" },
+  { value: "won", label: "Won" },
 ];
 
 const statusColor: Record<string, string> = {
@@ -66,7 +73,8 @@ export default function CrmCampaigns() {
     if (c.audienceType === "agent") return "All Agents";
     const stages = parseStages(c.segmentFilters);
     if (stages.length === 0) return "All Prospects";
-    return `Prospects: ${stages.join(", ")}`;
+    const labels = stages.map((v: string) => PROSPECT_STAGES.find((s) => s.value === v)?.label ?? v);
+    return `Prospects: ${labels.join(", ")}`;
   }
 
   return (
@@ -143,11 +151,11 @@ export default function CrmCampaigns() {
                 <div className="flex flex-wrap gap-2">
                   {PROSPECT_STAGES.map((s) => (
                     <button
-                      key={s}
+                      key={s.value}
                       type="button"
-                      onClick={() => setForm((f) => ({ ...f, stages: f.stages.includes(s) ? f.stages.filter((x) => x !== s) : [...f.stages, s] }))}
-                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${form.stages.includes(s) ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:border-primary"}`}
-                    >{s}</button>
+                      onClick={() => setForm((f) => ({ ...f, stages: f.stages.includes(s.value) ? f.stages.filter((x) => x !== s.value) : [...f.stages, s.value] }))}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${form.stages.includes(s.value) ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:border-primary"}`}
+                    >{s.label}</button>
                   ))}
                 </div>
               </div>
@@ -202,11 +210,11 @@ export default function CrmCampaigns() {
                   <div className="flex flex-wrap gap-2">
                     {PROSPECT_STAGES.map((s) => (
                       <button
-                        key={s}
+                        key={s.value}
                         type="button"
-                        onClick={() => setEditDialog((d: any) => ({ ...d, stages: (d.stages ?? []).includes(s) ? (d.stages ?? []).filter((x: string) => x !== s) : [...(d.stages ?? []), s] }))}
-                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${(editDialog.stages ?? []).includes(s) ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:border-primary"}`}
-                      >{s}</button>
+                        onClick={() => setEditDialog((d: any) => ({ ...d, stages: (d.stages ?? []).includes(s.value) ? (d.stages ?? []).filter((x: string) => x !== s.value) : [...(d.stages ?? []), s.value] }))}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${(editDialog.stages ?? []).includes(s.value) ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:border-primary"}`}
+                      >{s.label}</button>
                     ))}
                   </div>
                 </div>
