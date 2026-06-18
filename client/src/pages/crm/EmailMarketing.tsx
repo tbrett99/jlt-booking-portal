@@ -22,16 +22,19 @@ import {
 } from "lucide-react";
 import EmailBrandingEditor from "./EmailBrandingEditor";
 
-// ─── Prospect pipeline stages ─────────────────────────────────────────────────
+// ─── Prospect pipeline stages (values must match DB pipelineStage column) ─────────────
 const PROSPECT_STAGES: { value: string; label: string }[] = [
-  { value: "new_enquiry", label: "New Enquiry" },
-  { value: "application_received", label: "AR Submitted" },
-  { value: "ar_approved", label: "AR Approved" },
-  { value: "discovery_call_booked", label: "Discovery Call Booked" },
-  { value: "onboarding_approved", label: "Approved" },
-  { value: "rejected", label: "Rejected" },
-  { value: "lost", label: "Lost" },
-  { value: "won", label: "Won" },
+  { value: "new_enquiry",             label: "New Enquiry" },
+  { value: "application_received",    label: "AR Submitted" },
+  { value: "ar_approved",             label: "AR Approved" },
+  { value: "ar_declined",             label: "AR Declined" },
+  { value: "discovery_call_booked",   label: "Discovery Call Booked" },
+  { value: "discovery_call_complete", label: "Call Complete" },
+  { value: "did_not_turn_up",         label: "Did Not Turn Up" },
+  { value: "rebook_required",         label: "Rebook Required" },
+  { value: "onboarding_approved",     label: "Approved" },
+  { value: "archived",                label: "Archived" },
+  { value: "won",                     label: "Won" },
 ];
 
 // ─── Agent segmentation options ───────────────────────────────────────────────
