@@ -507,13 +507,13 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  // Campaign queue processor: every 15 minutes
-  // Picks up 'queued' email_sends rows for campaigns and sends them in batches of 50.
+  // Campaign queue processor: every 5 minutes
+  // Picks up 'queued' email_sends rows for campaigns and sends them in batches of 200.
   // Restart-safe: progress is persisted in the database (no fire-and-forget).
-  cron.schedule("*/15 * * * *", async () => {
+  cron.schedule("*/5 * * * *", async () => {
     try {
       const { processCampaignQueue } = await import("./resend-email");
-      const result = await processCampaignQueue(50);
+      const result = await processCampaignQueue(200);
       if (result.sent > 0 || result.failed > 0) {
         console.log(`[CampaignQueue] Sent: ${result.sent}, Failed: ${result.failed}, Skipped: ${result.skipped}`);
       }
