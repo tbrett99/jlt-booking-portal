@@ -2910,12 +2910,14 @@ export const crmRouter = router({
           rawFilters.stages = rawFilters.stages.map((s: string) => LEGACY_STAGE_MAP[s] ?? s);
         }
         const filters = rawFilters;
+        console.log("[Campaign Send Debug] campaignId:", input.campaignId, "audienceType:", campaign.audienceType, "segmentFilters raw:", campaign.segmentFilters, "parsed filters:", JSON.stringify(filters));
         let recipients: Array<{ email: string; name?: string; id?: number; type: "prospect" | "agent" }> = [];
 
         if (campaign.audienceType === "prospect") {
           // Use recruitment_prospects — the main pipeline table (900+ records)
           const { getAllRecruitmentProspects } = await import("./recruitment-db");
           const all = await getAllRecruitmentProspects();
+          console.log("[Campaign Send Debug] total prospects:", all.length, "sample stages:", Array.from(new Set(all.slice(0, 20).map(p => p.pipelineStage))));
           let filtered = all;
           if (filters.stages?.length) {
             // Allow filtering by specific pipeline stages — any (OR) or all (AND)
@@ -2927,6 +2929,7 @@ export const crmRouter = router({
               // ANY (OR, default): prospect matches at least one selected stage
               filtered = filtered.filter((p) => filters.stages.includes(p.pipelineStage));
             }
+            console.log("[Campaign Send Debug] after stage filter:", filtered.length, "recipients");
           } else {
             // By default exclude archived and declined prospects
             filtered = filtered.filter(
