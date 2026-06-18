@@ -2916,7 +2916,8 @@ export const crmRouter = router({
         if (campaign.audienceType === "prospect") {
           // Use recruitment_prospects — the main pipeline table (900+ records)
           const { getAllRecruitmentProspects } = await import("./recruitment-db");
-          const all = await getAllRecruitmentProspects();
+          // Pass limit: -1 sentinel to bypass the default 100-row limit
+          const all = await getAllRecruitmentProspects({ limit: 999999 });
           console.log("[Campaign Send Debug] total prospects:", all.length, "sample stages:", Array.from(new Set(all.slice(0, 20).map(p => p.pipelineStage))));
           let filtered = all;
           if (filters.stages?.length) {
