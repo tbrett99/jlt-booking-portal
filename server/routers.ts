@@ -1154,6 +1154,7 @@ export const appRouter = router({
           bookingId: z.number(),
           ptsRef: z.string().optional(),
           topdogRef: z.string().optional(),
+          crmRef: z.string().optional(),
           destination: z.string().optional(),
           finalSupplierPaymentDate: z.date().nullable().optional(),
           expectedCommission: z.number().optional(),

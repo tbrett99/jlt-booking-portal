@@ -323,6 +323,178 @@ router.get("/sso/verify", async (req: Request, res: Response) => {
   }
 });
 
+// ─── Commission status helpers ──────────────────────────────────────────────
+
+/**
+ * Map portal claim status → Orbit's expected enum.
+ * A booking with no claim record returns "unclaimed".
+ */
+function toOrbitStatus(portalStatus: string | null | undefined): string {
+  switch (portalStatus) {
+    case "paid":             return "claimed";
+    case "top_up_required":  return "partial";
+    case "pending":
+    case "processing":
+    case "awaiting_payment": return "pending";
+    default:                 return "unclaimed";
+  }
+}
+
+/**
+ * Build the response object for a single booking + its latest claim.
+ */
+function buildCommissionStatusRow(booking: any, claim: any | null) {
+  return {
+    bookingId:     booking.id,
+    crmRef:        booking.crmRef ?? null,
+    claimStatus:   toOrbitStatus(claim?.status),
+    claimedAmount: claim?.grossAmount != null ? parseFloat(claim.grossAmount) : null,
+    claimedAt:     claim?.claimedAt ? new Date(claim.claimedAt).toISOString() : null,
+    paidAt:        claim?.paidAt    ? new Date(claim.paidAt).toISOString()    : null,
+    updatedAt:     claim?.updatedAt ? new Date(claim.updatedAt).toISOString() : new Date(booking.updatedAt).toISOString(),
+    notes:         claim?.topUpNote ?? null,
+  };
+}
+
+// ─── GET /api/external/commission-status ─────────────────────────────────────
+/**
+ * Return the commission claim status for a single booking.
+ * Orbit passes ?crmRef=JLT-001  OR  ?bookingId=1234
+ */
+router.get("/commission-status", async (req: Request, res: Response) => {
+  try {
+    const rawKey = req.headers["x-api-key"] as string | undefined;
+    if (!rawKey) return res.status(401).json({ error: "Missing X-API-Key header" });
+    const keyRecord = await validateApiKey(rawKey);
+    if (!keyRecord) return res.status(401).json({ error: "Invalid or inactive API key" });
+
+    const { crmRef, bookingId } = req.query as { crmRef?: string; bookingId?: string };
+    if (!crmRef && !bookingId) {
+      return res.status(400).json({ error: "Provide at least one of crmRef or bookingId" });
+    }
+
+    const db = await getDb();
+    if (!db) return res.status(503).json({ error: "Database unavailable" });
+
+    const { bookings: bookingsTable, commissionClaims } = await import("../drizzle/schema");
+    const { desc } = await import("drizzle-orm");
+
+    // Resolve booking
+    let booking: any;
+    if (bookingId != null) {
+      const rows = await db.select().from(bookingsTable).where(eq(bookingsTable.id, Number(bookingId))).limit(1);
+      booking = rows[0];
+    } else {
+      const rows = await db.select().from(bookingsTable).where(eq(bookingsTable.crmRef, String(crmRef).trim())).limit(1);
+      booking = rows[0];
+    }
+
+    if (!booking) {
+      return res.status(404).json({
+        error: bookingId != null
+          ? `No booking found with bookingId: ${bookingId}`
+          : `No booking found with crmRef: ${crmRef}`,
+      });
+    }
+
+    // Get latest claim for this booking (most recently updated)
+    const claims = await db
+      .select()
+      .from(commissionClaims)
+      .where(eq(commissionClaims.bookingId, booking.id))
+      .orderBy(desc(commissionClaims.updatedAt))
+      .limit(1);
+    const claim = claims[0] ?? null;
+
+    return res.status(200).json(buildCommissionStatusRow(booking, claim));
+  } catch (err: any) {
+    console.error("[external-api] commission-status error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── GET /api/external/commission-status/bulk ────────────────────────────────
+/**
+ * Return paginated commission claim statuses for all bookings.
+ * Supports ?updatedSince=ISO8601  ?page=1  ?pageSize=100 (max 500)
+ */
+router.get("/commission-status/bulk", async (req: Request, res: Response) => {
+  try {
+    const rawKey = req.headers["x-api-key"] as string | undefined;
+    if (!rawKey) return res.status(401).json({ error: "Missing X-API-Key header" });
+    const keyRecord = await validateApiKey(rawKey);
+    if (!keyRecord) return res.status(401).json({ error: "Invalid or inactive API key" });
+
+    const {
+      updatedSince,
+      page: pageStr = "1",
+      pageSize: pageSizeStr = "100",
+    } = req.query as { updatedSince?: string; page?: string; pageSize?: string };
+
+    const page     = Math.max(1, parseInt(pageStr, 10) || 1);
+    const pageSize = Math.min(500, Math.max(1, parseInt(pageSizeStr, 10) || 100));
+    const offset   = (page - 1) * pageSize;
+
+    const db = await getDb();
+    if (!db) return res.status(503).json({ error: "Database unavailable" });
+
+    const { bookings: bookingsTable, commissionClaims } = await import("../drizzle/schema");
+    const { gte, desc, sql: drizzleSql } = await import("drizzle-orm");
+
+    // Build WHERE clause for updatedSince (applies to both bookings and claims)
+    let sinceDate: Date | null = null;
+    if (updatedSince) {
+      sinceDate = new Date(updatedSince);
+      if (isNaN(sinceDate.getTime())) {
+        return res.status(400).json({ error: "Invalid updatedSince — expected ISO 8601 datetime (e.g. 2026-06-01T00:00:00Z)" });
+      }
+    }
+
+    // Fetch all bookings (optionally filtered by updatedSince on the booking row)
+    const bookingQuery = db
+      .select()
+      .from(bookingsTable)
+      .orderBy(desc(bookingsTable.updatedAt));
+
+    const allBookings: any[] = sinceDate
+      ? await (bookingQuery.where(gte(bookingsTable.updatedAt, sinceDate)) as any)
+      : await (bookingQuery as any);
+
+    const total = allBookings.length;
+    const pageBookings = allBookings.slice(offset, offset + pageSize);
+
+    if (pageBookings.length === 0) {
+      return res.status(200).json({ total, page, pageSize, results: [] });
+    }
+
+    // Fetch latest claim for each booking in one query
+    const bookingIds = pageBookings.map((b: any) => b.id);
+    const { inArray } = await import("drizzle-orm");
+    const allClaims: any[] = await db
+      .select()
+      .from(commissionClaims)
+      .where(inArray(commissionClaims.bookingId, bookingIds))
+      .orderBy(desc(commissionClaims.updatedAt));
+
+    // Keep only the latest claim per booking
+    const latestClaimByBooking = new Map<number, any>();
+    for (const claim of allClaims) {
+      if (!latestClaimByBooking.has(claim.bookingId)) {
+        latestClaimByBooking.set(claim.bookingId, claim);
+      }
+    }
+
+    const results = pageBookings.map((b: any) =>
+      buildCommissionStatusRow(b, latestClaimByBooking.get(b.id) ?? null)
+    );
+
+    return res.status(200).json({ total, page, pageSize, results });
+  } catch (err: any) {
+    console.error("[external-api] commission-status/bulk error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 export { router as externalApiRouter, hashKey };

@@ -754,6 +754,7 @@ export default function AdminBookingDetail() {
   const [isSendingInternal, setIsSendingInternal] = useState(false);
   const [editPts, setEditPts] = useState("");
   const [editTopdog, setEditTopdog] = useState("");
+  const [editCrmRef, setEditCrmRef] = useState("");
   const [editDestination, setEditDestination] = useState("");
   const [editPaymentDate, setEditPaymentDate] = useState("");
   const [editCommission, setEditCommission] = useState("");
@@ -820,6 +821,7 @@ export default function AdminBookingDetail() {
   if (booking && !detailsInitialised) {
     setEditPts(booking.ptsRef ?? "");
     setEditTopdog(booking.topdogRef ?? "");
+    setEditCrmRef((booking as any).crmRef ?? "");
     setEditDestination((booking as any).destination ?? "");
     setEditPaymentDate(booking.finalSupplierPaymentDate ? format(new Date(booking.finalSupplierPaymentDate), "yyyy-MM-dd") : "");
     setEditCommission(booking.expectedCommission ? String(booking.expectedCommission) : "");
@@ -1021,6 +1023,7 @@ export default function AdminBookingDetail() {
         bookingId,
         ptsRef: editPts || undefined,
         topdogRef: editTopdog || undefined,
+        crmRef: editCrmRef || undefined,
         destination: editDestination || undefined,
         finalSupplierPaymentDate: editPaymentDate ? new Date(editPaymentDate) : null,
         expectedCommission: editCommission ? Number(editCommission) : undefined,
@@ -1368,6 +1371,15 @@ export default function AdminBookingDetail() {
                   <div className="flex items-center gap-1.5">
                     <Input value={editPts} onChange={(e) => setEditPts(e.target.value)} placeholder="PTS..." className="h-8 text-sm" />
                     {booking.ptsRef && <CopyableRef value={booking.ptsRef} label="PTS ref" className="flex-shrink-0" />}
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs flex items-center gap-1">Orbit Ref <span className="text-muted-foreground font-normal">(for commission sync)</span></Label>
+                  <div className="flex items-center gap-1.5">
+                    <Input value={editCrmRef} onChange={(e) => setEditCrmRef(e.target.value)} placeholder="e.g. JLT-001" className="h-8 text-sm" />
+                    {(booking as any).crmRef && <CopyableRef value={(booking as any).crmRef} label="Orbit ref" className="flex-shrink-0" />}
                   </div>
                 </div>
               </div>
