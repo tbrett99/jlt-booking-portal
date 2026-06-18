@@ -34,9 +34,99 @@ type FormState = {
   bodyHtml: string;
   audienceType: "prospect" | "agent";
   stages: string[];
+  stageLogic: "any" | "all";
 };
 
-const defaultForm: FormState = { name: "", subject: "", bodyHtml: "", audienceType: "prospect", stages: [] };
+const defaultForm: FormState = {
+  name: "", subject: "", bodyHtml: "", audienceType: "prospect", stages: [], stageLogic: "any",
+};
+
+function buildFilters(stages: string[], stageLogic: "any" | "all") {
+  if (stages.length === 0) return undefined;
+  return JSON.stringify({ stages, stageLogic: stageLogic === "all" ? "all" : "any" });
+}
+
+function parseFilters(filters: string | null | undefined): { stages: string[]; stageLogic: "any" | "all" } {
+  if (!filters) return { stages: [], stageLogic: "any" };
+  try {
+    const parsed = JSON.parse(filters);
+    return { stages: parsed.stages ?? [], stageLogic: parsed.stageLogic === "all" ? "all" : "any" };
+  } catch { return { stages: [], stageLogic: "any" }; }
+}
+
+function audienceLabel(c: any) {
+  if (c.audienceType === "agent") return "All Agents";
+  const { stages, stageLogic } = parseFilters(c.segmentFilters);
+  if (stages.length === 0) return "All Prospects";
+  const labels = stages.map((v: string) => PROSPECT_STAGES.find((s) => s.value === v)?.label ?? v);
+  const connector = stageLogic === "all" ? " AND " : " OR ";
+  return `Prospects: ${labels.join(connector)}`;
+}
+
+function StageFilter({
+  stages, stageLogic, onStagesChange, onLogicChange,
+}: {
+  stages: string[];
+  stageLogic: "any" | "all";
+  onStagesChange: (s: string[]) => void;
+  onLogicChange: (l: "any" | "all") => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label>
+          Filter by Pipeline Stage{" "}
+          <span className="text-muted-foreground font-normal">(leave blank for all prospects)</span>
+        </Label>
+        {stages.length > 1 && (
+          <div className="flex items-center gap-1 text-xs border rounded-full overflow-hidden">
+            <button
+              type="button"
+              onClick={() => onLogicChange("any")}
+              className={`px-2.5 py-1 transition-colors ${stageLogic === "any" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+            >
+              ANY
+            </button>
+            <button
+              type="button"
+              onClick={() => onLogicChange("all")}
+              className={`px-2.5 py-1 transition-colors ${stageLogic === "all" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+            >
+              ALL
+            </button>
+          </div>
+        )}
+      </div>
+      {stages.length > 1 && (
+        <p className="text-xs text-muted-foreground">
+          {stageLogic === "any"
+            ? "Sending to prospects who match any of the selected stages."
+            : "Sending to prospects who match all of the selected stages."}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {PROSPECT_STAGES.map((s) => (
+          <button
+            key={s.value}
+            type="button"
+            onClick={() =>
+              onStagesChange(
+                stages.includes(s.value) ? stages.filter((x) => x !== s.value) : [...stages, s.value]
+              )
+            }
+            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+              stages.includes(s.value)
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background border-border hover:border-primary"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function CrmCampaigns() {
   const [createDialog, setCreateDialog] = useState(false);
@@ -59,23 +149,6 @@ export default function CrmCampaigns() {
     onSuccess: (data) => { refetch(); setSendConfirm(null); toast.success(`Campaign sent to ${data.recipientCount} recipients`); },
     onError: (e) => toast.error(e.message),
   });
-
-  function buildFilters(stages: string[]) {
-    return stages.length > 0 ? JSON.stringify({ stages }) : undefined;
-  }
-
-  function parseStages(filters: string | null | undefined): string[] {
-    if (!filters) return [];
-    try { return JSON.parse(filters).stages ?? []; } catch { return []; }
-  }
-
-  function audienceLabel(c: any) {
-    if (c.audienceType === "agent") return "All Agents";
-    const stages = parseStages(c.segmentFilters);
-    if (stages.length === 0) return "All Prospects";
-    const labels = stages.map((v: string) => PROSPECT_STAGES.find((s) => s.value === v)?.label ?? v);
-    return `Prospects: ${labels.join(", ")}`;
-  }
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -113,7 +186,10 @@ export default function CrmCampaigns() {
                   <Button size="sm" variant="outline" onClick={() => setPreviewDialog(c)}><Eye size={13} className="mr-1" />Preview</Button>
                   {c.status === "draft" && (
                     <>
-                      <Button size="sm" variant="outline" onClick={() => setEditDialog({ ...c, stages: parseStages(c.segmentFilters) })}><Pencil size={13} className="mr-1" />Edit</Button>
+                      <Button size="sm" variant="outline" onClick={() => {
+                        const { stages, stageLogic } = parseFilters(c.segmentFilters);
+                        setEditDialog({ ...c, stages, stageLogic });
+                      }}><Pencil size={13} className="mr-1" />Edit</Button>
                       <Button size="sm" onClick={() => setSendConfirm(c)}><Send size={13} className="mr-1" />Send</Button>
                     </>
                   )}
@@ -136,7 +212,7 @@ export default function CrmCampaigns() {
               </div>
               <div className="space-y-1.5">
                 <Label>Audience</Label>
-                <Select value={form.audienceType} onValueChange={(v) => setForm((f) => ({ ...f, audienceType: v as "prospect" | "agent", stages: [] }))}>
+                <Select value={form.audienceType} onValueChange={(v) => setForm((f) => ({ ...f, audienceType: v as "prospect" | "agent", stages: [], stageLogic: "any" }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="prospect">Prospects</SelectItem>
@@ -146,19 +222,12 @@ export default function CrmCampaigns() {
               </div>
             </div>
             {form.audienceType === "prospect" && (
-              <div className="space-y-1.5">
-                <Label>Filter by Pipeline Stage <span className="text-muted-foreground font-normal">(leave blank for all prospects)</span></Label>
-                <div className="flex flex-wrap gap-2">
-                  {PROSPECT_STAGES.map((s) => (
-                    <button
-                      key={s.value}
-                      type="button"
-                      onClick={() => setForm((f) => ({ ...f, stages: f.stages.includes(s.value) ? f.stages.filter((x) => x !== s.value) : [...f.stages, s.value] }))}
-                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${form.stages.includes(s.value) ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:border-primary"}`}
-                    >{s.label}</button>
-                  ))}
-                </div>
-              </div>
+              <StageFilter
+                stages={form.stages}
+                stageLogic={form.stageLogic}
+                onStagesChange={(s) => setForm((f) => ({ ...f, stages: s }))}
+                onLogicChange={(l) => setForm((f) => ({ ...f, stageLogic: l }))}
+              />
             )}
             <div className="space-y-1.5">
               <Label>Email Subject</Label>
@@ -173,7 +242,7 @@ export default function CrmCampaigns() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialog(false)}>Cancel</Button>
             <Button
-              onClick={() => createCampaign.mutate({ name: form.name, subject: form.subject, bodyHtml: form.bodyHtml, audienceType: form.audienceType, segmentFilters: buildFilters(form.stages) })}
+              onClick={() => createCampaign.mutate({ name: form.name, subject: form.subject, bodyHtml: form.bodyHtml, audienceType: form.audienceType, segmentFilters: buildFilters(form.stages, form.stageLogic) })}
               disabled={createCampaign.isPending || !form.name || !form.subject || !form.bodyHtml}
             >
               {createCampaign.isPending ? "Creating…" : "Create Campaign"}
@@ -195,7 +264,7 @@ export default function CrmCampaigns() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Audience</Label>
-                  <Select value={editDialog.audienceType} onValueChange={(v) => setEditDialog((d: any) => ({ ...d, audienceType: v, stages: [] }))}>
+                  <Select value={editDialog.audienceType} onValueChange={(v) => setEditDialog((d: any) => ({ ...d, audienceType: v, stages: [], stageLogic: "any" }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="prospect">Prospects</SelectItem>
@@ -205,19 +274,12 @@ export default function CrmCampaigns() {
                 </div>
               </div>
               {editDialog.audienceType === "prospect" && (
-                <div className="space-y-1.5">
-                  <Label>Filter by Pipeline Stage</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {PROSPECT_STAGES.map((s) => (
-                      <button
-                        key={s.value}
-                        type="button"
-                        onClick={() => setEditDialog((d: any) => ({ ...d, stages: (d.stages ?? []).includes(s.value) ? (d.stages ?? []).filter((x: string) => x !== s.value) : [...(d.stages ?? []), s.value] }))}
-                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${(editDialog.stages ?? []).includes(s.value) ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:border-primary"}`}
-                      >{s.label}</button>
-                    ))}
-                  </div>
-                </div>
+                <StageFilter
+                  stages={editDialog.stages ?? []}
+                  stageLogic={editDialog.stageLogic ?? "any"}
+                  onStagesChange={(s) => setEditDialog((d: any) => ({ ...d, stages: s }))}
+                  onLogicChange={(l) => setEditDialog((d: any) => ({ ...d, stageLogic: l }))}
+                />
               )}
               <div className="space-y-1.5">
                 <Label>Email Subject</Label>
@@ -232,7 +294,7 @@ export default function CrmCampaigns() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialog(null)}>Cancel</Button>
             <Button
-              onClick={() => updateCampaign.mutate({ id: editDialog.id, name: editDialog.name, subject: editDialog.subject, bodyHtml: editDialog.bodyHtml, audienceType: editDialog.audienceType, segmentFilters: buildFilters(editDialog.stages ?? []) })}
+              onClick={() => updateCampaign.mutate({ id: editDialog.id, name: editDialog.name, subject: editDialog.subject, bodyHtml: editDialog.bodyHtml, audienceType: editDialog.audienceType, segmentFilters: buildFilters(editDialog.stages ?? [], editDialog.stageLogic ?? "any") })}
               disabled={updateCampaign.isPending}
             >
               {updateCampaign.isPending ? "Saving…" : "Save Changes"}

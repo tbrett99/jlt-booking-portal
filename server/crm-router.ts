@@ -2898,8 +2898,15 @@ export const crmRouter = router({
           const all = await getAllRecruitmentProspects();
           let filtered = all;
           if (filters.stages?.length) {
-            // Allow filtering by specific pipeline stages
-            filtered = filtered.filter((p) => filters.stages.includes(p.pipelineStage));
+            // Allow filtering by specific pipeline stages — any (OR) or all (AND)
+            if (filters.stageLogic === "all") {
+              // AND: prospect must match every selected stage (only makes sense for multi-tag scenarios,
+              // but honouring the user's explicit choice)
+              filtered = filtered.filter((p) => filters.stages.every((s: string) => p.pipelineStage === s));
+            } else {
+              // ANY (OR, default): prospect matches at least one selected stage
+              filtered = filtered.filter((p) => filters.stages.includes(p.pipelineStage));
+            }
           } else {
             // By default exclude archived and declined prospects
             filtered = filtered.filter(
