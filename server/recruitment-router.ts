@@ -254,8 +254,8 @@ export const recruitmentRouter = router({
       // Update prospectusEmailSentAt
       await updateRecruitmentProspect(id, { prospectusEmailSentAt: new Date() });
 
-      // Enroll in new_enquiry workflow (skip step 1 — prospectus already sent above)
-      try { await enrollProspectInWorkflow(id, "new_enquiry"); } catch {}
+      // Enroll in new_enquiry workflow (skip step 1 — prospectus already sent directly above)
+      try { await enrollProspectInWorkflow(id, "new_enquiry", { skipFirstStep: true }); } catch {}
 
       return { success: true, duplicate: false };
     }),

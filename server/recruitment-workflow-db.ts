@@ -137,7 +137,7 @@ export async function reorderWorkflowEmails(workflowId: number, orderedIds: numb
  * Enroll a prospect in the workflow for a given stage.
  * Cancels any existing active enrollments first.
  */
-export async function enrollProspectInWorkflow(prospectId: number, stage: string) {
+export async function enrollProspectInWorkflow(prospectId: number, stage: string, opts?: { skipFirstStep?: boolean }) {
   const db = await getDb();
   if (!db) return null;
   // Cancel all existing active enrollments for this prospect
@@ -159,13 +159,19 @@ export async function enrollProspectInWorkflow(prospectId: number, stage: string
   const steps = await getWorkflowEmails(workflow.id);
   if (!steps.length) return null;
 
-  const firstStep = steps[0];
-  const nextSendAt = new Date(Date.now() + firstStep.delayHours * 60 * 60 * 1000);
+  // If skipFirstStep is true, start from step 2 (step 1 already sent directly)
+  const startStep = opts?.skipFirstStep ? 2 : 1;
+  const startStepData = steps[startStep - 1];
+  if (!startStepData) {
+    // No step 2+ exists — nothing to schedule
+    return null;
+  }
+  const nextSendAt = new Date(Date.now() + startStepData.delayHours * 60 * 60 * 1000);
 
   const result = await db.insert(recruitmentWorkflowEnrollments).values({
     prospectId,
     workflowId: workflow.id,
-    currentStep: 1,
+    currentStep: startStep,
     nextSendAt,
   });
   return (result as any).insertId as number;
