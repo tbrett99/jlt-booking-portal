@@ -4261,10 +4261,20 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         'Accept': 'application/json',
       });
 
-      async function gcFetch(path: string) {
-        const res = await fetch(`${gcBase}${path}`, { headers: gcHeaders() });
-        if (!res.ok) throw new Error(`GC API error ${res.status} for ${path}`);
-        return res.json() as Promise<any>;
+      // Bulk fetch all pages from GC
+      async function gcGetAll(resource: string) {
+        const all: any[] = [];
+        let after: string | null = null;
+        while (true) {
+          const qs = after ? `?after=${after}&limit=500` : '?limit=500';
+          const res = await fetch(`${gcBase}/${resource}${qs}`, { headers: gcHeaders() });
+          if (!res.ok) throw new Error(`GC API error ${res.status} for /${resource}`);
+          const data = await res.json() as any;
+          all.push(...(data[resource] ?? []));
+          if (data.meta?.cursors?.after) after = data.meta.cursors.after;
+          else break;
+        }
+        return all;
       }
 
       const { getDb } = await import('./db');
@@ -4272,7 +4282,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       if (!dbInst) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
 
       const { users: usersTable, agentCrmProfiles, gcMandates: gcMandatesTable, gcSubscriptions: gcSubsTable } = await import('../drizzle/schema');
-      const { eq: eqFn, inArray, notExists, sql } = await import('drizzle-orm');
+      const { eq: eqFn } = await import('drizzle-orm');
 
       // Find active agents with no active gc_subscription
       const allAgents = await dbInst
@@ -4289,67 +4299,87 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       const linkedUserIds = new Set(agentsWithActiveSub.map(r => r.userId));
       const unlinkedAgents = allAgents.filter(a => !linkedUserIds.has(a.id));
 
+      if (unlinkedAgents.length === 0) {
+        return { totalChecked: 0, linked: 0, notFound: 0, errors: 0, results: [] };
+      }
+
+      // Bulk fetch all GC customers, mandates, subscriptions
+      const [gcCustomers, gcMandatesList, gcSubsList] = await Promise.all([
+        gcGetAll('customers'),
+        gcGetAll('mandates'),
+        gcGetAll('subscriptions'),
+      ]);
+
+      // Build lookup maps
+      const customerByEmail: Record<string, any> = {};
+      for (const c of gcCustomers) {
+        if (c.email) customerByEmail[c.email.toLowerCase()] = c;
+      }
+      const mandatesByCustomer: Record<string, any[]> = {};
+      for (const m of gcMandatesList) {
+        const cid = m.links?.customer;
+        if (cid) { if (!mandatesByCustomer[cid]) mandatesByCustomer[cid] = []; mandatesByCustomer[cid].push(m); }
+      }
+      const subsByMandate: Record<string, any[]> = {};
+      for (const s of gcSubsList) {
+        const mid = s.links?.mandate;
+        if (mid) { if (!subsByMandate[mid]) subsByMandate[mid] = []; subsByMandate[mid].push(s); }
+      }
+
       const results: Array<{ name: string; email: string; status: 'linked' | 'not_found' | 'error'; subscriptionId?: string; error?: string }> = [];
 
       for (const agent of unlinkedAgents) {
         try {
-          // Look up GoCardless customer by email
-          const custData = await gcFetch(`/customers?email=${agent.email ?? ''}`);
-          const customers = custData.customers ?? [];
-          if (customers.length === 0) {
+          const email = (agent.email ?? '').toLowerCase();
+          const gcCustomer = customerByEmail[email];
+          if (!gcCustomer) {
             results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'not_found' });
             continue;
           }
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const mandates = (mandatesByCustomer[gcCustomer.id] ?? []).filter((m: any) =>
+            ['active', 'pending_submission', 'submitted', 'pending'].includes(m.status)
+          );
 
-          // Check mandates for each customer
           let linked = false;
-          for (const cust of customers) {
-            const mandateData = await gcFetch(`/mandates?customer=${cust.id}`);
-            const mandates = (mandateData.mandates ?? []).filter((m: any) => ['active', 'pending_submission', 'submitted', 'pending'].includes(m.status));
-            if (mandates.length === 0) continue;
+          for (const mandate of mandates) {
+            const activeSubs = (subsByMandate[mandate.id] ?? []).filter((s: any) => s.status === 'active');
+            if (activeSubs.length === 0) continue;
+            const sub = activeSubs[0];
 
-            for (const mandate of mandates) {
-              const subData = await gcFetch(`/subscriptions?mandate=${mandate.id}`);
-              const activeSubs = (subData.subscriptions ?? []).filter((s: any) => s.status === 'active');
-              if (activeSubs.length === 0) continue;
-
-              const sub = activeSubs[0];
-
-              // Upsert mandate
-              const existingMandates = await dbInst.select().from(gcMandatesTable).where(eqFn(gcMandatesTable.mandateId, mandate.id));
-              if (existingMandates.length === 0) {
-                await dbInst.insert(gcMandatesTable).values({
-                  userId: agent.id,
-                  mandateId: mandate.id,
-                  status: mandate.status,
-                });
-              } else if (existingMandates[0].userId !== agent.id) {
-                await dbInst.update(gcMandatesTable).set({ userId: agent.id, status: mandate.status, updatedAt: new Date() }).where(eqFn(gcMandatesTable.id, existingMandates[0].id));
-              }
-
-              // Insert subscription
-              const existingSubs = await dbInst.select().from(gcSubsTable).where(eqFn(gcSubsTable.subscriptionId, sub.id));
-              if (existingSubs.length === 0) {
-                await dbInst.insert(gcSubsTable).values({
-                  userId: agent.id,
-                  mandateId: mandate.id,
-                  subscriptionId: sub.id,
-                  status: 'active',
-                  amount: sub.amount,
-                  currency: sub.currency ?? 'GBP',
-                  startDate: sub.start_date ?? new Date().toISOString().slice(0, 10),
-                  dayOfMonth: sub.day_of_month ?? null,
-                  nextChargeDate: sub.upcoming_payments?.[0]?.charge_date ?? null,
-                });
-              }
-
-              results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'linked', subscriptionId: sub.id });
-              linked = true;
-              break;
+            // Upsert mandate
+            const existingMandates = await dbInst.select().from(gcMandatesTable).where(eqFn(gcMandatesTable.mandateId, mandate.id));
+            if (existingMandates.length === 0) {
+              await dbInst.insert(gcMandatesTable).values({
+                userId: agent.id,
+                mandateId: mandate.id,
+                status: mandate.status,
+              });
+            } else if (existingMandates[0].userId !== agent.id) {
+              await dbInst.update(gcMandatesTable)
+                .set({ userId: agent.id, status: mandate.status, updatedAt: new Date() })
+                .where(eqFn(gcMandatesTable.id, existingMandates[0].id));
             }
-            if (linked) break;
+
+            // Upsert subscription
+            const existingSubs = await dbInst.select().from(gcSubsTable).where(eqFn(gcSubsTable.subscriptionId, sub.id));
+            if (existingSubs.length === 0) {
+              await dbInst.insert(gcSubsTable).values({
+                userId: agent.id,
+                mandateId: mandate.id,
+                subscriptionId: sub.id,
+                status: 'active',
+                amount: sub.amount,
+                currency: sub.currency ?? 'GBP',
+                startDate: sub.start_date ?? new Date().toISOString().slice(0, 10),
+                dayOfMonth: sub.day_of_month ?? null,
+                nextChargeDate: sub.upcoming_payments?.[0]?.charge_date ?? null,
+              });
+            }
+
+            results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'linked', subscriptionId: sub.id });
+            linked = true;
+            break;
           }
 
           if (!linked) {
