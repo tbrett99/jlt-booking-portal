@@ -4294,7 +4294,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       for (const agent of unlinkedAgents) {
         try {
           // Look up GoCardless customer by email
-          const custData = await gcFetch(`/customers?email=${encodeURIComponent(agent.email ?? '')}`);
+          const custData = await gcFetch(`/customers?email=${agent.email ?? ''}`);
           const customers = custData.customers ?? [];
           if (customers.length === 0) {
             results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'not_found' });
