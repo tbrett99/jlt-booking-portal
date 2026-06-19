@@ -4244,6 +4244,130 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         mandatesUpdated,
       };
     }),
+
+    /**
+     * ADMIN — Reconcile unlinked GoCardless subscriptions.
+     * Finds active agents with no gc_subscription row, looks them up in GoCardless
+     * by email, and auto-links any active subscription found.
+     */
+    reconcileUnlinked: adminProcedure.mutation(async () => {
+      const gcToken = process.env.GOCARDLESS_ACCESS_TOKEN;
+      if (!gcToken) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'GoCardless token not configured' });
+      const gcEnv = (process.env.GOCARDLESS_ENVIRONMENT || 'live').toUpperCase();
+      const gcBase = gcEnv === 'LIVE' ? 'https://api.gocardless.com' : 'https://api-sandbox.gocardless.com';
+      const gcHeaders = () => ({
+        'Authorization': `Bearer ${gcToken}`,
+        'GoCardless-Version': '2015-07-06',
+        'Accept': 'application/json',
+      });
+
+      async function gcFetch(path: string) {
+        const res = await fetch(`${gcBase}${path}`, { headers: gcHeaders() });
+        if (!res.ok) throw new Error(`GC API error ${res.status} for ${path}`);
+        return res.json() as Promise<any>;
+      }
+
+      const { getDb } = await import('./db');
+      const dbInst = await getDb();
+      if (!dbInst) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+
+      const { users: usersTable, agentCrmProfiles, gcMandates: gcMandatesTable, gcSubscriptions: gcSubsTable } = await import('../drizzle/schema');
+      const { eq: eqFn, inArray, notExists, sql } = await import('drizzle-orm');
+
+      // Find active agents with no active gc_subscription
+      const allAgents = await dbInst
+        .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email })
+        .from(usersTable)
+        .innerJoin(agentCrmProfiles, eqFn(agentCrmProfiles.userId, usersTable.id))
+        .where(eqFn(agentCrmProfiles.agentStatus, 'active'));
+
+      const agentsWithActiveSub = await dbInst
+        .select({ userId: gcSubsTable.userId })
+        .from(gcSubsTable)
+        .where(eqFn(gcSubsTable.status, 'active'));
+
+      const linkedUserIds = new Set(agentsWithActiveSub.map(r => r.userId));
+      const unlinkedAgents = allAgents.filter(a => !linkedUserIds.has(a.id));
+
+      const results: Array<{ name: string; email: string; status: 'linked' | 'not_found' | 'error'; subscriptionId?: string; error?: string }> = [];
+
+      for (const agent of unlinkedAgents) {
+        try {
+          // Look up GoCardless customer by email
+          const custData = await gcFetch(`/customers?email=${encodeURIComponent(agent.email ?? '')}`);
+          const customers = custData.customers ?? [];
+          if (customers.length === 0) {
+            results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'not_found' });
+            continue;
+          }
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+          // Check mandates for each customer
+          let linked = false;
+          for (const cust of customers) {
+            const mandateData = await gcFetch(`/mandates?customer=${cust.id}`);
+            const mandates = (mandateData.mandates ?? []).filter((m: any) => ['active', 'pending_submission', 'submitted', 'pending'].includes(m.status));
+            if (mandates.length === 0) continue;
+
+            for (const mandate of mandates) {
+              const subData = await gcFetch(`/subscriptions?mandate=${mandate.id}`);
+              const activeSubs = (subData.subscriptions ?? []).filter((s: any) => s.status === 'active');
+              if (activeSubs.length === 0) continue;
+
+              const sub = activeSubs[0];
+
+              // Upsert mandate
+              const existingMandates = await dbInst.select().from(gcMandatesTable).where(eqFn(gcMandatesTable.mandateId, mandate.id));
+              if (existingMandates.length === 0) {
+                await dbInst.insert(gcMandatesTable).values({
+                  userId: agent.id,
+                  mandateId: mandate.id,
+                  status: mandate.status,
+                });
+              } else if (existingMandates[0].userId !== agent.id) {
+                await dbInst.update(gcMandatesTable).set({ userId: agent.id, status: mandate.status, updatedAt: new Date() }).where(eqFn(gcMandatesTable.id, existingMandates[0].id));
+              }
+
+              // Insert subscription
+              const existingSubs = await dbInst.select().from(gcSubsTable).where(eqFn(gcSubsTable.subscriptionId, sub.id));
+              if (existingSubs.length === 0) {
+                await dbInst.insert(gcSubsTable).values({
+                  userId: agent.id,
+                  mandateId: mandate.id,
+                  subscriptionId: sub.id,
+                  status: 'active',
+                  amount: sub.amount,
+                  currency: sub.currency ?? 'GBP',
+                  startDate: sub.start_date ?? new Date().toISOString().slice(0, 10),
+                  dayOfMonth: sub.day_of_month ?? null,
+                  nextChargeDate: sub.upcoming_payments?.[0]?.charge_date ?? null,
+                });
+              }
+
+              results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'linked', subscriptionId: sub.id });
+              linked = true;
+              break;
+            }
+            if (linked) break;
+          }
+
+          if (!linked) {
+            results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'not_found' });
+          }
+        } catch (err: any) {
+          results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'error', error: err.message });
+        }
+      }
+
+      return {
+        totalChecked: unlinkedAgents.length,
+        linked: results.filter(r => r.status === 'linked').length,
+        notFound: results.filter(r => r.status === 'not_found').length,
+        errors: results.filter(r => r.status === 'error').length,
+        results,
+      };
+    }),
   }),
   inbox: router({
     // Admin: get IMAP config (password masked)

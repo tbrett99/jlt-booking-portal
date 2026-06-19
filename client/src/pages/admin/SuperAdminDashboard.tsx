@@ -1251,6 +1251,17 @@ export default function SuperAdminDashboard() {
     return currentMonth.getTime() === thisMonth.getTime();
   }, [currentMonth]);
 
+  const [reconcileResults, setReconcileResults] = useState<null | { totalChecked: number; linked: number; notFound: number; errors: number; results: Array<{ name: string; email: string; status: string; subscriptionId?: string; error?: string }> }>(null);
+  const [showReconcileDialog, setShowReconcileDialog] = useState(false);
+  const reconcileMutation = trpc.gocardless.reconcileUnlinked.useMutation({
+    onSuccess: (result) => {
+      setReconcileResults(result);
+      setShowReconcileDialog(true);
+      toast.success(`Reconciliation complete: ${result.linked} linked, ${result.notFound} not found in GC`);
+    },
+    onError: (e) => toast.error(`Reconciliation failed: ${e.message}`),
+  });
+
   const mandateSyncMutation = trpc.crm.mandateSync.sync.useMutation({
     onSuccess: (result) => {
       toast.success(`Mandate sync complete: ${result.updated} updated, ${result.unchanged} unchanged${result.failed > 0 ? `, ${result.failed} failed` : ""}`);
@@ -1461,6 +1472,15 @@ export default function SuperAdminDashboard() {
                     <StatCard title="Cancelled Mandates" value={fmt(data.ddRevenue.cancelledMandatesThisWeek)} accent={data.ddRevenue.cancelledMandatesThisWeek > 0 ? "red" : undefined} />
                     <StatCard title="Agents w/ Consecutive Failures" value={fmt(data.ddRevenue.agentsWithConsecutiveFailures)} icon={AlertCircle}
                       accent={data.ddRevenue.agentsWithConsecutiveFailures > 0 ? "amber" : undefined} link="/crm/memberships" />
+                  </div>
+                  <div className="flex items-center justify-between bg-muted/50 rounded-lg p-3">
+                    <div className="text-sm">
+                      <span className="font-medium">Reconcile Unlinked Subscriptions</span>
+                      <p className="text-muted-foreground text-xs mt-0.5">Scans all active agents with no linked GC subscription and auto-links any found in GoCardless by email.</p>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => reconcileMutation.mutate()} disabled={reconcileMutation.isPending}>
+                      {reconcileMutation.isPending ? "Scanning..." : "Run Reconciliation"}
+                    </Button>
                   </div>
                   <div className="flex items-center justify-between bg-muted/50 rounded-lg p-3">
                     <div className="text-sm">
@@ -1825,6 +1845,67 @@ export default function SuperAdminDashboard() {
 
               {/* Drill-down dialog */}
               <DrillDownDialog type={drillDown} weekStart={weekStartStr} onClose={() => setDrillDown(null)} />
+
+              {/* GC Reconciliation results dialog */}
+              <Dialog open={showReconcileDialog} onOpenChange={setShowReconcileDialog}>
+                <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>GoCardless Reconciliation Results</DialogTitle>
+                  </DialogHeader>
+                  {reconcileResults && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-green-50 dark:bg-green-950/30 rounded-lg p-3 text-center">
+                          <div className="text-2xl font-bold text-green-600">{reconcileResults.linked}</div>
+                          <div className="text-xs text-muted-foreground mt-1">Linked</div>
+                        </div>
+                        <div className="bg-muted/50 rounded-lg p-3 text-center">
+                          <div className="text-2xl font-bold">{reconcileResults.notFound}</div>
+                          <div className="text-xs text-muted-foreground mt-1">Not in GC</div>
+                        </div>
+                        <div className="bg-red-50 dark:bg-red-950/30 rounded-lg p-3 text-center">
+                          <div className="text-2xl font-bold text-red-500">{reconcileResults.errors}</div>
+                          <div className="text-xs text-muted-foreground mt-1">Errors</div>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{reconcileResults.totalChecked} active agents checked — {reconcileResults.linked} subscription(s) newly linked.</p>
+                      {reconcileResults.linked > 0 && (
+                        <div>
+                          <p className="text-sm font-medium mb-2">Newly linked:</p>
+                          <Table>
+                            <TableHeader><TableRow>
+                              <TableHead>Agent</TableHead>
+                              <TableHead>Email</TableHead>
+                              <TableHead>Subscription ID</TableHead>
+                            </TableRow></TableHeader>
+                            <TableBody>
+                              {reconcileResults.results.filter(r => r.status === 'linked').map((r, i) => (
+                                <TableRow key={i}>
+                                  <TableCell className="font-medium">{r.name}</TableCell>
+                                  <TableCell className="text-muted-foreground text-xs">{r.email}</TableCell>
+                                  <TableCell className="font-mono text-xs">{r.subscriptionId}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                      {reconcileResults.errors > 0 && (
+                        <div>
+                          <p className="text-sm font-medium mb-2 text-red-500">Errors:</p>
+                          <div className="space-y-1">
+                            {reconcileResults.results.filter(r => r.status === 'error').map((r, i) => (
+                              <div key={i} className="text-xs bg-red-50 dark:bg-red-950/30 rounded p-2">
+                                <span className="font-medium">{r.name}</span> — {r.error}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </DialogContent>
+              </Dialog>
             </>
           )}
         </>
