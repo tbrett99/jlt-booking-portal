@@ -741,12 +741,14 @@ export const communityRouter = router({
 </body>
 </html>`;
 
-        // Send in parallel batches of 20 to avoid sequential timeout
-        const BATCH_SIZE = 20;
+        // Send in small concurrent batches (max 5 at a time) with a short delay
+        // between batches to avoid overwhelming the SMTP server with simultaneous
+        // connections, which previously caused silent failures for some recipients.
+        const CONCURRENCY = 5;
         let sent = 0;
         const eligibleAgents = agents.filter((a) => !!a.email);
-        for (let i = 0; i < eligibleAgents.length; i += BATCH_SIZE) {
-          const batch = eligibleAgents.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < eligibleAgents.length; i += CONCURRENCY) {
+          const batch = eligibleAgents.slice(i, i + CONCURRENCY);
           const results = await Promise.allSettled(
             batch.map((agent) =>
               sendDirectEmail({
@@ -758,6 +760,10 @@ export const communityRouter = router({
             )
           );
           sent += results.filter((r) => r.status === "fulfilled").length;
+          // Small pause between batches to respect SMTP rate limits
+          if (i + CONCURRENCY < eligibleAgents.length) {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
         }
 
         await markDigestSent(input.digestId, ctx.user.id, sent);
