@@ -1755,7 +1755,7 @@ async function startServer() {
   // opens directly in the browser tab rather than triggering a download.
   app.get("/api/prospectus", async (_req, res) => {
     try {
-      const PROSPECTUS_CDN = "https://d2xsxph8kpxj0f.cloudfront.net/310419663026820811/PdcDVQRp8zC2FzsyWBWptW/JLTProspectus-4_0115900d.pdf";
+      const PROSPECTUS_CDN = "https://files.manuscdn.com/user_upload_by_module/session_file/310419663026820811/LtGJYQiWrfNsFVPl.pdf";
       const upstream = await fetch(PROSPECTUS_CDN);
       if (!upstream.ok) {
         res.status(502).send("Could not retrieve prospectus");
