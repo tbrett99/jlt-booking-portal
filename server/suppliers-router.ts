@@ -9,6 +9,8 @@ import {
   suppliers,
   agentSupplierStages,
   supplierAttachments,
+  supplierLoginRequests,
+  agentCrmProfiles,
 } from "../drizzle/schema";
 import { eq, like, or, and, asc, desc, sql } from "drizzle-orm";
 
@@ -278,6 +280,8 @@ export const suppliersRouter = router({
         adminNotes: z.string().optional(),
         credentialStage: z.number().int().min(1).max(3).optional(),
         isActive: z.number().int().min(0).max(1).optional(),
+        requiresLoginRequest: z.boolean().optional(),
+        loginRequestNotes: z.string().optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -288,6 +292,112 @@ export const suppliersRouter = router({
       await db.update(suppliers).set(data).where(eq(suppliers.id, id));
       return { ok: true };
     }),
+
+  // ── Agent: Request a personal supplier login ────────────────────────────────
+  requestLogin: protectedProcedure
+    .input(z.object({ supplierId: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      const { getDb } = await import("./db");
+      const { sendDirectEmail } = await import("./email");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, input.supplierId)).limit(1);
+      if (!supplier) throw new TRPCError({ code: "NOT_FOUND", message: "Supplier not found" });
+      if (!supplier.requiresLoginRequest) throw new TRPCError({ code: "BAD_REQUEST", message: "This supplier does not require a login request" });
+
+      // Check for existing pending request
+      const existingRows = await db.select().from(supplierLoginRequests)
+        .where(and(
+          eq(supplierLoginRequests.userId, ctx.user.id),
+          eq(supplierLoginRequests.supplierId, input.supplierId),
+          eq(supplierLoginRequests.status, "pending")
+        )).limit(1);
+      if (existingRows.length > 0) return { ok: true, alreadyRequested: true };
+
+      const [profile] = await db.select().from(agentCrmProfiles).where(eq(agentCrmProfiles.userId, ctx.user.id)).limit(1);
+
+      const agentName = ctx.user.name ?? "Unknown";
+      const agentEmail = ctx.user.email ?? "Unknown";
+      const jltEmail = profile?.jltEmail ?? profile?.jltEmailPreference ?? "Not set";
+      const businessEmail = profile?.businessEmail ?? "Not set";
+      const mobile = profile?.mobile ?? "Not set";
+      const businessName = profile?.businessName ?? "Not set";
+      const city = profile?.city ?? "Not set";
+      const ukRegion = profile?.ukRegion ?? "Not set";
+      const location = [city, ukRegion].filter(v => v !== "Not set").join(", ") || "Not set";
+      const agentId = profile?.uniqueAgentId ?? `User ID ${ctx.user.id}`;
+
+      await db.insert(supplierLoginRequests).values({
+        userId: ctx.user.id,
+        supplierId: input.supplierId,
+        status: "pending",
+      });
+
+      const supplierNotes = supplier.loginRequestNotes
+        ? `<p><strong>Supplier notes:</strong> ${supplier.loginRequestNotes}</p>`
+        : "";
+
+      const emailHtml = `<!DOCTYPE html><html><body style="font-family:'Poppins',Arial,sans-serif;background:#FFF6ED;margin:0;padding:32px 0;">
+<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.07);">
+  <div style="background:#70FFE8;padding:24px 40px;"><h2 style="margin:0;color:#1a1a1a;font-size:18px;">Supplier Login Request</h2></div>
+  <div style="padding:32px 40px;color:#414141;font-size:15px;line-height:1.7;">
+    <p>An agent has requested a personal login for <strong>${supplier.name}</strong>.</p>
+    <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+      <tr><td style="padding:8px 12px;background:#f9f9f9;font-weight:600;width:40%;">Agent</td><td style="padding:8px 12px;">${agentName} (${agentId})</td></tr>
+      <tr><td style="padding:8px 12px;background:#f0f0f0;font-weight:600;">Portal Email</td><td style="padding:8px 12px;">${agentEmail}</td></tr>
+      <tr><td style="padding:8px 12px;background:#f9f9f9;font-weight:600;">JLT Email</td><td style="padding:8px 12px;">${jltEmail}</td></tr>
+      <tr><td style="padding:8px 12px;background:#f0f0f0;font-weight:600;">Business Email</td><td style="padding:8px 12px;">${businessEmail}</td></tr>
+      <tr><td style="padding:8px 12px;background:#f9f9f9;font-weight:600;">Mobile</td><td style="padding:8px 12px;">${mobile}</td></tr>
+      <tr><td style="padding:8px 12px;background:#f0f0f0;font-weight:600;">Business Name</td><td style="padding:8px 12px;">${businessName}</td></tr>
+      <tr><td style="padding:8px 12px;background:#f9f9f9;font-weight:600;">Location</td><td style="padding:8px 12px;">${location}</td></tr>
+    </table>
+    ${supplierNotes}
+    <p style="margin-top:24px;">Please set up the agent's login with <strong>${supplier.name}</strong> and then toggle on their supplier access in the CRM.</p>
+  </div>
+  <div style="padding:16px 40px;background:#FFF6ED;font-size:12px;color:#888;text-align:center;">&copy; ${new Date().getFullYear()} JLT Group</div>
+</div></body></html>`;
+
+      await sendDirectEmail({
+        toEmail: "support@thejltgroup.co.uk",
+        toName: "JLT Support",
+        subject: `Supplier Login Request: ${supplier.name} \u2014 ${agentName}`,
+        html: emailHtml,
+      });
+
+      const confirmHtml = `<!DOCTYPE html><html><body style="font-family:'Poppins',Arial,sans-serif;background:#FFF6ED;margin:0;padding:32px 0;">
+<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.07);">
+  <div style="background:#70FFE8;padding:24px 40px;"><h2 style="margin:0;color:#1a1a1a;font-size:18px;">Login Request Received</h2></div>
+  <div style="padding:32px 40px;color:#414141;font-size:15px;line-height:1.7;">
+    <p>Hi ${agentName},</p>
+    <p>We've received your request for a personal login with <strong>${supplier.name}</strong>. Our team will get this set up for you and you'll be notified once it's ready.</p>
+    <p>If you have any questions in the meantime, please contact <a href="mailto:support@thejltgroup.co.uk">support@thejltgroup.co.uk</a>.</p>
+    <p>The JLT Group Team</p>
+  </div>
+  <div style="padding:16px 40px;background:#FFF6ED;font-size:12px;color:#888;text-align:center;">&copy; ${new Date().getFullYear()} JLT Group</div>
+</div></body></html>`;
+
+      await sendDirectEmail({
+        toEmail: agentEmail,
+        toName: agentName,
+        subject: `Your login request for ${supplier.name} has been received`,
+        html: confirmHtml,
+        userId: ctx.user.id,
+        triggerKey: "supplier_login_request_confirmation",
+      } as any);
+
+      return { ok: true, alreadyRequested: false };
+    }),
+
+  // ── Agent: Get my login requests (to show pending state) ────────────────────
+  getMyLoginRequests: protectedProcedure.query(async ({ ctx }) => {
+    const { getDb } = await import("./db");
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+    const rows = await db.select().from(supplierLoginRequests)
+      .where(eq(supplierLoginRequests.userId, ctx.user.id));
+    return rows;
+  }),
 
   // ── Admin: Delete supplier (soft delete) ────────────────────────────────────
   delete: adminProcedure

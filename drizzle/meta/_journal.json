@@ -743,6 +743,13 @@
       "when": 1781617549608,
       "tag": "0105_abnormal_roughhouse",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "5",
+      "when": 1781960442682,
+      "tag": "0106_peaceful_luminals",
+      "breakpoints": true
     }
   ]
 }

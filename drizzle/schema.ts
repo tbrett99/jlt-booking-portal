@@ -1537,11 +1537,24 @@ export const suppliers = mysqlTable("suppliers", {
   idealClient: text("idealClient"),                              // AI: who this supplier is best for (e.g. couples, families)
   bookingTips: text("bookingTips"),                              // AI: practical tips for agents when booking this supplier
   aiEnrichedAt: timestamp("aiEnrichedAt"),                       // when AI enrichment was last run
+  requiresLoginRequest: boolean("requiresLoginRequest").default(false).notNull(), // agent must request a personal login
+  loginRequestNotes: text("loginRequestNotes"),                   // admin notes shown when requesting (e.g. "use JLT email")
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type Supplier = typeof suppliers.$inferSelect;
 export type InsertSupplier = typeof suppliers.$inferInsert;
+
+// Supplier login requests — tracks which agents have requested a personal login for a supplier
+export const supplierLoginRequests = mysqlTable("supplier_login_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),           // FK → users.id
+  supplierId: int("supplierId").notNull(),   // FK → suppliers.id
+  status: varchar("status", { length: 50 }).notNull().default("pending"), // pending | fulfilled
+  requestedAt: timestamp("requestedAt").defaultNow().notNull(),
+  fulfilledAt: timestamp("fulfilledAt"),
+});
+export type SupplierLoginRequest = typeof supplierLoginRequests.$inferSelect;
 
 // Per-agent supplier stage unlock (1, 2, or 3)
 export const agentSupplierStages = mysqlTable("agent_supplier_stages", {

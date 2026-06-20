@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, Video, Loader2, Upload, X, Paperclip, ImageIcon } from "lucide-react";
+import { Sparkles, Video, Loader2, Upload, X, Paperclip, ImageIcon, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 
 type Supplier = {
@@ -54,6 +54,8 @@ type Supplier = {
   adminUsername: string | null;
   adminPassword: string | null;
   adminNotes: string | null;
+  requiresLoginRequest?: boolean;
+  loginRequestNotes?: string | null;
 };
 
 const EMPTY_FORM = {
@@ -86,6 +88,8 @@ const EMPTY_FORM = {
   adminPassword: "",
   adminNotes: "",
   credentialStage: 2,
+  requiresLoginRequest: false,
+  loginRequestNotes: "",
 };
 
 // Convert a File to base64 string
@@ -153,6 +157,8 @@ export function SupplierFormDialog({
         adminPassword: editSupplier.adminPassword ?? "",
         adminNotes: editSupplier.adminNotes ?? "",
         credentialStage: editSupplier.credentialStage,
+        requiresLoginRequest: editSupplier.requiresLoginRequest ?? false,
+        loginRequestNotes: editSupplier.loginRequestNotes ?? "",
       });
       setLogoPreview(editSupplier.imageUrl ?? null);
     } else {
@@ -344,6 +350,8 @@ export function SupplierFormDialog({
       adminPassword: form.adminPassword || undefined,
       adminNotes: form.adminNotes || undefined,
       credentialStage: form.credentialStage,
+      requiresLoginRequest: form.requiresLoginRequest,
+      loginRequestNotes: form.loginRequestNotes || undefined,
     };
 
     if (editSupplier) {
@@ -737,6 +745,37 @@ export function SupplierFormDialog({
               )}
             </div>
           )}
+
+          {/* Personal Login Request */}
+          <div className="col-span-2 border-t pt-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4 text-muted-foreground" />
+              <h4 className="text-sm font-semibold">Personal Login Request</h4>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="requiresLoginRequest"
+                checked={form.requiresLoginRequest ?? false}
+                onChange={(e) => setForm((f) => ({ ...f, requiresLoginRequest: e.target.checked }))}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <label htmlFor="requiresLoginRequest" className="text-sm">
+                Agents must request a personal login for this supplier
+              </label>
+            </div>
+            {form.requiresLoginRequest && (
+              <div className="space-y-1">
+                <Label>Notes for admin (optional)</Label>
+                <Textarea
+                  value={form.loginRequestNotes ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, loginRequestNotes: e.target.value }))}
+                  rows={2}
+                  placeholder="e.g. Use the agent's JLT email address when setting up the account"
+                />
+              </div>
+            )}
+          </div>
 
           {/* Admin credentials */}
           <div className="col-span-2 border-t pt-4 space-y-3">

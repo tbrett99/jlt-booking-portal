@@ -65,6 +65,8 @@ type Supplier = {
   adminUsername: string | null;
   adminPassword: string | null;
   adminNotes: string | null;
+  requiresLoginRequest?: boolean;
+  loginRequestNotes?: string | null;
 };
 
 export default function AdminSuppliers() {

@@ -51,6 +51,8 @@ import {
   Link,
   Users,
   Lightbulb,
+  KeyRound,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -91,6 +93,8 @@ type Supplier = {
   aiSummary: string | null;
   idealClient: string | null;
   bookingTips: string | null;
+  requiresLoginRequest?: boolean;
+  loginRequestNotes?: string | null;
 };
 
 type AiSearchResult = {
@@ -299,6 +303,21 @@ function SupplierModal({
     { id: supplierId },
     { staleTime: 60000 }
   );
+  const { data: myLoginRequests, refetch: refetchRequests } = trpc.suppliers.getMyLoginRequests.useQuery(undefined, { staleTime: 30000 });
+  const requestLoginMutation = trpc.suppliers.requestLogin.useMutation({
+    onSuccess: (data) => {
+      if (data.alreadyRequested) {
+        toast.info("You have already submitted a request for this supplier.");
+      } else {
+        toast.success("Request sent! The JLT team will set up your login and be in touch.");
+        refetchRequests();
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const hasPendingRequest = myLoginRequests?.some(
+    (r) => r.supplierId === supplierId && r.status === "pending"
+  ) ?? false;
 
   if (isLoading) {
     return (
@@ -530,6 +549,47 @@ function SupplierModal({
                   </a>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Personal login request */}
+          {(supplier as any).requiresLoginRequest && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-muted-foreground" />
+                Personal Login
+              </h4>
+              {hasPendingRequest ? (
+                <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
+                  <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Request submitted</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-500">The JLT team will set up your login and be in touch.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    This supplier requires a personal login. Click below and the JLT team will set one up for you.
+                  </p>
+                  {(supplier as any).loginRequestNotes && (
+                    <p className="text-xs text-muted-foreground italic">{(supplier as any).loginRequestNotes}</p>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={() => requestLoginMutation.mutate({ supplierId })}
+                    disabled={requestLoginMutation.isPending}
+                    className="gap-2"
+                  >
+                    {requestLoginMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <KeyRound className="h-3.5 w-3.5" />
+                    )}
+                    Request Access
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
