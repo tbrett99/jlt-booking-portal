@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
   CheckCircle2, Circle, AlertCircle, Sparkles, TrendingUp, Clock,
   RefreshCw, Pencil, User, Check, X, Trash2, Plane,
-  CreditCard, Copy, ExternalLink, Paperclip, FolderOpen, Download, Zap
+  CreditCard, Copy, ExternalLink, Paperclip, FolderOpen, Download, Zap, AlertTriangle
 } from "lucide-react";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -296,7 +296,8 @@ export default function AgentBookingDetail() {
   // Request additional reimbursement form state
   const [showAddReimb, setShowAddReimb] = useState(false);
   const [addReimbCount, setAddReimbCount] = useState(1);
-  const [addReimbItems, setAddReimbItems] = useState<{ supplierName: string; amount: string; files: File[] }[]>([{ supplierName: "", amount: "", files: [] }]);
+  const [addReimbItems, setAddReimbItems] = useState<{ supplierName: string; amount: string; files: File[]; jltCompanyCard: boolean }[]>([{ supplierName: "", amount: "", files: [], jltCompanyCard: false }]);
+  const [jltCardConfirmIdx, setJltCardConfirmIdx] = useState<number | null>(null);
   const [isSubmittingReimb, setIsSubmittingReimb] = useState(false);
   const addReimbFileRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -462,7 +463,7 @@ export default function AgentBookingDetail() {
     setAddReimbCount(n);
     setAddReimbItems(prev => {
       const next = [...prev];
-      while (next.length < n) next.push({ supplierName: "", amount: "", files: [] });
+      while (next.length < n) next.push({ supplierName: "", amount: "", files: [], jltCompanyCard: false });
       return next.slice(0, n);
     });
   };
@@ -480,7 +481,7 @@ export default function AgentBookingDetail() {
       // Step 1: create the reimbursement items
       const created = await addLateReimb.mutateAsync({
         bookingId,
-        items: addReimbItems.map(i => ({ supplierName: i.supplierName.trim(), amount: parseFloat(i.amount) })),
+        items: addReimbItems.map(i => ({ supplierName: i.supplierName.trim(), amount: parseFloat(i.amount), jltCompanyCard: i.jltCompanyCard ?? false })),
       });
       // Step 2: upload a doc for each item
       const createdItems: any[] = Array.isArray(created) ? created : [];
@@ -503,7 +504,7 @@ export default function AgentBookingDetail() {
       }
       await refetchReimbItems();
       setShowAddReimb(false);
-      setAddReimbItems([{ supplierName: "", amount: "", files: [] }]);
+      setAddReimbItems([{ supplierName: "", amount: "", files: [], jltCompanyCard: false }]);
       setAddReimbCount(1);
       toast.success("Reimbursement request submitted with documents — the JLT team has been notified");
     } catch (err: any) {
@@ -1046,6 +1047,31 @@ export default function AgentBookingDetail() {
                 </div>
               );
             })}
+            {/* JLT Company Card confirmation dialog */}
+            <Dialog open={jltCardConfirmIdx !== null} onOpenChange={(open) => { if (!open) setJltCardConfirmIdx(null); }}>
+              <DialogContent className="max-w-sm">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <AlertTriangle className="text-amber-500" size={18} />
+                    JLT Company Card — Are you sure?
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="text-sm text-muted-foreground space-y-2 py-2">
+                  <p>Only select this if the reimbursement was paid using the <strong>JLT company card</strong>.</p>
+                  <p>This means the funds will be <strong>retained by JLT</strong> and will <strong>not</strong> be paid back to you.</p>
+                </div>
+                <div className="flex gap-2 justify-end pt-2">
+                  <Button variant="outline" size="sm" onClick={() => setJltCardConfirmIdx(null)}>Cancel</Button>
+                  <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" onClick={() => {
+                    if (jltCardConfirmIdx !== null) {
+                      setAddReimbItems(prev => prev.map((p, i) => i === jltCardConfirmIdx ? { ...p, jltCompanyCard: true } : p));
+                    }
+                    setJltCardConfirmIdx(null);
+                  }}>Yes, JLT Company Card</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
             {/* Request Additional Reimbursement */}
             {!showAddReimb ? (
               <Button
@@ -1092,6 +1118,25 @@ export default function AgentBookingDetail() {
                         className="text-xs h-8"
                       />
                     </div>
+                    {/* JLT Company Card toggle */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!item.jltCompanyCard) {
+                          setJltCardConfirmIdx(idx);
+                        } else {
+                          setAddReimbItems(prev => prev.map((p, i) => i === idx ? { ...p, jltCompanyCard: false } : p));
+                        }
+                      }}
+                      className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors ${
+                        item.jltCompanyCard
+                          ? 'bg-amber-50 border-amber-400 text-amber-700 font-semibold'
+                          : 'border-dashed border-gray-300 text-muted-foreground hover:border-amber-400 hover:text-amber-600'
+                      }`}
+                    >
+                      <CreditCard size={13} />
+                      {item.jltCompanyCard ? 'JLT Company Card — funds return to JLT' : 'Paid with JLT company card?'}
+                    </button>
                     {/* Multi-document upload with 2-doc requirement */}
                     <div className="space-y-1.5">
                       {/* Always-visible requirement banner */}
@@ -1159,7 +1204,7 @@ export default function AgentBookingDetail() {
                     {isSubmittingReimb ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
                     {isSubmittingReimb ? 'Submitting...' : 'Submit Request'}
                   </Button>
-                  <Button size="sm" variant="outline" className="text-xs" onClick={() => { setShowAddReimb(false); setAddReimbItems([{ supplierName: '', amount: '', files: [] }]); setAddReimbCount(1); }}>Cancel</Button>
+                  <Button size="sm" variant="outline" className="text-xs" onClick={() => { setShowAddReimb(false); setAddReimbItems([{ supplierName: '', amount: '', files: [], jltCompanyCard: false }]); setAddReimbCount(1); }}>Cancel</Button>
                 </div>
               </div>
             )}
