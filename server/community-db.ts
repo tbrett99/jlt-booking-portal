@@ -628,7 +628,7 @@ export async function getAgentsNeedingConfirmationReminder() {
 
   const postIds = posts.map((p) => p.id);
 
-  // All active agents who haven't logged in for 14+ days
+  // All active agents
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
   const agents = await db
     .select({
@@ -641,8 +641,7 @@ export async function getAgentsNeedingConfirmationReminder() {
     .where(
       and(
         eq(users.role, "agent"),
-        eq(users.isActive, true),
-        lt(users.lastSignedIn, fourteenDaysAgo)
+        eq(users.isActive, true)
       )
     );
 
