@@ -1000,9 +1000,11 @@ export const appRouter = router({
           !existingClaim &&
           !alreadyClaimed
         ) {
-          // Auto-create the commission claim with optional VAT
+          // Auto-create the commission claim — set directly to awaiting_payment (skipping processing)
+          // so it appears in the "Claimed in PTS" tab immediately, without the admin needing a second click.
           const grossAmount = (booking as any).expectedCommission ? parseFloat((booking as any).expectedCommission) : undefined;
-          const claim = await createCommissionClaim(booking.id, booking.agentId, "other", grossAmount, "processing");
+          const claimNow = new Date();
+          const claim = await createCommissionClaim(booking.id, booking.agentId, "other", grossAmount, "awaiting_payment", { paidAt: claimNow, paidById: ctx.user.id });
           if (claim && input.vatAmount !== undefined && input.vatAmount !== null) {
             await updateCommissionVat(claim.id, input.vatAmount);
           }
