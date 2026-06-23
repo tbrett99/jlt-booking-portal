@@ -26,6 +26,7 @@ import {
   updateGcMandate,
   createGcSubscription,
   createPaymentEvent,
+  getGcSubscriptionByUserId,
 } from "../gocardless-db";
 import { notifyOwner } from "./notification";
 import { externalApiRouter } from "../external-api";
@@ -1342,8 +1343,18 @@ async function startServer() {
             ? (mandateNextChargeDate ?? calcSubscriptionStartDate(joiningFeeDate, dayOfMonth))
             : calcSubscriptionStartDate(joiningFeeDate, dayOfMonth);
 
-          // Look up the agent's membership tier/type to get the correct monthly amount
-          let monthlyAmountPence = 3000; // fallback £30
+          // Guard: skip subscription creation if this user already has one in our DB.
+          // This prevents duplicate subscriptions when mandates are manually linked via admin scripts.
+          const existingSub = localMandate.userId ? await getGcSubscriptionByUserId(localMandate.userId) : null;
+          if (existingSub) {
+            console.log(`[GC Webhook] mandates.active: user ${localMandate.userId} already has subscription ${existingSub.subscriptionId} — skipping duplicate creation`);
+            continue;
+          }
+
+          // Look up the agent's membership tier/type to get the correct monthly amount.
+          // If we cannot determine the correct amount, do NOT fall back to a hardcoded value —
+          // instead skip creation and alert support so the subscription can be set up manually.
+          let monthlyAmountPence: number | null = null;
           try {
             const db2 = await getDb();
             if (db2) {
@@ -1360,7 +1371,19 @@ async function startServer() {
               }
             }
           } catch (amtErr) {
-            console.error("[GC Webhook] Could not resolve monthly amount, using fallback:", amtErr);
+            console.error("[GC Webhook] Could not resolve monthly amount:", amtErr);
+          }
+
+          // If we still don't have a valid amount, skip and alert support rather than creating a wrong subscription.
+          if (!monthlyAmountPence) {
+            console.error(`[GC Webhook] mandates.active: could not determine monthly amount for user ${localMandate.userId} / mandate ${mandateId} — skipping subscription creation. Please set up manually.`);
+            try {
+              await sendSupportEmail({
+                subject: `ACTION REQUIRED: Mandate active but subscription not created — Agent ID ${localMandate.userId}`,
+                html: `<p>The mandate <strong>${mandateId}</strong> for agent user ID <strong>${localMandate.userId}</strong> became active, but the portal could not determine the correct monthly subscription amount (no CRM profile or join session found).</p><p>Please create the GoCardless subscription manually and link it via the admin panel.</p>`,
+              });
+            } catch (_) {}
+            continue;
           }
 
           // Create the GoCardless subscription.
