@@ -2164,7 +2164,6 @@ export const crmRouter = router({
       }
 
       const CANCEL_CHECKLIST_ITEMS = [
-        "Supplier logins revoked",
         "Topdog login removed",
         "WhatsApp access removed",
         "Learnworlds access removed",
