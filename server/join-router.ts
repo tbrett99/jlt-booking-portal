@@ -447,10 +447,11 @@ export const joinRouter = router({
       };
       const resolvedFee = feeMap[type] ?? LEGACY_JOINING_FEES[type];
 
-      // Save to session
+      // Save to session — also clear any stale billing request so initiatePayment
+      // creates a fresh one at the discounted price rather than returning the old full-price URL.
       await db
         .update(joinSessions)
-        .set({ discountCode: dc.code, discountedFeePence: resolvedFee })
+        .set({ discountCode: dc.code, discountedFeePence: resolvedFee, billingRequestId: null, billingRequestFlowUrl: null })
         .where(eq(joinSessions.id, session.id));
 
       return {
