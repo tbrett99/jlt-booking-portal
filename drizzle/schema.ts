@@ -68,6 +68,10 @@ export const bookings = mysqlTable("bookings", {
   crmRef: varchar("crmRef", { length: 100 }), // External CRM booking reference (e.g. Tom's CRM ref L71)
   commissionPreAuthorised: boolean("commissionPreAuthorised").default(false).notNull(), // Agent pre-authorises auto-claim when file becomes claimable
   commissionVat: decimal("commissionVat", { precision: 10, scale: 2 }), // VAT amount set by admin when marking claimable
+  reducedMarginApproved: boolean("reducedMarginApproved").default(false).notNull(), // Admin-approved reduced margin (below 6%)
+  reducedMarginEvidenceUrl: text("reducedMarginEvidenceUrl"), // S3 URL for evidence uploaded by admin
+  reducedMarginApprovedAt: timestamp("reducedMarginApprovedAt"), // When the reduced margin was approved
+  reducedMarginApprovedById: int("reducedMarginApprovedById"), // FK → users.id (admin who approved)
   // Current pipeline stage
   currentStage: varchar("currentStage", { length: 100 }).default("New Booking").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

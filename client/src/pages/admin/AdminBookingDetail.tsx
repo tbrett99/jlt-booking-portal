@@ -1453,6 +1453,96 @@ export default function AdminBookingDetail() {
           </CardContent>
         </Card>
 
+        {/* Reduced Margin Approval */}
+        {(() => {
+          const [reducedMarginFile, setReducedMarginFile] = useState<File | null>(null);
+          const reducedMarginInputRef = useRef<HTMLInputElement>(null);
+          const setReducedMarginApproved = trpc.bookings.setReducedMarginApproved.useMutation({
+            onSuccess: () => { utils.bookings.byId.invalidate({ id: bookingId }); toast.success((booking as any).reducedMarginApproved ? 'Reduced margin approval removed' : 'Reduced margin approved'); },
+            onError: (e) => toast.error(e.message),
+          });
+          const uploadReducedMarginEvidence = trpc.bookings.uploadReducedMarginEvidence.useMutation({
+            onSuccess: () => { utils.bookings.byId.invalidate({ id: bookingId }); setReducedMarginFile(null); toast.success('Evidence uploaded'); },
+            onError: (e) => toast.error(e.message),
+          });
+          const handleUploadEvidence = async () => {
+            if (!reducedMarginFile) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+              const base64 = (e.target?.result as string).split(',')[1];
+              await uploadReducedMarginEvidence.mutateAsync({ bookingId, fileBase64: base64, fileName: reducedMarginFile.name, mimeType: reducedMarginFile.type });
+            };
+            reader.readAsDataURL(reducedMarginFile);
+          };
+          return (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-amber-500" />
+                  Reduced Margin
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Reduced margin approved</p>
+                    <p className="text-xs text-muted-foreground">Agent has been approved to price match below 6% margin</p>
+                    {(booking as any).reducedMarginApproved && (booking as any).reducedMarginApprovedAt && (
+                      <p className="text-xs text-muted-foreground mt-0.5">Approved {format(new Date((booking as any).reducedMarginApprovedAt), 'dd MMM yyyy HH:mm')}</p>
+                    )}
+                  </div>
+                  <Switch
+                    checked={!!(booking as any).reducedMarginApproved}
+                    onCheckedChange={(checked) => setReducedMarginApproved.mutate({ bookingId, approved: checked })}
+                    disabled={setReducedMarginApproved.isPending}
+                  />
+                </div>
+                {(booking as any).reducedMarginApproved && (
+                  <div className="space-y-2 pt-2 border-t">
+                    <Label className="text-xs">Evidence</Label>
+                    {(booking as any).reducedMarginEvidenceUrl ? (
+                      <div className="flex items-center gap-2">
+                        <a href={(booking as any).reducedMarginEvidenceUrl} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
+                          <FileText size={13} /> View uploaded evidence
+                        </a>
+                        <span className="text-xs text-muted-foreground">·</span>
+                        <button onClick={() => reducedMarginInputRef.current?.click()}
+                          className="text-xs text-muted-foreground hover:text-foreground underline">Replace</button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-amber-600 flex items-center gap-1"><AlertTriangle size={12} /> No evidence uploaded yet</p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input ref={reducedMarginInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" className="hidden"
+                        onChange={(e) => setReducedMarginFile(e.target.files?.[0] ?? null)} />
+                      {!reducedMarginFile && (
+                        <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8"
+                          onClick={() => reducedMarginInputRef.current?.click()}>
+                          <Upload size={12} /> {(booking as any).reducedMarginEvidenceUrl ? 'Replace evidence' : 'Upload evidence'}
+                        </Button>
+                      )}
+                      {reducedMarginFile && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground truncate max-w-[160px]">{reducedMarginFile.name}</span>
+                          <Button size="sm" className="gap-1.5 text-xs h-8" style={{ background: '#70FFE8', color: '#414141' }}
+                            onClick={handleUploadEvidence} disabled={uploadReducedMarginEvidence.isPending}>
+                            {uploadReducedMarginEvidence.isPending ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                            Upload
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setReducedMarginFile(null)}>
+                            <X size={12} />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })()}
+
         {/* Notes */}
         <Card>
           <CardHeader><CardTitle className="text-base">Notes</CardTitle></CardHeader>

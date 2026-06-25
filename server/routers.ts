@@ -1437,6 +1437,73 @@ export const appRouter = router({
          const succeeded = results.filter((r) => r.success).length;
         return { results, total: input.bookingIds.length, succeeded };
       }),
+    // Admin: toggle reduced margin approval on a booking
+    setReducedMarginApproved: adminProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        approved: z.boolean(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        const { bookings: bookingsTable } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.update(bookingsTable).set({
+          reducedMarginApproved: input.approved,
+          reducedMarginApprovedAt: input.approved ? new Date() : null,
+          reducedMarginApprovedById: input.approved ? ctx.user.id : null,
+        } as any).where(eq(bookingsTable.id, input.bookingId));
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: input.approved
+            ? `[System] Reduced margin approved by ${ctx.user.name ?? "Admin"}.`
+            : `[System] Reduced margin approval removed by ${ctx.user.name ?? "Admin"}.`,
+          isInternal: true,
+        });
+        return { success: true };
+      }),
+
+    // Admin: upload evidence for a reduced margin approval
+    uploadReducedMarginEvidence: adminProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        fileBase64: z.string(),
+        fileName: z.string(),
+        mimeType: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `reduced-margin-evidence/${input.bookingId}-${nanoid(8)}-${input.fileName}`;
+        let url: string;
+        try {
+          ({ url } = await storagePut(key, buffer, input.mimeType));
+        } catch (storageErr: any) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: storageErr?.message ?? "Failed to upload evidence — please try again",
+          });
+        }
+        const { bookings: bookingsTable } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.update(bookingsTable).set({ reducedMarginEvidenceUrl: url } as any).where(eq(bookingsTable.id, input.bookingId));
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Reduced margin evidence uploaded by ${ctx.user.name ?? "Admin"}: ${input.fileName}.`,
+          isInternal: true,
+        });
+        return { success: true, url };
+      }),
+
     // Admin: hard delete a booking and all related records
     delete: adminProcedure
       .input(z.object({ id: z.number() }))
