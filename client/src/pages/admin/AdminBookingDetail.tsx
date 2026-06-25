@@ -1550,9 +1550,6 @@ export default function AdminBookingDetail() {
           </CardContent>
         </Card>
 
-        {/* Reduced Margin Approval */}
-        <ReducedMarginCard bookingId={bookingId} booking={booking as any} />
-
         {/* Notes */}
         <Card>
           <CardHeader><CardTitle className="text-base">Notes</CardTitle></CardHeader>
@@ -1744,6 +1741,9 @@ export default function AdminBookingDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Reduced Margin Approval */}
+      <ReducedMarginCard bookingId={bookingId} booking={booking as any} />
 
       {/* Full History Overview */}
       {/* expandedHistoryItems tracks which timeline event IDs are expanded */}
