@@ -59,10 +59,11 @@ export default function RegisterBooking() {
     }
   };
 
-  // Derived margin for live preview
+  // Derived margin for live preview — reverse-engineer estimated gross commission from Orbit net (80/20 split, ~1.3% PTS fee)
   const grossNum = parseFloat(grossCost);
   const commNum = parseFloat(expectedCommission);
-  const marginPct = grossNum > 0 && commNum > 0 ? (commNum / grossNum) * 100 : null;
+  const estimatedGrossComm = commNum > 0 ? (commNum / 0.80) / (1 - 0.013) : 0;
+  const marginPct = grossNum > 0 && commNum > 0 ? (estimatedGrossComm / grossNum) * 100 : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -3021,8 +3021,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             const gross = b.grossCost != null ? parseFloat(String(b.grossCost)) : null;
             const commission = b.expectedCommission != null ? parseFloat(String(b.expectedCommission)) : null;
             const hasData = gross != null && gross > 0 && commission != null && commission >= 0;
-            // Margin = gross commission / gross cost * 100 (no VAT adjustment)
-            const marginPct = hasData ? (commission! / gross!) * 100 : null;
+            // Reverse-engineer estimated gross commission from Orbit net figure (80/20 split, ~1.3% PTS fee)
+            const estimatedGross = commission != null ? (commission / 0.80) / (1 - 0.013) : null;
+            const marginPct = hasData ? (estimatedGross! / gross!) * 100 : null;
             return {
               id: b.id,
               agentId: b.agentId,
@@ -3090,7 +3091,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           const gross = b.grossCost != null ? parseFloat(String(b.grossCost)) : null;
           const commission = b.expectedCommission != null ? parseFloat(String(b.expectedCommission)) : null;
           const hasData = gross != null && gross > 0 && commission != null && commission >= 0;
-          const marginPct = hasData ? (commission! / gross!) * 100 : null;
+          // Reverse-engineer estimated gross commission from Orbit net figure (80/20 split, ~1.3% PTS fee)
+          const estimatedGross = commission != null ? (commission / 0.80) / (1 - 0.013) : null;
+          const marginPct = hasData ? (estimatedGross! / gross!) * 100 : null;
           return {
             id: b.id,
             clientName: b.clientName,
