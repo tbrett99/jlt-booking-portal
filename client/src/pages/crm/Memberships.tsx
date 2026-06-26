@@ -765,6 +765,7 @@ export default function Memberships() {
                       <TableHead>Agent</TableHead>
                       <TableHead>Agent ID</TableHead>
                       <TableHead>Tier</TableHead>
+                      <TableHead>Reason</TableHead>
                       <TableHead>Suspended Since</TableHead>
                       <TableHead className="w-32"></TableHead>
                     </TableRow>
@@ -785,6 +786,11 @@ export default function Memberships() {
                           {agent.membershipTier
                             ? <Badge variant="secondary" className="text-xs">{agent.membershipTier}</Badge>
                             : <span className="text-muted-foreground text-xs">—</span>}
+                        </TableCell>
+                        <TableCell>
+                          {(agent as any).suspensionReason === 'non_payment'
+                            ? <Badge variant="outline" className="text-xs border-red-300 text-red-700 bg-red-50 dark:border-red-800 dark:text-red-400 dark:bg-red-950/30">Non-Payment</Badge>
+                            : <span className="text-xs text-muted-foreground">{(agent as any).suspensionReason ?? 'Manual'}</span>}
                         </TableCell>
                         <TableCell className="text-sm">
                           {formatDate(agent.suspendedAt)}

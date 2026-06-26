@@ -1819,15 +1819,17 @@ export const crmRouter = router({
           profileUpdate.suspendedAt = null;
         } else if (input.newStatus === "suspended") {
           profileUpdate.suspendedAt = new Date();
+          profileUpdate.suspensionReason = "manual";
           profileUpdate.pauseEndsAt = null;
           profileUpdate.noticeEndsAt = null;
           profileUpdate.cancelledAt = null;
         } else {
-          // active — clear all date fields
+          // active — clear all date fields and suspension reason
           profileUpdate.pauseEndsAt = null;
           profileUpdate.noticeEndsAt = null;
           profileUpdate.cancelledAt = null;
           profileUpdate.suspendedAt = null;
+          profileUpdate.suspensionReason = null;
         }
 
         await upsertAgentCrmProfile(input.userId, profileUpdate as any);
@@ -2139,6 +2141,7 @@ export const crmRouter = router({
           noticeEndsAt: agentCrmProfiles.noticeEndsAt,
           cancelledAt: agentCrmProfiles.cancelledAt,
           suspendedAt: agentCrmProfiles.suspendedAt,
+          suspensionReason: agentCrmProfiles.suspensionReason,
           cancelChecklist: agentCrmProfiles.cancelChecklist,
           uniqueAgentId: agentCrmProfiles.uniqueAgentId,
           ukRegion: agentCrmProfiles.ukRegion,

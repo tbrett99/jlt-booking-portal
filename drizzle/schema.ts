@@ -30,6 +30,8 @@ export const users = mysqlTable("users", {
   crmAccess: boolean("crmAccess").default(false).notNull(), // Whether this agent can access the CRM via Open CRM button
   crmEmail: varchar("crmEmail", { length: 320 }), // Optional CRM email alias (e.g. hello@loupr.com) — used to match bookings from external CRM
   commissionRatePct: int("commissionRatePct").default(80).notNull(), // Agent's commission rate percentage (default 80, can be overridden per-agent)
+  suspendedAt: timestamp("suspendedAt"), // Set when agent is suspended
+  suspensionReason: varchar("suspensionReason", { length: 255 }), // e.g. 'non_payment', 'manual'
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -780,6 +782,7 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   noticeEndsAt: timestamp("noticeEndsAt"),                                  // Agent's final date at JLT (in_notice)
   cancelledAt: timestamp("cancelledAt"),                                    // Date agent was cancelled / final date recorded
   suspendedAt: timestamp("suspendedAt"),                                    // Date agent was suspended
+  suspensionReason: varchar("suspensionReason", { length: 255 }),             // e.g. 'non_payment', 'manual'
   cancelChecklist: json("cancelChecklist"),                                 // JSON array of ticked offboarding items
   trainingStage: varchar("trainingStage", { length: 50 }),                   // Training | Agent Accelerator | Accredited
   // Emergency contact (collected during onboarding)

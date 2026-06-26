@@ -1703,8 +1703,11 @@ async function startServer() {
                 } else {
                   await db2.insert(gcPF).values({ userId, consecutiveFailures: 1, lastFailedAt: new Date() });
                 }
-                if (newConsecutive >= 3 && agentRow && (agentRow as any).agentStatus !== "suspended") {
-                  await db2.update(usersT).set({ agentStatus: "suspended", suspendedAt: new Date() } as any).where(eqOp(usersT.id, userId));
+                if (newConsecutive >= 3 && agentRow && agentRow.portalStatus !== "suspended") {
+                  await db2.update(usersT).set({ portalStatus: "suspended", isActive: false, suspendedAt: new Date(), suspensionReason: "non_payment" }).where(eqOp(usersT.id, userId));
+                  // Also update the CRM profile so the suspension is visible in the Memberships view
+                  const { agentCrmProfiles: agentCrmProfilesT } = await import("../../drizzle/schema");
+                  await db2.update(agentCrmProfilesT).set({ agentStatus: "suspended", suspendedAt: new Date(), suspensionReason: "non_payment" }).where(eqOp(agentCrmProfilesT.userId, userId));
                   await db2.update(gcPF).set({ autoSuspendedAt: new Date() }).where(eqOp(gcPF.userId, userId));
                   await sendSupportEmail({ subject: `\u26a0\ufe0f Agent Auto-Suspended \u2014 3 Consecutive DD Failures (Agent ID ${userId})`, html: `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;"><h2 style="color:#dc2626;margin:0 0 16px;">Agent Auto-Suspended</h2><p style="color:#414141;">Agent <strong>${agentName ?? userId}</strong> (ID: ${userId}) has been automatically suspended after <strong>3 consecutive failed Direct Debit payments</strong>.</p><p style="color:#414141;">Please review their account in the CRM and contact them to resolve the payment issue before reinstating access.</p></div>` });
                   console.log(`[GC Webhook] Agent ${userId} auto-suspended after 3 consecutive payment failures`);
