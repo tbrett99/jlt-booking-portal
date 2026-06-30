@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { ThumbsUp, ThumbsDown, Lightbulb, Rocket, Clock, CheckCircle2, Sparkles, ChevronRight, Plus, Users } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Lightbulb, Rocket, Clock, CheckCircle2, Sparkles, ChevronRight, Plus, Users, ArrowDown } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -312,7 +312,7 @@ export default function Roadmap() {
           <p className="text-gray-300 text-sm max-w-xl">
             See what we're working on, what's coming next, and what we've recently shipped. Your feedback shapes our priorities.
           </p>
-          <div className="flex gap-3 mt-6">
+          <div className="flex flex-wrap gap-3 mt-6">
             <button
               onClick={() => setTab("roadmap")}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "roadmap" ? "bg-[#02E6D2] text-[#1a1a2e]" : "bg-white/10 text-white hover:bg-white/20"}`}
@@ -328,6 +328,18 @@ export default function Roadmap() {
                 <span className="ml-2 bg-white/20 text-white text-xs px-1.5 py-0.5 rounded-full">{suggestions.length}</span>
               )}
             </button>
+            {tab === "roadmap" && releasedItems.length > 0 && (
+              <button
+                onClick={() => {
+                  document.getElementById("recently-released")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-all bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Recently Released
+                <ArrowDown className="w-3 h-3" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -377,7 +389,7 @@ export default function Roadmap() {
 
                 {/* Recently Released */}
                 {releasedItems.length > 0 && (
-                  <div>
+                  <div id="recently-released">
                     <div className="flex items-center gap-3 mb-6">
                       <div className="flex items-center gap-2">
                         <CheckCircle2 className="w-5 h-5 text-emerald-600" />
@@ -445,18 +457,30 @@ export default function Roadmap() {
         {/* ── Suggestions Tab ── */}
         {tab === "suggestions" && (
           <div>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Community Suggestions</h2>
-                <p className="text-sm text-gray-500 mt-0.5">Vote for the features you want most, or submit your own idea.</p>
+            {/* Suggestions CTA banner */}
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-5 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+                  <Lightbulb className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">Have an idea?</h2>
+                  <p className="text-sm text-gray-600 mt-0.5">Submit a feature request and let other agents vote on it. The most popular ideas shape our roadmap.</p>
+                </div>
               </div>
               <Button
                 onClick={() => setShowSubmitDialog(true)}
-                className="bg-[#02E6D2] hover:bg-[#00c9b8] text-[#1a1a2e] font-semibold gap-2"
+                className="bg-amber-500 hover:bg-amber-600 text-white font-semibold gap-2 whitespace-nowrap shadow-sm"
               >
                 <Plus className="w-4 h-4" />
-                Submit Idea
+                Submit Your Idea
               </Button>
+            </div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Community Suggestions</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Sorted by votes — upvote the features you want most.</p>
+              </div>
             </div>
 
             {suggestionsLoading ? (
