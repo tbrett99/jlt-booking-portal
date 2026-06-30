@@ -1258,16 +1258,9 @@ export const crmRouter = router({
         const userIds = pending.map((p) => p.userId);
         const agentRows = await db.select({ id: usersTable.id, name: usersTable.name, email: usersTable.email }).from(usersTable);
         const agentMap = new Map(agentRows.map((a) => [a.id, a]));
-        // Build transporter
-        const smtpPort = Number(process.env.SMTP_PORT ?? 465);
-        const secure = smtpPort === 465 || process.env.SMTP_SECURE === "true";
-        const nodemailer = await import("nodemailer");
-        const transporter = nodemailer.default.createTransport({
-          host: process.env.SMTP_HOST ?? "mail.thejltgroup.co.uk",
-          port: smtpPort,
-          secure,
-          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-        });
+        // Build Resend client
+        const { Resend } = await import("resend");
+        const resend = new Resend(process.env.RESEND_API_KEY ?? "");
         let sent = 0;
         let skipped = 0;
         const now = new Date();
@@ -1276,8 +1269,9 @@ export const crmRouter = router({
           if (!agent?.email) { skipped++; continue; }
           const instructionsHtml = (input.instructions ?? "").replace(/\n/g, "<br>");
           try {
-            await transporter.sendMail({
-              from: `"JLT Group" <support@thejltgroup.co.uk>`,
+            await resend.emails.send({
+              from: "JLT Group <support@mail.thejltgroup.co.uk>",
+              replyTo: "support@thejltgroup.co.uk",
               to: agent.email,
               subject: "Your Aviate Login Details",
               html: `
