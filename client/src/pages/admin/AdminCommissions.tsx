@@ -242,7 +242,12 @@ export default function AdminCommissions() {
   const utils = trpc.useUtils();
 
   const updateVatMutation = trpc.commissionClaims.updateVat.useMutation({
-    onSuccess: () => utils.commissionClaims.all.invalidate(),
+    onSuccess: (_data, vars) => {
+      utils.commissionClaims.all.setData(undefined, (prev) =>
+        prev ? prev.map((c) => c.id === vars.claimId ? { ...c, vatAmount: vars.vatAmount !== null ? String(vars.vatAmount) : null } : c) : prev
+      );
+      utils.commissionClaims.all.invalidate();
+    },
     onError: (err) => toast.error(err.message),
   });
 
@@ -278,21 +283,48 @@ export default function AdminCommissions() {
 
   const { data: claims, isLoading } = trpc.commissionClaims.all.useQuery();
   const deleteClaimMutation = trpc.commissionClaims.deleteClaim.useMutation({
+    onMutate: async (vars) => {
+      await utils.commissionClaims.all.cancel();
+      const prev = utils.commissionClaims.all.getData();
+      utils.commissionClaims.all.setData(undefined, (old) =>
+        old ? old.filter((c) => c.id !== vars.claimId) : old
+      );
+      return { prev };
+    },
     onSuccess: () => {
       toast.success("Commission claim deleted.");
       setDeleteTarget(null);
       utils.commissionClaims.all.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err, _vars, ctx) => {
+      if (ctx?.prev) utils.commissionClaims.all.setData(undefined, ctx.prev);
+      toast.error(err.message);
+    },
   });
 
   const markPaidMutation = trpc.commissionClaims.markPaid.useMutation({
-    onSuccess: () => {
-      toast.success(`${selectedIds.size} commission(s) claimed in PTS.`);
+    onMutate: async (vars) => {
+      await utils.commissionClaims.all.cancel();
+      const prev = utils.commissionClaims.all.getData();
+      const now = new Date();
+      utils.commissionClaims.all.setData(undefined, (old) =>
+        old ? old.map((c) =>
+          vars.claimIds.includes(c.id)
+            ? { ...c, status: 'awaiting_payment', paidAt: now }
+            : c
+        ) : old
+      );
+      return { prev };
+    },
+    onSuccess: (_data, vars) => {
+      toast.success(`${vars.claimIds.length} commission(s) claimed in PTS.`);
       setSelectedIds(new Set());
       utils.commissionClaims.all.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err, _vars, ctx) => {
+      if (ctx?.prev) utils.commissionClaims.all.setData(undefined, ctx.prev);
+      toast.error(err.message);
+    },
   });
 
   // Pending review state
@@ -302,15 +334,38 @@ export default function AdminCommissions() {
   const [topUpNote, setTopUpNote] = useState("");
 
   const markClaimableMutation = trpc.commissionClaims.markClaimable.useMutation({
+    onMutate: async (vars) => {
+      await utils.commissionClaims.all.cancel();
+      const prev = utils.commissionClaims.all.getData();
+      utils.commissionClaims.all.setData(undefined, (old) =>
+        old ? old.map((c) =>
+          c.id === vars.claimId ? { ...c, status: 'processing' } : c
+        ) : old
+      );
+      return { prev };
+    },
     onSuccess: () => {
       toast.success("Claim marked as claimable — moved to Processing.");
       setMarkClaimableTarget(null);
       utils.commissionClaims.all.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err, _vars, ctx) => {
+      if (ctx?.prev) utils.commissionClaims.all.setData(undefined, ctx.prev);
+      toast.error(err.message);
+    },
   });
 
   const requestTopUpMutation = trpc.commissionClaims.requestTopUp.useMutation({
+    onMutate: async (vars) => {
+      await utils.commissionClaims.all.cancel();
+      const prev = utils.commissionClaims.all.getData();
+      utils.commissionClaims.all.setData(undefined, (old) =>
+        old ? old.map((c) =>
+          c.id === vars.claimId ? { ...c, status: 'top_up_required' } : c
+        ) : old
+      );
+      return { prev };
+    },
     onSuccess: () => {
       toast.success("Top-up request sent to agent.");
       setTopUpTarget(null);
@@ -318,7 +373,10 @@ export default function AdminCommissions() {
       setTopUpNote("");
       utils.commissionClaims.all.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err, _vars, ctx) => {
+      if (ctx?.prev) utils.commissionClaims.all.setData(undefined, ctx.prev);
+      toast.error(err.message);
+    },
   });
 
   const allClaims = (claims ?? []) as ClaimRow[];

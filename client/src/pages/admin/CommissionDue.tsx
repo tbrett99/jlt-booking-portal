@@ -98,7 +98,8 @@ function MoveDatePopover({ bookingId, currentDate, onSuccess }: {
 }
 
 export default function CommissionDue() {
-  const { data: bookings, isLoading, refetch } = trpc.commissionDue.list.useQuery();
+  const utils = trpc.useUtils();
+  const { data: bookings, isLoading } = trpc.commissionDue.list.useQuery();
   const [search, setSearch] = useState("");
   const [pastDepartureOnly, setPastDepartureOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -113,13 +114,33 @@ export default function CommissionDue() {
   const [vatInput, setVatInput] = useState("");
 
   const moveStage = trpc.bookings.moveStage.useMutation({
-    onSuccess: () => { refetch(); toast.success("Booking moved"); },
-    onError: (e) => toast.error(e.message),
+    onMutate: async ({ bookingId }) => {
+      await utils.commissionDue.list.cancel();
+      const prev = utils.commissionDue.list.getData();
+      utils.commissionDue.list.setData(undefined, (old) => old?.filter((b) => b.id !== bookingId) ?? []);
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) utils.commissionDue.list.setData(undefined, ctx.prev);
+      toast.error(_e.message);
+    },
+    onSuccess: () => { toast.success("Booking moved"); },
+    onSettled: () => { utils.commissionDue.list.invalidate(); },
   });
 
   const bulkMoveStage = trpc.bookings.bulkMoveStage.useMutation({
+    onMutate: async ({ bookingIds }) => {
+      await utils.commissionDue.list.cancel();
+      const prev = utils.commissionDue.list.getData();
+      const idSet = new Set(bookingIds);
+      utils.commissionDue.list.setData(undefined, (old) => old?.filter((b) => !idSet.has(b.id)) ?? []);
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) utils.commissionDue.list.setData(undefined, ctx.prev);
+      toast.error(_e.message);
+    },
     onSuccess: (data) => {
-      refetch();
       setSelectedIds(new Set());
       const skipped = data.total - data.succeeded;
       if (skipped > 0) {
@@ -128,18 +149,27 @@ export default function CommissionDue() {
         toast.success(`${data.succeeded} booking${data.succeeded !== 1 ? "s" : ""} moved successfully.`);
       }
     },
-    onError: (e) => toast.error(e.message),
+    onSettled: () => { utils.commissionDue.list.invalidate(); },
   });
 
   const requestTopUpMutation = trpc.commissionDue.requestTopUp.useMutation({
+    onMutate: async ({ bookingId }) => {
+      await utils.commissionDue.list.cancel();
+      const prev = utils.commissionDue.list.getData();
+      utils.commissionDue.list.setData(undefined, (old) => old?.filter((b) => b.id !== bookingId) ?? []);
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) utils.commissionDue.list.setData(undefined, ctx.prev);
+      toast.error(_e.message);
+    },
     onSuccess: () => {
       toast.success("Top-up request sent to agent.");
       setTopUpBooking(null);
       setTopUpAmount("");
       setTopUpNote("");
-      refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onSettled: () => { utils.commissionDue.list.invalidate(); },
   });
 
   const filtered = useMemo(() => {
@@ -394,7 +424,7 @@ export default function CommissionDue() {
                       <MoveDatePopover
                         bookingId={booking.id}
                         currentDate={booking.finalSupplierPaymentDate}
-                        onSuccess={refetch}
+                        onSuccess={() => utils.commissionDue.list.invalidate()}
                       />
                       <Button
                         size="sm"
