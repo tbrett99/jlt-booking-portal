@@ -771,6 +771,13 @@
       "when": 1782477843466,
       "tag": "0109_orange_scourge",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "5",
+      "when": 1782825494922,
+      "tag": "0110_majestic_caretaker",
+      "breakpoints": true
     }
   ]
 }

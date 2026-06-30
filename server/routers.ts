@@ -142,6 +142,7 @@ import { dashboardRouter } from "./dashboard-router";
 import { suppliersRouter } from "./suppliers-router";
 import { communityRouter } from "./community-router";
 import { superAdminRouter } from "./super-admin-router";
+import { roadmapRouter } from "./roadmap-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -3935,6 +3936,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
   suppliers: suppliersRouter,
   community: communityRouter,
   superAdmin: superAdminRouter,
+  roadmap: roadmapRouter,
   // ─── GoCardless Direct Debitt ───────────────────────────────────────────────
   gocardless: router({
     /**

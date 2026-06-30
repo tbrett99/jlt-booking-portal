@@ -104,6 +104,8 @@ const AdminSuppliers = lazy(() => import("./pages/admin/AdminSuppliers"));
 const SystemWorkflows = lazy(() => import("./pages/admin/SystemWorkflows"));
 const Community = lazy(() => import("./pages/Community"));
 const AgentCalendar = lazy(() => import("./pages/AgentCalendar"));
+const Roadmap = lazy(() => import("./pages/Roadmap"));
+const AdminRoadmap = lazy(() => import("./pages/admin/AdminRoadmap"));
 const WeeklyDigestAdmin = lazy(() => import("./pages/community/WeeklyDigestAdmin"));
 const SuperAdminDashboard = lazy(() => import("./pages/admin/SuperAdminDashboard"));
 import { useAuth } from "./_core/hooks/useAuth";
@@ -258,6 +260,7 @@ function AuthRouter() {
           <Route path="/my-margin" component={MyMarginReport} />
           <Route path="/community" component={Community} />
           <Route path="/events" component={AgentCalendar} />
+          <Route path="/roadmap" component={Roadmap} />
           {/* Terms & Policies — accessible to logged-in agents */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}
@@ -309,6 +312,7 @@ function AuthRouter() {
           <Route path="/my-margin" component={MyMarginReport} />
           <Route path="/community" component={Community} />
           <Route path="/events" component={AgentCalendar} />
+          <Route path="/roadmap" component={Roadmap} />
           {/* Terms & Policies — accessible to admins in agent view */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}
@@ -392,6 +396,8 @@ function AuthRouter() {
         <Route path="/admin/system-workflows" component={SystemWorkflows} />
         <Route path="/community" component={Community} />
         <Route path="/admin/weekly-digest" component={WeeklyDigestAdmin} />
+        <Route path="/admin/roadmap" component={AdminRoadmap} />
+        <Route path="/roadmap" component={Roadmap} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/unsubscribe" component={UnsubscribePage} />
         {/* Terms & Policies — accessible to logged-in admins */}

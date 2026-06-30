@@ -1692,3 +1692,58 @@ export const communityDigests = mysqlTable("community_digests", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type CommunityDigest = typeof communityDigests.$inferSelect;
+
+// ─── Roadmap ──────────────────────────────────────────────────────────────────
+
+export const roadmapItems = mysqlTable("roadmap_items", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  category: mysqlEnum("category", ["Bookings", "Payments", "CRM", "Reports", "Commissions", "Community", "Mobile", "Admin", "Other"]).default("Other").notNull(),
+  status: mysqlEnum("status", ["under_consideration", "planned", "in_progress", "released"]).default("planned").notNull(),
+  timeframe: varchar("timeframe", { length: 100 }),                          // e.g. "Q3 2026", "Coming Soon", "July 2026"
+  progressPct: int("progressPct").default(0).notNull(),                      // 0–100 for In Progress items
+  internalNotes: text("internalNotes"),                                      // Admin-only internal notes (not shown to agents)
+  effort: mysqlEnum("effort", ["small", "medium", "large", "xl"]),           // Effort estimate
+  priorityScore: int("priorityScore").default(0).notNull(),                  // Internal priority (higher = more important)
+  fromSuggestionId: int("fromSuggestionId"),                                 // FK → roadmap_suggestions.id if converted
+  isVisible: boolean("isVisible").default(true).notNull(),                   // Whether agents can see this item
+  sortOrder: int("sortOrder").default(0).notNull(),                          // Manual sort order within status column
+  releasedAt: timestamp("releasedAt"),                                       // When it was released (for Recently Released)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type RoadmapItem = typeof roadmapItems.$inferSelect;
+export type InsertRoadmapItem = typeof roadmapItems.$inferInsert;
+
+export const roadmapItemNotes = mysqlTable("roadmap_item_notes", {
+  id: int("id").autoincrement().primaryKey(),
+  itemId: int("itemId").notNull(),                                           // FK → roadmap_items.id
+  authorId: int("authorId").notNull(),                                       // FK → users.id
+  note: text("note").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type RoadmapItemNote = typeof roadmapItemNotes.$inferSelect;
+
+// ─── Roadmap Suggestions ──────────────────────────────────────────────────────
+
+export const roadmapSuggestions = mysqlTable("roadmap_suggestions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),                                           // FK → users.id (submitter — kept private from agents)
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  status: mysqlEnum("status", ["open", "under_review", "planned", "declined"]).default("open").notNull(),
+  convertedToItemId: int("convertedToItemId"),                               // FK → roadmap_items.id if converted
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type RoadmapSuggestion = typeof roadmapSuggestions.$inferSelect;
+export type InsertRoadmapSuggestion = typeof roadmapSuggestions.$inferInsert;
+
+export const roadmapVotes = mysqlTable("roadmap_votes", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),                                           // FK → users.id
+  suggestionId: int("suggestionId").notNull(),                               // FK → roadmap_suggestions.id
+  value: int("value").notNull(),                                             // +1 or -1
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type RoadmapVote = typeof roadmapVotes.$inferSelect;

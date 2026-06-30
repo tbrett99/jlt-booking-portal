@@ -2615,3 +2615,24 @@
 - [x] Join flow UI: applied code shows green confirmation with saving amount
 - [x] Super Admin: Discount Codes tab in BI dashboard (weekly + monthly views)
 - [x] Super Admin: list, create, toggle active/inactive, delete discount codes
+
+## Roadmap & Suggestions Feature
+- [ ] Add roadmap_items table to schema (id, title, description, category, status, timeframe, progressPct, internalNotes, effort, priorityScore, fromSuggestionId, isVisible, sortOrder, releasedAt, createdAt, updatedAt)
+- [ ] Add roadmap_suggestions table to schema (id, userId, title, description, status, createdAt)
+- [ ] Add roadmap_votes table to schema (id, userId, suggestionId, value +1/-1, createdAt)
+- [ ] Add roadmap_item_notes table for internal activity log (id, itemId, note, createdAt)
+- [ ] Run drizzle-kit generate and apply migration SQL
+- [ ] DB helpers: getRoadmapItems, getRoadmapSuggestions, getSuggestionVotes
+- [ ] tRPC procedures: roadmap.listPublic, roadmap.listAdmin, roadmap.create, roadmap.update, roadmap.delete
+- [ ] tRPC procedures: suggestions.list, suggestions.submit, suggestions.vote, suggestions.delete, suggestions.convertToRoadmapItem
+- [ ] tRPC procedures: roadmap.addInternalNote, roadmap.listNotes
+- [ ] Agent-facing /roadmap page: Kanban board (Under Consideration, Planned, In Progress, Recently Released)
+- [ ] Agent roadmap: progress bars on In Progress cards, category tags, timeframe labels, community badge
+- [ ] Agent roadmap: Recently Released section as timeline below Kanban
+- [ ] Agent roadmap: Suggestions tab with voting (upvote/downvote, no self-vote), submit new idea form
+- [ ] Admin /admin/roadmap page: full CRUD for roadmap items with internal notes panel
+- [ ] Admin roadmap: effort, priority score, visibility toggle, sort order
+- [ ] Admin roadmap: suggestions management table (see submitter, delete, convert to roadmap item)
+- [ ] Admin roadmap: internal activity log per item
+- [ ] Wire /roadmap route in App.tsx and add to agent sidebar nav
+- [ ] Wire /admin/roadmap route in App.tsx and add to admin sidebar nav
