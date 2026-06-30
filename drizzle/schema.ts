@@ -1296,6 +1296,7 @@ export const gcPaymentFailures = mysqlTable("gc_payment_failures", {
   userId: int("userId").notNull(),
   consecutiveFailures: int("consecutiveFailures").default(0).notNull(),
   lastFailedAt: timestamp("lastFailedAt"),
+  lastFailedPaymentId: varchar("lastFailedPaymentId", { length: 64 }),
   autoSuspendedAt: timestamp("autoSuspendedAt"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

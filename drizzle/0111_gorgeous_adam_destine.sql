@@ -1,0 +1,1 @@
+ALTER TABLE `gc_payment_failures` ADD `lastFailedPaymentId` varchar(64);

@@ -1702,11 +1702,18 @@ async function startServer() {
                 agentEmail = agentRow?.email ?? null;
                 agentName = agentRow?.name ?? null;
                 const [existing] = await db2.select().from(gcPF).where(eqOp(gcPF.userId, userId)).limit(1);
-                if (existing) {
+                // Deduplicate: GoCardless retries the same failed payment multiple times,
+                // each firing a new webhook. Only increment the counter once per unique payment ID.
+                const alreadyCountedThisPayment = paymentId && existing?.lastFailedPaymentId === paymentId;
+                if (alreadyCountedThisPayment) {
+                  // Same payment ID fired again (GC retry) — use existing count, don't increment
+                  newConsecutive = existing.consecutiveFailures ?? 1;
+                  console.log(`[GC Webhook] Skipping duplicate failure increment for payment ${paymentId} (already counted)`);
+                } else if (existing) {
                   newConsecutive = (existing.consecutiveFailures ?? 0) + 1;
-                  await db2.update(gcPF).set({ consecutiveFailures: newConsecutive, lastFailedAt: new Date() }).where(eqOp(gcPF.userId, userId));
+                  await db2.update(gcPF).set({ consecutiveFailures: newConsecutive, lastFailedAt: new Date(), lastFailedPaymentId: paymentId ?? null }).where(eqOp(gcPF.userId, userId));
                 } else {
-                  await db2.insert(gcPF).values({ userId, consecutiveFailures: 1, lastFailedAt: new Date() });
+                  await db2.insert(gcPF).values({ userId, consecutiveFailures: 1, lastFailedAt: new Date(), lastFailedPaymentId: paymentId ?? null });
                 }
                 if (newConsecutive >= 3 && agentRow && agentRow.portalStatus !== "suspended") {
                   await db2.update(usersT).set({ portalStatus: "suspended", isActive: false, suspendedAt: new Date(), suspensionReason: "non_payment" }).where(eqOp(usersT.id, userId));
