@@ -949,6 +949,11 @@ async function startServer() {
       const events: Array<{ id: string; action: string; resource_type: string; links: Record<string, string> }> =
         payload?.events ?? [];
 
+      // Respond immediately so GoCardless doesn't time out — process events in background
+      res.status(200).json({ success: true });
+
+      // Process events asynchronously (fire-and-forget)
+      (async () => { try {
       for (const event of events) {
         console.log(`[GC Webhook] ${event.resource_type}.${event.action}`, event.links);
 
@@ -1727,10 +1732,12 @@ async function startServer() {
         }
       }
 
-      res.status(200).json({ success: true });
+      } catch (asyncErr) {
+        console.error("[GC Webhook] Async processing error:", asyncErr);
+      } })();
     } catch (err) {
       console.error("[GC Webhook] Error:", err);
-      res.status(500).json({ error: "Internal error" });
+      if (!res.headersSent) res.status(500).json({ error: "Internal error" });
     }
   });
 
