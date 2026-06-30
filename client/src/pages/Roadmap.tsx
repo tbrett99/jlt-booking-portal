@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
@@ -109,6 +109,9 @@ const SUGGESTION_STATUS_LABELS: Record<string, string> = {
 function RoadmapCard({ item }: { item: RoadmapItem }) {
   const catColour = CATEGORY_COLOURS[item.category] ?? CATEGORY_COLOURS.Other;
   const isInProgress = item.status === "in_progress";
+  const [expanded, setExpanded] = useState(false);
+  // Estimate if description is long enough to need clamping (>120 chars is a reasonable threshold)
+  const isLong = (item.description?.length ?? 0) > 120;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow group">
@@ -127,7 +130,19 @@ function RoadmapCard({ item }: { item: RoadmapItem }) {
         {item.title}
       </h3>
       {item.description && (
-        <p className="text-xs text-gray-500 leading-relaxed mb-3 line-clamp-3">{item.description}</p>
+        <div className="mb-3">
+          <p className={`text-xs text-gray-500 leading-relaxed ${!expanded && isLong ? "line-clamp-3" : ""}`}>
+            {item.description}
+          </p>
+          {isLong && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="text-xs text-violet-500 hover:text-violet-700 font-medium mt-1 transition-colors"
+            >
+              {expanded ? "Show less" : "Read more"}
+            </button>
+          )}
+        </div>
       )}
       {isInProgress && (
         <div className="mb-3">
