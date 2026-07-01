@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { User, Calendar, ArrowRight, FileText, Clock, XCircle, Loader2 } from "lucide-react";
+import { User, Calendar, ArrowRight, FileText, Clock, XCircle, Loader2, EyeOff, Eye } from "lucide-react";
 import { useState } from "react";
 import { differenceInDays } from "date-fns";
 
@@ -31,9 +31,12 @@ const STAGE_COLORS: Record<Stage, string> = {
   "Actioned": "bg-emerald-100 text-emerald-800 border-emerald-300",
 };
 
+const ACTIVE_STAGES = ["To Do", "In Progress"] as const;
+
 export default function AdminAmendmentKanban() {
   const { data: amendments, refetch } = trpc.amendments.all.useQuery(undefined, { staleTime: 60000 });
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
+  const [showActioned, setShowActioned] = useState(false);
   const updatePipeline = trpc.amendments.updatePipeline.useMutation({
     onSuccess: () => { refetch(); toast.success("Amendment updated"); },
     onError: (e) => toast.error(e.message),
@@ -43,6 +46,7 @@ export default function AdminAmendmentKanban() {
     (amendments ?? []).filter((a) => (a.pipelineStage ?? "To Do") === stage && a.status !== "rejected");
 
   const rejectedAmendments = (amendments ?? []).filter((a) => a.status === "rejected");
+  const actionedCount = byStage("Actioned").length;
 
   const moveStage = (amendmentId: number, stage: Stage) => {
     updatePipeline.mutate({ amendmentId, pipelineStage: stage });
@@ -52,15 +56,28 @@ export default function AdminAmendmentKanban() {
     updatePipeline.mutate({ amendmentId, assignedToId: userId });
   };
 
+  const visibleStages = showActioned ? STAGES : ACTIVE_STAGES;
+
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Amendment Pipeline</h1>
-        <p className="text-muted-foreground text-sm mt-1">Manage and track all amendment requests across stages</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Amendment Pipeline</h1>
+          <p className="text-muted-foreground text-sm mt-1">Manage and track all amendment requests across stages</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowActioned((v) => !v)}
+          className="shrink-0 flex items-center gap-1.5 text-xs"
+        >
+          {showActioned ? <EyeOff size={14} /> : <Eye size={14} />}
+          {showActioned ? "Hide Actioned" : `Show Actioned (${actionedCount})`}
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {STAGES.map((stage) => (
+      <div className={`grid grid-cols-1 gap-6 ${showActioned ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+        {visibleStages.map((stage) => (
           <div key={stage} className="space-y-3">
             <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${STAGE_COLORS[stage]}`}>
               <span className="font-semibold text-sm">{stage}</span>
