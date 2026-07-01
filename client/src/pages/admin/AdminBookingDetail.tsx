@@ -802,7 +802,7 @@ function ReducedMarginCard({ bookingId, booking }: { bookingId: number; booking:
               <p className="text-xs text-amber-600 flex items-center gap-1"><AlertTriangle size={12} /> No evidence uploaded yet</p>
             )}
             <div className="flex items-center gap-2">
-              <input ref={reducedMarginInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" className="hidden"
+              <input ref={reducedMarginInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
                 onChange={(e) => setReducedMarginFile(e.target.files?.[0] ?? null)} />
               {!reducedMarginFile && (
                 <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8"
@@ -2315,7 +2315,8 @@ function AdminBookingDocumentsSection({ bookingId }: { bookingId: number }) {
             </div>
             <div className="space-y-1">
               <Label className="text-xs">File</Label>
-              <input ref={fileRef} type="file" className="block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-primary/10 file:text-primary cursor-pointer" />
+              <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-primary/10 file:text-primary cursor-pointer" />
+              <p className="text-xs text-muted-foreground">Accepted formats: PDF, JPG, PNG</p>
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleUpload} disabled={uploading || uploadMutation.isPending}>

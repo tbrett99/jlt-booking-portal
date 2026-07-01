@@ -290,6 +290,10 @@ export const crmRouter = router({
         })
       )
       .mutation(async ({ input }) => {
+        const { isAllowedMimeType, ALLOWED_TYPES_LABEL } = await import("../shared/uploadValidation");
+        if (!isAllowedMimeType(input.mimeType, input.fileName)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Only ${ALLOWED_TYPES_LABEL} files are allowed.` });
+        }
         const buf = Buffer.from(input.fileBase64, "base64");
         const ext = input.fileName.split(".").pop() ?? "bin";
         const key = `crm/docs/${input.prospectId}/${input.docType}-${nanoid(8)}.${ext}`;
@@ -1390,6 +1394,10 @@ export const crmRouter = router({
         })
       )
       .mutation(async ({ input }) => {
+        const { isAllowedMimeType, ALLOWED_TYPES_LABEL } = await import("../shared/uploadValidation");
+        if (!isAllowedMimeType(input.mimeType, input.fileName)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Only ${ALLOWED_TYPES_LABEL} files are allowed.` });
+        }
         const buffer = Buffer.from(input.fileBase64, "base64");
         const key = `agent-docs/${input.userId}/${input.docType}-${Date.now()}-${input.fileName}`;
         const { url } = await storagePut(key, buffer, input.mimeType);
@@ -1756,6 +1764,10 @@ export const crmRouter = router({
         mimeType: z.string(),
       }))
       .mutation(async ({ input, ctx }) => {
+        const { isAllowedMimeType, ALLOWED_TYPES_LABEL } = await import("../shared/uploadValidation");
+        if (!isAllowedMimeType(input.mimeType, input.fileName)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Only ${ALLOWED_TYPES_LABEL} files are allowed.` });
+        }
         const { storagePut } = await import("./storage");
         const { nanoid } = await import("nanoid");
         const buf = Buffer.from(input.fileBase64, "base64");

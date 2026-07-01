@@ -430,9 +430,15 @@ export default function AgentBookingDetail() {
     }
   };
 
+  const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+  const ALLOWED_EXTS = ['.pdf', '.jpg', '.jpeg', '.png'];
+  const isAllowed = (f: File) => ALLOWED_TYPES.includes(f.type) || ALLOWED_EXTS.includes('.' + f.name.split('.').pop()?.toLowerCase());
+
   const handleItemDocUpload = async (e: React.ChangeEvent<HTMLInputElement>, itemId: number) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
+    const invalidFile = files.find(f => !isAllowed(f));
+    if (invalidFile) { toast.error(`${invalidFile.name} is not allowed — only PDF, JPG, or PNG files are accepted`); return; }
     const oversized = files.find(f => f.size > 10 * 1024 * 1024);
     if (oversized) { toast.error(`${oversized.name} is over 10MB — please compress it first`); return; }
     setUploadingItemId(itemId);
@@ -1025,7 +1031,7 @@ export default function AgentBookingDetail() {
                         <input
                           type="file"
                           className="hidden"
-                          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                          accept=".pdf,.jpg,.jpeg,.png"
                           multiple
                           onChange={(e) => handleItemDocUpload(e, item.id)}
                           disabled={uploadingItemId === item.id}
@@ -1171,7 +1177,7 @@ export default function AgentBookingDetail() {
                       <input
                         type="file"
                         className="hidden"
-                        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                        accept=".pdf,.jpg,.jpeg,.png"
                         multiple
                         ref={el => { addReimbFileRefs.current[idx] = el; }}
                         onChange={(e) => {
@@ -1460,7 +1466,7 @@ export default function AgentBookingDetail() {
                 type="file"
                 className="hidden"
                 multiple
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png"
                 onChange={(e) => {
                   const files = Array.from(e.target.files ?? []);
                   setMessageAttachments(prev => [...prev, ...files]);
@@ -1580,6 +1586,10 @@ function FlightRequestsSection({ bookingId }: { bookingId: number }) {
 }
 
 // ─── Booking Documents Section ────────────────────────────────────────────────
+const ALLOWED_UPLOAD_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+const ALLOWED_UPLOAD_EXTS = ['.pdf', '.jpg', '.jpeg', '.png'];
+const isAllowedUpload = (f: File) => ALLOWED_UPLOAD_TYPES.includes(f.type) || ALLOWED_UPLOAD_EXTS.includes('.' + f.name.split('.').pop()?.toLowerCase());
+
 function BookingDocumentsSection({ bookingId }: { bookingId: number }) {
   const { user } = useAuth();
   const utils = trpc.useUtils();
@@ -1606,6 +1616,7 @@ function BookingDocumentsSection({ bookingId }: { bookingId: number }) {
   const handleUpload = async () => {
     const file = fileRef.current?.files?.[0];
     if (!file) { toast.error('Please select a file'); return; }
+    if (!isAllowedUpload(file)) { toast.error('Only PDF, JPG, or PNG files are allowed'); return; }
     if (!displayName.trim()) { toast.error('Please enter a document name'); return; }
     setUploading(true);
     try {
@@ -1687,7 +1698,8 @@ function BookingDocumentsSection({ bookingId }: { bookingId: number }) {
             </div>
             <div className="space-y-1">
               <Label className="text-xs">File</Label>
-              <input ref={fileRef} type="file" className="block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-primary/10 file:text-primary cursor-pointer" />
+              <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-primary/10 file:text-primary cursor-pointer" />
+              <p className="text-xs text-muted-foreground">Accepted formats: PDF, JPG, PNG</p>
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleUpload} disabled={uploading || uploadMutation.isPending}>

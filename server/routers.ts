@@ -877,6 +877,10 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        const { isAllowedMimeType, ALLOWED_TYPES_LABEL } = await import("../shared/uploadValidation");
+        if (!isAllowedMimeType(input.mimeType, input.fileName)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Only ${ALLOWED_TYPES_LABEL} files are allowed.` });
+        }
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
         if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
@@ -1478,6 +1482,10 @@ export const appRouter = router({
         mimeType: z.string(),
       }))
       .mutation(async ({ input, ctx }) => {
+        const { isAllowedMimeType, ALLOWED_TYPES_LABEL } = await import("../shared/uploadValidation");
+        if (!isAllowedMimeType(input.mimeType, input.fileName)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Only ${ALLOWED_TYPES_LABEL} files are allowed.` });
+        }
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
         const buffer = Buffer.from(input.fileBase64, "base64");
@@ -1558,6 +1566,10 @@ export const appRouter = router({
         mimeType: z.string(),
       }))
       .mutation(async ({ input, ctx }) => {
+        const { isAllowedMimeType, ALLOWED_TYPES_LABEL } = await import("../shared/uploadValidation");
+        if (!isAllowedMimeType(input.mimeType, input.fileName)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Only ${ALLOWED_TYPES_LABEL} files are allowed.` });
+        }
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
         if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
@@ -3686,9 +3698,13 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         let finalUrl = input.fileUrl;
         if (input.fileUrl.startsWith("data:")) {
           const { storagePut } = await import("./storage");
+          const { isAllowedMimeType, ALLOWED_TYPES_LABEL } = await import("../shared/uploadValidation");
           const matches = input.fileUrl.match(/^data:([^;]+);base64,(.+)$/);
           if (!matches) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid file data" });
           const [, mimeType, b64] = matches;
+          if (!isAllowedMimeType(mimeType, input.fileName)) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `Only ${ALLOWED_TYPES_LABEL} files are allowed.` });
+          }
           const buffer = Buffer.from(b64, "base64");
           try {
             const { url } = await storagePut(input.fileKey, buffer, mimeType);
@@ -4921,6 +4937,10 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         fileSize: z.number().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        const { isAllowedMimeType, ALLOWED_TYPES_LABEL } = await import('../shared/uploadValidation');
+        if (!isAllowedMimeType(input.mimeType, input.filename)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: `Only ${ALLOWED_TYPES_LABEL} files are allowed.` });
+        }
         const { bookingDocuments } = await import('../drizzle/schema');
         const { getDb } = await import('./db');
         const db = await getDb();
