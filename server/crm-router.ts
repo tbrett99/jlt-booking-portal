@@ -2960,6 +2960,8 @@ export const crmRouter = router({
           const conditions: any[] = [
             sqlFn`${usersTable.role} = 'agent'`,
             isNotNull(usersTable.email),
+            // Hard guard: NEVER send campaigns to suspended agents regardless of any other filters
+            sqlFn`(${usersTable.portalStatus} IS NULL OR ${usersTable.portalStatus} != 'suspended')`,
           ];
           // Filter by agentStatus (active by default unless specified)
           const statusFilter = filters.agentStatus?.length ? filters.agentStatus : ["active"];
