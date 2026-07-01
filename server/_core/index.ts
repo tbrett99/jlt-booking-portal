@@ -1721,7 +1721,41 @@ async function startServer() {
                   const { agentCrmProfiles: agentCrmProfilesT } = await import("../../drizzle/schema");
                   await db2.update(agentCrmProfilesT).set({ agentStatus: "suspended", suspendedAt: new Date(), suspensionReason: "non_payment" }).where(eqOp(agentCrmProfilesT.userId, userId));
                   await db2.update(gcPF).set({ autoSuspendedAt: new Date() }).where(eqOp(gcPF.userId, userId));
-                  await sendSupportEmail({ subject: `\u26a0\ufe0f Agent Auto-Suspended \u2014 3 Consecutive DD Failures (Agent ID ${userId})`, html: `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;"><h2 style="color:#dc2626;margin:0 0 16px;">Agent Auto-Suspended</h2><p style="color:#414141;">Agent <strong>${agentName ?? userId}</strong> (ID: ${userId}) has been automatically suspended after <strong>3 consecutive failed Direct Debit payments</strong>.</p><p style="color:#414141;">Please review their account in the CRM and contact them to resolve the payment issue before reinstating access.</p></div>` });
+                  // Fetch CRM profile for membership tier
+                  const [crmRow] = await db2.select({ membershipTier: agentCrmProfilesT.membershipTier }).from(agentCrmProfilesT).where(eqOp(agentCrmProfilesT.userId, userId)).limit(1);
+                  const membershipTierLabel = crmRow?.membershipTier ?? "Unknown";
+                  const suspendedAt = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                  const crmLink = `https://portal.thejltgroup.co.uk/admin/crm/${userId}`;
+                  const suspensionEmailHtml = `
+<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+  <div style="background:#dc2626;padding:28px 32px;">
+    <h1 style="margin:0;font-size:20px;font-weight:700;color:#ffffff;">⚠️ Agent Auto-Suspended</h1>
+    <p style="margin:6px 0 0;font-size:13px;color:#fecaca;">Non-Payment — Action Required</p>
+  </div>
+  <div style="padding:32px;">
+    <p style="color:#414141;margin:0 0 20px;font-size:15px;">An agent has been <strong>automatically suspended</strong> due to <strong>3 consecutive failed Direct Debit payments</strong>. Please contact them directly to resolve the outstanding payment and reinstate their access.</p>
+    <table style="width:100%;border-collapse:collapse;margin:0 0 24px;background:#f9fafb;border-radius:8px;overflow:hidden;">
+      <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:10px 16px;color:#6b7280;font-size:14px;width:40%;">Agent Name</td><td style="padding:10px 16px;color:#414141;font-weight:600;font-size:14px;">${agentName ?? "—"}</td></tr>
+      <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:10px 16px;color:#6b7280;font-size:14px;">Email Address</td><td style="padding:10px 16px;color:#414141;font-size:14px;"><a href="mailto:${agentEmail ?? ""}" style="color:#02E6D2;">${agentEmail ?? "—"}</a></td></tr>
+      <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:10px 16px;color:#6b7280;font-size:14px;">Membership Tier</td><td style="padding:10px 16px;color:#414141;font-size:14px;">${membershipTierLabel}</td></tr>
+      <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:10px 16px;color:#6b7280;font-size:14px;">Failed Payments</td><td style="padding:10px 16px;color:#dc2626;font-weight:700;font-size:14px;">3 consecutive failures</td></tr>
+      <tr><td style="padding:10px 16px;color:#6b7280;font-size:14px;">Suspended At</td><td style="padding:10px 16px;color:#414141;font-size:14px;">${suspendedAt}</td></tr>
+    </table>
+    <div style="background:#fef2f2;border-left:4px solid #dc2626;padding:16px;border-radius:4px;margin:0 0 24px;">
+      <p style="margin:0;color:#991b1b;font-weight:600;font-size:14px;">Next Steps</p>
+      <ol style="margin:8px 0 0;padding-left:20px;color:#991b1b;font-size:14px;line-height:1.8;">
+        <li>Contact <strong>${agentName ?? "the agent"}</strong> at <a href="mailto:${agentEmail ?? ""}" style="color:#dc2626;">${agentEmail ?? "their email"}</a> to discuss the failed payments</li>
+        <li>Once payment is resolved, reinstate their portal access via the CRM</li>
+        <li>Consider updating their Direct Debit mandate if needed</li>
+      </ol>
+    </div>
+    <a href="${crmLink}" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">View Agent in CRM →</a>
+  </div>
+  <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #f0f0f0;">
+    <p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">JLT Group Booking Portal — automated suspension alert</p>
+  </div>
+</div>`;
+                  await sendSupportEmail({ subject: `⚠️ Agent Auto-Suspended: ${agentName ?? `ID ${userId}`} — 3 Consecutive DD Failures`, html: suspensionEmailHtml });
                   console.log(`[GC Webhook] Agent ${userId} auto-suspended after 3 consecutive payment failures`);
                 }
               }
