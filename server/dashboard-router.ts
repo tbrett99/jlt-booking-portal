@@ -47,7 +47,7 @@ export const dashboardRouter = router({
       db.execute(sql`
         SELECT
           SUM(CASE WHEN pipelineStage != 'Actioned' AND isReimbursementDoc = 0 THEN 1 ELSE 0 END) AS pending,
-          SUM(CASE WHEN pipelineStage = 'To Do' AND isReimbursementDoc = 0 THEN 1 ELSE 0 END) AS newAmendments,
+          SUM(CASE WHEN (pipelineStage = 'To Do' OR pipelineStage IS NULL) AND isReimbursementDoc = 0 AND status != 'rejected' THEN 1 ELSE 0 END) AS newAmendments,
           SUM(CASE WHEN pipelineStage != 'Actioned' AND isReimbursementDoc = 1 THEN 1 ELSE 0 END) AS reimbAmendments
         FROM amendments
       `),
@@ -238,7 +238,7 @@ export const dashboardRouter = router({
           FROM bookings
         `),
         db.execute(sql`
-          SELECT SUM(CASE WHEN pipelineStage = 'To Do' AND isReimbursementDoc = 0 THEN 1 ELSE 0 END) AS newAmendments
+          SELECT SUM(CASE WHEN (pipelineStage = 'To Do' OR pipelineStage IS NULL) AND isReimbursementDoc = 0 AND status != 'rejected' THEN 1 ELSE 0 END) AS newAmendments
           FROM amendments
         `),
         db.execute(sql`
