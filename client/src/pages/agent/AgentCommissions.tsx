@@ -46,6 +46,21 @@ function fmt(d: Date | string | null | undefined) {
   return format(new Date(d), "dd/MM/yyyy");
 }
 
+/** Returns the number of weeks until departure (negative if already departed). */
+function weeksUntilDeparture(departureDate: Date | string | null | undefined): number | null {
+  if (!departureDate) return null;
+  const dep = new Date(departureDate);
+  const diffMs = dep.getTime() - Date.now();
+  return Math.ceil(diffMs / (7 * 24 * 60 * 60 * 1000));
+}
+
+/** Returns true if the booking is within the claimable window (≤ 12 weeks to departure). */
+function isWithin12Weeks(departureDate: Date | string | null | undefined): boolean {
+  const weeks = weeksUntilDeparture(departureDate);
+  if (weeks === null) return true; // no date — don't block
+  return weeks <= 12;
+}
+
 function sumCommission(list: BookingWithClaim[]) {
   return list.reduce((acc, b) => acc + Number(b.expectedCommission ?? 0), 0);
 }
@@ -198,8 +213,10 @@ export default function AgentCommissions() {
                 ? "border-emerald-500 text-emerald-600"
                 : booking.claim?.status === "awaiting_payment"
                 ? "border-amber-500 text-amber-600"
-                : booking.claim?.status === "processing"
+                :               booking.claim?.status === "processing"
                 ? "border-orange-500 text-orange-600"
+                : booking.claim?.status === "notice_hold"
+                ? "border-purple-500 text-purple-600"
                 : booking.currentStage === "Commission Claimable"
                 ? "border-[#02E6D2] text-[#02E6D2]"
                 : "border-muted text-muted-foreground"
@@ -211,18 +228,35 @@ export default function AgentCommissions() {
               ? "Awaiting Payment"
               : booking.claim?.status === "processing"
               ? "Processing"
+              : booking.claim?.status === "notice_hold"
+              ? "Notice Hold"
               : booking.currentStage}
           </Badge>
         )}
-        {showClaim && (
-          <Button
-            size="sm"
-            className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#414141] font-semibold"
-            onClick={() => openClaimDialog(booking)}
-          >
-            Claim Commission
-          </Button>
-        )}
+        {showClaim && (() => {
+          const weeks = weeksUntilDeparture(booking.departureDate);
+          const tooEarly = weeks !== null && weeks > 12;
+          if (tooEarly) {
+            return (
+              <div className="flex flex-col items-end gap-1">
+                <span className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg"
+                  style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b' }}>
+                  <Lock size={11} /> Not yet claimable
+                </span>
+                <span className="text-xs text-muted-foreground text-right">{weeks}w until departure</span>
+              </div>
+            );
+          }
+          return (
+            <Button
+              size="sm"
+              className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#414141] font-semibold"
+              onClick={() => openClaimDialog(booking)}
+            >
+              Claim Commission
+            </Button>
+          );
+        })()}
         <Link href={`/bookings/${booking.id}`}>
           <button className="p-1 rounded hover:bg-muted">
             <ChevronRight size={16} className="text-muted-foreground" />

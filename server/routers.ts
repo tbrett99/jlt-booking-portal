@@ -2548,7 +2548,26 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         if (booking.currentStage !== "Commission Claimable") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Booking is not in Commission Claimable stage" });
         }
-        const claim = await createCommissionClaim(input.bookingId, ctx.user.id, input.bookingType, input.grossAmount, 'processing');
+
+        // ── 12-week departure rule ──────────────────────────────────────────────
+        // Agents cannot claim commission if departure is more than 12 weeks away.
+        const TWELVE_WEEKS_MS = 12 * 7 * 24 * 60 * 60 * 1000;
+        const depDate = booking.departureDate ? new Date(booking.departureDate) : null;
+        if (depDate && depDate.getTime() - Date.now() > TWELVE_WEEKS_MS) {
+          const weeksLeft = Math.ceil((depDate.getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000));
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Commission cannot be claimed more than 12 weeks before departure. This booking departs in approximately ${weeksLeft} weeks (${depDate.toLocaleDateString('en-GB')}). Please try again closer to the departure date.`,
+          });
+        }
+
+        // ── Notice-period routing ───────────────────────────────────────────────
+        // Claims from agents in notice are held separately — they cannot receive
+        // commission until after their clients have departed.
+        const agentInNotice = (ctx.user as any).portalStatus === "in_notice";
+        const claimStatus = agentInNotice ? "notice_hold" : "processing";
+
+        const claim = await createCommissionClaim(input.bookingId, ctx.user.id, input.bookingType, input.grossAmount, claimStatus as any);
         // Auto-apply admin-set VAT to the claim if it was recorded when the booking was marked claimable
         if (claim && (booking as any).commissionVat != null) {
           await updateCommissionVat(claim.id, parseFloat(String((booking as any).commissionVat)));
@@ -2639,10 +2658,30 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         ...c,
         agentName: userMap.get(c.agentId)?.name ?? "Unknown",
         agentEmail: userMap.get(c.agentId)?.email ?? "",
+        agentPortalStatus: (userMap.get(c.agentId) as any)?.portalStatus ?? null,
         booking: bookingMap.get(c.bookingId) ?? null,
         paidByName: c.paidById ? (userMap.get(c.paidById)?.name ?? "Admin") : null,
       }));
     }),
+
+    // Admin: release a notice-period hold claim to processing
+    releaseNoticeClaim: adminProcedure
+      .input(z.object({ claimId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const { getDb } = await import('./db');
+        const dbInst = await getDb();
+        if (!dbInst) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        const { commissionClaims: claimsTable } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await dbInst.update(claimsTable).set({ status: 'processing' }).where(eq(claimsTable.id, input.claimId));
+        await createNote({
+          bookingId: (await getAllCommissionClaims()).find((c) => c.id === input.claimId)?.bookingId ?? 0,
+          authorId: ctx.user.id,
+          content: `[System] Notice period hold released — claim moved to Processing by ${ctx.user.name ?? 'Admin'}.`,
+          isInternal: true,
+        });
+        return { success: true };
+      }),
 
     // Admin: delete a commission claim (e.g. test claims or holding accounts)
     deleteClaim: adminProcedure

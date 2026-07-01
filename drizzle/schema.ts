@@ -249,7 +249,7 @@ export const commissionClaims = mysqlTable("commission_claims", {
   agentId: int("agentId").notNull(), // FK → users.id
   bookingType: mysqlEnum("bookingType", ["lapland", "cruise", "disney", "other"]).notNull().default("other"),
   claimedAt: timestamp("claimedAt").defaultNow().notNull(),
-  status: mysqlEnum("status", ["pending", "processing", "awaiting_payment", "paid", "top_up_required"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "processing", "awaiting_payment", "paid", "top_up_required", "notice_hold"]).default("pending").notNull(),
   topUpAmountPence: int("topUpAmountPence"), // set when admin requests a top-up
   topUpNote: text("topUpNote"), // optional note from admin when requesting top-up
   topUpRequestedAt: timestamp("topUpRequestedAt"), // when the top-up was requested

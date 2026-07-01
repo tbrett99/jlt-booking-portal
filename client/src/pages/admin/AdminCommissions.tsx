@@ -22,6 +22,7 @@ type ClaimRow = {
   agentId: number;
   agentName: string;
   agentEmail: string;
+  agentPortalStatus?: string | null;
   status: string;
   claimedAt: Date | string;
   paidAt: Date | string | null;
@@ -386,6 +387,7 @@ export default function AdminCommissions() {
   const awaitingPayment = allClaims.filter((c) => c.status === "awaiting_payment");
   const claimed = awaitingPayment;
   const paid = allClaims.filter((c) => c.status === "paid");
+  const noticeHold = allClaims.filter((c) => c.status === "notice_hold");
 
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) => {
@@ -426,6 +428,25 @@ export default function AdminCommissions() {
     updateVatMutation.mutate({ claimId, vatAmount: parsed });
     setVatEditing((prev) => { const n = { ...prev }; delete n[claimId]; return n; });
   };
+
+  const releaseNoticeClaim = trpc.commissionClaims.releaseNoticeClaim.useMutation({
+    onMutate: async (vars: { claimId: number }) => {
+      await utils.commissionClaims.all.cancel();
+      const prev = utils.commissionClaims.all.getData();
+      utils.commissionClaims.all.setData(undefined, (old) =>
+        old ? old.map((c) => c.id === vars.claimId ? { ...c, status: 'processing' } : c) : old
+      );
+      return { prev };
+    },
+    onSuccess: () => {
+      toast.success("Claim released to Processing.");
+      utils.commissionClaims.all.invalidate();
+    },
+    onError: (err: { message: string }, _vars: unknown, ctx: { prev?: typeof claims } | undefined) => {
+      if (ctx?.prev) utils.commissionClaims.all.setData(undefined, ctx.prev);
+      toast.error(err.message);
+    },
+  });
 
   const exportCSV = (rows: ClaimRow[], filename: string) => {
     const headers = ["Client", "Agent", "Agent Email", "Departure", "Expected Commission (£)", "VAT (£)", "Booking Type", "Claimed On", "Processed On", "Processed By", "Status"];
@@ -608,6 +629,14 @@ export default function AdminCommissions() {
 
       <Tabs defaultValue="processing">
         <TabsList className="mb-4 flex-wrap h-auto gap-1">
+          {noticeHold.length > 0 && (
+            <TabsTrigger value="notice_hold">
+              Notice Period
+              <span className="ml-2 bg-purple-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                {noticeHold.length}
+              </span>
+            </TabsTrigger>
+          )}
           <TabsTrigger value="top_up">
             Top-Up Required
             {topUpRequired.length > 0 && (
@@ -632,8 +661,102 @@ export default function AdminCommissions() {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="paid">Paid</TabsTrigger>
+            <TabsTrigger value="paid">Paid</TabsTrigger>
         </TabsList>
+
+        {/* NOTICE PERIOD TAB */}
+        <TabsContent value="notice_hold">
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Notice Period Claims</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">These claims were submitted by agents currently serving their notice period. Commission cannot be processed until after the client has departed.</p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {noticeHold.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground text-sm">No notice period claims.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        <th className="py-3 px-4 text-left">Client</th>
+                        <th className="py-3 px-4 text-left">Agent</th>
+                        <th className="py-3 px-4 text-left">Agent Status</th>
+                        <th className="py-3 px-4 text-left">Departure Date</th>
+                        <th className="py-3 px-4 text-left">Commission</th>
+                        <th className="py-3 px-4 text-left">Claimed On</th>
+                        <th className="py-3 px-4 text-left">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {noticeHold.map((c) => {
+                        const depDate = c.booking?.departureDate ? new Date(c.booking.departureDate) : null;
+                        const departed = depDate ? depDate < new Date() : false;
+                        return (
+                          <tr key={c.id} className="border-b border-border hover:bg-muted/30">
+                            <td className="py-3 px-4">
+                              <div className="font-medium">{c.booking?.clientName ?? "—"}</div>
+                              {c.booking?.ptsRef && <div className="text-xs text-muted-foreground">{c.booking.ptsRef}</div>}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div>{c.agentName}</div>
+                              <div className="text-xs text-muted-foreground">{c.agentEmail}</div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <Badge variant="outline" className="border-purple-500 text-purple-600 text-xs">
+                                {(c as any).agentPortalStatus === 'in_notice' ? 'In Notice' : ((c as any).agentPortalStatus ?? 'Unknown')}
+                              </Badge>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className={departed ? 'text-emerald-600 font-semibold' : 'text-amber-600 font-semibold'}>
+                                {depDate ? format(depDate, 'dd/MM/yyyy') : '—'}
+                              </div>
+                              {departed ? (
+                                <div className="text-xs text-emerald-600">Client departed ✔</div>
+                              ) : (
+                                <div className="text-xs text-amber-600">Not yet departed</div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 font-semibold">
+                              {c.booking?.expectedCommission != null ? `£${Number(c.booking.expectedCommission).toFixed(2)}` : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-muted-foreground">{formatDate(c.claimedAt)}</td>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2">
+                                {departed && (
+                                  <Button
+                                    size="sm"
+                                    className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs"
+                                    onClick={() => releaseNoticeClaim.mutate({ claimId: c.id })}
+                                    disabled={releaseNoticeClaim.isPending}
+                                  >
+                                    Release to Processing
+                                  </Button>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-muted-foreground hover:text-foreground"
+                                  onClick={() => navigate(`/admin/bookings/${c.bookingId}`)}
+                                >
+                                  View
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* TOP-UP REQUIRED TAB */}
         <TabsContent value="top_up">
