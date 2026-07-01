@@ -733,6 +733,7 @@ export const appRouter = router({
           agentId: z.number().optional(),
           fromDate: z.date().optional(),
           toDate: z.date().optional(),
+          stages: z.array(z.string()).optional(),
         }).optional()
       )
       .query(async ({ input }) => {

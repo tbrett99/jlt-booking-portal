@@ -8,10 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, ChevronRight, AlertTriangle, Calendar, Loader2, SlidersHorizontal, MessageSquare, PackageCheck } from "lucide-react";
+import { Search, ChevronRight, AlertTriangle, Calendar, Loader2, SlidersHorizontal, MessageSquare, PackageCheck, Eye, EyeOff } from "lucide-react";
 import { format } from "date-fns";
 
-const STAGES = [
+const ALL_STAGES = [
   "New Booking",
   "Creating own PTS file",
   "Incomplete Booking",
@@ -25,6 +25,27 @@ const STAGES = [
   "Commission Claimed",
   "Cancelled",
   "Holding Accounts",
+];
+
+// Stages loaded by default (active working stages only)
+const ACTIVE_STAGES = [
+  "New Booking",
+  "Creating own PTS file",
+  "Incomplete Booking",
+  "Query",
+  "Reimb Docs Missing",
+  "Urgent/Reimb",
+  "T/O Package",
+  "DP",
+  "Holding Accounts",
+];
+
+// Stages only loaded when searching or "Show all" is toggled
+const ARCHIVED_STAGES = [
+  "Added to PTS",
+  "Commission Claimable",
+  "Commission Claimed",
+  "Cancelled",
 ];
 
 const STAGES_REQUIRING_PAYMENT_DATE = [
@@ -54,6 +75,7 @@ export default function AdminKanban() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "departure_asc" | "departure_desc" | "agent_az">("oldest");
   const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [showAllStages, setShowAllStages] = useState(false);
   const [hiddenStages, setHiddenStages] = useState<Set<string>>(new Set());
   const toggleStage = (stage: string) => setHiddenStages((prev) => {
     const next = new Set(prev);
@@ -68,7 +90,18 @@ export default function AdminKanban() {
   const [queryMessage, setQueryMessage] = useState("");
   const utils = trpc.useUtils();
 
-  const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery({}, { staleTime: 60000 });
+  // When searching or showing all stages, load all stages from the server.
+  // Otherwise only load active stages for faster initial load.
+  const loadAllStages = showAllStages || search.length > 0;
+  const queryStages = loadAllStages ? undefined : ACTIVE_STAGES;
+
+  const { data: bookings = [], isLoading } = trpc.bookings.all.useQuery(
+    queryStages ? { stages: queryStages } : {},
+    { staleTime: 60000 }
+  );
+
+  // Which stages to show as columns
+  const STAGES = loadAllStages ? ALL_STAGES : ACTIVE_STAGES;
   const { data: unreadIds = [] } = trpc.notes.unreadBookingIds.useQuery();
   const unreadSet = new Set(unreadIds);
   const moveStage = trpc.bookings.moveStage.useMutation({
@@ -157,8 +190,8 @@ export default function AdminKanban() {
       return 0;
     });
 
-  const visibleStages = STAGES.filter((s) => !hiddenStages.has(s));
-  const byStage = STAGES.reduce<Record<string, typeof bookings>>((acc, stage) => {
+  const visibleStages = (loadAllStages ? ALL_STAGES : ACTIVE_STAGES).filter((s) => !hiddenStages.has(s));
+  const byStage = ALL_STAGES.reduce<Record<string, typeof bookings>>((acc, stage) => {
     acc[stage] = filtered.filter((b) => b.currentStage === stage);
     return acc;
   }, {});
@@ -215,6 +248,18 @@ export default function AdminKanban() {
               </Select>
             </>
           )}
+          <button
+            onClick={() => setShowAllStages((v) => !v)}
+            className={`ml-2 flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-all ${
+              showAllStages
+                ? "bg-amber-50 border-amber-300 text-amber-700 font-semibold"
+                : "border-dashed border-muted-foreground/40 text-muted-foreground hover:text-foreground"
+            }`}
+            title={showAllStages ? "Hide archived stages (Added to PTS, Commission Claimable, Commission Claimed, Cancelled)" : "Show all stages including archived"}
+          >
+            {showAllStages ? <EyeOff size={12} /> : <Eye size={12} />}
+            {showAllStages ? "Hide archived stages" : "Show all stages"}
+          </button>
           {(search || agentFilter !== "all" || sortBy !== "oldest") && (
             <button
               onClick={() => { setSearch(""); setAgentFilter("all"); setSortBy("oldest"); }}

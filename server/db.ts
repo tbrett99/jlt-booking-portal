@@ -305,6 +305,7 @@ export async function getAllBookings(filters?: {
   agentId?: number;
   fromDate?: Date;
   toDate?: Date;
+  stages?: string[];
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -312,6 +313,9 @@ export async function getAllBookings(filters?: {
   if (filters?.agentId) conditions.push(eq(bookings.agentId, filters.agentId));
   if (filters?.fromDate) conditions.push(gte(bookings.departureDate, filters.fromDate));
   if (filters?.toDate) conditions.push(lte(bookings.departureDate, filters.toDate));
+  if (filters?.stages && filters.stages.length > 0) {
+    conditions.push(inArray(bookings.currentStage, filters.stages));
+  }
   const query =
     conditions.length > 0
       ? db
