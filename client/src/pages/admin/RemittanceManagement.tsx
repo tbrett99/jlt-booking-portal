@@ -422,6 +422,9 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
       return {
         "Agent": a.agentName ?? "",
         "Agent Email": a.agentEmail ?? "",
+        "Bank Account Name": (a as any).bankAccountName ?? "",
+        "Sort Code": (a as any).bankSortCode ?? "",
+        "Account Number": (a as any).bankAccountNumber ?? "",
         "Number of Claims": String(a.lines.length),
         "Total to Pay (80%)": `£${total.toFixed(2)}`,
       };
@@ -436,6 +439,9 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
     rows.push({
       "Agent": "TOTAL",
       "Agent Email": "",
+      "Bank Account Name": "",
+      "Sort Code": "",
+      "Account Number": "",
       "Number of Claims": String(totalClaims),
       "Total to Pay (80%)": `£${grandTotal.toFixed(2)}`,
     });

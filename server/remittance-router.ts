@@ -379,6 +379,9 @@ export const remittanceRouter = router({
         agentName: string;
         agentEmail: string;
         totalRemit80: number;
+        bankAccountName: string | null;
+        bankSortCode: string | null;
+        bankAccountNumber: string | null;
         lines: Array<typeof lines[0] & { batchName: string; weekOf: Date | null }>;
       }> = {};
 
@@ -390,6 +393,9 @@ export const remittanceRouter = router({
             agentName: line.agentName ?? "Unknown Agent",
             agentEmail: line.agentEmail ?? "",
             totalRemit80: 0,
+            bankAccountName: null,
+            bankSortCode: null,
+            bankAccountNumber: null,
             lines: [],
           };
         }
@@ -401,6 +407,32 @@ export const remittanceRouter = router({
           batchName: batchMap[line.batchId]?.name ?? "",
           weekOf: batchMap[line.batchId]?.weekOf ?? null,
         });
+      }
+
+      // Fetch and decrypt bank details for all matched agents
+      const agentEntries = Object.values(agentMap);
+      const agentUserIds = agentEntries.map((a) => a.agentId).filter((id): id is number => id !== null);
+      if (agentUserIds.length > 0) {
+        const { agentCrmProfiles } = await import("../drizzle/schema");
+        const { inArray: inArrayOp } = await import("drizzle-orm");
+        const { decryptAgentBankDetails } = await import("./agent-crm-db");
+        const profiles = await db
+          .select({ userId: agentCrmProfiles.userId, bankAccountName: agentCrmProfiles.bankAccountName, bankSortCode: agentCrmProfiles.bankSortCode, bankAccountNumber: agentCrmProfiles.bankAccountNumber })
+          .from(agentCrmProfiles)
+          .where(inArrayOp(agentCrmProfiles.userId, agentUserIds));
+        const bankMap = new Map<number, { bankAccountName: string | null; bankSortCode: string | null; bankAccountNumber: string | null }>();
+        for (const p of profiles) {
+          const dec = await decryptAgentBankDetails(p as any);
+          bankMap.set(p.userId, { bankAccountName: dec.bankAccountName ?? null, bankSortCode: dec.bankSortCode ?? null, bankAccountNumber: dec.bankAccountNumber ?? null });
+        }
+        for (const agent of agentEntries) {
+          if (agent.agentId !== null && bankMap.has(agent.agentId)) {
+            const b = bankMap.get(agent.agentId)!;
+            agent.bankAccountName = b.bankAccountName;
+            agent.bankSortCode = b.bankSortCode;
+            agent.bankAccountNumber = b.bankAccountNumber;
+          }
+        }
       }
 
       return Object.values(agentMap).sort((a, b) => a.agentName.localeCompare(b.agentName));
