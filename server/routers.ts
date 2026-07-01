@@ -2654,6 +2654,32 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       const allBookingsRaw = await getAllBookings();
       const userMap = new Map(allUsers.map((u) => [u.id, u]));
       const bookingMap = new Map(allBookingsRaw.map((b) => [b.id, b]));
+
+      // Fetch and decrypt bank details for all unique agents in this claim set
+      const uniqueAgentIds = Array.from(new Set(claims.map((c) => c.agentId)));
+      const bankDetailsMap = new Map<number, { bankAccountName: string | null; bankSortCode: string | null; bankAccountNumber: string | null }>();
+      if (uniqueAgentIds.length > 0) {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (db) {
+          const { agentCrmProfiles } = await import('../drizzle/schema');
+          const { inArray } = await import('drizzle-orm');
+          const { decryptAgentBankDetails } = await import('./agent-crm-db');
+          const profiles = await db
+            .select({ userId: agentCrmProfiles.userId, bankAccountName: agentCrmProfiles.bankAccountName, bankSortCode: agentCrmProfiles.bankSortCode, bankAccountNumber: agentCrmProfiles.bankAccountNumber })
+            .from(agentCrmProfiles)
+            .where(inArray(agentCrmProfiles.userId, uniqueAgentIds));
+          for (const p of profiles) {
+            const decrypted = await decryptAgentBankDetails(p as any);
+            bankDetailsMap.set(p.userId, {
+              bankAccountName: decrypted.bankAccountName ?? null,
+              bankSortCode: decrypted.bankSortCode ?? null,
+              bankAccountNumber: decrypted.bankAccountNumber ?? null,
+            });
+          }
+        }
+      }
+
       return claims.map((c) => ({
         ...c,
         agentName: userMap.get(c.agentId)?.name ?? "Unknown",
@@ -2661,6 +2687,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         agentPortalStatus: (userMap.get(c.agentId) as any)?.portalStatus ?? null,
         booking: bookingMap.get(c.bookingId) ?? null,
         paidByName: c.paidById ? (userMap.get(c.paidById)?.name ?? "Admin") : null,
+        bankAccountName: bankDetailsMap.get(c.agentId)?.bankAccountName ?? null,
+        bankSortCode: bankDetailsMap.get(c.agentId)?.bankSortCode ?? null,
+        bankAccountNumber: bankDetailsMap.get(c.agentId)?.bankAccountNumber ?? null,
       }));
     }),
 

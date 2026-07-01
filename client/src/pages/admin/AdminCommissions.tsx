@@ -29,6 +29,9 @@ type ClaimRow = {
   paidByName: string | null;
   bookingType?: string | null;
   vatAmount?: string | number | null;
+  bankAccountName?: string | null;
+  bankSortCode?: string | null;
+  bankAccountNumber?: string | null;
   booking: {
     clientName: string;
     departureDate: Date | string | null;
@@ -108,6 +111,7 @@ function ClaimTable({
             <th className="py-3 px-4 text-left font-medium">Client</th>
             <th className="py-3 px-4 text-left font-medium">PTS Ref</th>
             <th className="py-3 px-4 text-left font-medium">Agent</th>
+            <th className="py-3 px-4 text-left font-medium">Bank Details</th>
             <th className="py-3 px-4 text-left font-medium">Departure</th>
             <th className="py-3 px-4 text-left font-medium">Expected Comm.</th>
             <th className="py-3 px-4 text-left font-medium">VAT (£)</th>
@@ -150,6 +154,23 @@ function ClaimTable({
                     <p>{c.agentName}</p>
                     <p className="text-xs text-muted-foreground">{c.agentEmail}</p>
                   </div>
+                </td>
+                <td className="py-3 px-4">
+                  {c.bankAccountName || c.bankSortCode || c.bankAccountNumber ? (
+                    <div className="text-xs space-y-0.5">
+                      {c.bankAccountName && (
+                        <p className="font-medium text-foreground">{c.bankAccountName}</p>
+                      )}
+                      {c.bankSortCode && (
+                        <p className="text-muted-foreground font-mono">{c.bankSortCode}</p>
+                      )}
+                      {c.bankAccountNumber && (
+                        <p className="text-muted-foreground font-mono">{c.bankAccountNumber}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground italic">Not provided</span>
+                  )}
                 </td>
                 <td className="py-3 px-4">{formatDate(c.booking?.departureDate)}</td>
                 <td className="py-3 px-4">
