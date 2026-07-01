@@ -111,7 +111,6 @@ function ClaimTable({
             <th className="py-3 px-4 text-left font-medium">Client</th>
             <th className="py-3 px-4 text-left font-medium">PTS Ref</th>
             <th className="py-3 px-4 text-left font-medium">Agent</th>
-            <th className="py-3 px-4 text-left font-medium">Bank Details</th>
             <th className="py-3 px-4 text-left font-medium">Departure</th>
             <th className="py-3 px-4 text-left font-medium">Expected Comm.</th>
             <th className="py-3 px-4 text-left font-medium">VAT (£)</th>
@@ -154,23 +153,6 @@ function ClaimTable({
                     <p>{c.agentName}</p>
                     <p className="text-xs text-muted-foreground">{c.agentEmail}</p>
                   </div>
-                </td>
-                <td className="py-3 px-4">
-                  {c.bankAccountName || c.bankSortCode || c.bankAccountNumber ? (
-                    <div className="text-xs space-y-0.5">
-                      {c.bankAccountName && (
-                        <p className="font-medium text-foreground">{c.bankAccountName}</p>
-                      )}
-                      {c.bankSortCode && (
-                        <p className="text-muted-foreground font-mono">{c.bankSortCode}</p>
-                      )}
-                      {c.bankAccountNumber && (
-                        <p className="text-muted-foreground font-mono">{c.bankAccountNumber}</p>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-muted-foreground italic">Not provided</span>
-                  )}
                 </td>
                 <td className="py-3 px-4">{formatDate(c.booking?.departureDate)}</td>
                 <td className="py-3 px-4">
@@ -470,11 +452,14 @@ export default function AdminCommissions() {
   });
 
   const exportCSV = (rows: ClaimRow[], filename: string) => {
-    const headers = ["Client", "Agent", "Agent Email", "Departure", "Expected Commission (£)", "VAT (£)", "Booking Type", "Claimed On", "Processed On", "Processed By", "Status"];
+    const headers = ["Client", "Agent", "Agent Email", "Bank Account Name", "Sort Code", "Account Number", "Departure", "Expected Commission (£)", "VAT (£)", "Booking Type", "Claimed On", "Processed On", "Processed By", "Status"];
     const csvRows = rows.map((c) => [
       c.booking?.clientName ?? "",
       c.agentName,
       c.agentEmail,
+      c.bankAccountName ?? "",
+      c.bankSortCode ?? "",
+      c.bankAccountNumber ?? "",
       formatDate(c.booking?.departureDate),
       c.booking?.expectedCommission != null ? Number(c.booking.expectedCommission).toFixed(2) : "",
       c.vatAmount != null ? Number(c.vatAmount).toFixed(2) : "",
