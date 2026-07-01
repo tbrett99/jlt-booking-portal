@@ -450,6 +450,217 @@ function ItemRow({ item, onEdit, onDelete }: { item: RoadmapItem; onEdit: (item:
   );
 }
 
+// ─── AdminSuggestionCard ──────────────────────────────────────────────────────────
+
+type Reply = { id: number; body: string; createdAt: Date; updatedAt: Date; authorName: string | null };
+
+function AdminSuggestionCard({
+  s,
+  expandedReplies, setExpandedReplies,
+  replyingToId, setReplyingToId,
+  replyText, setReplyText,
+  editingReply, setEditingReply,
+  addReplyMutation, editReplyMutation, deleteReplyMutation,
+  updateSuggestionStatusMutation,
+  setConvertingSuggestion,
+  deleteSuggestionMutation,
+}: {
+  s: Suggestion;
+  expandedReplies: Set<number>;
+  setExpandedReplies: React.Dispatch<React.SetStateAction<Set<number>>>;
+  replyingToId: number | null;
+  setReplyingToId: (id: number | null) => void;
+  replyText: string;
+  setReplyText: (t: string) => void;
+  editingReply: { replyId: number; body: string } | null;
+  setEditingReply: (r: { replyId: number; body: string } | null) => void;
+  addReplyMutation: any;
+  editReplyMutation: any;
+  deleteReplyMutation: any;
+  updateSuggestionStatusMutation: any;
+  setConvertingSuggestion: (s: Suggestion) => void;
+  deleteSuggestionMutation: any;
+}) {
+  const isExpanded = expandedReplies.has(s.id);
+  const toggleReplies = () => setExpandedReplies((prev) => {
+    const next = new Set(prev);
+    if (next.has(s.id)) next.delete(s.id); else next.add(s.id);
+    return next;
+  });
+
+  const { data: replies = [], isLoading: repliesLoading } = trpc.roadmap.listReplies.useQuery(
+    { suggestionId: s.id },
+    { enabled: isExpanded }
+  );
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="p-4">
+        <div className="flex gap-4 items-start">
+          {/* Vote score */}
+          <div className="flex flex-col items-center min-w-[48px]">
+            <ThumbsUp className="w-4 h-4 text-emerald-500 mb-0.5" />
+            <span className={`text-sm font-bold tabular-nums ${s.votes > 0 ? "text-emerald-600" : s.votes < 0 ? "text-red-500" : "text-gray-500"}`}>
+              {s.votes > 0 ? `+${s.votes}` : s.votes}
+            </span>
+          </div>
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <h3 className="font-semibold text-gray-900 text-sm">{s.title}</h3>
+              <div className="flex items-center gap-2 shrink-0">
+                <Select
+                  value={s.status}
+                  onValueChange={(v) => updateSuggestionStatusMutation.mutate({ id: s.id, status: v as any })}
+                >
+                  <SelectTrigger className={`h-7 text-xs w-36 ${SUGGESTION_STATUS_COLOURS[s.status] ?? ""}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="under_review">Under Review</SelectItem>
+                    <SelectItem value="planned">Planned</SelectItem>
+                    <SelectItem value="declined">Declined</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {s.description && <p className="text-xs text-gray-500 mb-2">{s.description}</p>}
+            <div className="flex items-center gap-3 text-xs text-gray-400">
+              <span className="font-medium text-gray-600">By: {s.submitterName ?? "Unknown"}</span>
+              <span>{new Date(s.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+              {s.convertedToItemId && (
+                <span className="text-emerald-600 font-medium flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  On roadmap
+                </span>
+              )}
+            </div>
+          </div>
+          {/* Actions */}
+          <div className="flex gap-2 shrink-0">
+            {!s.convertedToItemId && (
+              <Button
+                size="sm" variant="outline"
+                onClick={() => setConvertingSuggestion(s)}
+                className="text-violet-600 border-violet-200 hover:bg-violet-50 gap-1 text-xs"
+              >
+                <ArrowRight className="w-3 h-3" />
+                Add to Roadmap
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => deleteSuggestionMutation.mutate({ id: s.id })} className="text-red-400 hover:text-red-600">
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Replies section */}
+      <div className="border-t border-gray-100">
+        <button
+          onClick={toggleReplies}
+          className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-gray-500 hover:bg-gray-50 transition-colors"
+        >
+          <span className="flex items-center gap-1.5">
+            <MessageSquare className="w-3.5 h-3.5 text-[#02E6D2]" />
+            <span className="font-medium text-[#02E6D2]">Admin Replies</span>
+            {!isExpanded && (
+              <span className="text-gray-400">(click to view / reply)</span>
+            )}
+          </span>
+          {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+
+        {isExpanded && (
+          <div className="px-4 pb-4 space-y-3">
+            {repliesLoading ? (
+              <div className="h-10 rounded-lg bg-gray-100 animate-pulse" />
+            ) : replies.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No replies yet.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {(replies as Reply[]).map((reply) => (
+                  <div key={reply.id} className="bg-[#f0fffe] border border-[#70FFE8]/40 rounded-xl p-3">
+                    {editingReply?.replyId === reply.id ? (
+                      <div className="space-y-2">
+                        <Textarea
+                          value={editingReply.body}
+                          onChange={(e) => setEditingReply({ ...editingReply, body: e.target.value })}
+                          rows={3}
+                          className="text-xs"
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => editReplyMutation.mutate({ replyId: reply.id, body: editingReply.body })} disabled={editReplyMutation.isPending} className="bg-[#02E6D2] hover:bg-[#00c9b8] text-[#1a1a2e] text-xs h-7">
+                            Save
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingReply(null)} className="text-xs h-7">Cancel</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-[#1a1a2e]">{reply.authorName ?? "Admin"}</span>
+                            <span className="text-xs text-gray-400">{new Date(reply.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <button onClick={() => setEditingReply({ replyId: reply.id, body: reply.body })} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button onClick={() => deleteReplyMutation.mutate({ replyId: reply.id })} className="p-1 text-gray-400 hover:text-red-500 rounded">
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">{reply.body}</p>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Reply compose */}
+            {replyingToId === s.id ? (
+              <div className="space-y-2">
+                <Textarea
+                  placeholder="Write a reply visible to all agents..."
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  rows={3}
+                  className="text-xs"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => addReplyMutation.mutate({ suggestionId: s.id, body: replyText.trim() })}
+                    disabled={!replyText.trim() || addReplyMutation.isPending}
+                    className="bg-[#02E6D2] hover:bg-[#00c9b8] text-[#1a1a2e] font-semibold gap-1.5 text-xs h-7"
+                  >
+                    <Send className="w-3 h-3" />
+                    Post Reply
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setReplyingToId(null); setReplyText(""); }} className="text-xs h-7">Cancel</Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                size="sm" variant="outline"
+                onClick={() => { setReplyingToId(s.id); }}
+                className="gap-1.5 text-xs h-7 text-[#02E6D2] border-[#02E6D2]/40 hover:bg-[#f0fffe]"
+              >
+                <MessageSquare className="w-3 h-3" />
+                Add Reply
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Admin Page ──────────────────────────────────────────────────────────
 
 export default function AdminRoadmap() {
@@ -460,6 +671,10 @@ export default function AdminRoadmap() {
   const [editingItem, setEditingItem] = useState<RoadmapItem | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [convertingSuggestion, setConvertingSuggestion] = useState<Suggestion | null>(null);
+  const [replyingToId, setReplyingToId] = useState<number | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [expandedReplies, setExpandedReplies] = useState<Set<number>>(new Set());
+  const [editingReply, setEditingReply] = useState<{ replyId: number; body: string } | null>(null);
 
   const { data: items = [], isLoading: itemsLoading } = trpc.roadmap.listAdmin.useQuery();
   const { data: suggestions = [], isLoading: suggestionsLoading } = trpc.roadmap.listSuggestions.useQuery();
@@ -486,6 +701,34 @@ export default function AdminRoadmap() {
 
   const updateSuggestionStatusMutation = trpc.roadmap.updateSuggestionStatus.useMutation({
     onSuccess: () => utils.roadmap.listSuggestions.invalidate(),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const addReplyMutation = trpc.roadmap.addReply.useMutation({
+    onSuccess: (_data, vars) => {
+      toast.success("Reply posted");
+      setReplyingToId(null);
+      setReplyText("");
+      utils.roadmap.listReplies.invalidate({ suggestionId: vars.suggestionId });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const editReplyMutation = trpc.roadmap.editReply.useMutation({
+    onSuccess: (_data, vars) => {
+      toast.success("Reply updated");
+      setEditingReply(null);
+      // Invalidate all suggestion replies (we don't know which suggestionId from here)
+      utils.roadmap.listReplies.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteReplyMutation = trpc.roadmap.deleteReply.useMutation({
+    onSuccess: () => {
+      toast.success("Reply deleted");
+      utils.roadmap.listReplies.invalidate();
+    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -672,73 +915,26 @@ export default function AdminRoadmap() {
           ) : (
             <div className="flex flex-col gap-3">
               {sortedSuggestions.map((s) => (
-                <div key={s.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-                  <div className="flex gap-4 items-start">
-                    {/* Vote score */}
-                    <div className="flex flex-col items-center min-w-[48px]">
-                      <ThumbsUp className="w-4 h-4 text-emerald-500 mb-0.5" />
-                      <span className={`text-sm font-bold tabular-nums ${s.votes > 0 ? "text-emerald-600" : s.votes < 0 ? "text-red-500" : "text-gray-500"}`}>
-                        {s.votes > 0 ? `+${s.votes}` : s.votes}
-                      </span>
-                    </div>
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <h3 className="font-semibold text-gray-900 text-sm">{s.title}</h3>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <Select
-                            value={s.status}
-                            onValueChange={(v) => updateSuggestionStatusMutation.mutate({ id: s.id, status: v as any })}
-                          >
-                            <SelectTrigger className={`h-7 text-xs w-36 ${SUGGESTION_STATUS_COLOURS[s.status] ?? ""}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="open">Open</SelectItem>
-                              <SelectItem value="under_review">Under Review</SelectItem>
-                              <SelectItem value="planned">Planned</SelectItem>
-                              <SelectItem value="declined">Declined</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      {s.description && <p className="text-xs text-gray-500 mb-2">{s.description}</p>}
-                      <div className="flex items-center gap-3 text-xs text-gray-400">
-                        <span className="font-medium text-gray-600">By: {s.submitterName ?? "Unknown"}</span>
-                        <span>{new Date(s.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
-                        {s.convertedToItemId && (
-                          <span className="text-emerald-600 font-medium flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" />
-                            On roadmap
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {/* Actions */}
-                    <div className="flex gap-2 shrink-0">
-                      {!s.convertedToItemId && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setConvertingSuggestion(s)}
-                          className="text-violet-600 border-violet-200 hover:bg-violet-50 gap-1 text-xs"
-                        >
-                          <ArrowRight className="w-3 h-3" />
-                          Add to Roadmap
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => deleteSuggestionMutation.mutate({ id: s.id })}
-                        className="text-red-400 hover:text-red-600"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+                <AdminSuggestionCard
+                  key={s.id}
+                  s={s}
+                  expandedReplies={expandedReplies}
+                  setExpandedReplies={setExpandedReplies}
+                  replyingToId={replyingToId}
+                  setReplyingToId={setReplyingToId}
+                  replyText={replyText}
+                  setReplyText={setReplyText}
+                  editingReply={editingReply}
+                  setEditingReply={setEditingReply}
+                  addReplyMutation={addReplyMutation}
+                  editReplyMutation={editReplyMutation}
+                  deleteReplyMutation={deleteReplyMutation}
+                  updateSuggestionStatusMutation={updateSuggestionStatusMutation}
+                  setConvertingSuggestion={setConvertingSuggestion}
+                  deleteSuggestionMutation={deleteSuggestionMutation}
+                />
               ))}
+
             </div>
           )}
         </div>

@@ -298,6 +298,96 @@ export const roadmapRouter = router({
       return { success: true };
     }),
 
+  // ─── Suggestion Replies ───────────────────────────────────────────────────────
+
+  // List replies for a suggestion (visible to all authenticated users)
+  listReplies: protectedProcedure
+    .input(z.object({ suggestionId: z.number().int() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return [];
+      const { roadmapSuggestionReplies, users } = await import("../drizzle/schema");
+      const { eq, asc } = await import("drizzle-orm");
+      return db
+        .select({
+          id: roadmapSuggestionReplies.id,
+          body: roadmapSuggestionReplies.body,
+          createdAt: roadmapSuggestionReplies.createdAt,
+          updatedAt: roadmapSuggestionReplies.updatedAt,
+          authorName: users.name,
+        })
+        .from(roadmapSuggestionReplies)
+        .leftJoin(users, eq(roadmapSuggestionReplies.authorId, users.id))
+        .where(eq(roadmapSuggestionReplies.suggestionId, input.suggestionId))
+        .orderBy(asc(roadmapSuggestionReplies.createdAt));
+    }),
+
+  // Add a reply to a suggestion (admin only)
+  addReply: adminProcedure
+    .input(z.object({ suggestionId: z.number().int(), body: z.string().min(1).max(5000) }))
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { roadmapSuggestionReplies } = await import("../drizzle/schema");
+      const result = await db.insert(roadmapSuggestionReplies).values({
+        suggestionId: input.suggestionId,
+        authorId: ctx.user.id,
+        body: input.body,
+      });
+      return { id: (result as any).insertId as number };
+    }),
+
+  // Edit a reply (admin only — own replies only, or super_admin can edit any)
+  editReply: adminProcedure
+    .input(z.object({ replyId: z.number().int(), body: z.string().min(1).max(5000) }))
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { roadmapSuggestionReplies } = await import("../drizzle/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [existing] = await db
+        .select({ authorId: roadmapSuggestionReplies.authorId })
+        .from(roadmapSuggestionReplies)
+        .where(eq(roadmapSuggestionReplies.id, input.replyId))
+        .limit(1);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
+      if (existing.authorId !== ctx.user.id && ctx.user.role !== "super_admin") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      await db
+        .update(roadmapSuggestionReplies)
+        .set({ body: input.body })
+        .where(eq(roadmapSuggestionReplies.id, input.replyId));
+      return { success: true };
+    }),
+
+  // Delete a reply (admin only)
+  deleteReply: adminProcedure
+    .input(z.object({ replyId: z.number().int() }))
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { roadmapSuggestionReplies } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const [existing] = await db
+        .select({ authorId: roadmapSuggestionReplies.authorId })
+        .from(roadmapSuggestionReplies)
+        .where(eq(roadmapSuggestionReplies.id, input.replyId))
+        .limit(1);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
+      if (existing.authorId !== ctx.user.id && ctx.user.role !== "super_admin") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      await db
+        .delete(roadmapSuggestionReplies)
+        .where(eq(roadmapSuggestionReplies.id, input.replyId));
+      return { success: true };
+    }),
+
   // Convert a suggestion to a roadmap item (admin)
   convertSuggestion: adminProcedure
     .input(

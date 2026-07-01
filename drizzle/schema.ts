@@ -1748,3 +1748,16 @@ export const roadmapVotes = mysqlTable("roadmap_votes", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type RoadmapVote = typeof roadmapVotes.$inferSelect;
+
+// ─── Roadmap Suggestion Replies (admin → public) ─────────────────────────────
+
+export const roadmapSuggestionReplies = mysqlTable("roadmap_suggestion_replies", {
+  id: int("id").autoincrement().primaryKey(),
+  suggestionId: int("suggestionId").notNull(),                                // FK → roadmap_suggestions.id
+  authorId: int("authorId").notNull(),                                        // FK → users.id (admin who replied)
+  body: text("body").notNull(),                                               // Reply content (visible to all agents)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type RoadmapSuggestionReply = typeof roadmapSuggestionReplies.$inferSelect;
+export type InsertRoadmapSuggestionReply = typeof roadmapSuggestionReplies.$inferInsert;

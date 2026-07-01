@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { ThumbsUp, ThumbsDown, Lightbulb, Rocket, Clock, CheckCircle2, Sparkles, ChevronRight, Plus, Users, ArrowDown } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Lightbulb, Rocket, Clock, CheckCircle2, Sparkles, ChevronRight, Plus, Users, ArrowDown, MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -168,68 +168,119 @@ function RoadmapCard({ item }: { item: RoadmapItem }) {
 function SuggestionCard({ suggestion, onVote }: { suggestion: Suggestion; onVote: (id: number, value: 1 | -1 | 0) => void }) {
   const statusColour = SUGGESTION_STATUS_COLOURS[suggestion.status] ?? "bg-gray-100 text-gray-600";
   const statusLabel = SUGGESTION_STATUS_LABELS[suggestion.status] ?? suggestion.status;
+  const [showReplies, setShowReplies] = useState(false);
+
+  const { data: replies = [], isLoading: repliesLoading } = trpc.roadmap.listReplies.useQuery(
+    { suggestionId: suggestion.id },
+    { enabled: showReplies }
+  );
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex gap-4">
-        {/* Vote column */}
-        <div className="flex flex-col items-center gap-1 min-w-[48px]">
-          <button
-            onClick={() => onVote(suggestion.id, suggestion.myVote === 1 ? 0 : 1)}
-            disabled={suggestion.isOwn}
-            className={`p-1.5 rounded-lg transition-colors ${
-              suggestion.myVote === 1
-                ? "bg-emerald-100 text-emerald-600"
-                : suggestion.isOwn
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-400 hover:bg-emerald-50 hover:text-emerald-600"
-            }`}
-            title={suggestion.isOwn ? "You cannot vote on your own suggestion" : "Upvote"}
-          >
-            <ThumbsUp className="w-4 h-4" />
-          </button>
-          <span className={`text-sm font-bold tabular-nums ${suggestion.votes > 0 ? "text-emerald-600" : suggestion.votes < 0 ? "text-red-500" : "text-gray-500"}`}>
-            {suggestion.votes > 0 ? `+${suggestion.votes}` : suggestion.votes}
-          </span>
-          <button
-            onClick={() => onVote(suggestion.id, suggestion.myVote === -1 ? 0 : -1)}
-            disabled={suggestion.isOwn}
-            className={`p-1.5 rounded-lg transition-colors ${
-              suggestion.myVote === -1
-                ? "bg-red-100 text-red-500"
-                : suggestion.isOwn
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-400 hover:bg-red-50 hover:text-red-500"
-            }`}
-            title={suggestion.isOwn ? "You cannot vote on your own suggestion" : "Downvote"}
-          >
-            <ThumbsDown className="w-4 h-4" />
-          </button>
-        </div>
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <h3 className="font-semibold text-gray-900 text-sm leading-snug">{suggestion.title}</h3>
-            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusColour}`}>
-              {statusLabel}
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+      <div className="p-4">
+        <div className="flex gap-4">
+          {/* Vote column */}
+          <div className="flex flex-col items-center gap-1 min-w-[48px]">
+            <button
+              onClick={() => onVote(suggestion.id, suggestion.myVote === 1 ? 0 : 1)}
+              disabled={suggestion.isOwn}
+              className={`p-1.5 rounded-lg transition-colors ${
+                suggestion.myVote === 1
+                  ? "bg-emerald-100 text-emerald-600"
+                  : suggestion.isOwn
+                  ? "text-gray-300 cursor-not-allowed"
+                  : "text-gray-400 hover:bg-emerald-50 hover:text-emerald-600"
+              }`}
+              title={suggestion.isOwn ? "You cannot vote on your own suggestion" : "Upvote"}
+            >
+              <ThumbsUp className="w-4 h-4" />
+            </button>
+            <span className={`text-sm font-bold tabular-nums ${suggestion.votes > 0 ? "text-emerald-600" : suggestion.votes < 0 ? "text-red-500" : "text-gray-500"}`}>
+              {suggestion.votes > 0 ? `+${suggestion.votes}` : suggestion.votes}
             </span>
+            <button
+              onClick={() => onVote(suggestion.id, suggestion.myVote === -1 ? 0 : -1)}
+              disabled={suggestion.isOwn}
+              className={`p-1.5 rounded-lg transition-colors ${
+                suggestion.myVote === -1
+                  ? "bg-red-100 text-red-500"
+                  : suggestion.isOwn
+                  ? "text-gray-300 cursor-not-allowed"
+                  : "text-gray-400 hover:bg-red-50 hover:text-red-500"
+              }`}
+              title={suggestion.isOwn ? "You cannot vote on your own suggestion" : "Downvote"}
+            >
+              <ThumbsDown className="w-4 h-4" />
+            </button>
           </div>
-          {suggestion.description && (
-            <p className="text-xs text-gray-500 leading-relaxed mb-2 line-clamp-3">{suggestion.description}</p>
-          )}
-          <div className="flex items-center gap-3 text-xs text-gray-400">
-            {suggestion.isOwn && (
-              <span className="text-violet-500 font-medium">Your idea</span>
-            )}
-            {suggestion.convertedToItemId && (
-              <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
-                <CheckCircle2 className="w-3 h-3" />
-                Added to roadmap
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <h3 className="font-semibold text-gray-900 text-sm leading-snug">{suggestion.title}</h3>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusColour}`}>
+                {statusLabel}
               </span>
+            </div>
+            {suggestion.description && (
+              <p className="text-xs text-gray-500 leading-relaxed mb-2 line-clamp-3">{suggestion.description}</p>
             )}
-            <span>{new Date(suggestion.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+            <div className="flex items-center gap-3 text-xs text-gray-400">
+              {suggestion.isOwn && (
+                <span className="text-violet-500 font-medium">Your idea</span>
+              )}
+              {suggestion.convertedToItemId && (
+                <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Added to roadmap
+                </span>
+              )}
+              <span>{new Date(suggestion.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+            </div>
           </div>
         </div>
+      </div>
+
+      {/* Admin replies toggle */}
+      <div className="border-t border-gray-100">
+        <button
+          onClick={() => setShowReplies((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-gray-500 hover:bg-gray-50 transition-colors"
+        >
+          <span className="flex items-center gap-1.5">
+            <MessageSquare className="w-3.5 h-3.5 text-[#02E6D2]" />
+            <span className="font-medium text-[#02E6D2]">JLT Team Response</span>
+            {!showReplies && (
+              <span className="text-gray-400">(click to view)</span>
+            )}
+          </span>
+          {showReplies ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+
+        {showReplies && (
+          <div className="px-4 pb-4">
+            {repliesLoading ? (
+              <div className="h-10 rounded-lg bg-gray-100 animate-pulse" />
+            ) : replies.length === 0 ? (
+              <p className="text-xs text-gray-400 italic py-1">No response yet — check back soon.</p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {replies.map((reply) => (
+                  <div key={reply.id} className="bg-gradient-to-r from-[#f0fffe] to-[#f8fffe] border border-[#70FFE8]/40 rounded-xl p-3">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="w-6 h-6 rounded-full bg-[#02E6D2]/20 flex items-center justify-center">
+                        <MessageSquare className="w-3 h-3 text-[#02E6D2]" />
+                      </div>
+                      <span className="text-xs font-semibold text-[#1a1a2e]">{reply.authorName ?? "JLT Team"}</span>
+                      <span className="text-xs text-gray-400">·</span>
+                      <span className="text-xs text-gray-400">{new Date(reply.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                    </div>
+                    <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">{reply.body}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
