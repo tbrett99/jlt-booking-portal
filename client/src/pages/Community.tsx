@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -73,8 +73,15 @@ const CATEGORY_COLOURS: Record<string, string> = {
 
 export default function Community() {
   const { user } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+
+  // Parse ?postId= from URL
+  const targetPostId = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get("postId");
+    return v ? parseInt(v, 10) : null;
+  }, [location]);
 
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [search, setSearch] = useState("");
@@ -281,6 +288,7 @@ export default function Community() {
                 isAdmin={isAdmin}
                 currentUserId={user?.id}
                 expanded={expandedPostId === post.id}
+                highlighted={targetPostId === post.id}
                 onToggleExpand={() => setExpandedPostId(expandedPostId === post.id ? null : post.id)}
                 onReact={(emoji) => reactMutation.mutate({ postId: post.id, emoji: emoji as any })}
                 onConfirm={() => confirmMutation.mutate({ postId: post.id })}
@@ -352,6 +360,7 @@ function PostCard({
   isAdmin,
   currentUserId,
   expanded,
+  highlighted,
   onToggleExpand,
   onReact,
   onConfirm,
@@ -364,6 +373,7 @@ function PostCard({
   isAdmin: boolean;
   currentUserId?: number;
   expanded: boolean;
+  highlighted?: boolean;
   onToggleExpand: () => void;
   onReact: (emoji: string) => void;
   onConfirm: () => void;
@@ -372,7 +382,17 @@ function PostCard({
   onDelete: () => void;
   onViewCompliance: () => void;
 }) {
+  const cardRef = useRef<HTMLElement>(null);
   const isOwner = post.authorId === currentUserId;
+
+  // Scroll highlighted post into view when it mounts
+  useEffect(() => {
+    if (highlighted && cardRef.current) {
+      setTimeout(() => {
+        cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+    }
+  }, [highlighted]);
   const canEdit = isAdmin || isOwner;
   const catColour = CATEGORY_COLOURS[post.category] ?? "bg-gray-100 text-gray-700 border-gray-200";
   const catLabel = CATEGORIES.find((c) => c.id === post.category)?.label ?? post.category;
@@ -402,10 +422,12 @@ function PostCard({
 
   return (
     <article
+      ref={cardRef}
       className={cn(
         "bg-card border border-border rounded-xl overflow-hidden transition-shadow hover:shadow-md",
         post.isPinned && "ring-2 ring-primary/20",
-        needsConfirmation && "ring-2 ring-amber-400/40"
+        needsConfirmation && "ring-2 ring-amber-400/40",
+        highlighted && "ring-2 ring-primary shadow-lg"
       )}
     >
       {/* Card header */}
