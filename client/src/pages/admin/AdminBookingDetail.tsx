@@ -1527,15 +1527,17 @@ export default function AdminBookingDetail() {
                 <div className="space-y-1">
                   <Label className="text-xs">Margin</Label>
                   {(() => {
+                    // Use Orbit-supplied margin if available, otherwise fall back to calculation
+                    const orbitPct = (booking as any).orbitMarginPct != null ? Number((booking as any).orbitMarginPct) : null;
                     const gc = Number(editGrossCost || (booking as any).grossCost || 0);
                     const ec = Number(editCommission || booking.expectedCommission || 0);
-                    if (!gc || !ec) return <p className="text-xs text-muted-foreground h-8 flex items-center">—</p>;
-                    const pct = (ec / gc) * 100;
+                    const pct = orbitPct !== null ? orbitPct : (gc && ec ? (ec / gc) * 100 : null);
+                    if (pct === null) return <p className="text-xs text-muted-foreground h-8 flex items-center">—</p>;
                     return (
                       <div className={`h-8 flex items-center px-2 rounded text-sm font-semibold ${
                         pct < 5 ? 'bg-red-100 text-red-700' : pct < 10 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
                       }`}>
-                        {pct.toFixed(1)}%{pct < 5 && ' ⚠ Low'}
+                        {pct.toFixed(1)}%{orbitPct !== null && <span className="text-xs font-normal ml-1 opacity-60">(Orbit)</span>}{pct < 5 && ' ⚠ Low'}
                       </div>
                     );
                   })()}

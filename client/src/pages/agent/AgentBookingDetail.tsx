@@ -866,11 +866,13 @@ export default function AgentBookingDetail() {
                       {booking.expectedCommission ? `£${Number(booking.expectedCommission).toFixed(2)}` : '—'}
                     </span>
                   </div>
-                  {booking.expectedCommission && (booking as any).grossCost && (
+                  {((booking as any).orbitMarginPct != null || (booking.expectedCommission && (booking as any).grossCost)) && (
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-muted-foreground">Margin</span>
-                      <span className="font-semibold text-sm" style={{ color: (Number(booking.expectedCommission) / Number((booking as any).grossCost) * 100) >= 6 ? '#065f46' : '#991b1b' }}>
-                        {((Number(booking.expectedCommission) / Number((booking as any).grossCost)) * 100).toFixed(2)}%
+                      <span className="font-semibold text-sm" style={{ color: ((booking as any).orbitMarginPct != null ? Number((booking as any).orbitMarginPct) : (Number(booking.expectedCommission) / Number((booking as any).grossCost) * 100)) >= 6 ? '#065f46' : '#991b1b' }}>
+                        {(booking as any).orbitMarginPct != null
+                          ? `${Number((booking as any).orbitMarginPct).toFixed(2)}%`
+                          : `${((Number(booking.expectedCommission) / Number((booking as any).grossCost)) * 100).toFixed(2)}%`}
                       </span>
                     </div>
                   )}
