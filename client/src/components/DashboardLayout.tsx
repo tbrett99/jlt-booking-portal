@@ -21,12 +21,68 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, X, Rocket } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { Button } from "./ui/button";
+
+// ─── Orbit Countdown Banner ───────────────────────────────────────────────────
+const ORBIT_DEADLINE = new Date("2026-08-01T00:00:00");
+const BANNER_DISMISSED_KEY = "orbit-banner-dismissed-v1";
+
+function OrbitCountdownBanner() {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem(BANNER_DISMISSED_KEY) === "1"; } catch { return false; }
+  });
+  const [timeLeft, setTimeLeft] = useState(() => getTimeLeft());
+
+  function getTimeLeft() {
+    const diff = ORBIT_DEADLINE.getTime() - Date.now();
+    if (diff <= 0) return null;
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    return { days, hours, mins };
+  }
+
+  useEffect(() => {
+    const id = setInterval(() => setTimeLeft(getTimeLeft()), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  const dismiss = () => {
+    try { localStorage.setItem(BANNER_DISMISSED_KEY, "1"); } catch {}
+    setDismissed(true);
+  };
+
+  if (dismissed || !timeLeft) return null;
+
+  const urgency = timeLeft.days <= 7 ? "bg-red-600" : timeLeft.days <= 14 ? "bg-amber-500" : "bg-[#02E6D2]";
+  const textColor = timeLeft.days <= 14 ? "text-white" : "text-gray-900";
+
+  return (
+    <div className={`${urgency} ${textColor} px-4 py-2.5 flex items-center justify-between gap-4 text-sm font-medium`}>
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <Rocket size={15} className="shrink-0" />
+        <span className="truncate">
+          <strong>Orbit Switch-Over:</strong> All new bookings must be made in Orbit from <strong>1st August 2026</strong>. Topdog will no longer be used for new bookings.
+        </span>
+      </div>
+      <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-1.5 font-mono text-xs bg-black/10 rounded px-2 py-1">
+          <span><strong>{timeLeft.days}</strong>d</span>
+          <span><strong>{timeLeft.hours}</strong>h</span>
+          <span><strong>{timeLeft.mins}</strong>m</span>
+        </div>
+        <button type="button" onClick={dismiss} className="opacity-70 hover:opacity-100 transition-opacity" aria-label="Dismiss">
+          <X size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Page 1", path: "/" },
@@ -245,6 +301,7 @@ function DashboardLayoutContent({
 
       <SidebarInset>
         <ImpersonationBanner />
+        <OrbitCountdownBanner />
         {isMobile && (
           <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
             <div className="flex items-center gap-2">
