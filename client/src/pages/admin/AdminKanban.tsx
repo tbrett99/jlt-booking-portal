@@ -401,16 +401,14 @@ export default function AdminKanban() {
                                   </span>
                                 )}
                                 {(() => {
-                                  const gc = Number((booking as any).grossCost || 0);
-                                  const ec = Number(booking.expectedCommission || 0);
-                                  if (!gc || !ec) return null;
-                                  const pct = (ec / gc) * 100;
-                                  if (pct >= 5) return null;
+                                  const orbitPct = (booking as any).orbitMarginPct != null ? Number((booking as any).orbitMarginPct) : null;
+                                  if (orbitPct === null) return null;
+                                  if (orbitPct >= 5) return null;
                                   return (
                                     <span className="text-xs px-1.5 py-0.5 rounded flex items-center gap-0.5"
                                       style={{ background: '#fee2e2', color: '#991b1b' }}>
                                       <AlertTriangle size={9} />
-                                      {pct.toFixed(1)}% margin
+                                      {orbitPct.toFixed(1)}% margin
                                     </span>
                                   );
                                 })()}

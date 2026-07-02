@@ -3103,10 +3103,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             const gross = b.grossCost != null ? parseFloat(String(b.grossCost)) : null;
             const commission = b.expectedCommission != null ? parseFloat(String(b.expectedCommission)) : null;
             const hasData = gross != null && gross > 0 && commission != null && commission >= 0;
-            // Use Orbit-supplied margin if available, otherwise fall back to reverse-engineering for legacy bookings
+            // Use Orbit-supplied margin directly — no portal-side recalculation
             const orbitMargin = (b as any).orbitMarginPct != null ? parseFloat(String((b as any).orbitMarginPct)) : null;
-            const estimatedGross = commission != null ? (commission / 0.80) / (1 - 0.013) : null;
-            const marginPct = orbitMargin != null ? orbitMargin : (hasData ? (estimatedGross! / gross!) * 100 : null);
+            const marginPct = orbitMargin;
             return {
               id: b.id,
               agentId: b.agentId,
@@ -3175,10 +3174,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           const gross = b.grossCost != null ? parseFloat(String(b.grossCost)) : null;
           const commission = b.expectedCommission != null ? parseFloat(String(b.expectedCommission)) : null;
           const hasData = gross != null && gross > 0 && commission != null && commission >= 0;
-          // Use Orbit-supplied margin if available, otherwise fall back to reverse-engineering for legacy bookings
+          // Use Orbit-supplied margin directly — no portal-side recalculation
           const orbitMargin = (b as any).orbitMarginPct != null ? parseFloat(String((b as any).orbitMarginPct)) : null;
-          const estimatedGross = commission != null ? (commission / 0.80) / (1 - 0.013) : null;
-          const marginPct = orbitMargin != null ? orbitMargin : (hasData ? (estimatedGross! / gross!) * 100 : null);
+          const marginPct = orbitMargin;
           return {
             id: b.id,
             clientName: b.clientName,

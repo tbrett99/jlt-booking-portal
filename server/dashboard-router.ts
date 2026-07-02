@@ -114,14 +114,17 @@ export const dashboardRouter = router({
           AND paymentDateDismissed = 0
         LIMIT 5
       `),
-      // Low margin bookings (< 6%)
+      // Low margin bookings (< 6%) — use orbitMarginPct if available
       db.execute(sql`
         SELECT id, clientName
         FROM bookings
         WHERE currentStage != 'Cancelled'
-          AND grossCost IS NOT NULL AND grossCost > 0
-          AND expectedCommission IS NOT NULL AND expectedCommission > 0
-          AND (CAST(expectedCommission AS DECIMAL(10,2)) / CAST(grossCost AS DECIMAL(10,2))) * 100 < 6
+          AND (
+            (orbitMarginPct IS NOT NULL AND orbitMarginPct < 6)
+            OR (orbitMarginPct IS NULL AND grossCost IS NOT NULL AND grossCost > 0
+              AND expectedCommission IS NOT NULL AND expectedCommission > 0
+              AND (CAST(expectedCommission AS DECIMAL(10,2)) / CAST(grossCost AS DECIMAL(10,2))) * 100 < 6)
+          )
         LIMIT 10
       `),
       // This month bookings count

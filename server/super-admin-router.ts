@@ -1440,7 +1440,7 @@ export const superAdminRouter = router({
       const dateTo = input.dateTo ? new Date(input.dateTo + "T23:59:59") : null;
 
       // Per-agent margin summary sourced directly from bookings (real-time, no claim required).
-      // Uses b.expectedCommission as the commission figure and b.grossCost as the cost.
+      // Uses orbitMarginPct when available (sent directly from Orbit), falls back to legacy calculation for older bookings.
       // Date filter applies to b.createdAt (booking registration date).
       const agentMargins = await db.execute(sql`
         SELECT
@@ -1448,29 +1448,42 @@ export const superAdminRouter = router({
           u.name AS agentName,
           u.email AS agentEmail,
           COUNT(DISTINCT b.id) AS totalBookingsCount,
-          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND b.expectedCommission IS NOT NULL THEN b.id END) AS bookingsWithMargin,
-          -- Estimated gross commission = (agentNet / 0.80) / (1 - 0.013) to reverse-engineer from Orbit net figure
-          AVG(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND b.expectedCommission IS NOT NULL
-            THEN ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) END) AS avgMarginPct,
-          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND b.expectedCommission IS NOT NULL
-            AND ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) < 6 THEN b.id END) AS bookingsBelowThreshold,
-          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND b.expectedCommission IS NOT NULL
-            AND ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) >= 6
-            AND ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) < 8 THEN b.id END) AS bookingsAmber,
-          COUNT(DISTINCT CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND b.expectedCommission IS NOT NULL
-            AND ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) >= 8 THEN b.id END) AS bookingsGreen,
+          COUNT(DISTINCT CASE WHEN b.orbitMarginPct IS NOT NULL
+            OR (b.grossCost IS NOT NULL AND b.grossCost > 0 AND b.expectedCommission IS NOT NULL) THEN b.id END) AS bookingsWithMargin,
+          -- Use orbitMarginPct if available, otherwise fall back to legacy calculation
+          AVG(CASE
+            WHEN b.orbitMarginPct IS NOT NULL THEN b.orbitMarginPct
+            WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 AND b.expectedCommission IS NOT NULL
+            THEN ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100)
+            END) AS avgMarginPct,
+          COUNT(DISTINCT CASE
+            WHEN b.orbitMarginPct IS NOT NULL AND b.orbitMarginPct < 6 THEN b.id
+            WHEN b.orbitMarginPct IS NULL AND b.grossCost IS NOT NULL AND b.grossCost > 0
+              AND b.expectedCommission IS NOT NULL
+              AND ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) < 6 THEN b.id
+            END) AS bookingsBelowThreshold,
+          COUNT(DISTINCT CASE
+            WHEN b.orbitMarginPct IS NOT NULL AND b.orbitMarginPct >= 6 AND b.orbitMarginPct < 8 THEN b.id
+            WHEN b.orbitMarginPct IS NULL AND b.grossCost IS NOT NULL AND b.grossCost > 0
+              AND b.expectedCommission IS NOT NULL
+              AND ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) >= 6
+              AND ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) < 8 THEN b.id
+            END) AS bookingsAmber,
+          COUNT(DISTINCT CASE
+            WHEN b.orbitMarginPct IS NOT NULL AND b.orbitMarginPct >= 8 THEN b.id
+            WHEN b.orbitMarginPct IS NULL AND b.grossCost IS NOT NULL AND b.grossCost > 0
+              AND b.expectedCommission IS NOT NULL
+              AND ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) >= 8 THEN b.id
+            END) AS bookingsGreen,
           SUM(CASE WHEN b.expectedCommission IS NOT NULL THEN b.expectedCommission ELSE 0 END) AS totalGrossCommission,
           SUM(CASE WHEN b.grossCost IS NOT NULL THEN b.grossCost ELSE 0 END) AS totalGrossCost,
           MAX(b.createdAt) AS lastBookingDate,
-          -- Value at risk: sum of gross cost on bookings below 6% threshold (using estimated gross margin)
-          SUM(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND b.expectedCommission IS NOT NULL
-            AND ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) < 6
+          -- Value at risk: sum of gross cost on bookings below 6% threshold
+          SUM(CASE
+            WHEN b.orbitMarginPct IS NOT NULL AND b.orbitMarginPct < 6 THEN b.grossCost
+            WHEN b.orbitMarginPct IS NULL AND b.grossCost IS NOT NULL AND b.grossCost > 0
+              AND b.expectedCommission IS NOT NULL
+              AND ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) < 6
             THEN b.grossCost ELSE 0 END) AS valueAtRisk
         FROM bookings b
         JOIN users u ON b.agentId = u.id
@@ -1496,9 +1509,11 @@ export const superAdminRouter = router({
         SELECT
           b.agentId,
           DATE_FORMAT(b.createdAt, '%Y-%m') AS month,
-          AVG(CASE WHEN b.grossCost IS NOT NULL AND b.grossCost > 0
-            AND b.expectedCommission IS NOT NULL
-            THEN ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100) END) AS avgMarginPct,
+          AVG(CASE
+            WHEN b.orbitMarginPct IS NOT NULL THEN b.orbitMarginPct
+            WHEN b.grossCost IS NOT NULL AND b.grossCost > 0 AND b.expectedCommission IS NOT NULL
+            THEN ((b.expectedCommission / 0.80) / 0.987 / b.grossCost * 100)
+            END) AS avgMarginPct,
           COUNT(b.id) AS bookingCount
         FROM bookings b
         WHERE b.isPersonalBooking = 0
