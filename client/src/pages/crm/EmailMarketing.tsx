@@ -648,6 +648,7 @@ export default function EmailMarketing() {
   const [sendConfirm, setSendConfirm] = useState<any>(null);
   const [previewCampaign, setPreviewCampaign] = useState<any>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<number | null>(null);
+  const [resendDialog, setResendDialog] = useState(false);
 
   // Templates
   const { data: templates = [], refetch: refetchTemplates } = trpc.crm.emailTemplates.list.useQuery({});
@@ -765,9 +766,14 @@ export default function EmailMarketing() {
         <TabsContent value="campaigns" className="mt-4">
           <div className="flex justify-between items-center mb-4">
             <p className="text-sm text-muted-foreground">{campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}</p>
-            <Button onClick={() => setCampaignDialog("create")}>
-              <Plus className="h-4 w-4 mr-2" /> New Campaign
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setResendDialog(true)}>
+                <RefreshCw className="h-4 w-4 mr-2" /> Resend to Agents
+              </Button>
+              <Button onClick={() => setCampaignDialog("create")}>
+                <Plus className="h-4 w-4 mr-2" /> New Campaign
+              </Button>
+            </div>
           </div>
 
           {campaigns.length === 0 ? (
@@ -1009,6 +1015,9 @@ export default function EmailMarketing() {
           title={campaignDialog === "create" ? "New Campaign" : "Edit Campaign"}
         />
       )}
+
+      {/* Resend to Specific Agents */}
+      {resendDialog && <ResendAgentsModal onClose={() => setResendDialog(false)} />}
 
       {/* Template Form Dialog */}
       {templateDialog && (
@@ -1324,5 +1333,173 @@ function EmailUnsubscribesTab() {
         </Card>
       )}
     </div>
+  );
+}
+
+// ─── Resend to Specific Agents Modal ─────────────────────────────────────────
+function ResendAgentsModal({ onClose }: { onClose: () => void }) {
+  const [emailSearch, setEmailSearch] = useState("");
+  const [selectedEmail, setSelectedEmail] = useState<any>(null);
+  const [agentSearch, setAgentSearch] = useState("");
+  const [selectedAgents, setSelectedAgents] = useState<Set<number>>(new Set());
+  const [step, setStep] = useState<"pick-email" | "pick-agents">("pick-email");
+
+  const emailLog = trpc.crm.agentEmailLog.list.useQuery(
+    { search: emailSearch || undefined, limit: 50 },
+    { enabled: step === "pick-email" }
+  );
+
+  const agents = trpc.crm.agentCrm.list.useQuery(undefined, { enabled: step === "pick-agents" });
+
+  const resendMutation = trpc.crm.agentEmailLog.resend.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Resent to ${data.sent} agent${data.sent !== 1 ? "s" : ""}${data.failed > 0 ? ` (${data.failed} failed)` : ""}`);
+      onClose();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const filteredAgents = ((agents.data ?? []) as any[]).filter((a: any) => {
+    if (!agentSearch) return true;
+    const q = agentSearch.toLowerCase();
+    return (a.name ?? "").toLowerCase().includes(q) || (a.email ?? "").toLowerCase().includes(q);
+  });
+
+  const toggleAgent = (id: number) => {
+    setSelectedAgents((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => setSelectedAgents(new Set(filteredAgents.map((a: any) => a.id)));
+  const clearAll = () => setSelectedAgents(new Set());
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Resend Email to Specific Agents
+          </DialogTitle>
+        </DialogHeader>
+
+        {step === "pick-email" && (
+          <div className="flex flex-col gap-4 min-h-0">
+            <p className="text-sm text-muted-foreground">Search your email log and pick the email you want to resend.</p>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Search by subject, name or email address…"
+                value={emailSearch}
+                onChange={(e) => setEmailSearch(e.target.value)}
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto border rounded-lg divide-y max-h-80">
+              {emailLog.isLoading && <div className="p-4 text-center text-sm text-muted-foreground">Loading…</div>}
+              {!emailLog.isLoading && (emailLog.data?.rows ?? []).length === 0 && (
+                <div className="p-4 text-center text-sm text-muted-foreground">No emails found</div>
+              )}
+              {(emailLog.data?.rows ?? []).map((e: any) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => { setSelectedEmail(e); setStep("pick-agents"); }}
+                  className="w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="font-medium text-sm truncate">{e.subject}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5 flex gap-3">
+                    <span>To: {e.toName ?? e.toEmail}</span>
+                    {e.sentAt && <span>{new Date(e.sentAt).toLocaleDateString("en-GB")}</span>}
+                    {e.triggerKey && <span className="font-mono">{e.triggerKey}</span>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === "pick-agents" && selectedEmail && (
+          <div className="flex flex-col gap-4 min-h-0">
+            <div className="bg-muted/40 rounded-lg px-4 py-3 text-sm">
+              <div className="font-medium truncate">{selectedEmail.subject}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Originally sent to: {selectedEmail.toName ?? selectedEmail.toEmail}</div>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="relative flex-1">
+                <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Search agents by name or email…"
+                  value={agentSearch}
+                  onChange={(e) => setAgentSearch(e.target.value)}
+                />
+              </div>
+              <Button size="sm" variant="outline" onClick={selectAll}>Select All</Button>
+              <Button size="sm" variant="outline" onClick={clearAll}>Clear</Button>
+            </div>
+            {selectedAgents.size > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {Array.from(selectedAgents).map((id) => {
+                  const a = (agents.data as any[] ?? []).find((x: any) => x.id === id);
+                  if (!a) return null;
+                  return (
+                    <Badge key={id} variant="secondary" className="flex items-center gap-1 pr-1">
+                      {a.name ?? a.email}
+                      <button type="button" onClick={() => toggleAgent(id)} className="ml-0.5 hover:text-destructive">
+                        <AlertCircle className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex-1 overflow-y-auto border rounded-lg divide-y max-h-64">
+              {agents.isLoading && <div className="p-4 text-center text-sm text-muted-foreground">Loading agents…</div>}
+              {filteredAgents.map((a: any) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => toggleAgent(a.id)}
+                  className={`w-full text-left px-4 py-2.5 flex items-center gap-3 hover:bg-muted/50 transition-colors ${
+                    selectedAgents.has(a.id) ? "bg-primary/5" : ""
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                    selectedAgents.has(a.id) ? "bg-primary border-primary" : "border-border"
+                  }`}>
+                    {selectedAgents.has(a.id) && <CheckCircle className="h-3 w-3 text-primary-foreground" />}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{a.name ?? "Unnamed"}</div>
+                    <div className="text-xs text-muted-foreground truncate">{a.email}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <DialogFooter className="mt-2">
+          {step === "pick-agents" && (
+            <Button variant="outline" onClick={() => { setStep("pick-email"); setSelectedAgents(new Set()); }}>
+              ← Back
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          {step === "pick-agents" && (
+            <Button
+              disabled={selectedAgents.size === 0 || resendMutation.isPending}
+              onClick={() => resendMutation.mutate({ sourceEmailId: selectedEmail.id, recipientUserIds: Array.from(selectedAgents) })}
+            >
+              {resendMutation.isPending ? "Sending…" : `Resend to ${selectedAgents.size} Agent${selectedAgents.size !== 1 ? "s" : ""}`}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
