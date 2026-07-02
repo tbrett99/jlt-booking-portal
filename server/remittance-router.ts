@@ -12,6 +12,7 @@ import {
 import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import { sendDirectEmail } from "./email";
 import { createInAppNotification } from "./db";
+import { pushClaimStatusToOrbit } from "./orbit-sync";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -266,6 +267,8 @@ export const remittanceRouter = router({
                 eq(commissionClaims.status, "awaiting_payment")
               )
             );
+          // Notify Orbit (fire-and-forget)
+          pushClaimStatusToOrbit(lineVal.bookingId).catch(() => {});
         }
       }
 
@@ -528,6 +531,8 @@ export const remittanceRouter = router({
           paidAt: new Date(),
         })
         .where(eq(commissionClaims.id, line.processingClaimId));
+      // Notify Orbit (fire-and-forget)
+      if (line.bookingId) pushClaimStatusToOrbit(line.bookingId).catch(() => {});
 
       // Clear the flag on the line
       await db
@@ -715,6 +720,8 @@ export const remittanceRouter = router({
               eq(commissionClaims.status, "awaiting_payment")
             )
           );
+        // Notify Orbit (fire-and-forget)
+        pushClaimStatusToOrbit(booking.id).catch(() => {});
       }
 
       // Update batch counts
@@ -922,6 +929,8 @@ export const remittanceRouter = router({
               inArray(commissionClaims.status, ['processing', 'awaiting_payment'])
             )
           );
+        // Notify Orbit (fire-and-forget)
+        pushClaimStatusToOrbit(line.bookingId).catch(() => {});
         paidCount++;
       }
 

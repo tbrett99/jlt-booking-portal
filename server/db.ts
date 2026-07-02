@@ -1073,6 +1073,8 @@ export async function createCommissionClaim(bookingId: number, agentId: number, 
     .from(commissionClaims)
     .where(eq(commissionClaims.bookingId, bookingId))
     .limit(1);
+  // Notify Orbit of new claim status (fire-and-forget)
+  import("./orbit-sync").then(({ pushClaimStatusToOrbit }) => pushClaimStatusToOrbit(bookingId)).catch(() => {});
   return result[0];
 }
 
@@ -1104,6 +1106,13 @@ export async function markCommissionPaid(claimIds: number[], paidById: number) {
       .update(commissionClaims)
       .set({ status: "awaiting_payment", paidAt: now, paidById })
       .where(eq(commissionClaims.id, id));
+    // Notify Orbit (fire-and-forget) — fetch bookingId for this claim
+    db.select({ bookingId: commissionClaims.bookingId }).from(commissionClaims).where(eq(commissionClaims.id, id)).limit(1)
+      .then((rows) => {
+        if (rows[0]?.bookingId) {
+          import("./orbit-sync").then(({ pushClaimStatusToOrbit }) => pushClaimStatusToOrbit(rows[0].bookingId)).catch(() => {});
+        }
+      }).catch(() => {});
   }
 }
 
@@ -1115,6 +1124,13 @@ export async function markCommissionAgentPaid(claimIds: number[]) {
       .update(commissionClaims)
       .set({ status: "paid" })
       .where(eq(commissionClaims.id, id));
+    // Notify Orbit (fire-and-forget)
+    db.select({ bookingId: commissionClaims.bookingId }).from(commissionClaims).where(eq(commissionClaims.id, id)).limit(1)
+      .then((rows) => {
+        if (rows[0]?.bookingId) {
+          import("./orbit-sync").then(({ pushClaimStatusToOrbit }) => pushClaimStatusToOrbit(rows[0].bookingId)).catch(() => {});
+        }
+      }).catch(() => {});
   }
 }
 
