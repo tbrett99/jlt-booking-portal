@@ -322,7 +322,7 @@ function SupplierModal({
   if (isLoading) {
     return (
       <Dialog open onOpenChange={onClose}>
-        <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto" style={{maxWidth:"min(1024px,95vw)",width:"95vw"}}>
           <div className="space-y-4">
             <Skeleton className="h-8 w-3/4" />
             <Skeleton className="h-32 w-full" />
@@ -343,7 +343,7 @@ function SupplierModal({
 
   return (
     <Dialog open onOpenChange={onClose}>
-        <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto" style={{maxWidth:"min(1024px,95vw)",width:"95vw"}}>
         <DialogHeader>
           <div className="flex items-start gap-4">
             {supplier.imageUrl && (
