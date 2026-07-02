@@ -799,6 +799,13 @@
       "when": 1782920239296,
       "tag": "0113_nosy_purifiers",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "5",
+      "when": 1783010630360,
+      "tag": "0114_parched_stranger",
+      "breakpoints": true
     }
   ]
 }

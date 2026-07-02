@@ -65,6 +65,7 @@ router.post("/register-booking", async (req: Request, res: Response) => {
       numberOfNights,
       grossCost,
       expectedCommission,
+      orbitMarginPct,
       topdogRef,
       crmRef,
     } = req.body;
@@ -127,6 +128,7 @@ router.post("/register-booking", async (req: Request, res: Response) => {
     const parsedNights = parseInt(String(numberOfNights), 10);
     const parsedGross = parseFloat(String(grossCost));
     const parsedCommission = expectedCommission != null ? parseFloat(String(expectedCommission)) : undefined;
+    const parsedMarginPct = orbitMarginPct != null ? parseFloat(String(orbitMarginPct)) : undefined;
 
     if (isNaN(parsedPassengers) || parsedPassengers < 1) {
       return res.status(400).json({ error: "passengers must be a positive integer" });
@@ -152,6 +154,7 @@ router.post("/register-booking", async (req: Request, res: Response) => {
       topdogRef: topdogRef ? String(topdogRef).trim() : undefined,
       crmRef: crmRef ? String(crmRef).trim() : undefined,
       reimbursementsRequired: false,
+      orbitMarginPct: parsedMarginPct,
     });
 
     if (!booking) {
@@ -191,7 +194,7 @@ router.post("/update-commission", async (req: Request, res: Response) => {
     if (!keyRecord) return res.status(401).json({ error: "Invalid or inactive API key" });
 
     // 2. Parse body
-    const { bookingId, crmRef, expectedCommission, agentEmail } = req.body;
+    const { bookingId, crmRef, expectedCommission, orbitMarginPct, agentEmail } = req.body;
 
     // 3. Validate
     if (bookingId == null && !crmRef) {
@@ -251,9 +254,16 @@ router.post("/update-commission", async (req: Request, res: Response) => {
     }
 
     // 6. Update
-    await updateBookingAdminFields(booking.id, { expectedCommission: parsedCommission });
+    const updateFields: Record<string, any> = { expectedCommission: parsedCommission };
+    if (orbitMarginPct != null) {
+      const parsedMarginPct = parseFloat(String(orbitMarginPct));
+      if (!isNaN(parsedMarginPct) && parsedMarginPct >= 0) {
+        updateFields.orbitMarginPct = parsedMarginPct;
+      }
+    }
+    await updateBookingAdminFields(booking.id, updateFields);
 
-    return res.status(200).json({ success: true, bookingId: booking.id, expectedCommission: parsedCommission });
+    return res.status(200).json({ success: true, bookingId: booking.id, expectedCommission: parsedCommission, orbitMarginPct: updateFields.orbitMarginPct ?? null });
   } catch (err: any) {
     console.error("[external-api] update-commission error:", err);
     return res.status(500).json({ error: "Internal server error" });

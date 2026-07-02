@@ -57,6 +57,7 @@ export const bookings = mysqlTable("bookings", {
   suppliersAndDocsAddedToPts: boolean("suppliersAndDocsAddedToPts").default(false).notNull(),
   expectedCommission: decimal("expectedCommission", { precision: 10, scale: 2 }),
   grossCost: decimal("grossCost", { precision: 10, scale: 2 }),
+  orbitMarginPct: decimal("orbitMarginPct", { precision: 6, scale: 3 }), // Margin % sent directly from Orbit (gross commission ÷ gross price × 100)
   grossCostLockedAt: timestamp("grossCostLockedAt"), // Set when agent first saves grossCost — after this only admins can edit
   // Admin-managed fields
   ptsRef: varchar("ptsRef", { length: 100 }),

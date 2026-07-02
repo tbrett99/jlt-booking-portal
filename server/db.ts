@@ -234,6 +234,7 @@ export async function createBooking(data: {
   numberOfNights?: number;
   isPersonalBooking?: boolean;
   crmRef?: string;
+  orbitMarginPct?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -254,7 +255,8 @@ export async function createBooking(data: {
     passengers: data.passengers,
     numberOfNights: data.numberOfNights,
     isPersonalBooking: data.isPersonalBooking ?? false,
-    crmRef: data.crmRef,
+    crmRef: data.crmRef ?? null,
+    orbitMarginPct: data.orbitMarginPct != null ? String(data.orbitMarginPct) : null,
     finalSupplierPaymentDate,
     currentStage: "New Booking",
   } as any);

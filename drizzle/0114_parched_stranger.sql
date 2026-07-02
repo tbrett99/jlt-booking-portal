@@ -1,0 +1,1 @@
+ALTER TABLE `bookings` ADD `orbitMarginPct` decimal(6,3);
