@@ -57,6 +57,7 @@ export function mapClaimStatus(
 
 export interface OrbitCommissionPayload {
   crmRef?: string | null;
+  ptsRef?: string | null;
   topdogRef?: string | null;
   bookingId?: number | null;
   claimStatus: PortalClaimStatus;
@@ -96,7 +97,8 @@ export async function pushClaimStatusToOrbit(bookingId: number): Promise<void> {
     const claim = claimRows[0] ?? null;
 
     await pushCommissionToOrbit({
-      crmRef: booking.crmRef ?? null,
+      crmRef:    booking.crmRef    ?? null,
+      ptsRef:    (booking as any).ptsRef    ?? null,
       topdogRef: (booking as any).topdogRef ?? null,
       bookingId: booking.id,
       claimStatus: mapClaimStatus(claim?.status, booking.currentStage),
@@ -132,9 +134,10 @@ export async function pushCommissionToOrbit(
     const body: Record<string, unknown> = {
       claimStatus: payload.claimStatus,
     };
-    if (payload.crmRef) body.crmRef = payload.crmRef;
-    if (payload.topdogRef) body.topdogRef = payload.topdogRef;
-    if (payload.bookingId) body.bookingId = payload.bookingId;
+    if (payload.crmRef)     body.crmRef     = payload.crmRef;
+    if (payload.ptsRef)     body.ptsRef     = payload.ptsRef;
+    if (payload.topdogRef)  body.topdogRef  = payload.topdogRef;
+    if (payload.bookingId)  body.bookingId  = payload.bookingId;
     if (payload.claimedAmount != null) body.claimedAmount = payload.claimedAmount;
     if (payload.claimedAt) body.claimedAt = payload.claimedAt;
     if (payload.paidAt) body.paidAt = payload.paidAt;

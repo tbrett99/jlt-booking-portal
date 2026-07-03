@@ -366,7 +366,9 @@ function toOrbitStatus(
 function buildCommissionStatusRow(booking: any, claim: any | null) {
   return {
     bookingId:     booking.id,
-    crmRef:        booking.crmRef ?? null,
+    crmRef:        booking.crmRef     ?? null,
+    ptsRef:        booking.ptsRef     ?? null,
+    topdogRef:     booking.topdogRef  ?? null,
     claimStatus:   toOrbitStatus(claim?.status, booking.currentStage),
     claimedAmount: claim?.grossAmount != null ? parseFloat(claim.grossAmount) : null,
     claimedAt:     claim?.claimedAt ? new Date(claim.claimedAt).toISOString() : null,
