@@ -32,21 +32,20 @@ import { Button } from "./ui/button";
 const ORBIT_DEADLINE = new Date("2026-08-01T00:00:00");
 const BANNER_DISMISSED_KEY = "orbit-banner-dismissed-v2";
 
+function getTimeLeft() {
+  const diff = ORBIT_DEADLINE.getTime() - Date.now();
+  if (diff <= 0) return null;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  return { days, hours, mins };
+}
+
 function OrbitCountdownBanner() {
-  const { user } = useAuth();
   const [dismissed, setDismissed] = useState(() => {
     try { return localStorage.getItem(BANNER_DISMISSED_KEY) === "1"; } catch { return false; }
   });
   const [timeLeft, setTimeLeft] = useState(() => getTimeLeft());
-
-  function getTimeLeft() {
-    const diff = ORBIT_DEADLINE.getTime() - Date.now();
-    if (diff <= 0) return null;
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    return { days, hours, mins };
-  }
 
   useEffect(() => {
     const id = setInterval(() => setTimeLeft(getTimeLeft()), 60000);
@@ -58,7 +57,7 @@ function OrbitCountdownBanner() {
     setDismissed(true);
   };
 
-  if (!user || dismissed || !timeLeft) return null;
+  if (dismissed || !timeLeft) return null;
 
   const urgency = timeLeft.days <= 7 ? "bg-red-600" : timeLeft.days <= 14 ? "bg-amber-500" : "bg-[#02E6D2]";
   const textColor = timeLeft.days <= 14 ? "text-white" : "text-gray-900";
