@@ -20,25 +20,38 @@ const ORBIT_WEBHOOK_URL =
 
 const ORBIT_API_KEY = process.env.ORBIT_WEBHOOK_SECRET ?? "";
 
-export type PortalClaimStatus = "unclaimed" | "pending" | "partial" | "claimed";
+export type PortalClaimStatus =
+  | "unclaimed"
+  | "claimable"
+  | "pending"
+  | "processing"
+  | "awaiting_payment"
+  | "top_up_required"
+  | "notice_hold"
+  | "paid";
 
-/** Map portal-internal claim status to Orbit's portalClaimStatus vocabulary */
+/**
+ * Map portal-internal claim status to the value sent to Orbit.
+ * Now sends exact portal statuses so both systems stay in sync.
+ * When there is no claim yet, pass bookingStage to distinguish
+ * "claimable" (Commission Claimable stage) from plain "unclaimed".
+ */
 export function mapClaimStatus(
-  status: string | null | undefined
+  status: string | null | undefined,
+  bookingStage?: string | null
 ): PortalClaimStatus {
-  if (!status) return "unclaimed";
+  if (!status) {
+    if (bookingStage === "Commission Claimable") return "claimable";
+    return "unclaimed";
+  }
   switch (status) {
-    case "paid":
-      return "claimed";
-    case "awaiting_payment":
-      return "partial";
-    case "pending":
-    case "processing":
-    case "notice_hold":
-    case "top_up_required":
-      return "pending";
-    default:
-      return "unclaimed";
+    case "paid":             return "paid";
+    case "awaiting_payment": return "awaiting_payment";
+    case "top_up_required":  return "top_up_required";
+    case "notice_hold":      return "notice_hold";
+    case "processing":       return "processing";
+    case "pending":          return "pending";
+    default:                 return "pending";
   }
 }
 
@@ -86,7 +99,7 @@ export async function pushClaimStatusToOrbit(bookingId: number): Promise<void> {
       crmRef: booking.crmRef ?? null,
       topdogRef: (booking as any).topdogRef ?? null,
       bookingId: booking.id,
-      claimStatus: mapClaimStatus(claim?.status),
+      claimStatus: mapClaimStatus(claim?.status, booking.currentStage),
       claimedAmount: claim?.grossAmount != null ? parseFloat(String(claim.grossAmount)) : null,
       claimedAt: claim?.claimedAt ? new Date(claim.claimedAt).toISOString() : null,
       paidAt: claim?.paidAt ? new Date(claim.paidAt).toISOString() : null,

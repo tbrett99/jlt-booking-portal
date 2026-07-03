@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
+import { pushClaimStatusToOrbit } from "./orbit-sync";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -1098,6 +1099,13 @@ export const appRouter = router({
           content: `[System] Booking stage moved from "${booking.currentStage}" to "${input.toStage}" by ${ctx.user.name ?? "Admin"}.`,
           isInternal: true,
         });
+        // Push updated commission status to Orbit whenever stage changes to/from Commission Claimable
+        if (
+          input.toStage === "Commission Claimable" ||
+          booking.currentStage === "Commission Claimable"
+        ) {
+          void pushClaimStatusToOrbit(booking.id);
+        }
         return updated;
       }),
     togglePreAuth: protectedProcedure

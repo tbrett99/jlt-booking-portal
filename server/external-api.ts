@@ -339,15 +339,25 @@ router.get("/sso/verify", async (req: Request, res: Response) => {
  * Map portal claim status → Orbit's expected enum.
  * A booking with no claim record returns "unclaimed".
  */
-function toOrbitStatus(portalStatus: string | null | undefined): string {
-  switch (portalStatus) {
-    case "paid":             return "claimed";
-    case "top_up_required":  return "partial";
-    case "pending":
-    case "processing":
-    case "awaiting_payment": return "pending";
-    default:                 return "unclaimed";
+function toOrbitStatus(
+  portalStatus: string | null | undefined,
+  bookingStage?: string | null
+): string {
+  // If there's an active claim, send the exact portal claim status
+  if (portalStatus) {
+    switch (portalStatus) {
+      case "paid":             return "paid";
+      case "awaiting_payment": return "awaiting_payment";
+      case "top_up_required":  return "top_up_required";
+      case "notice_hold":      return "notice_hold";
+      case "processing":       return "processing";
+      case "pending":          return "pending";
+      default:                 return "pending";
+    }
   }
+  // No claim yet — check if the booking is at the Commission Claimable stage
+  if (bookingStage === "Commission Claimable") return "claimable";
+  return "unclaimed";
 }
 
 /**
@@ -357,7 +367,7 @@ function buildCommissionStatusRow(booking: any, claim: any | null) {
   return {
     bookingId:     booking.id,
     crmRef:        booking.crmRef ?? null,
-    claimStatus:   toOrbitStatus(claim?.status),
+    claimStatus:   toOrbitStatus(claim?.status, booking.currentStage),
     claimedAmount: claim?.grossAmount != null ? parseFloat(claim.grossAmount) : null,
     claimedAt:     claim?.claimedAt ? new Date(claim.claimedAt).toISOString() : null,
     paidAt:        claim?.paidAt    ? new Date(claim.paidAt).toISOString()    : null,
