@@ -30,9 +30,10 @@ import { Button } from "./ui/button";
 
 // ─── Orbit Countdown Banner ───────────────────────────────────────────────────
 const ORBIT_DEADLINE = new Date("2026-08-01T00:00:00");
-const BANNER_DISMISSED_KEY = "orbit-banner-dismissed-v1";
+const BANNER_DISMISSED_KEY = "orbit-banner-dismissed-v2";
 
 function OrbitCountdownBanner() {
+  const { user } = useAuth();
   const [dismissed, setDismissed] = useState(() => {
     try { return localStorage.getItem(BANNER_DISMISSED_KEY) === "1"; } catch { return false; }
   });
@@ -57,7 +58,7 @@ function OrbitCountdownBanner() {
     setDismissed(true);
   };
 
-  if (dismissed || !timeLeft) return null;
+  if (!user || dismissed || !timeLeft) return null;
 
   const urgency = timeLeft.days <= 7 ? "bg-red-600" : timeLeft.days <= 14 ? "bg-amber-500" : "bg-[#02E6D2]";
   const textColor = timeLeft.days <= 14 ? "text-white" : "text-gray-900";
