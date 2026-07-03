@@ -382,8 +382,14 @@ function toOrbitStatus(
       default:                 return "pending";
     }
   }
-  // No claim yet — check if the booking is at the Commission Claimable stage
+  // No claim yet — check booking stage for context
   if (bookingStage === "Commission Claimable") return "claimable";
+  // Booking has been claimed/is in the commission pipeline but claim record not found
+  if (
+    bookingStage === "Commission Claimed" ||
+    bookingStage === "Commission Paid" ||
+    bookingStage === "Awaiting Commission Payment"
+  ) return "pending";
   return "unclaimed";
 }
 

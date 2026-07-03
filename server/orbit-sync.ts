@@ -42,6 +42,11 @@ export function mapClaimStatus(
 ): PortalClaimStatus {
   if (!status) {
     if (bookingStage === "Commission Claimable") return "claimable";
+    if (
+      bookingStage === "Commission Claimed" ||
+      bookingStage === "Commission Paid" ||
+      bookingStage === "Awaiting Commission Payment"
+    ) return "pending";
     return "unclaimed";
   }
   switch (status) {
