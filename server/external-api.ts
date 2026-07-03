@@ -65,10 +65,13 @@ router.post("/register-booking", async (req: Request, res: Response) => {
       numberOfNights,
       grossCost,
       expectedCommission,
-      orbitMarginPct,
+      orbitMarginPct: orbitMarginPctField,
+      marginPct,          // Orbit sends this as "marginPct"
       topdogRef,
       crmRef,
     } = req.body;
+    // Accept both field names — Orbit sends "marginPct", legacy callers may send "orbitMarginPct"
+    const orbitMarginPct = orbitMarginPctField ?? marginPct;
 
     // 3. Validate required fields
     const missing: string[] = [];
@@ -201,10 +204,12 @@ router.post("/update-commission", async (req: Request, res: Response) => {
       ptsRef,
       topdogRef,
       expectedCommission,
-      orbitMarginPct,
+      orbitMarginPct: orbitMarginPctField2,
+      marginPct: marginPctField2,  // Orbit may send as "marginPct"
       newCrmRef,   // Orbit sends this to set/update the crmRef on the portal booking
       agentEmail,
     } = req.body;
+    const orbitMarginPct = orbitMarginPctField2 ?? marginPctField2;
 
     // 3. Validate — need at least one identifier
     if (bookingId == null && !crmRef && !ptsRef && !topdogRef) {
