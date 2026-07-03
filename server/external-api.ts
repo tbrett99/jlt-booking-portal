@@ -416,7 +416,8 @@ function buildCommissionStatusRow(
 // ─── GET /api/external/commission-status ─────────────────────────────────────
 /**
  * Return the commission claim status for a single booking.
- * Orbit passes ?crmRef=JLT-001  OR  ?bookingId=1234
+ * Supports: ?bookingId=1234  ?crmRef=JLT-001  ?ptsRef=2T0130158  ?topdogRef=L40
+ * Priority order: bookingId > crmRef > ptsRef > topdogRef
  */
 router.get("/commission-status", async (req: Request, res: Response) => {
   try {
@@ -425,9 +426,11 @@ router.get("/commission-status", async (req: Request, res: Response) => {
     const keyRecord = await validateApiKey(rawKey);
     if (!keyRecord) return res.status(401).json({ error: "Invalid or inactive API key" });
 
-    const { crmRef, bookingId } = req.query as { crmRef?: string; bookingId?: string };
-    if (!crmRef && !bookingId) {
-      return res.status(400).json({ error: "Provide at least one of crmRef or bookingId" });
+    const { crmRef, bookingId, ptsRef, topdogRef } = req.query as {
+      crmRef?: string; bookingId?: string; ptsRef?: string; topdogRef?: string;
+    };
+    if (!bookingId && !crmRef && !ptsRef && !topdogRef) {
+      return res.status(400).json({ error: "Provide at least one of: bookingId, crmRef, ptsRef, or topdogRef" });
     }
 
     const db = await getDb();
@@ -436,22 +439,28 @@ router.get("/commission-status", async (req: Request, res: Response) => {
     const { bookings: bookingsTable, commissionClaims } = await import("../drizzle/schema");
     const { desc } = await import("drizzle-orm");
 
-    // Resolve booking
+    // Resolve booking — try identifiers in priority order
     let booking: any;
     if (bookingId != null) {
       const rows = await db.select().from(bookingsTable).where(eq(bookingsTable.id, Number(bookingId))).limit(1);
       booking = rows[0];
-    } else {
+    } else if (crmRef) {
       const rows = await db.select().from(bookingsTable).where(eq(bookingsTable.crmRef, String(crmRef).trim())).limit(1);
+      booking = rows[0];
+    } else if (ptsRef) {
+      const rows = await db.select().from(bookingsTable).where(eq(bookingsTable.ptsRef, String(ptsRef).trim())).limit(1);
+      booking = rows[0];
+    } else if (topdogRef) {
+      const rows = await db.select().from(bookingsTable).where(eq(bookingsTable.topdogRef, String(topdogRef).trim())).limit(1);
       booking = rows[0];
     }
 
     if (!booking) {
-      return res.status(404).json({
-        error: bookingId != null
-          ? `No booking found with bookingId: ${bookingId}`
-          : `No booking found with crmRef: ${crmRef}`,
-      });
+      const identifier = bookingId ? `bookingId: ${bookingId}`
+        : crmRef    ? `crmRef: ${crmRef}`
+        : ptsRef    ? `ptsRef: ${ptsRef}`
+        : `topdogRef: ${topdogRef}`;
+      return res.status(404).json({ error: `No booking found with ${identifier}` });
     }
 
     // Get latest claim for this booking (most recently updated)
