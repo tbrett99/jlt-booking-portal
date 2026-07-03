@@ -179,11 +179,12 @@ router.post("/register-booking", async (req: Request, res: Response) => {
 
 // ─── POST /api/external/update-commission ────────────────────────────────────
 /**
- * Update the expectedCommission on an existing booking.
- * Called by Tom's CRM when the agent clicks "Send Expected Commission".
+ * Update commission fields on an existing booking.
+ * Called by Orbit / Tom's CRM.
  *
- * Body: { bookingId?, crmRef?, expectedCommission, agentEmail? }
- * At least one of bookingId or crmRef must be provided.
+ * Body: { bookingId?, crmRef?, ptsRef?, topdogRef?, expectedCommission?, orbitMarginPct?, newCrmRef?, agentEmail? }
+ * At least one of bookingId, crmRef, ptsRef, or topdogRef must be provided to identify the booking.
+ * expectedCommission is optional — Orbit may call this just to set crmRef on a matched booking.
  */
 router.post("/update-commission", async (req: Request, res: Response) => {
   try {
@@ -194,53 +195,66 @@ router.post("/update-commission", async (req: Request, res: Response) => {
     if (!keyRecord) return res.status(401).json({ error: "Invalid or inactive API key" });
 
     // 2. Parse body
-    const { bookingId, crmRef, expectedCommission, orbitMarginPct, agentEmail } = req.body;
+    const {
+      bookingId,
+      crmRef,
+      ptsRef,
+      topdogRef,
+      expectedCommission,
+      orbitMarginPct,
+      newCrmRef,   // Orbit sends this to set/update the crmRef on the portal booking
+      agentEmail,
+    } = req.body;
 
-    // 3. Validate
-    if (bookingId == null && !crmRef) {
-      return res.status(400).json({ error: "Provide at least one of bookingId or crmRef to identify the booking" });
+    // 3. Validate — need at least one identifier
+    if (bookingId == null && !crmRef && !ptsRef && !topdogRef) {
+      return res.status(400).json({ error: "Provide at least one of bookingId, crmRef, ptsRef, or topdogRef to identify the booking" });
     }
-    if (expectedCommission == null) {
-      return res.status(400).json({ error: "Missing required field: expectedCommission" });
-    }
-    const parsedCommission = parseFloat(String(expectedCommission));
-    if (isNaN(parsedCommission) || parsedCommission < 0) {
-      return res.status(400).json({ error: "expectedCommission must be a non-negative number" });
+    // Need at least one field to update
+    if (expectedCommission == null && orbitMarginPct == null && !newCrmRef) {
+      return res.status(400).json({ error: "Provide at least one field to update: expectedCommission, orbitMarginPct, or newCrmRef" });
     }
 
-    // 4. Resolve booking
+    let parsedCommission: number | undefined;
+    if (expectedCommission != null) {
+      parsedCommission = parseFloat(String(expectedCommission));
+      if (isNaN(parsedCommission) || parsedCommission < 0) {
+        return res.status(400).json({ error: "expectedCommission must be a non-negative number" });
+      }
+    }
+
+    // 4. Resolve booking — try identifiers in priority order
     const db = await getDb();
     if (!db) return res.status(503).json({ error: "Database unavailable" });
 
     const { bookings: bookingsTable } = await import("../drizzle/schema");
-    let booking;
+    let booking: any;
+
     if (bookingId != null) {
       booking = await getBookingById(Number(bookingId));
-    } else {
-      const results = await db
-        .select()
-        .from(bookingsTable)
-        .where(eq(bookingsTable.crmRef, String(crmRef).trim()))
-        .limit(1);
+    } else if (crmRef) {
+      const results = await db.select().from(bookingsTable).where(eq(bookingsTable.crmRef, String(crmRef).trim())).limit(1);
+      booking = results[0];
+    } else if (ptsRef) {
+      const results = await db.select().from(bookingsTable).where(eq(bookingsTable.ptsRef, String(ptsRef).trim())).limit(1);
+      booking = results[0];
+    } else if (topdogRef) {
+      const results = await db.select().from(bookingsTable).where(eq(bookingsTable.topdogRef, String(topdogRef).trim())).limit(1);
       booking = results[0];
     }
 
     if (!booking) {
-      return res.status(404).json({
-        error: bookingId != null
-          ? `No booking found with id: ${bookingId}`
-          : `No booking found with crmRef: ${crmRef}`,
-      });
+      const identifier = bookingId != null ? `bookingId: ${bookingId}`
+        : crmRef    ? `crmRef: ${crmRef}`
+        : ptsRef    ? `ptsRef: ${ptsRef}`
+        : `topdogRef: ${topdogRef}`;
+      return res.status(404).json({ error: `No booking found with ${identifier}` });
     }
 
     // 5. Optional: verify agentEmail matches the booking's agent (security check)
     if (agentEmail) {
       const normalizedEmail = String(agentEmail).toLowerCase().trim();
-      const agentResults = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, booking.agentId))
-        .limit(1);
+      const agentResults = await db.select().from(users).where(eq(users.id, booking.agentId)).limit(1);
       const agent = agentResults[0];
       if (agent) {
         const portalEmail = (agent.email ?? "").toLowerCase();
@@ -253,17 +267,30 @@ router.post("/update-commission", async (req: Request, res: Response) => {
       }
     }
 
-    // 6. Update
-    const updateFields: Record<string, any> = { expectedCommission: parsedCommission };
+    // 6. Build update fields
+    const updateFields: Record<string, any> = {};
+    if (parsedCommission != null) updateFields.expectedCommission = parsedCommission;
     if (orbitMarginPct != null) {
       const parsedMarginPct = parseFloat(String(orbitMarginPct));
       if (!isNaN(parsedMarginPct) && parsedMarginPct >= 0) {
         updateFields.orbitMarginPct = parsedMarginPct;
       }
     }
+    // Allow Orbit to write back the crmRef once it has matched the booking by ptsRef
+    if (newCrmRef) {
+      updateFields.crmRef = String(newCrmRef).trim();
+    }
+
     await updateBookingAdminFields(booking.id, updateFields);
 
-    return res.status(200).json({ success: true, bookingId: booking.id, expectedCommission: parsedCommission, orbitMarginPct: updateFields.orbitMarginPct ?? null });
+    return res.status(200).json({
+      success: true,
+      bookingId: booking.id,
+      crmRef: updateFields.crmRef ?? booking.crmRef ?? null,
+      ptsRef: booking.ptsRef ?? null,
+      expectedCommission: updateFields.expectedCommission ?? null,
+      orbitMarginPct: updateFields.orbitMarginPct ?? null,
+    });
   } catch (err: any) {
     console.error("[external-api] update-commission error:", err);
     return res.status(500).json({ error: "Internal server error" });
@@ -362,13 +389,21 @@ function toOrbitStatus(
 
 /**
  * Build the response object for a single booking + its latest claim.
+ * resolvedPtsRef: ptsRef from the matched remittance line (via claim.remittanceLineId),
+ *                 falls back to booking.ptsRef if not available.
  */
-function buildCommissionStatusRow(booking: any, claim: any | null) {
+function buildCommissionStatusRow(
+  booking: any,
+  claim: any | null,
+  resolvedPtsRef?: string | null
+) {
+  // Priority: remittance line ptsRef > booking.ptsRef direct field
+  const ptsRef = resolvedPtsRef ?? booking.ptsRef ?? null;
   return {
     bookingId:     booking.id,
-    crmRef:        booking.crmRef     ?? null,
-    ptsRef:        booking.ptsRef     ?? null,
-    topdogRef:     booking.topdogRef  ?? null,
+    crmRef:        booking.crmRef    ?? null,
+    ptsRef,
+    topdogRef:     booking.topdogRef ?? null,
     claimStatus:   toOrbitStatus(claim?.status, booking.currentStage),
     claimedAmount: claim?.grossAmount != null ? parseFloat(claim.grossAmount) : null,
     claimedAt:     claim?.claimedAt ? new Date(claim.claimedAt).toISOString() : null,
@@ -420,6 +455,7 @@ router.get("/commission-status", async (req: Request, res: Response) => {
     }
 
     // Get latest claim for this booking (most recently updated)
+    const { remittanceLines: remittanceLinesTable } = await import("../drizzle/schema");
     const claims = await db
       .select()
       .from(commissionClaims)
@@ -428,7 +464,18 @@ router.get("/commission-status", async (req: Request, res: Response) => {
       .limit(1);
     const claim = claims[0] ?? null;
 
-    return res.status(200).json(buildCommissionStatusRow(booking, claim));
+    // Resolve ptsRef: try remittance line first, then booking direct field
+    let resolvedPtsRef: string | null = booking.ptsRef ?? null;
+    if (!resolvedPtsRef && claim?.remittanceLineId) {
+      const rlRows = await db
+        .select({ ptsRef: remittanceLinesTable.ptsRef })
+        .from(remittanceLinesTable)
+        .where(eq(remittanceLinesTable.id, claim.remittanceLineId))
+        .limit(1);
+      resolvedPtsRef = rlRows[0]?.ptsRef ?? null;
+    }
+
+    return res.status(200).json(buildCommissionStatusRow(booking, claim, resolvedPtsRef));
   } catch (err: any) {
     console.error("[external-api] commission-status error:", err);
     return res.status(500).json({ error: "Internal server error" });
@@ -492,6 +539,7 @@ router.get("/commission-status/bulk", async (req: Request, res: Response) => {
     // Fetch latest claim for each booking in one query
     const bookingIds = pageBookings.map((b: any) => b.id);
     const { inArray } = await import("drizzle-orm");
+    const { remittanceLines: remittanceLinesTable } = await import("../drizzle/schema");
     const allClaims: any[] = await db
       .select()
       .from(commissionClaims)
@@ -506,9 +554,31 @@ router.get("/commission-status/bulk", async (req: Request, res: Response) => {
       }
     }
 
-    const results = pageBookings.map((b: any) =>
-      buildCommissionStatusRow(b, latestClaimByBooking.get(b.id) ?? null)
-    );
+    // Batch-fetch ptsRef from remittance_lines for claims that have a remittanceLineId
+    // and whose booking doesn't already have a direct ptsRef
+    const remittanceLineIds = Array.from(latestClaimByBooking.values())
+      .map((c: any) => c.remittanceLineId)
+      .filter((id: any) => id != null) as number[];
+
+    const ptsRefByRemittanceLineId = new Map<number, string>();
+    if (remittanceLineIds.length > 0) {
+      const rlRows: any[] = await db
+        .select({ id: remittanceLinesTable.id, ptsRef: remittanceLinesTable.ptsRef })
+        .from(remittanceLinesTable)
+        .where(inArray(remittanceLinesTable.id, remittanceLineIds));
+      for (const rl of rlRows) {
+        if (rl.ptsRef) ptsRefByRemittanceLineId.set(rl.id, rl.ptsRef);
+      }
+    }
+
+    const results = pageBookings.map((b: any) => {
+      const claim = latestClaimByBooking.get(b.id) ?? null;
+      // Resolve ptsRef: booking direct field first, then via remittance line
+      const resolvedPtsRef: string | null =
+        b.ptsRef ??
+        (claim?.remittanceLineId ? ptsRefByRemittanceLineId.get(claim.remittanceLineId) ?? null : null);
+      return buildCommissionStatusRow(b, claim, resolvedPtsRef);
+    });
 
     return res.status(200).json({ total, page, pageSize, results });
   } catch (err: any) {

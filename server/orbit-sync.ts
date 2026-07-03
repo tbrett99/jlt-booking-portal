@@ -74,7 +74,7 @@ export interface OrbitCommissionPayload {
 export async function pushClaimStatusToOrbit(bookingId: number): Promise<void> {
   try {
     const { getDb } = await import("./db");
-    const { bookings, commissionClaims } = await import("../drizzle/schema");
+    const { bookings, commissionClaims, remittanceLines } = await import("../drizzle/schema");
     const { eq, desc } = await import("drizzle-orm");
 
     const db = await getDb();
@@ -96,9 +96,20 @@ export async function pushClaimStatusToOrbit(bookingId: number): Promise<void> {
       .limit(1);
     const claim = claimRows[0] ?? null;
 
+    // Resolve ptsRef: booking direct field first, then via claim's remittance line
+    let resolvedPtsRef: string | null = (booking as any).ptsRef ?? null;
+    if (!resolvedPtsRef && claim?.remittanceLineId) {
+      const rlRows = await db
+        .select({ ptsRef: remittanceLines.ptsRef })
+        .from(remittanceLines)
+        .where(eq(remittanceLines.id, claim.remittanceLineId))
+        .limit(1);
+      resolvedPtsRef = rlRows[0]?.ptsRef ?? null;
+    }
+
     await pushCommissionToOrbit({
       crmRef:    booking.crmRef    ?? null,
-      ptsRef:    (booking as any).ptsRef    ?? null,
+      ptsRef:    resolvedPtsRef,
       topdogRef: (booking as any).topdogRef ?? null,
       bookingId: booking.id,
       claimStatus: mapClaimStatus(claim?.status, booking.currentStage),
