@@ -44,9 +44,9 @@ export function mapClaimStatus(
     if (bookingStage === "Commission Claimable") return "claimable";
     if (
       bookingStage === "Commission Claimed" ||
-      bookingStage === "Commission Paid" ||
-      bookingStage === "Awaiting Commission Payment"
-    ) return "pending";
+      bookingStage === "Commission Paid"
+    ) return "paid";
+    if (bookingStage === "Awaiting Commission Payment") return "awaiting_payment";
     return "unclaimed";
   }
   switch (status) {

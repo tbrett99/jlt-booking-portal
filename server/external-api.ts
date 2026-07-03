@@ -384,12 +384,14 @@ function toOrbitStatus(
   }
   // No claim yet — check booking stage for context
   if (bookingStage === "Commission Claimable") return "claimable";
-  // Booking has been claimed/is in the commission pipeline but claim record not found
+  // Booking is at Commission Claimed/Paid stage but has no claim record —
+  // this means it was paid before the portal claim workflow existed, so report as paid.
   if (
     bookingStage === "Commission Claimed" ||
-    bookingStage === "Commission Paid" ||
-    bookingStage === "Awaiting Commission Payment"
-  ) return "pending";
+    bookingStage === "Commission Paid"
+  ) return "paid";
+  // Awaiting payment but no claim record — treat as pending
+  if (bookingStage === "Awaiting Commission Payment") return "awaiting_payment";
   return "unclaimed";
 }
 
