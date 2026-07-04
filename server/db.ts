@@ -410,6 +410,7 @@ export async function updateBookingAdminFields(
     bookedDate?: Date | null;
     isPersonalBooking?: boolean;
     commissionVat?: number | null;
+    crmRef?: string | null;
   }
 ) {
   const db = await getDb();

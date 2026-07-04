@@ -310,6 +310,9 @@ export default function AgentBookingDetail() {
   // TD reference (one-time set by agent)
   const [editingTdRef, setEditingTdRef] = useState(false);
   const [tdRefInput, setTdRefInput] = useState("");
+  // Orbit / CRM reference
+  const [editingCrmRef, setEditingCrmRef] = useState(false);
+  const [crmRefInput, setCrmRefInput] = useState("");
 
   const utils = trpc.useUtils();
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
@@ -342,6 +345,21 @@ export default function AgentBookingDetail() {
   const handleSaveTdRef = () => {
     if (!tdRefInput.trim()) { toast.error("Please enter a TD reference"); return; }
     setTopdogRef.mutate({ bookingId, topdogRef: tdRefInput.trim() });
+  };
+
+  const setCrmRef = trpc.bookings.setCrmRef.useMutation({
+    onSuccess: () => {
+      utils.bookings.byId.invalidate({ id: bookingId });
+      setEditingCrmRef(false);
+      setCrmRefInput("");
+      toast.success("Orbit reference saved");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleSaveCrmRef = () => {
+    if (!crmRefInput.trim()) { toast.error("Please enter an Orbit reference"); return; }
+    setCrmRef.mutate({ bookingId, crmRef: crmRefInput.trim() });
   };
 
   const handleSavePtsDetails = () => {
@@ -701,6 +719,46 @@ export default function AgentBookingDetail() {
           ) : booking.topdogRef ? (
             <div className="space-y-0.5">
               <CopyableRef value={booking.topdogRef} label="Topdog ref" />
+              <p className="text-[10px] text-muted-foreground">To amend, please contact an admin.</p>
+            </div>
+          ) : (
+            <span className="italic text-muted-foreground text-sm">Not set</span>
+          )}
+        </div>
+
+        {/* Orbit Ref card */}
+        <div className="rounded-xl p-3 border" style={{ background: '#f0fdf4', borderColor: booking.crmRef ? '#86efac' : undefined }}>
+          <p className="text-xs text-muted-foreground mb-1 font-semibold flex items-center justify-between">
+            <span>Orbit Ref</span>
+            {!booking.crmRef && !editingCrmRef && (
+              <button
+                onClick={() => { setCrmRefInput(""); setEditingCrmRef(true); }}
+                className="text-[10px] underline opacity-60 hover:opacity-100"
+              >
+                Add
+              </button>
+            )}
+          </p>
+          {editingCrmRef ? (
+            <div className="space-y-2 mt-1">
+              <Input
+                value={crmRefInput}
+                onChange={(e) => setCrmRefInput(e.target.value)}
+                placeholder="e.g. ORB-12345"
+                className="h-7 text-xs"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveCrmRef(); if (e.key === 'Escape') setEditingCrmRef(false); }}
+                autoFocus
+              />
+              <div className="flex gap-1">
+                <Button size="sm" className="h-6 text-xs px-2" onClick={handleSaveCrmRef} disabled={setCrmRef.isPending}>
+                  {setCrmRef.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                </Button>
+                <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setEditingCrmRef(false)}>Cancel</Button>
+              </div>
+            </div>
+          ) : booking.crmRef ? (
+            <div className="space-y-0.5">
+              <CopyableRef value={booking.crmRef} label="Orbit ref" />
               <p className="text-[10px] text-muted-foreground">To amend, please contact an admin.</p>
             </div>
           ) : (

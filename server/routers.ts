@@ -1312,6 +1312,28 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    setCrmRef: protectedProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        crmRef: z.string().min(1, "Orbit reference cannot be empty").max(100),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
+        // Agents can only update their own bookings
+        if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: 'FORBIDDEN' });
+        }
+        await updateBookingAdminFields(input.bookingId, { crmRef: input.crmRef });
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] ${ctx.user.role === 'agent' ? 'Agent' : 'Admin'} set Orbit reference to "${input.crmRef}".`,
+          isInternal: false,
+        });
+        return { success: true };
+      }),
+
     // Bulk import bookings from CSV (admin only)
     bulkImport: adminProcedure
       .input(
