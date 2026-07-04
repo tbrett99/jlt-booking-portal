@@ -1025,23 +1025,8 @@ async function sendStageEmail(
   const name = prospect.firstName;
   const email = prospect.email;
 
-  if (toStage === "ar_approved") {
-    const subject = "Great News — Your Application Has Been Approved!";
-    const bodyHtml = `
-<p>Hi ${name},</p>
-<p>We've reviewed your application and we're delighted to let you know that you've been approved to move forward in our recruitment process!</p>
-<p>The next step is a short discovery call with our team. Please use the link below to book a time that works for you:</p>
-<p style="text-align:center;margin:24px 0;">
-  <a href="https://cal.com/jlt-group/jlt-discovery" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
-    Book Your Discovery Call
-  </a>
-</p>
-<p>We look forward to speaking with you soon!</p>
-<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
-
-    await sendProspectEmail({ toEmail: email, toName: name, subject, bodyHtml });
-    await logRecruitmentEmail({ prospectId, stage: "ar_approved", emailKey: "ar_approved_notification", subject });
-  }
+  // ar_approved: email is handled entirely by the branded workflow (enrollProspectInWorkflow).
+  // The plain sendStageEmail send was removed to prevent duplicate emails.
 
   if (toStage === "ar_declined") {
     const subject = "Update on Your JLT Group Application";
