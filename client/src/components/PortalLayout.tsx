@@ -50,7 +50,7 @@ function OrbitCountdownBanner() {
       <div className="flex items-start gap-2 flex-1">
         <Rocket size={15} className="shrink-0 mt-0.5" />
         <span>
-          <strong>Orbit Switch-Over:</strong> All new bookings must be made in Orbit from <strong>1st August 2026</strong>. Topdog will no longer be used for new bookings.
+          <strong>Orbit Switch-Over:</strong> All new bookings must be made in Orbit from <strong>1st August 2026</strong>. If you already have an Orbit login, please use it for all new bookings now. If you don't have access yet, contact support immediately to arrange your login.
         </span>
       </div>
       <div className="flex items-center gap-3 shrink-0">
