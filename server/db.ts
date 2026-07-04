@@ -22,6 +22,8 @@ import {
   reimbursementItems,
   users,
   systemSettings,
+  communityPosts,
+  communityConfirmations,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -199,6 +201,47 @@ export async function activatePortalAccess(userId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(users).set({ portalStatus: "active" }).where(eq(users.id, userId));
+  // Mark all existing business update posts as seen so the new agent isn't
+  // bombarded with historical updates that predate their joining.
+  try {
+    await markAllBusinessUpdatesSeenForUser(userId);
+  } catch {
+    // Non-blocking — don't fail activation if this errors
+  }
+}
+
+/**
+ * Pre-seed community_confirmations for all existing business_update posts
+ * so a newly activated agent only sees updates posted after they joined.
+ */
+export async function markAllBusinessUpdatesSeenForUser(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Get all published, non-hidden business update posts that require confirmation
+  const posts = await db
+    .select({ id: communityPosts.id })
+    .from(communityPosts)
+    .where(
+      and(
+        eq(communityPosts.category, "business_update"),
+        eq(communityPosts.isDraft, false),
+        eq(communityPosts.isHidden, false),
+        eq(communityPosts.requiresConfirmation, true)
+      )
+    );
+  if (!posts.length) return;
+  const postIds = posts.map((p) => p.id);
+  // Find which ones already have a confirmation for this user
+  const existing = await db
+    .select({ postId: communityConfirmations.postId })
+    .from(communityConfirmations)
+    .where(and(inArray(communityConfirmations.postId, postIds), eq(communityConfirmations.userId, userId)));
+  const existingSet = new Set(existing.map((c) => c.postId));
+  const toInsert = postIds
+    .filter((id) => !existingSet.has(id))
+    .map((postId) => ({ postId, userId }));
+  if (!toInsert.length) return;
+  await db.insert(communityConfirmations).values(toInsert);
 }
 
 export async function getUserByEmail(email: string) {
