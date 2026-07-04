@@ -30,7 +30,8 @@ function getTimeLeft() {
 
 function OrbitCountdownBanner() {
   const [dismissed, setDismissed] = useState(() => {
-    try { return localStorage.getItem(BANNER_DISMISSED_KEY) === "1"; } catch { return false; }
+    // Use sessionStorage so the banner reappears every time the user logs in (new session)
+    try { return sessionStorage.getItem(BANNER_DISMISSED_KEY) === "1"; } catch { return false; }
   });
   const [timeLeft, setTimeLeft] = useState(() => getTimeLeft());
   useEffect(() => {
@@ -38,7 +39,7 @@ function OrbitCountdownBanner() {
     return () => clearInterval(id);
   }, []);
   const dismiss = () => {
-    try { localStorage.setItem(BANNER_DISMISSED_KEY, "1"); } catch {}
+    try { sessionStorage.setItem(BANNER_DISMISSED_KEY, "1"); } catch {}
     setDismissed(true);
   };
   if (dismissed || !timeLeft) return null;
