@@ -29,22 +29,23 @@ async function getActiveAllocation(db: any, agentId: number) {
     fnfVoucherAllocations,
     fnfVoucherUses,
   } = await import("../drizzle/schema");
-  const { eq, and, gt, isNull } = await import("drizzle-orm");
+  const { eq, and, isNull, desc } = await import("drizzle-orm");
 
   const now = new Date();
 
-  // Get the current (not-yet-expired) allocation for this agent
-  const [alloc] = await db
+  // Get the most recent allocation for this agent (filter expiry in JS to avoid timezone issues)
+  const allocs = await db
     .select()
     .from(fnfVoucherAllocations)
-    .where(
-      and(
-        eq(fnfVoucherAllocations.agentId, agentId),
-        gt(fnfVoucherAllocations.renewsAt, now),
-      )
-    )
-    .orderBy(fnfVoucherAllocations.renewsAt)
-    .limit(1);
+    .where(eq(fnfVoucherAllocations.agentId, agentId))
+    .orderBy(desc(fnfVoucherAllocations.renewsAt))
+    .limit(5);
+
+  // Find the first non-expired allocation
+  const alloc = allocs.find((a: any) => {
+    const renewsAt = a.renewsAt instanceof Date ? a.renewsAt : new Date(a.renewsAt);
+    return renewsAt > now;
+  });
 
   if (!alloc) return null;
 

@@ -20,7 +20,7 @@ import {
   Search, UserCheck, Banknote, Eye, EyeOff, Plus, Trash2,
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
-  ChevronDown, X, Pencil, Clock, ArrowRight, CheckCircle2,
+  ChevronDown, ChevronLeft, ChevronRight, X, Pencil, Clock, ArrowRight, CheckCircle2,
   Shield, ExternalLink, FileSignature, ScrollText, Printer, Zap
 } from "lucide-react";
 import { toast } from "sonner";
@@ -514,22 +514,7 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             )}
           </div>
           <Tabs defaultValue="profile">
-            <div className="overflow-x-auto w-full -mx-0">
-              <TabsList className="inline-flex w-max h-auto gap-0 rounded-lg p-1">
-                <TabsTrigger value="profile" className="text-xs px-3 py-1.5 whitespace-nowrap">Profile</TabsTrigger>
-                <TabsTrigger value="activity" className="text-xs px-3 py-1.5 whitespace-nowrap">Activity</TabsTrigger>
-                <TabsTrigger value="team" className="text-xs px-3 py-1.5 whitespace-nowrap">Team</TabsTrigger>
-                <TabsTrigger value="suppliers" className="text-xs px-3 py-1.5 whitespace-nowrap">Suppliers</TabsTrigger>
-                <TabsTrigger value="bank" className="text-xs px-3 py-1.5 whitespace-nowrap">Bank</TabsTrigger>
-                <TabsTrigger value="docs" className="text-xs px-3 py-1.5 whitespace-nowrap">Docs</TabsTrigger>
-                <TabsTrigger value="tags" className="text-xs px-3 py-1.5 whitespace-nowrap">Tags</TabsTrigger>
-                <TabsTrigger value="history" className="text-xs px-3 py-1.5 whitespace-nowrap">History</TabsTrigger>
-                <TabsTrigger value="dd" className="text-xs px-3 py-1.5 whitespace-nowrap">Direct Debit</TabsTrigger>
-                <TabsTrigger value="onboarding" className="text-xs px-3 py-1.5 whitespace-nowrap">Onboarding</TabsTrigger>
-                <TabsTrigger value="notes" className="text-xs px-3 py-1.5 whitespace-nowrap">Notes</TabsTrigger>
-                <TabsTrigger value="fnf" className="text-xs px-3 py-1.5 whitespace-nowrap">F&amp;F Vouchers</TabsTrigger>
-              </TabsList>
-            </div>
+            <ScrollableTabs />
 
             <TabsContent value="profile" className="mt-5 pb-8">
               <ProfileTab userId={agent.id} profile={profile} supplierLogins={crmData?.supplierLogins ?? []} onRefresh={refresh} />
@@ -598,6 +583,78 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
       </DialogContent>
     </Dialog>
     </>
+  );
+}
+
+// ─── Scrollable Tabs Bar ─────────────────────────────────────────────────────
+
+function ScrollableTabs() {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  };
+
+  useEffect(() => {
+    checkScroll();
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', checkScroll);
+    const ro = new ResizeObserver(checkScroll);
+    ro.observe(el);
+    return () => { el.removeEventListener('scroll', checkScroll); ro.disconnect(); };
+  }, []);
+
+  const scroll = (dir: 'left' | 'right') => {
+    scrollRef.current?.scrollBy({ left: dir === 'left' ? -120 : 120, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="relative flex items-center">
+      {canScrollLeft && (
+        <button
+          onClick={() => scroll('left')}
+          className="absolute left-0 z-10 flex items-center justify-center w-7 h-7 rounded-full bg-background border shadow-md text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Scroll tabs left"
+        >
+          <ChevronLeft size={14} />
+        </button>
+      )}
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto w-full scrollbar-none"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
+        <TabsList className="inline-flex w-max h-auto gap-0 rounded-lg p-1">
+          <TabsTrigger value="profile" className="text-xs px-3 py-1.5 whitespace-nowrap">Profile</TabsTrigger>
+          <TabsTrigger value="activity" className="text-xs px-3 py-1.5 whitespace-nowrap">Activity</TabsTrigger>
+          <TabsTrigger value="team" className="text-xs px-3 py-1.5 whitespace-nowrap">Team</TabsTrigger>
+          <TabsTrigger value="suppliers" className="text-xs px-3 py-1.5 whitespace-nowrap">Suppliers</TabsTrigger>
+          <TabsTrigger value="bank" className="text-xs px-3 py-1.5 whitespace-nowrap">Bank</TabsTrigger>
+          <TabsTrigger value="docs" className="text-xs px-3 py-1.5 whitespace-nowrap">Docs</TabsTrigger>
+          <TabsTrigger value="tags" className="text-xs px-3 py-1.5 whitespace-nowrap">Tags</TabsTrigger>
+          <TabsTrigger value="history" className="text-xs px-3 py-1.5 whitespace-nowrap">History</TabsTrigger>
+          <TabsTrigger value="dd" className="text-xs px-3 py-1.5 whitespace-nowrap">Direct Debit</TabsTrigger>
+          <TabsTrigger value="onboarding" className="text-xs px-3 py-1.5 whitespace-nowrap">Onboarding</TabsTrigger>
+          <TabsTrigger value="notes" className="text-xs px-3 py-1.5 whitespace-nowrap">Notes</TabsTrigger>
+          <TabsTrigger value="fnf" className="text-xs px-3 py-1.5 whitespace-nowrap">F&amp;F Vouchers</TabsTrigger>
+        </TabsList>
+      </div>
+      {canScrollRight && (
+        <button
+          onClick={() => scroll('right')}
+          className="absolute right-0 z-10 flex items-center justify-center w-7 h-7 rounded-full bg-background border shadow-md text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Scroll tabs right"
+        >
+          <ChevronRight size={14} />
+        </button>
+      )}
+    </div>
   );
 }
 
