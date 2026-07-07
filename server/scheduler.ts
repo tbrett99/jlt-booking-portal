@@ -444,16 +444,16 @@ export async function runTaskReminders(): Promise<{ sent: number; errors: number
 // ─── Cron wiring ──────────────────────────────────────────────────────────────
 
 export function startScheduler() {
-  // Run at 04:00 UTC every day — nightly full data export
-  cron.schedule("0 4 * * *", async () => {
-    console.log("[Scheduler] Starting nightly full data export…");
-    const result = await runNightlyExport("cron");
-    if (result.success) {
-      console.log(`[Scheduler] Export complete — ${result.rowCount} total rows`);
-    } else {
-      console.error(`[Scheduler] Export failed — ${result.error}`);
-    }
-  }, { timezone: "UTC" });
+  // Nightly full data export — DISABLED (commented out 2026-07-07)
+  // cron.schedule("0 4 * * *", async () => {
+  //   console.log("[Scheduler] Starting nightly full data export…");
+  //   const result = await runNightlyExport("cron");
+  //   if (result.success) {
+  //     console.log(`[Scheduler] Export complete — ${result.rowCount} total rows`);
+  //   } else {
+  //     console.error(`[Scheduler] Export failed — ${result.error}`);
+  //   }
+  // }, { timezone: "UTC" });
 
   // Run task reminders every hour
   cron.schedule("0 * * * *", async () => {
@@ -617,7 +617,7 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: nightly export (04:00 UTC), task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — inbox auto-import DISABLED");
+  console.log("[Scheduler] Cron jobs registered: task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — nightly export DISABLED, inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────
