@@ -3249,7 +3249,7 @@ export const crmRouter = router({
         // The original email log entry to resend
         sourceEmailId: z.number().int(),
         // User IDs of agents to resend to
-        recipientUserIds: z.array(z.number().int()).min(1).max(100),
+        recipientUserIds: z.array(z.number().int()).min(1).max(1000),
       }))
       .mutation(async ({ input, ctx }) => {
         const db = await (await import("./db")).getDb();
