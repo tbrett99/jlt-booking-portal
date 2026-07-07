@@ -115,16 +115,6 @@ export const fnfRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      // Debug: log raw rows from DB so we can diagnose production issues
-      try {
-        const { fnfVoucherAllocations } = await import("../drizzle/schema");
-        const { eq } = await import("drizzle-orm");
-        const rawRows = await db.select().from(fnfVoucherAllocations).where(eq(fnfVoucherAllocations.agentId, input.agentId));
-        console.log(`[FnF Debug] agentId=${input.agentId} rawRows=${JSON.stringify(rawRows)} serverNow=${new Date().toISOString()}`);
-      } catch (e: any) {
-        console.log(`[FnF Debug] raw query failed: ${e?.message}`);
-      }
-
       const result = await getActiveAllocation(db, input.agentId);
       if (!result) {
         return { hasAllocation: false, totalGranted: 0, used: 0, remaining: 0, renewsAt: null };
