@@ -1344,12 +1344,21 @@ function ResendAgentsModal({ onClose }: { onClose: () => void }) {
   const [selectedAgents, setSelectedAgents] = useState<Set<number>>(new Set());
   const [step, setStep] = useState<"pick-email" | "pick-agents">("pick-email");
 
+  // Agent filters — default to active only
+  const [filterStatus, setFilterStatus] = useState<string[]>(["active"]);
+  const [filterTiers, setFilterTiers] = useState<string[]>([]);
+  const [filterTraining, setFilterTraining] = useState<string[]>([]);
+  const [filterTags, setFilterTags] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+
   const emailLog = trpc.crm.agentEmailLog.list.useQuery(
     { search: emailSearch || undefined, limit: 50 },
     { enabled: step === "pick-email" }
   );
 
   const agents = trpc.crm.agentCrm.list.useQuery(undefined, { enabled: step === "pick-agents" });
+  const agentTagsQuery = trpc.crm.agentCrm.listTags.useQuery(undefined, { enabled: step === "pick-agents" });
+  const agentTagOptions: string[] = agentTagsQuery.data ?? [];
 
   const resendMutation = trpc.crm.agentEmailLog.resend.useMutation({
     onSuccess: (data) => {
@@ -1360,9 +1369,22 @@ function ResendAgentsModal({ onClose }: { onClose: () => void }) {
   });
 
   const filteredAgents = ((agents.data ?? []) as any[]).filter((a: any) => {
-    if (!agentSearch) return true;
-    const q = agentSearch.toLowerCase();
-    return (a.name ?? "").toLowerCase().includes(q) || (a.email ?? "").toLowerCase().includes(q);
+    const profile = a.crmProfile;
+    const status = profile?.agentStatus ?? "active";
+    // Status filter
+    if (filterStatus.length > 0 && !filterStatus.includes(status)) return false;
+    // Tier filter
+    if (filterTiers.length > 0 && !filterTiers.includes(profile?.membershipTier ?? "")) return false;
+    // Training stage filter
+    if (filterTraining.length > 0 && !filterTraining.includes(profile?.trainingStage ?? "")) return false;
+    // Tags filter
+    if (filterTags.length > 0 && !filterTags.some((t) => (a.tags ?? []).includes(t))) return false;
+    // Text search
+    if (agentSearch) {
+      const q = agentSearch.toLowerCase();
+      if (!(a.name ?? "").toLowerCase().includes(q) && !(a.email ?? "").toLowerCase().includes(q)) return false;
+    }
+    return true;
   });
 
   const toggleAgent = (id: number) => {
@@ -1375,6 +1397,15 @@ function ResendAgentsModal({ onClose }: { onClose: () => void }) {
 
   const selectAll = () => setSelectedAgents(new Set(filteredAgents.map((a: any) => a.id)));
   const clearAll = () => setSelectedAgents(new Set());
+
+  function toggleFilter<T>(arr: T[], setArr: (v: T[]) => void, val: T) {
+    setArr(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
+    // Clear selection when filters change — avoid sending to wrong people
+    setSelectedAgents(new Set());
+  }
+
+  const activeFilterCount = filterStatus.length + filterTiers.length + filterTraining.length + filterTags.length;
+  const isDefaultFilter = filterStatus.length === 1 && filterStatus[0] === "active" && filterTiers.length === 0 && filterTraining.length === 0 && filterTags.length === 0;
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -1423,12 +1454,103 @@ function ResendAgentsModal({ onClose }: { onClose: () => void }) {
         )}
 
         {step === "pick-agents" && selectedEmail && (
-          <div className="flex flex-col gap-4 min-h-0">
+          <div className="flex flex-col gap-4 min-h-0 overflow-y-auto">
             <div className="bg-muted/40 rounded-lg px-4 py-3 text-sm">
               <div className="font-medium truncate">{selectedEmail.subject}</div>
               <div className="text-xs text-muted-foreground mt-0.5">Originally sent to: {selectedEmail.toName ?? selectedEmail.toEmail}</div>
             </div>
-            <div className="flex items-center justify-between gap-2">
+
+            {/* Filter panel */}
+            <div className="border rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowFilters((v) => !v)}
+                className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium bg-muted/30 hover:bg-muted/50 transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Users className="h-3.5 w-3.5" />
+                  Agent Filters
+                  {!isDefaultFilter && (
+                    <span className="text-xs bg-primary text-primary-foreground rounded-full px-1.5 py-0.5">{activeFilterCount}</span>
+                  )}
+                </span>
+                {showFilters ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </button>
+              {showFilters && (
+                <div className="p-3 space-y-3 border-t">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1.5">Status <span className="font-normal">(default: active only)</span></p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {AGENT_STATUSES.map((s) => (
+                        <button key={s} type="button"
+                          onClick={() => toggleFilter(filterStatus, setFilterStatus, s)}
+                          className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                            filterStatus.includes(s) ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"
+                          }`}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1.5">Membership Tier <span className="font-normal">(empty = all tiers)</span></p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {MEMBERSHIP_TIERS.map((t) => (
+                        <button key={t} type="button"
+                          onClick={() => toggleFilter(filterTiers, setFilterTiers, t)}
+                          className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                            filterTiers.includes(t) ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"
+                          }`}>
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1.5">Training Stage <span className="font-normal">(empty = all stages)</span></p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {TRAINING_STAGES.map((t) => (
+                        <button key={t} type="button"
+                          onClick={() => toggleFilter(filterTraining, setFilterTraining, t)}
+                          className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                            filterTraining.includes(t) ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"
+                          }`}>
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {agentTagOptions.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1.5">Tags <span className="font-normal">(empty = all tags)</span></p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {agentTagOptions.map((t) => (
+                          <button key={t} type="button"
+                            onClick={() => toggleFilter(filterTags, setFilterTags, t)}
+                            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                              filterTags.includes(t) ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"
+                            }`}>
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {!isDefaultFilter && (
+                    <button
+                      type="button"
+                      onClick={() => { setFilterStatus(["active"]); setFilterTiers([]); setFilterTraining([]); setFilterTags([]); setSelectedAgents(new Set()); }}
+                      className="text-xs text-muted-foreground underline hover:text-foreground"
+                    >
+                      Reset to default (active only)
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Search + select all */}
+            <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -1438,9 +1560,10 @@ function ResendAgentsModal({ onClose }: { onClose: () => void }) {
                   onChange={(e) => setAgentSearch(e.target.value)}
                 />
               </div>
-              <Button size="sm" variant="outline" onClick={selectAll}>Select All</Button>
-              <Button size="sm" variant="outline" onClick={clearAll}>Clear</Button>
+              <Button size="sm" variant="outline" onClick={selectAll} disabled={filteredAgents.length === 0}>Select All ({filteredAgents.length})</Button>
+              <Button size="sm" variant="outline" onClick={clearAll} disabled={selectedAgents.size === 0}>Clear</Button>
             </div>
+
             {selectedAgents.size > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {Array.from(selectedAgents).map((id) => {
@@ -1457,28 +1580,42 @@ function ResendAgentsModal({ onClose }: { onClose: () => void }) {
                 })}
               </div>
             )}
-            <div className="flex-1 overflow-y-auto border rounded-lg divide-y max-h-64">
+
+            <div className="border rounded-lg divide-y max-h-56 overflow-y-auto">
               {agents.isLoading && <div className="p-4 text-center text-sm text-muted-foreground">Loading agents…</div>}
-              {filteredAgents.map((a: any) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => toggleAgent(a.id)}
-                  className={`w-full text-left px-4 py-2.5 flex items-center gap-3 hover:bg-muted/50 transition-colors ${
-                    selectedAgents.has(a.id) ? "bg-primary/5" : ""
-                  }`}
-                >
-                  <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
-                    selectedAgents.has(a.id) ? "bg-primary border-primary" : "border-border"
-                  }`}>
-                    {selectedAgents.has(a.id) && <CheckCircle className="h-3 w-3 text-primary-foreground" />}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium truncate">{a.name ?? "Unnamed"}</div>
-                    <div className="text-xs text-muted-foreground truncate">{a.email}</div>
-                  </div>
-                </button>
-              ))}
+              {!agents.isLoading && filteredAgents.length === 0 && (
+                <div className="p-4 text-center text-sm text-muted-foreground">No agents match the current filters.</div>
+              )}
+              {filteredAgents.map((a: any) => {
+                const status = a.crmProfile?.agentStatus ?? "active";
+                const statusColor = status === "active" ? "text-green-700 bg-green-50" : status === "paused" ? "text-amber-700 bg-amber-50" : "text-red-700 bg-red-50";
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => toggleAgent(a.id)}
+                    className={`w-full text-left px-4 py-2.5 flex items-center gap-3 hover:bg-muted/50 transition-colors ${
+                      selectedAgents.has(a.id) ? "bg-primary/5" : ""
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                      selectedAgents.has(a.id) ? "bg-primary border-primary" : "border-border"
+                    }`}>
+                      {selectedAgents.has(a.id) && <CheckCircle className="h-3 w-3 text-primary-foreground" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{a.name ?? "Unnamed"}</div>
+                      <div className="text-xs text-muted-foreground truncate">{a.email}</div>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {a.crmProfile?.membershipTier && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{a.crmProfile.membershipTier}</span>
+                      )}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${statusColor}`}>{status}</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
