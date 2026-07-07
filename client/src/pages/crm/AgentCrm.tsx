@@ -514,21 +514,22 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             )}
           </div>
           <Tabs defaultValue="profile">
-            <TabsList className="grid grid-cols-11 w-full">
-              <TabsTrigger value="profile" className="text-xs">Profile</TabsTrigger>
-              <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
-              <TabsTrigger value="team" className="text-xs">Team</TabsTrigger>
-              <TabsTrigger value="suppliers" className="text-xs">Suppliers</TabsTrigger>
-              <TabsTrigger value="bank" className="text-xs">Bank</TabsTrigger>
-              <TabsTrigger value="docs" className="text-xs">Docs</TabsTrigger>
-              <TabsTrigger value="tags" className="text-xs">Tags</TabsTrigger>
-              <TabsTrigger value="history" className="text-xs">History</TabsTrigger>
-              <TabsTrigger value="dd" className="text-xs">Direct Debit</TabsTrigger>
-              <TabsTrigger value="onboarding" className="text-xs">Onboarding</TabsTrigger>
-              <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
-              <TabsTrigger value="fnf" className="text-xs">F&amp;F Vouchers</TabsTrigger>
-
-            </TabsList>
+            <div className="overflow-x-auto w-full -mx-0">
+              <TabsList className="inline-flex w-max h-auto gap-0 rounded-lg p-1">
+                <TabsTrigger value="profile" className="text-xs px-3 py-1.5 whitespace-nowrap">Profile</TabsTrigger>
+                <TabsTrigger value="activity" className="text-xs px-3 py-1.5 whitespace-nowrap">Activity</TabsTrigger>
+                <TabsTrigger value="team" className="text-xs px-3 py-1.5 whitespace-nowrap">Team</TabsTrigger>
+                <TabsTrigger value="suppliers" className="text-xs px-3 py-1.5 whitespace-nowrap">Suppliers</TabsTrigger>
+                <TabsTrigger value="bank" className="text-xs px-3 py-1.5 whitespace-nowrap">Bank</TabsTrigger>
+                <TabsTrigger value="docs" className="text-xs px-3 py-1.5 whitespace-nowrap">Docs</TabsTrigger>
+                <TabsTrigger value="tags" className="text-xs px-3 py-1.5 whitespace-nowrap">Tags</TabsTrigger>
+                <TabsTrigger value="history" className="text-xs px-3 py-1.5 whitespace-nowrap">History</TabsTrigger>
+                <TabsTrigger value="dd" className="text-xs px-3 py-1.5 whitespace-nowrap">Direct Debit</TabsTrigger>
+                <TabsTrigger value="onboarding" className="text-xs px-3 py-1.5 whitespace-nowrap">Onboarding</TabsTrigger>
+                <TabsTrigger value="notes" className="text-xs px-3 py-1.5 whitespace-nowrap">Notes</TabsTrigger>
+                <TabsTrigger value="fnf" className="text-xs px-3 py-1.5 whitespace-nowrap">F&amp;F Vouchers</TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="profile" className="mt-5 pb-8">
               <ProfileTab userId={agent.id} profile={profile} supplierLogins={crmData?.supplierLogins ?? []} onRefresh={refresh} />

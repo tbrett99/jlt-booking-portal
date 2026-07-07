@@ -686,8 +686,32 @@ export const appRouter = router({
     // Activate portal access for an agent (admin only)
     activatePortalAccess: adminProcedure
       .input(z.object({ userId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         await activatePortalAccess(input.userId);
+        // Auto-assign 2 F&F vouchers if the agent doesn't already have an allocation
+        try {
+          const { getDb } = await import('./db');
+          const db = await getDb();
+          if (db) {
+            const { fnfVoucherAllocations } = await import('../drizzle/schema');
+            const { eq } = await import('drizzle-orm');
+            const existing = await db.select({ id: fnfVoucherAllocations.id }).from(fnfVoucherAllocations).where(eq(fnfVoucherAllocations.agentId, input.userId)).limit(1);
+            if (existing.length === 0) {
+              // Renewal date = 1 year from today
+              const renewsAt = new Date();
+              renewsAt.setFullYear(renewsAt.getFullYear() + 1);
+              await db.insert(fnfVoucherAllocations).values({
+                agentId: input.userId,
+                totalGranted: 2,
+                renewsAt,
+                createdById: ctx.user.id,
+                note: 'Auto-assigned on portal activation',
+              });
+            }
+          }
+        } catch (fnfErr: any) {
+          console.error('[activatePortalAccess] F&F voucher auto-assign failed:', fnfErr?.message);
+        }
         // Send portal access welcome email via editable notification template
         try {
           const agent = await getUserById(input.userId);
