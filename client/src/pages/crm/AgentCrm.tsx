@@ -4,7 +4,8 @@ import { resolveDocUrl } from "@/lib/docUrl";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { format } from "date-fns";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
@@ -525,6 +526,7 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <TabsTrigger value="dd" className="text-xs">Direct Debit</TabsTrigger>
               <TabsTrigger value="onboarding" className="text-xs">Onboarding</TabsTrigger>
               <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
+              <TabsTrigger value="fnf" className="text-xs">F&amp;F Vouchers</TabsTrigger>
 
             </TabsList>
 
@@ -560,6 +562,9 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             </TabsContent>
             <TabsContent value="notes" className="mt-5 pb-8">
               <AgentNotesTab userId={agent.id} />
+            </TabsContent>
+            <TabsContent value="fnf" className="mt-5 pb-8">
+              <FnfVoucherAdminTab userId={agent.id} agentName={agent.name ?? ""} />
             </TabsContent>
 
           </Tabs>
@@ -2885,3 +2890,185 @@ function AgentNotesTab({ userId }: { userId: number }) {
 }
 
 
+
+// ─── F&F Voucher Admin Tab ────────────────────────────────────────────────────
+function FnfVoucherAdminTab({ userId, agentName }: { userId: number; agentName: string }) {
+  const utils = trpc.useUtils();
+  const { data: balance, isLoading: balanceLoading } = trpc.fnf.getBalanceForAgent.useQuery({ agentId: userId });
+  const { data: log = [], isLoading: logLoading } = trpc.fnf.getUseLog.useQuery({ agentId: userId });
+
+  const [showTopUp, setShowTopUp] = useState(false);
+  const [topUpCount, setTopUpCount] = useState("1");
+  const [topUpRenewsAt, setTopUpRenewsAt] = useState("2027-06-01");
+  const [topUpNote, setTopUpNote] = useState("");
+
+  const topUp = trpc.fnf.topUp.useMutation({
+    onSuccess: () => {
+      utils.fnf.getBalanceForAgent.invalidate({ agentId: userId });
+      utils.fnf.getUseLog.invalidate({ agentId: userId });
+      toast.success(`Voucher(s) added for ${agentName}`);
+      setShowTopUp(false);
+      setTopUpCount("1");
+      setTopUpNote("");
+    },
+    onError: (e: any) => toast.error(e.message || "Failed to add vouchers"),
+  });
+
+  const handleTopUp = () => {
+    const count = parseInt(topUpCount);
+    if (isNaN(count) || count < 1) { toast.error("Enter a valid count"); return; }
+    if (!topUpRenewsAt) { toast.error("Enter a renewal date"); return; }
+    topUp.mutate({ agentId: userId, count, renewsAt: topUpRenewsAt, note: topUpNote || undefined });
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Balance summary */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#db2777" stroke="#db2777" strokeWidth="0"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              Friends &amp; Family Vouchers
+            </span>
+            <button
+              onClick={() => setShowTopUp(!showTopUp)}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              style={{ background: '#db2777', color: '#fff' }}
+            >
+              + Add Vouchers
+            </button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {balanceLoading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : !balance?.hasAllocation ? (
+            <div className="rounded-lg p-3 text-sm" style={{ background: '#fef2f2', color: '#991b1b' }}>
+              No active allocation. Use "Add Vouchers" to create one.
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg p-3 text-center" style={{ background: '#fce7f3' }}>
+                <p className="text-2xl font-bold" style={{ color: '#db2777' }}>{balance.totalGranted}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Total granted</p>
+              </div>
+              <div className="rounded-lg p-3 text-center" style={{ background: '#fce7f3' }}>
+                <p className="text-2xl font-bold" style={{ color: '#9d174d' }}>{balance.used}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Used</p>
+              </div>
+              <div className="rounded-lg p-3 text-center" style={{ background: balance.remaining > 0 ? '#dcfce7' : '#fee2e2' }}>
+                <p className="text-2xl font-bold" style={{ color: balance.remaining > 0 ? '#166534' : '#991b1b' }}>{balance.remaining}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Remaining</p>
+              </div>
+            </div>
+          )}
+          {balance?.renewsAt && (
+            <p className="text-xs text-muted-foreground">
+              Current allocation renews / expires: <strong>{format(new Date(balance.renewsAt), "d MMM yyyy")}</strong>
+            </p>
+          )}
+
+          {/* Top-up form */}
+          {showTopUp && (
+            <div className="rounded-lg border p-4 space-y-3 mt-2" style={{ background: '#fdf2f8', borderColor: '#f9a8d4' }}>
+              <p className="text-sm font-semibold" style={{ color: '#9d174d' }}>Add Vouchers</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-muted-foreground">Number of vouchers</label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={topUpCount}
+                    onChange={(e) => setTopUpCount(e.target.value)}
+                    className="h-8 text-sm mt-0.5"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Expires / renews on</label>
+                  <Input
+                    type="date"
+                    value={topUpRenewsAt}
+                    onChange={(e) => setTopUpRenewsAt(e.target.value)}
+                    className="h-8 text-sm mt-0.5"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Note (optional)</label>
+                <Input
+                  placeholder="e.g. Bonus voucher for top performer"
+                  value={topUpNote}
+                  onChange={(e) => setTopUpNote(e.target.value)}
+                  className="h-8 text-sm mt-0.5"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleTopUp}
+                  disabled={topUp.isPending}
+                  className="px-4 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50"
+                  style={{ background: '#db2777', color: '#fff' }}
+                >
+                  {topUp.isPending ? "Adding..." : "Add Vouchers"}
+                </button>
+                <button
+                  onClick={() => setShowTopUp(false)}
+                  className="px-4 py-1.5 rounded-lg text-xs font-semibold border"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Use log */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Voucher Use History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {logLoading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : log.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic">No vouchers used yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {(log as any[]).map((use) => (
+                <div key={use.id} className="rounded-lg border p-3 text-xs space-y-1" style={{ background: use.removedAt ? '#f9fafb' : '#fdf2f8', borderColor: use.removedAt ? '#e5e7eb' : '#f9a8d4' }}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">
+                      {use.clientName ?? `Booking #${use.bookingId}`}
+                      {use.topdogRef ? ` · ${use.topdogRef}` : ""}
+                    </span>
+                    <span
+                      className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                      style={{ background: use.removedAt ? '#f3f4f6' : '#fce7f3', color: use.removedAt ? '#6b7280' : '#9d174d' }}
+                    >
+                      {use.removedAt ? "Removed" : "Active"}
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground">
+                    Applied {format(new Date(use.appliedAt), "d MMM yyyy")}
+                    {use.appliedByName ? ` by ${use.appliedByName}` : ""}
+                  </p>
+                  {use.removedAt && (
+                    <p className="text-muted-foreground">
+                      Removed {format(new Date(use.removedAt), "d MMM yyyy")} — voucher returned
+                    </p>
+                  )}
+                  <p className="text-muted-foreground">
+                    Allocation expires: {format(new Date(use.allocationRenewsAt), "d MMM yyyy")}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

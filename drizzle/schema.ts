@@ -75,6 +75,8 @@ export const bookings = mysqlTable("bookings", {
   reducedMarginEvidenceUrl: text("reducedMarginEvidenceUrl"), // S3 URL for evidence uploaded by admin
   reducedMarginApprovedAt: timestamp("reducedMarginApprovedAt"), // When the reduced margin was approved
   reducedMarginApprovedById: int("reducedMarginApprovedById"), // FK → users.id (admin who approved)
+  // Friends & Family voucher
+  fnfVoucherUsed: boolean("fnfVoucherUsed").default(false).notNull(), // Agent used an F&F voucher — bypasses 6% margin check
   // Current pipeline stage
   currentStage: varchar("currentStage", { length: 100 }).default("New Booking").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1762,3 +1764,32 @@ export const roadmapSuggestionReplies = mysqlTable("roadmap_suggestion_replies",
 });
 export type RoadmapSuggestionReply = typeof roadmapSuggestionReplies.$inferSelect;
 export type InsertRoadmapSuggestionReply = typeof roadmapSuggestionReplies.$inferInsert;
+
+// ─── Friends & Family Vouchers ────────────────────────────────────────────────
+// One row per agent per "year" allocation. Each row tracks how many vouchers
+// were granted and when the allocation renews/expires.
+export const fnfVoucherAllocations = mysqlTable("fnf_voucher_allocations", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: int("agentId").notNull(),            // FK → users.id
+  totalGranted: int("totalGranted").default(2).notNull(), // vouchers in this allocation period
+  renewsAt: timestamp("renewsAt").notNull(),    // date this allocation expires / renews
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  createdById: int("createdById"),              // FK → users.id (admin who created/topped-up)
+  note: varchar("note", { length: 255 }),       // optional admin note (e.g. "bonus voucher")
+});
+export type FnfVoucherAllocation = typeof fnfVoucherAllocations.$inferSelect;
+export type InsertFnfVoucherAllocation = typeof fnfVoucherAllocations.$inferInsert;
+
+// One row per voucher use — links an allocation to a booking.
+export const fnfVoucherUses = mysqlTable("fnf_voucher_uses", {
+  id: int("id").autoincrement().primaryKey(),
+  allocationId: int("allocationId").notNull(), // FK → fnf_voucher_allocations.id
+  agentId: int("agentId").notNull(),           // FK → users.id (denormalised for easy queries)
+  bookingId: int("bookingId").notNull(),        // FK → bookings.id
+  appliedAt: timestamp("appliedAt").defaultNow().notNull(),
+  appliedById: int("appliedById").notNull(),   // FK → users.id (who toggled it on)
+  removedAt: timestamp("removedAt"),           // set when admin removes the voucher
+  removedById: int("removedById"),             // FK → users.id (admin who removed it)
+});
+export type FnfVoucherUse = typeof fnfVoucherUses.$inferSelect;
+export type InsertFnfVoucherUse = typeof fnfVoucherUses.$inferInsert;

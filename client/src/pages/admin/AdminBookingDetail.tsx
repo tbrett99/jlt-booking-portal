@@ -831,6 +831,65 @@ function ReducedMarginCard({ bookingId, booking }: { bookingId: number; booking:
   );
 }
 
+// ─── F&F Voucher Admin Card ──────────────────────────────────────────────────
+function FnfVoucherAdminCard({ bookingId, booking }: { bookingId: number; booking: any }) {
+  const utils = trpc.useUtils();
+  const removeFnfVoucher = trpc.fnf.removeFromBooking.useMutation({
+    onSuccess: () => {
+      utils.bookings.byId.invalidate({ id: bookingId });
+      toast.success('Friends & Family voucher removed — voucher returned to agent balance');
+    },
+    onError: (e: any) => toast.error(e.message || 'Failed to remove voucher'),
+  });
+  const applyFnfVoucher = trpc.fnf.applyToBooking.useMutation({
+    onSuccess: () => {
+      utils.bookings.byId.invalidate({ id: bookingId });
+      toast.success('Friends & Family voucher applied');
+    },
+    onError: (e: any) => toast.error(e.message || 'Failed to apply voucher'),
+  });
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#db2777" stroke="#db2777" strokeWidth="0"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          Friends &amp; Family Voucher
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Voucher applied</p>
+            <p className="text-xs text-muted-foreground">
+              {booking.fnfVoucherUsed
+                ? 'A F&F voucher is active — agent is permitted to sell at NET rate. Remove to return the voucher to the agent.'
+                : 'Apply a F&F voucher to allow this agent to sell at NET rate (bypasses 6% margin check).'}
+            </p>
+          </div>
+          <Switch
+            checked={!!booking.fnfVoucherUsed}
+            onCheckedChange={(checked) => {
+              if (checked) {
+                applyFnfVoucher.mutate({ bookingId });
+              } else {
+                if (window.confirm('Remove the F&F voucher from this booking? The voucher will be returned to the agent.')) {
+                  removeFnfVoucher.mutate({ bookingId });
+                }
+              }
+            }}
+            disabled={applyFnfVoucher.isPending || removeFnfVoucher.isPending}
+          />
+        </div>
+        {booking.fnfVoucherUsed && (
+          <div className="rounded-lg px-3 py-2 text-xs" style={{ background: '#fce7f3', color: '#9d174d' }}>
+            ♥ NET rate selling is permitted on this booking
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AdminBookingDetail() {
   const { id } = useParams<{ id: string }>();
   const bookingId = Number(id);
@@ -1743,6 +1802,9 @@ export default function AdminBookingDetail() {
 
       {/* Reduced Margin Approval */}
       <ReducedMarginCard bookingId={bookingId} booking={booking as any} />
+
+      {/* Friends & Family Voucher */}
+      <FnfVoucherAdminCard bookingId={bookingId} booking={booking as any} />
 
       {/* Full History Overview */}
       {/* expandedHistoryItems tracks which timeline event IDs are expanded */}

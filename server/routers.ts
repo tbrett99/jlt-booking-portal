@@ -144,6 +144,7 @@ import { suppliersRouter } from "./suppliers-router";
 import { communityRouter } from "./community-router";
 import { superAdminRouter } from "./super-admin-router";
 import { roadmapRouter } from "./roadmap-router";
+import { fnfRouter } from "./fnf-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -799,6 +800,7 @@ export const appRouter = router({
             amount: z.number().positive(),
             jltCompanyCard: z.boolean().optional().default(false),
           })).optional(),
+          useFnfVoucher: z.boolean().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -856,6 +858,16 @@ export const appRouter = router({
             message: `New booking registered by ${ctx.user.name}: ${input.clientName}`,
             linkUrl: `/bookings/${booking?.id}`,
           });
+        }
+        // Apply F&F voucher if requested
+        if (input.useFnfVoucher && booking?.id && !input.isPersonalBooking) {
+          try {
+            const { applyFnfVoucherToBooking } = await import('./fnf-router');
+            await applyFnfVoucherToBooking(booking.id, ctx.user.id, ctx.user.name ?? 'Agent');
+          } catch (fnfErr: any) {
+            // Non-fatal — booking is created, just log the voucher failure
+            console.error('[create booking] F&F voucher apply failed:', fnfErr?.message);
+          }
         }
         // System audit note
         if (booking?.id) {
@@ -4054,6 +4066,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
   community: communityRouter,
   superAdmin: superAdminRouter,
   roadmap: roadmapRouter,
+  fnf: fnfRouter,
   // ─── GoCardless Direct Debitt ───────────────────────────────────────────────
   gocardless: router({
     /**

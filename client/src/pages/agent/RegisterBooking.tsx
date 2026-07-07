@@ -34,6 +34,7 @@ export default function RegisterBooking() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successBooking, setSuccessBooking] = useState<{ id: number; clientName: string; departureDate: Date } | null>(null);
   const [showHistoricConfirm, setShowHistoricConfirm] = useState(false);
+  const [useFnfVoucher, setUseFnfVoucher] = useState(false);
 
   // Warn if booked date is >7 days ago and historic toggle is off
   const bookedDateIsOld = useMemo(() => {
@@ -47,6 +48,7 @@ export default function RegisterBooking() {
   const utils = trpc.useUtils();
   const createBooking = trpc.bookings.create.useMutation();
   const uploadDoc = trpc.bookings.uploadReimbDoc.useMutation();
+  const { data: fnfBalance } = trpc.fnf.getBalance.useQuery();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -106,6 +108,7 @@ export default function RegisterBooking() {
         numberOfNights: parseInt(numberOfNights),
         isPersonalBooking,
         isHistoricBooking,
+        useFnfVoucher: useFnfVoucher && !isPersonalBooking && (fnfBalance?.remaining ?? 0) > 0 ? true : undefined,
       });
 
       if (booking && docFile) {
@@ -340,15 +343,50 @@ export default function RegisterBooking() {
               {/* Live margin preview — only for non-personal */}
               {!isPersonalBooking && marginPct !== null && (
                 <div className={`flex items-center gap-2 text-sm rounded-md px-3 py-2 ${
-                  marginPct < 6
+                  marginPct < 6 && !useFnfVoucher
                     ? "bg-red-50 text-red-700 border border-red-200"
                     : "bg-green-50 text-green-700 border border-green-200"
                 }`}>
                   <Info size={14} />
                   <span>
                     Margin: <strong>{marginPct.toFixed(1)}%</strong>
-                    {marginPct < 6 && " — below the 6% monthly average threshold"}
+                    {marginPct < 6 && !useFnfVoucher && " — below the 6% monthly average threshold"}
+                    {useFnfVoucher && " — F&F voucher active, NET rate permitted"}
                   </span>
+                </div>
+              )}
+              {/* F&F Voucher toggle — only show if agent has remaining vouchers and not personal */}
+              {!isPersonalBooking && fnfBalance && fnfBalance.hasAllocation && (
+                <div
+                  className="rounded-lg border p-3 flex items-center gap-3 cursor-pointer select-none"
+                  style={{ background: useFnfVoucher ? '#fdf2f8' : '#f9fafb', borderColor: useFnfVoucher ? '#f9a8d4' : '#e5e7eb' }}
+                  onClick={() => {
+                    if (fnfBalance.remaining <= 0 && !useFnfVoucher) {
+                      toast.error('No Friends & Family vouchers remaining');
+                      return;
+                    }
+                    setUseFnfVoucher((v) => !v);
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={useFnfVoucher}
+                    onChange={() => {}}
+                    className="w-4 h-4 accent-pink-600"
+                    disabled={fnfBalance.remaining <= 0 && !useFnfVoucher}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold" style={{ color: '#9d174d' }}>
+                      Use a Friends &amp; Family voucher
+                      <span className="ml-2 text-xs font-normal" style={{ color: '#db2777' }}>
+                        ({fnfBalance.remaining} remaining)
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Allows you to sell at NET rate — PTS fees still apply. Once applied, only an admin can remove it.
+                    </p>
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill={useFnfVoucher ? '#db2777' : '#d1d5db'} stroke={useFnfVoucher ? '#db2777' : '#d1d5db'} strokeWidth="0"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
                 </div>
               )}
               <p className="text-xs text-muted-foreground flex items-start gap-1">

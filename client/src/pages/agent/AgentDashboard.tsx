@@ -11,7 +11,7 @@ import {
   Calendar, ChevronRight, AlertCircle, CheckCircle2, Clock,
   Sparkles, Filter, Plane, Zap, RefreshCw, FileText,
   ArrowRight, Banknote, Activity, ReceiptText, Edit3, RotateCcw, Wallet,
-  ShieldAlert, Newspaper, Users
+  ShieldAlert, Newspaper, Users, Heart
 } from "lucide-react";
 import { format, differenceInDays, isPast, isWithinInterval, addDays } from "date-fns";
 
@@ -708,6 +708,9 @@ export default function AgentDashboard() {
             </div>
           )}
 
+          {/* Friends & Family Voucher Balance */}
+          <FnfVoucherCard />
+
           {/* Earnings Summary */}
           {earnings && earnings.grandTotal > 0 && (
             <Card>
@@ -1134,6 +1137,68 @@ function OutstandingItemsPanel({
         )}
 
       </CardContent>
+    </Card>
+  );
+}
+
+// ─── Friends & Family Voucher Balance Card ────────────────────────────────────
+function FnfVoucherCard() {
+  const { data, isLoading } = trpc.fnf.getBalance.useQuery();
+
+  if (isLoading) return null;
+  if (!data || !data.hasAllocation) return null;
+
+  const renewsAt = data.renewsAt ? new Date(data.renewsAt) : null;
+  const daysUntilRenewal = renewsAt ? differenceInDays(renewsAt, new Date()) : null;
+
+  const dots = Array.from({ length: data.totalGranted }, (_, i) => i < data.used);
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="px-4 pt-4 pb-3">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: '#fce7f3' }}>
+              <Heart size={13} style={{ color: '#db2777' }} />
+            </div>
+            <span className="text-sm font-bold text-foreground">Friends &amp; Family Vouchers</span>
+          </div>
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: data.remaining > 0 ? '#dcfce7' : '#fee2e2', color: data.remaining > 0 ? '#166534' : '#991b1b' }}>
+            {data.remaining} remaining
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 mb-3">
+          {dots.map((used, i) => (
+            <div
+              key={i}
+              className="w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all"
+              style={{
+                borderColor: used ? '#d1d5db' : '#db2777',
+                background: used ? '#f3f4f6' : '#fce7f3',
+                color: used ? '#9ca3af' : '#db2777',
+              }}
+            >
+              {used ? '✓' : '♥'}
+            </div>
+          ))}
+        </div>
+
+        <div className="text-xs text-muted-foreground space-y-0.5">
+          <p>
+            <span className="font-medium">{data.used}</span> of <span className="font-medium">{data.totalGranted}</span> used this period
+          </p>
+          {renewsAt && (
+            <p>
+              Renews <span className="font-medium">{format(renewsAt, "d MMM yyyy")}</span>
+              {daysUntilRenewal !== null && daysUntilRenewal > 0 && (
+                <span className="text-muted-foreground"> ({daysUntilRenewal} days)</span>
+              )}
+            </p>
+          )}
+          <p className="text-[10px] mt-1 opacity-70">Allows selling at NET rate — PTS fees must still be covered</p>
+        </div>
+      </div>
     </Card>
   );
 }

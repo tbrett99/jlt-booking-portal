@@ -806,6 +806,13 @@
       "when": 1783010630360,
       "tag": "0114_parched_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "5",
+      "when": 1783438965361,
+      "tag": "0115_loose_nico_minoru",
+      "breakpoints": true
     }
   ]
 }

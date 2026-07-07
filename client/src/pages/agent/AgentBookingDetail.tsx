@@ -370,6 +370,16 @@ export default function AgentBookingDetail() {
     });
   };
 
+  // F&F Voucher
+  const applyFnfVoucher = trpc.fnf.applyToBooking.useMutation({
+    onSuccess: (res) => {
+      utils.bookings.byId.invalidate({ id: bookingId });
+      utils.fnf.getBalance.invalidate();
+      toast.success(`Friends & Family voucher applied. ${res.remaining} remaining.`);
+    },
+    onError: (e: any) => toast.error(e.message || "Failed to apply voucher"),
+  });
+
   const togglePreAuth = trpc.bookings.togglePreAuth.useMutation({
     onSuccess: () => {
       utils.bookings.byId.invalidate({ id: bookingId });
@@ -985,6 +995,41 @@ export default function AgentBookingDetail() {
               }`}
             />
           </button>
+        </div>
+      )}
+
+      {/* Friends & Family Voucher Toggle */}
+      {!(booking as any).fnfVoucherUsed && !['Cancelled'].includes(booking.currentStage) && (
+        <div className="rounded-xl border p-4 flex items-start gap-3" style={{ background: '#fdf2f8', borderColor: '#f9a8d4' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="#db2777" stroke="#db2777" strokeWidth="0" className="shrink-0 mt-0.5"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm" style={{ color: '#9d174d' }}>Friends &amp; Family Voucher</p>
+            <p className="text-xs mt-0.5 opacity-80" style={{ color: '#9d174d' }}>
+              Apply a Friends &amp; Family voucher to this booking. This allows you to sell at NET rate (PTS fees still apply) and bypasses the 6% margin threshold. Once applied, only an admin can remove it.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              if (window.confirm("Apply a Friends & Family voucher to this booking? Once applied, only an admin can remove it.")) {
+                applyFnfVoucher.mutate({ bookingId: booking.id });
+              }
+            }}
+            disabled={applyFnfVoucher.isPending}
+            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
+            style={{ background: '#db2777', color: '#fff' }}
+          >
+            {applyFnfVoucher.isPending ? "Applying..." : "Apply Voucher"}
+          </button>
+        </div>
+      )}
+      {(booking as any).fnfVoucherUsed && (
+        <div className="rounded-xl border p-4 flex items-center gap-3" style={{ background: '#fdf2f8', borderColor: '#f9a8d4' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="#db2777" stroke="#db2777" strokeWidth="0" className="shrink-0"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm" style={{ color: '#9d174d' }}>Friends &amp; Family Voucher Applied</p>
+            <p className="text-xs mt-0.5 opacity-80" style={{ color: '#9d174d' }}>A voucher is active on this booking — NET rate selling is permitted. To remove, contact an admin.</p>
+          </div>
+          <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: '#fce7f3', color: '#9d174d' }}>Active</span>
         </div>
       )}
 
