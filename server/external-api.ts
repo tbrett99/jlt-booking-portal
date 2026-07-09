@@ -191,6 +191,8 @@ router.post("/register-booking", async (req: Request, res: Response) => {
  */
 router.post("/update-commission", async (req: Request, res: Response) => {
   try {
+    // Log full request body for debugging margin issues
+    console.log("[update-commission] incoming body:", JSON.stringify(req.body));
     // 1. Auth
     const rawKey = req.headers["x-api-key"] as string | undefined;
     if (!rawKey) return res.status(401).json({ error: "Missing X-API-Key header" });
