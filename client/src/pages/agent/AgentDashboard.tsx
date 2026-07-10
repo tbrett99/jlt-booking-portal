@@ -49,6 +49,8 @@ function flightStatusLabel(status: string) {
   return { label: status, color: "#414141", bg: "#f3f4f6" };
 }
 
+const ITEMS_PER_PAGE = 15;
+
 export default function AgentDashboard() {
   const { user } = useAuth();
   const [search, setSearch] = useState("");
@@ -58,6 +60,7 @@ export default function AgentDashboard() {
   const [bookingTab, setBookingTab] = useState<"active" | "completed">("active");
   const [sortBy, setSortBy] = useState<"departure" | "booked" | "commission">("departure");
   const [filterYear, setFilterYear] = useState<string>("");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const { data: bookings = [], isLoading } = trpc.bookings.myBookings.useQuery();
   const { data: notifications = [] } = trpc.notifications.myNotifications.useQuery();
@@ -193,6 +196,15 @@ export default function AgentDashboard() {
       return dir * (new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime());
     });
   }, [bookings, bookingTab, activeBookings, completedBookings, statusFilter, search, bookedFrom, bookedTo, sortBy, filterYear]);
+
+  // Reset to page 1 whenever filters/tab change
+  const resetPage = () => setCurrentPage(1);
+
+  const totalPages = Math.max(1, Math.ceil(filteredBookings.length / ITEMS_PER_PAGE));
+  const pagedBookings = filteredBookings.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE,
+  );
 
   return (
     <div className="space-y-6">
@@ -426,7 +438,7 @@ export default function AgentDashboard() {
               {/* Tab switcher */}
               <div className="flex items-center gap-1 mb-3">
                 <button
-                  onClick={() => { setBookingTab("active"); setStatusFilter("all"); setFilterYear(""); }}
+                  onClick={() => { setBookingTab("active"); setStatusFilter("all"); setFilterYear(""); resetPage(); }}
                   className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${
                     bookingTab === "active" ? "text-[#414141]" : "text-muted-foreground hover:bg-muted"
                   }`}
@@ -436,7 +448,7 @@ export default function AgentDashboard() {
                   <span className="ml-1.5 text-xs font-bold opacity-70">({activeBookings.length})</span>
                 </button>
                 <button
-                  onClick={() => { setBookingTab("completed"); setStatusFilter("all"); }}
+                  onClick={() => { setBookingTab("completed"); setStatusFilter("all"); resetPage(); }}
                   className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${
                     bookingTab === "completed" ? "text-[#414141]" : "text-muted-foreground hover:bg-muted"
                   }`}
@@ -519,7 +531,7 @@ export default function AgentDashboard() {
                 {/* Clear all filters */}
                 {(search || bookedFrom || bookedTo || filterYear || statusFilter !== "all") && (
                   <button
-                    onClick={() => { setSearch(""); setBookedFrom(""); setBookedTo(""); setFilterYear(""); setStatusFilter("all"); }}
+                    onClick={() => { setSearch(""); setBookedFrom(""); setBookedTo(""); setFilterYear(""); setStatusFilter("all"); resetPage(); }}
                     className="text-xs underline text-muted-foreground hover:text-foreground ml-auto"
                   >
                     Clear all
@@ -557,7 +569,7 @@ export default function AgentDashboard() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {filteredBookings.map((booking) => {
+                  {pagedBookings.map((booking) => {
                     const badge = STAGE_BADGE[booking.currentStage] ?? { label: booking.currentStage, color: "#414141", bg: "#f3f4f6" };
                     const daysUntilDeparture = differenceInDays(new Date(booking.departureDate), now);
                     const departed = isPast(new Date(booking.departureDate));
@@ -627,6 +639,28 @@ export default function AgentDashboard() {
                       </Link>
                     );
                   })}
+                  {/* Pagination controls */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between pt-3 border-t border-border">
+                      <button
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-border disabled:opacity-40 hover:bg-muted transition-colors"
+                      >
+                        ← Previous
+                      </button>
+                      <span className="text-xs text-muted-foreground">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <button
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-border disabled:opacity-40 hover:bg-muted transition-colors"
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

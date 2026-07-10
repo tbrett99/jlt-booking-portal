@@ -277,6 +277,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     staleTime: 30000,
   });
 
+  // Agent: count of unanswered threads (latest note from admin)
+  const { data: agentUnansweredThreads = [] } = trpc.notes.myUnansweredThreads.useQuery(undefined, {
+    enabled: !isAdminUser || isAgentView,
+    refetchInterval: 60000,
+    staleTime: 60000,
+  });
+  const agentUnansweredCount = agentUnansweredThreads.length;
+
   const { data: overdueData } = trpc.crm.agentCrm.getOverdueCount.useQuery(undefined, {
     enabled: isAdminUser && !isAgentView,
     refetchInterval: 120000,
@@ -342,6 +350,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "My Commissions", href: "/commissions", icon: <Banknote size={16} /> },
         { label: "Commission Timeline", href: "/commission-timeline", icon: <CalendarDays size={16} /> },
         { label: "My Commission Margin", href: "/my-margin", icon: <TrendingUp size={16} /> },
+      ],
+    },
+    {
+      label: "Communication",
+      icon: <MessageSquare size={16} />,
+      defaultOpen: true,
+      items: [
+        { label: "Messages", href: "/messages", icon: <MessageSquare size={16} /> },
       ],
     },
     {
@@ -585,6 +601,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       {notifOpen && (
         <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
       )}
+      {/* Notifications dropdown portal — rendered outside header to avoid stacking-context clip */}
 
       {/* Sidebar */}
       <aside
@@ -646,7 +663,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               location={location}
               collapsed={collapsed}
               onNavigate={() => setSidebarOpen(false)}
-              unreadMessageCount={unreadMessageCount}
+              unreadMessageCount={isAdminUser && !isAgentView ? unreadMessageCount : agentUnansweredCount}
               overdueCount={overdueCount}
             />
           ))}
@@ -693,7 +710,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="sticky top-0 z-10 bg-card border-b border-border shadow-sm">
+        <header className="sticky top-0 z-50 bg-card border-b border-border shadow-sm">
           {/* Primary row */}
           <div className="flex items-center gap-3 px-4 py-2.5">
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-lg hover:bg-muted">
@@ -732,7 +749,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               {/* Notifications dropdown */}
               {notifOpen && (
                 <div
-                  className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-xl shadow-xl border bg-card overflow-hidden z-50"
+                  className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-xl shadow-xl border bg-card overflow-hidden z-[60]"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -741,7 +758,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                       <X size={14} />
                     </button>
                   </div>
-                  <div className="max-h-96 overflow-y-auto divide-y">
+                  <div className="max-h-[70vh] overflow-y-auto divide-y">
                     {!notifications || notifications.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
                         <Bell size={24} className="mb-2 opacity-30" />

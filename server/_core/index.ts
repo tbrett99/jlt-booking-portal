@@ -5,6 +5,7 @@ import net from "net";
 import { eq } from "drizzle-orm";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
+import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -140,6 +141,8 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Storage proxy for /manus-storage/* paths
+  registerStorageProxy(app);
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
 
@@ -1834,8 +1837,22 @@ async function startServer() {
   // opens directly in the browser tab rather than triggering a download.
   app.get("/api/prospectus", async (_req, res) => {
     try {
-      const PROSPECTUS_CDN = "https://files.manuscdn.com/user_upload_by_module/session_file/310419663026820811/WRpeAvCirycSWBpp.pdf";
-      const upstream = await fetch(PROSPECTUS_CDN);
+      // New prospectus v4 — served via storage proxy
+      const PROSPECTUS_KEY = "JLTProspectus-4_841f5e0f.pdf";
+      const forgeUrl = new URL(
+        "v1/storage/presign/get",
+        ENV.forgeApiUrl.replace(/\/+$/, "") + "/",
+      );
+      forgeUrl.searchParams.set("path", PROSPECTUS_KEY);
+      const forgeResp = await fetch(forgeUrl, {
+        headers: { Authorization: `Bearer ${ENV.forgeApiKey}` },
+      });
+      if (!forgeResp.ok) {
+        res.status(502).send("Could not retrieve prospectus");
+        return;
+      }
+      const { url: signedUrl } = (await forgeResp.json()) as { url: string };
+      const upstream = await fetch(signedUrl);
       if (!upstream.ok) {
         res.status(502).send("Could not retrieve prospectus");
         return;

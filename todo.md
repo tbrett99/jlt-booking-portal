@@ -2636,3 +2636,8 @@
 - [ ] Admin roadmap: internal activity log per item
 - [ ] Wire /roadmap route in App.tsx and add to agent sidebar nav
 - [ ] Wire /admin/roadmap route in App.tsx and add to admin sidebar nav
+
+## Agent Dashboard & Messaging Improvements (Jul 10)
+- [x] Paginate agent dashboard bookings list (15 per page, Previous/Next controls, page reset on filter change)
+- [x] Fix notifications panel scrolling — raised header z-index to z-50, dropdown to z-[60], max-h to 70vh
+- [x] Add agent Messages section — new AgentMessages.tsx page with "Needs Reply" and "All Conversations" tabs, badge count on sidebar nav, backend procedures notes.myUnansweredThreads and notes.myAllThreads

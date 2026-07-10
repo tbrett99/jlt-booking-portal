@@ -1734,6 +1734,115 @@ export const appRouter = router({
   }),
   // ── Notes ─────────────────────────────────────────────────────────────────
   notes: router({
+    // Agent: get threads on my bookings where the latest shared note came from admin (unanswered)
+    myUnansweredThreads: protectedProcedure.query(async ({ ctx }) => {
+      const db = await (await import('./db')).getDb();
+      if (!db) return [];
+      const { notes: notesTable, users: usersTable, bookings: bookingsTable } = await import('../drizzle/schema');
+      const { eq, and, not, like, desc } = await import('drizzle-orm');
+      const allRows = await db
+        .select({
+          noteId: notesTable.id,
+          bookingId: notesTable.bookingId,
+          content: notesTable.content,
+          createdAt: notesTable.createdAt,
+          authorRole: usersTable.role,
+          authorName: usersTable.name,
+          clientName: bookingsTable.clientName,
+          agentId: bookingsTable.agentId,
+          topdogRef: bookingsTable.topdogRef,
+          ptsRef: bookingsTable.ptsRef,
+        })
+        .from(notesTable)
+        .innerJoin(usersTable, eq(notesTable.authorId, usersTable.id))
+        .innerJoin(bookingsTable, eq(notesTable.bookingId, bookingsTable.id))
+        .where(and(
+          eq(notesTable.isInternal, false),
+          eq(bookingsTable.agentId, ctx.user.id),
+          not(like(notesTable.content, '[System]%')),
+        ))
+        .orderBy(desc(notesTable.createdAt));
+      // Group by bookingId, keep only threads where latest note is from admin/super_admin
+      const threadMap = new Map<number, {
+        bookingId: number; clientName: string; topdogRef: string | null; ptsRef: string | null;
+        latestMessage: string; latestMessageAt: Date; latestAuthorName: string; latestAuthorRole: string;
+        totalMessages: number;
+      }>();
+      for (const row of allRows) {
+        if (!threadMap.has(row.bookingId)) {
+          threadMap.set(row.bookingId, {
+            bookingId: row.bookingId,
+            clientName: row.clientName,
+            topdogRef: row.topdogRef ?? null,
+            ptsRef: row.ptsRef ?? null,
+            latestMessage: row.content,
+            latestMessageAt: row.createdAt,
+            latestAuthorName: row.authorName ?? 'JLT Team',
+            latestAuthorRole: row.authorRole ?? 'agent',
+            totalMessages: 1,
+          });
+        } else {
+          threadMap.get(row.bookingId)!.totalMessages++;
+        }
+      }
+      // Only return threads where the latest message came from admin/super_admin
+      return Array.from(threadMap.values())
+        .filter((t) => t.latestAuthorRole === 'admin' || t.latestAuthorRole === 'super_admin')
+        .sort((a, b) => new Date(b.latestMessageAt).getTime() - new Date(a.latestMessageAt).getTime());
+    }),
+    // Agent: get ALL message threads on my bookings (for the full messages page)
+    myAllThreads: protectedProcedure.query(async ({ ctx }) => {
+      const db = await (await import('./db')).getDb();
+      if (!db) return [];
+      const { notes: notesTable, users: usersTable, bookings: bookingsTable } = await import('../drizzle/schema');
+      const { eq, and, not, like, desc } = await import('drizzle-orm');
+      const allRows = await db
+        .select({
+          noteId: notesTable.id,
+          bookingId: notesTable.bookingId,
+          content: notesTable.content,
+          createdAt: notesTable.createdAt,
+          authorRole: usersTable.role,
+          authorName: usersTable.name,
+          clientName: bookingsTable.clientName,
+          agentId: bookingsTable.agentId,
+          topdogRef: bookingsTable.topdogRef,
+          ptsRef: bookingsTable.ptsRef,
+        })
+        .from(notesTable)
+        .innerJoin(usersTable, eq(notesTable.authorId, usersTable.id))
+        .innerJoin(bookingsTable, eq(notesTable.bookingId, bookingsTable.id))
+        .where(and(
+          eq(notesTable.isInternal, false),
+          eq(bookingsTable.agentId, ctx.user.id),
+          not(like(notesTable.content, '[System]%')),
+        ))
+        .orderBy(desc(notesTable.createdAt));
+      const threadMap = new Map<number, {
+        bookingId: number; clientName: string; topdogRef: string | null; ptsRef: string | null;
+        latestMessage: string; latestMessageAt: Date; latestAuthorName: string; latestAuthorRole: string;
+        totalMessages: number;
+      }>();
+      for (const row of allRows) {
+        if (!threadMap.has(row.bookingId)) {
+          threadMap.set(row.bookingId, {
+            bookingId: row.bookingId,
+            clientName: row.clientName,
+            topdogRef: row.topdogRef ?? null,
+            ptsRef: row.ptsRef ?? null,
+            latestMessage: row.content,
+            latestMessageAt: row.createdAt,
+            latestAuthorName: row.authorName ?? 'JLT Team',
+            latestAuthorRole: row.authorRole ?? 'agent',
+            totalMessages: 1,
+          });
+        } else {
+          threadMap.get(row.bookingId)!.totalMessages++;
+        }
+      }
+      return Array.from(threadMap.values())
+        .sort((a, b) => new Date(b.latestMessageAt).getTime() - new Date(a.latestMessageAt).getTime());
+    }),
     // Admin: get all bookings with unread agent messages
     unreadAgentMessages: adminProcedure.query(async () => {
       return getBookingsWithUnreadAgentNotes();

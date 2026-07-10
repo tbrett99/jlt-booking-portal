@@ -36,6 +36,7 @@ const AgentCancelBooking = lazy(() => import("./pages/agent/AgentCancelBooking")
 const AgentRequestAmendment = lazy(() => import("./pages/agent/AgentRequestAmendment"));
 const AgentFlightRequests = lazy(() => import("./pages/agent/AgentFlightRequests"));
 const AgentNotifications = lazy(() => import("./pages/agent/AgentNotifications"));
+const AgentMessages = lazy(() => import("./pages/agent/AgentMessages"));
 const OnboardingDashboard = lazy(() => import("./pages/agent/OnboardingDashboard"));
 const DdSetup = lazy(() => import("./pages/agent/DdSetup"));
 const DdComplete = lazy(() => import("./pages/agent/DdComplete"));
@@ -252,6 +253,7 @@ function AuthRouter() {
           <Route path="/flight-requests" component={AgentFlightRequests} />
           <Route path="/booking-documents" component={BookingDocuments} />
           <Route path="/notifications" component={AgentNotifications} />
+          <Route path="/messages" component={AgentMessages} />
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
@@ -304,6 +306,7 @@ function AuthRouter() {
            <Route path="/flight-requests" component={AgentFlightRequests} />
           <Route path="/booking-documents" component={BookingDocuments} />
           <Route path="/notifications" component={AgentNotifications} />
+          <Route path="/messages" component={AgentMessages} />
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
