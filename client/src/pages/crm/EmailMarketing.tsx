@@ -15,10 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RichEmailEditor } from "@/components/RichEmailEditor";
 import { toast } from "sonner";
-import {
-  Plus, Send, Eye, Pencil, Trash2, Mail, Users, Zap,
+import { Plus, Send, Eye, Pencil, Trash2, Mail, Users, Zap,
   BarChart2, Clock, CheckCircle, AlertCircle, FileText, Paintbrush,
-  ChevronDown, ChevronUp, RefreshCw, MailOpen, MailX,
+  ChevronDown, ChevronUp, RefreshCw, MailOpen, MailX, Edit3,
 } from "lucide-react";
 import EmailBrandingEditor from "./EmailBrandingEditor";
 
@@ -105,6 +104,29 @@ const defaultCampaignForm: CampaignFormData = {
   stages: [], stageLogic: "any", membershipTiers: [], trainingStages: [], agentTags: [], agentStatus: [], hasActiveMandate: null,
 };
 
+function EmailPreviewPanel({ bodyHtml }: { bodyHtml: string }) {
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <div className="bg-muted/30 px-3 py-2 text-xs text-muted-foreground border-b">Email preview (approximate rendering)</div>
+      <div className="p-4 bg-[#f5f5f5] min-h-[280px]" style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}>
+        <div style={{ maxWidth: 540, margin: '0 auto', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+          <div style={{ background: '#0d1a26', padding: '16px 24px' }}>
+            <span style={{ color: '#70FFE8', fontWeight: 700, fontSize: 18 }}>JLT Group</span>
+            <span style={{ color: '#fff', fontSize: 13, marginLeft: 8, opacity: 0.7 }}>Booking Portal</span>
+          </div>
+          <div
+            style={{ padding: '24px', color: '#1a1a2e', fontSize: 15, lineHeight: 1.7 }}
+            dangerouslySetInnerHTML={{ __html: bodyHtml }}
+          />
+          <div style={{ padding: '0 24px 24px' }}>
+            <p style={{ marginTop: 20, color: '#888', fontSize: 11, borderTop: '1px solid #eee', paddingTop: 14 }}>This email was sent from the JLT Group Booking Portal.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CampaignFormDialog({
   open, onClose, initial, templates, onSave, title,
 }: {
@@ -116,6 +138,7 @@ function CampaignFormDialog({
   title: string;
 }) {
   const [form, setForm] = useState<CampaignFormData>(initial ?? { ...defaultCampaignForm, ...(initial ?? {}) });
+  const [previewMode, setPreviewMode] = useState(false);
   const agentTagsQuery = trpc.crm.agentCrm.listTags.useQuery(undefined, { enabled: form.audienceType === "agent" });
   const agentTagOptions = agentTagsQuery.data ?? [];
 
@@ -303,8 +326,34 @@ function CampaignFormDialog({
           </div>
 
           <div>
-            <Label>Email Body</Label>
-            <RichEmailEditor value={form.bodyHtml} onChange={(html) => setForm((f) => ({ ...f, bodyHtml: html }))} className="mt-1" />
+            <div className="flex items-center justify-between mb-2">
+              <Label>Email Body</Label>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode(false)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    !previewMode ? "text-[#0d1a26] bg-[#70FFE8]" : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  <Edit3 size={12} /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode(true)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    previewMode ? "text-[#0d1a26] bg-[#70FFE8]" : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  <Eye size={12} /> Preview
+                </button>
+              </div>
+            </div>
+            {previewMode ? (
+              <EmailPreviewPanel bodyHtml={form.bodyHtml} />
+            ) : (
+              <RichEmailEditor value={form.bodyHtml} onChange={(html) => setForm((f) => ({ ...f, bodyHtml: html }))} className="mt-1" />
+            )}
           </div>
         </div>
         <DialogFooter>
@@ -338,6 +387,7 @@ function TemplateFormDialog({
   title: string;
 }) {
   const [form, setForm] = useState<TemplateFormData>(initial ?? defaultTemplateForm);
+  const [previewMode, setPreviewMode] = useState(false);
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -365,8 +415,34 @@ function TemplateFormDialog({
             <Input value={form.subject} onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} placeholder="Your email subject…" />
           </div>
           <div>
-            <Label>Email Body</Label>
-            <RichEmailEditor value={form.bodyHtml} onChange={(html) => setForm((f) => ({ ...f, bodyHtml: html }))} className="mt-1" />
+            <div className="flex items-center justify-between mb-2">
+              <Label>Email Body</Label>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode(false)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    !previewMode ? "text-[#0d1a26] bg-[#70FFE8]" : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  <Edit3 size={12} /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode(true)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    previewMode ? "text-[#0d1a26] bg-[#70FFE8]" : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  <Eye size={12} /> Preview
+                </button>
+              </div>
+            </div>
+            {previewMode ? (
+              <EmailPreviewPanel bodyHtml={form.bodyHtml} />
+            ) : (
+              <RichEmailEditor value={form.bodyHtml} onChange={(html) => setForm((f) => ({ ...f, bodyHtml: html }))} className="mt-1" />
+            )}
           </div>
         </div>
         <DialogFooter>
