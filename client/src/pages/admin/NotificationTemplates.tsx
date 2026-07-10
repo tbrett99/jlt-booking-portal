@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Pencil, Loader2, Mail, Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Link as LinkIcon, Unlink } from "lucide-react";
+import { Pencil, Loader2, Mail, Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Link as LinkIcon, Unlink, Eye, Edit3 } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import TiptapLink from "@tiptap/extension-link";
@@ -133,6 +133,7 @@ export default function NotificationTemplates() {
   const [subject, setSubject] = useState("");
   const [bodyHtml, setBodyHtml] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
 
   const { data: templates = [], isLoading } = trpc.notifications.templates.list.useQuery();
   const upsertTemplate = trpc.notifications.templates.update.useMutation({
@@ -211,7 +212,7 @@ export default function NotificationTemplates() {
         </div>
       )}
 
-      <Dialog open={!!editingTemplate} onOpenChange={() => setEditingTemplate(null)}>
+      <Dialog open={!!editingTemplate} onOpenChange={() => { setEditingTemplate(null); setPreviewMode(false); }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Template: {editingTemplate?.label}</DialogTitle>
@@ -229,19 +230,69 @@ export default function NotificationTemplates() {
               <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject line…" />
             </div>
 
-            {/* WYSIWYG body editor */}
-            <div className="space-y-2">
-              <Label>Email Body</Label>
-              {editingTemplate && (
-                <RichEditor key={editingTemplate.triggerKey} value={bodyHtml} onChange={setBodyHtml} />
-              )}
+            {/* Edit / Preview toggle */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPreviewMode(false)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  !previewMode ? "text-[#0d1a26] bg-[#70FFE8]" : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <Edit3 size={13} /> Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewMode(true)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  previewMode ? "text-[#0d1a26] bg-[#70FFE8]" : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <Eye size={13} /> Preview
+              </button>
             </div>
+
+            {/* WYSIWYG body editor OR preview */}
+            {previewMode ? (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="bg-muted/30 px-3 py-2 text-xs text-muted-foreground border-b">Email preview (approximate rendering)</div>
+                <div
+                  className="p-4 bg-[#f5f5f5] min-h-[200px]"
+                  style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
+                >
+                  <div style={{ maxWidth: 540, margin: '0 auto', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+                    <div style={{ background: '#0d1a26', padding: '16px 24px' }}>
+                      <span style={{ color: '#70FFE8', fontWeight: 700, fontSize: 18 }}>JLT Group</span>
+                      <span style={{ color: '#fff', fontSize: 13, marginLeft: 8, opacity: 0.7 }}>Booking Portal</span>
+                    </div>
+                    <div
+                      style={{ padding: '24px', color: '#1a1a2e', fontSize: 15, lineHeight: 1.7 }}
+                      dangerouslySetInnerHTML={{ __html: bodyHtml }}
+                    />
+                    <div style={{ padding: '0 24px 24px' }}>
+                      <div style={{ marginTop: 24, padding: '14px 18px', background: '#f0fffe', borderTop: '3px solid #02E6D2', borderRadius: 6 }}>
+                        <p style={{ margin: '0 0 8px', color: '#1a1a2e', fontWeight: 700, fontSize: 13 }}>🔒 Please reply in the portal — not by email</p>
+                        <a href="#" style={{ display: 'inline-block', background: '#02E6D2', color: '#1a1a2e', padding: '8px 18px', borderRadius: 6, textDecoration: 'none', fontWeight: 700, fontSize: 13 }}>Open in Portal →</a>
+                      </div>
+                      <p style={{ marginTop: 20, color: '#888', fontSize: 11, borderTop: '1px solid #eee', paddingTop: 14 }}>This email was sent from the JLT Group Booking Portal.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Email Body</Label>
+                {editingTemplate && (
+                  <RichEditor key={editingTemplate.triggerKey} value={bodyHtml} onChange={setBodyHtml} />
+                )}
+              </div>
+            )}
 
             <div className="flex gap-3 pt-2">
               <Button onClick={handleSave} disabled={isSaving} style={{ background: '#70FFE8', color: '#414141' }} className="font-semibold">
                 {isSaving ? <><Loader2 size={14} className="animate-spin mr-2" />Saving…</> : "Save Template"}
               </Button>
-              <Button variant="outline" onClick={() => setEditingTemplate(null)}>Cancel</Button>
+              <Button variant="outline" onClick={() => { setEditingTemplate(null); setPreviewMode(false); }}>Cancel</Button>
             </div>
           </div>
         </DialogContent>
