@@ -105,19 +105,47 @@ const defaultCampaignForm: CampaignFormData = {
 };
 
 function EmailPreviewPanel({ bodyHtml }: { bodyHtml: string }) {
+  const { data: branding } = trpc.crm.emailBranding.get.useQuery();
+  const headerBg = branding?.headerBgColor ?? "#70FFE8";
+  const headerText = branding?.headerTextColor ?? "#414141";
+  const logoUrl = branding?.logoUrl ?? null;
+  const companyName = branding?.companyName ?? "JLT Group";
+
+  // Inject paragraph/list spacing into the preview body
+  const styledBody = `<style>
+    .email-body p { margin: 0 0 14px 0; }
+    .email-body ul, .email-body ol { margin: 0 0 14px 0; padding-left: 24px; }
+    .email-body li { margin-bottom: 6px; }
+    .email-body h1 { font-size: 22px; font-weight: 700; margin: 0 0 12px 0; }
+    .email-body h2 { font-size: 18px; font-weight: 700; margin: 0 0 10px 0; }
+    .email-body h3 { font-size: 15px; font-weight: 700; margin: 0 0 8px 0; }
+    .email-body a { color: #02E6D2; }
+    .email-body strong { font-weight: 700; }
+  </style><div class="email-body">${bodyHtml}</div>`;
+
   return (
     <div className="border rounded-lg overflow-hidden">
       <div className="bg-muted/30 px-3 py-2 text-xs text-muted-foreground border-b">Email preview (approximate rendering)</div>
       <div className="p-4 bg-[#f5f5f5] min-h-[280px]" style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}>
         <div style={{ maxWidth: 540, margin: '0 auto', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-          <div style={{ background: '#0d1a26', padding: '16px 24px' }}>
-            <span style={{ color: '#70FFE8', fontWeight: 700, fontSize: 18 }}>JLT Group</span>
-            <span style={{ color: '#fff', fontSize: 13, marginLeft: 8, opacity: 0.7 }}>Booking Portal</span>
+          {/* Header — turquoise with logo centred */}
+          <div style={{ background: headerBg, padding: '20px 24px', textAlign: 'center' }}>
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={companyName}
+                style={{ maxHeight: 60, maxWidth: 200, display: 'inline-block', objectFit: 'contain' }}
+              />
+            ) : (
+              <span style={{ color: headerText, fontWeight: 800, fontSize: 22, letterSpacing: '-0.5px' }}>{companyName}</span>
+            )}
           </div>
+          {/* Body */}
           <div
             style={{ padding: '24px', color: '#1a1a2e', fontSize: 15, lineHeight: 1.7 }}
-            dangerouslySetInnerHTML={{ __html: bodyHtml }}
+            dangerouslySetInnerHTML={{ __html: styledBody }}
           />
+          {/* Footer */}
           <div style={{ padding: '0 24px 24px' }}>
             <p style={{ marginTop: 20, color: '#888', fontSize: 11, borderTop: '1px solid #eee', paddingTop: 14 }}>This email was sent from the JLT Group Booking Portal.</p>
           </div>

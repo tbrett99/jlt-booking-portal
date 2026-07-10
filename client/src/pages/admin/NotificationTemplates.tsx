@@ -136,6 +136,7 @@ export default function NotificationTemplates() {
   const [previewMode, setPreviewMode] = useState(false);
 
   const { data: templates = [], isLoading } = trpc.notifications.templates.list.useQuery();
+  const { data: branding } = trpc.crm.emailBranding.get.useQuery();
   const upsertTemplate = trpc.notifications.templates.update.useMutation({
     onSuccess: () => utils.notifications.templates.invalidate(),
   });
@@ -261,13 +262,17 @@ export default function NotificationTemplates() {
                   style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
                 >
                   <div style={{ maxWidth: 540, margin: '0 auto', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-                    <div style={{ background: '#0d1a26', padding: '16px 24px' }}>
-                      <span style={{ color: '#70FFE8', fontWeight: 700, fontSize: 18 }}>JLT Group</span>
-                      <span style={{ color: '#fff', fontSize: 13, marginLeft: 8, opacity: 0.7 }}>Booking Portal</span>
+                    {/* Turquoise header with logo */}
+                    <div style={{ background: branding?.headerBgColor ?? '#70FFE8', padding: '20px 24px', textAlign: 'center' }}>
+                      {branding?.logoUrl ? (
+                        <img src={branding.logoUrl} alt={branding.companyName ?? 'JLT Group'} style={{ maxHeight: 60, maxWidth: 200, display: 'inline-block', objectFit: 'contain' }} />
+                      ) : (
+                        <span style={{ color: branding?.headerTextColor ?? '#414141', fontWeight: 800, fontSize: 22, letterSpacing: '-0.5px' }}>{branding?.companyName ?? 'JLT Group'}</span>
+                      )}
                     </div>
                     <div
                       style={{ padding: '24px', color: '#1a1a2e', fontSize: 15, lineHeight: 1.7 }}
-                      dangerouslySetInnerHTML={{ __html: bodyHtml }}
+                      dangerouslySetInnerHTML={{ __html: `<style>.nb-body p{margin:0 0 14px 0}.nb-body ul,.nb-body ol{margin:0 0 14px 0;padding-left:24px}.nb-body li{margin-bottom:6px}.nb-body h1{font-size:22px;font-weight:700;margin:0 0 12px 0}.nb-body h2{font-size:18px;font-weight:700;margin:0 0 10px 0}.nb-body a{color:#02E6D2}.nb-body strong{font-weight:700}</style><div class="nb-body">${bodyHtml}</div>` }}
                     />
                     <div style={{ padding: '0 24px 24px' }}>
                       <div style={{ marginTop: 24, padding: '14px 18px', background: '#f0fffe', borderTop: '3px solid #02E6D2', borderRadius: 6 }}>
