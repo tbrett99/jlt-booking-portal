@@ -3020,6 +3020,24 @@ export const crmRouter = router({
           recipients = agentRows
             .filter((u) => u.email)
             .map((u) => ({ email: u.email!, name: u.name ?? undefined, id: u.id, type: "agent" as const }));
+
+          // Always include admins and super_admins as recipients for agent campaigns
+          // (they are treated as active agents for email marketing purposes)
+          const adminRows = await db
+            .select({ id: usersTable.id, email: usersTable.email, name: usersTable.name })
+            .from(usersTable)
+            .where(
+              and(
+                inArray(usersTable.role, ["admin", "super_admin"]),
+                isNotNull(usersTable.email),
+                sqlFn`(${usersTable.portalStatus} IS NULL OR ${usersTable.portalStatus} != 'suspended')`
+              )
+            );
+          const existingEmails = new Set(recipients.map((r) => r.email.toLowerCase()));
+          const adminRecipients = adminRows
+            .filter((u) => u.email && !existingEmails.has(u.email.toLowerCase()))
+            .map((u) => ({ email: u.email!, name: u.name ?? undefined, id: u.id, type: "agent" as const }));
+          recipients = [...recipients, ...adminRecipients];
         }
 
         if (recipients.length === 0) {

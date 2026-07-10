@@ -226,7 +226,6 @@ export async function sendDirectEmail(params: {
   bookingId?: number;
   userId?: number | null;
   triggerKey?: string;
-  skipAdminCc?: boolean;
 }): Promise<{ success: boolean; error?: string }> {
   if (await areNotificationsPaused()) {
     console.log(`[Notifications] Paused — skipping direct email to ${params.toEmail}`);
@@ -236,15 +235,12 @@ export async function sendDirectEmail(params: {
   const footer = params.injectPortalFooter ? portalReplyFooter(params.bookingId) : undefined;
   const html = wrapEmailHtml(params.html, footer);
 
-  const adminCc = params.skipAdminCc ? [] : await getAdminCcEmails();
-
   try {
     const resend = getResend();
     await resend.emails.send({
       from: FROM_AGENT,
       replyTo: REPLY_TO_AGENT,
       to: `${params.toName} <${params.toEmail}>`,
-      ...(adminCc.length > 0 ? { cc: adminCc } : {}),
       subject: params.subject,
       html,
     });
@@ -284,7 +280,6 @@ export async function sendNotificationEmail(params: {
   overrideSubject?: string;
   overrideBody?: string;
   userId?: number | null;
-  skipAdminCc?: boolean;
 }): Promise<{ success: boolean; error?: string }> {
   if (await areNotificationsPaused()) {
     console.log(`[Notifications] Paused — skipping email (${params.triggerKey}) to ${params.toEmail}`);
@@ -323,15 +318,12 @@ export async function sendNotificationEmail(params: {
   const footer = portalReplyFooter(params.bookingId);
   const html = wrapEmailHtml(body, footer);
 
-  const adminCc = params.skipAdminCc ? [] : await getAdminCcEmails();
-
   try {
     const resend = getResend();
     await resend.emails.send({
       from: FROM_AGENT,
       replyTo: REPLY_TO_AGENT,
       to: `${params.toName} <${params.toEmail}>`,
-      ...(adminCc.length > 0 ? { cc: adminCc } : {}),
       subject,
       html,
     });
