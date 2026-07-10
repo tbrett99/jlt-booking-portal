@@ -2,12 +2,14 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   MessageSquare, ChevronRight, Clock, CheckCircle2, AlertCircle,
-  Search, RefreshCw,
+  Search, RefreshCw, CheckCheck,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { format, formatDistanceToNow } from "date-fns";
+import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 
 type Thread = {
   bookingId: number;
@@ -21,20 +23,25 @@ type Thread = {
   totalMessages: number;
 };
 
-function ThreadCard({ thread, showBadge }: { thread: Thread; showBadge?: boolean }) {
+function ThreadCard({
+  thread, showBadge, onMarkRead,
+}: {
+  thread: Thread;
+  showBadge?: boolean;
+  onMarkRead?: (bookingId: number) => void;
+}) {
   const isFromAdmin =
     thread.latestAuthorRole === "admin" || thread.latestAuthorRole === "super_admin";
   const timeAgo = formatDistanceToNow(new Date(thread.latestMessageAt), { addSuffix: true });
 
   return (
-    <Link href={`/bookings/${thread.bookingId}#messages`}>
-      <div
-        className={`flex items-start gap-3 p-4 rounded-xl border transition-all hover:shadow-sm cursor-pointer ${
-          isFromAdmin
-            ? "border-[#70FFE8]/60 bg-[#f0fffb] dark:bg-[#0a2e2a]/40"
-            : "border-border hover:border-[#70FFE8]/30"
-        }`}
-      >
+    <div
+      className={`flex items-start gap-3 p-4 rounded-xl border transition-all ${
+        isFromAdmin
+          ? "border-[#70FFE8]/60 bg-[#f0fffb] dark:bg-[#0a2e2a]/40"
+          : "border-border"
+      }`}
+    >
         {/* Icon */}
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
@@ -94,15 +101,35 @@ function ThreadCard({ thread, showBadge }: { thread: Thread; showBadge?: boolean
           </div>
         </div>
 
-        <ChevronRight size={15} className="text-muted-foreground flex-shrink-0 mt-1" />
+        {/* Right side: actions */}
+        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+          <Link href={`/bookings/${thread.bookingId}#messages`}>
+            <ChevronRight size={15} className="text-muted-foreground" />
+          </Link>
+          {showBadge && isFromAdmin && onMarkRead && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onMarkRead(thread.bookingId);
+              }}
+              className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full border border-[#70FFE8]/60 text-[#414141] hover:bg-[#70FFE8]/20 transition-colors"
+              style={{ background: "rgba(112,255,232,0.1)" }}
+              title="Mark as read — removes from Needs Reply"
+            >
+              <CheckCheck size={10} />
+              Mark read
+            </button>
+          )}
+        </div>
       </div>
-    </Link>
   );
 }
 
 export default function AgentMessages() {
   const [tab, setTab] = useState<"unanswered" | "all">("unanswered");
   const [search, setSearch] = useState("");
+  const utils = trpc.useUtils();
 
   const {
     data: unanswered = [],
@@ -117,6 +144,18 @@ export default function AgentMessages() {
   } = trpc.notes.myAllThreads.useQuery(undefined, {
     enabled: tab === "all",
   });
+
+  const markThreadRead = trpc.notes.markThreadRead.useMutation({
+    onSuccess: () => {
+      utils.notes.myUnansweredThreads.invalidate();
+      toast.success("Marked as read");
+    },
+    onError: () => toast.error("Failed to mark as read"),
+  });
+
+  const handleMarkRead = (bookingId: number) => {
+    markThreadRead.mutate({ bookingId });
+  };
 
   const isLoading = tab === "unanswered" ? loadingUnanswered : loadingAll;
   const threads = tab === "unanswered" ? unanswered : allThreads;
@@ -261,6 +300,7 @@ export default function AgentMessages() {
                   key={thread.bookingId}
                   thread={thread}
                   showBadge={tab === "unanswered"}
+                  onMarkRead={tab === "unanswered" ? handleMarkRead : undefined}
                 />
               ))}
             </div>

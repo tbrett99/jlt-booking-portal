@@ -1746,6 +1746,7 @@ export const appRouter = router({
           bookingId: notesTable.bookingId,
           content: notesTable.content,
           createdAt: notesTable.createdAt,
+          isReadByAgent: notesTable.isReadByAgent,
           authorRole: usersTable.role,
           authorName: usersTable.name,
           clientName: bookingsTable.clientName,
@@ -1766,7 +1767,7 @@ export const appRouter = router({
       const threadMap = new Map<number, {
         bookingId: number; clientName: string; topdogRef: string | null; ptsRef: string | null;
         latestMessage: string; latestMessageAt: Date; latestAuthorName: string; latestAuthorRole: string;
-        totalMessages: number;
+        totalMessages: number; isReadByAgent: boolean;
       }>();
       for (const row of allRows) {
         if (!threadMap.has(row.bookingId)) {
@@ -1780,14 +1781,17 @@ export const appRouter = router({
             latestAuthorName: row.authorName ?? 'JLT Team',
             latestAuthorRole: row.authorRole ?? 'agent',
             totalMessages: 1,
+            isReadByAgent: row.isReadByAgent,
           });
         } else {
           threadMap.get(row.bookingId)!.totalMessages++;
+          // If any note is unread, the thread is unread
+          if (!row.isReadByAgent) threadMap.get(row.bookingId)!.isReadByAgent = false;
         }
       }
-      // Only return threads where the latest message came from admin/super_admin
+      // Only return threads where the latest message came from admin/super_admin AND is not yet read by agent
       return Array.from(threadMap.values())
-        .filter((t) => t.latestAuthorRole === 'admin' || t.latestAuthorRole === 'super_admin')
+        .filter((t) => (t.latestAuthorRole === 'admin' || t.latestAuthorRole === 'super_admin') && !t.isReadByAgent)
         .sort((a, b) => new Date(b.latestMessageAt).getTime() - new Date(a.latestMessageAt).getTime());
     }),
     // Agent: get ALL message threads on my bookings (for the full messages page)
@@ -1843,6 +1847,28 @@ export const appRouter = router({
       return Array.from(threadMap.values())
         .sort((a, b) => new Date(b.latestMessageAt).getTime() - new Date(a.latestMessageAt).getTime());
     }),
+    // Agent: mark all admin notes on a booking thread as read (removes from "Needs Reply" tab)
+    markThreadRead: protectedProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await (await import('./db')).getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        const { notes: notesTable, bookings: bookingsTable } = await import('../drizzle/schema');
+        const { eq, and } = await import('drizzle-orm');
+        // Verify the booking belongs to this agent
+        const [booking] = await db.select({ agentId: bookingsTable.agentId })
+          .from(bookingsTable)
+          .where(eq(bookingsTable.id, input.bookingId))
+          .limit(1);
+        if (!booking || booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Not your booking' });
+        }
+        await db.update(notesTable)
+          .set({ isReadByAgent: true })
+          .where(and(eq(notesTable.bookingId, input.bookingId), eq(notesTable.isInternal, false)));
+        return { success: true };
+      }),
+
     // Admin: get all bookings with unread agent messages
     unreadAgentMessages: adminProcedure.query(async () => {
       return getBookingsWithUnreadAgentNotes();

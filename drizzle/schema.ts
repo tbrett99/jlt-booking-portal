@@ -194,6 +194,7 @@ export const notes = mysqlTable("notes", {
   content: text("content").notNull(),
   isInternal: boolean("isInternal").default(false).notNull(), // true = admin-only
   isReadByAdmin: boolean("isReadByAdmin").default(false).notNull(), // true once an admin has seen/replied
+  isReadByAgent: boolean("isReadByAgent").default(false).notNull(), // true once the agent has marked the thread as read
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   tag: mysqlEnum("tag", ["Commissions", "Refunds", "Amendments", "Reimbursements", "New Booking", "Support"]),
 });
