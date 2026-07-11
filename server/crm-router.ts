@@ -2945,8 +2945,34 @@ export const crmRouter = router({
               (p) => !['archived', 'onboarding_declined', 'won'].includes(p.pipelineStage)
             );
           }
+          // Systemic safeguard: cross-check against the users table and exclude anyone
+          // who is already an active portal agent/admin — catches prospects whose
+          // pipelineStage was never updated to 'won' when they were onboarded.
+          const prospectEmails = filtered.filter((p) => p.email).map((p) => p.email!.toLowerCase());
+          let agentEmailSet = new Set<string>();
+          if (prospectEmails.length > 0) {
+            try {
+              const { getDb: getDbForCheck } = await import("./db");
+              const dbCheck = await getDbForCheck();
+              if (dbCheck) {
+                const { users: usersTableCheck } = await import("../drizzle/schema");
+                const { sql: sqlCheck } = await import("drizzle-orm");
+                const agentRows = await dbCheck
+                  .select({ email: usersTableCheck.email })
+                  .from(usersTableCheck)
+                  .where(sqlCheck`${usersTableCheck.role} IN ('agent', 'admin', 'super_admin') AND ${usersTableCheck.email} IS NOT NULL`);
+                agentEmailSet = new Set(agentRows.map((r) => r.email?.toLowerCase() ?? ""));
+                const excluded = prospectEmails.filter((e) => agentEmailSet.has(e));
+                if (excluded.length > 0) {
+                  console.log(`[Campaign Send] Safeguard excluded ${excluded.length} prospect(s) who are already portal agents/admins:`, excluded);
+                }
+              }
+            } catch (e) {
+              console.warn("[Campaign Send] Could not run agent email safeguard check:", e);
+            }
+          }
           recipients = filtered
-            .filter((p) => p.email)
+            .filter((p) => p.email && !agentEmailSet.has(p.email.toLowerCase()))
             .map((p) => ({ email: p.email!, name: `${p.firstName} ${p.lastName}`.trim(), id: p.id, type: "prospect" as const }));
         } else {
           // Agents — join with agentCrmProfiles and agentTags for segmentation
