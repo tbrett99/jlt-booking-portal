@@ -1069,16 +1069,6 @@ async function sendStageEmail(
     await logRecruitmentEmail({ prospectId, stage: "did_not_turn_up", emailKey: "dntu_notification", subject });
   }
 
-  if (toStage === "onboarding_approved") {
-    const subject = "Welcome to the JLT Group Family!";
-    const bodyHtml = `
-<p>Hi ${name},</p>
-<p>We are absolutely thrilled to welcome you to the JLT Group team! 🎉</p>
-<p>Your onboarding has been approved and we'll be in touch very shortly with everything you need to get started.</p>
-<p>We can't wait to have you on board!</p>
-<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
-
-    await sendProspectEmail({ toEmail: email, toName: name, subject, bodyHtml });
-    await logRecruitmentEmail({ prospectId, stage: "onboarding_approved", emailKey: "onboarding_approved_notification", subject });
-  }
+  // onboarding_approved: email is handled entirely by the branded workflow (enrollProspectInWorkflow).
+  // The plain sendStageEmail send was removed to prevent duplicate emails.
 }
