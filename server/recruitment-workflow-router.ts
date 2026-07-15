@@ -20,7 +20,7 @@ import {
   advanceEnrollment,
   enrollProspectInWorkflow,
 } from "./recruitment-workflow-db";
-import { getRecruitmentProspectById } from "./recruitment-db";
+import { getRecruitmentProspectById, logRecruitmentEmail } from "./recruitment-db";
 import { sendSupportEmail } from "./email";
 import { PROSPECT_FROM, PROSPECT_REPLY_TO } from "./resend-email";
 import { Resend } from "resend";
@@ -413,7 +413,17 @@ export async function processWorkflowEmailsInternal() {
       });
 
       sent++;
-
+      // Log the email so it appears in the prospect's Email Log on the portal
+      try {
+        await logRecruitmentEmail({
+          prospectId: enrollment.prospectId,
+          stage: workflow.stage,
+          emailKey: `workflow_${workflow.stage}_step${enrollment.currentStep}`,
+          subject,
+        });
+      } catch (_logErr) {
+        // Non-fatal — email was sent, logging failure should not block advancement
+      }
       // Advance to next step
       await advanceEnrollment(enrollment.id, enrollment.workflowId, enrollment.currentStep + 1);
     } catch (err) {
