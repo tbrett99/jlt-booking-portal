@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import CopyableRef from "@/components/CopyableRef";
+import { CompetitionsWidget } from "@/components/CompetitionsWidget";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link } from "wouter";
@@ -667,9 +668,10 @@ export default function AgentDashboard() {
           </Card>
         </div>
 
-        {/* ── RIGHT COLUMN (1/3 width) ─────────────────────────────────────── */}
+                {/* ── RIGHT COLUMN (1/3 width) ─────────────────────────────────────── */}
         <div className="space-y-5">
-
+          {/* ── Competitions widget ─────────────────────────────────────── */}
+          <CompetitionsWidget />
           {/* ── Outstanding Items panel ─────────────────────────────────── */}
           <OutstandingItemsPanel
             needsAttention={needsAttention}

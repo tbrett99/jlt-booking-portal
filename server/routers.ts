@@ -145,6 +145,7 @@ import { communityRouter } from "./community-router";
 import { superAdminRouter } from "./super-admin-router";
 import { roadmapRouter } from "./roadmap-router";
 import { fnfRouter } from "./fnf-router";
+import { competitionsRouter } from "./competitions-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -4226,6 +4227,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
   superAdmin: superAdminRouter,
   roadmap: roadmapRouter,
   fnf: fnfRouter,
+  competitions: competitionsRouter,
   // ─── GoCardless Direct Debitt ───────────────────────────────────────────────
   gocardless: router({
     /**

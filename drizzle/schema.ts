@@ -1794,3 +1794,37 @@ export const fnfVoucherUses = mysqlTable("fnf_voucher_uses", {
 });
 export type FnfVoucherUse = typeof fnfVoucherUses.$inferSelect;
 export type InsertFnfVoucherUse = typeof fnfVoucherUses.$inferInsert;
+
+// ─── Competitions / Incentive Leaderboard ─────────────────────────────────────
+
+export const competitions = mysqlTable("competitions", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  prizeDescription: varchar("prizeDescription", { length: 255 }).notNull(),
+  startDate: timestamp("startDate").notNull(),
+  endDate: timestamp("endDate").notNull(),
+  status: mysqlEnum("status", ["draft", "active", "closed"]).default("draft").notNull(),
+  createdById: int("createdById").notNull(),   // FK → users.id
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Competition = typeof competitions.$inferSelect;
+export type InsertCompetition = typeof competitions.$inferInsert;
+
+export const competitionEntries = mysqlTable("competition_entries", {
+  id: int("id").autoincrement().primaryKey(),
+  competitionId: int("competitionId").notNull(),  // FK → competitions.id
+  agentId: int("agentId").notNull(),              // FK → users.id
+  bookingReference: varchar("bookingReference", { length: 100 }).notNull(),
+  bookingDate: timestamp("bookingDate").notNull(),
+  submittedAt: timestamp("submittedAt").defaultNow().notNull(),
+  verifiedStatus: mysqlEnum("verifiedStatus", ["pending", "approved", "rejected"]).default("pending").notNull(),
+  verifiedById: int("verifiedById"),              // FK → users.id (admin who verified)
+  verifiedAt: timestamp("verifiedAt"),
+  adminNotes: varchar("adminNotes", { length: 500 }),
+});
+
+export type CompetitionEntry = typeof competitionEntries.$inferSelect;
+export type InsertCompetitionEntry = typeof competitionEntries.$inferInsert;

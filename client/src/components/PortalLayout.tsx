@@ -8,7 +8,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper, Activity, Rocket
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper, Activity, Rocket, Trophy
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { Link, useLocation } from "wouter";
@@ -367,6 +367,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       items: [
         { label: "Community Hub", href: "/community", icon: <Newspaper size={16} /> },
         { label: "Events Calendar", href: "/events", icon: <CalendarDays size={16} /> },
+        { label: "Competitions", href: "/competitions", icon: <Trophy size={16} /> },
         { label: "Roadmap & Suggestions", href: "/roadmap", icon: <Rocket size={16} /> },
       ],
     },
@@ -507,6 +508,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       items: [
         { label: "Community Hub", href: "/community", icon: <Newspaper size={16} /> },
         { label: "Weekly Digest", href: "/admin/weekly-digest", icon: <Mail size={16} /> },
+        { label: "Competitions", href: "/admin/competitions", icon: <Trophy size={16} /> },
         { label: "Roadmap Manager", href: "/admin/roadmap", icon: <Rocket size={16} /> },
       ],
     },
