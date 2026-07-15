@@ -142,25 +142,27 @@ async function sendProspectusEmail(opts: {
   firstName: string;
   applicationUrl: string;
 }): Promise<void> {
-  const subject = "Your JLT Group Prospectus";
+  const subject = "Your JLT Group Prospectus — and Your Next Step";
   const bodyHtml = `
 <p style="margin:0 0 16px;">Hi ${opts.firstName},</p>
-<p style="margin:0 0 16px;">Thank you for your interest in joining JLT Group. We are really excited to share more about who we are and what we offer.</p>
-<p style="margin:0 0 16px;">Start by reading our prospectus. It covers everything you need to know about life at JLT Group and what makes us different:</p>
+<p style="margin:0 0 16px;">Thank you for getting in touch — we are genuinely excited to share more about what we have built at JLT Group and what it could mean for you.</p>
+<p style="margin:0 0 16px;">Your prospectus is ready to read. It covers everything you need to know about life at JLT Group — our model, our support, and what makes us different from every other host agency out there:</p>
 <p style="text-align:center;margin:28px 0;">
   <a href="${PROSPECTUS_URL}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Read the JLT Prospectus</a>
 </p>
-<p style="margin:0 0 16px;">We also have a fantastic Facebook community where current agents and prospective members connect, share tips, and get a real feel for the JLT culture. We would love for you to join us there. When you request to join, please answer the membership questions so we can approve you straight away:</p>
+<p style="margin:0 0 16px;">We also have a brilliant Facebook community where current agents and prospective members connect, share wins, ask questions, and get a real feel for the JLT culture before they even join. We would love for you to be part of it — when you request to join, please answer the membership questions so we can approve you straight away:</p>
 <p style="text-align:center;margin:28px 0;">
   <a href="${FACEBOOK_GROUP_URL}" style="display:inline-block;background:#414141;color:#ffffff;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Join the JLT Facebook Community</a>
 </p>
 <hr style="border:none;border-top:1px solid #e8e8e8;margin:28px 0;"/>
-<p style="margin:0 0 12px;"><strong>Ready for the next step?</strong></p>
-<p style="margin:0 0 16px;">Once you have read the prospectus, we would love to learn more about you by completing a short application form. There is absolutely no commitment involved in doing so. The form simply helps us understand where you are right now and allows us to organise a discovery call that is completely tailored to you and your goals. It takes just a few minutes and makes all the difference.</p>
+<p style="margin:0 0 12px;"><strong>Your application — and why it matters</strong></p>
+<p style="margin:0 0 16px;">Once you have read the prospectus, the next step is your application form.</p>
+<p style="margin:0 0 16px;">We read every application personally, and we use it to prepare for your discovery call — so the more you share, the more useful that conversation will be for <em>you</em>. We are not looking for a CV or a list of qualifications. We want to understand where you are right now, what has drawn you to travel, and what you are hoping to build.</p>
+<p style="margin:0 0 16px;">The applications that lead to the best discovery calls are the ones where we can already picture the person behind the answers. Tell us about your background, your motivations, and what your ideal version of this looks like. There are no right or wrong answers — just yours.</p>
 <p style="text-align:center;margin:28px 0;">
   <a href="${opts.applicationUrl}" style="display:inline-block;background:#70FFE8;color:#414141;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Complete Your Application</a>
 </p>
-<p style="margin:0 0 16px;">If you have any questions at any point, just reply to this email and we will be happy to help.</p>
+<p style="margin:0 0 16px;">If anything is unclear or you have questions before you apply, just reply to this email. We are always happy to help.</p>
 <p style="margin:0;">Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
 
   await sendProspectEmail({
