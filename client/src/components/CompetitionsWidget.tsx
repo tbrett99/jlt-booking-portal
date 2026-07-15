@@ -43,7 +43,7 @@ export function CompetitionsWidget() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {summary.map(({ competition, approvedTickets, pendingTickets }) => {
+        {summary.map(({ competition, tickets }) => {
           const days = daysRemaining(competition.endDate);
           return (
             <div key={competition.id} className="space-y-1.5">
@@ -62,14 +62,8 @@ export function CompetitionsWidget() {
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Ticket className="w-3 h-3 text-emerald-500" />
-                  <span className="font-semibold text-foreground">{approvedTickets}</span> approved
+                  <span className="font-semibold text-foreground">{tickets}</span> ticket{tickets !== 1 ? 's' : ''}
                 </span>
-                {pendingTickets > 0 && (
-                  <span className="flex items-center gap-1">
-                    <Ticket className="w-3 h-3 text-amber-500" />
-                    <span className="font-semibold text-amber-600">{pendingTickets}</span> pending
-                  </span>
-                )}
               </div>
             </div>
           );

@@ -148,7 +148,7 @@ export const competitionsRouter = router({
         bookingReference: input.bookingReference.toUpperCase(),
         bookingDate,
         submittedAt: new Date(),
-        verifiedStatus: "pending",
+        verifiedStatus: "approved",
       });
 
       return { success: true };
@@ -189,8 +189,7 @@ export const competitionsRouter = router({
     const approvedCounts = await db
       .select({
         competitionId: competitionEntries.competitionId,
-        approved: sql<number>`SUM(CASE WHEN ${competitionEntries.verifiedStatus} = 'approved' THEN 1 ELSE 0 END)`.as("approved"),
-        pending: sql<number>`SUM(CASE WHEN ${competitionEntries.verifiedStatus} = 'pending' THEN 1 ELSE 0 END)`.as("pending"),
+        tickets: sql<number>`COUNT(*)`.as("tickets"),
       })
       .from(competitionEntries)
       .where(
@@ -201,18 +200,14 @@ export const competitionsRouter = router({
       )
       .groupBy(competitionEntries.competitionId);
 
-    const countMap: Record<number, { approved: number; pending: number }> = {};
+    const countMap: Record<number, number> = {};
     for (const row of approvedCounts) {
-      countMap[row.competitionId] = {
-        approved: Number(row.approved),
-        pending: Number(row.pending),
-      };
+      countMap[row.competitionId] = Number(row.tickets);
     }
 
     return activeComps.map((comp: typeof competitions.$inferSelect) => ({
       competition: comp,
-      approvedTickets: countMap[comp.id]?.approved ?? 0,
-      pendingTickets: countMap[comp.id]?.pending ?? 0,
+      tickets: countMap[comp.id] ?? 0,
     }));
   }),
 
