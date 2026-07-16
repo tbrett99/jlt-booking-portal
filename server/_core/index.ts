@@ -1697,6 +1697,7 @@ async function startServer() {
               const db2 = await getDb();
               let agentEmail: string | null = null;
               let agentName: string | null = null;
+              let agentPortalStatus: string | null = null;
               let newConsecutive = 1;
               if (db2) {
                 const { users: usersT, gcPaymentFailures: gcPF } = await import("../../drizzle/schema");
@@ -1704,6 +1705,7 @@ async function startServer() {
                 const [agentRow] = await db2.select().from(usersT).where(eqOp(usersT.id, userId)).limit(1);
                 agentEmail = agentRow?.email ?? null;
                 agentName = agentRow?.name ?? null;
+                agentPortalStatus = agentRow?.portalStatus ?? null;
                 const [existing] = await db2.select().from(gcPF).where(eqOp(gcPF.userId, userId)).limit(1);
                 // Deduplicate: GoCardless retries the same failed payment multiple times,
                 // each firing a new webhook. Only increment the counter once per unique payment ID.
@@ -1762,7 +1764,10 @@ async function startServer() {
                   console.log(`[GC Webhook] Agent ${userId} auto-suspended after 3 consecutive payment failures`);
                 }
               }
-              if (agentEmail) {
+              if (agentEmail && agentPortalStatus !== "suspended") {
+                // Note: if the agent is already suspended we skip the email entirely.
+                // GoCardless continues retrying the DD after suspension (generating new payment IDs
+                // each time), which would otherwise send a new suspension email on every retry.
                 const failureReason = meta.description ?? meta.cause ?? null;
                 const isSuspended = newConsecutive >= 3;
                 const failureSubject = isSuspended
@@ -1772,7 +1777,7 @@ async function startServer() {
                   ? `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);"><div style="background:#fee2e2;padding:28px 32px;"><h1 style="margin:0;font-size:22px;font-weight:700;color:#991b1b;">JLT Group</h1><p style="margin:4px 0 0;font-size:13px;color:#991b1b;opacity:0.8;">Membership Payment Failed \u2014 Portal Access Suspended</p></div><div style="padding:32px;"><p style="color:#414141;margin:0 0 16px;">Hi ${agentName ?? "there"},</p><p style="color:#414141;margin:0 0 16px;">Your JLT Group membership Direct Debit payment was <strong>unsuccessful for the third consecutive time</strong>.</p>${failureReason ? `<p style="color:#6b7280;font-size:14px;margin:0 0 16px;"><strong>Reason:</strong> ${failureReason}</p>` : ""}<div style="background:#fee2e2;border-left:4px solid #dc2626;padding:16px;border-radius:4px;margin:0 0 20px;"><p style="margin:0;color:#991b1b;font-weight:700;font-size:15px;">\u26a0\ufe0f Your portal access has been temporarily suspended</p><p style="margin:8px 0 0;color:#991b1b;font-size:14px;">Due to 3 consecutive failed payments, your access to the JLT Group portal has been suspended until this is resolved.</p></div><div style="background:#fff7ed;border-left:4px solid #f97316;padding:16px;border-radius:4px;margin:0 0 20px;"><p style="margin:0;color:#9a3412;font-weight:700;font-size:14px;">Admin Charge Notice</p><p style="margin:8px 0 0;color:#9a3412;font-size:14px;">As per the terms of your membership contract with JLT Group, a <strong>\u00a325 administration charge has been applied</strong> due to multiple failed payments. This will be collected once your payment details are updated.</p></div><p style="color:#414141;margin:0 0 16px;">To reinstate your portal access, please contact us <strong>immediately</strong> so we can resolve your payment and restore your account.</p><p style="color:#6b7280;font-size:13px;margin:0;">Contact us at <a href="mailto:memberships@thejltgroup.co.uk" style="color:#02E6D2;">memberships@thejltgroup.co.uk</a></p></div><div style="background:#f9fafb;padding:20px 32px;border-top:1px solid #f0f0f0;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">JLT Group &bull; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p></div></div>`
                   : `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);"><div style="background:#fee2e2;padding:28px 32px;"><h1 style="margin:0;font-size:22px;font-weight:700;color:#991b1b;">JLT Group</h1><p style="margin:4px 0 0;font-size:13px;color:#991b1b;opacity:0.8;">Membership Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}</p></div><div style="padding:32px;"><p style="color:#414141;margin:0 0 16px;">Hi ${agentName ?? "there"},</p><p style="color:#414141;margin:0 0 16px;">Your JLT Group membership Direct Debit payment was <strong>${event.action === "charged_back" ? "charged back" : "unsuccessful"}</strong>.</p>${failureReason ? `<p style="color:#6b7280;font-size:14px;margin:0 0 16px;"><strong>Reason:</strong> ${failureReason}</p>` : ""}<p style="color:#414141;margin:0 0 16px;">Your payment will be retried automatically. It is essential that you ensure <strong>sufficient funds are available</strong> in your account before the next retry to avoid further failed attempts.</p><div style="background:#fff7ed;border-left:4px solid #f97316;padding:16px;border-radius:4px;margin:0 0 20px;"><p style="margin:0;color:#9a3412;font-weight:700;font-size:14px;">Important \u2014 Admin Charge Notice</p><p style="margin:8px 0 0;color:#9a3412;font-size:14px;">As per the terms of your membership contract with JLT Group, a <strong>\u00a325 administration charge will be applied for multiple late or failed payments</strong>. This charge is in addition to your standard membership fee and will be collected via Direct Debit.</p></div><p style="color:#414141;margin:0 0 20px;">This is failure <strong>${newConsecutive} of 3</strong>. If 3 consecutive payments fail, your portal access will be temporarily suspended.</p><p style="color:#414141;margin:0 0 16px;">If you need to update your bank details or discuss your payment, please contact us as soon as possible.</p><p style="color:#6b7280;font-size:13px;margin:0;">Contact us at <a href="mailto:memberships@thejltgroup.co.uk" style="color:#02E6D2;">memberships@thejltgroup.co.uk</a></p></div><div style="background:#f9fafb;padding:20px 32px;border-top:1px solid #f0f0f0;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">JLT Group &bull; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p></div></div>`;
                 await sendDirectEmail({ toEmail: agentEmail, toName: agentName ?? "Agent", subject: failureSubject, html: failureHtml, ...(({ triggerKey: "gc_payment_failed", userId } as any)) });
-              }
+              } // end if (agentEmail && not already suspended)
             } catch (failureEmailErr) {
               console.error("[GC Webhook] Failed to send payment failure email to agent:", failureEmailErr);
             }
