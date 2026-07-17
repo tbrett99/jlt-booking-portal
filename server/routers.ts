@@ -4504,15 +4504,15 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         let subscriptionStatus: string | null = null;
         let subscriptionId: string | null = null;
         try {
-          const { gcSubscriptions: gcSubsTable } = await import('../drizzle/schema');
+          const { gcSubscriptions: gcSubsTable, users: usersTableResync } = await import('../drizzle/schema');
           const gcToken2 = process.env.GOCARDLESS_ACCESS_TOKEN!;
           const gcEnv2 = (process.env.GOCARDLESS_ENVIRONMENT || 'live').toUpperCase();
           const gcBase2 = gcEnv2 === 'LIVE' ? 'https://api.gocardless.com' : 'https://api-sandbox.gocardless.com';
           const gcHeaders2 = { 'Authorization': `Bearer ${gcToken2}`, 'GoCardless-Version': '2015-07-06', 'Accept': 'application/json' };
 
           // Step 1: find the GC customer by email
-          const agentForResync = await dbInst.select({ email: usersTable.email })
-            .from(usersTable).where(eqFn(usersTable.id, input.userId)).limit(1).then(r => r[0]);
+          const agentForResync = await dbInst.select({ email: usersTableResync.email })
+            .from(usersTableResync).where(eqFn(usersTableResync.id, input.userId)).limit(1).then(r => r[0]);
           if (agentForResync?.email) {
             const email = agentForResync.email.toLowerCase().trim();
             // Fetch all customers, mandates, subscriptions
