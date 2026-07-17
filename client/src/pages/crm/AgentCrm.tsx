@@ -2305,6 +2305,14 @@ function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; m
     },
     onError: (err) => toast.error(err.message),
   });
+  const linkByEmailMutation = trpc.gocardless.linkByEmail.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      refetchDdStatus();
+      utils.gocardless.adminListMandates.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   const formatEventType = (type: string) => {
     const map: Record<string, string> = {
@@ -2377,6 +2385,19 @@ function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; m
             >
               {refreshMutation.isPending ? "Refreshing..." : "↻ Refresh status from GoCardless"}
             </button>
+          </div>
+        )}
+        {/* Link GC subscription by email — shown when no mandate exists */}
+        {!mandate && (
+          <div className="mt-2">
+            <button
+              onClick={() => linkByEmailMutation.mutate({ userId })}
+              disabled={linkByEmailMutation.isPending}
+              className="w-full text-sm border border-dashed rounded-lg px-4 py-2 text-blue-700 hover:bg-blue-50 transition-colors disabled:opacity-50"
+            >
+              {linkByEmailMutation.isPending ? "Searching GoCardless..." : "🔗 Link GC Subscription by Email"}
+            </button>
+            <p className="text-xs text-muted-foreground mt-1 text-center">Searches GoCardless for an active subscription matching this agent's email and links it automatically.</p>
           </div>
         )}
         {/* Manual subscription creation — shown when mandate exists (any non-cancelled/expired status) OR no mandate at all */}
