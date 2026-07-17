@@ -319,7 +319,7 @@ export const recruitmentRouter = router({
     .input(
       z.object({
         token: z.string(),
-        occupation: z.string().min(1).max(255),
+        occupation: z.string().min(1).max(1000),
         whyJlt: z.string().min(1).max(2000),
         experience: z.string().max(2000).optional(),
         fullOrPartTime: z.enum(["full_time", "part_time", "not_sure"]),
