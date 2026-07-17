@@ -4498,7 +4498,59 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           .update(gcMandatesTable)
           .set({ status: newStatus, mandateId: resolvedMandateId, updatedAt: new Date() })
           .where(eqFn(gcMandatesTable.id, mandate.id));
-                return { status: gcMandate.status, mandateId: resolvedMandateId };
+
+        // Also refresh the subscription status for this mandate from GoCardless
+        let subscriptionStatus: string | null = null;
+        let subscriptionId: string | null = null;
+        try {
+          const { gcSubscriptions: gcSubsTable } = await import('../drizzle/schema');
+          const gcToken2 = process.env.GOCARDLESS_ACCESS_TOKEN!;
+          const gcEnv2 = (process.env.GOCARDLESS_ENVIRONMENT || 'live').toUpperCase();
+          const gcBase2 = gcEnv2 === 'LIVE' ? 'https://api.gocardless.com' : 'https://api-sandbox.gocardless.com';
+          const gcHeaders2 = { 'Authorization': `Bearer ${gcToken2}`, 'GoCardless-Version': '2015-07-06', 'Accept': 'application/json' };
+          // Fetch subscriptions for this mandate
+          const subRes = await fetch(`${gcBase2}/subscriptions?mandate=${resolvedMandateId}`, { headers: gcHeaders2 });
+          if (subRes.ok) {
+            const subData = await subRes.json() as any;
+            const subs: any[] = subData.subscriptions ?? [];
+            // Find the most relevant subscription (prefer active, then most recent)
+            const activeSub = subs.find((s: any) => s.status === 'active') ?? subs[0];
+            if (activeSub) {
+              subscriptionStatus = activeSub.status;
+              subscriptionId = activeSub.id;
+              // Check if we have a row for this subscription
+              const existingSubs = await dbInst.select().from(gcSubsTable)
+                .where(eqFn(gcSubsTable.subscriptionId, activeSub.id));
+              if (existingSubs.length > 0) {
+                // Update existing row
+                await dbInst.update(gcSubsTable)
+                  .set({
+                    status: activeSub.status,
+                    nextChargeDate: activeSub.upcoming_payments?.[0]?.charge_date ?? null,
+                    updatedAt: new Date(),
+                  })
+                  .where(eqFn(gcSubsTable.subscriptionId, activeSub.id));
+              } else if (activeSub.status === 'active') {
+                // Insert missing subscription row
+                await dbInst.insert(gcSubsTable).values({
+                  userId: input.userId,
+                  mandateId: resolvedMandateId,
+                  subscriptionId: activeSub.id,
+                  status: 'active',
+                  amount: activeSub.amount,
+                  currency: activeSub.currency ?? 'GBP',
+                  startDate: activeSub.start_date ?? new Date().toISOString().slice(0, 10),
+                  dayOfMonth: activeSub.day_of_month ?? null,
+                  nextChargeDate: activeSub.upcoming_payments?.[0]?.charge_date ?? null,
+                });
+              }
+            }
+          }
+        } catch (subErr: any) {
+          console.warn('[adminRefreshMandateStatus] Could not refresh subscription:', subErr.message);
+        }
+
+        return { status: gcMandate.status, mandateId: resolvedMandateId, subscriptionStatus, subscriptionId };
       }),
 
     /**
