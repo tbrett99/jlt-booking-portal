@@ -17,7 +17,7 @@ import { RichEmailEditor } from "@/components/RichEmailEditor";
 import { toast } from "sonner";
 import { Plus, Send, Eye, Pencil, Trash2, Mail, Users, Zap,
   BarChart2, Clock, CheckCircle, AlertCircle, FileText, Paintbrush,
-  ChevronDown, ChevronUp, RefreshCw, MailOpen, MailX, Edit3,
+  ChevronDown, ChevronUp, RefreshCw, MailOpen, MailX, Edit3, Copy,
 } from "lucide-react";
 import EmailBrandingEditor from "./EmailBrandingEditor";
 
@@ -945,15 +945,33 @@ export default function EmailMarketing() {
                             </>
                           )}
                           {c.status === "sent" && (
-                            <Button
-                              size="sm" variant="outline"
-                              onClick={() => setExpandedCampaignId(isExpanded ? null : c.id)}
-                              className="text-xs"
-                            >
-                              <BarChart2 className="h-3.5 w-3.5 mr-1" />
-                              Recipients
-                              {isExpanded ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
-                            </Button>
+                            <>
+                              <Button
+                                size="sm" variant="ghost"
+                                title="Copy to Draft"
+                                onClick={() => {
+                                  const f = parseFilters(c.segmentFilters);
+                                  setEditCampaign({
+                                    ...c,
+                                    id: undefined,
+                                    name: `Copy of ${c.name}`,
+                                    status: 'draft',
+                                  });
+                                  setCampaignDialog('create');
+                                }}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm" variant="outline"
+                                onClick={() => setExpandedCampaignId(isExpanded ? null : c.id)}
+                                className="text-xs"
+                              >
+                                <BarChart2 className="h-3.5 w-3.5 mr-1" />
+                                Recipients
+                                {isExpanded ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
+                              </Button>
+                            </>
                           )}
                         </div>
                       </div>
@@ -1180,13 +1198,28 @@ export default function EmailMarketing() {
           <DialogHeader>
             <DialogTitle>Preview: {previewCampaign?.name}</DialogTitle>
           </DialogHeader>
-          <div className="border rounded p-4 bg-white">
-            <p className="text-sm font-medium text-muted-foreground mb-1">Subject: {previewCampaign?.subject}</p>
-            <div
-              className="prose prose-sm max-w-none mt-3"
-              dangerouslySetInnerHTML={{ __html: previewCampaign?.bodyHtml ?? "" }}
-            />
-          </div>
+          <p className="text-sm text-muted-foreground -mt-1 mb-2"><span className="font-medium">Subject:</span> {previewCampaign?.subject}</p>
+          {previewCampaign && <EmailPreviewPanel bodyHtml={previewCampaign.bodyHtml} />}
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setPreviewCampaign(null)}>Close</Button>
+            <Button
+              variant="default"
+              onClick={() => {
+                const c = previewCampaign;
+                setPreviewCampaign(null);
+                const f = parseFilters(c.segmentFilters);
+                setEditCampaign({
+                  ...c,
+                  id: undefined,
+                  name: `Copy of ${c.name}`,
+                  status: 'draft',
+                });
+                setCampaignDialog('create');
+              }}
+            >
+              <Copy className="h-4 w-4 mr-1.5" /> Copy to Draft
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
