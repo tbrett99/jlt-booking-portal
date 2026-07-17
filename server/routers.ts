@@ -4499,7 +4499,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           .set({ status: newStatus, mandateId: resolvedMandateId, updatedAt: new Date() })
           .where(eqFn(gcMandatesTable.id, mandate.id));
 
-        // Also refresh the subscription status for this mandate from GoCardless
+        // Full re-sync by email: find the active mandate + subscription for this agent in GC,
+        // regardless of whether the mandate ID has changed (e.g. reinstated subscription on new mandate)
         let subscriptionStatus: string | null = null;
         let subscriptionId: string | null = null;
         try {
@@ -4508,41 +4509,83 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           const gcEnv2 = (process.env.GOCARDLESS_ENVIRONMENT || 'live').toUpperCase();
           const gcBase2 = gcEnv2 === 'LIVE' ? 'https://api.gocardless.com' : 'https://api-sandbox.gocardless.com';
           const gcHeaders2 = { 'Authorization': `Bearer ${gcToken2}`, 'GoCardless-Version': '2015-07-06', 'Accept': 'application/json' };
-          // Fetch subscriptions for this mandate
-          const subRes = await fetch(`${gcBase2}/subscriptions?mandate=${resolvedMandateId}`, { headers: gcHeaders2 });
-          if (subRes.ok) {
-            const subData = await subRes.json() as any;
-            const subs: any[] = subData.subscriptions ?? [];
-            // Find the most relevant subscription (prefer active, then most recent)
-            const activeSub = subs.find((s: any) => s.status === 'active') ?? subs[0];
-            if (activeSub) {
-              subscriptionStatus = activeSub.status;
-              subscriptionId = activeSub.id;
-              // Check if we have a row for this subscription
-              const existingSubs = await dbInst.select().from(gcSubsTable)
-                .where(eqFn(gcSubsTable.subscriptionId, activeSub.id));
-              if (existingSubs.length > 0) {
-                // Update existing row
-                await dbInst.update(gcSubsTable)
-                  .set({
-                    status: activeSub.status,
-                    nextChargeDate: activeSub.upcoming_payments?.[0]?.charge_date ?? null,
-                    updatedAt: new Date(),
-                  })
-                  .where(eqFn(gcSubsTable.subscriptionId, activeSub.id));
-              } else if (activeSub.status === 'active') {
-                // Insert missing subscription row
-                await dbInst.insert(gcSubsTable).values({
-                  userId: input.userId,
-                  mandateId: resolvedMandateId,
-                  subscriptionId: activeSub.id,
-                  status: 'active',
-                  amount: activeSub.amount,
-                  currency: activeSub.currency ?? 'GBP',
-                  startDate: activeSub.start_date ?? new Date().toISOString().slice(0, 10),
-                  dayOfMonth: activeSub.day_of_month ?? null,
-                  nextChargeDate: activeSub.upcoming_payments?.[0]?.charge_date ?? null,
-                });
+
+          // Step 1: find the GC customer by email
+          const agentForResync = await dbInst.select({ email: usersTable.email })
+            .from(usersTable).where(eqFn(usersTable.id, input.userId)).limit(1).then(r => r[0]);
+          if (agentForResync?.email) {
+            const email = agentForResync.email.toLowerCase().trim();
+            // Fetch all customers, mandates, subscriptions
+            const gcGetAll2 = async (resource: string) => {
+              const items: any[] = [];
+              let after: string | null = null;
+              do {
+                const url = `${gcBase2}/${resource}?limit=500${after ? `&after=${after}` : ''}`;
+                const res = await fetch(url, { headers: gcHeaders2 });
+                if (!res.ok) break;
+                const data = await res.json() as any;
+                items.push(...(data[resource] ?? []));
+                after = data.meta?.cursors?.after ?? null;
+              } while (after);
+              return items;
+            };
+            const [allCustomers, allMandates, allSubs] = await Promise.all([
+              gcGetAll2('customers'),
+              gcGetAll2('mandates'),
+              gcGetAll2('subscriptions'),
+            ]);
+            const gcCustomer = allCustomers.find((c: any) => (c.email ?? '').toLowerCase().trim() === email);
+            if (gcCustomer) {
+              // Find all mandates for this customer
+              const customerMandates = allMandates.filter((m: any) => m.links?.customer === gcCustomer.id);
+              // Find the best mandate: prefer active, then pending, then most recent
+              const bestMandate = customerMandates.find((m: any) => m.status === 'active')
+                ?? customerMandates.find((m: any) => ['pending_submission','submitted','pending'].includes(m.status))
+                ?? customerMandates[0];
+              if (bestMandate) {
+                // Update the portal mandate row with the best mandate's ID and status
+                const mandateValidStatuses = ['pending','pending_submission','submitted','active','cancelled','failed','expired'] as const;
+                const bestMandateStatus = mandateValidStatuses.includes(bestMandate.status) ? bestMandate.status : 'pending';
+                await dbInst.update(gcMandatesTable)
+                  .set({ mandateId: bestMandate.id, status: bestMandateStatus, updatedAt: new Date() })
+                  .where(eqFn(gcMandatesTable.id, mandate.id));
+                // Find the active subscription across ALL mandates for this customer
+                const customerMandateIds = new Set(customerMandates.map((m: any) => m.id));
+                const customerSubs = allSubs.filter((s: any) => customerMandateIds.has(s.links?.mandate));
+                const activeSub = customerSubs.find((s: any) => s.status === 'active') ?? customerSubs[0];
+                if (activeSub) {
+                  subscriptionStatus = activeSub.status;
+                  subscriptionId = activeSub.id;
+                  // Check if we have a row for this subscription ID
+                  const existingSubs = await dbInst.select().from(gcSubsTable)
+                    .where(eqFn(gcSubsTable.subscriptionId, activeSub.id));
+                  if (existingSubs.length > 0) {
+                    await dbInst.update(gcSubsTable)
+                      .set({ status: activeSub.status, mandateId: activeSub.links?.mandate ?? resolvedMandateId, nextChargeDate: activeSub.upcoming_payments?.[0]?.charge_date ?? null, updatedAt: new Date() })
+                      .where(eqFn(gcSubsTable.subscriptionId, activeSub.id));
+                  } else {
+                    // Check if there's an existing sub row for this userId — update it rather than inserting a duplicate
+                    const existingUserSubs = await dbInst.select().from(gcSubsTable)
+                      .where(eqFn(gcSubsTable.userId, input.userId));
+                    if (existingUserSubs.length > 0) {
+                      await dbInst.update(gcSubsTable)
+                        .set({ subscriptionId: activeSub.id, status: activeSub.status, mandateId: activeSub.links?.mandate ?? resolvedMandateId, nextChargeDate: activeSub.upcoming_payments?.[0]?.charge_date ?? null, updatedAt: new Date() })
+                        .where(eqFn(gcSubsTable.userId, input.userId));
+                    } else {
+                      await dbInst.insert(gcSubsTable).values({
+                        userId: input.userId,
+                        mandateId: activeSub.links?.mandate ?? resolvedMandateId,
+                        subscriptionId: activeSub.id,
+                        status: activeSub.status,
+                        amount: activeSub.amount,
+                        currency: activeSub.currency ?? 'GBP',
+                        startDate: activeSub.start_date ?? new Date().toISOString().slice(0, 10),
+                        dayOfMonth: activeSub.day_of_month ?? null,
+                        nextChargeDate: activeSub.upcoming_payments?.[0]?.charge_date ?? null,
+                      });
+                    }
+                  }
+                }
               }
             }
           }
