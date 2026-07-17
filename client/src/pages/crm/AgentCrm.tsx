@@ -2379,8 +2379,8 @@ function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; m
           </div>
         )}
 
-        {/* Refresh status button — shown when mandate exists but is not yet active */}
-        {mandate && mandate.status !== "active" && mandate.status !== "cancelled" && mandate.status !== "expired" && (
+        {/* Refresh status button — shown whenever a mandate exists */}
+        {mandate && (
           <div className="mt-2">
             <button
               onClick={() => refreshMutation.mutate({ userId })}
