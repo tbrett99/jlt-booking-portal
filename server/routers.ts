@@ -4771,7 +4771,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
      * and inserts the rows into gc_mandates and gc_subscriptions.
      */
     linkByEmail: adminProcedure
-      .input(z.object({ userId: z.number().int() }))
+      .input(z.object({ userId: z.number().int(), overrideEmail: z.string().email().optional() }))
       .mutation(async ({ input }) => {
         const gcToken = process.env.GOCARDLESS_ACCESS_TOKEN;
         if (!gcToken) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'GoCardless token not configured' });
@@ -4811,7 +4811,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         if (!agent) throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' });
         if (!agent.email) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Agent has no email address' });
 
-        const email = agent.email.toLowerCase().trim();
+        // Use overrideEmail if provided (agent used different email in GC), otherwise use portal email
+        const email = (input.overrideEmail ?? agent.email).toLowerCase().trim();
 
         const [gcCustomers, gcMandatesList, gcSubsList] = await Promise.all([
           gcGetAll('customers'),

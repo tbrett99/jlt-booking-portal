@@ -2305,9 +2305,13 @@ function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; m
     },
     onError: (err) => toast.error(err.message),
   });
+  const [gcOverrideEmail, setGcOverrideEmail] = useState("");
+  const [showGcEmailOverride, setShowGcEmailOverride] = useState(false);
   const linkByEmailMutation = trpc.gocardless.linkByEmail.useMutation({
     onSuccess: (data) => {
       toast.success(data.message);
+      setGcOverrideEmail("");
+      setShowGcEmailOverride(false);
       refetchDdStatus();
       utils.gocardless.adminListMandates.invalidate();
     },
@@ -2389,15 +2393,34 @@ function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; m
         )}
         {/* Link GC subscription by email — shown when no mandate exists */}
         {!mandate && (
-          <div className="mt-2">
+          <div className="mt-2 space-y-2">
             <button
-              onClick={() => linkByEmailMutation.mutate({ userId })}
+              onClick={() => linkByEmailMutation.mutate({ userId, overrideEmail: gcOverrideEmail.trim() || undefined })}
               disabled={linkByEmailMutation.isPending}
               className="w-full text-sm border border-dashed rounded-lg px-4 py-2 text-blue-700 hover:bg-blue-50 transition-colors disabled:opacity-50"
             >
               {linkByEmailMutation.isPending ? "Searching GoCardless..." : "🔗 Link GC Subscription by Email"}
             </button>
-            <p className="text-xs text-muted-foreground mt-1 text-center">Searches GoCardless for an active subscription matching this agent's email and links it automatically.</p>
+            {!showGcEmailOverride ? (
+              <button
+                onClick={() => setShowGcEmailOverride(true)}
+                className="text-xs text-muted-foreground hover:text-foreground underline w-full text-center"
+              >
+                Agent used a different email in GoCardless?
+              </button>
+            ) : (
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground block">GoCardless email address</label>
+                <input
+                  type="email"
+                  value={gcOverrideEmail}
+                  onChange={(e) => setGcOverrideEmail(e.target.value)}
+                  placeholder="e.g. christina@gmail.com"
+                  className="w-full border rounded px-2 py-1 text-sm bg-background"
+                />
+                <p className="text-xs text-muted-foreground">Enter the email the agent used when setting up their GoCardless Direct Debit. Leave blank to use their portal email.</p>
+              </div>
+            )}
           </div>
         )}
         {/* Manual subscription creation — shown when mandate exists (any non-cancelled/expired status) OR no mandate at all */}
