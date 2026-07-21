@@ -2307,6 +2307,20 @@ function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; m
   });
   const [gcOverrideEmail, setGcOverrideEmail] = useState("");
   const [showGcEmailOverride, setShowGcEmailOverride] = useState(false);
+  const [showSendReceipt, setShowSendReceipt] = useState(false);
+  const [receiptPaymentId, setReceiptPaymentId] = useState("");
+  const [receiptAmountPence, setReceiptAmountPence] = useState("");
+  const [receiptDate, setReceiptDate] = useState("");
+  const sendReceiptMutation = trpc.gocardless.sendReceipt.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      setShowSendReceipt(false);
+      setReceiptPaymentId("");
+      setReceiptAmountPence("");
+      setReceiptDate("");
+    },
+    onError: (err) => toast.error(err.message),
+  });
   const linkByEmailMutation = trpc.gocardless.linkByEmail.useMutation({
     onSuccess: (data) => {
       toast.success(data.message);
@@ -2520,6 +2534,77 @@ function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; m
           </div>
         </div>
       )}
+
+      {/* Send Backdated Receipt */}
+      <div>
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+          <Mail size={14} />
+          Send Backdated Receipt
+        </h3>
+        {!showSendReceipt ? (
+          <button
+            onClick={() => setShowSendReceipt(true)}
+            className="w-full text-sm border border-dashed rounded-lg px-4 py-2 text-amber-700 hover:bg-amber-50 transition-colors"
+          >
+            ✉️ Send receipt for a specific payment
+          </button>
+        ) : (
+          <div className="rounded-lg border p-4 space-y-3 text-sm bg-muted/30">
+            <p className="font-medium text-sm">Send Backdated Receipt</p>
+            <p className="text-xs text-muted-foreground">Use this to manually send a receipt for a payment that was never emailed to the agent.</p>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground block">GoCardless Payment ID</label>
+              <input
+                type="text"
+                value={receiptPaymentId}
+                onChange={(e) => setReceiptPaymentId(e.target.value)}
+                placeholder="e.g. PM01XM4PBFKK234PA9QZE0M9WC7N"
+                className="w-full border rounded px-2 py-1 text-sm bg-background font-mono"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground block">Amount (pence, e.g. 8700 for £87.00)</label>
+              <input
+                type="number"
+                value={receiptAmountPence}
+                onChange={(e) => setReceiptAmountPence(e.target.value)}
+                placeholder="8700"
+                className="w-full border rounded px-2 py-1 text-sm bg-background"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground block">Payment Date (e.g. 29 June 2026)</label>
+              <input
+                type="text"
+                value={receiptDate}
+                onChange={(e) => setReceiptDate(e.target.value)}
+                placeholder="29 June 2026"
+                className="w-full border rounded px-2 py-1 text-sm bg-background"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => sendReceiptMutation.mutate({
+                  paymentId: receiptPaymentId.trim(),
+                  userId,
+                  amountPence: parseInt(receiptAmountPence, 10),
+                  paymentDate: receiptDate.trim(),
+                })}
+                disabled={sendReceiptMutation.isPending || !receiptPaymentId.trim() || !receiptAmountPence || !receiptDate.trim()}
+                className="flex-1 text-sm bg-amber-600 text-white rounded-lg px-4 py-2 hover:bg-amber-700 transition-colors disabled:opacity-50"
+              >
+                {sendReceiptMutation.isPending ? "Sending..." : "Send Receipt"}
+              </button>
+              <button
+                onClick={() => { setShowSendReceipt(false); setReceiptPaymentId(""); setReceiptAmountPence(""); setReceiptDate(""); }}
+                className="text-sm border rounded-lg px-4 py-2 hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Payment Event History */}
       <div>

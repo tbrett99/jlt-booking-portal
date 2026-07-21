@@ -4993,6 +4993,34 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             : `Mandate linked for ${agent.name ?? agent.email} but no active subscription found — mandate only.`,
         };
       }),
+
+    /**
+     * Send a single backdated receipt for a specific payment that was never sent.
+     * Used by admins to manually trigger a receipt email for a known payment ID.
+     */
+    sendReceipt: adminProcedure
+      .input(z.object({
+        paymentId: z.string(),
+        userId: z.number().int(),
+        amountPence: z.number().int(),
+        paymentDate: z.string(), // e.g. "29 June 2026"
+      }))
+      .mutation(async ({ input }) => {
+        const { ENV } = await import("./_core/env");
+        const token = ENV.exportTriggerToken;
+        if (!token) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Export trigger token not configured' });
+        const baseUrl = process.env.PORTAL_BASE_URL ?? 'https://portal.thejltgroup.co.uk';
+        const url = `${baseUrl}/api/dd/send-receipt?paymentId=${encodeURIComponent(input.paymentId)}&userId=${input.userId}&amount=${input.amountPence}&date=${encodeURIComponent(input.paymentDate)}`;
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const json = await resp.json() as { ok: boolean; message?: string; error?: string };
+        if (!resp.ok || !json.ok) {
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: json.error ?? json.message ?? 'Failed to send receipt' });
+        }
+        return { success: true, message: json.message ?? 'Receipt sent' };
+      }),
   }),
   inbox: router({
     // Admin: get IMAP config (password masked)
