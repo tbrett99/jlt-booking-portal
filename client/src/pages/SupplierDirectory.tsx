@@ -1112,7 +1112,7 @@ export default function SupplierDirectory() {
                 <span className="text-sm">⭐</span>
                 <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">Preferred Partners</span>
               </div>
-              <p className="text-xs text-muted-foreground">JLT-recommended suppliers with exclusive rates &amp; higher commission</p>
+
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {preferredPartners.map((supplier) => (

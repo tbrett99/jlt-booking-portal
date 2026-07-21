@@ -692,9 +692,8 @@ export const communityRouter = router({
                 <div style="margin-bottom:28px;">
                   <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;border-bottom:2px solid #fcd34d;padding-bottom:6px;">
                     <span style="font-size:18px;">⭐</span>
-                    <h3 style="margin:0;font-size:15px;font-weight:700;color:#414141;font-family:'Poppins',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">Preferred Partners — Book with Confidence</h3>
+                    <h3 style="margin:0;font-size:15px;font-weight:700;color:#414141;font-family:'Poppins',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">Preferred Partners</h3>
                   </div>
-                  <p style="margin:0 0 14px;font-size:13px;color:#555;font-family:'Poppins',sans-serif;">These JLT-recommended suppliers offer exclusive rates and higher commission. Make sure your clients know about them!</p>
                   <table style="width:100%;border-collapse:collapse;"><tr>${partnerCards}</tr></table>
                   <p style="margin:12px 0 0;text-align:center;">
                     <a href="${input.origin}/suppliers" style="font-size:12px;font-weight:600;color:#d97706;text-decoration:none;font-family:'Poppins',sans-serif;">View all preferred partners in the Supplier Directory →</a>
