@@ -448,7 +448,16 @@ export default function RegisterBooking() {
                                 <span className="text-sm shrink-0 mt-0.5">⭐</span>
                                 <div className="flex-1 min-w-0">
                                   <p className="text-xs font-semibold text-amber-800">Did you know JLT has Preferred Partners?</p>
-                                  <p className="text-[10px] text-amber-700 mt-0.5">{matchingPreferred.map((pp) => pp.name).join(" & ")} — check the Supplier Directory for details.</p>
+                                  <div className="mt-1 space-y-1">
+                                    {matchingPreferred.map((pp) => (
+                                      <div key={pp.id}>
+                                        <p className="text-[10px] font-semibold text-amber-800">{pp.name}</p>
+                                        {(pp as any).preferredPartnerNote && (
+                                          <p className="text-[10px] text-amber-700">{(pp as any).preferredPartnerNote}</p>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               </div>
                             );

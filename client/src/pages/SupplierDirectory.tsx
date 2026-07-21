@@ -226,6 +226,7 @@ function SupplierCard({
   const credentialsLocked = hasCredentials && agentStage < credentialStage;
 
   const isPreferred = 'isPreferredPartner' in supplier && (supplier as Supplier).isPreferredPartner;
+  const preferredNote = isPreferred ? (supplier as Supplier).preferredPartnerNote : null;
 
   return (
     <button
@@ -238,9 +239,14 @@ function SupplierCard({
     >
       {/* Preferred partner banner */}
       {isPreferred && (
-        <div className="bg-gradient-to-r from-amber-400 to-yellow-400 px-3 py-1 flex items-center gap-1.5">
-          <span className="text-xs">⭐</span>
-          <span className="text-xs font-semibold text-amber-900">Preferred Partner</span>
+        <div className="bg-gradient-to-r from-amber-400 to-yellow-400 px-3 py-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs">⭐</span>
+            <span className="text-xs font-semibold text-amber-900">Preferred Partner</span>
+          </div>
+          {preferredNote && (
+            <p className="text-[10px] text-amber-900/80 mt-0.5 leading-tight line-clamp-2">{preferredNote}</p>
+          )}
         </div>
       )}
       {/* Logo area */}
@@ -392,6 +398,19 @@ function SupplierModal({
         </DialogHeader>
 
         <div className="space-y-5 mt-2">
+          {/* Preferred Partner note */}
+          {supplier.isPreferredPartner && (
+            <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-300 rounded-lg px-4 py-3 flex items-start gap-3">
+              <span className="text-lg shrink-0">⭐</span>
+              <div>
+                <p className="text-sm font-semibold text-amber-900">JLT Preferred Partner</p>
+                {supplier.preferredPartnerNote && (
+                  <p className="text-sm text-amber-800 mt-0.5">{supplier.preferredPartnerNote}</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* AI Summary */}
           {supplier.aiSummary && (
             <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
