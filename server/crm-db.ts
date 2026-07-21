@@ -844,6 +844,9 @@ export async function getAgentEmailLog(params: {
     // campaign:N keys are stored as "campaign:123" — prefix match covers all campaign emails
     if (params.triggerKey === "campaign") {
       conditions.push(like(agentEmails.triggerKey, "campaign%"));
+    } else if (params.triggerKey === "gc_receipt") {
+      // Receipts are stored with payment ID suffix: gc_receipt_PM01XND...
+      conditions.push(like(agentEmails.triggerKey, "gc_receipt%"));
     } else {
       conditions.push(eq(agentEmails.triggerKey, params.triggerKey));
     }

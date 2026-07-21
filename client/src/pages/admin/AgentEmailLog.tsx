@@ -21,6 +21,14 @@ import {
 import { Mail, Search, Eye, ChevronLeft, ChevronRight, Send, X, CheckCircle, AlertCircle, Users } from "lucide-react";
 import { toast } from "sonner";
 
+// Normalise trigger keys that have suffixes (e.g. gc_receipt_PM01XND...)
+function normaliseTriggerKey(key: string | null | undefined): string {
+  if (!key) return "";
+  if (key.startsWith("gc_receipt")) return "gc_receipt";
+  if (key.startsWith("campaign")) return "campaign";
+  return key;
+}
+
 const TRIGGER_LABELS: Record<string, string> = {
   gc_receipt: "Membership Receipt",
   gc_payment_failed: "Payment Failed",
@@ -224,8 +232,8 @@ export default function AgentEmailLog() {
                       </td>
                       <td className="px-4 py-3">
                         {row.triggerKey ? (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TRIGGER_COLORS[row.triggerKey] ?? "bg-gray-100 text-gray-700"}`}>
-                            {TRIGGER_LABELS[row.triggerKey] ?? row.triggerKey}
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TRIGGER_COLORS[normaliseTriggerKey(row.triggerKey)] ?? "bg-gray-100 text-gray-700"}`}>
+                            {TRIGGER_LABELS[normaliseTriggerKey(row.triggerKey)] ?? row.triggerKey}
                           </span>
                         ) : (
                           <span className="text-muted-foreground text-xs">—</span>
