@@ -117,6 +117,22 @@ export const suppliersRouter = router({
       };
     }),
 
+  // ── List preferred partners (for dashboard widget + directory section) ────────
+  preferredPartners: protectedProcedure
+    .query(async ({ ctx }) => {
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
+      const agentStage = isAdmin ? 3 : await getAgentStage(ctx.user.id);
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const rows = await db
+        .select()
+        .from(suppliers)
+        .where(and(eq(suppliers.isActive, 1), eq(suppliers.isPreferredPartner, true)))
+        .orderBy(asc(suppliers.sortOrder), asc(suppliers.name));
+      return rows.map((s: typeof suppliers.$inferSelect) => applyStageFilter(s, agentStage, isAdmin));
+    }),
+
   // ── Get single supplier ─────────────────────────────────────────────────────
   get: protectedProcedure
     .input(z.object({ id: z.number().int() }))
@@ -231,6 +247,8 @@ export const suppliersRouter = router({
         adminPassword: z.string().optional(),
         adminNotes: z.string().optional(),
         credentialStage: z.number().int().min(1).max(3).default(2),
+        isPreferredPartner: z.boolean().optional(),
+        preferredPartnerNote: z.string().optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -282,6 +300,8 @@ export const suppliersRouter = router({
         isActive: z.number().int().min(0).max(1).optional(),
         requiresLoginRequest: z.boolean().optional(),
         loginRequestNotes: z.string().optional(),
+        isPreferredPartner: z.boolean().optional(),
+        preferredPartnerNote: z.string().optional(),
       })
     )
     .mutation(async ({ input }) => {

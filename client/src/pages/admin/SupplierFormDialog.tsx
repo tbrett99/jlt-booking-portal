@@ -56,6 +56,8 @@ type Supplier = {
   adminNotes: string | null;
   requiresLoginRequest?: boolean;
   loginRequestNotes?: string | null;
+  isPreferredPartner?: boolean;
+  preferredPartnerNote?: string | null;
 };
 
 const EMPTY_FORM = {
@@ -90,6 +92,8 @@ const EMPTY_FORM = {
   credentialStage: 2,
   requiresLoginRequest: false,
   loginRequestNotes: "",
+  isPreferredPartner: false,
+  preferredPartnerNote: "",
 };
 
 // Convert a File to base64 string
@@ -159,6 +163,8 @@ export function SupplierFormDialog({
         credentialStage: editSupplier.credentialStage,
         requiresLoginRequest: editSupplier.requiresLoginRequest ?? false,
         loginRequestNotes: editSupplier.loginRequestNotes ?? "",
+        isPreferredPartner: editSupplier.isPreferredPartner ?? false,
+        preferredPartnerNote: editSupplier.preferredPartnerNote ?? "",
       });
       setLogoPreview(editSupplier.imageUrl ?? null);
     } else {
@@ -352,6 +358,8 @@ export function SupplierFormDialog({
       credentialStage: form.credentialStage,
       requiresLoginRequest: form.requiresLoginRequest,
       loginRequestNotes: form.loginRequestNotes || undefined,
+      isPreferredPartner: form.isPreferredPartner ?? false,
+      preferredPartnerNote: form.preferredPartnerNote || undefined,
     };
 
     if (editSupplier) {
@@ -772,6 +780,37 @@ export function SupplierFormDialog({
                   onChange={(e) => setForm((f) => ({ ...f, loginRequestNotes: e.target.value }))}
                   rows={2}
                   placeholder="e.g. Use the agent's JLT email address when setting up the account"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Preferred Partner */}
+          <div className="col-span-2 border-t pt-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-base">⭐</span>
+              <h4 className="text-sm font-semibold text-amber-600">Preferred Partner</h4>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="isPreferredPartner"
+                checked={form.isPreferredPartner ?? false}
+                onChange={(e) => setForm((f) => ({ ...f, isPreferredPartner: e.target.checked }))}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <label htmlFor="isPreferredPartner" className="text-sm font-medium">
+                Mark as Preferred Partner — promoted prominently to agents
+              </label>
+            </div>
+            {form.isPreferredPartner && (
+              <div className="space-y-1">
+                <Label>Why preferred? (shown to agents)</Label>
+                <Textarea
+                  value={form.preferredPartnerNote ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, preferredPartnerNote: e.target.value }))}
+                  rows={2}
+                  placeholder="e.g. Higher commission — 15% vs standard 10%. Exclusive JLT rates available."
                 />
               </div>
             )}

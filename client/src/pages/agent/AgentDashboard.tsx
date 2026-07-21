@@ -52,6 +52,53 @@ function flightStatusLabel(status: string) {
 
 const ITEMS_PER_PAGE = 15;
 
+// ─── Spotlight Suppliers Widget ─────────────────────────────────────────────
+function SpotlightSuppliersWidget() {
+  const { data: preferred, isLoading } = trpc.suppliers.preferredPartners.useQuery(undefined, {
+    staleTime: 300000,
+  });
+
+  if (isLoading || !preferred || preferred.length === 0) return null;
+
+  const displayed = preferred.slice(0, 3);
+
+  return (
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#d97706', background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)' }}>
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b" style={{ borderColor: '#fcd34d', background: '#fef9c3' }}>
+        <span className="text-sm">⭐</span>
+        <span className="text-sm font-bold" style={{ color: '#92400e' }}>Spotlight Suppliers</span>
+        <Link href="/suppliers" className="ml-auto">
+          <button className="text-xs font-semibold underline" style={{ color: '#d97706' }}>View all →</button>
+        </Link>
+      </div>
+      <div className="divide-y" style={{ borderColor: '#fde68a' }}>
+        {displayed.map((s) => (
+          <Link key={s.id} href="/suppliers">
+            <div className="flex items-center gap-3 px-4 py-3 hover:bg-amber-100/50 transition-colors cursor-pointer">
+              {s.imageUrl ? (
+                <img src={s.imageUrl} alt={s.name} className="h-9 w-14 object-contain rounded flex-shrink-0" />
+              ) : (
+                <div className="h-9 w-14 rounded flex-shrink-0 flex items-center justify-center" style={{ background: '#fde68a' }}>
+                  <span className="text-lg">⭐</span>
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold truncate" style={{ color: '#92400e' }}>{s.name}</p>
+                {(s as any).preferredPartnerNote && (
+                  <p className="text-[10px] truncate mt-0.5" style={{ color: '#b45309' }}>{(s as any).preferredPartnerNote}</p>
+                )}
+                {s.commission && !((s as any).preferredPartnerNote) && (
+                  <p className="text-[10px] truncate mt-0.5" style={{ color: '#b45309' }}>{s.commission}</p>
+                )}
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AgentDashboard() {
   const { user } = useAuth();
   const [search, setSearch] = useState("");
@@ -670,6 +717,8 @@ export default function AgentDashboard() {
 
                 {/* ── RIGHT COLUMN (1/3 width) ─────────────────────────────────────── */}
         <div className="space-y-5">
+          {/* ── Spotlight Suppliers widget ─────────────────────────────── */}
+          <SpotlightSuppliersWidget />
           {/* ── Competitions widget ─────────────────────────────────────── */}
           <CompetitionsWidget />
           {/* ── Outstanding Items panel ─────────────────────────────────── */}

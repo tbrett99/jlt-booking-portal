@@ -95,6 +95,8 @@ type Supplier = {
   bookingTips: string | null;
   requiresLoginRequest?: boolean;
   loginRequestNotes?: string | null;
+  isPreferredPartner?: boolean;
+  preferredPartnerNote?: string | null;
 };
 
 type AiSearchResult = {
@@ -223,11 +225,24 @@ function SupplierCard({
   const credentialStage = "credentialStage" in supplier ? supplier.credentialStage : 1;
   const credentialsLocked = hasCredentials && agentStage < credentialStage;
 
+  const isPreferred = 'isPreferredPartner' in supplier && (supplier as Supplier).isPreferredPartner;
+
   return (
     <button
       onClick={onClick}
-      className="group bg-card border border-border rounded-xl overflow-hidden hover:border-primary/50 hover:shadow-md transition-all text-left w-full"
+      className={`group bg-card border rounded-xl overflow-hidden hover:shadow-md transition-all text-left w-full ${
+        isPreferred
+          ? 'border-amber-400/60 hover:border-amber-400 shadow-amber-100/50 dark:shadow-amber-900/20'
+          : 'border-border hover:border-primary/50'
+      }`}
     >
+      {/* Preferred partner banner */}
+      {isPreferred && (
+        <div className="bg-gradient-to-r from-amber-400 to-yellow-400 px-3 py-1 flex items-center gap-1.5">
+          <span className="text-xs">⭐</span>
+          <span className="text-xs font-semibold text-amber-900">Preferred Partner</span>
+        </div>
+      )}
       {/* Logo area */}
       <div className="h-32 bg-muted/30 flex items-center justify-center p-4 border-b border-border">
         {supplier.imageUrl ? (
@@ -879,6 +894,10 @@ export default function SupplierDirectory() {
     staleTime: 300000,
   });
 
+  const { data: preferredPartners } = trpc.suppliers.preferredPartners.useQuery(undefined, {
+    staleTime: 120000,
+  });
+
   const agentStage = data?.agentStage ?? 1;
 
   const stageDescription =
@@ -1084,6 +1103,58 @@ export default function SupplierDirectory() {
             )}
           </>
         )}
+
+        {/* ── Preferred Partners section (only on unfiltered page 1) ─────────── */}
+        {!aiResults && !search && category === "all" && page === 1 && preferredPartners && preferredPartners.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 bg-gradient-to-r from-amber-400/20 to-yellow-400/10 border border-amber-400/40 rounded-full px-3 py-1">
+                <span className="text-sm">⭐</span>
+                <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">Preferred Partners</span>
+              </div>
+              <p className="text-xs text-muted-foreground">JLT-recommended suppliers with exclusive rates &amp; higher commission</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {preferredPartners.map((supplier) => (
+                <SupplierCard
+                  key={supplier.id}
+                  supplier={supplier as Supplier}
+                  agentStage={agentStage}
+                  onClick={() => setSelectedId(supplier.id)}
+                />
+              ))}
+            </div>
+            <div className="border-t border-border pt-4">
+              <p className="text-sm font-medium text-muted-foreground">All Suppliers</p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Preferred Partners pinned at top of search/filter results ─────── */}
+        {!aiResults && (search || category !== "all") && preferredPartners && preferredPartners.length > 0 && (() => {
+          const matchingPreferred = preferredPartners.filter((pp) => {
+            const matchesSearch = !search || pp.name.toLowerCase().includes(search.toLowerCase());
+            const matchesCategory = category === "all" || (pp.categories ?? "").includes(category);
+            return matchesSearch && matchesCategory;
+          });
+          return matchingPreferred.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">⭐ Preferred Partners matching your search</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {matchingPreferred.map((supplier) => (
+                  <SupplierCard
+                    key={supplier.id}
+                    supplier={supplier as Supplier}
+                    agentStage={agentStage}
+                    onClick={() => setSelectedId(supplier.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null;
+        })()}
 
         {/* Regular grid */}
         {!aiResults && (

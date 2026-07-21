@@ -67,6 +67,8 @@ type Supplier = {
   adminNotes: string | null;
   requiresLoginRequest?: boolean;
   loginRequestNotes?: string | null;
+  isPreferredPartner?: boolean;
+  preferredPartnerNote?: string | null;
 };
 
 export default function AdminSuppliers() {
@@ -191,7 +193,16 @@ export default function AdminSuppliers() {
                           <Building2 className="h-6 w-6 text-muted-foreground/40" />
                         )}
                       </TableCell>
-                      <TableCell className="font-medium">{s.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {s.name}
+                          {(s as any).isPreferredPartner && (
+                            <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 gap-1">
+                              ⭐ Preferred
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {cats.slice(0, 2).map((cat) => (

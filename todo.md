@@ -2641,3 +2641,14 @@
 - [x] Paginate agent dashboard bookings list (15 per page, Previous/Next controls, page reset on filter change)
 - [x] Fix notifications panel scrolling — raised header z-index to z-50, dropdown to z-[60], max-h to 70vh
 - [x] Add agent Messages section — new AgentMessages.tsx page with "Needs Reply" and "All Conversations" tabs, badge count on sidebar nav, backend procedures notes.myUnansweredThreads and notes.myAllThreads
+
+## Preferred Partners Feature
+- [ ] DB: add isPreferredPartner (boolean, default false) and preferredPartnerNote (text) columns to suppliers table
+- [ ] Admin UI: add Preferred Partner toggle + note field in SupplierFormDialog
+- [ ] Admin UI: show "Preferred Partner" badge on supplier cards in AdminSuppliers list
+- [ ] Supplier Directory: dedicated preferred partner section at top of page with gold/teal styling and star badge
+- [ ] Supplier Directory: preferred partners pinned to top of filtered/search results
+- [ ] Agent Dashboard: "Spotlight Suppliers" widget showing 2-3 preferred partners with logo and link
+- [ ] Register Booking: inline nudge when agent types a non-preferred supplier if a preferred one exists in same category
+- [ ] Weekly Digest email: add preferred partners section showing 1-2 partners with logo and pitch
+- [x] Community Hub: preferred partner spotlight post sub-type with gold badge + auto-pin to top of Supplier News tab

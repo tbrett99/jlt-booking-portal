@@ -248,7 +248,7 @@ export async function createCommunityPost(data: {
   authorName: string;
   category: CommunityPost["category"];
   supplierSubCategory?: string;
-  supplierPostType?: "news" | "deal";
+  supplierPostType?: "news" | "deal" | "preferred_partner_spotlight";
   title: string;
   bodyHtml: string;
   loomUrl?: string;
@@ -289,7 +289,7 @@ export async function updateCommunityPost(
     requiresConfirmation: boolean;
     expiresAt: Date | null;
     supplierSubCategory: string;
-    supplierPostType: "news" | "deal";
+    supplierPostType: "news" | "deal" | "preferred_partner_spotlight";
   }>
 ) {
   const db = await getDb();

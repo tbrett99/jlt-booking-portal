@@ -1551,6 +1551,8 @@ export const suppliers = mysqlTable("suppliers", {
   aiEnrichedAt: timestamp("aiEnrichedAt"),                       // when AI enrichment was last run
   requiresLoginRequest: boolean("requiresLoginRequest").default(false).notNull(), // agent must request a personal login
   loginRequestNotes: text("loginRequestNotes"),                   // admin notes shown when requesting (e.g. "use JLT email")
+  isPreferredPartner: boolean("isPreferredPartner").default(false).notNull(), // promoted supplier shown prominently to agents
+  preferredPartnerNote: text("preferredPartnerNote"),             // short note explaining why (e.g. "Higher commission — 15%")
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

@@ -820,6 +820,13 @@
       "when": 1784124604909,
       "tag": "0116_fluffy_toad_men",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "5",
+      "when": 1784646135845,
+      "tag": "0117_graceful_outlaw_kid",
+      "breakpoints": true
     }
   ]
 }

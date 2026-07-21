@@ -49,6 +49,7 @@ export default function RegisterBooking() {
   const createBooking = trpc.bookings.create.useMutation();
   const uploadDoc = trpc.bookings.uploadReimbDoc.useMutation();
   const { data: fnfBalance } = trpc.fnf.getBalance.useQuery();
+  const { data: preferredPartners } = trpc.suppliers.preferredPartners.useQuery(undefined, { staleTime: 300000 });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -431,6 +432,27 @@ export default function RegisterBooking() {
                               setReimbItems(updated);
                             }}
                           />
+                          {/* Preferred partner nudge */}
+                          {(() => {
+                            const typed = item.supplierName.trim().toLowerCase();
+                            if (!typed || typed.length < 3 || !preferredPartners) return null;
+                            const isTypingPreferred = preferredPartners.some((pp) => pp.name.toLowerCase().includes(typed));
+                            if (isTypingPreferred) return null; // they're already booking a preferred partner
+                            const matchingPreferred = preferredPartners.filter((pp) => {
+                              // suggest preferred partners in the same broad category (or just all if no match)
+                              return true;
+                            }).slice(0, 2);
+                            if (matchingPreferred.length === 0) return null;
+                            return (
+                              <div className="mt-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 flex items-start gap-2">
+                                <span className="text-sm shrink-0 mt-0.5">⭐</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-amber-800">Did you know JLT has Preferred Partners?</p>
+                                  <p className="text-[10px] text-amber-700 mt-0.5">{matchingPreferred.map((pp) => pp.name).join(" & ")} offer{matchingPreferred.length === 1 ? "s" : ""} exclusive JLT rates &amp; higher commission.</p>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div className="w-32 space-y-1">
                           <Label className="text-xs">Amount (£)</Label>

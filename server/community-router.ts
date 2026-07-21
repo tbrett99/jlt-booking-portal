@@ -29,8 +29,8 @@ import {
 import { storagePut } from "./storage";
 import { sendDirectEmail } from "./email";
 import { getDb, getUpcomingAgentEvents } from "./db";
-import { users, agentCrmProfiles } from "../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { users, agentCrmProfiles, suppliers } from "../drizzle/schema";
+import { eq, and, asc } from "drizzle-orm";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -124,7 +124,7 @@ export const communityRouter = router({
       z.object({
         category: z.enum(CATEGORIES),
         supplierSubCategory: z.string().optional(),
-        supplierPostType: z.enum(["news", "deal"]).optional(),
+        supplierPostType: z.enum(["news", "deal", "preferred_partner_spotlight"]).optional(),
         title: z.string().min(1).max(300),
         bodyHtml: z.string(),
         loomUrl: z.string().url().optional(),
@@ -176,7 +176,7 @@ export const communityRouter = router({
         requiresConfirmation: z.boolean().optional(),
         expiresAt: z.date().optional().nullable(),
         supplierSubCategory: z.string().optional(),
-        supplierPostType: z.enum(["news", "deal"]).optional(),
+        supplierPostType: z.enum(["news", "deal", "preferred_partner_spotlight"]).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -666,6 +666,45 @@ export const communityRouter = router({
           }
         }
 
+        // ── Preferred Partners section for digest ───────────────────────────
+        let preferredPartnersHtml = "";
+        try {
+          const db2 = await getDb();
+          if (db2) {
+            const preferredRows = await db2
+              .select()
+              .from(suppliers)
+              .where(and(eq(suppliers.isActive, 1), eq(suppliers.isPreferredPartner, true)))
+              .orderBy(asc(suppliers.sortOrder), asc(suppliers.name))
+              .limit(3);
+            if (preferredRows.length > 0) {
+              const partnerCards = preferredRows.map((pp) => `
+                <td style="width:${Math.floor(100/preferredRows.length)}%;padding:0 6px;vertical-align:top;">
+                  <div style="background:#fffbeb;border:2px solid #fcd34d;border-radius:10px;padding:14px;text-align:center;">
+                    ${pp.imageUrl ? `<img src="${pp.imageUrl}" alt="${pp.name}" style="max-height:48px;max-width:100%;object-fit:contain;margin-bottom:8px;" />` : `<div style="font-size:24px;margin-bottom:8px;">⭐</div>`}
+                    <p style="margin:0 0 4px;font-size:13px;font-weight:700;color:#92400e;font-family:'Poppins',sans-serif;">${pp.name}</p>
+                    ${pp.preferredPartnerNote ? `<p style="margin:0 0 6px;font-size:11px;color:#b45309;font-family:'Poppins',sans-serif;">${pp.preferredPartnerNote}</p>` : pp.commission ? `<p style="margin:0 0 6px;font-size:11px;color:#b45309;font-family:'Poppins',sans-serif;">${pp.commission}</p>` : ""}
+                    <a href="${input.origin}/suppliers" style="font-size:11px;font-weight:600;color:#d97706;text-decoration:none;font-family:'Poppins',sans-serif;">View supplier →</a>
+                  </div>
+                </td>
+              `).join("");
+              preferredPartnersHtml = `
+                <div style="margin-bottom:28px;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;border-bottom:2px solid #fcd34d;padding-bottom:6px;">
+                    <span style="font-size:18px;">⭐</span>
+                    <h3 style="margin:0;font-size:15px;font-weight:700;color:#414141;font-family:'Poppins',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">Preferred Partners — Book with Confidence</h3>
+                  </div>
+                  <p style="margin:0 0 14px;font-size:13px;color:#555;font-family:'Poppins',sans-serif;">These JLT-recommended suppliers offer exclusive rates and higher commission. Make sure your clients know about them!</p>
+                  <table style="width:100%;border-collapse:collapse;"><tr>${partnerCards}</tr></table>
+                  <p style="margin:12px 0 0;text-align:center;">
+                    <a href="${input.origin}/suppliers" style="font-size:12px;font-weight:600;color:#d97706;text-decoration:none;font-family:'Poppins',sans-serif;">View all preferred partners in the Supplier Directory →</a>
+                  </p>
+                </div>
+              `;
+            }
+          }
+        } catch (_e) { /* non-fatal */ }
+
         const weekLabel = new Date(digest.weekStarting).toLocaleDateString(
           "en-GB",
           { day: "numeric", month: "long", year: "numeric" }
@@ -704,6 +743,7 @@ export const communityRouter = router({
 
       ${statsHtml}
       ${highlightsHtml}
+      ${preferredPartnersHtml}
       ${eventsHtml}
       ${snapshotHtml}
 

@@ -56,7 +56,7 @@ export function PostComposer({ isAdmin, initialData, defaultCategory, onClose, o
   const [isDraft, setIsDraft] = useState(initialData?.isDraft ?? false);
   const [requiresConfirmation, setRequiresConfirmation] = useState(initialData?.requiresConfirmation ?? false);
   const [supplierSubCategory, setSupplierSubCategory] = useState(initialData?.supplierSubCategory ?? "");
-  const [supplierPostType, setSupplierPostType] = useState<"news" | "deal" | "">(initialData?.supplierPostType ?? "");
+  const [supplierPostType, setSupplierPostType] = useState<"news" | "deal" | "preferred_partner_spotlight" | "">(initialData?.supplierPostType as "news" | "deal" | "preferred_partner_spotlight" | "" ?? "");
   const [imageUrls, setImageUrls] = useState<string[]>(
     Array.isArray(initialData?.imageUrls) ? initialData.imageUrls : []
   );
@@ -139,7 +139,7 @@ export function PostComposer({ isAdmin, initialData, defaultCategory, onClose, o
       title: title.trim(),
       bodyHtml,
       loomUrl: loomUrl || undefined,
-      isPinned: isAdmin ? isPinned : undefined,
+      isPinned: isAdmin ? (supplierPostType === "preferred_partner_spotlight" ? true : isPinned) : undefined,
       isDraft: isAdmin ? isDraft : undefined,
       requiresConfirmation: isAdmin ? requiresConfirmation : undefined,
       supplierSubCategory: category === "supplier_news_deals" ? supplierSubCategory || undefined : undefined,
@@ -192,6 +192,7 @@ export function PostComposer({ isAdmin, initialData, defaultCategory, onClose, o
                   <SelectContent>
                     <SelectItem value="news">News</SelectItem>
                     <SelectItem value="deal">Deal</SelectItem>
+                    <SelectItem value="preferred_partner_spotlight">⭐ Preferred Partner Spotlight</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

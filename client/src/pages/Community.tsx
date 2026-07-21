@@ -426,6 +426,7 @@ function PostCard({
       className={cn(
         "bg-card border border-border rounded-xl overflow-hidden transition-shadow hover:shadow-md",
         post.isPinned && "ring-2 ring-primary/20",
+        post.supplierPostType === "preferred_partner_spotlight" && "ring-2 ring-amber-400/60 shadow-amber-100/50 dark:shadow-amber-900/20",
         needsConfirmation && "ring-2 ring-amber-400/40",
         highlighted && "ring-2 ring-primary shadow-lg"
       )}
@@ -446,7 +447,13 @@ function PostCard({
                   {catEmoji} {catLabel}
                 </span>
                 {post.supplierPostType && (
-                  <Badge variant="outline" className="text-xs capitalize">{post.supplierPostType}</Badge>
+                  post.supplierPostType === "preferred_partner_spotlight" ? (
+                    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: 'linear-gradient(90deg,#fcd34d,#fbbf24)', color: '#92400e' }}>
+                      ⭐ Preferred Partner Spotlight
+                    </span>
+                  ) : (
+                    <Badge variant="outline" className="text-xs capitalize">{post.supplierPostType}</Badge>
+                  )
                 )}
                 {post.supplierSubCategory && (
                   <Badge variant="outline" className="text-xs capitalize">{post.supplierSubCategory}</Badge>
