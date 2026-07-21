@@ -327,6 +327,58 @@ async function startServer() {
     })();
   });
 
+  // ── Send single backdated receipt ─────────────────────────────────────────
+  // POST /api/dd/send-receipt?paymentId=PM01...&userId=123&amount=8700&date=29+June+2026
+  // Sends a one-off receipt for a specific payment that was never sent.
+  app.post("/api/dd/send-receipt", async (req, res) => {
+    const auth = req.headers.authorization ?? "";
+    const token = ENV.exportTriggerToken;
+    if (!token || auth !== `Bearer ${token}`) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const { paymentId, userId: userIdStr, amount: amountStr, date: paymentDate } = req.query as Record<string, string>;
+    if (!paymentId || !userIdStr) {
+      res.status(400).json({ error: "paymentId and userId are required" });
+      return;
+    }
+    const userId = parseInt(userIdStr, 10);
+    const amount = amountStr ? parseInt(amountStr, 10) : null;
+    try {
+      const db = await getDb();
+      if (!db) { res.status(500).json({ error: "DB unavailable" }); return; }
+      const { users: usersT, agentCrmProfiles: agentCrmProfilesT, agentEmails: agentEmailsT } = await import("../../drizzle/schema");
+      const { eq: eqOp, and: andOp } = await import("drizzle-orm");
+      // Dedup check
+      const receiptTriggerKey = `gc_receipt_${paymentId}`;
+      const existing = await db.select({ id: agentEmailsT.id }).from(agentEmailsT)
+        .where(andOp(eqOp(agentEmailsT.triggerKey, receiptTriggerKey), eqOp(agentEmailsT.userId, userId))).limit(1);
+      if (existing.length > 0) {
+        res.json({ ok: false, message: "Receipt already sent for this payment" });
+        return;
+      }
+      const [agentRow] = await db.select().from(usersT).where(eqOp(usersT.id, userId)).limit(1);
+      if (!agentRow?.email) { res.status(404).json({ error: "Agent not found" }); return; }
+      const [crmRow] = await db.select({ membershipTier: agentCrmProfilesT.membershipTier }).from(agentCrmProfilesT).where(eqOp(agentCrmProfilesT.userId, userId)).limit(1);
+      const membershipTier = crmRow?.membershipTier ?? null;
+      const tierLabel = membershipTier === "first_class" ? "First Class" : membershipTier === "charter" ? "Charter" : "Business Class";
+      const amountFormatted = amount ? `\u00a3${(amount / 100).toFixed(2)}` : "\u2014";
+      const vatNet = amount ? Math.round(amount / 1.2) : 0;
+      const vatAmt = amount ? amount - vatNet : 0;
+      const netFmt = `\u00a3${(vatNet / 100).toFixed(2)}`;
+      const vatFmt = `\u00a3${(vatAmt / 100).toFixed(2)}`;
+      const displayDate = paymentDate ?? new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      const agentName = agentRow.name ?? "there";
+      const agentEmail = agentRow.email;
+      const receiptHtml = `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);"><div style="background:#70FFE8;padding:28px 32px;"><h1 style="margin:0;font-size:22px;font-weight:700;color:#1a1a2e;">JLT Group</h1><p style="margin:4px 0 0;font-size:13px;color:#1a1a2e;opacity:0.7;">Membership Payment Receipt</p></div><div style="padding:32px;"><p style="color:#414141;margin:0 0 20px;">Hi ${agentName},</p><p style="color:#414141;margin:0 0 20px;">Your JLT Group membership payment has been successfully collected.</p><table style="width:100%;border-collapse:collapse;margin:0 0 24px;"><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Net Amount (excl. VAT)</td><td style="padding:10px 0;color:#414141;text-align:right;">${netFmt}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">VAT (20%)</td><td style="padding:10px 0;color:#414141;text-align:right;">${vatFmt}</td></tr><tr style="border-bottom:1px solid #f0f0f0;background:#f8fffe;"><td style="padding:10px 0;color:#414141;font-weight:700;font-size:15px;">Total</td><td style="padding:10px 0;color:#414141;font-weight:700;font-size:16px;text-align:right;">${amountFormatted}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Membership</td><td style="padding:10px 0;color:#414141;font-weight:600;text-align:right;">${tierLabel}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Date</td><td style="padding:10px 0;color:#414141;text-align:right;">${displayDate}</td></tr><tr><td style="padding:10px 0;color:#6b7280;font-size:14px;">Reference</td><td style="padding:10px 0;color:#414141;font-family:monospace;text-align:right;">${paymentId}</td></tr></table><p style="color:#6b7280;font-size:13px;margin:0 0 8px;">VAT Registration Number: <strong>341303939</strong></p><p style="color:#6b7280;font-size:13px;margin:0;">For queries contact <a href="mailto:memberships@thejltgroup.co.uk" style="color:#02E6D2;">memberships@thejltgroup.co.uk</a>.</p></div><div style="background:#f9fafb;padding:20px 32px;border-top:1px solid #f0f0f0;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">JLT Group &bull; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p></div></div>`;
+      await sendDirectEmail({ toEmail: agentEmail, toName: agentName, subject: `Membership Payment Receipt \u2014 ${amountFormatted}`, html: receiptHtml, ...({ triggerKey: receiptTriggerKey, userId } as any) });
+      res.json({ ok: true, message: `Receipt sent to ${agentEmail}` });
+    } catch (err: any) {
+      console.error("[SendReceipt] Error:", err?.message);
+      res.status(500).json({ error: err?.message ?? "Unknown error" });
+    }
+  });
+
   // ── PPS Direct Payment Page ─────────────────────────────────────────────────
   // Server-side GET /api/pay/:token — returns a self-submitting HTML form that
   // goes straight to PPS. Uses /api/ prefix so it's never intercepted by the
