@@ -1633,8 +1633,8 @@ async function startServer() {
                 agentStatusForReceipt = statusRow?.agentStatus ?? statusRow?.portalStatus ?? null;
               }
             } catch { /* non-critical */ }
-            if (agentStatusForReceipt === "in_notice" || agentStatusForReceipt === "cancelled") {
-              console.log(`[GC Webhook] Skipping receipt email for agent ${userId} — status: ${agentStatusForReceipt}`);
+            if (agentStatusForReceipt === "cancelled") {
+              console.log(`[GC Webhook] Skipping receipt email for agent ${userId} — status: ${agentStatusForReceipt} (cancelled agents do not receive receipts)`);
             } else {
             try {
               const db2 = await getDb();
