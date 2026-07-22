@@ -2172,7 +2172,7 @@ async function startServer() {
           const { PROSPECT_FROM, PROSPECT_REPLY_TO } = await import("../resend-email");
           if (env.resendApiKey) {
             const resend = new Resend(env.resendApiKey);
-            const callDateStr = startTime ? new Date(startTime).toLocaleString("en-GB", { dateStyle: "full", timeStyle: "short" }) : "the scheduled time";
+            const callDateStr = startTime ? new Date(startTime).toLocaleString("en-GB", { dateStyle: "full", timeStyle: "short", timeZone: "Europe/London" }) : "the scheduled time";
             await resend.emails.send({
               from: PROSPECT_FROM,
               to: [prospect.email],
