@@ -3014,7 +3014,7 @@ export const crmRouter = router({
           }
 
           const rows = await db
-            .select({ id: usersTable.id, email: usersTable.email, name: usersTable.name, profileId: agentCrmProfiles.id })
+            .select({ id: usersTable.id, email: usersTable.email, name: usersTable.name, profileId: agentCrmProfiles.id, paymentExempt: agentCrmProfiles.paymentExempt })
             .from(usersTable)
             .innerJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, usersTable.id))
             .where(and(...conditions));
@@ -3037,7 +3037,9 @@ export const crmRouter = router({
             if (filters.hasActiveMandate === true) {
               agentRows = agentRows.filter((u) => agentIdsWithMandate.has(u.id));
             } else {
-              agentRows = agentRows.filter((u) => !agentIdsWithMandate.has(u.id));
+              // Exclude agents who have a mandate AND exclude payment-exempt agents
+              // (Duo/Trio secondary members are covered by the lead's subscription)
+              agentRows = agentRows.filter((u) => !agentIdsWithMandate.has(u.id) && !u.paymentExempt);
             }
           }
 

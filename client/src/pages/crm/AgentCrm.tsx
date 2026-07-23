@@ -450,6 +450,12 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
                     <CreditCard size={10} /> No DD
                   </span>
                 )}
+                {/* Payment exempt badge */}
+                {crmData?.paymentExempt && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800" title={crmData.paymentExemptReason ?? "Payment exempt"}>
+                    <ShieldOff size={10} /> Payment Exempt
+                  </span>
+                )}
               </div>
             </div>
           </div>
