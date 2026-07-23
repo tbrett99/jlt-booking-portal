@@ -5021,6 +5021,63 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         }
         return { success: true, message: json.message ?? 'Receipt sent' };
       }),
+
+    /**
+     * Admin: payment gap report — active/in_notice agents with no GC mandate or Stripe subscription,
+     * excluding payment-exempt agents (Duo/Trio secondary members).
+     */
+    paymentGapReport: adminProcedure.query(async () => {
+      const { getDb } = await import('./db');
+      const { users: usersTable, agentCrmProfiles: crmTable, gcMandates: gcMandatesTable, gcSubscriptions: gcSubsTable } = await import('../drizzle/schema');
+      const { eq: eqFn, inArray, isNotNull } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) return [];
+
+      // All active/in_notice agents with their CRM profile
+      const agents = await db
+        .select({
+          id: usersTable.id,
+          name: usersTable.name,
+          email: usersTable.email,
+          portalStatus: usersTable.portalStatus,
+          membershipTier: crmTable.membershipTier,
+          monthlySub: crmTable.monthlySub,
+          paymentExempt: crmTable.paymentExempt,
+          paymentExemptReason: crmTable.paymentExemptReason,
+          dateJoined: crmTable.dateJoined,
+        })
+        .from(usersTable)
+        .leftJoin(crmTable, eqFn(crmTable.userId, usersTable.id))
+        .where(inArray(usersTable.portalStatus, ['active', 'in_notice']))
+        .orderBy(usersTable.name);
+
+      const agentIds = agents.map(a => a.id);
+      if (!agentIds.length) return [];
+
+      // Agents with an active GC mandate
+      const gcMandates = await db
+        .select({ userId: gcMandatesTable.userId })
+        .from(gcMandatesTable)
+        .where(inArray(gcMandatesTable.status, ['active', 'submitted', 'pending_submission']))
+        .then(rows => new Set(rows.map(r => r.userId)));
+
+      // Agents with an active GC subscription
+      const gcSubs = await db
+        .select({ userId: gcSubsTable.userId })
+        .from(gcSubsTable)
+        .where(eqFn(gcSubsTable.status, 'active'))
+        .then(rows => new Set(rows.map(r => r.userId)));
+
+      return agents
+        .filter(a => !a.paymentExempt)
+        .map(a => ({
+          ...a,
+          hasGcMandate: gcMandates.has(a.id),
+          hasGcSubscription: gcSubs.has(a.id),
+          hasPayment: gcMandates.has(a.id) || gcSubs.has(a.id),
+        }))
+        .filter(a => !a.hasPayment);
+    }),
   }),
   inbox: router({
     // Admin: get IMAP config (password masked)

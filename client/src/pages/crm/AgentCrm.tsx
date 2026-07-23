@@ -21,7 +21,7 @@ import {
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
   ChevronDown, ChevronLeft, ChevronRight, X, Pencil, Clock, ArrowRight, CheckCircle2,
-  Shield, ExternalLink, FileSignature, ScrollText, Printer, Zap
+  Shield, ShieldOff, ExternalLink, FileSignature, ScrollText, Printer, Zap
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -541,7 +541,7 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <StatusHistoryTab userId={agent.id} />
             </TabsContent>
             <TabsContent value="dd" className="mt-5 pb-8">
-              <DirectDebitTab userId={agent.id} mandate={agentMandate} />
+              <DirectDebitTab userId={agent.id} mandate={agentMandate} paymentExempt={crmData?.paymentExempt ?? false} paymentExemptReason={crmData?.paymentExemptReason ?? null} />
             </TabsContent>
             <TabsContent value="onboarding" className="mt-5 pb-8">
               <AdminOnboardingChecklistTab userId={agent.id} agentName={agent.name ?? ""} agentEmail={agent.email ?? ""} open={open} onRefresh={refresh} />
@@ -2276,7 +2276,7 @@ function StatusHistoryTab({ userId }: { userId: number }) {
 
 // ─── Direct Debit Tab ─────────────────────────────────────────────────────────
 
-function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; mandate: any }) {
+function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initialPaymentExempt, paymentExemptReason: initialPaymentExemptReason }: { userId: number; mandate: any; paymentExempt?: boolean; paymentExemptReason?: string | null }) {
   const utils = trpc.useUtils();
   const [localMandate, setLocalMandate] = useState<any>(initialMandate);
   const mandate = localMandate;
@@ -2331,6 +2331,17 @@ function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; m
     },
     onError: (err) => toast.error(err.message),
   });
+
+  // Payment Exempt
+  const [paymentExemptChecked, setPaymentExemptChecked] = useState<boolean>(initialPaymentExempt ?? false);
+  const [paymentExemptReasonText, setPaymentExemptReasonText] = useState<string>(initialPaymentExemptReason ?? "");
+  const updateProfileMutation = trpc.crm.agentCrm.updateProfile.useMutation({
+    onSuccess: () => toast.success("Payment exemption updated"),
+    onError: (err) => toast.error(err.message),
+  });
+  const savePaymentExempt = (exempt: boolean, reason: string) => {
+    updateProfileMutation.mutate({ userId, paymentExempt: exempt, paymentExemptReason: reason || null });
+  };
 
   const formatEventType = (type: string) => {
     const map: Record<string, string> = {
@@ -2648,6 +2659,47 @@ function DirectDebitTab({ userId, mandate: initialMandate }: { userId: number; m
                 ))}
               </TableBody>
             </Table>
+          </div>
+        )}
+      </div>
+      {/* Payment Exemption */}
+      <div className="rounded-lg border p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <ShieldOff size={14} />
+              Payment Exempt
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Enable for Duo/Trio secondary members covered by the lead agent's subscription.</p>
+          </div>
+          <Switch
+            checked={paymentExemptChecked}
+            disabled={updateProfileMutation.isPending}
+            onCheckedChange={(checked) => {
+              setPaymentExemptChecked(checked);
+              if (!checked) savePaymentExempt(false, "");
+            }}
+          />
+        </div>
+        {paymentExemptChecked && (
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground">Reason (e.g. "Duo secondary — covered by Jane Smith")</label>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="Covered by lead agent..."
+                value={paymentExemptReasonText}
+                onChange={(e) => setPaymentExemptReasonText(e.target.value)}
+                maxLength={255}
+              />
+              <button
+                onClick={() => savePaymentExempt(true, paymentExemptReasonText)}
+                disabled={updateProfileMutation.isPending}
+                className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
+              >
+                {updateProfileMutation.isPending ? "Saving..." : "Save"}
+              </button>
+            </div>
           </div>
         )}
       </div>

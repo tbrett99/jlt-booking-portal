@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { FileSpreadsheet, FileText, TrendingUp, BarChart3 } from "lucide-react";
+import { FileSpreadsheet, FileText, TrendingUp, BarChart3, AlertTriangle, Download } from "lucide-react";
 import { format, startOfMonth, subMonths } from "date-fns";
 import { useMemo } from "react";
 
@@ -276,6 +276,97 @@ export default function AdminReports() {
           )}
         </CardContent>
       </Card>
+      {/* Payment Gap Report */}
+      <PaymentGapReport />
     </div>
+  );
+}
+
+function PaymentGapReport() {
+  const { data: gaps = [], isLoading, refetch } = trpc.gocardless.paymentGapReport.useQuery();
+
+  const downloadCSV = () => {
+    if (!gaps.length) { toast.error("No data to export"); return; }
+    const headers = ["Name", "Email", "Status", "Tier", "Monthly Sub", "Date Joined"];
+    const rows = gaps.map(g => [
+      `"${g.name ?? ''}"`,
+      `"${g.email ?? ''}"`,
+      g.portalStatus ?? "",
+      g.membershipTier ?? "",
+      g.monthlySub ?? "",
+      g.dateJoined ?? "",
+    ]);
+    const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `payment-gap-report-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("CSV downloaded");
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-3">
+        <div>
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertTriangle size={16} className="text-amber-500" />
+            Payment Gap Report
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Active and in-notice agents with no GoCardless mandate or subscription. Payment-exempt agents (Duo/Trio secondary members) are excluded.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()}>Refresh</Button>
+          <Button variant="outline" size="sm" onClick={downloadCSV} className="gap-2">
+            <Download size={14} />CSV
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2" style={{ borderColor: '#70FFE8' }} />
+          </div>
+        ) : gaps.length === 0 ? (
+          <p className="text-center py-8 text-muted-foreground text-sm">No payment gaps found — all active agents have a payment method set up.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <p className="text-sm font-medium mb-3 text-amber-600">{gaps.length} agent{gaps.length !== 1 ? 's' : ''} with no payment set up</p>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="pb-3 font-semibold text-muted-foreground">Name</th>
+                  <th className="pb-3 font-semibold text-muted-foreground hidden sm:table-cell">Email</th>
+                  <th className="pb-3 font-semibold text-muted-foreground">Status</th>
+                  <th className="pb-3 font-semibold text-muted-foreground hidden md:table-cell">Tier</th>
+                  <th className="pb-3 font-semibold text-muted-foreground hidden lg:table-cell">Monthly Sub</th>
+                  <th className="pb-3 font-semibold text-muted-foreground hidden lg:table-cell">Date Joined</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {gaps.map(g => (
+                  <tr key={g.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="py-3 font-medium">{g.name ?? '—'}</td>
+                    <td className="py-3 text-muted-foreground hidden sm:table-cell">{g.email ?? '—'}</td>
+                    <td className="py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        g.portalStatus === 'active' ? 'bg-teal-100 text-teal-800' : 'bg-amber-100 text-amber-800'
+                      }`}>{g.portalStatus}</span>
+                    </td>
+                    <td className="py-3 text-muted-foreground hidden md:table-cell">{g.membershipTier ?? '—'}</td>
+                    <td className="py-3 text-muted-foreground hidden lg:table-cell">{g.monthlySub ?? '—'}</td>
+                    <td className="py-3 text-muted-foreground hidden lg:table-cell">{g.dateJoined ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

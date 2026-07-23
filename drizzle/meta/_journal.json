@@ -827,6 +827,13 @@
       "when": 1784646135845,
       "tag": "0117_graceful_outlaw_kid",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "5",
+      "when": 1784815158947,
+      "tag": "0118_tidy_iron_patriot",
+      "breakpoints": true
     }
   ]
 }

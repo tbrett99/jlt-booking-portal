@@ -1092,7 +1092,14 @@ export const crmRouter = router({
           console.error("[CRM] Failed to fetch contract data for user", input.userId, err);
         }
 
-        return { profile: decryptedProfile, tags, supplierLogins: decryptedLogins, contractData };
+        return {
+          profile: decryptedProfile,
+          tags,
+          supplierLogins: decryptedLogins,
+          contractData,
+          paymentExempt: decryptedProfile?.paymentExempt ?? false,
+          paymentExemptReason: decryptedProfile?.paymentExemptReason ?? null,
+        };
       }),
 
     updateProfile: adminProcedure
@@ -1122,6 +1129,8 @@ export const crmRouter = router({
           internalNotes: z.string().optional().nullable(),
           trainingStage: z.string().optional().nullable(),
           orbitEnabled: z.boolean().optional(),
+          paymentExempt: z.boolean().optional(),
+          paymentExemptReason: z.string().max(255).optional().nullable(),
         })
       )
       .mutation(async ({ input }) => {
@@ -1630,6 +1639,8 @@ export const crmRouter = router({
         suppliers: supplierLogins.map(s => s.supplierName),
         // Hoisted to top level to avoid SuperJSON depth truncation in PortalLayout
         orbitEnabled: profile?.orbitEnabled ?? false,
+        paymentExempt: profile?.paymentExempt ?? false,
+        paymentExemptReason: profile?.paymentExemptReason ?? null,
       };
     }),
 
