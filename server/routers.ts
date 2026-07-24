@@ -2419,20 +2419,15 @@ export const appRouter = router({
         // Send confirmation email to the agent with refund process information
         try {
           const supplierList = input.suppliers.length > 0
-            ? input.suppliers.map(s => `<li><strong>${s.supplierName}</strong> — £${(s.amountDue / 100).toFixed(2)}</li>`).join('')
+            ? input.suppliers.map(s => `<li><strong>${s.supplierName}</strong> — £${Number(s.amountDue).toFixed(2)}</li>`).join('')
             : '';
           const supplierSection = supplierList
             ? `<p><strong>Suppliers to contact for refund:</strong></p><ul>${supplierList}</ul>`
             : '';
-          await sendDirectEmail({
-            toEmail: ctx.user.email ?? '',
-            toName: ctx.user.name ?? 'Agent',
-            subject: `Refund Request Submitted — ${booking.clientName} (Booking #${input.bookingId})`,
-            userId: ctx.user.id,
-            triggerKey: `refund_confirmation_${refundId}`,
-            injectPortalFooter: true,
-            bookingId: input.bookingId,
-            html: `
+          // Load the editable notification template (falls back to hardcoded default)
+          const refundTemplate = await getNotificationTemplate('refund_confirmation');
+          const defaultSubject = `Refund Request Submitted — ${booking.clientName} (Booking #${input.bookingId})`;
+          const defaultBody = `
               <p>Hi ${ctx.user.name ?? 'there'},</p>
               <p>Your refund request for <strong>${booking.clientName}</strong> (Booking #${input.bookingId}) has been successfully submitted. Here's what happens next:</p>
               <hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb;" />
@@ -2458,7 +2453,16 @@ export const appRouter = router({
                 <li>If we need any further information from you, we will be in touch.</li>
               </ul>
               <p style="margin-top:16px;">If you have any questions, please contact the JLT support team.</p>
-            `,
+            `;
+          await sendDirectEmail({
+            toEmail: ctx.user.email ?? '',
+            toName: ctx.user.name ?? 'Agent',
+            subject: refundTemplate ? refundTemplate.subject.replace('{{clientName}}', booking.clientName ?? '').replace('{{bookingId}}', String(input.bookingId)) : defaultSubject,
+            userId: ctx.user.id,
+            triggerKey: `refund_confirmation_${refundId}`,
+            injectPortalFooter: true,
+            bookingId: input.bookingId,
+            html: refundTemplate ? refundTemplate.bodyHtml.replace('{{agentName}}', ctx.user.name ?? 'there').replace('{{clientName}}', booking.clientName ?? '').replace('{{bookingId}}', String(input.bookingId)).replace('{{supplierSection}}', supplierSection) : defaultBody,
           });
         } catch (emailErr) {
           console.error('[Refund] Failed to send confirmation email to agent:', emailErr);

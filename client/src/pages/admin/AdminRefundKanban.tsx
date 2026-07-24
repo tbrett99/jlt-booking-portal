@@ -95,17 +95,17 @@ export default function AdminRefundKanban() {
       );
       if (!hasMatch) return false;
     }
-    // Amount range filter — checks if any supplier amount OR client amount falls in range
-    const minPence = amountMin ? parseFloat(amountMin) * 100 : null;
-    const maxPence = amountMax ? parseFloat(amountMax) * 100 : null;
-    if (minPence !== null || maxPence !== null) {
+    // Amount range filter — amounts stored in pounds (decimal), compare directly
+    const minAmt = amountMin ? parseFloat(amountMin) : null;
+    const maxAmt = amountMax ? parseFloat(amountMax) : null;
+    if (minAmt !== null || maxAmt !== null) {
       const amounts = [
         ...(r.suppliers ?? []).map((s: { amountDue: number }) => Number(s.amountDue)),
         ...(r.amountToClient != null ? [Number(r.amountToClient)] : []),
       ];
       const totalAmount = amounts.reduce((sum: number, a: number) => sum + a, 0);
-      if (minPence !== null && totalAmount < minPence) return false;
-      if (maxPence !== null && totalAmount > maxPence) return false;
+      if (minAmt !== null && totalAmount < minAmt) return false;
+      if (maxAmt !== null && totalAmount > maxAmt) return false;
     }
     return true;
   });
@@ -416,7 +416,7 @@ function RefundCard({
                   <Building2 size={10} className="shrink-0" />{s.supplierName}
                 </span>
                 <span className="flex items-center gap-0.5 text-blue-700 font-semibold shrink-0 ml-2">
-                  <PoundSterling size={9} />{(s.amountDue / 100).toFixed(2)}
+                  <PoundSterling size={9} />{Number(s.amountDue).toFixed(2)}
                 </span>
               </div>
             ))}
@@ -426,7 +426,7 @@ function RefundCard({
           <div className="flex items-center justify-between text-xs bg-emerald-50 border border-emerald-100 rounded px-2 py-1">
             <span className="text-emerald-800 font-medium">Client refund</span>
             <span className="flex items-center gap-0.5 text-emerald-700 font-semibold">
-              <PoundSterling size={9} />{(refund.amountToClient / 100).toFixed(2)}
+              <PoundSterling size={9} />{Number(refund.amountToClient).toFixed(2)}
             </span>
           </div>
         )}
