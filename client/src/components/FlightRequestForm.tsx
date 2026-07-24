@@ -89,6 +89,41 @@ function FlightSection({
   );
 }
 
+/** Reusable flight cost input */
+function FlightCostInput({
+  id,
+  label,
+  value,
+  onChange,
+  hint,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  hint?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label} <span className="text-destructive">*</span></Label>
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+        <Input
+          id={id}
+          type="number"
+          min="0"
+          step="0.01"
+          className="pl-7"
+          placeholder="0.00"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </div>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
 export function FlightRequestForm({ open, onOpenChange, bookingId, clientName, onSuccess }: Props) {
   const utils = trpc.useUtils();
 
@@ -99,11 +134,13 @@ export function FlightRequestForm({ open, onOpenChange, bookingId, clientName, o
   const [pnr, setPnr] = useState("");
   const [departureDate, setDepartureDate] = useState("");
   const [ticketingDeadline, setTicketingDeadline] = useState("");
+  const [flightCost, setFlightCost] = useState("");
 
   // Cancellation-specific fields (used when requestType = 'both')
   const [cancellationPnr, setCancellationPnr] = useState("");
   const [cancellationDepartureDate, setCancellationDepartureDate] = useState("");
   const [cancellationTicketingDeadline, setCancellationTicketingDeadline] = useState("");
+  const [cancellationFlightCost, setCancellationFlightCost] = useState("");
 
   const isBoth = requestType === "both";
 
@@ -127,9 +164,11 @@ export function FlightRequestForm({ open, onOpenChange, bookingId, clientName, o
     setPnr("");
     setDepartureDate("");
     setTicketingDeadline("");
+    setFlightCost("");
     setCancellationPnr("");
     setCancellationDepartureDate("");
     setCancellationTicketingDeadline("");
+    setCancellationFlightCost("");
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -138,8 +177,16 @@ export function FlightRequestForm({ open, onOpenChange, bookingId, clientName, o
       toast.error("Please fill in all required fields.");
       return;
     }
+    if (!flightCost || isNaN(parseFloat(flightCost)) || parseFloat(flightCost) < 0) {
+      toast.error("Please enter a valid flight cost.");
+      return;
+    }
     if (isBoth && (!cancellationPnr.trim() || !cancellationDepartureDate || !cancellationTicketingDeadline)) {
       toast.error("Please fill in all cancellation fields.");
+      return;
+    }
+    if (isBoth && (!cancellationFlightCost || isNaN(parseFloat(cancellationFlightCost)) || parseFloat(cancellationFlightCost) < 0)) {
+      toast.error("Please enter a valid cancellation flight cost.");
       return;
     }
     createMutation.mutate({
@@ -149,10 +196,12 @@ export function FlightRequestForm({ open, onOpenChange, bookingId, clientName, o
       pnr: pnr.trim(),
       departureDate: new Date(departureDate),
       ticketingDeadline: new Date(ticketingDeadline),
+      flightCost: parseFloat(flightCost),
       ...(isBoth && {
         cancellationPnr: cancellationPnr.trim(),
         cancellationDepartureDate: new Date(cancellationDepartureDate),
         cancellationTicketingDeadline: new Date(cancellationTicketingDeadline),
+        cancellationFlightCost: parseFloat(cancellationFlightCost),
       }),
     });
   }
@@ -201,18 +250,27 @@ export function FlightRequestForm({ open, onOpenChange, bookingId, clientName, o
             </Select>
           </div>
 
-          {/* Single-type: just one section */}
+          {/* Single-type: one section + cost */}
           {requestType && !isBoth && (
-            <FlightSection
-              prefix="primary"
-              label={requestType === "ticketing" ? "Ticketing Details" : "Cancellation Details"}
-              pnr={pnr} setPnr={setPnr}
-              departureDate={departureDate} setDepartureDate={setDepartureDate}
-              ticketingDeadline={ticketingDeadline} setTicketingDeadline={setTicketingDeadline}
-            />
+            <>
+              <FlightSection
+                prefix="primary"
+                label={requestType === "ticketing" ? "Ticketing Details" : "Cancellation Details"}
+                pnr={pnr} setPnr={setPnr}
+                departureDate={departureDate} setDepartureDate={setDepartureDate}
+                ticketingDeadline={ticketingDeadline} setTicketingDeadline={setTicketingDeadline}
+              />
+              <FlightCostInput
+                id="flightCost"
+                label="Flight Cost"
+                value={flightCost}
+                onChange={setFlightCost}
+                hint="Enter the total cost of the flight so we can match this when completing your request."
+              />
+            </>
           )}
 
-          {/* Both: two separate sections */}
+          {/* Both: two sections + two costs */}
           {isBoth && (
             <>
               <FlightSection
@@ -222,12 +280,26 @@ export function FlightRequestForm({ open, onOpenChange, bookingId, clientName, o
                 departureDate={departureDate} setDepartureDate={setDepartureDate}
                 ticketingDeadline={ticketingDeadline} setTicketingDeadline={setTicketingDeadline}
               />
+              <FlightCostInput
+                id="flightCost"
+                label="Ticketing Flight Cost"
+                value={flightCost}
+                onChange={setFlightCost}
+                hint="Enter the total cost of the ticketing flight."
+              />
               <FlightSection
                 prefix="cancellation"
                 label="Cancellation Details"
                 pnr={cancellationPnr} setPnr={setCancellationPnr}
                 departureDate={cancellationDepartureDate} setDepartureDate={setCancellationDepartureDate}
                 ticketingDeadline={cancellationTicketingDeadline} setTicketingDeadline={setCancellationTicketingDeadline}
+              />
+              <FlightCostInput
+                id="cancellationFlightCost"
+                label="Cancellation Flight Cost"
+                value={cancellationFlightCost}
+                onChange={setCancellationFlightCost}
+                hint="Enter the total cost of the cancellation flight."
               />
             </>
           )}

@@ -951,10 +951,12 @@ export const flightRequests = mysqlTable("flight_requests", {
   pnr: varchar("pnr", { length: 50 }).notNull(),
   departureDate: timestamp("departureDate").notNull(),
   ticketingDeadline: timestamp("ticketingDeadline").notNull(),
+  flightCost: decimal("flightCost", { precision: 10, scale: 2 }), // Cost of the flight (£) for ticketing request
   // Cancellation-specific fields (used when requestType = 'both')
   cancellationPnr: varchar("cancellationPnr", { length: 50 }),
   cancellationDepartureDate: timestamp("cancellationDepartureDate"),
   cancellationTicketingDeadline: timestamp("cancellationTicketingDeadline"),
+  cancellationFlightCost: decimal("cancellationFlightCost", { precision: 10, scale: 2 }), // Cost of the flight (£) for cancellation request
   status: varchar("status", { length: 20 }).notNull().default("pending"), // "pending" | "ticketed" | "cancelled" | "query"
   cancellationStatus: varchar("cancellationStatus", { length: 20 }).default("pending"), // only used when requestType = 'both': "pending" | "cancelled"
   invoiceAddedToPts: boolean("invoiceAddedToPts").notNull().default(false),

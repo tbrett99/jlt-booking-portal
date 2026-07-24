@@ -205,6 +205,9 @@ export default function AdminFlightsPipeline() {
                 {r.ptsRef && <span>PTS: <strong className="text-foreground">{r.ptsRef}</strong></span>}
                 {r.topdogRef && <span>TD: <strong className="text-foreground">{r.topdogRef}</strong></span>}
                 <span>PNR: <strong className="text-foreground">{r.pnr}</strong></span>
+                {r.flightCost != null && (
+                  <span className="text-emerald-700 font-semibold">£{parseFloat(String(r.flightCost)).toFixed(2)}</span>
+                )}
               </div>
               <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-0.5">
                 <span>Departure: <strong className="text-foreground">{format(new Date(r.departureDate), "dd MMM yyyy")}</strong></span>

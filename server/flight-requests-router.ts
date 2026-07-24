@@ -19,10 +19,13 @@ export const flightRequestsRouter = router({
         pnr: z.string().min(1).max(50),
         departureDate: z.date(),
         ticketingDeadline: z.date(),
+        // Flight cost fields
+        flightCost: z.number().min(0).optional(),
         // Cancellation-specific fields (required when requestType = 'both')
         cancellationPnr: z.string().max(50).optional(),
         cancellationDepartureDate: z.date().optional(),
         cancellationTicketingDeadline: z.date().optional(),
+        cancellationFlightCost: z.number().min(0).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -50,9 +53,11 @@ export const flightRequestsRouter = router({
         pnr: input.pnr,
         departureDate: input.departureDate,
         ticketingDeadline: input.ticketingDeadline,
+        flightCost: input.flightCost != null ? String(input.flightCost) : null,
         cancellationPnr: input.cancellationPnr ?? null,
         cancellationDepartureDate: input.cancellationDepartureDate ?? null,
         cancellationTicketingDeadline: input.cancellationTicketingDeadline ?? null,
+        cancellationFlightCost: input.cancellationFlightCost != null ? String(input.cancellationFlightCost) : null,
         status: "pending",
         invoiceAddedToPts: false,
       });
@@ -133,9 +138,11 @@ export const flightRequestsRouter = router({
         pnr: flightRequests.pnr,
         departureDate: flightRequests.departureDate,
         ticketingDeadline: flightRequests.ticketingDeadline,
+        flightCost: flightRequests.flightCost,
         cancellationPnr: flightRequests.cancellationPnr,
         cancellationDepartureDate: flightRequests.cancellationDepartureDate,
         cancellationTicketingDeadline: flightRequests.cancellationTicketingDeadline,
+        cancellationFlightCost: flightRequests.cancellationFlightCost,
         status: flightRequests.status,
         cancellationStatus: flightRequests.cancellationStatus,
         invoiceAddedToPts: flightRequests.invoiceAddedToPts,
