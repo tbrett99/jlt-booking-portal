@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { User, Calendar, ArrowRight, Clock, Search, MessageSquare, Trash2 } from "lucide-react";
+import { User, Calendar, ArrowRight, Clock, Search, MessageSquare, Trash2, Building2, PoundSterling } from "lucide-react";
 import { useState } from "react";
 import { differenceInDays } from "date-fns";
 import { Input } from "@/components/ui/input";
@@ -52,6 +52,13 @@ export default function AdminRefundKanban() {
   const { data: refunds, refetch } = trpc.refunds.all.useQuery(undefined, { staleTime: 60000 });
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const [search, setSearch] = useState("");
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [amountMin, setAmountMin] = useState("");
+  const [amountMax, setAmountMax] = useState("");
+  const PAGE_SIZE = 10;
+  const [stagePage, setStagePage] = useState<Record<Stage, number>>(
+    () => Object.fromEntries(STAGES.map((s) => [s, 1])) as Record<Stage, number>
+  );
 
   // Query dialog state
   const [queryDialog, setQueryDialog] = useState<{ refundId: number; targetStage: Stage } | null>(null);
@@ -71,16 +78,46 @@ export default function AdminRefundKanban() {
   });
 
   const allRefunds = refunds ?? [];
-  const filtered = search
-    ? allRefunds.filter((r) =>
-        (r.clientName ?? "").toLowerCase().includes(search.toLowerCase()) ||
-        (r.ptsRef ?? "").toLowerCase().includes(search.toLowerCase()) ||
-        (r.topdogRef ?? "").toLowerCase().includes(search.toLowerCase())
-      )
-    : allRefunds;
+  const filtered = allRefunds.filter((r) => {
+    // Client/ref search
+    if (search) {
+      const s = search.toLowerCase();
+      const matchesClient = (r.clientName ?? "").toLowerCase().includes(s);
+      const matchesPts = (r.ptsRef ?? "").toLowerCase().includes(s);
+      const matchesTd = (r.topdogRef ?? "").toLowerCase().includes(s);
+      if (!matchesClient && !matchesPts && !matchesTd) return false;
+    }
+    // Supplier name search
+    if (supplierSearch) {
+      const ss = supplierSearch.toLowerCase();
+      const hasMatch = (r.suppliers ?? []).some((s: { supplierName: string }) =>
+        s.supplierName.toLowerCase().includes(ss)
+      );
+      if (!hasMatch) return false;
+    }
+    // Amount range filter — checks if any supplier amount OR client amount falls in range
+    const minPence = amountMin ? parseFloat(amountMin) * 100 : null;
+    const maxPence = amountMax ? parseFloat(amountMax) * 100 : null;
+    if (minPence !== null || maxPence !== null) {
+      const amounts = [
+        ...(r.suppliers ?? []).map((s: { amountDue: number }) => Number(s.amountDue)),
+        ...(r.amountToClient != null ? [Number(r.amountToClient)] : []),
+      ];
+      const totalAmount = amounts.reduce((sum: number, a: number) => sum + a, 0);
+      if (minPence !== null && totalAmount < minPence) return false;
+      if (maxPence !== null && totalAmount > maxPence) return false;
+    }
+    return true;
+  });
 
   const byStage = (stage: Stage) =>
     filtered.filter((r) => (r.pipelineStage ?? "New Refund Request") === stage);
+  const byStagePagedCount = (stage: Stage) => byStage(stage).length;
+  const byStagePagedItems = (stage: Stage) => {
+    const all = byStage(stage);
+    const page = stagePage[stage] ?? 1;
+    return all.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  };
 
   const pendingCount = filtered.filter((r) => r.pipelineStage !== "Refund Processed").length;
 
@@ -126,14 +163,62 @@ export default function AdminRefundKanban() {
               {pendingCount} pending
             </div>
           )}
-          <div className="relative w-64">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search client, PTS ref, Topdog ref..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-8 text-sm"
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-52">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Client, PTS ref, Topdog ref..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-8 text-sm"
+              />
+            </div>
+            <div className="relative w-40">
+              <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Supplier name..."
+                value={supplierSearch}
+                onChange={(e) => setSupplierSearch(e.target.value)}
+                className="pl-9 h-8 text-sm"
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="relative w-24">
+                <PoundSterling size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="number"
+                  placeholder="Min"
+                  value={amountMin}
+                  onChange={(e) => setAmountMin(e.target.value)}
+                  className="pl-6 h-8 text-sm"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+              <span className="text-muted-foreground text-xs">–</span>
+              <div className="relative w-24">
+                <PoundSterling size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="number"
+                  placeholder="Max"
+                  value={amountMax}
+                  onChange={(e) => setAmountMax(e.target.value)}
+                  className="pl-6 h-8 text-sm"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+            </div>
+            {(search || supplierSearch || amountMin || amountMax) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground"
+                onClick={() => { setSearch(""); setSupplierSearch(""); setAmountMin(""); setAmountMax(""); }}
+              >
+                Clear filters
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -151,7 +236,7 @@ export default function AdminRefundKanban() {
                 <Badge variant="outline" className="text-xs ml-2 shrink-0">{byStage(stage).length}</Badge>
               </div>
 
-              {byStage(stage).map((refund) => (
+              {byStagePagedItems(stage).map((refund) => (
                 <RefundCard
                   key={refund.id}
                   refund={refund}
@@ -164,9 +249,32 @@ export default function AdminRefundKanban() {
                 />
               ))}
 
-              {byStage(stage).length === 0 && (
+              {byStagePagedCount(stage) === 0 && (
                 <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg">
                   No refunds
+                </div>
+              )}
+
+              {/* Pagination controls */}
+              {byStagePagedCount(stage) > PAGE_SIZE && (
+                <div className="flex items-center justify-between pt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs px-2"
+                    disabled={(stagePage[stage] ?? 1) <= 1}
+                    onClick={() => setStagePage((p) => ({ ...p, [stage]: (p[stage] ?? 1) - 1 }))}
+                  >←</Button>
+                  <span className="text-xs text-muted-foreground">
+                    {stagePage[stage] ?? 1} / {Math.ceil(byStagePagedCount(stage) / PAGE_SIZE)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs px-2"
+                    disabled={(stagePage[stage] ?? 1) >= Math.ceil(byStagePagedCount(stage) / PAGE_SIZE)}
+                    onClick={() => setStagePage((p) => ({ ...p, [stage]: (p[stage] ?? 1) + 1 }))}
+                  >→</Button>
                 </div>
               )}
             </div>
@@ -299,6 +407,29 @@ function RefundCard({
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-3 space-y-3">
+        {/* Supplier names + amounts */}
+        {refund.suppliers && refund.suppliers.length > 0 && (
+          <div className="space-y-1">
+            {refund.suppliers.map((s: { supplierName: string; amountDue: number }, i: number) => (
+              <div key={i} className="flex items-center justify-between text-xs bg-blue-50 border border-blue-100 rounded px-2 py-1">
+                <span className="flex items-center gap-1 text-blue-800 font-medium truncate">
+                  <Building2 size={10} className="shrink-0" />{s.supplierName}
+                </span>
+                <span className="flex items-center gap-0.5 text-blue-700 font-semibold shrink-0 ml-2">
+                  <PoundSterling size={9} />{(s.amountDue / 100).toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {refund.amountToClient != null && refund.amountToClient > 0 && (
+          <div className="flex items-center justify-between text-xs bg-emerald-50 border border-emerald-100 rounded px-2 py-1">
+            <span className="text-emerald-800 font-medium">Client refund</span>
+            <span className="flex items-center gap-0.5 text-emerald-700 font-semibold">
+              <PoundSterling size={9} />{(refund.amountToClient / 100).toFixed(2)}
+            </span>
+          </div>
+        )}
         <p className="text-xs text-muted-foreground line-clamp-2 bg-muted/50 rounded p-2">
           {refund.refundReason}
         </p>

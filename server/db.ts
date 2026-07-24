@@ -927,23 +927,33 @@ export async function getAllRefunds() {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.select().from(refunds).orderBy(desc(refunds.createdAt));
-  // Enrich with booking info and assignee name
+  // Enrich with booking info, assignee name, and suppliers
   const bookingIds = Array.from(new Set(rows.map((r) => r.bookingId)));
   const assigneeIds = Array.from(new Set(rows.map((r) => r.assignedToId).filter(Boolean) as number[]));
+  const refundIds = rows.map((r) => r.id);
   const bookingRows = bookingIds.length > 0
     ? await db.select({ id: bookings.id, clientName: bookings.clientName, ptsRef: bookings.ptsRef, topdogRef: bookings.topdogRef }).from(bookings).where(inArray(bookings.id, bookingIds))
     : [];
   const assigneeRows = assigneeIds.length > 0
     ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, assigneeIds))
     : [];
+  const supplierRows = refundIds.length > 0
+    ? await db.select().from(refundSuppliers).where(inArray(refundSuppliers.refundId, refundIds))
+    : [];
   const bookingMap = new Map(bookingRows.map((b) => [b.id, b]));
   const assigneeMap = new Map(assigneeRows.map((u) => [u.id, u.name]));
+  const suppliersByRefund = new Map<number, { supplierName: string; amountDue: number }[]>();
+  for (const s of supplierRows) {
+    if (!suppliersByRefund.has(s.refundId)) suppliersByRefund.set(s.refundId, []);
+    suppliersByRefund.get(s.refundId)!.push({ supplierName: s.supplierName, amountDue: Number(s.amountDue) });
+  }
   return rows.map((r) => ({
     ...r,
     clientName: bookingMap.get(r.bookingId)?.clientName ?? null,
     ptsRef: bookingMap.get(r.bookingId)?.ptsRef ?? null,
     topdogRef: bookingMap.get(r.bookingId)?.topdogRef ?? null,
     assignedToName: r.assignedToId ? (assigneeMap.get(r.assignedToId) ?? null) : null,
+    suppliers: suppliersByRefund.get(r.id) ?? [],
   }));
 }
 

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Plus, Minus, Lock } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Minus, Lock, AlertTriangle, Info } from "lucide-react";
 
 type Supplier = { supplierName: string; amountDue: string };
 
@@ -88,6 +88,21 @@ export default function RefundForm() {
         <div>
           <h1 className="text-xl font-bold">Request Refund</h1>
           {booking && <p className="text-sm text-muted-foreground">{booking.clientName} — Booking #{bookingId}</p>}
+        </div>
+      </div>
+
+      {/* Agent responsibility notice */}
+      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="text-amber-600 mt-0.5 shrink-0" size={20} />
+          <div className="space-y-2">
+            <p className="font-semibold text-amber-900 text-sm">Important — Please read before submitting</p>
+            <ul className="text-sm text-amber-800 space-y-1.5 list-disc list-inside">
+              <li><strong>You are responsible for initiating the refund directly with the supplier</strong> (where applicable) and for chasing it through to completion.</li>
+              <li>Once you submit this form, you will receive a confirmation email with full details on timelines and the refund process. <strong>Please read this carefully.</strong></li>
+              <li>JLT will support you throughout the process, but the supplier relationship and initial contact is your responsibility.</li>
+            </ul>
+          </div>
         </div>
       </div>
 

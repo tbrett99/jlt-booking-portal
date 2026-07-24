@@ -2416,7 +2416,54 @@ export const appRouter = router({
             message: `Refund request submitted for booking "${booking.clientName}" by ${ctx.user.name}`,
           });
         }
-        // Admin email notification disabled — admins use dashboard + in-app notifications
+        // Send confirmation email to the agent with refund process information
+        try {
+          const supplierList = input.suppliers.length > 0
+            ? input.suppliers.map(s => `<li><strong>${s.supplierName}</strong> — £${(s.amountDue / 100).toFixed(2)}</li>`).join('')
+            : '';
+          const supplierSection = supplierList
+            ? `<p><strong>Suppliers to contact for refund:</strong></p><ul>${supplierList}</ul>`
+            : '';
+          await sendDirectEmail({
+            toEmail: ctx.user.email ?? '',
+            toName: ctx.user.name ?? 'Agent',
+            subject: `Refund Request Submitted — ${booking.clientName} (Booking #${input.bookingId})`,
+            userId: ctx.user.id,
+            triggerKey: `refund_confirmation_${refundId}`,
+            injectPortalFooter: true,
+            bookingId: input.bookingId,
+            html: `
+              <p>Hi ${ctx.user.name ?? 'there'},</p>
+              <p>Your refund request for <strong>${booking.clientName}</strong> (Booking #${input.bookingId}) has been successfully submitted. Here's what happens next:</p>
+              <hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb;" />
+              <h3 style="margin:0 0 8px;">Your Responsibilities</h3>
+              <ul>
+                <li><strong>You must initiate the refund directly with the supplier</strong> (where applicable). JLT cannot do this on your behalf.</li>
+                <li>You are responsible for chasing the supplier until the refund is received.</li>
+                <li>Keep a record of all correspondence with the supplier — you may need to provide this to JLT.</li>
+              </ul>
+              ${supplierSection}
+              <hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb;" />
+              <h3 style="margin:0 0 8px;">Timelines</h3>
+              <ul>
+                <li>Supplier refunds typically take <strong>4–12 weeks</strong> depending on the supplier's own processes.</li>
+                <li>Once the supplier refund is confirmed, JLT will process the client refund within <strong>5 working days</strong>.</li>
+                <li>Bank transfers to clients are processed on Tuesdays and Thursdays.</li>
+              </ul>
+              <hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb;" />
+              <h3 style="margin:0 0 8px;">What JLT Will Do</h3>
+              <ul>
+                <li>Your refund request has been added to our pipeline and will be reviewed by the team.</li>
+                <li>We will support you throughout the process and keep you updated on progress.</li>
+                <li>If we need any further information from you, we will be in touch.</li>
+              </ul>
+              <p style="margin-top:16px;">If you have any questions, please contact the JLT support team.</p>
+            `,
+          });
+        } catch (emailErr) {
+          console.error('[Refund] Failed to send confirmation email to agent:', emailErr);
+          // Non-fatal — refund was still created successfully
+        }
         // System audit note
         await createNote({
           bookingId: input.bookingId,
