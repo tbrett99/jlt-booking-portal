@@ -2639,10 +2639,43 @@ export const appRouter = router({
       const dueBookings = await getCommissionDueBookings();
       const allUsers = await getAllUsers();
       const userMap = new Map(allUsers.map((u) => [u.id, u]));
+
+      // Fetch outstanding refunds and amendments for these bookings
+      const bookingIds = dueBookings.map((b) => b.id);
+      const outstandingRefundBookingIds = new Set<number>();
+      const outstandingAmendmentBookingIds = new Set<number>();
+      if (bookingIds.length > 0) {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (db) {
+          const { refunds: refundsTable, amendments: amendmentsTable } = await import('../drizzle/schema');
+          const { inArray, and, ne } = await import('drizzle-orm');
+          const outstandingRefunds = await db
+            .select({ bookingId: refundsTable.bookingId })
+            .from(refundsTable)
+            .where(and(
+              inArray(refundsTable.bookingId, bookingIds),
+              ne(refundsTable.status, 'completed'),
+            ));
+          for (const r of outstandingRefunds) outstandingRefundBookingIds.add(r.bookingId);
+          const outstandingAmendments = await db
+            .select({ bookingId: amendmentsTable.bookingId })
+            .from(amendmentsTable)
+            .where(and(
+              inArray(amendmentsTable.bookingId, bookingIds),
+              ne(amendmentsTable.status, 'actioned'),
+              ne(amendmentsTable.status, 'rejected'),
+            ));
+          for (const a of outstandingAmendments) outstandingAmendmentBookingIds.add(a.bookingId);
+        }
+      }
+
       return dueBookings.map((b) => ({
         ...b,
         agentName: userMap.get(b.agentId)?.name ?? "Unknown",
         agentEmail: userMap.get(b.agentId)?.email ?? "",
+        hasOutstandingRefund: outstandingRefundBookingIds.has(b.id),
+        hasOutstandingAmendment: outstandingAmendmentBookingIds.has(b.id),
       }));
     }),
     requestTopUp: adminProcedure
@@ -2933,6 +2966,38 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         }
       }
 
+      // Fetch outstanding refunds and amendments for all booking IDs in these claims
+      const bookingIds = Array.from(new Set(claims.map((c) => c.bookingId)));
+      const outstandingRefundBookingIds = new Set<number>();
+      const outstandingAmendmentBookingIds = new Set<number>();
+      if (bookingIds.length > 0) {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (db) {
+          const { refunds: refundsTable, amendments: amendmentsTable } = await import('../drizzle/schema');
+          const { inArray, and, ne } = await import('drizzle-orm');
+          // Outstanding refunds: status is pending or processing (not completed)
+          const outstandingRefunds = await db
+            .select({ bookingId: refundsTable.bookingId })
+            .from(refundsTable)
+            .where(and(
+              inArray(refundsTable.bookingId, bookingIds),
+              ne(refundsTable.status, 'completed'),
+            ));
+          for (const r of outstandingRefunds) outstandingRefundBookingIds.add(r.bookingId);
+          // Outstanding amendments: status is pending (not actioned or rejected)
+          const outstandingAmendments = await db
+            .select({ bookingId: amendmentsTable.bookingId })
+            .from(amendmentsTable)
+            .where(and(
+              inArray(amendmentsTable.bookingId, bookingIds),
+              ne(amendmentsTable.status, 'actioned'),
+              ne(amendmentsTable.status, 'rejected'),
+            ));
+          for (const a of outstandingAmendments) outstandingAmendmentBookingIds.add(a.bookingId);
+        }
+      }
+
       return claims.map((c) => ({
         ...c,
         agentName: userMap.get(c.agentId)?.name ?? "Unknown",
@@ -2943,6 +3008,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         bankAccountName: bankDetailsMap.get(c.agentId)?.bankAccountName ?? null,
         bankSortCode: bankDetailsMap.get(c.agentId)?.bankSortCode ?? null,
         bankAccountNumber: bankDetailsMap.get(c.agentId)?.bankAccountNumber ?? null,
+        hasOutstandingRefund: outstandingRefundBookingIds.has(c.bookingId),
+        hasOutstandingAmendment: outstandingAmendmentBookingIds.has(c.bookingId),
       }));
     }),
 

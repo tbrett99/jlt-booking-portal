@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle, CheckCircle2, TrendingDown } from "lucide-react";
+import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle, CheckCircle2, TrendingDown, AlertTriangle } from "lucide-react";
 import CopyableRef from "@/components/CopyableRef";
 import { useLocation } from "wouter";
 
@@ -32,6 +32,8 @@ type ClaimRow = {
   bankAccountName?: string | null;
   bankSortCode?: string | null;
   bankAccountNumber?: string | null;
+  hasOutstandingRefund?: boolean;
+  hasOutstandingAmendment?: boolean;
   booking: {
     clientName: string;
     departureDate: Date | string | null;
@@ -140,7 +142,23 @@ function ClaimTable({
                     />
                   </td>
                 )}
-                <td className="py-3 px-4 font-medium">{c.booking?.clientName ?? "—"}</td>
+                <td className="py-3 px-4 font-medium">
+                  <div className="flex flex-col gap-1">
+                    <span>{c.booking?.clientName ?? "—"}</span>
+                    <div className="flex gap-1 flex-wrap">
+                      {c.hasOutstandingRefund && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-1.5 py-0.5">
+                          <AlertTriangle className="h-2.5 w-2.5" /> Refund Pending
+                        </span>
+                      )}
+                      {c.hasOutstandingAmendment && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 border border-orange-200 rounded px-1.5 py-0.5">
+                          <AlertTriangle className="h-2.5 w-2.5" /> Amendment Pending
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </td>
                 <td className="py-3 px-4">
                   {c.booking?.ptsRef ? (
                     <CopyableRef value={c.booking.ptsRef} />

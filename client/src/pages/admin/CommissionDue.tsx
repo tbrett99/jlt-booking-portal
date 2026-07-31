@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { AlertCircle, Calendar, CheckCircle2, User, Square, CheckSquare, CalendarClock, Minus, Zap } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, User, Square, CheckSquare, CalendarClock, Minus, Zap, AlertTriangle } from "lucide-react";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import CopyableRef from "@/components/CopyableRef";
 
@@ -370,6 +370,18 @@ export default function CommissionDue() {
                             Pre-Auth
                           </Badge>
                         )}
+                        {(booking as any).hasOutstandingRefund && (
+                          <Badge className="text-xs bg-red-100 text-red-800 border border-red-300 gap-1 flex items-center">
+                            <AlertTriangle size={10} />
+                            Outstanding Refund
+                          </Badge>
+                        )}
+                        {(booking as any).hasOutstandingAmendment && (
+                          <Badge className="text-xs bg-orange-100 text-orange-800 border border-orange-300 gap-1 flex items-center">
+                            <AlertTriangle size={10} />
+                            Outstanding Amendment
+                          </Badge>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -519,6 +531,27 @@ export default function CommissionDue() {
               }
             </DialogDescription>
           </DialogHeader>
+          {/* Outstanding refund/amendment warnings */}
+          {preAuthBooking && (() => {
+            const bk = filtered.find((b) => b.id === preAuthBooking.id);
+            const hasRefund = (bk as any)?.hasOutstandingRefund;
+            const hasAmendment = (bk as any)?.hasOutstandingAmendment;
+            if (!hasRefund && !hasAmendment) return null;
+            return (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 space-y-1.5">
+                <div className="flex items-center gap-2 text-amber-800 font-semibold text-sm">
+                  <AlertTriangle size={15} className="shrink-0" />
+                  Outstanding items on this booking
+                </div>
+                {hasRefund && (
+                  <p className="text-xs text-amber-700">⚠ There is an <strong>outstanding refund</strong> on this booking that has not been completed. Ensure the refund is resolved before marking commission claimable.</p>
+                )}
+                {hasAmendment && (
+                  <p className="text-xs text-amber-700">⚠ There is an <strong>outstanding amendment</strong> on this booking that has not been actioned. Ensure the amendment is resolved before marking commission claimable.</p>
+                )}
+              </div>
+            );
+          })()}
           <div className="space-y-4 py-2">
             <p className="text-sm font-medium text-foreground">
               Booking: <span className="text-muted-foreground">{preAuthBooking?.clientName}</span>

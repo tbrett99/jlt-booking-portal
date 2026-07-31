@@ -2652,3 +2652,8 @@
 - [ ] Register Booking: inline nudge when agent types a non-preferred supplier if a preferred one exists in same category
 - [ ] Weekly Digest email: add preferred partners section showing 1-2 partners with logo and pitch
 - [x] Community Hub: preferred partner spotlight post sub-type with gold badge + auto-pin to top of Supplier News tab
+
+- [x] Commission safeguards: outstanding refund/amendment flags on commissionDue.list and commissionClaims.all procedures
+- [x] CommissionDue admin page: warning badges on booking cards + warning panel in Mark Claimable dialog
+- [x] AdminCommissions page: Refund Pending / Amendment Pending badges on claim rows
+- [x] AgentCommissions: pre-claim amendment lock warning modal before claim dialog
