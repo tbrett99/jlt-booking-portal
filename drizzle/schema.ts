@@ -1835,3 +1835,14 @@ export const competitionEntries = mysqlTable("competition_entries", {
 
 export type CompetitionEntry = typeof competitionEntries.$inferSelect;
 export type InsertCompetitionEntry = typeof competitionEntries.$inferInsert;
+
+// ─── Digest Runs ─────────────────────────────────────────────────────────────
+// Tracks each successful weekly digest send so the next run knows where to start.
+export const digestRuns = mysqlTable("digest_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  digestType: varchar("digestType", { length: 64 }).notNull().default("weekly"), // e.g. 'weekly'
+  periodFrom: timestamp("periodFrom").notNull(),   // start of the period reported on
+  periodTo: timestamp("periodTo").notNull(),       // end of the period reported on (= sentAt)
+  sentAt: timestamp("sentAt").defaultNow().notNull(),
+});
+export type DigestRun = typeof digestRuns.$inferSelect;

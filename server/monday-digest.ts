@@ -1,8 +1,13 @@
 /**
  * Monday Morning Business Digest
  * Triggered by a Heartbeat cron every Monday at 08:00 UTC.
- * Queries the previous week's stats and emails a formatted HTML digest
- * to support@thejltgroup.co.uk.
+ *
+ * Date range logic:
+ *   - On first ever run: reports on the previous 7 calendar days.
+ *   - On subsequent runs: reports from the moment the last digest was sent
+ *     up to now. This means a late run (e.g. run on Wednesday instead of
+ *     Monday) will still capture everything since the last digest, not just
+ *     the most recent Mon–Sun calendar week.
  */
 import type { Request, Response } from "express";
 import { getDb } from "./db";
@@ -11,20 +16,11 @@ import {
   agentCrmProfiles, agentStatusEvents, gcPaymentEvents, gcMandates,
   bookings, pipelineHistory, amendments, refunds, flightRequests,
   commissionClaims, reimbursementItems, remittanceBatches, remittanceLines,
-  recruitmentProspects, recruitmentStageHistory,
+  recruitmentProspects, recruitmentStageHistory, digestRuns,
 } from "../drizzle/schema";
 import {
-  and, eq, gte, lt, ne, isNotNull, sql,
+  and, eq, gte, lt, ne, isNotNull, sql, desc,
 } from "drizzle-orm";
-
-function getMondayOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
 
 function fmtGbp(n: number): string {
   return `£${n.toLocaleString("en-GB", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -78,24 +74,38 @@ export async function mondayDigestHandler(req: Request, res: Response) {
     const db = await getDb();
     if (!db) return res.status(500).json({ error: "DB unavailable" });
 
-    // Determine the week to report on: the most recently completed Mon–Sun
     const now = new Date();
-    const thisMonday = getMondayOfWeek(now);
-    // If today is Monday, report on last week; otherwise report on the current week-to-date
-    const reportMonday = now.getDay() === 1 ? new Date(thisMonday.getTime() - 7 * 86400000) : new Date(thisMonday.getTime() - 7 * 86400000);
-    const reportSunday = new Date(reportMonday.getTime() + 7 * 86400000);
-    const prevMonday = new Date(reportMonday.getTime() - 7 * 86400000);
-    const prevSunday = new Date(reportMonday.getTime());
 
-    const weekLabel = `${reportMonday.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${new Date(reportSunday.getTime() - 1).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+    // ── Determine the reporting window ────────────────────────────────────────
+    // Look up the last successful digest run so we always report from that
+    // point forward, regardless of when this run was triggered.
+    const [lastRun] = await db
+      .select()
+      .from(digestRuns)
+      .where(eq(digestRuns.digestType, "weekly"))
+      .orderBy(desc(digestRuns.sentAt))
+      .limit(1);
+
+    // If no previous run exists, fall back to 7 days ago
+    const reportFrom: Date = lastRun
+      ? new Date(lastRun.sentAt)
+      : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const reportTo: Date = now;
+
+    // Previous equivalent period (same duration, immediately before reportFrom)
+    const periodMs = reportTo.getTime() - reportFrom.getTime();
+    const prevFrom = new Date(reportFrom.getTime() - periodMs);
+    const prevTo = reportFrom;
+
+    const weekLabel = `${reportFrom.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${reportTo.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
 
     // ── Membership ──
     const [totalActive, newSignups, newSignupsPrev, cancellations, cancellationsPrev, inNotice, paused] = await Promise.all([
       db.select({ count: sql<number>`COUNT(*)` }).from(agentCrmProfiles).where(eq(agentCrmProfiles.agentStatus, "active")),
-      db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(eq(agentStatusEvents.toStatus, "active"), gte(agentStatusEvents.createdAt, reportMonday), lt(agentStatusEvents.createdAt, reportSunday))),
-      db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(eq(agentStatusEvents.toStatus, "active"), gte(agentStatusEvents.createdAt, prevMonday), lt(agentStatusEvents.createdAt, prevSunday))),
-      db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(eq(agentStatusEvents.toStatus, "in_notice"), gte(agentStatusEvents.createdAt, reportMonday), lt(agentStatusEvents.createdAt, reportSunday))),
-      db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(eq(agentStatusEvents.toStatus, "in_notice"), gte(agentStatusEvents.createdAt, prevMonday), lt(agentStatusEvents.createdAt, prevSunday))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(eq(agentStatusEvents.toStatus, "active"), gte(agentStatusEvents.createdAt, reportFrom), lt(agentStatusEvents.createdAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(eq(agentStatusEvents.toStatus, "active"), gte(agentStatusEvents.createdAt, prevFrom), lt(agentStatusEvents.createdAt, prevTo))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(eq(agentStatusEvents.toStatus, "in_notice"), gte(agentStatusEvents.createdAt, reportFrom), lt(agentStatusEvents.createdAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(eq(agentStatusEvents.toStatus, "in_notice"), gte(agentStatusEvents.createdAt, prevFrom), lt(agentStatusEvents.createdAt, prevTo))),
       db.select({ count: sql<number>`COUNT(*)` }).from(agentCrmProfiles).where(eq(agentCrmProfiles.agentStatus, "in_notice")),
       db.select({ count: sql<number>`COUNT(*)` }).from(agentCrmProfiles).where(eq(agentCrmProfiles.agentStatus, "paused")),
     ]);
@@ -104,38 +114,38 @@ export async function mondayDigestHandler(req: Request, res: Response) {
     // ── DD Revenue ──
     const [mrrRaw, confirmedThisWeek, confirmedPrevWeek, paidOutThisWeek, failedThisWeek] = await Promise.all([
       db.select({ totalPence: sql<number>`SUM(amount)` }).from(gcMandates).innerJoin(agentCrmProfiles, eq(gcMandates.userId, agentCrmProfiles.userId)).where(and(eq(gcMandates.status, "active"), eq(agentCrmProfiles.agentStatus, "active"))),
-      db.select({ count: sql<number>`COUNT(DISTINCT paymentId)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, reportMonday), lt(gcPaymentEvents.occurredAt, reportSunday))),
-      db.select({ count: sql<number>`COUNT(DISTINCT paymentId)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, prevMonday), lt(gcPaymentEvents.occurredAt, prevSunday))),
-      db.select({ count: sql<number>`COUNT(DISTINCT paymentId)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_paid_out"), gte(gcPaymentEvents.occurredAt, reportMonday), lt(gcPaymentEvents.occurredAt, reportSunday))),
-      db.select({ count: sql<number>`COUNT(DISTINCT paymentId)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_failed"), gte(gcPaymentEvents.occurredAt, reportMonday), lt(gcPaymentEvents.occurredAt, reportSunday))),
+      db.select({ count: sql<number>`COUNT(DISTINCT paymentId)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, reportFrom), lt(gcPaymentEvents.occurredAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(DISTINCT paymentId)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_confirmed"), gte(gcPaymentEvents.occurredAt, prevFrom), lt(gcPaymentEvents.occurredAt, prevTo))),
+      db.select({ count: sql<number>`COUNT(DISTINCT paymentId)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_paid_out"), gte(gcPaymentEvents.occurredAt, reportFrom), lt(gcPaymentEvents.occurredAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(DISTINCT paymentId)`, totalPence: sql<number>`SUM(amount)` }).from(gcPaymentEvents).where(and(eq(gcPaymentEvents.eventType, "payments_failed"), gte(gcPaymentEvents.occurredAt, reportFrom), lt(gcPaymentEvents.occurredAt, reportTo))),
     ]);
 
     // ── Bookings ──
     const [newBookings, newBookingsPrev, pipelineMoves, amendmentsNew, refundsNew, flightsPending] = await Promise.all([
-      db.select({ count: sql<number>`COUNT(*)` }).from(bookings).where(and(gte(bookings.createdAt, reportMonday), lt(bookings.createdAt, reportSunday))),
-      db.select({ count: sql<number>`COUNT(*)` }).from(bookings).where(and(gte(bookings.createdAt, prevMonday), lt(bookings.createdAt, prevSunday))),
-      db.select({ count: sql<number>`COUNT(*)` }).from(pipelineHistory).where(and(gte(pipelineHistory.movedAt, reportMonday), lt(pipelineHistory.movedAt, reportSunday))),
-      db.select({ count: sql<number>`COUNT(*)` }).from(amendments).where(and(gte(amendments.createdAt, reportMonday), lt(amendments.createdAt, reportSunday))),
-      db.select({ count: sql<number>`COUNT(*)` }).from(refunds).where(and(gte(refunds.createdAt, reportMonday), lt(refunds.createdAt, reportSunday))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(bookings).where(and(gte(bookings.createdAt, reportFrom), lt(bookings.createdAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(bookings).where(and(gte(bookings.createdAt, prevFrom), lt(bookings.createdAt, prevTo))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(pipelineHistory).where(and(gte(pipelineHistory.movedAt, reportFrom), lt(pipelineHistory.movedAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(amendments).where(and(gte(amendments.createdAt, reportFrom), lt(amendments.createdAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(refunds).where(and(gte(refunds.createdAt, reportFrom), lt(refunds.createdAt, reportTo))),
       db.select({ count: sql<number>`COUNT(*)` }).from(flightRequests).where(and(ne(flightRequests.status, "completed"), ne(flightRequests.status, "cancelled"))),
     ]);
 
     // ── Financials ──
     const [jltRevThisWeek, jltRevPrevWeek, agentPayouts, commClaimsNew, commClaimsPaid, reimbPaid, reimbPending] = await Promise.all([
-      db.select({ total: sql<number>`SUM(jlt20)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, reportMonday), lt(remittanceBatches.createdAt, reportSunday), isNotNull(remittanceLines.jlt20))),
-      db.select({ total: sql<number>`SUM(jlt20)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, prevMonday), lt(remittanceBatches.createdAt, prevSunday), isNotNull(remittanceLines.jlt20))),
-      db.select({ total: sql<number>`SUM(remit80)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, reportMonday), lt(remittanceBatches.createdAt, reportSunday), isNotNull(remittanceLines.remit80))),
-      db.select({ count: sql<number>`COUNT(*)`, gross: sql<number>`SUM(grossAmount)` }).from(commissionClaims).where(and(gte(commissionClaims.createdAt, reportMonday), lt(commissionClaims.createdAt, reportSunday))),
-      db.select({ count: sql<number>`COUNT(*)`, gross: sql<number>`SUM(grossAmount)` }).from(commissionClaims).where(and(eq(commissionClaims.status, "paid"), isNotNull(commissionClaims.paidAt), gte(commissionClaims.paidAt, reportMonday), lt(commissionClaims.paidAt, reportSunday))),
-      db.select({ count: sql<number>`COUNT(*)`, total: sql<number>`SUM(amount)` }).from(reimbursementItems).where(and(eq(reimbursementItems.status, "paid"), isNotNull(reimbursementItems.paidAt), gte(reimbursementItems.paidAt, reportMonday), lt(reimbursementItems.paidAt, reportSunday))),
+      db.select({ total: sql<number>`SUM(jlt20)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, reportFrom), lt(remittanceBatches.createdAt, reportTo), isNotNull(remittanceLines.jlt20))),
+      db.select({ total: sql<number>`SUM(jlt20)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, prevFrom), lt(remittanceBatches.createdAt, prevTo), isNotNull(remittanceLines.jlt20))),
+      db.select({ total: sql<number>`SUM(remit80)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, reportFrom), lt(remittanceBatches.createdAt, reportTo), isNotNull(remittanceLines.remit80))),
+      db.select({ count: sql<number>`COUNT(*)`, gross: sql<number>`SUM(grossAmount)` }).from(commissionClaims).where(and(gte(commissionClaims.createdAt, reportFrom), lt(commissionClaims.createdAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(*)`, gross: sql<number>`SUM(grossAmount)` }).from(commissionClaims).where(and(eq(commissionClaims.status, "paid"), isNotNull(commissionClaims.paidAt), gte(commissionClaims.paidAt, reportFrom), lt(commissionClaims.paidAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(*)`, total: sql<number>`SUM(amount)` }).from(reimbursementItems).where(and(eq(reimbursementItems.status, "paid"), isNotNull(reimbursementItems.paidAt), gte(reimbursementItems.paidAt, reportFrom), lt(reimbursementItems.paidAt, reportTo))),
       db.select({ count: sql<number>`COUNT(*)`, total: sql<number>`SUM(amount)` }).from(reimbursementItems).where(eq(reimbursementItems.status, "pending")),
     ]);
 
     // ── Recruitment ──
     const [newProspects, newProspectsPrev, wonThisWeek] = await Promise.all([
-      db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, reportMonday), lt(recruitmentProspects.createdAt, reportSunday))),
-      db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, prevMonday), lt(recruitmentProspects.createdAt, prevSunday))),
-      db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(and(eq(recruitmentStageHistory.toStage, "won"), gte(recruitmentStageHistory.changedAt, reportMonday), lt(recruitmentStageHistory.changedAt, reportSunday))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, reportFrom), lt(recruitmentProspects.createdAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, prevFrom), lt(recruitmentProspects.createdAt, prevTo))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(and(eq(recruitmentStageHistory.toStage, "won"), gte(recruitmentStageHistory.changedAt, reportFrom), lt(recruitmentStageHistory.changedAt, reportTo))),
     ]);
 
     // ── Build HTML ──
@@ -177,6 +187,10 @@ export async function mondayDigestHandler(req: Request, res: Response) {
       row("Won (Converted to Agents)", fmtNum(n(wonThisWeek[0]?.count))),
     ].join("");
 
+    const periodNote = lastRun
+      ? `Reporting period: since last digest sent on ${reportFrom.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })} at ${reportFrom.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} UTC.`
+      : `Reporting period: last 7 days (first digest run).`;
+
     const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -184,11 +198,12 @@ export async function mondayDigestHandler(req: Request, res: Response) {
   <div style="max-width:640px;margin:0 auto;">
     <div style="background:#1a1a2e;color:#70FFE8;padding:20px 24px;border-radius:8px 8px 0 0;text-align:center;">
       <h1 style="margin:0;font-size:22px;font-weight:700;">JLT Group — Weekly Business Digest</h1>
-      <p style="margin:6px 0 0;color:#a0f0e0;font-size:14px;">Week of ${weekLabel}</p>
+      <p style="margin:6px 0 0;color:#a0f0e0;font-size:14px;">Period: ${weekLabel}</p>
     </div>
     <div style="background:#ffffff;padding:16px 24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
       <p style="color:#6b7280;font-size:13px;margin:0 0 16px;">
-        This digest was automatically generated on ${now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} at ${now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} UTC.
+        Generated on ${now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} at ${now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} UTC.
+        ${periodNote}
         <a href="${process.env.PORTAL_BASE_URL ?? "https://portal.thejltgroup.co.uk"}/super-admin" style="color:#1a8a78;text-decoration:none;">View full BI dashboard →</a>
       </p>
       ${section("👥 Membership & Retention", membershipRows)}
@@ -216,8 +231,17 @@ export async function mondayDigestHandler(req: Request, res: Response) {
       return res.status(500).json({ ok: false, error: result.error });
     }
 
-    console.log(`[Monday Digest] Sent for week ${weekLabel}`);
-    return res.json({ ok: true, weekLabel });
+    // ── Record this successful run ────────────────────────────────────────────
+    // Store the period so the next run knows where to start from.
+    await db.insert(digestRuns).values({
+      digestType: "weekly",
+      periodFrom: reportFrom,
+      periodTo: reportTo,
+      sentAt: now,
+    });
+
+    console.log(`[Monday Digest] Sent for period ${weekLabel}`);
+    return res.json({ ok: true, weekLabel, periodFrom: reportFrom.toISOString(), periodTo: reportTo.toISOString() });
   } catch (err: any) {
     console.error("[Monday Digest] Error:", err);
     return res.status(500).json({
