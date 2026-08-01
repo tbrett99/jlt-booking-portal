@@ -734,18 +734,31 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
 
   const postIds = posts.map((p) => p.id);
 
-  // Stats snapshot — count bookings by bookedDate within the Fri–Fri window
-  // weekStarting is the Friday the digest covers; weekEnd is the following Friday
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const weekEnd = new Date(weekStarting.getTime() + 7 * 24 * 60 * 60 * 1000);
+  // Stats snapshot — count bookings since the last digest was sent (not a fixed calendar window).
+  // This ensures a late digest run captures everything since the previous send.
   const { bookings, commissionClaims, reimbursementItems } = await import("../drizzle/schema");
+
+  // Find the most recently SENT digest (not the current draft) to use as the period start
+  const [lastSentDigest] = await db
+    .select({ sentAt: communityDigests.sentAt })
+    .from(communityDigests)
+    .where(and(eq(communityDigests.status, "sent"), isNotNull(communityDigests.sentAt)))
+    .orderBy(desc(communityDigests.sentAt))
+    .limit(1);
+
+  // Fall back to 7 days ago if no previous digest has been sent
+  const periodStart: Date = lastSentDigest?.sentAt
+    ? new Date(lastSentDigest.sentAt)
+    : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  const weekEnd = now; // period ends now
+
   const [bookingCount] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(bookings)
     .where(and(
-      isNotNull(bookings.bookedDate),
-      gte(bookings.bookedDate, weekStarting),
-      lt(bookings.bookedDate, weekEnd)
+      gte(bookings.createdAt, periodStart),
+      lt(bookings.createdAt, weekEnd)
     ));
 
   const claimedThisWeek = await db
@@ -753,7 +766,7 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     .from(commissionClaims)
     .where(
       and(
-        gt(commissionClaims.claimedAt, sevenDaysAgo),
+        gt(commissionClaims.claimedAt, periodStart),
         lt(commissionClaims.claimedAt, now),
         or(
           eq(commissionClaims.status, "paid"),
@@ -766,14 +779,14 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     0
   );
 
-  // Count reimbursement items moved to scheduled status in the last 7 days
+  // Count reimbursement items moved to scheduled status since last digest
   const [reimbCount] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(reimbursementItems)
     .where(
       and(
         eq(reimbursementItems.status, "scheduled"),
-        gt(reimbursementItems.scheduledAt, sevenDaysAgo),
+        gt(reimbursementItems.scheduledAt, periodStart),
         lt(reimbursementItems.scheduledAt, now)
       )
     );
@@ -785,8 +798,8 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     reimbursementsCount: Number(reimbCount.count),
   };
 
-  // Fetch booking highlights using the same Mon–Sun week window
-  const highlights = await getBookingHighlights(weekStarting, weekEnd);
+  // Fetch booking highlights using the same period window
+  const highlights = await getBookingHighlights(periodStart, weekEnd);
 
   if (existing) {
     // Refresh stats, posts, and highlights on the existing draft
