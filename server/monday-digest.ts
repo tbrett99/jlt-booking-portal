@@ -241,7 +241,15 @@ export async function mondayDigestHandler(req: Request, res: Response) {
     });
 
     console.log(`[Monday Digest] Sent for period ${weekLabel}`);
-    return res.json({ ok: true, weekLabel, periodFrom: reportFrom.toISOString(), periodTo: reportTo.toISOString() });
+    return res.json({
+      ok: true,
+      weekLabel,
+      periodFrom: reportFrom.toISOString(),
+      periodTo: reportTo.toISOString(),
+      lastRunFound: !!lastRun,
+      lastRunSentAt: lastRun ? new Date(lastRun.sentAt).toISOString() : null,
+      newBookingsCount: n(newBookings[0]?.count),
+    });
   } catch (err: any) {
     console.error("[Monday Digest] Error:", err);
     return res.status(500).json({
