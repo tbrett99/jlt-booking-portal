@@ -423,7 +423,7 @@ export default function AgentFlightRequests() {
               Decline Price Increase
             </DialogTitle>
             <DialogDescription>
-              By declining, you are rejecting the new price. JLT will be notified and will contact you to discuss next steps.
+              Please read the important information below before declining.
             </DialogDescription>
           </DialogHeader>
           {priceIncreaseTarget && (
@@ -437,9 +437,18 @@ export default function AgentFlightRequests() {
               </p>
             </div>
           )}
+          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 space-y-2 text-sm text-red-800">
+            <p className="font-semibold">⚠ Important — What happens if you decline:</p>
+            <ul className="list-disc list-inside space-y-1 text-xs">
+              <li>This flight request will need to be <strong>cancelled</strong>.</li>
+              <li>A <strong>new flight request</strong> will need to be submitted for an alternative flight.</li>
+              <li><strong>New PTS booking fees will apply</strong> for the new file.</li>
+              <li>JLT will be notified and will contact you to arrange the cancellation and rebooking.</li>
+            </ul>
+          </div>
           <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setDeclineDialogOpen(false)}>
-              Cancel
+              Go Back
             </Button>
             <Button
               variant="destructive"
@@ -447,7 +456,7 @@ export default function AgentFlightRequests() {
               disabled={declinePriceIncrease.isPending}
             >
               {declinePriceIncrease.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <XCircle className="h-4 w-4 mr-1.5" />}
-              Confirm Decline
+              I Understand — Decline & Request Cancellation
             </Button>
           </DialogFooter>
         </DialogContent>
