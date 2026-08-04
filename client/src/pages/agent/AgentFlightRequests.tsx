@@ -443,13 +443,14 @@ export default function AgentFlightRequests() {
               This price increase is due to <strong>taxes and surcharges</strong>, which are not guaranteed at the point of holding ITX fares. These costs are applied by the airline/supplier at the time of ticketing and are outside JLT’s control.
             </p>
             <p className="text-xs">
-              <strong>Rebooking a new flight will not guarantee a different price</strong> — the same taxes and surcharges are likely to apply to any alternative booking.
+              <strong>Please be aware:</strong> rebooking a different flight is unlikely to result in a lower price, as the same taxes and surcharges will apply.
             </p>
-            <p className="text-xs font-semibold">If you still wish to decline:</p>
+            <p className="text-xs font-semibold">If you decline:</p>
             <ul className="list-disc list-inside space-y-1 text-xs">
-              <li>This flight request will need to be <strong>cancelled</strong>.</li>
-              <li>A <strong>new PTS file</strong> will need to be created and new PTS booking fees will apply.</li>
-              <li>JLT will contact you to discuss next steps.</li>
+              <li>Your <strong>held flight will be cancelled</strong>.</li>
+              <li>You will need to <strong>rebook an alternative flight</strong> yourself.</li>
+              <li>If ticketing is required on the new flight, you will need to <strong>submit a new ticketing request</strong>.</li>
+              <li>A <strong>new PTS file will need to be created</strong> and new PTS booking fees will apply.</li>
             </ul>
           </div>
           <DialogFooter className="mt-4">
