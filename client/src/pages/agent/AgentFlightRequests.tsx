@@ -450,7 +450,6 @@ export default function AgentFlightRequests() {
               <li>Your <strong>held flight will be cancelled</strong>.</li>
               <li>You will need to <strong>rebook an alternative flight</strong> yourself.</li>
               <li>If ticketing is required on the new flight, you will need to <strong>submit a new ticketing request</strong>.</li>
-              <li>A <strong>new PTS file will need to be created</strong> and new PTS booking fees will apply.</li>
             </ul>
           </div>
           <DialogFooter className="mt-4">
