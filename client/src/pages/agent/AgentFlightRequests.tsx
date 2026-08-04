@@ -437,13 +437,19 @@ export default function AgentFlightRequests() {
               </p>
             </div>
           )}
-          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 space-y-2 text-sm text-red-800">
-            <p className="font-semibold">⚠ Important — What happens if you decline:</p>
+          <div className="rounded-lg bg-amber-50 border border-amber-300 px-4 py-3 space-y-2 text-sm text-amber-900">
+            <p className="font-semibold">⚠ Please read before declining</p>
+            <p className="text-xs">
+              This price increase is due to <strong>taxes and surcharges</strong>, which are not guaranteed at the point of holding ITX fares. These costs are applied by the airline/supplier at the time of ticketing and are outside JLT’s control.
+            </p>
+            <p className="text-xs">
+              <strong>Rebooking a new flight will not guarantee a different price</strong> — the same taxes and surcharges are likely to apply to any alternative booking.
+            </p>
+            <p className="text-xs font-semibold">If you still wish to decline:</p>
             <ul className="list-disc list-inside space-y-1 text-xs">
               <li>This flight request will need to be <strong>cancelled</strong>.</li>
-              <li>A <strong>new flight request</strong> will need to be submitted for an alternative flight.</li>
-              <li><strong>New PTS booking fees will apply</strong> for the new file.</li>
-              <li>JLT will be notified and will contact you to arrange the cancellation and rebooking.</li>
+              <li>A <strong>new PTS file</strong> will need to be created and new PTS booking fees will apply.</li>
+              <li>JLT will contact you to discuss next steps.</li>
             </ul>
           </div>
           <DialogFooter className="mt-4">
