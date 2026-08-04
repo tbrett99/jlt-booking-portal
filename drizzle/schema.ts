@@ -240,6 +240,7 @@ export const inAppNotifications = mysqlTable("in_app_notifications", {
   message: text("message").notNull(),
   linkUrl: varchar("linkUrl", { length: 500 }), // optional deep link
   isRead: boolean("isRead").default(false).notNull(),
+  isUrgent: boolean("isUrgent").default(false).notNull(), // urgent notifications shown prominently (e.g. price increases)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -961,6 +962,15 @@ export const flightRequests = mysqlTable("flight_requests", {
   cancellationStatus: varchar("cancellationStatus", { length: 20 }).default("pending"), // only used when requestType = 'both': "pending" | "cancelled"
   invoiceAddedToPts: boolean("invoiceAddedToPts").notNull().default(false),
   queryMessage: text("queryMessage"),
+  // ── Price increase flow ──────────────────────────────────────────────────
+  // Admin sets priceIncreaseAmount when the live price is higher than flightCost.
+  // Status moves to 'price_increase_pending' until agent accepts or declines.
+  priceIncreaseAmount: decimal("priceIncreaseAmount", { precision: 10, scale: 2 }),   // new total price quoted by supplier
+  priceIncreaseNote: text("priceIncreaseNote"),                                         // optional note from admin (e.g. "Price increased by £100")
+  priceIncreaseNotifiedAt: timestamp("priceIncreaseNotifiedAt"),                       // when admin sent the notification
+  priceIncreaseAcceptedAt: timestamp("priceIncreaseAcceptedAt"),                       // when agent accepted
+  priceIncreaseAcceptedBy: int("priceIncreaseAcceptedBy"),                             // FK → users.id (the agent)
+  priceIncreaseDeclinedAt: timestamp("priceIncreaseDeclinedAt"),                       // when agent declined
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

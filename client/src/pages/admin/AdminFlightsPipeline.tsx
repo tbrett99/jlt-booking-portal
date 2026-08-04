@@ -23,12 +23,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plane, Loader2, Search, AlertTriangle, Clock, CheckCircle2, Trash2 } from "lucide-react";
+import { Plane, Loader2, Search, AlertTriangle, Clock, CheckCircle2, Trash2, TrendingUp } from "lucide-react";
 import { format, differenceInHours } from "date-fns";
 import { toast } from "sonner";
 import { Link } from "wouter";
 
-type FlightStatus = "pending" | "ticketed" | "cancelled" | "query" | "completed";
+type FlightStatus = "pending" | "ticketed" | "cancelled" | "query" | "completed" | "price_increase_pending";
 type CancellationStatus = "pending" | "cancelled";
 
 const ACTIVE_STATUS_OPTIONS: { value: FlightStatus; label: string }[] = [
@@ -48,7 +48,8 @@ const STATUS_BADGE: Record<FlightStatus, { label: string; color: string; bg: str
   ticketed:  { label: "Ticketed",  color: "#065f46", bg: "#d1fae5" },
   cancelled: { label: "Cancelled", color: "#991b1b", bg: "#fee2e2" },
   query:     { label: "Query",     color: "#1e40af", bg: "#dbeafe" },
-  completed: { label: "Completed", color: "#166534", bg: "#dcfce7" },
+  completed:               { label: "Completed",        color: "#166534", bg: "#dcfce7" },
+  price_increase_pending:  { label: "Price Increase",   color: "#7c2d12", bg: "#ffedd5" },
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -84,6 +85,43 @@ export default function AdminFlightsPipeline() {
     onError: (err) => toast.error(err.message),
   });
 
+  // Price increase dialog state
+  const [priceIncreaseDialogOpen, setPriceIncreaseDialogOpen] = useState(false);
+  const [priceIncreaseTargetId, setPriceIncreaseTargetId] = useState<number | null>(null);
+  const [priceIncreaseTargetOriginal, setPriceIncreaseTargetOriginal] = useState<number>(0);
+  const [newPrice, setNewPrice] = useState("");
+  const [priceIncreaseNote, setPriceIncreaseNote] = useState("");
+
+  const notifyPriceIncrease = trpc.flightRequests.notifyPriceIncrease.useMutation({
+    onSuccess: () => {
+      utils.flightRequests.adminList.invalidate();
+      setPriceIncreaseDialogOpen(false);
+      setPriceIncreaseTargetId(null);
+      setNewPrice("");
+      setPriceIncreaseNote("");
+      toast.success("Agent notified of price increase");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  function openPriceIncreaseDialog(id: number, originalPrice: number) {
+    setPriceIncreaseTargetId(id);
+    setPriceIncreaseTargetOriginal(originalPrice);
+    setNewPrice("");
+    setPriceIncreaseNote("");
+    setPriceIncreaseDialogOpen(true);
+  }
+
+  function submitPriceIncrease() {
+    if (!priceIncreaseTargetId || !newPrice) return;
+    const parsed = parseFloat(newPrice);
+    if (isNaN(parsed) || parsed <= 0) {
+      toast.error("Please enter a valid new price.");
+      return;
+    }
+    notifyPriceIncrease.mutate({ id: priceIncreaseTargetId, newPrice: parsed, note: priceIncreaseNote || undefined });
+  }
+
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const deleteRequest = trpc.flightRequests.delete.useMutation({
     onSuccess: () => {
@@ -99,6 +137,8 @@ export default function AdminFlightsPipeline() {
       setQueryTargetId(id);
       setQueryMessage("");
       setQueryDialogOpen(true);
+    } else if (newStatus === "price_increase_pending") {
+      // Don't allow setting this via dropdown — use the dedicated button
     } else {
       updateStatus.mutate({ id, status: newStatus });
     }
@@ -153,6 +193,7 @@ export default function AdminFlightsPipeline() {
   const filteredCompleted = filterRequests(completedRequests);
 
   const pendingCount = activeRequests.filter((r) => r.status === "pending").length;
+  const priceIncreasePendingCount = activeRequests.filter((r) => r.status === "price_increase_pending").length;
 
   const renderCard = (r: (typeof allRequests)[0], isCompleted = false) => {
     const badge = STATUS_BADGE[r.status as FlightStatus] ?? STATUS_BADGE.pending;
@@ -208,6 +249,9 @@ export default function AdminFlightsPipeline() {
                 {r.flightCost != null && (
                   <span className="text-emerald-700 font-semibold">£{parseFloat(String(r.flightCost)).toFixed(2)}</span>
                 )}
+                {(r as any).priceIncreaseAmount != null && r.status === "price_increase_pending" && (
+                  <span className="text-orange-700 font-semibold">→ New: £{parseFloat(String((r as any).priceIncreaseAmount)).toFixed(2)}</span>
+                )}
               </div>
               <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-0.5">
                 <span>Departure: <strong className="text-foreground">{format(new Date(r.departureDate), "dd MMM yyyy")}</strong></span>
@@ -245,23 +289,42 @@ export default function AdminFlightsPipeline() {
                   <strong>Query sent:</strong> {r.queryMessage}
                 </div>
               )}
+              {r.status === "price_increase_pending" && (
+                <div className="mt-1.5 rounded bg-orange-50 border border-orange-300 px-3 py-2 text-xs text-orange-800">
+                  <strong>Awaiting agent acceptance</strong> — price increase notified.
+                  {(r as any).priceIncreaseNote && <span className="ml-1">Note: {(r as any).priceIncreaseNote}</span>}
+                </div>
+              )}
             </div>
 
             {/* Right: controls */}
             <div className="flex flex-col gap-2 sm:items-end shrink-0">
               {!isCompleted ? (
                 <>
-                  {/* Ticketing status dropdown */}
+                  {/* Price increase button — shown when status is pending (before ticketing) */}
+                  {r.status === "pending" && r.requestType !== "cancellation" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs px-3 border-orange-400 text-orange-700 hover:bg-orange-50"
+                      onClick={() => openPriceIncreaseDialog(r.id, parseFloat(String(r.flightCost ?? 0)))}
+                    >
+                      <TrendingUp className="h-3 w-3 mr-1.5" />
+                      Notify Price Increase
+                    </Button>
+                  )}
+
+                  {/* Ticketing status dropdown — disabled while awaiting price acceptance */}
                   <div className="flex flex-col gap-1 sm:items-end">
                     {r.requestType === "both" && (
                       <span className="text-xs text-muted-foreground font-medium">Ticketing</span>
                     )}
                     <Select
-                      value={r.status}
+                      value={r.status === "price_increase_pending" ? "price_increase_pending" : r.status}
                       onValueChange={(v) => handleStatusChange(r.id, v as FlightStatus)}
-                      disabled={updateStatus.isPending}
+                      disabled={updateStatus.isPending || r.status === "price_increase_pending"}
                     >
-                      <SelectTrigger className="w-40 h-8 text-xs">
+                      <SelectTrigger className={`w-40 h-8 text-xs ${r.status === "price_increase_pending" ? "opacity-60 cursor-not-allowed" : ""}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -270,8 +333,16 @@ export default function AdminFlightsPipeline() {
                             {s.label}
                           </SelectItem>
                         ))}
+                        {r.status === "price_increase_pending" && (
+                          <SelectItem value="price_increase_pending" className="text-xs text-orange-700">
+                            Price Increase Pending
+                          </SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
+                    {r.status === "price_increase_pending" && (
+                      <p className="text-xs text-orange-600 text-right">Awaiting agent acceptance</p>
+                    )}
                   </div>
 
                   {/* Cancellation status dropdown — only for 'both' requests */}
@@ -487,6 +558,68 @@ export default function AdminFlightsPipeline() {
             >
               {deleteRequest.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Price Increase Dialog */}
+      <Dialog open={priceIncreaseDialogOpen} onOpenChange={(v) => !v && setPriceIncreaseDialogOpen(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-orange-600" />
+              Notify Agent: Price Increase
+            </DialogTitle>
+            <DialogDescription>
+              Enter the new price quoted by the supplier. The agent will receive an urgent notification and must accept or decline before ticketing can proceed.
+              {priceIncreaseTargetOriginal > 0 && (
+                <span className="block mt-1 text-orange-700 font-medium">
+                  Agent quoted: £{priceIncreaseTargetOriginal.toFixed(2)}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="newPrice">New Total Flight Price (£)</Label>
+              <Input
+                id="newPrice"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="e.g. 450.00"
+                value={newPrice}
+                onChange={(e) => setNewPrice(e.target.value)}
+              />
+              {newPrice && priceIncreaseTargetOriginal > 0 && parseFloat(newPrice) > priceIncreaseTargetOriginal && (
+                <p className="text-xs text-orange-600">
+                  Increase: +£{(parseFloat(newPrice) - priceIncreaseTargetOriginal).toFixed(2)}
+                </p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="priceNote">Note for Agent <span className="text-muted-foreground">(optional)</span></Label>
+              <Textarea
+                id="priceNote"
+                value={priceIncreaseNote}
+                onChange={(e) => setPriceIncreaseNote(e.target.value)}
+                placeholder="e.g. Supplier increased price due to availability change."
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setPriceIncreaseDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+              onClick={submitPriceIncrease}
+              disabled={!newPrice || notifyPriceIncrease.isPending}
+            >
+              {notifyPriceIncrease.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <TrendingUp className="h-4 w-4 mr-1.5" />}
+              Notify Agent
             </Button>
           </DialogFooter>
         </DialogContent>

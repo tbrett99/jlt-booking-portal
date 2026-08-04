@@ -89,6 +89,12 @@ export const flightRequestsRouter = router({
         cancellationStatus: flightRequests.cancellationStatus,
         invoiceAddedToPts: flightRequests.invoiceAddedToPts,
         queryMessage: flightRequests.queryMessage,
+        flightCost: flightRequests.flightCost,
+        priceIncreaseAmount: flightRequests.priceIncreaseAmount,
+        priceIncreaseNote: flightRequests.priceIncreaseNote,
+        priceIncreaseNotifiedAt: flightRequests.priceIncreaseNotifiedAt,
+        priceIncreaseAcceptedAt: flightRequests.priceIncreaseAcceptedAt,
+        priceIncreaseDeclinedAt: flightRequests.priceIncreaseDeclinedAt,
         createdAt: flightRequests.createdAt,
         updatedAt: flightRequests.updatedAt,
         clientName: bookings.clientName,
@@ -284,6 +290,200 @@ export const flightRequestsRouter = router({
         .select()
         .from(flightRequests)
         .where(eq(flightRequests.id, input.id));
+      return updated;
+    }),
+
+  // ─── Admin: notify agent of a price increase ──────────────────────────────
+  notifyPriceIncrease: adminProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        newPrice: z.number().min(0),        // new total flight cost quoted by supplier
+        note: z.string().optional(),        // optional context note for the agent
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const [req] = await db
+        .select({
+          id: flightRequests.id,
+          agentId: flightRequests.agentId,
+          bookingId: flightRequests.bookingId,
+          pnr: flightRequests.pnr,
+          flightCost: flightRequests.flightCost,
+          status: flightRequests.status,
+          clientName: bookings.clientName,
+          agentName: users.name,
+          agentEmail: users.email,
+        })
+        .from(flightRequests)
+        .innerJoin(bookings, eq(flightRequests.bookingId, bookings.id))
+        .innerJoin(users, eq(flightRequests.agentId, users.id))
+        .where(eq(flightRequests.id, input.id));
+      if (!req) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const originalPrice = Number(req.flightCost ?? 0);
+      const increase = input.newPrice - originalPrice;
+
+      // Update the flight request with price increase details and set status to price_increase_pending
+      await db
+        .update(flightRequests)
+        .set({
+          priceIncreaseAmount: String(input.newPrice),
+          priceIncreaseNote: input.note ?? null,
+          priceIncreaseNotifiedAt: new Date(),
+          priceIncreaseAcceptedAt: null,
+          priceIncreaseAcceptedBy: null,
+          priceIncreaseDeclinedAt: null,
+          status: "price_increase_pending",
+        } as any)
+        .where(eq(flightRequests.id, input.id));
+
+      // Send urgent in-app notification to agent
+      const increaseFormatted = `£${increase.toFixed(2)}`;
+      const newPriceFormatted = `£${input.newPrice.toFixed(2)}`;
+      const notifMessage = `⚠️ Price increase on your flight request for "${req.clientName}" (PNR: ${req.pnr}). The price has increased by ${increaseFormatted} to ${newPriceFormatted}. Please review and accept or decline.`;
+
+      await createInAppNotification({
+        userId: req.agentId,
+        bookingId: req.bookingId,
+        message: notifMessage,
+        linkUrl: `/bookings/${req.bookingId}`,
+        isUrgent: true,
+      });
+
+      // Also send email notification
+      if (req.agentEmail) {
+        await sendNotificationEmail({
+          triggerKey: "flight_price_increase",
+          toEmail: req.agentEmail,
+          toName: req.agentName ?? "Agent",
+          variables: {
+            clientName: req.clientName,
+            pnr: req.pnr,
+            originalPrice: `£${originalPrice.toFixed(2)}`,
+            newPrice: newPriceFormatted,
+            increase: increaseFormatted,
+            note: input.note ?? "",
+          },
+          bookingId: req.bookingId,
+        });
+      }
+
+      // Log as a shared note on the booking
+      await createNote({
+        bookingId: req.bookingId,
+        authorId: ctx.user.id,
+        content: `[Flight Price Increase] Price for PNR ${req.pnr} has increased from £${originalPrice.toFixed(2)} to ${newPriceFormatted} (+${increaseFormatted}). Agent notified and awaiting acceptance.${input.note ? ` Note: ${input.note}` : ""}`,
+        isInternal: false,
+      });
+
+      const [updated] = await db.select().from(flightRequests).where(eq(flightRequests.id, input.id));
+      return updated;
+    }),
+
+  // ─── Agent: accept a price increase ─────────────────────────────────────────
+  acceptPriceIncrease: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const [req] = await db
+        .select({
+          id: flightRequests.id,
+          agentId: flightRequests.agentId,
+          bookingId: flightRequests.bookingId,
+          pnr: flightRequests.pnr,
+          priceIncreaseAmount: flightRequests.priceIncreaseAmount,
+          status: flightRequests.status,
+          clientName: bookings.clientName,
+        })
+        .from(flightRequests)
+        .innerJoin(bookings, eq(flightRequests.bookingId, bookings.id))
+        .where(eq(flightRequests.id, input.id));
+      if (!req) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role === "agent" && req.agentId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      if (req.status !== "price_increase_pending") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No pending price increase on this request." });
+      }
+
+      const now = new Date();
+      // Accept: update flightCost to the new price, clear increase fields, revert to pending
+      await db
+        .update(flightRequests)
+        .set({
+          flightCost: req.priceIncreaseAmount,  // update the agreed price
+          priceIncreaseAcceptedAt: now,
+          priceIncreaseAcceptedBy: ctx.user.id,
+          priceIncreaseDeclinedAt: null,
+          status: "pending",  // back to pending so admin can proceed with ticketing
+        } as any)
+        .where(eq(flightRequests.id, input.id));
+
+      // Log acceptance as a note
+      await createNote({
+        bookingId: req.bookingId,
+        authorId: ctx.user.id,
+        content: `[Flight Price Increase Accepted] ${ctx.user.name ?? "Agent"} accepted the price increase for PNR ${req.pnr}. New agreed price: £${Number(req.priceIncreaseAmount ?? 0).toFixed(2)}.`,
+        isInternal: false,
+      });
+
+      const [updated] = await db.select().from(flightRequests).where(eq(flightRequests.id, input.id));
+      return updated;
+    }),
+
+  // ─── Agent: decline a price increase ────────────────────────────────────────
+  declinePriceIncrease: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const [req] = await db
+        .select({
+          id: flightRequests.id,
+          agentId: flightRequests.agentId,
+          bookingId: flightRequests.bookingId,
+          pnr: flightRequests.pnr,
+          status: flightRequests.status,
+          clientName: bookings.clientName,
+        })
+        .from(flightRequests)
+        .innerJoin(bookings, eq(flightRequests.bookingId, bookings.id))
+        .where(eq(flightRequests.id, input.id));
+      if (!req) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role === "agent" && req.agentId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      if (req.status !== "price_increase_pending") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No pending price increase on this request." });
+      }
+
+      const now = new Date();
+      await db
+        .update(flightRequests)
+        .set({
+          priceIncreaseDeclinedAt: now,
+          priceIncreaseAcceptedAt: null,
+          status: "query",  // move to query so admin is alerted
+          queryMessage: `Agent declined the price increase for PNR ${req.pnr}.`,
+        } as any)
+        .where(eq(flightRequests.id, input.id));
+
+      // Log decline as a note
+      await createNote({
+        bookingId: req.bookingId,
+        authorId: ctx.user.id,
+        content: `[Flight Price Increase Declined] ${ctx.user.name ?? "Agent"} declined the price increase for PNR ${req.pnr}. Please contact the agent to discuss next steps.`,
+        isInternal: false,
+      });
+
+      const [updated] = await db.select().from(flightRequests).where(eq(flightRequests.id, input.id));
       return updated;
     }),
 

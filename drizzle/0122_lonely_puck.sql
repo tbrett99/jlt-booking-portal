@@ -1,0 +1,1 @@
+ALTER TABLE `in_app_notifications` ADD `isUrgent` boolean DEFAULT false NOT NULL;

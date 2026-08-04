@@ -1068,6 +1068,7 @@ export async function createInAppNotification(data: {
   bookingId?: number;
   message: string;
   linkUrl?: string;
+  isUrgent?: boolean;
 }) {
   // Respect global notifications kill-switch
   if (await areNotificationsPaused()) {

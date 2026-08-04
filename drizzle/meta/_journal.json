@@ -848,6 +848,20 @@
       "when": 1785591864995,
       "tag": "0120_daily_tag",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "5",
+      "when": 1785854688588,
+      "tag": "0121_modern_nighthawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "5",
+      "when": 1785854799071,
+      "tag": "0122_lonely_puck",
+      "breakpoints": true
     }
   ]
 }

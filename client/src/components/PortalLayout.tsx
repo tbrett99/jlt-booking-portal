@@ -770,7 +770,13 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                       notifications.map((n) => (
                         <div
                           key={n.id}
-                          className={`px-4 py-3 hover:bg-muted/50 transition-colors ${!n.isRead ? "bg-[#70FFE8]/5 border-l-2 border-l-[#70FFE8]" : ""}`}
+                          className={`px-4 py-3 hover:bg-muted/50 transition-colors ${
+                            (n as any).isUrgent
+                              ? "bg-orange-50 border-l-2 border-l-orange-500"
+                              : !n.isRead
+                              ? "bg-[#70FFE8]/5 border-l-2 border-l-[#70FFE8]"
+                              : ""
+                          }`}
                         >
                           {n.linkUrl ? (
                             <Link href={n.linkUrl} onClick={() => setNotifOpen(false)}>
@@ -830,10 +836,15 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   );
 }
 
-function NotifItem({ n }: { n: { message: string; createdAt: Date; isRead: boolean } }) {
+function NotifItem({ n }: { n: { message: string; createdAt: Date; isRead: boolean; isUrgent?: boolean } }) {
   return (
     <div className="space-y-0.5 cursor-pointer">
-      <p className={`text-sm leading-snug ${!n.isRead ? "font-medium text-foreground" : "text-muted-foreground"}`}>
+      {n.isUrgent && (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-orange-700 bg-orange-100 rounded px-1.5 py-0.5 mb-0.5">
+          ⚠ Urgent — Action Required
+        </span>
+      )}
+      <p className={`text-sm leading-snug ${n.isUrgent ? "font-semibold text-orange-900" : !n.isRead ? "font-medium text-foreground" : "text-muted-foreground"}`}>
         {n.message}
       </p>
       <p className="text-xs text-muted-foreground flex items-center gap-1">
