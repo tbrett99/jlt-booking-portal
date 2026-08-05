@@ -263,9 +263,21 @@ export default function AdminReimbursements() {
                             </Button>
                           )}
                           {r.status === "scheduled" && (
-                            <Button size="sm" className="text-xs h-7 font-semibold" style={{ background: "#70FFE8", color: "#414141" }} disabled={updateStatus.isPending} onClick={() => handlePaid(r.id)}>
-                              Mark Paid
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-50"
+                                disabled={updateStatus.isPending}
+                                onClick={() => updateStatus.mutate({ id: r.id, status: "pending" })}
+                                title="Reset this reimbursement back to pending — use if PTS did not process the payment"
+                              >
+                                Reset to Pending
+                              </Button>
+                              <Button size="sm" className="text-xs h-7 font-semibold" style={{ background: "#70FFE8", color: "#414141" }} disabled={updateStatus.isPending} onClick={() => handlePaid(r.id)}>
+                                Mark Paid
+                              </Button>
+                            </>
                           )}
                           {r.status === "paid" && (
                             <span className="text-xs text-muted-foreground">{(r as any).paidAt ? format(new Date((r as any).paidAt), "dd MMM yyyy") : "Paid"}</span>
