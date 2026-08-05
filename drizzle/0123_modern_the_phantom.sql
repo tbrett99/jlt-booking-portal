@@ -1,0 +1,1 @@
+ALTER TABLE `calendar_events` MODIFY COLUMN `type` enum('holiday','event','task','rota') NOT NULL DEFAULT 'event';

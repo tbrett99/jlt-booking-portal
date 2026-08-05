@@ -3689,7 +3689,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         z.object({
           title: z.string().min(1),
           description: z.string().optional(),
-          type: z.enum(["holiday", "event", "task"]),
+          type: z.enum(["holiday", "event", "task", "rota"]),
           startDate: z.date(),
           endDate: z.date(),
           allDay: z.boolean().default(true),
@@ -3746,7 +3746,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           id: z.number(),
           title: z.string().min(1).optional(),
           description: z.string().nullable().optional(),
-          type: z.enum(["holiday", "event", "task"]).optional(),
+          type: z.enum(["holiday", "event", "task", "rota"]).optional(),
           startDate: z.date().optional(),
           endDate: z.date().optional(),
           allDay: z.boolean().optional(),

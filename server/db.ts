@@ -1605,7 +1605,7 @@ export async function getCalendarEvents(from: Date, to: Date) {
 export async function createCalendarEvent(data: {
   title: string;
   description?: string;
-  type: "holiday" | "event" | "task";
+  type: "holiday" | "event" | "task" | "rota";
   startDate: Date;
   endDate: Date;
   allDay: boolean;
@@ -1649,7 +1649,7 @@ export async function updateCalendarEvent(
   data: Partial<{
     title: string;
     description: string | null;
-    type: "holiday" | "event" | "task";
+    type: "holiday" | "event" | "task" | "rota";
     startDate: Date;
     endDate: Date;
     allDay: boolean;

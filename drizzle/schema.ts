@@ -344,7 +344,7 @@ export const calendarEvents = mysqlTable("calendar_events", {
   id: int("id").autoincrement().primaryKey(),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
-  type: mysqlEnum("type", ["holiday", "event", "task"]).notNull().default("event"),
+  type: mysqlEnum("type", ["holiday", "event", "task", "rota"]).notNull().default("event"),
   startDate: timestamp("startDate").notNull(),
   endDate: timestamp("endDate").notNull(),
   allDay: boolean("allDay").default(true).notNull(),

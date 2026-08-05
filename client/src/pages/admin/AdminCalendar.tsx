@@ -24,7 +24,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type EventType = "holiday" | "event" | "task";
+type EventType = "holiday" | "event" | "task" | "rota";
 type RecurrenceRule = "none" | "daily" | "weekly" | "monthly" | "yearly";
 
 type EventCategory = "training" | "webinar" | "supplier_event";
@@ -72,12 +72,14 @@ const TYPE_COLORS: Record<EventType, { bg: string; text: string; badge: string }
   holiday: { bg: "bg-[#FFC3BC]", text: "text-[#414141]", badge: "bg-[#FFC3BC] text-[#414141]" },
   event:   { bg: "bg-[#70FFE8]", text: "text-[#414141]", badge: "bg-[#70FFE8] text-[#414141]" },
   task:    { bg: "bg-amber-200",  text: "text-amber-900",  badge: "bg-amber-200 text-amber-900" },
+  rota:    { bg: "bg-purple-200", text: "text-purple-900", badge: "bg-purple-200 text-purple-900" },
 };
 
 const TYPE_LABELS: Record<EventType, string> = {
   holiday: "Holiday / Leave",
   event:   "Company Event",
   task:    "Task",
+  rota:    "Rota",
 };
 
 const RECURRENCE_LABELS: Record<RecurrenceRule, string> = {
@@ -164,7 +166,7 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
   const today = defaultDate ?? new Date();
   const [title, setTitle] = useState(event?.title ?? "");
   const [description, setDescription] = useState(event?.description ?? "");
-  const [type, setType] = useState<EventType>(event?.type ?? "event");
+  const [type, setType] = useState<EventType>((event?.type as EventType) ?? "event");
   const [allDay, setAllDay] = useState(event?.allDay ?? true);
   const [startDate, setStartDate] = useState(
     event ? toLocalDateString(new Date(event.startDate)) : toLocalDateString(today)
@@ -221,7 +223,7 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
 
     if (event) {
       updateMutation.mutate({
-        id: event.id, title, description: description || null, type,
+        id: event.id, title, description: description || null, type: type as any,
         startDate: start, endDate: end, allDay, assigneeId,
         recurrenceRule, recurrenceEndDate: recEnd, dueDate: due,
         agentFacing,
@@ -232,7 +234,7 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
       });
     } else {
       createMutation.mutate({
-        title, description: description || undefined, type,
+        title, description: description || undefined, type: type as any,
         startDate: start, endDate: end, allDay, assigneeId,
         recurrenceRule, recurrenceEndDate: recEnd, dueDate: due,
         agentFacing,
@@ -268,6 +270,7 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
                 <SelectItem value="holiday">Holiday / Leave</SelectItem>
                 <SelectItem value="event">Company Event</SelectItem>
                 <SelectItem value="task">Task</SelectItem>
+                <SelectItem value="rota">Rota</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -304,9 +307,9 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
           )}
 
           {/* Assignee */}
-          {(type === "holiday" || type === "task") && (
+          {(type === "holiday" || type === "task" || type === "rota") && (
             <div>
-              <Label>{type === "holiday" ? "Who is off?" : "Assigned to"}</Label>
+              <Label>{type === "holiday" ? "Who is off?" : type === "rota" ? "Who is working?" : "Assigned to"}</Label>
               <Popover open={assigneeOpen} onOpenChange={setAssigneeOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full mt-1 justify-between">
@@ -387,7 +390,7 @@ function EventFormDialog({ open, onClose, event, defaultDate, adminUsers, onSave
           </div>
 
           {/* Agent-facing section */}
-          {type === "event" && (
+          {(type === "event") && (
             <div className="border rounded-lg p-3 space-y-3 bg-[#70FFE8]/10">
               <div className="flex items-center gap-3">
                 <Switch id="agentfacing" checked={!!agentFacing} onCheckedChange={setAgentFacing} />
@@ -808,6 +811,39 @@ interface MonthViewProps {
   onCloseDetail: () => void;
 }
 
+function OverflowEventsPopover({ events, onEventClick }: { events: CalEventOccurrence[]; onEventClick: (ev: CalEventOccurrence) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <div
+          className="text-xs text-muted-foreground pl-1 cursor-pointer hover:text-foreground hover:underline"
+          onClick={e => { e.stopPropagation(); setOpen(true); }}
+        >
+          +{events.length} more
+        </div>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-2 space-y-1" onClick={e => e.stopPropagation()}>
+        <p className="text-xs font-semibold text-muted-foreground mb-1">All events</p>
+        {events.map((ev, i) => {
+          const colors = TYPE_COLORS[ev.type] ?? TYPE_COLORS["event"];
+          return (
+            <div
+              key={`${ev.id}-${i}`}
+              className={`text-xs px-2 py-1 rounded cursor-pointer ${colors.bg} ${colors.text} font-medium truncate`}
+              onClick={() => { setOpen(false); onEventClick(ev); }}
+            >
+              {ev.assigneeName && ev.type === "holiday" ? `${ev.assigneeName.split(" ")[0]}: ` : ""}
+              {ev.assigneeName && ev.type === "rota" ? `${ev.assigneeName.split(" ")[0]}: ` : ""}
+              {ev.title}
+            </div>
+          );
+        })}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function MonthView({ currentDate, eventsOnDay, onDayClick, onEventClick, selectedEvent, onEditEvent, onDeleteEvent, onCloseDetail }: MonthViewProps) {
   const monthStart = startOfMonth(currentDate);
   const monthEnd   = endOfMonth(currentDate);
@@ -856,7 +892,7 @@ function MonthView({ currentDate, eventsOnDay, onDayClick, onEventClick, selecte
                   );
                 })}
                 {dayEvents.length > 3 && (
-                  <div className="text-xs text-muted-foreground pl-1">+{dayEvents.length - 3} more</div>
+                  <OverflowEventsPopover events={dayEvents.slice(3)} onEventClick={onEventClick} />
                 )}
               </div>
             </div>
