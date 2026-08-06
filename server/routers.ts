@@ -2296,14 +2296,14 @@ export const appRouter = router({
         if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
-        await createCancellation({ bookingId: input.bookingId, agentId: ctx.user.id });
-        await updateBookingStage(input.bookingId, "Cancelled", ctx.user.id);
+       await createCancellation({ bookingId: input.bookingId, agentId: ctx.user.id });
+        await updateBookingStage(input.bookingId, "Cancellation Requested", ctx.user.id);
         // System audit note
         const reasonText = input.reason ? ` Reason: ${input.reason}` : "";
         await createNote({
           bookingId: input.bookingId,
           authorId: ctx.user.id,
-          content: `[System] Cancellation submitted by ${ctx.user.name ?? "Agent"}.${reasonText}`,
+          content: `[System] Cancellation requested by ${ctx.user.name ?? "Agent"}.${reasonText} Booking moved to "Cancellation Requested" stage pending admin review.`,
           isInternal: false,
         });
         // Notify admins in-app + email support@ for workflow events
@@ -2316,8 +2316,26 @@ export const appRouter = router({
             message: `Cancellation requested for booking "${booking.clientName}" by ${ctx.user.name}`,
             linkUrl: `/bookings/${input.bookingId}`,
           });
+          // Send email notification to each admin
+          if (admin.email) {
+            try {
+              await sendNotificationEmail({
+                triggerKey: "cancellation_request",
+                toEmail: admin.email,
+                toName: admin.name ?? "Admin",
+                variables: {
+                  clientName: booking.clientName,
+                  agentName: ctx.user.name ?? "Agent",
+                  reason: input.reason ?? "No reason provided",
+                  bookingId: String(input.bookingId),
+                },
+                bookingId: input.bookingId,
+              });
+            } catch (_) {
+              // Non-fatal — in-app notification already sent
+            }
+          }
         }
-        // Admin email notification disabled — admins use dashboard + in-app notifications
         return { success: true };
       }),
     all: adminProcedure.query(async () => getAllCancellations()),

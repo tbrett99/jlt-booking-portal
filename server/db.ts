@@ -864,14 +864,22 @@ export async function getAllCancellations() {
   // Enrich with booking info
   const bookingIds = Array.from(new Set(rows.map((c) => c.bookingId)));
   const bookingRows = bookingIds.length > 0
-    ? await db.select({ id: bookings.id, clientName: bookings.clientName, ptsRef: bookings.ptsRef, topdogRef: bookings.topdogRef }).from(bookings).where(inArray(bookings.id, bookingIds))
+    ? await db.select({ id: bookings.id, clientName: bookings.clientName, ptsRef: bookings.ptsRef, topdogRef: bookings.topdogRef, agentId: bookings.agentId, departureDate: bookings.departureDate }).from(bookings).where(inArray(bookings.id, bookingIds))
     : [];
   const bookingMap = new Map(bookingRows.map((b) => [b.id, b]));
+  // Enrich with agent names
+  const agentIds = Array.from(new Set(bookingRows.map((b) => b.agentId).filter(Boolean)));
+  const agentRows = agentIds.length > 0
+    ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, agentIds))
+    : [];
+  const agentMap = new Map(agentRows.map((a) => [a.id, a.name]));
   return rows.map((c) => ({
     ...c,
     clientName: bookingMap.get(c.bookingId)?.clientName ?? null,
     ptsRef: bookingMap.get(c.bookingId)?.ptsRef ?? null,
     topdogRef: bookingMap.get(c.bookingId)?.topdogRef ?? null,
+    agentName: agentMap.get(bookingMap.get(c.bookingId)?.agentId ?? 0) ?? null,
+    departureDate: bookingMap.get(c.bookingId)?.departureDate ?? null,
     processed: !!c.processedById,
   }));
 }

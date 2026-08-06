@@ -425,6 +425,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Amendments Pipeline", href: "/amendments/pipeline", icon: <FileText size={16} /> },
         { label: "Refund Pipeline", href: "/refunds/pipeline", icon: <RefreshCw size={16} /> },
         { label: "Flight Requests", href: "/flights", icon: <Plane size={16} /> },
+        { label: "Cancellations", href: "/cancellations", icon: <XCircle size={16} /> },
       ],
     },
     {

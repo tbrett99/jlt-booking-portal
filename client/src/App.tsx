@@ -56,6 +56,7 @@ const CommissionMarginReport = lazy(() => import("./pages/admin/CommissionMargin
 const NotificationTemplates = lazy(() => import("./pages/admin/NotificationTemplates"));
 const AdminFlightsPipeline = lazy(() => import("./pages/admin/AdminFlightsPipeline"));
 const AdminCommissions = lazy(() => import("./pages/admin/AdminCommissions"));
+const AdminCancellations = lazy(() => import("./pages/admin/AdminCancellations"));
 const RemittanceManagement = lazy(() => import("./pages/admin/RemittanceManagement"));
 const AdminImport = lazy(() => import("./pages/admin/AdminImport"));
 const AdminAgentPerformance = lazy(() => import("./pages/admin/AdminAgentPerformance"));
@@ -357,6 +358,7 @@ function AuthRouter() {
         <Route path="/commissions-admin" component={AdminCommissions} />
         <Route path="/remittance" component={RemittanceManagement} />
         <Route path="/flights" component={AdminFlightsPipeline} />
+        <Route path="/cancellations" component={AdminCancellations} />
         <Route path="/super-admin" component={SuperAdminDashboard} />
         <Route path="/reports" component={AdminReports} />
         <Route path="/commission-margin" component={CommissionMarginReport} />
