@@ -23,6 +23,7 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, X, Pencil, Clock, ArrowRight, CheckCircle2,
   Shield, ShieldOff, ExternalLink, FileSignature, ScrollText, Printer, Zap
 } from "lucide-react";
+import { Download } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -199,6 +200,54 @@ export default function AgentCrm() {
     return matchesSearch && matchesStatus && matchesTier;
   });
 
+  const exportCsv = () => {
+    const headers = [
+      "Name", "Agent ID", "JLT Email", "Personal Email", "Business Email",
+      "Phone", "Business Name", "Membership Tier", "Status", "UK Region",
+      "Retailer Code", "Topdog Retailer Name", "Topdog Retailer Code",
+      "Monthly Sub", "Date Joined", "Introduced By", "Training Stage",
+      "Address Line 1", "Address Line 2", "City", "Postcode",
+      "Bank Account Name", "Portal Status", "Tags",
+    ];
+    const rows = filtered.map((a) => [
+      a.name ?? "",
+      a.crmProfile?.uniqueAgentId ?? "",
+      a.crmProfile?.jltEmail ?? "",
+      a.crmProfile?.personalEmail ?? "",
+      a.crmProfile?.businessEmail ?? "",
+      a.phone ?? "",
+      a.crmProfile?.businessName ?? "",
+      a.crmProfile?.membershipTier ?? "",
+      a.crmProfile?.agentStatus ?? "active",
+      a.crmProfile?.ukRegion ?? "",
+      a.crmProfile?.retailerCode ?? "",
+      a.crmProfile?.topdogRetailerName ?? "",
+      a.crmProfile?.topdogRetailerCode ?? "",
+      a.crmProfile?.monthlySub ?? "",
+      a.crmProfile?.dateJoined ? format(new Date(a.crmProfile.dateJoined), "dd/MM/yyyy") : "",
+      a.crmProfile?.introducedBy ?? "",
+      a.crmProfile?.trainingStage ?? "",
+      a.crmProfile?.addressLine1 ?? "",
+      a.crmProfile?.addressLine2 ?? "",
+      a.crmProfile?.city ?? "",
+      a.crmProfile?.postcode ?? "",
+      a.crmProfile?.bankAccountName ?? "",
+      a.portalStatus,
+      (a.tags ?? []).join("; "),
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const suffix = statusFilter !== "all" ? `-${statusFilter}` : tierFilter !== "all" ? `-${tierFilter.replace(/\s+/g, "-").toLowerCase()}` : "";
+    link.download = `agents${suffix}-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
@@ -206,6 +255,10 @@ export default function AgentCrm() {
           <h1 className="text-2xl font-bold text-foreground">Agent CRM</h1>
           <p className="text-muted-foreground text-sm mt-0.5">{(agents as AgentRow[]).length} registered agents</p>
         </div>
+        <Button variant="outline" size="sm" className="gap-2" onClick={exportCsv} disabled={filtered.length === 0}>
+          <Download size={14} />
+          Export CSV ({filtered.length})
+        </Button>
         <SyncGcButton onSynced={refetch} />
       </div>
 
