@@ -103,6 +103,7 @@ export default function AdminKanban() {
     queryStages ? { stages: queryStages } : {},
     { staleTime: 60000 }
   );
+  const { data: allAgents = [] } = trpc.users.listAgents.useQuery();
 
   // Which stages to show as columns
   const STAGES = loadAllStages ? ALL_STAGES : ACTIVE_STAGES;
@@ -174,7 +175,7 @@ export default function AdminKanban() {
   };
 
   // Unique agent names for filter dropdown
-  const agentNames = Array.from(new Set(bookings.map((b: any) => b.agentName).filter(Boolean))).sort() as string[];
+  const agentNames = allAgents.map((a) => a.name).filter(Boolean).sort() as string[];
 
   const filtered = bookings
     .filter((b: any) =>
