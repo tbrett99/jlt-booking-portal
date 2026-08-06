@@ -79,6 +79,7 @@ export default function AdminKanban() {
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "departure_asc" | "departure_desc" | "agent_az">("oldest");
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [showAllStages, setShowAllStages] = useState(false);
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [hiddenStages, setHiddenStages] = useState<Set<string>>(new Set());
   const toggleStage = (stage: string) => setHiddenStages((prev) => {
     const next = new Set(prev);
@@ -565,4 +566,3 @@ export default function AdminKanban() {
     </div>
   );
 }
-  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
