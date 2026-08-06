@@ -2306,7 +2306,7 @@ export const appRouter = router({
           content: `[System] Cancellation requested by ${ctx.user.name ?? "Agent"}.${reasonText} Booking moved to "Cancellation Requested" stage pending admin review.`,
           isInternal: false,
         });
-        // Notify admins in-app + email support@ for workflow events
+        // Notify all admins in-app
         const allUsers = await getAllUsers();
         const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
         for (const admin of admins) {
@@ -2316,25 +2316,23 @@ export const appRouter = router({
             message: `Cancellation requested for booking "${booking.clientName}" by ${ctx.user.name}`,
             linkUrl: `/bookings/${input.bookingId}`,
           });
-          // Send email notification to each admin
-          if (admin.email) {
-            try {
-              await sendNotificationEmail({
-                triggerKey: "cancellation_request",
-                toEmail: admin.email,
-                toName: admin.name ?? "Admin",
-                variables: {
-                  clientName: booking.clientName,
-                  agentName: ctx.user.name ?? "Agent",
-                  reason: input.reason ?? "No reason provided",
-                  bookingId: String(input.bookingId),
-                },
-                bookingId: input.bookingId,
-              });
-            } catch (_) {
-              // Non-fatal — in-app notification already sent
-            }
-          }
+        }
+        // Send a single email to the support inbox
+        try {
+          await sendNotificationEmail({
+            triggerKey: "cancellation_request",
+            toEmail: "support@thejltgroup.co.uk",
+            toName: "JLT Support",
+            variables: {
+              clientName: booking.clientName,
+              agentName: ctx.user.name ?? "Agent",
+              reason: input.reason ?? "No reason provided",
+              bookingId: String(input.bookingId),
+            },
+            bookingId: input.bookingId,
+          });
+        } catch (_) {
+          // Non-fatal — in-app notifications already sent
         }
         return { success: true };
       }),
