@@ -8,7 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, ChevronRight, AlertTriangle, Calendar, Loader2, SlidersHorizontal, MessageSquare, PackageCheck, Eye, EyeOff } from "lucide-react";
+import { Search, ChevronRight, AlertTriangle, Calendar, Loader2, SlidersHorizontal, MessageSquare, PackageCheck, Eye, EyeOff, ChevronsUpDown, Check } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
 const ALL_STAGES = [
@@ -235,17 +238,34 @@ export default function AdminKanban() {
           {agentNames.length > 0 && (
             <>
               <span className="text-xs font-medium text-muted-foreground ml-2">Agent:</span>
-              <Select value={agentFilter} onValueChange={setAgentFilter}>
-                <SelectTrigger className="h-7 text-xs w-44">
-                  <SelectValue placeholder="All agents" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All agents</SelectItem>
-                  {agentNames.map((name) => (
-                    <SelectItem key={name} value={name}>{name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={agentPickerOpen} onOpenChange={setAgentPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="h-7 text-xs w-48 justify-between font-normal">
+                    {agentFilter === "all" ? "All agents" : agentFilter}
+                    <ChevronsUpDown size={12} className="ml-1 opacity-50 shrink-0" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search agents…" className="h-8 text-xs" />
+                    <CommandList>
+                      <CommandEmpty>No agent found.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem value="all" onSelect={() => { setAgentFilter("all"); setAgentPickerOpen(false); }}>
+                          <Check size={12} className={cn("mr-2", agentFilter === "all" ? "opacity-100" : "opacity-0")} />
+                          All agents
+                        </CommandItem>
+                        {agentNames.map((name) => (
+                          <CommandItem key={name} value={name} onSelect={() => { setAgentFilter(name); setAgentPickerOpen(false); }}>
+                            <Check size={12} className={cn("mr-2", agentFilter === name ? "opacity-100" : "opacity-0")} />
+                            {name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </>
           )}
           <button
@@ -545,3 +565,4 @@ export default function AdminKanban() {
     </div>
   );
 }
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);

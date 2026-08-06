@@ -8,7 +8,12 @@ import { useLocation } from "wouter";
 import {
   PoundSterling, Clock, CheckCircle2, AlertCircle, RefreshCw, Download, Trash2, CreditCard
 } from "lucide-react";
+import { Check, ChevronsUpDown, X } from "lucide-react";
 import { format } from "date-fns";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 
 type StatusFilter = "all" | "pending" | "scheduled" | "paid" | "late";
 
@@ -21,6 +26,11 @@ const STATUS_BADGE: Record<string, { label: string; color: string; bg: string }>
 export default function AdminReimbursements() {
   const [, navigate] = useLocation();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [cardFilter, setCardFilter] = useState<CardFilter>("all");
+  const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [minAmount, setMinAmount] = useState<string>("");
+  const [maxAmount, setMaxAmount] = useState<string>("");
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const utils = trpc.useUtils();
 
   const { data: allItems = [], isLoading, refetch } = trpc.reimbursements.list.useQuery({});
@@ -45,6 +55,19 @@ export default function AdminReimbursements() {
   const items = statusFilter === "all" ? allItems
     : statusFilter === "late" ? allItems.filter((r) => r.isLate)
     : allItems.filter((r) => r.status === statusFilter);
+
+  const agentNames = Array.from(new Set(allItems.map((r: any) => r.agentName).filter(Boolean))).sort() as string[];
+
+  const filteredItems = items.filter((r: any) => {
+    if (cardFilter === "jlt" && !r.jltCompanyCard) return false;
+    if (cardFilter === "agent" && r.jltCompanyCard) return false;
+    if (agentFilter !== "all" && r.agentName !== agentFilter) return false;
+    const amt = Number(r.amount);
+    if (minAmount && amt < Number(minAmount)) return false;
+    if (maxAmount && amt > Number(maxAmount)) return false;
+    return true;
+  });
+  const hasExtraFilters = cardFilter !== "all" || agentFilter !== "all" || !!minAmount || !!maxAmount;
 
   const handleSchedule = (id: number) => {
     updateStatus.mutate({ id, status: "scheduled" });
@@ -79,9 +102,9 @@ export default function AdminReimbursements() {
   };
 
   const pending = items.filter((r) => r.status === "pending");
-  const scheduled = items.filter((r) => r.status === "scheduled");
-  const paid = items.filter((r) => r.status === "paid");
-  const late = items.filter((r) => r.isLate ?? false);
+  const scheduled = allItems.filter((r) => r.status === "scheduled");
+  const paid = allItems.filter((r) => r.status === "paid");
+  const late = allItems.filter((r) => r.isLate ?? false);
 
   return (
     <div className="space-y-6">
@@ -170,6 +193,56 @@ export default function AdminReimbursements() {
         ))}
       </div>
 
+      {/* Extra filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <CreditCard size={13} className="text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Card:</span>
+        <select value={cardFilter} onChange={(e) => setCardFilter(e.target.value as CardFilter)} className="h-7 text-xs border rounded-md px-2 bg-background">
+          <option value="all">All</option>
+          <option value="jlt">JLT Company Card</option>
+          <option value="agent">Agent Card</option>
+        </select>
+        <span className="text-xs text-muted-foreground ml-2">Agent:</span>
+        <Popover open={agentPickerOpen} onOpenChange={setAgentPickerOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" role="combobox" className="h-7 text-xs w-44 justify-between font-normal">
+              {agentFilter === "all" ? "All agents" : agentFilter}
+              <ChevronsUpDown size={11} className="ml-1 opacity-50 shrink-0" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-52 p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Search agents…" className="h-8 text-xs" />
+              <CommandList>
+                <CommandEmpty>No agent found.</CommandEmpty>
+                <CommandGroup>
+                  <CommandItem value="all" onSelect={() => { setAgentFilter("all"); setAgentPickerOpen(false); }}>
+                    <Check size={11} className={cn("mr-2", agentFilter === "all" ? "opacity-100" : "opacity-0")} />
+                    All agents
+                  </CommandItem>
+                  {agentNames.map((name) => (
+                    <CommandItem key={name} value={name} onSelect={() => { setAgentFilter(name); setAgentPickerOpen(false); }}>
+                      <Check size={11} className={cn("mr-2", agentFilter === name ? "opacity-100" : "opacity-0")} />
+                      {name}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+        <span className="text-xs text-muted-foreground ml-2">Amount:</span>
+        <Input type="number" placeholder="Min £" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="h-7 text-xs w-20" />
+        <span className="text-xs text-muted-foreground">–</span>
+        <Input type="number" placeholder="Max £" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="h-7 text-xs w-20" />
+        {hasExtraFilters && (
+          <>
+            <button onClick={() => { setCardFilter("all"); setAgentFilter("all"); setMinAmount(""); setMaxAmount(""); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground underline ml-1"><X size={11} /> Clear</button>
+            <span className="text-xs text-muted-foreground">({filteredItems.length} of {items.length})</span>
+          </>
+        )}
+      </div>
+
       {/* Table */}
       {isLoading ? (
         <div className="space-y-2">
@@ -177,11 +250,11 @@ export default function AdminReimbursements() {
             <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />
           ))}
         </div>
-      ) : items.length === 0 ? (
+      ) : filteredItems.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <PoundSterling size={32} className="mx-auto text-muted-foreground mb-3" />
-            <p className="text-muted-foreground">No reimbursements found for this filter.</p>
+            <p className="text-muted-foreground">No reimbursements match the current filters.</p>
           </CardContent>
         </Card>
       ) : (
@@ -202,7 +275,7 @@ export default function AdminReimbursements() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((r) => {
+                {filteredItems.map((r) => {
                   const sb = STATUS_BADGE[r.status] ?? STATUS_BADGE.pending;
                   return (
                     <tr key={r.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
@@ -315,3 +388,4 @@ export default function AdminReimbursements() {
     </div>
   );
 }
+type CardFilter = "all" | "jlt" | "agent";
