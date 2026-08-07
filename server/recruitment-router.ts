@@ -411,6 +411,20 @@ export const recruitmentRouter = router({
         const crmProspect = await getProspectByEmail(prospect.email);
         if (crmProspect && crmProspect.stage === "New Enquiry") {
           await moveProspectStage(crmProspect.id, "AR Submitted", null, "Application form submitted (auto-synced from recruitment pipeline)");
+        } else if (!crmProspect) {
+          // No CRM prospect exists — create one at AR Submitted so it appears in the CRM pipeline
+          const nameParts = (prospect.firstName + " " + prospect.lastName).trim();
+          const newCrmProspect = await createProspect({
+            firstName: prospect.firstName,
+            lastName: prospect.lastName,
+            email: prospect.email,
+            phone: prospect.phone ?? undefined,
+            stage: "AR Submitted",
+            source: prospect.source ?? "recruitment_form",
+          });
+          if (newCrmProspect?.id) {
+            await moveProspectStage(newCrmProspect.id, "AR Submitted", null, "Application form submitted — CRM prospect auto-created from recruitment pipeline");
+          }
         }
       } catch (syncErr) {
         console.error("[Recruitment] Failed to sync CRM prospect stage:", syncErr);
@@ -1074,3 +1088,4 @@ async function sendStageEmail(
   // onboarding_approved: email is handled entirely by the branded workflow (enrollProspectInWorkflow).
   // The plain sendStageEmail send was removed to prevent duplicate emails.
 }
+import { createProspect } from "./crm-db";
