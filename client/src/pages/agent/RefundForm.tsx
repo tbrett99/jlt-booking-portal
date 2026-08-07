@@ -17,6 +17,8 @@ export default function RefundForm() {
   const bookingId = Number(id);
   const [, navigate] = useLocation();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [disclaimerOpen, setDisclaimerOpen] = useState(false);
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
 
   const [refundType, setRefundType] = useState<"supplier" | "customer" | "both">("both");
   const [supplierCount, setSupplierCount] = useState(1);
@@ -51,6 +53,12 @@ export default function RefundForm() {
       toast.error("Please fill in all required fields");
       return;
     }
+    // Show disclaimer modal before submitting
+    setDisclaimerOpen(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    setDisclaimerOpen(false);
     setIsSubmitting(true);
     try {
       await submitRefund.mutateAsync({
@@ -224,6 +232,87 @@ export default function RefundForm() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Refund fee disclaimer modal */}
+      <Dialog open={disclaimerOpen} onOpenChange={(open) => { setDisclaimerOpen(open); if (!open) setDisclaimerAccepted(false); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <AlertTriangle size={18} className="shrink-0" />
+              Before submitting your refund request
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 text-sm">
+            <p className="text-muted-foreground">Please be aware that refund costs may apply depending on the reason for the refund:</p>
+
+            <div className="rounded-lg border divide-y text-sm">
+              <div className="p-3 space-y-0.5">
+                <p className="font-semibold text-foreground">Standard refund cost</p>
+                <p className="text-muted-foreground">£5 + any applicable card fees</p>
+              </div>
+              <div className="p-3 space-y-0.5">
+                <p className="font-semibold text-foreground">Client-requested amendment</p>
+                <p className="text-muted-foreground">£25pp JLT amendment fee applies, plus any supplier fees. This will normally cover the refund costs.</p>
+              </div>
+              <div className="p-3 space-y-0.5">
+                <p className="font-semibold text-foreground">JLT dynamic package — refund through no fault of the client</p>
+                <p className="text-muted-foreground">JLT will normally cover the refund costs.</p>
+              </div>
+              <div className="p-3 space-y-0.5">
+                <p className="font-semibold text-foreground">Tour operator package — supplier change/cancellation</p>
+                <p className="text-muted-foreground">Refund costs may be payable by the agent depending on the circumstances.</p>
+              </div>
+              <div className="p-3 space-y-0.5 bg-red-50 rounded-b-lg">
+                <p className="font-semibold text-red-700">Agent error</p>
+                <p className="text-red-600">Any resulting refund costs must be covered by the agent.</p>
+              </div>
+            </div>
+
+            <p className="text-muted-foreground">Not all refunds are the same and each request will be reviewed on a case-by-case basis. If you are unsure, please contact JLT Support before confirming a refund amount to your client.</p>
+
+            <a
+              href="https://help-jltgroup.frontkb.com/en/articles/10257090"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-2"
+              style={{ color: '#02E6D2' }}
+            >
+              <ExternalLink size={13} />
+              Read the full article: Refund Requests — Fees &amp; Responsibilities
+            </a>
+
+            <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
+              <Checkbox
+                id="disclaimer-accept"
+                checked={disclaimerAccepted}
+                onCheckedChange={(v) => setDisclaimerAccepted(!!v)}
+                className="mt-0.5 shrink-0"
+              />
+              <label htmlFor="disclaimer-accept" className="text-sm text-amber-900 cursor-pointer leading-snug">
+                I confirm that I have read and understood the above and acknowledge that fees may apply to this refund request.
+              </label>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 flex-col sm:flex-row">
+            <Button variant="outline" onClick={() => { setDisclaimerOpen(false); setDisclaimerAccepted(false); }}>
+              Go Back
+            </Button>
+            <Button
+              disabled={!disclaimerAccepted || isSubmitting}
+              onClick={handleConfirmSubmit}
+              style={disclaimerAccepted ? { background: '#70FFE8', color: '#414141' } : {}}
+              className="font-semibold"
+            >
+              {isSubmitting ? <><Loader2 size={16} className="animate-spin mr-2" />Submitting...</> : "Confirm & Submit Request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ExternalLink } from "lucide-react";
