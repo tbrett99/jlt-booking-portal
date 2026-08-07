@@ -295,6 +295,8 @@ export default function AgentBookingDetail() {
   const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
   // Request additional reimbursement form state
   const [showAddReimb, setShowAddReimb] = useState(false);
+  const [reimbDisclaimerOpen, setReimbDisclaimerOpen] = useState(false);
+  const [reimbDisclaimerAccepted, setReimbDisclaimerAccepted] = useState(false);
   const [addReimbCount, setAddReimbCount] = useState(1);
   const [addReimbItems, setAddReimbItems] = useState<{ supplierName: string; amount: string; files: File[]; jltCompanyCard: boolean }[]>([{ supplierName: "", amount: "", files: [], jltCompanyCard: false }]);
   const [jltCardConfirmIdx, setJltCardConfirmIdx] = useState<number | null>(null);
@@ -576,6 +578,66 @@ export default function AgentBookingDetail() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
+      {/* Reimbursement document requirements modal */}
+      <Dialog open={reimbDisclaimerOpen} onOpenChange={() => {}}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <AlertTriangle size={18} className="shrink-0" />
+              Before you submit your reimbursement request
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <p className="text-muted-foreground">To process your reimbursement, we require the following two documents to be uploaded with your request:</p>
+            <div className="rounded-lg border divide-y">
+              <div className="p-4 space-y-2">
+                <p className="font-semibold text-foreground">1. Confirmation or Invoice Document</p>
+                <p className="text-muted-foreground">This must clearly show:</p>
+                <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-1">
+                  <li>The supplier name</li>
+                  <li>The client's name</li>
+                  <li>The amount paid</li>
+                </ul>
+              </div>
+              <div className="p-4 space-y-2">
+                <p className="font-semibold text-foreground">2. Proof of Payment (Banking Screenshot)</p>
+                <p className="text-muted-foreground">This must:</p>
+                <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-1">
+                  <li>Match the supplier name and amount shown on the confirmation/invoice</li>
+                  <li>Show the payment as <strong className="text-foreground">cleared</strong> — payments showing as "Pending" will not be accepted</li>
+                </ul>
+              </div>
+            </div>
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+              <p className="text-amber-900 text-sm font-medium">⚠ Important</p>
+              <p className="text-amber-800 text-sm mt-1">Reimbursement requests submitted without both documents, or with a payment that has not yet cleared, will be returned to you and will delay processing.</p>
+            </div>
+            <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
+              <Checkbox
+                id="reimb-disclaimer-accept"
+                checked={reimbDisclaimerAccepted}
+                onCheckedChange={(v) => setReimbDisclaimerAccepted(!!v)}
+                className="mt-0.5 shrink-0"
+              />
+              <label htmlFor="reimb-disclaimer-accept" className="text-sm text-amber-900 cursor-pointer leading-snug">
+                I confirm that I have the required documents ready to upload and that my payment has cleared.
+              </label>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 flex-col sm:flex-row">
+            <Button variant="outline" onClick={() => setReimbDisclaimerOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!reimbDisclaimerAccepted}
+              onClick={() => { setReimbDisclaimerOpen(false); setShowAddReimb(true); }}
+              style={reimbDisclaimerAccepted ? { background: '#70FFE8', color: '#414141' } : {}}
+              className="font-semibold"
+            >
+              I understand — Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link href="/dashboard">
@@ -1187,7 +1249,7 @@ export default function AgentBookingDetail() {
                 variant="outline"
                 size="sm"
                 className="w-full gap-2 text-xs"
-                onClick={() => setShowAddReimb(true)}
+                onClick={() => { setReimbDisclaimerOpen(true); setReimbDisclaimerAccepted(false); }}
               >
                 <Upload size={12} /> Request Additional Reimbursement
               </Button>
@@ -1850,3 +1912,4 @@ function BookingDocumentsSection({ bookingId }: { bookingId: number }) {
     </Card>
   );
 }
+import { Checkbox } from "@/components/ui/checkbox";
