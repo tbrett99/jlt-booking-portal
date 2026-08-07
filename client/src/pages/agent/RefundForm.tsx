@@ -19,6 +19,7 @@ export default function RefundForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [disclaimerOpen, setDisclaimerOpen] = useState(false);
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
+  const [introOpen, setIntroOpen] = useState(true);
 
   const [refundType, setRefundType] = useState<"supplier" | "customer" | "both">("both");
   const [supplierCount, setSupplierCount] = useState(1);
@@ -100,19 +101,6 @@ export default function RefundForm() {
       </div>
 
       {/* Agent responsibility notice */}
-      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="text-amber-600 mt-0.5 shrink-0" size={20} />
-          <div className="space-y-2">
-            <p className="font-semibold text-amber-900 text-sm">Important — Please read before submitting</p>
-            <ul className="text-sm text-amber-800 space-y-1.5 list-disc list-inside">
-              <li><strong>You are responsible for initiating the refund directly with the supplier</strong> (where applicable) and for chasing it through to completion.</li>
-              <li>Once you submit this form, you will receive a confirmation email with full details on timelines and the refund process. <strong>Please read this carefully.</strong></li>
-              <li>JLT will support you throughout the process, but the supplier relationship and initial contact is your responsibility.</li>
-            </ul>
-          </div>
-        </div>
-      </div>
 
       <Card>
         <CardHeader><CardTitle className="text-base">Refund Details</CardTitle></CardHeader>
@@ -232,6 +220,32 @@ export default function RefundForm() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Intro responsibility modal — shown on page load */}
+      <Dialog open={introOpen} onOpenChange={() => {}}>
+        <DialogContent className="max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <AlertTriangle size={18} className="shrink-0" />
+              Important — Please read before submitting
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-foreground">
+            <p><strong>You are responsible for initiating the refund directly with the supplier</strong> (where applicable) and for chasing it through to completion.</p>
+            <p>Once you submit this form, you will receive a confirmation email with full details on timelines and the refund process. <strong>Please read this carefully.</strong></p>
+            <p>JLT will support you throughout the process, but the supplier relationship and initial contact is your responsibility.</p>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => setIntroOpen(false)}
+              style={{ background: '#70FFE8', color: '#414141' }}
+              className="font-semibold w-full"
+            >
+              I understand — Continue to Form
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Refund fee disclaimer modal */}
       <Dialog open={disclaimerOpen} onOpenChange={(open) => { setDisclaimerOpen(open); if (!open) setDisclaimerAccepted(false); }}>
