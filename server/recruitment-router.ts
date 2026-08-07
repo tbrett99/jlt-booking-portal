@@ -437,29 +437,6 @@ export const recruitmentRouter = router({
         note: "Application form submitted by prospect",
       });
 
-      // Send confirmation email to prospect
-      const subject = "Application Received — JLT Group";
-      const bodyHtml = `
-<p>Hi ${prospect.firstName},</p>
-<p>Thank you for completing your application to join the JLT Group team! We've received your answers and our team will be in touch shortly.</p>
-<p>We review all applications personally, so please allow a few business days for us to get back to you.</p>
-<p>In the meantime, if you have any questions, feel free to reply to this email.</p>
-<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
-
-      await sendProspectEmail({
-        toEmail: prospect.email,
-        toName: prospect.firstName,
-        subject,
-        bodyHtml,
-      });
-
-      await logRecruitmentEmail({
-        prospectId: prospect.id,
-        stage: "application_received",
-        emailKey: "application_confirmation",
-        subject,
-      });
-
       // Notify support@ that a new application has been submitted
       try {
         await sendSupportEmail({
