@@ -42,13 +42,8 @@ export default function WeeklyDigestAdmin() {
   // Match using weekStarting (the correct DB field name)
   const draft = digests?.find((d: any) => {
     const dStart = new Date(d.weekStarting);
-    // Compare UTC dates to avoid BST/timezone mismatch (DB stores UTC midnight which may be Thursday 23:00 UTC = Friday 00:00 BST)
-    const dbDateStr = dStart.toISOString().slice(0, 10); // e.g. "2026-07-30"
-    const localDateStr = weekStart.toISOString().slice(0, 10); // e.g. "2026-07-31"
-    // Allow ±1 day tolerance to handle timezone offset
-    const dbDay = new Date(dbDateStr).getTime();
-    const localDay = new Date(localDateStr).getTime();
-    return Math.abs(dbDay - localDay) <= 24 * 60 * 60 * 1000;
+    // Allow ±2 days tolerance to handle BST/UTC timezone offset (DB stores UTC midnight)
+    return Math.abs(dStart.getTime() - weekStart.getTime()) <= 2 * 24 * 60 * 60 * 1000;
   });
 
   const sendTest = trpc.community.digest.sendTest.useMutation({
