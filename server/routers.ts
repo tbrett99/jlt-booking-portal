@@ -573,6 +573,28 @@ export const appRouter = router({
         if (input.userId === ctx.user.id) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot delete your own account" });
         }
+        // Look up the target user before deleting to log and guard
+        const db = await import('./db').then((m) => m.getDb());
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const { users: usersTable, userDeletions } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const [target] = await db.select().from(usersTable).where(eq(usersTable.id, input.userId)).limit(1);
+        if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        // Only super admins can delete admin or super_admin accounts
+        if ((target.role === 'admin' || target.role === 'super_admin') && ctx.user.role !== 'super_admin') {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Only super admins can delete admin accounts' });
+        }
+        // Log the deletion before deleting
+        await db.insert(userDeletions).values({
+          deletedUserId: target.id,
+          deletedUserEmail: target.email ?? '',
+          deletedUserName: target.name ?? undefined,
+          deletedUserRole: target.role,
+          deletedByUserId: ctx.user.id,
+          deletedByEmail: ctx.user.email ?? undefined,
+          deletedByName: ctx.user.name ?? undefined,
+          deletedFrom: 'users.delete',
+        } as any);
         await deleteUser(input.userId);
         return { success: true };
       }),

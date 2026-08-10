@@ -1856,3 +1856,20 @@ export const digestRuns = mysqlTable("digest_runs", {
   sentAt: timestamp("sentAt").defaultNow().notNull(),
 });
 export type DigestRun = typeof digestRuns.$inferSelect;
+
+// ─── User Deletion Audit Log ─────────────────────────────────────────────────
+// Records every user account deletion for audit purposes.
+export const userDeletions = mysqlTable("user_deletions", {
+  id: int("id").autoincrement().primaryKey(),
+  deletedUserId: int("deletedUserId").notNull(),
+  deletedUserEmail: varchar("deletedUserEmail", { length: 320 }).notNull(),
+  deletedUserName: varchar("deletedUserName", { length: 255 }),
+  deletedUserRole: varchar("deletedUserRole", { length: 50 }),
+  deletedByUserId: int("deletedByUserId"),
+  deletedByEmail: varchar("deletedByEmail", { length: 320 }),
+  deletedByName: varchar("deletedByName", { length: 255 }),
+  deletedFrom: varchar("deletedFrom", { length: 100 }),
+  deletedAt: timestamp("deletedAt").defaultNow().notNull(),
+  notes: text("notes"),
+});
+export type UserDeletion = typeof userDeletions.$inferSelect;
