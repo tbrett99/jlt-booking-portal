@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle, CheckCircle2, TrendingDown, AlertTriangle } from "lucide-react";
 import CopyableRef from "@/components/CopyableRef";
 import { useLocation } from "wouter";
+import { getPage, sortRowsByDate } from "@/lib/commission-list-utils";
 
 type ClaimRow = {
   id: number;
@@ -252,6 +253,9 @@ export default function AdminCommissions() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<ClaimRow | null>(null);
   const [vatEditing, setVatEditing] = useState<Record<number, string>>({});
+  const [sortOrder, setSortOrder] = useState<"oldest" | "newest">("oldest");
+  const [paidPage, setPaidPage] = useState(1);
+  const PAID_CLAIMS_PER_PAGE = 20;
 
   // VAT import state
   const [vatImportOpen, setVatImportOpen] = useState(false);
@@ -402,13 +406,15 @@ export default function AdminCommissions() {
   });
 
   const allClaims = (claims ?? []) as ClaimRow[];
-  const pendingReview = allClaims.filter((c) => c.status === "pending");
-  const topUpRequired = allClaims.filter((c) => c.status === "top_up_required");
-  const processing = allClaims.filter((c) => c.status === "processing");
-  const awaitingPayment = allClaims.filter((c) => c.status === "awaiting_payment");
+  const sortClaims = (rows: ClaimRow[]) => sortRowsByDate(rows, (claim) => claim.claimedAt, sortOrder);
+  const pendingReview = sortClaims(allClaims.filter((c) => c.status === "pending"));
+  const topUpRequired = sortClaims(allClaims.filter((c) => c.status === "top_up_required"));
+  const processing = sortClaims(allClaims.filter((c) => c.status === "processing"));
+  const awaitingPayment = sortClaims(allClaims.filter((c) => c.status === "awaiting_payment"));
   const claimed = awaitingPayment;
-  const paid = allClaims.filter((c) => c.status === "paid");
-  const noticeHold = allClaims.filter((c) => c.status === "notice_hold");
+  const paid = sortClaims(allClaims.filter((c) => c.status === "paid"));
+  const noticeHold = sortClaims(allClaims.filter((c) => c.status === "notice_hold"));
+  const { rows: pagedPaid, safePage: safePaidPage, totalPages: paidTotalPages } = getPage(paid, paidPage, PAID_CLAIMS_PER_PAGE);
 
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) => {
@@ -555,6 +561,17 @@ export default function AdminCommissions() {
           <p className="text-muted-foreground mt-1">Review and process agent commission claims.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            Order
+            <select
+              value={sortOrder}
+              onChange={(e) => { setSortOrder(e.target.value as "oldest" | "newest"); setPaidPage(1); }}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+            >
+              <option value="oldest">Oldest claim first</option>
+              <option value="newest">Newest claim first</option>
+            </select>
+          </label>
           <Button
             variant="outline"
             size="sm"
@@ -907,7 +924,23 @@ export default function AdminCommissions() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <ClaimTable rows={paid} {...tableProps} />
+              <ClaimTable rows={pagedPaid} {...tableProps} />
+              {paid.length > PAID_CLAIMS_PER_PAGE && (
+                <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm">
+                  <span className="text-muted-foreground">
+                    Showing {(safePaidPage - 1) * PAID_CLAIMS_PER_PAGE + 1}–{Math.min(safePaidPage * PAID_CLAIMS_PER_PAGE, paid.length)} of {paid.length} paid claims
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" disabled={safePaidPage === 1} onClick={() => setPaidPage((page) => Math.max(1, page - 1))}>
+                      Previous
+                    </Button>
+                    <span className="text-xs text-muted-foreground">Page {safePaidPage} of {paidTotalPages}</span>
+                    <Button variant="outline" size="sm" disabled={safePaidPage === paidTotalPages} onClick={() => setPaidPage((page) => Math.min(paidTotalPages, page + 1))}>
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

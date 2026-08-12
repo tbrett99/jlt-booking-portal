@@ -2665,3 +2665,7 @@
 
 ## Booking Pipeline Attention Age (Aug 12)
 - [x] Show current-stage age and priority guidance on New Booking, Incomplete Booking, Query, Reimb Docs Missing, Urgent/Reimb, T/O Package, and DP booking cards
+
+## Commission List Controls (Aug 12)
+- [x] Add oldest-first sorting to Commission Due and Commission Management lists
+- [x] Paginate the Paid tab in Commission Management
