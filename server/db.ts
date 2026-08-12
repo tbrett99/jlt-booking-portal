@@ -369,7 +369,32 @@ export async function getAllBookings(filters?: {
           .where(and(...conditions))
           .orderBy(bookings.createdAt)
       : db.select().from(bookings).orderBy(bookings.createdAt);
-  return query;
+  const rows = await query;
+  if (rows.length === 0) return rows;
+
+  const bookingIds = rows.map((booking) => booking.id);
+  const historyRows = await db
+    .select({
+      bookingId: pipelineHistory.bookingId,
+      toStage: pipelineHistory.toStage,
+      movedAt: pipelineHistory.movedAt,
+    })
+    .from(pipelineHistory)
+    .where(inArray(pipelineHistory.bookingId, bookingIds))
+    .orderBy(desc(pipelineHistory.movedAt));
+
+  const stageEnteredAtByBooking = new Map<number, Date>();
+  for (const history of historyRows) {
+    const booking = rows.find((row) => row.id === history.bookingId);
+    if (booking && history.toStage === booking.currentStage && !stageEnteredAtByBooking.has(history.bookingId)) {
+      stageEnteredAtByBooking.set(history.bookingId, history.movedAt);
+    }
+  }
+
+  return rows.map((booking) => ({
+    ...booking,
+    currentStageEnteredAt: stageEnteredAtByBooking.get(booking.id) ?? booking.createdAt,
+  }));
 }
 
 export async function updateBookingStage(

@@ -2662,3 +2662,6 @@
 - [x] Record the staff member who completes, cancels, queries, or sends a price-increase notice for each flight request
 - [x] Show the responsible staff member and action timestamps on the admin flight request pipeline
 - [x] Add flight request completion and action metrics to Super Admin staff productivity reporting
+
+## Booking Pipeline Attention Age (Aug 12)
+- [x] Show current-stage age and priority guidance on New Booking, Incomplete Booking, Query, Reimb Docs Missing, Urgent/Reimb, T/O Package, and DP booking cards
