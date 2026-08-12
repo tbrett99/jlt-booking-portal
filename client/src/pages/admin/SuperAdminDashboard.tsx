@@ -1724,6 +1724,8 @@ export default function SuperAdminDashboard() {
                               <TableHead className="text-right">Status Changes</TableHead>
                               <TableHead className="text-right">Notes Written</TableHead>
                               <TableHead className="text-right">Recruitment</TableHead>
+                              <TableHead className="text-right">Flights Ticketed</TableHead>
+                              <TableHead className="text-right">Flight Actions</TableHead>
                               <TableHead className="text-right font-semibold bg-muted/50">Total</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -1751,6 +1753,8 @@ export default function SuperAdminDashboard() {
                                 <TableCell className="text-right">{s.statusChanges || <span className="text-muted-foreground">—</span>}</TableCell>
                                 <TableCell className="text-right">{s.bookingNotes || <span className="text-muted-foreground">—</span>}</TableCell>
                                 <TableCell className="text-right">{s.recruitmentMoves || <span className="text-muted-foreground">—</span>}</TableCell>
+                                <TableCell className="text-right">{s.flightsTicketed || <span className="text-muted-foreground">—</span>}</TableCell>
+                                <TableCell className="text-right">{s.flightActions || <span className="text-muted-foreground">—</span>}</TableCell>
                                 <TableCell className="text-right font-bold text-foreground bg-muted/50">{s.totalActions}</TableCell>
                               </TableRow>
                             ))}
@@ -1760,7 +1764,7 @@ export default function SuperAdminDashboard() {
                     </Card>
                   )}
                   <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">
-                    <strong>What's counted:</strong> Pipeline moves, tasks completed, tasks created, amendments actioned, commission claims marked paid, reimbursements marked paid, reimbursements scheduled, agent status changes, booking notes/messages written, recruitment stage moves.
+                    <strong>What's counted:</strong> Pipeline moves, tasks completed, tasks created, amendments actioned, commission claims marked paid, reimbursements marked paid, reimbursements scheduled, agent status changes, booking notes/messages written, recruitment stage moves, and flight request actions. “Flights Ticketed” is the subset of flight actions that completed ticketing.
                   </div>
                 </TabsContent>
 

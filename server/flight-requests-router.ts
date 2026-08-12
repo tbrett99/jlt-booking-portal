@@ -1,11 +1,34 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { eq, desc, asc, count } from "drizzle-orm";
+import { eq, desc, asc, count, inArray } from "drizzle-orm";
 import { router, protectedProcedure, adminProcedure } from "./_core/trpc";
 import { getDb } from "./db";
-import { flightRequests, bookings, users } from "../drizzle/schema";
+import { flightRequests, flightRequestActions, bookings, users } from "../drizzle/schema";
 import { createInAppNotification, createNote } from "./db";
 import { sendNotificationEmail } from "./email";
+
+async function logFlightRequestAction(
+  db: any,
+  data: {
+    flightRequestId: number;
+    bookingId: number;
+    action: string;
+    previousStatus?: string | null;
+    newStatus?: string | null;
+    performedById?: number | null;
+    details?: string | null;
+  },
+) {
+  await db.insert(flightRequestActions).values({
+    flightRequestId: data.flightRequestId,
+    bookingId: data.bookingId,
+    action: data.action,
+    previousStatus: data.previousStatus ?? null,
+    newStatus: data.newStatus ?? null,
+    performedById: data.performedById ?? null,
+    details: data.details ?? null,
+  });
+}
 
 export const flightRequestsRouter = router({
   // ─── Agent: create a new flight request ──────────────────────────────────
@@ -62,6 +85,14 @@ export const flightRequestsRouter = router({
         invoiceAddedToPts: false,
       });
       const insertId = (result as any)[0]?.insertId ?? (result as any).insertId;
+      await logFlightRequestAction(db, {
+        flightRequestId: Number(insertId),
+        bookingId: input.bookingId,
+        action: "submitted",
+        newStatus: "pending",
+        performedById: ctx.user.id,
+        details: `Flight ${input.requestType} request submitted.`,
+      });
       const [created] = await db
         .select()
         .from(flightRequests)
@@ -167,7 +198,41 @@ export const flightRequestsRouter = router({
       .innerJoin(bookings, eq(flightRequests.bookingId, bookings.id))
       .innerJoin(agentAlias, eq(flightRequests.agentId, agentAlias.id))
       .orderBy(asc(flightRequests.createdAt)); // oldest first
-    return rows;
+    if (rows.length === 0) return rows;
+
+    const requestIds = rows.map((row) => row.id);
+    const auditRows = await db
+      .select({
+        id: flightRequestActions.id,
+        flightRequestId: flightRequestActions.flightRequestId,
+        action: flightRequestActions.action,
+        previousStatus: flightRequestActions.previousStatus,
+        newStatus: flightRequestActions.newStatus,
+        performedById: flightRequestActions.performedById,
+        details: flightRequestActions.details,
+        createdAt: flightRequestActions.createdAt,
+      })
+      .from(flightRequestActions)
+      .where(inArray(flightRequestActions.flightRequestId, requestIds))
+      .orderBy(desc(flightRequestActions.createdAt));
+    const performerIds = Array.from(new Set(auditRows.map((row) => row.performedById).filter((id): id is number => id != null)));
+    const performers = performerIds.length > 0
+      ? await db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users).where(inArray(users.id, performerIds))
+      : [];
+    const performerById = new Map(performers.map((user) => [user.id, user]));
+    const actionsByRequest = new Map<number, Array<typeof auditRows[number] & { performedByName: string | null; performedByEmail: string | null; performedByRole: string | null }>>();
+    for (const action of auditRows) {
+      const list = actionsByRequest.get(action.flightRequestId) ?? [];
+      const performer = action.performedById ? performerById.get(action.performedById) : null;
+      list.push({
+        ...action,
+        performedByName: performer?.name ?? null,
+        performedByEmail: performer?.email ?? null,
+        performedByRole: performer?.role ?? null,
+      });
+      actionsByRequest.set(action.flightRequestId, list);
+    }
+    return rows.map((row) => ({ ...row, actionHistory: actionsByRequest.get(row.id) ?? [] }));
   }),
 
   // ─── Admin: count pending flight requests (for dashboard) ───────────────
@@ -203,6 +268,8 @@ export const flightRequestsRouter = router({
           pnr: flightRequests.pnr,
           cancellationPnr: flightRequests.cancellationPnr,
           requestType: flightRequests.requestType,
+          status: flightRequests.status,
+          cancellationStatus: flightRequests.cancellationStatus,
           clientName: bookings.clientName,
           agentName: users.name,
           agentEmail: users.email,
@@ -236,6 +303,37 @@ export const flightRequestsRouter = router({
           .update(flightRequests)
           .set(updateFields)
           .where(eq(flightRequests.id, input.id));
+      }
+
+      if (input.status !== undefined) {
+        const action = input.status === "ticketed" || input.status === "completed"
+          ? "ticketed"
+          : input.status === "cancelled"
+            ? "cancelled"
+            : input.status === "query"
+              ? "queried"
+              : input.status === "pending"
+                ? "reopened"
+                : "status_updated";
+        await logFlightRequestAction(db, {
+          flightRequestId: req.id,
+          bookingId: req.bookingId,
+          action,
+          previousStatus: req.status,
+          newStatus: input.status,
+          performedById: ctx.user.id,
+          details: input.status === "query" ? input.queryMessage?.trim() ?? null : null,
+        });
+      }
+      if (input.cancellationStatus !== undefined) {
+        await logFlightRequestAction(db, {
+          flightRequestId: req.id,
+          bookingId: req.bookingId,
+          action: input.cancellationStatus === "cancelled" ? "cancellation_completed" : "cancellation_reopened",
+          previousStatus: req.cancellationStatus,
+          newStatus: input.cancellationStatus,
+          performedById: ctx.user.id,
+        });
       }
 
       // Notify agent based on what changed
@@ -341,6 +439,16 @@ export const flightRequestsRouter = router({
         } as any)
         .where(eq(flightRequests.id, input.id));
 
+      await logFlightRequestAction(db, {
+        flightRequestId: req.id,
+        bookingId: req.bookingId,
+        action: "price_increase_notified",
+        previousStatus: req.status,
+        newStatus: "price_increase_pending",
+        performedById: ctx.user.id,
+        details: `New price £${input.newPrice.toFixed(2)}. ${input.note?.trim() ?? ""}`.trim(),
+      });
+
       // Send urgent in-app notification to agent
       const increaseFormatted = `£${increase.toFixed(2)}`;
       const newPriceFormatted = `£${input.newPrice.toFixed(2)}`;
@@ -425,6 +533,16 @@ export const flightRequestsRouter = router({
         } as any)
         .where(eq(flightRequests.id, input.id));
 
+      await logFlightRequestAction(db, {
+        flightRequestId: req.id,
+        bookingId: req.bookingId,
+        action: "price_increase_accepted",
+        previousStatus: "price_increase_pending",
+        newStatus: "pending",
+        performedById: ctx.user.id,
+        details: `New agreed price £${Number(req.priceIncreaseAmount ?? 0).toFixed(2)}.`,
+      });
+
       // Log acceptance as a note
       await createNote({
         bookingId: req.bookingId,
@@ -475,6 +593,15 @@ export const flightRequestsRouter = router({
         } as any)
         .where(eq(flightRequests.id, input.id));
 
+      await logFlightRequestAction(db, {
+        flightRequestId: req.id,
+        bookingId: req.bookingId,
+        action: "price_increase_declined",
+        previousStatus: "price_increase_pending",
+        newStatus: "query",
+        performedById: ctx.user.id,
+      });
+
       // Log decline as a note
       await createNote({
         bookingId: req.bookingId,
@@ -490,14 +617,21 @@ export const flightRequestsRouter = router({
   // ─── Admin: delete a flight request ──────────────────────────────────────
   delete: adminProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const [req] = await db
-        .select({ id: flightRequests.id })
+        .select({ id: flightRequests.id, bookingId: flightRequests.bookingId, status: flightRequests.status })
         .from(flightRequests)
         .where(eq(flightRequests.id, input.id));
       if (!req) throw new TRPCError({ code: "NOT_FOUND", message: "Flight request not found" });
+      await logFlightRequestAction(db, {
+        flightRequestId: req.id,
+        bookingId: req.bookingId,
+        action: "deleted",
+        previousStatus: req.status,
+        performedById: ctx.user.id,
+      });
       await db.delete(flightRequests).where(eq(flightRequests.id, input.id));
       return { success: true };
     }),
@@ -505,13 +639,26 @@ export const flightRequestsRouter = router({
   // ─── Admin: toggle invoice checkbox ─────────────────────────────────────
   toggleInvoice: adminProcedure
     .input(z.object({ id: z.number(), invoiceAddedToPts: z.boolean() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [req] = await db
+        .select({ id: flightRequests.id, bookingId: flightRequests.bookingId, status: flightRequests.status })
+        .from(flightRequests)
+        .where(eq(flightRequests.id, input.id));
+      if (!req) throw new TRPCError({ code: "NOT_FOUND", message: "Flight request not found" });
       await db
         .update(flightRequests)
         .set({ invoiceAddedToPts: input.invoiceAddedToPts })
         .where(eq(flightRequests.id, input.id));
+      await logFlightRequestAction(db, {
+        flightRequestId: req.id,
+        bookingId: req.bookingId,
+        action: input.invoiceAddedToPts ? "invoice_marked_added" : "invoice_marked_not_added",
+        previousStatus: req.status,
+        newStatus: req.status,
+        performedById: ctx.user.id,
+      });
       return { success: true };
     }),
 });

@@ -2657,3 +2657,8 @@
 - [x] CommissionDue admin page: warning badges on booking cards + warning panel in Mark Claimable dialog
 - [x] AdminCommissions page: Refund Pending / Amendment Pending badges on claim rows
 - [x] AgentCommissions: pre-claim amendment lock warning modal before claim dialog
+
+## Action Audit & Flight Productivity (Aug 12)
+- [x] Record the staff member who completes, cancels, queries, or sends a price-increase notice for each flight request
+- [x] Show the responsible staff member and action timestamps on the admin flight request pipeline
+- [x] Add flight request completion and action metrics to Super Admin staff productivity reporting
