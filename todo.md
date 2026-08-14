@@ -2669,3 +2669,6 @@
 ## Commission List Controls (Aug 12)
 - [x] Add oldest-first sorting to Commission Due and Commission Management lists
 - [x] Paginate the Paid tab in Commission Management
+
+## Admin Onboarding Exclusion (Aug 14)
+- [x] Exclude admin and super-admin accounts from the onboarding queue without deleting their user accounts

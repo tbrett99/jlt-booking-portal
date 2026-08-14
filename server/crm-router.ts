@@ -5,6 +5,7 @@ import { router, protectedProcedure, publicProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { nanoid } from "nanoid";
+import { isOnboardingEligible } from "./onboarding-eligibility";
 import { createRecruitmentProspect, getRecruitmentProspectByEmail } from "./recruitment-db";
 import {
   createProspect,
@@ -2566,12 +2567,13 @@ export const crmRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const { users, agentCrmProfiles, adminOnboardingChecklist, joinSessions } = await import("../drizzle/schema");
-      const { eq } = await import("drizzle-orm");
+      const { and, eq } = await import("drizzle-orm");
       const rows = await db
         .select({
           userId: users.id,
           name: users.name,
           email: users.email,
+          role: users.role,
           portalStatus: users.portalStatus,
           createdAt: users.createdAt,
           membershipTier: agentCrmProfiles.membershipTier,
@@ -2604,9 +2606,9 @@ export const crmRouter = router({
         .leftJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, users.id))
         .leftJoin(adminOnboardingChecklist, eq(adminOnboardingChecklist.userId, users.id))
         .leftJoin(joinSessions, eq(joinSessions.userId, users.id))
-        .where(eq(users.portalStatus, "onboarding"))
+        .where(and(eq(users.portalStatus, "onboarding"), eq(users.role, "agent")))
         .orderBy(users.createdAt);
-      return rows.map(r => {
+      return rows.filter((r) => isOnboardingEligible(r.role, r.portalStatus)).map(r => {
         const adminSteps = [
           r.trainingHubLogin ?? false,
           r.jltEmailSetup ?? false,
@@ -2644,11 +2646,11 @@ export const crmRouter = router({
       const db = await getDb();
       if (!db) return 0;
       const { users } = await import("../drizzle/schema");
-      const { eq } = await import("drizzle-orm");
+      const { and, eq } = await import("drizzle-orm");
       const rows = await db
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.portalStatus, "onboarding"));
+        .where(and(eq(users.portalStatus, "onboarding"), eq(users.role, "agent")));
       return rows.length;
     }),
 
@@ -2666,9 +2668,8 @@ export const crmRouter = router({
         if (row.portalStatus === "active") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot delete an active agent from here. Use the CRM agent management page instead." });
         }
-        // Only super admins can delete admin/super_admin accounts
-        if ((row.role === 'admin' || row.role === 'super_admin') && ctx.user.role !== 'super_admin') {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'Only super admins can delete admin accounts' });
+        if (row.role !== "agent") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Admin accounts cannot be deleted from the onboarding queue." });
         }
         // Log the deletion before deleting
         await db.insert(userDeletions).values({
