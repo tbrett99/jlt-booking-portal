@@ -23,6 +23,7 @@ vi.mock("./db", () => ({
   getPipelineHistory: vi.fn().mockResolvedValue([]),
   createNote: vi.fn().mockResolvedValue({ id: 10 }),
   getNotesByBooking: vi.fn().mockResolvedValue([]),
+  getNotesByAmendment: vi.fn().mockResolvedValue([]),
   createAmendment: vi.fn().mockResolvedValue({ id: 5 }),
   getAmendmentsByBooking: vi.fn().mockResolvedValue([]),
   getAllAmendments: vi.fn().mockResolvedValue([]),
@@ -281,6 +282,45 @@ describe("notes", () => {
     const caller = appRouter.createCaller(ctx);
     const result = await caller.notes.add({ bookingId: 1, content: "internal note", isInternal: true });
     expect(result.success).toBe(true);
+  });
+
+  it("records an admin amendment message in the linked shared booking thread", async () => {
+    const { getBookingById, getAmendmentsByBooking, createNote } = await import("./db");
+    vi.mocked(getBookingById).mockResolvedValueOnce({
+      id: 1,
+      agentId: 3,
+      clientName: "Test Client",
+      departureDate: new Date(),
+      topdogRef: null,
+      reimbursementsRequired: false,
+      reimbursementDocUrl: null,
+      reimbursementDocUploadedAt: null,
+      reimbursementDocLateUpload: false,
+      ptsRef: null,
+      finalSupplierPaymentDate: null,
+      expectedCommission: null,
+      currentStage: "New Booking",
+      isHoldingAccount: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    vi.mocked(getAmendmentsByBooking).mockResolvedValueOnce([{ id: 9, bookingId: 1 }] as any);
+    vi.mocked(createNote).mockResolvedValueOnce({ id: 11 } as any);
+
+    const caller = appRouter.createCaller(makeCtx("admin"));
+    const result = await caller.notes.add({
+      bookingId: 1,
+      amendmentId: 9,
+      content: "Please confirm the supplier's revised cost.",
+      isInternal: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(createNote).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 1,
+      amendmentId: 9,
+      isInternal: false,
+    }));
   });
 });
 

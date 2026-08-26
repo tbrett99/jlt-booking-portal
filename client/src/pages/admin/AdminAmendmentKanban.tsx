@@ -11,6 +11,7 @@ import { Link } from "wouter";
 import { User, Calendar, ArrowRight, FileText, Clock, XCircle, Loader2, EyeOff, Eye } from "lucide-react";
 import { useState } from "react";
 import { differenceInDays } from "date-fns";
+import AmendmentMessageThread from "@/components/AmendmentMessageThread";
 
 function AgeBadge({ createdAt }: { createdAt: string | Date }) {
   const days = differenceInDays(new Date(), new Date(createdAt));
@@ -349,6 +350,8 @@ function AmendmentCard({
               )}
             </div>
           )}
+
+          <AmendmentMessageThread amendmentId={amendment.id} bookingId={amendment.bookingId} />
 
           {/* Assignee */}
           <div className="space-y-1">

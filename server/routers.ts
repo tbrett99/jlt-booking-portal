@@ -1989,10 +1989,33 @@ export const appRouter = router({
         );
         return enriched;
       }),
+    byAmendment: protectedProcedure
+      .input(z.object({ amendmentId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const db = await (await import("./db")).getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { amendments: amendmentsTable } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const rows = await db.select().from(amendmentsTable).where(eq(amendmentsTable.id, input.amendmentId)).limit(1);
+        const amendment = rows[0];
+        if (!amendment) throw new TRPCError({ code: "NOT_FOUND", message: "Amendment not found" });
+        const booking = await getBookingById(amendment.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND", message: "Booking not found" });
+        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        const { getNotesByAmendment } = await import("./db");
+        const noteRows = await getNotesByAmendment(input.amendmentId);
+        return Promise.all(noteRows.map(async (note) => {
+          const author = await getUserById(note.authorId);
+          return { ...note, authorName: author?.name ?? "JLT Team", authorRole: author?.role ?? "admin" };
+        }));
+      }),
     add: protectedProcedure
       .input(
         z.object({
           bookingId: z.number(),
+          amendmentId: z.number().optional(),
           content: z.string().min(1),
           isInternal: z.boolean().default(false),
         })
@@ -2007,8 +2030,18 @@ export const appRouter = router({
         if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
+        if (input.amendmentId) {
+          if (ctx.user.role === "agent") {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can send a message directly from an amendment" });
+          }
+          const linkedAmendments = await getAmendmentsByBooking(input.bookingId);
+          if (!linkedAmendments.some((amendment) => amendment.id === input.amendmentId)) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "This amendment does not belong to the selected booking" });
+          }
+        }
         await createNote({
           bookingId: input.bookingId,
+          amendmentId: input.amendmentId,
           authorId: ctx.user.id,
           content: input.content,
           isInternal: input.isInternal,

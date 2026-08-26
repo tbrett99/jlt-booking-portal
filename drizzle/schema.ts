@@ -190,6 +190,7 @@ export type RefundSupplier = typeof refundSuppliers.$inferSelect;
 export const notes = mysqlTable("notes", {
   id: int("id").autoincrement().primaryKey(),
   bookingId: int("bookingId").notNull(), // FK → bookings.id
+  amendmentId: int("amendmentId"), // set only for messages sent directly from an amendment
   authorId: int("authorId").notNull(), // FK → users.id
   content: text("content").notNull(),
   isInternal: boolean("isInternal").default(false).notNull(), // true = admin-only

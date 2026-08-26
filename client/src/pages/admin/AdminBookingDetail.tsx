@@ -19,6 +19,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import CopyableRef from "@/components/CopyableRef";
 import CountrySelect from "@/components/CountrySelect";
 import TaskFormDialog from "./TaskFormDialog";
+import AmendmentMessageThread from "@/components/AmendmentMessageThread";
 
 const STAGES = [
   "New Booking", "Creating own PTS file", "Incomplete Booking", "Query",
@@ -492,6 +493,7 @@ function AmendmentPipelineCard({
                   </Select>
                 </div>
               </div>
+              <AmendmentMessageThread amendmentId={a.id} bookingId={a.bookingId} compact />
             </div>
           );
         })}

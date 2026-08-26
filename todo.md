@@ -5,6 +5,10 @@
 - [ ] Backfill VAT on Railway claims 2T0138659, 2T0094707, and 2T0113252 once the original VAT figures are confirmed
 - [ ] Identify and correct any other historical claims where VAT is set on the booking but missing from the claim
 - [x] Add a booking-page activity bar for outstanding refunds, amendments, reimbursements, reimbursement documents, and uploaded documents
+- [x] Add admin-to-agent amendment messages that post into the booking Messages thread and display as an amendment communication trail
+- [x] Apply the amendment-linked message migration to Railway production and verify the live message flow
+- [ ] Save, push, and deploy the amendment messaging feature after production migration verification
+- [ ] Verify a live amendment message appears both on the amendment communication trail and in the booking Messages thread after Railway deploys
 
 ## Phase 1: Database Schema & Migrations
 - [x] Extend users table with role enum (super_admin, admin, agent) and agentCode field
