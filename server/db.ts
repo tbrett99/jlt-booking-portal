@@ -490,6 +490,7 @@ export async function getPipelineHistory(bookingId: number) {
 
 export async function createNote(data: {
   bookingId: number;
+  amendmentId?: number | null;
   authorId: number;
   content: string;
   isInternal: boolean;
@@ -510,6 +511,7 @@ export async function getNotesByBooking(bookingId: number, includeInternal: bool
     .select({
       id: notes.id,
       bookingId: notes.bookingId,
+      amendmentId: notes.amendmentId,
       authorId: notes.authorId,
       content: notes.content,
       isInternal: notes.isInternal,
@@ -520,6 +522,25 @@ export async function getNotesByBooking(bookingId: number, includeInternal: bool
     .where(condition)
     .orderBy(notes.createdAt);
   return rows;
+}
+
+export async function getNotesByAmendment(amendmentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: notes.id,
+      bookingId: notes.bookingId,
+      amendmentId: notes.amendmentId,
+      authorId: notes.authorId,
+      content: notes.content,
+      isInternal: notes.isInternal,
+      isReadByAgent: notes.isReadByAgent,
+      createdAt: notes.createdAt,
+    })
+    .from(notes)
+    .where(and(eq(notes.amendmentId, amendmentId), eq(notes.isInternal, false)))
+    .orderBy(notes.createdAt);
 }
 
 // Mark all agent notes on a booking as read by admin
