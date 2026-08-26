@@ -1155,7 +1155,23 @@ export async function createCommissionClaim(bookingId: number, agentId: number, 
     .where(eq(commissionClaims.bookingId, bookingId))
     .limit(1);
   if (existing.length > 0) return existing[0];
-  await db.insert(commissionClaims).values({ bookingId, agentId, bookingType, grossAmount: grossAmount?.toString() ?? null, ...(initialStatus ? { status: initialStatus } : {}), ...(extraFields ?? {}) });
+  // VAT is entered at the Commission Due stage and stored against the booking.
+  // Every claim-creation path must inherit it so Commission Management and
+  // remittance processing use the same VAT figure.
+  const [booking] = await db
+    .select({ commissionVat: bookings.commissionVat })
+    .from(bookings)
+    .where(eq(bookings.id, bookingId))
+    .limit(1);
+  await db.insert(commissionClaims).values({
+    bookingId,
+    agentId,
+    bookingType,
+    grossAmount: grossAmount?.toString() ?? null,
+    vatAmount: booking?.commissionVat ?? null,
+    ...(initialStatus ? { status: initialStatus } : {}),
+    ...(extraFields ?? {}),
+  });
   const result = await db
     .select()
     .from(commissionClaims)

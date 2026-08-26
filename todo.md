@@ -1,5 +1,10 @@
 # JLT Group Booking Portal - TODO
 
+## Active Investigation
+- [x] Diagnose and fix future VAT persistence from Commission Due into Commission Management
+- [ ] Backfill VAT on Railway claims 2T0138659, 2T0094707, and 2T0113252 once the original VAT figures are confirmed
+- [ ] Identify and correct any other historical claims where VAT is set on the booking but missing from the claim
+
 ## Phase 1: Database Schema & Migrations
 - [x] Extend users table with role enum (super_admin, admin, agent) and agentCode field
 - [x] Create bookings table (clientName, departureDate, topdogRef, reimbursementsRequired, reimbursementDocUrl, status, agentId, ptsRef, topdogRef, finalSupplierPaymentDate, expectedCommission)

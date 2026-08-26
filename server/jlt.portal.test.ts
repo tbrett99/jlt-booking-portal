@@ -449,6 +449,28 @@ describe("bookings.moveStage payment date guardrail", () => {
     expect((result as any).id).toBe(1);
   });
 
+  it("persists and verifies VAT before moving a booking to Commission Claimable", async () => {
+    const { getBookingById, updateBookingAdminFields, updateBookingStage, createNote } = await import("./db");
+    const commissionDueBooking = {
+      ...BOOKING_WITH_PAYMENT_DATE,
+      commissionPreAuthorised: false,
+      commissionVat: null,
+    };
+    // First lookup finds the booking, second lookup confirms the VAT write.
+    vi.mocked(getBookingById)
+      .mockResolvedValueOnce(commissionDueBooking as any)
+      .mockResolvedValueOnce({ ...commissionDueBooking, commissionVat: "12.50" } as any);
+    vi.mocked(updateBookingAdminFields).mockResolvedValueOnce({ ...commissionDueBooking, commissionVat: "12.50" } as any);
+    vi.mocked(updateBookingStage).mockResolvedValueOnce({ id: 1, currentStage: "Commission Claimable" } as any);
+    vi.mocked(createNote).mockResolvedValue({ id: 99 } as any);
+
+    const caller = appRouter.createCaller(makeCtx("admin"));
+    await caller.bookings.moveStage({ bookingId: 1, toStage: "Commission Claimable", vatAmount: 12.5 });
+
+    expect(updateBookingAdminFields).toHaveBeenCalledWith(1, { commissionVat: 12.5 });
+    expect(updateBookingStage).toHaveBeenCalledWith(1, "Commission Claimable", 2);
+  });
+
   it("allows move to earlier stages without finalSupplierPaymentDate", async () => {
     const { getBookingById, updateBookingStage, getUserById, getNotificationTemplate, createInAppNotification, createNote } = await import("./db");
     vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITHOUT_PAYMENT_DATE as any);
