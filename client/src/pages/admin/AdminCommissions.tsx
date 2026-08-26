@@ -269,6 +269,7 @@ export default function AdminCommissions() {
         prev ? prev.map((c) => c.id === vars.claimId ? { ...c, vatAmount: vars.vatAmount !== null ? String(vars.vatAmount) : null } : c) : prev
       );
       utils.commissionClaims.all.invalidate();
+      toast.success(vars.vatAmount === null ? "VAT cleared" : `VAT of £${vars.vatAmount.toFixed(2)} saved`);
     },
     onError: (err) => toast.error(err.message),
   });

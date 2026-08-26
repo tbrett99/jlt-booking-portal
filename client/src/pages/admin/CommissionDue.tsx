@@ -124,7 +124,17 @@ export default function CommissionDue() {
       if (ctx?.prev) utils.commissionDue.list.setData(undefined, ctx.prev);
       toast.error(_e.message);
     },
-    onSuccess: () => { toast.success("Booking moved"); },
+    onSuccess: (_data, variables) => {
+      if (variables.toStage === "Commission Claimable" && variables.vatAmount !== undefined) {
+        toast.success(
+          variables.vatAmount === null
+            ? "Booking moved — no VAT recorded"
+            : `Booking moved — VAT of £${Number(variables.vatAmount).toFixed(2)} saved`
+        );
+      } else {
+        toast.success("Booking moved");
+      }
+    },
     onSettled: () => { utils.commissionDue.list.invalidate(); },
   });
 

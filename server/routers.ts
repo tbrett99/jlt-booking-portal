@@ -1029,6 +1029,33 @@ export const appRouter = router({
           });
         }
 
+        // Persist VAT before changing the pipeline stage. Previously the stage was
+        // updated first, so a VAT write failure could leave the booking/claim in a
+        // later stage without its entered VAT amount. Re-read and verify the value
+        // so the admin receives an error instead of a silent data loss.
+        if (input.toStage === "Commission Claimable" && input.vatAmount !== undefined) {
+          await updateBookingAdminFields(input.bookingId, { commissionVat: input.vatAmount });
+          const vatVerifiedBooking = await getBookingById(input.bookingId);
+          const savedVat = (vatVerifiedBooking as any)?.commissionVat;
+          const vatSavedCorrectly = input.vatAmount === null
+            ? savedVat === null
+            : Number(savedVat) === Number(input.vatAmount);
+          if (!vatSavedCorrectly) {
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "The VAT figure could not be saved. The booking has not been moved — please try again or contact support.",
+            });
+          }
+          await createNote({
+            bookingId: input.bookingId,
+            authorId: ctx.user.id,
+            content: input.vatAmount === null
+              ? `[System] No VAT recorded when commission was marked claimable by ${ctx.user.name ?? "Admin"}.`
+              : `[System] VAT of £${Number(input.vatAmount).toFixed(2)} recorded when commission was marked claimable by ${ctx.user.name ?? "Admin"}.`,
+            isInternal: true,
+          });
+        }
+
         // Pre-auth auto-claim: if moving to Commission Claimable and agent has pre-authorised,
         // skip the claimable stage and auto-create the commission claim, then move straight to Commission Claimed.
         // Guards:
@@ -1103,12 +1130,6 @@ export const appRouter = router({
         }
 
         const updated = await updateBookingStage(input.bookingId, input.toStage, ctx.user.id);
-
-        // Store admin-entered VAT on the booking when marking Commission Claimable
-        // so it is pre-populated on the commission claim when the agent submits
-        if (input.toStage === "Commission Claimable" && input.vatAmount !== undefined) {
-          await updateBookingAdminFields(input.bookingId, { commissionVat: input.vatAmount ?? null });
-        }
 
         // Trigger notifications based on stage
         const agent = await getUserById(booking.agentId);
@@ -3036,19 +3057,26 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         }
       }
 
-      return claims.map((c) => ({
+      return claims.map((c) => {
+        const booking = bookingMap.get(c.bookingId) ?? null;
+        return {
         ...c,
+        // A historical claim may have been created before VAT was copied from the
+        // booking. Prefer the claim value, but fall back to the verified booking VAT
+        // so Commission Management remains accurate during that transition.
+        vatAmount: (c as any).vatAmount ?? (booking as any)?.commissionVat ?? null,
         agentName: userMap.get(c.agentId)?.name ?? "Unknown",
         agentEmail: userMap.get(c.agentId)?.email ?? "",
         agentPortalStatus: (userMap.get(c.agentId) as any)?.portalStatus ?? null,
-        booking: bookingMap.get(c.bookingId) ?? null,
+        booking,
         paidByName: c.paidById ? (userMap.get(c.paidById)?.name ?? "Admin") : null,
         bankAccountName: bankDetailsMap.get(c.agentId)?.bankAccountName ?? null,
         bankSortCode: bankDetailsMap.get(c.agentId)?.bankSortCode ?? null,
         bankAccountNumber: bankDetailsMap.get(c.agentId)?.bankAccountNumber ?? null,
         hasOutstandingRefund: outstandingRefundBookingIds.has(c.bookingId),
         hasOutstandingAmendment: outstandingAmendmentBookingIds.has(c.bookingId),
-      }));
+        };
+      });
     }),
 
     // Admin: release a notice-period hold claim to processing
