@@ -13,6 +13,7 @@ import { Link } from "wouter";
 import { AlertCircle, Calendar, CheckCircle2, User, Square, CheckSquare, CalendarClock, Minus, Zap, AlertTriangle } from "lucide-react";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import CopyableRef from "@/components/CopyableRef";
+import { sortRowsByDate } from "@/lib/commission-list-utils";
 
 function MoveDatePopover({ bookingId, currentDate, onSuccess }: {
   bookingId: number;
@@ -102,6 +103,7 @@ export default function CommissionDue() {
   const { data: bookings, isLoading } = trpc.commissionDue.list.useQuery();
   const [search, setSearch] = useState("");
   const [pastDepartureOnly, setPastDepartureOnly] = useState(false);
+  const [sortOrder, setSortOrder] = useState<"oldest" | "newest">("oldest");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   // Top-up (Minus) dialog state
@@ -197,8 +199,8 @@ export default function CommissionDue() {
           (b.ptsRef ?? "").toLowerCase().includes(q)
       );
     }
-    return list;
-  }, [bookings, pastDepartureOnly, search]);
+    return sortRowsByDate(list, (booking) => booking.finalSupplierPaymentDate ?? booking.createdAt, sortOrder);
+  }, [bookings, pastDepartureOnly, search, sortOrder]);
 
   const allSelected = filtered.length > 0 && filtered.every((b) => selectedIds.has(b.id));
   const someSelected = selectedIds.size > 0;
@@ -272,6 +274,17 @@ export default function CommissionDue() {
           <Calendar size={14} />
           Past departure only
         </Button>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          Order
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as "oldest" | "newest")}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+          >
+            <option value="oldest">Oldest due first</option>
+            <option value="newest">Newest due first</option>
+          </select>
+        </label>
         {filtered.length > 0 && (
           <button
             onClick={toggleAll}

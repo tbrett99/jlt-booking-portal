@@ -58,6 +58,23 @@ const TYPE_LABEL: Record<string, string> = {
   both:         "Ticketing & Cancellation",
 };
 
+const ACTION_LABEL: Record<string, string> = {
+  submitted: "Submitted",
+  ticketed: "Ticketed",
+  cancelled: "Cancelled",
+  queried: "Query sent",
+  reopened: "Reopened",
+  cancellation_completed: "Cancellation completed",
+  cancellation_reopened: "Cancellation reopened",
+  price_increase_notified: "Price increase notified",
+  price_increase_accepted: "Price increase accepted",
+  price_increase_declined: "Price increase declined",
+  invoice_marked_added: "Invoice marked added",
+  invoice_marked_not_added: "Invoice marked not added",
+  deleted: "Deleted",
+  status_updated: "Status updated",
+};
+
 export default function AdminFlightsPipeline() {
   const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
@@ -197,6 +214,14 @@ export default function AdminFlightsPipeline() {
 
   const renderCard = (r: (typeof allRequests)[0], isCompleted = false) => {
     const badge = STATUS_BADGE[r.status as FlightStatus] ?? STATUS_BADGE.pending;
+    const actionHistory = ((r as any).actionHistory ?? []) as Array<{
+      action: string;
+      performedByName: string | null;
+      performedByRole: string | null;
+      createdAt: Date | string;
+    }>;
+    const ticketedAction = actionHistory.find((action) => action.action === "ticketed");
+    const latestStaffAction = actionHistory.find((action) => action.performedByRole === "admin" || action.performedByRole === "super_admin");
     return (
       <Card key={r.id} className={`overflow-hidden ${
         !isCompleted && r.status === 'pending' && (() => {
@@ -282,6 +307,16 @@ export default function AdminFlightsPipeline() {
                 <span>Submitted: {format(new Date(r.createdAt), "dd MMM yyyy HH:mm")}</span>
                 {isCompleted && r.updatedAt && (
                   <span className="text-emerald-700">Completed: {format(new Date(r.updatedAt), "dd MMM yyyy HH:mm")}</span>
+                )}
+                {isCompleted && (
+                  <span className="text-emerald-700">
+                    Completed by: <strong>{ticketedAction?.performedByName ?? "Not recorded"}</strong>
+                  </span>
+                )}
+                {!isCompleted && latestStaffAction && (
+                  <span>
+                    Latest staff action: <strong className="text-foreground">{ACTION_LABEL[latestStaffAction.action] ?? latestStaffAction.action}</strong> by <strong className="text-foreground">{latestStaffAction.performedByName ?? "Unknown"}</strong>
+                  </span>
                 )}
               </div>
               {r.status === "query" && r.queryMessage && (

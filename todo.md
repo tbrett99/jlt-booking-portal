@@ -4,6 +4,7 @@
 - [x] Diagnose and fix future VAT persistence from Commission Due into Commission Management
 - [ ] Backfill VAT on Railway claims 2T0138659, 2T0094707, and 2T0113252 once the original VAT figures are confirmed
 - [ ] Identify and correct any other historical claims where VAT is set on the booking but missing from the claim
+- [x] Add a booking-page activity bar for outstanding refunds, amendments, reimbursements, reimbursement documents, and uploaded documents
 
 ## Phase 1: Database Schema & Migrations
 - [x] Extend users table with role enum (super_admin, admin, agent) and agentCode field
@@ -2662,3 +2663,18 @@
 - [x] CommissionDue admin page: warning badges on booking cards + warning panel in Mark Claimable dialog
 - [x] AdminCommissions page: Refund Pending / Amendment Pending badges on claim rows
 - [x] AgentCommissions: pre-claim amendment lock warning modal before claim dialog
+
+## Action Audit & Flight Productivity (Aug 12)
+- [x] Record the staff member who completes, cancels, queries, or sends a price-increase notice for each flight request
+- [x] Show the responsible staff member and action timestamps on the admin flight request pipeline
+- [x] Add flight request completion and action metrics to Super Admin staff productivity reporting
+
+## Booking Pipeline Attention Age (Aug 12)
+- [x] Show current-stage age and priority guidance on New Booking, Incomplete Booking, Query, Reimb Docs Missing, Urgent/Reimb, T/O Package, and DP booking cards
+
+## Commission List Controls (Aug 12)
+- [x] Add oldest-first sorting to Commission Due and Commission Management lists
+- [x] Paginate the Paid tab in Commission Management
+
+## Admin Onboarding Exclusion (Aug 14)
+- [x] Exclude admin and super-admin accounts from the onboarding queue without deleting their user accounts

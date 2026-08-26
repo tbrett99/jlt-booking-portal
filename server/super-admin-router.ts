@@ -47,6 +47,7 @@ export const superAdminRouter = router({
         emailSends,
         agentEmails,
         flightRequests,
+        flightRequestActions,
         recruitmentProspects,
         recruitmentStageHistory,
       } = await import("../drizzle/schema");
@@ -692,6 +693,22 @@ export const superAdminRouter = router({
         ))
         .groupBy(recruitmentStageHistory.changedById);
 
+      // Flight workflow actions per staff member, including completed ticketing.
+      const flightActionsByAdmin = await db
+        .select({
+          adminId: flightRequestActions.performedById,
+          action: flightRequestActions.action,
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(flightRequestActions)
+        .where(and(
+          gte(flightRequestActions.createdAt, weekStartDate),
+          lt(flightRequestActions.createdAt, weekEndDate),
+          isNotNull(flightRequestActions.performedById),
+          inArray(flightRequestActions.performedById, adminIds),
+        ))
+        .groupBy(flightRequestActions.performedById, flightRequestActions.action);
+
       // Build staff productivity rows
       const staffProductivity = adminUsers.map((admin) => {
         const pipelineMoves = pipelineMovesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
@@ -706,6 +723,8 @@ export const superAdminRouter = router({
         const bookingNotes = notesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
         const amendmentsActioned = amendmentsActionedByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
         const recruitmentMoves = recruitmentMovesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
+        const flightActions = flightActionsByAdmin.filter((r) => r.adminId === admin.id).reduce((total, r) => total + Number(r.count), 0);
+        const flightsTicketed = flightActionsByAdmin.filter((r) => r.adminId === admin.id && r.action === "ticketed").reduce((total, r) => total + Number(r.count), 0);
 
         return {
           adminId: admin.id,
@@ -723,6 +742,8 @@ export const superAdminRouter = router({
           bookingNotes: Number(bookingNotes),
           amendmentsActioned: Number(amendmentsActioned),
           recruitmentMoves: Number(recruitmentMoves),
+          flightActions,
+          flightsTicketed,
           totalActions:
             Number(pipelineMoves) +
             Number(tasksCompleted) +
@@ -732,7 +753,8 @@ export const superAdminRouter = router({
             Number(statusChanges) +
             Number(bookingNotes) +
             Number(amendmentsActioned) +
-            Number(recruitmentMoves),
+            Number(recruitmentMoves) +
+            flightActions,
         };
       }).sort((a, b) => b.totalActions - a.totalActions);
 
@@ -1907,6 +1929,8 @@ function buildResponse(data: {
     bookingNotes: number;
     amendmentsActioned: number;
     recruitmentMoves: number;
+    flightActions: number;
+    flightsTicketed: number;
     totalActions: number;
   }>;
   emailStats: {

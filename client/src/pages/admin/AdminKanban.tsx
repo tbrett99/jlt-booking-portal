@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, ChevronRight, AlertTriangle, Calendar, Loader2, SlidersHorizontal, MessageSquare, PackageCheck, Eye, EyeOff, ChevronsUpDown, Check } from "lucide-react";
+import { Search, ChevronRight, AlertTriangle, Calendar, Clock, Loader2, SlidersHorizontal, MessageSquare, PackageCheck, Eye, EyeOff, ChevronsUpDown, Check } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,31 @@ const STAGES_REQUIRING_PAYMENT_DATE = [
   "Commission Claimed",
   "Holding Accounts",
 ];
+
+const ATTENTION_AGE_STAGES = new Set([
+  "New Booking",
+  "Incomplete Booking",
+  "Query",
+  "Reimb Docs Missing",
+  "Urgent/Reimb",
+  "T/O Package",
+  "DP",
+]);
+
+export function getStageAgeGuidance(enteredAt: Date | string | null | undefined) {
+  const elapsedMs = Date.now() - new Date(enteredAt ?? Date.now()).getTime();
+  const days = Math.max(0, Math.floor(elapsedMs / 86_400_000));
+  if (days >= 5) {
+    return { label: `${days}d in stage · Needs attention`, color: "#b91c1c", bg: "#fef2f2", border: "#fecaca", urgent: true };
+  }
+  if (days >= 3) {
+    return { label: `${days}d in stage · Review soon`, color: "#b45309", bg: "#fffbeb", border: "#fde68a", urgent: false };
+  }
+  if (days >= 1) {
+    return { label: `${days}d in stage · In progress`, color: "#0369a1", bg: "#f0f9ff", border: "#bae6fd", urgent: false };
+  }
+  return { label: "New today", color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0", urgent: false };
+}
 
 const STAGE_COLORS: Record<string, { bg: string; border: string; dot: string }> = {
   "New Booking": { bg: "#eff6ff", border: "#bfdbfe", dot: "#3b82f6" },
@@ -358,6 +383,9 @@ export default function AdminKanban() {
                   <div className="p-2 space-y-2 min-h-[200px] max-h-[calc(100vh-280px)] overflow-y-auto">
                     {cols.map((booking) => {
                       const missingDate = !booking.finalSupplierPaymentDate;
+                      const stageAge = ATTENTION_AGE_STAGES.has(stage)
+                        ? getStageAgeGuidance((booking as any).currentStageEnteredAt)
+                        : null;
                       return (
                         <div
                           key={booking.id}
@@ -393,6 +421,16 @@ export default function AdminKanban() {
                               )}
                               {booking.ptsRef && (
                                 <CopyableRef value={booking.ptsRef} label="PTS ref" />
+                              )}
+                              {stageAge && (
+                                <div
+                                  className="mt-2 flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs font-semibold"
+                                  style={{ background: stageAge.bg, borderColor: stageAge.border, color: stageAge.color }}
+                                  title={`This booking entered ${stage} on ${format(new Date((booking as any).currentStageEnteredAt ?? booking.createdAt), "dd MMM yyyy HH:mm")}`}
+                                >
+                                  {stageAge.urgent ? <AlertTriangle size={12} /> : <Clock size={12} />}
+                                  <span>{stageAge.label}</span>
+                                </div>
                               )}
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {booking.reimbursementsRequired && (

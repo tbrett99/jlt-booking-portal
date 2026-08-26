@@ -976,6 +976,21 @@ export const flightRequests = mysqlTable("flight_requests", {
 });
 export type FlightRequest = typeof flightRequests.$inferSelect;
 
+// ─── Flight Request Action Audit ──────────────────────────────────────────────
+// Append-only record of every action taken on a flight request, including who performed it.
+export const flightRequestActions = mysqlTable("flight_request_actions", {
+  id: int("id").autoincrement().primaryKey(),
+  flightRequestId: int("flightRequestId").notNull(),
+  bookingId: int("bookingId").notNull(),
+  action: varchar("action", { length: 50 }).notNull(), // e.g. ticketed, cancelled, queried, price_increase_notified
+  previousStatus: varchar("previousStatus", { length: 50 }),
+  newStatus: varchar("newStatus", { length: 50 }),
+  performedById: int("performedById"), // null only for a future system-triggered action
+  details: text("details"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type FlightRequestAction = typeof flightRequestActions.$inferSelect;
+
 // ─── PPS Payment Links ────────────────────────────────────────────────────────
 export const paymentLinks = mysqlTable("payment_links", {
   id: varchar("id", { length: 36 }).primaryKey(), // UUID token

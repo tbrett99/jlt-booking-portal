@@ -134,12 +134,14 @@ export const dashboardRouter = router({
         WHERE MONTH(createdAt) = MONTH(CURDATE())
           AND YEAR(createdAt) = YEAR(CURDATE())
       `),
-      // New sign-ups count (join_sessions with userId set, created this month)
+      // New agent sign-ups this month (exclude admin and super-admin accounts)
       db.execute(sql`
-        SELECT COUNT(*) AS count FROM join_sessions
-        WHERE userId IS NOT NULL
-          AND MONTH(createdAt) = MONTH(CURDATE())
-          AND YEAR(createdAt) = YEAR(CURDATE())
+        SELECT COUNT(*) AS count FROM join_sessions js
+        INNER JOIN users u ON u.id = js.userId
+        WHERE js.userId IS NOT NULL
+          AND u.role = 'agent'
+          AND MONTH(js.createdAt) = MONTH(CURDATE())
+          AND YEAR(js.createdAt) = YEAR(CURDATE())
       `),
     ]);
 
@@ -268,7 +270,7 @@ export const dashboardRouter = router({
         `),
         db.execute(sql`
           SELECT COUNT(*) AS count FROM users
-          WHERE portalStatus = 'onboarding'
+          WHERE portalStatus = 'onboarding' AND role = 'agent'
         `),
       ]);
 

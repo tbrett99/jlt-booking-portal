@@ -34,6 +34,60 @@ const STAGES_REQUIRING_PAYMENT_DATE = [
   "Holding Accounts",
 ];
 
+type BookingActivityItem = {
+  id: string;
+  label: string;
+  tone: "urgent" | "warning" | "info" | "success";
+  icon: "refund" | "amendment" | "reimbursement" | "document";
+};
+
+function BookingActivityBar({ items }: { items: BookingActivityItem[] }) {
+  const scrollToSection = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const toneClass = {
+    urgent: "border-red-200 bg-red-50 text-red-800 hover:bg-red-100",
+    warning: "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100",
+    info: "border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100",
+    success: "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
+  };
+  const icon = (kind: BookingActivityItem["icon"]) => {
+    const className = "h-3.5 w-3.5 shrink-0";
+    if (kind === "refund") return <DollarSign className={className} />;
+    if (kind === "amendment") return <RefreshCw className={className} />;
+    if (kind === "reimbursement") return <CreditCard className={className} />;
+    return <FileText className={className} />;
+  };
+
+  return (
+    <section aria-label="Booking activity summary" className="rounded-xl border border-border bg-card px-3 py-2.5 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">At a glance</span>
+        {items.length === 0 ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
+            <CheckCircle2 className="h-3.5 w-3.5" /> No outstanding refund, amendment or reimbursement actions
+          </span>
+        ) : (
+          items.map((item) => (
+            <button
+              type="button"
+              key={`${item.id}-${item.label}`}
+              onClick={() => scrollToSection(item.id)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-[#02E6D2] focus:ring-offset-1 ${toneClass[item.tone]}`}
+              title={`View ${item.label.toLowerCase()}`}
+            >
+              {icon(item.icon)}
+              {item.label}
+              <ArrowRight className="h-3 w-3 opacity-70" />
+            </button>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
 // Render note content with @mentions highlighted
 function NoteContent({ content }: { content: string }) {
   // Split on @mentions AND markdown-style attachment links [Attachment: name](url)
@@ -942,6 +996,7 @@ export default function AdminBookingDetail() {
 
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
+  const { data: bookingDocs = [] } = trpc.bookingDocs.list.useQuery({ bookingId }, { enabled: !!bookingId, staleTime: 0 });
   const { data: reimbDocs = [] } = trpc.bookings.listReimbDocs.useQuery({ bookingId }, { enabled: !!bookingId });
   const { data: reimbItems = [], refetch: refetchReimbItems } = trpc.reimbursements.getByBooking.useQuery({ bookingId }, { enabled: !!bookingId });
   const { data: reimbAuditLog = [] } = trpc.reimbursements.auditLog.useQuery({ bookingId }, { enabled: !!bookingId });
@@ -1209,6 +1264,25 @@ export default function AdminBookingDetail() {
   if (!booking) return <div className="text-center py-20 text-muted-foreground">Booking not found.</div>;
 
   const missingPaymentDate = !booking.finalSupplierPaymentDate && !editPaymentDate;
+  const outstandingRefunds = (refundsList as any[]).filter((refund) => {
+    const status = String(refund.pipelineStage ?? refund.status ?? "").toLowerCase();
+    return !["actioned", "completed", "rejected", "cancelled"].includes(status);
+  });
+  const outstandingAmendments = (amendments as any[]).filter((amendment) => {
+    const status = String(amendment.status ?? amendment.pipelineStage ?? "").toLowerCase();
+    return !["actioned", "completed", "rejected", "cancelled"].includes(status);
+  });
+  const outstandingReimbursements = (reimbItems as any[]).filter((item) => item.status !== "paid");
+  const reimbursementDocumentCount = (reimbDocs as any[]).length + (reimbItems as any[]).reduce((total, item) => total + ((item.docs as any[] | undefined)?.length ?? 0), 0);
+  const bookingDocumentCount = (bookingDocs as any[]).length;
+  const reimbursementDocumentsMissing = booking.reimbursementsRequired && reimbursementDocumentCount === 0;
+  const activityItems: BookingActivityItem[] = [
+    ...(outstandingRefunds.length > 0 ? [{ id: "booking-refunds", label: `${outstandingRefunds.length} outstanding refund${outstandingRefunds.length === 1 ? "" : "s"}`, tone: "urgent" as const, icon: "refund" as const }] : []),
+    ...(outstandingAmendments.length > 0 ? [{ id: "booking-amendments", label: `${outstandingAmendments.length} outstanding amendment${outstandingAmendments.length === 1 ? "" : "s"}`, tone: "warning" as const, icon: "amendment" as const }] : []),
+    ...(outstandingReimbursements.length > 0 ? [{ id: "booking-reimbursements", label: `${outstandingReimbursements.length} reimbursement${outstandingReimbursements.length === 1 ? "" : "s"} to process`, tone: "warning" as const, icon: "reimbursement" as const }] : []),
+    ...(reimbursementDocumentsMissing ? [{ id: "booking-reimbursements", label: "Reimbursement documents missing", tone: "urgent" as const, icon: "document" as const }] : []),
+    ...((bookingDocumentCount + reimbursementDocumentCount) > 0 ? [{ id: "booking-documents", label: `${bookingDocumentCount + reimbursementDocumentCount} document${bookingDocumentCount + reimbursementDocumentCount === 1 ? "" : "s"} uploaded`, tone: "success" as const, icon: "document" as const }] : []),
+  ];
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -1271,9 +1345,11 @@ export default function AdminBookingDetail() {
         </div>
       </div>
 
+      <BookingActivityBar items={activityItems} />
+
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Booking info */}
-        <Card>
+        <Card id="booking-reimbursements">
           <CardHeader><CardTitle className="text-base">Booking Details</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <dl className="grid grid-cols-2 gap-3 text-sm">
@@ -1994,20 +2070,24 @@ export default function AdminBookingDetail() {
       </Card>
 
       {/* Amendment Pipeline */}
-      <AmendmentPipelineCard
-        amendments={amendments as any[]}
-        adminUsers={adminUsers}
-        onUpdatePipeline={(amendmentId, data) => updateAmendmentPipeline.mutate({ amendmentId, ...data })}
-        isPending={updateAmendmentPipeline.isPending}
-      />
+      <div id="booking-amendments">
+        <AmendmentPipelineCard
+          amendments={amendments as any[]}
+          adminUsers={adminUsers}
+          onUpdatePipeline={(amendmentId, data) => updateAmendmentPipeline.mutate({ amendmentId, ...data })}
+          isPending={updateAmendmentPipeline.isPending}
+        />
+      </div>
 
       {/* Refund Pipeline */}
-      <RefundPipelineCard
-        refunds={refundsList as any[]}
-        adminUsers={adminUsers}
-        onUpdatePipeline={(refundId, data) => updateRefundPipeline.mutate({ refundId, ...data })}
-        isPending={updateRefundPipeline.isPending}
-      />
+      <div id="booking-refunds">
+        <RefundPipelineCard
+          refunds={refundsList as any[]}
+          adminUsers={adminUsers}
+          onUpdatePipeline={(refundId, data) => updateRefundPipeline.mutate({ refundId, ...data })}
+          isPending={updateRefundPipeline.isPending}
+        />
+      </div>
 
       {/* Linked Emails */}
       <LinkedEmailsCard bookingId={bookingId} />
@@ -2016,7 +2096,9 @@ export default function AdminBookingDetail() {
       <PaymentsCard bookingId={bookingId} booking={booking} />
 
       {/* Booking Documents */}
-      <AdminBookingDocumentsSection bookingId={bookingId} />
+      <div id="booking-documents">
+        <AdminBookingDocumentsSection bookingId={bookingId} />
+      </div>
 
       {/* Query Message Dialog */}
       <Dialog open={showQueryDialog} onOpenChange={(open) => { if (!open) { setShowQueryDialog(false); setPendingStage(null); setQueryMessage(""); } }}>
