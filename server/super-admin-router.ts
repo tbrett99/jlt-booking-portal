@@ -34,6 +34,7 @@ export const superAdminRouter = router({
         amendments,
         refunds,
         reimbursementItems,
+        reimbursementAuditLogs,
         commissionClaims,
         remittanceBatches,
         remittanceLines,
@@ -616,22 +617,22 @@ export const superAdminRouter = router({
         ))
         .groupBy(reimbursementItems.paidById);
 
-      // Reimbursements scheduled per admin (marked as scheduled this week)
+      // Reimbursements scheduled per admin. Use the immutable audit record for
+      // the person who took the action, rather than the optional assignee.
       const reimbursementsScheduledByAdmin = await db
         .select({
-          adminId: reimbursementItems.assignedToId,
+          adminId: reimbursementAuditLogs.actedById,
           count: sql<number>`COUNT(*)`,
         })
-        .from(reimbursementItems)
+        .from(reimbursementAuditLogs)
         .where(and(
-          eq(reimbursementItems.status, "scheduled"),
-          isNotNull(reimbursementItems.scheduledAt),
-          gte(reimbursementItems.scheduledAt, weekStartDate),
-          lt(reimbursementItems.scheduledAt, weekEndDate),
-          isNotNull(reimbursementItems.assignedToId),
-          inArray(reimbursementItems.assignedToId, adminIds),
+          eq(reimbursementAuditLogs.action, "status_changed"),
+          eq(reimbursementAuditLogs.newStatus, "scheduled"),
+          gte(reimbursementAuditLogs.actedAt, weekStartDate),
+          lt(reimbursementAuditLogs.actedAt, weekEndDate),
+          inArray(reimbursementAuditLogs.actedById, adminIds),
         ))
-        .groupBy(reimbursementItems.assignedToId);
+        .groupBy(reimbursementAuditLogs.actedById);
 
       // Agent status changes per admin
       const statusChangesByAdmin = await db
@@ -1115,7 +1116,7 @@ export const superAdminRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
       const {
         users, agentCrmProfiles, agentStatusEvents, bookings, pipelineHistory, amendments, refunds,
-        reimbursementItems, commissionClaims, remittanceBatches, remittanceLines, gcSubscriptions,
+        reimbursementItems, reimbursementAuditLogs, commissionClaims, remittanceBatches, remittanceLines, gcSubscriptions,
         gcPaymentEvents, gcMandates, notes, agentEmails, flightRequests,
         recruitmentProspects, recruitmentStageHistory, adminTasks,
       } = await import("../drizzle/schema");
@@ -1282,7 +1283,7 @@ export const superAdminRouter = router({
           db.select({ adminId: adminTasks.createdById, count: sql<number>`COUNT(*)` }).from(adminTasks).where(and(gte(adminTasks.createdAt, monthStartDate), lt(adminTasks.createdAt, monthEndDate), inArray(adminTasks.createdById, adminIds))).groupBy(adminTasks.createdById),
           db.select({ adminId: commissionClaims.paidById, count: sql<number>`COUNT(*)`, total: sql<number>`SUM(grossAmount)` }).from(commissionClaims).where(and(eq(commissionClaims.status, "paid"), isNotNull(commissionClaims.paidAt), gte(commissionClaims.paidAt, monthStartDate), lt(commissionClaims.paidAt, monthEndDate), isNotNull(commissionClaims.paidById), inArray(commissionClaims.paidById, adminIds))).groupBy(commissionClaims.paidById),
           db.select({ adminId: reimbursementItems.paidById, count: sql<number>`COUNT(*)`, total: sql<number>`SUM(amount)` }).from(reimbursementItems).where(and(eq(reimbursementItems.status, "paid"), isNotNull(reimbursementItems.paidAt), gte(reimbursementItems.paidAt, monthStartDate), lt(reimbursementItems.paidAt, monthEndDate), isNotNull(reimbursementItems.paidById), inArray(reimbursementItems.paidById, adminIds))).groupBy(reimbursementItems.paidById),
-          db.select({ adminId: reimbursementItems.assignedToId, count: sql<number>`COUNT(*)` }).from(reimbursementItems).where(and(eq(reimbursementItems.status, "scheduled"), isNotNull(reimbursementItems.scheduledAt), gte(reimbursementItems.scheduledAt, monthStartDate), lt(reimbursementItems.scheduledAt, monthEndDate), isNotNull(reimbursementItems.assignedToId), inArray(reimbursementItems.assignedToId, adminIds))).groupBy(reimbursementItems.assignedToId),
+          db.select({ adminId: reimbursementAuditLogs.actedById, count: sql<number>`COUNT(*)` }).from(reimbursementAuditLogs).where(and(eq(reimbursementAuditLogs.action, "status_changed"), eq(reimbursementAuditLogs.newStatus, "scheduled"), gte(reimbursementAuditLogs.actedAt, monthStartDate), lt(reimbursementAuditLogs.actedAt, monthEndDate), inArray(reimbursementAuditLogs.actedById, adminIds))).groupBy(reimbursementAuditLogs.actedById),
           db.select({ adminId: agentStatusEvents.adminId, count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(gte(agentStatusEvents.createdAt, monthStartDate), lt(agentStatusEvents.createdAt, monthEndDate), inArray(agentStatusEvents.adminId, adminIds))).groupBy(agentStatusEvents.adminId),
           db.select({ adminId: notes.authorId, count: sql<number>`COUNT(*)` }).from(notes).where(and(gte(notes.createdAt, monthStartDate), lt(notes.createdAt, monthEndDate), inArray(notes.authorId, adminIds))).groupBy(notes.authorId),
           db.select({ adminId: amendments.actionedById, count: sql<number>`COUNT(*)` }).from(amendments).where(and(eq(amendments.status, "actioned"), isNotNull(amendments.actionedAt), gte(amendments.actionedAt, monthStartDate), lt(amendments.actionedAt, monthEndDate), isNotNull(amendments.actionedById), inArray(amendments.actionedById, adminIds))).groupBy(amendments.actionedById),
