@@ -145,6 +145,22 @@ describe("Super Admin Dashboard — staff productivity aggregation", () => {
     expect(sorted[1].adminName).toBe("Alice");
     expect(sorted[2].adminName).toBe("Carol");
   });
+
+  it("includes reimbursements scheduled by a staff member in total actions", () => {
+    const actionCounts = {
+      pipelineMoves: 2,
+      tasksCompleted: 1,
+      commissionsPaid: 0,
+      reimbursementsPaid: 3,
+      reimbursementsScheduled: 5,
+      statusChanges: 1,
+      bookingNotes: 2,
+      amendmentsActioned: 0,
+      recruitmentMoves: 1,
+    };
+    const totalActions = Object.values(actionCounts).reduce((total, count) => total + count, 0);
+    expect(totalActions).toBe(15);
+  });
 });
 
 describe("Super Admin Dashboard — DD revenue calculations", () => {
