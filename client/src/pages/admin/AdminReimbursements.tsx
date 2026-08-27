@@ -15,7 +15,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 
-type StatusFilter = "all" | "pending" | "scheduled" | "paid" | "late";
+type StatusFilter = "all" | "pending" | "scheduled" | "paid" | "late" | "overdue_scheduled";
+type ReimbursementSort = "oldest" | "newest";
 
 const STATUS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
   pending:   { label: "Pending",   color: "#92400e", bg: "#fef3c7" },
@@ -31,6 +32,7 @@ export default function AdminReimbursements() {
   const [minAmount, setMinAmount] = useState<string>("");
   const [maxAmount, setMaxAmount] = useState<string>("");
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [sortOrder, setSortOrder] = useState<ReimbursementSort>("oldest");
   const utils = trpc.useUtils();
 
   const { data: allItems = [], isLoading, refetch } = trpc.reimbursements.list.useQuery({});
@@ -52,8 +54,16 @@ export default function AdminReimbursements() {
     deleteItem.mutate({ id });
   };
 
+  const scheduledReference = (item: any) => item.scheduledAt ?? item.actionedAt ?? item.updatedAt ?? item.createdAt;
+  const daysSinceScheduled = (item: any) => {
+    const reference = scheduledReference(item);
+    if (!reference) return 0;
+    return Math.floor((Date.now() - new Date(reference).getTime()) / (1000 * 60 * 60 * 24));
+  };
+  const isOverdueScheduled = (item: any) => item.status === "scheduled" && daysSinceScheduled(item) >= 5;
   const items = statusFilter === "all" ? allItems
     : statusFilter === "late" ? allItems.filter((r) => r.isLate)
+    : statusFilter === "overdue_scheduled" ? allItems.filter(isOverdueScheduled)
     : allItems.filter((r) => r.status === statusFilter);
 
   const agentNames = Array.from(new Set(allItems.map((r: any) => r.agentName).filter(Boolean))).sort() as string[];
@@ -66,6 +76,10 @@ export default function AdminReimbursements() {
     if (minAmount && amt < Number(minAmount)) return false;
     if (maxAmount && amt > Number(maxAmount)) return false;
     return true;
+  }).sort((a: any, b: any) => {
+    const dateA = new Date(statusFilter === "overdue_scheduled" ? scheduledReference(a) : a.createdAt).getTime();
+    const dateB = new Date(statusFilter === "overdue_scheduled" ? scheduledReference(b) : b.createdAt).getTime();
+    return sortOrder === "oldest" ? dateA - dateB : dateB - dateA;
   });
   const hasExtraFilters = cardFilter !== "all" || agentFilter !== "all" || !!minAmount || !!maxAmount;
 
@@ -79,7 +93,7 @@ export default function AdminReimbursements() {
   const exportCsv = () => {
     const rows = [
       ["Client", "PTS Ref", "Agent", "Supplier", "Amount (£)", "Status", "Late", "Departure Date", "Created"],
-      ...items.map((r) => [
+      ...filteredItems.map((r) => [
         r.clientName ?? "",
         r.ptsRef ?? "",
         r.agentName ?? "",
@@ -105,6 +119,8 @@ export default function AdminReimbursements() {
   const scheduled = allItems.filter((r) => r.status === "scheduled");
   const paid = allItems.filter((r) => r.status === "paid");
   const late = allItems.filter((r) => r.isLate ?? false);
+  const overdueScheduled = allItems.filter(isOverdueScheduled);
+  const overdueScheduledTotal = overdueScheduled.reduce((sum, item) => sum + Number(item.amount), 0);
 
   return (
     <div className="space-y-6">
@@ -121,7 +137,7 @@ export default function AdminReimbursements() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <button
           onClick={() => setStatusFilter("pending")}
           className={`text-left rounded-xl p-4 border-2 transition-all ${statusFilter === "pending" ? "border-amber-400 shadow-sm" : "border-transparent"}`}
@@ -168,33 +184,40 @@ export default function AdminReimbursements() {
         </button>
 
         <button
-          onClick={() => setStatusFilter("all")}
-          className={`text-left rounded-xl p-4 border-2 transition-all ${statusFilter === "all" ? "border-[#70FFE8] shadow-sm" : "border-transparent"}`}
-          style={{ background: "#f9fafb" }}
+          onClick={() => setStatusFilter("overdue_scheduled")}
+          className={`text-left rounded-xl p-4 border-2 transition-all ${statusFilter === "overdue_scheduled" ? "border-red-400 shadow-sm" : "border-transparent"}`}
+          style={{ background: "#fff1f2" }}
         >
           <div className="flex items-center gap-2 mb-1">
-            <AlertCircle size={15} style={{ color: late.length > 0 ? "#e11d48" : "#9ca3af" }} />
-            <span className="text-xs text-muted-foreground font-medium">Late</span>
+            <AlertCircle size={15} style={{ color: overdueScheduled.length > 0 ? "#e11d48" : "#9ca3af" }} />
+            <span className="text-xs text-muted-foreground font-medium">Scheduled 5+ days</span>
           </div>
-          <p className="text-2xl font-bold" style={{ color: late.length > 0 ? "#e11d48" : "#414141" }}>{late.length}</p>
+          <p className="text-2xl font-bold" style={{ color: overdueScheduled.length > 0 ? "#be123c" : "#414141" }}>{overdueScheduled.length}</p>
+          <p className="text-xs" style={{ color: overdueScheduled.length > 0 ? "#be123c" : "#6b7280", opacity: 0.8 }}>£{overdueScheduledTotal.toFixed(2)} unpaid</p>
         </button>
       </div>
 
       {/* Filter tabs */}
       <div className="flex gap-2 flex-wrap">
-        {(["all", "pending", "scheduled", "paid", "late"] as StatusFilter[]).map((f) => (
+        {(["all", "pending", "scheduled", "overdue_scheduled", "paid", "late"] as StatusFilter[]).map((f) => (
           <button
             key={f}
             onClick={() => setStatusFilter(f)}
             className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${statusFilter === f ? "border-[#70FFE8] bg-[#70FFE8]/20 text-[#414141]" : "border-border text-muted-foreground hover:bg-muted"}`}
           >
-            {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
+            {f === "all" ? "All" : f === "overdue_scheduled" ? "Scheduled 5+ days" : f.charAt(0).toUpperCase() + f.slice(1)}
           </button>
         ))}
       </div>
 
       {/* Extra filters */}
       <div className="flex flex-wrap items-center gap-2">
+        <Clock size={13} className="text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Sort:</span>
+        <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as ReimbursementSort)} className="h-7 text-xs border rounded-md px-2 bg-background">
+          <option value="oldest">Oldest first</option>
+          <option value="newest">Newest first</option>
+        </select>
         <CreditCard size={13} className="text-muted-foreground" />
         <span className="text-xs text-muted-foreground">Card:</span>
         <select value={cardFilter} onChange={(e) => setCardFilter(e.target.value as CardFilter)} className="h-7 text-xs border rounded-md px-2 bg-background">
@@ -312,6 +335,11 @@ export default function AdminReimbursements() {
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: sb.bg, color: sb.color }}>
                           {sb.label}
                         </span>
+                        {r.status === "scheduled" && (
+                          <p className={`mt-1 text-[10px] font-medium ${isOverdueScheduled(r) ? "text-red-600" : "text-muted-foreground"}`}>
+                            Scheduled {daysSinceScheduled(r)} day{daysSinceScheduled(r) === 1 ? "" : "s"} ago
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">
                         {r.departureDate ? format(new Date(r.departureDate), "dd MMM yyyy") : "—"}

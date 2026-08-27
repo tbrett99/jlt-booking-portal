@@ -10,6 +10,7 @@
 - [ ] Save, push, and deploy the amendment messaging feature after production migration verification
 - [ ] Verify a live amendment message appears both on the amendment communication trail and in the booking Messages thread after Railway deploys
 - [x] Add active cancellation requests to the booking activity bar and provide direct cancellation action controls on the admin booking page
+- [x] Add oldest-first reimbursement sorting and an overdue scheduled reimbursements view for items still unpaid after five days
 
 ## Phase 1: Database Schema & Migrations
 - [x] Extend users table with role enum (super_admin, admin, agent) and agentCode field
