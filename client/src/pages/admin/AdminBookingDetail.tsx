@@ -39,7 +39,7 @@ type BookingActivityItem = {
   id: string;
   label: string;
   tone: "urgent" | "warning" | "info" | "success";
-  icon: "refund" | "amendment" | "reimbursement" | "document";
+  icon: "cancellation" | "refund" | "amendment" | "reimbursement" | "document";
 };
 
 function BookingActivityBar({ items }: { items: BookingActivityItem[] }) {
@@ -55,6 +55,7 @@ function BookingActivityBar({ items }: { items: BookingActivityItem[] }) {
   };
   const icon = (kind: BookingActivityItem["icon"]) => {
     const className = "h-3.5 w-3.5 shrink-0";
+    if (kind === "cancellation") return <XCircle className={className} />;
     if (kind === "refund") return <DollarSign className={className} />;
     if (kind === "amendment") return <RefreshCw className={className} />;
     if (kind === "reimbursement") return <CreditCard className={className} />;
@@ -86,6 +87,58 @@ function BookingActivityBar({ items }: { items: BookingActivityItem[] }) {
         )}
       </div>
     </section>
+  );
+}
+
+function CancellationRequestCard({
+  cancellations,
+  onAction,
+}: {
+  cancellations: any[];
+  onAction: (cancellation: any) => void;
+}) {
+  if (cancellations.length === 0) return null;
+  const pending = cancellations.filter((cancellation) => cancellation.status === "pending");
+
+  return (
+    <Card className={pending.length > 0 ? "border-red-200 shadow-sm" : "border-border shadow-sm"}>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+          <XCircle className={pending.length > 0 ? "h-5 w-5 text-red-600" : "h-5 w-5 text-muted-foreground"} />
+          Cancellation requests
+          {pending.length > 0 ? (
+            <Badge className="border-red-200 bg-red-50 text-red-700 hover:bg-red-50">{pending.length} awaiting action</Badge>
+          ) : (
+            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">All actioned</Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {cancellations.map((cancellation) => {
+          const isPending = cancellation.status === "pending";
+          return (
+            <div key={cancellation.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 ${isPending ? "border-red-200 bg-red-50/60" : "border-border bg-muted/25"}`}>
+              <div className="min-w-0">
+                <p className={`text-sm font-semibold ${isPending ? "text-red-900" : "text-foreground"}`}>
+                  {isPending ? "Cancellation request awaiting action" : "Cancellation request actioned"}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Submitted {format(new Date(cancellation.confirmedAt), "dd MMM yyyy, HH:mm")}
+                  {cancellation.processedAt ? ` · Actioned ${format(new Date(cancellation.processedAt), "dd MMM yyyy, HH:mm")}` : ""}
+                </p>
+              </div>
+              {isPending ? (
+                <Button size="sm" variant="destructive" onClick={() => onAction(cancellation)}>
+                  <CheckCircle2 className="mr-1.5 h-4 w-4" /> Action request
+                </Button>
+              ) : (
+                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">Actioned</Badge>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -986,6 +1039,8 @@ export default function AdminBookingDetail() {
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [cancellationActionTarget, setCancellationActionTarget] = useState<any | null>(null);
+  const [moveCancellationToCancelled, setMoveCancellationToCancelled] = useState(true);
   const [mergeTarget, setMergeTarget] = useState<{ id: number; clientName: string } | null>(null);
   const [mergeSearchQuery, setMergeSearchQuery] = useState("");
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
@@ -1014,6 +1069,18 @@ export default function AdminBookingDetail() {
     onError: (e) => toast.error(e.message),
   });
   const { data: cancellationsList = [] } = trpc.cancellations.byBooking.useQuery({ bookingId }, { enabled: !!bookingId });
+  const markCancellationActioned = trpc.cancellations.markActioned.useMutation({
+    onSuccess: async () => {
+      setCancellationActionTarget(null);
+      await Promise.all([
+        utils.cancellations.byBooking.invalidate({ bookingId }),
+        utils.bookings.byId.invalidate({ id: bookingId }),
+        utils.bookings.all.invalidate(),
+      ]);
+      toast.success("Cancellation request actioned");
+    },
+    onError: (error) => toast.error(error.message || "Unable to action cancellation request"),
+  });
   const updateReimbStatus = trpc.reimbursements.updateStatus.useMutation({
     onSuccess: () => { refetchReimbItems(); toast.success('Reimbursement status updated'); },
     onError: (e) => toast.error(e.message),
@@ -1275,10 +1342,12 @@ export default function AdminBookingDetail() {
     return !["actioned", "completed", "rejected", "cancelled"].includes(status);
   });
   const outstandingReimbursements = (reimbItems as any[]).filter((item) => item.status !== "paid");
+  const activeCancellationRequests = (cancellationsList as any[]).filter((cancellation) => cancellation.status === "pending");
   const reimbursementDocumentCount = (reimbDocs as any[]).length + (reimbItems as any[]).reduce((total, item) => total + ((item.docs as any[] | undefined)?.length ?? 0), 0);
   const bookingDocumentCount = (bookingDocs as any[]).length;
   const reimbursementDocumentsMissing = booking.reimbursementsRequired && reimbursementDocumentCount === 0;
   const activityItems: BookingActivityItem[] = [
+    ...(activeCancellationRequests.length > 0 ? [{ id: "booking-cancellations", label: `${activeCancellationRequests.length} cancellation request${activeCancellationRequests.length === 1 ? "" : "s"} awaiting action`, tone: "urgent" as const, icon: "cancellation" as const }] : []),
     ...(outstandingRefunds.length > 0 ? [{ id: "booking-refunds", label: `${outstandingRefunds.length} outstanding refund${outstandingRefunds.length === 1 ? "" : "s"}`, tone: "urgent" as const, icon: "refund" as const }] : []),
     ...(outstandingAmendments.length > 0 ? [{ id: "booking-amendments", label: `${outstandingAmendments.length} outstanding amendment${outstandingAmendments.length === 1 ? "" : "s"}`, tone: "warning" as const, icon: "amendment" as const }] : []),
     ...(outstandingReimbursements.length > 0 ? [{ id: "booking-reimbursements", label: `${outstandingReimbursements.length} reimbursement${outstandingReimbursements.length === 1 ? "" : "s"} to process`, tone: "warning" as const, icon: "reimbursement" as const }] : []),
@@ -2071,6 +2140,16 @@ export default function AdminBookingDetail() {
         </CardContent>
       </Card>
 
+      <div id="booking-cancellations">
+        <CancellationRequestCard
+          cancellations={cancellationsList as any[]}
+          onAction={(cancellation) => {
+            setCancellationActionTarget(cancellation);
+            setMoveCancellationToCancelled(true);
+          }}
+        />
+      </div>
+
       {/* Amendment Pipeline */}
       <div id="booking-amendments">
         <AmendmentPipelineCard
@@ -2101,6 +2180,34 @@ export default function AdminBookingDetail() {
       <div id="booking-documents">
         <AdminBookingDocumentsSection bookingId={bookingId} />
       </div>
+
+      <Dialog open={!!cancellationActionTarget} onOpenChange={(open) => { if (!open) setCancellationActionTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><XCircle className="h-5 w-5 text-red-600" /> Action cancellation request</DialogTitle>
+            <DialogDescription>Confirm that the cancellation request has been processed. You can also move the booking into the Cancelled pipeline stage.</DialogDescription>
+          </DialogHeader>
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-red-100 bg-red-50 p-3">
+            <input
+              type="checkbox"
+              checked={moveCancellationToCancelled}
+              onChange={(event) => setMoveCancellationToCancelled(event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300"
+            />
+            <span className="text-sm text-foreground">
+              Move booking to <strong>Cancelled</strong> stage
+              <span className="mt-0.5 block text-xs text-muted-foreground">The agent will receive an email and in-portal notification.</span>
+            </span>
+          </label>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancellationActionTarget(null)} disabled={markCancellationActioned.isPending}>Cancel</Button>
+            <Button variant="destructive" onClick={() => cancellationActionTarget && markCancellationActioned.mutate({ cancellationId: cancellationActionTarget.id, moveToCancelled: moveCancellationToCancelled })} disabled={markCancellationActioned.isPending}>
+              {markCancellationActioned.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />}
+              Confirm & action
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Query Message Dialog */}
       <Dialog open={showQueryDialog} onOpenChange={(open) => { if (!open) { setShowQueryDialog(false); setPendingStage(null); setQueryMessage(""); } }}>

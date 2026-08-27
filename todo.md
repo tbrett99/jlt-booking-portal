@@ -9,6 +9,7 @@
 - [x] Apply the amendment-linked message migration to Railway production and verify the live message flow
 - [ ] Save, push, and deploy the amendment messaging feature after production migration verification
 - [ ] Verify a live amendment message appears both on the amendment communication trail and in the booking Messages thread after Railway deploys
+- [x] Add active cancellation requests to the booking activity bar and provide direct cancellation action controls on the admin booking page
 
 ## Phase 1: Database Schema & Migrations
 - [x] Extend users table with role enum (super_admin, admin, agent) and agentCode field
