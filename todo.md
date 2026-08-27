@@ -12,6 +12,7 @@
 - [x] Add active cancellation requests to the booking activity bar and provide direct cancellation action controls on the admin booking page
 - [x] Add oldest-first reimbursement sorting and an overdue scheduled reimbursements view for items still unpaid after five days
 - [x] Add filter-aware pagination controls to the Admin Reimbursements page
+- [x] Add a client-name search to Admin Reimbursements that integrates with sorting, pagination, and CSV export
 - [x] Use reimbursement audit-log attribution for Super Admin staff-report scheduled reimbursement figures
 - [x] Confirm a scheduled-by schema migration is not required because reimbursement audit logs already capture the scheduling admin
 - [x] Verify staff scheduled reimbursement counts against Railway reimbursement audit records

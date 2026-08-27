@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import {
-  PoundSterling, Clock, CheckCircle2, AlertCircle, RefreshCw, Download, Trash2, CreditCard
+  PoundSterling, Clock, CheckCircle2, AlertCircle, RefreshCw, Download, Trash2, CreditCard, Search
 } from "lucide-react";
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { format } from "date-fns";
@@ -30,6 +30,7 @@ export default function AdminReimbursements() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [cardFilter, setCardFilter] = useState<CardFilter>("all");
   const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [clientSearch, setClientSearch] = useState("");
   const [minAmount, setMinAmount] = useState<string>("");
   const [maxAmount, setMaxAmount] = useState<string>("");
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
@@ -71,6 +72,7 @@ export default function AdminReimbursements() {
   const agentNames = Array.from(new Set(allItems.map((r: any) => r.agentName).filter(Boolean))).sort() as string[];
 
   const filteredItems = items.filter((r: any) => {
+    if (clientSearch.trim() && !(r.clientName ?? "").toLowerCase().includes(clientSearch.trim().toLowerCase())) return false;
     if (cardFilter === "jlt" && !r.jltCompanyCard) return false;
     if (cardFilter === "agent" && r.jltCompanyCard) return false;
     if (agentFilter !== "all" && r.agentName !== agentFilter) return false;
@@ -87,11 +89,11 @@ export default function AdminReimbursements() {
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const pageStart = (safeCurrentPage - 1) * REIMBURSEMENTS_PER_PAGE;
   const paginatedItems = filteredItems.slice(pageStart, pageStart + REIMBURSEMENTS_PER_PAGE);
-  const hasExtraFilters = cardFilter !== "all" || agentFilter !== "all" || !!minAmount || !!maxAmount;
+  const hasExtraFilters = !!clientSearch.trim() || cardFilter !== "all" || agentFilter !== "all" || !!minAmount || !!maxAmount;
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, cardFilter, agentFilter, minAmount, maxAmount, sortOrder]);
+  }, [statusFilter, clientSearch, cardFilter, agentFilter, minAmount, maxAmount, sortOrder]);
 
   const handleSchedule = (id: number) => {
     updateStatus.mutate({ id, status: "scheduled" });
@@ -222,6 +224,14 @@ export default function AdminReimbursements() {
 
       {/* Extra filters */}
       <div className="flex flex-wrap items-center gap-2">
+        <Search size={13} className="text-muted-foreground" />
+        <Input
+          value={clientSearch}
+          onChange={(e) => setClientSearch(e.target.value)}
+          placeholder="Search client name…"
+          aria-label="Search reimbursements by client name"
+          className="h-7 w-44 text-xs"
+        />
         <Clock size={13} className="text-muted-foreground" />
         <span className="text-xs text-muted-foreground">Sort:</span>
         <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as ReimbursementSort)} className="h-7 text-xs border rounded-md px-2 bg-background">
@@ -270,7 +280,7 @@ export default function AdminReimbursements() {
         <Input type="number" placeholder="Max £" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="h-7 text-xs w-20" />
         {hasExtraFilters && (
           <>
-            <button onClick={() => { setCardFilter("all"); setAgentFilter("all"); setMinAmount(""); setMaxAmount(""); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground underline ml-1"><X size={11} /> Clear</button>
+            <button onClick={() => { setClientSearch(""); setCardFilter("all"); setAgentFilter("all"); setMinAmount(""); setMaxAmount(""); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground underline ml-1"><X size={11} /> Clear</button>
             <span className="text-xs text-muted-foreground">({filteredItems.length} of {items.length})</span>
           </>
         )}
