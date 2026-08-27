@@ -13,6 +13,7 @@ import {
   createRecruitmentProspect,
   getRecruitmentProspectById,
   getRecruitmentProspectByEmail,
+  getRecruitmentProspectByApplicationToken,
   getAllRecruitmentProspects,
   updateRecruitmentProspect,
   moveRecruitmentProspectStage,
@@ -268,11 +269,8 @@ export const recruitmentRouter = router({
   getApplicationByToken: publicProcedure
     .input(z.object({ token: z.string() }))
     .query(async ({ input }) => {
-      // Search recruitment_prospects first
-      const prospects = await getAllRecruitmentProspects({ limit: 5000 });
-      let prospect = prospects.find(
-        (p) => extractApplicationToken(p.adminNotes) === input.token
-      );
+      // Search recruitment_prospects first with a direct database lookup.
+      let prospect = await getRecruitmentProspectByApplicationToken(input.token);
       // Fallback: search CRM prospects table (for enquiry-form submissions)
       if (!prospect) {
         const crmProspects = await getAllProspects();
@@ -294,8 +292,7 @@ export const recruitmentRouter = router({
             });
           }
           // Re-fetch after creation
-          const updated = await getAllRecruitmentProspects({ limit: 5000 });
-          prospect = updated.find((p) => extractApplicationToken(p.adminNotes) === input.token);
+          prospect = await getRecruitmentProspectByApplicationToken(input.token);
         }
       }
       if (!prospect) {
@@ -348,11 +345,8 @@ export const recruitmentRouter = router({
       })
     )
         .mutation(async ({ input }) => {
-      // Find prospect by token — search recruitment_prospects first, then CRM prospects as fallback
-      let prospects = await getAllRecruitmentProspects({ limit: 5000 });
-      let prospect = prospects.find(
-        (p) => extractApplicationToken(p.adminNotes) === input.token
-      );
+      // Find prospect by token directly, then use CRM as a fallback.
+      let prospect = await getRecruitmentProspectByApplicationToken(input.token);
       if (!prospect) {
         const crmProspects = await getAllProspects();
         const crmMatch = crmProspects.find(
@@ -371,8 +365,7 @@ export const recruitmentRouter = router({
               adminNotes: `APP_TOKEN:${input.token}`,
             });
           }
-          const updated = await getAllRecruitmentProspects({ limit: 5000 });
-          prospect = updated.find((p) => extractApplicationToken(p.adminNotes) === input.token);
+          prospect = await getRecruitmentProspectByApplicationToken(input.token);
         }
       }
       if (!prospect) {
@@ -406,6 +399,15 @@ export const recruitmentRouter = router({
         pipelineStage: "application_received",
         ...(isTikTokViaForm && !prospect.referredById ? { referredById: MAX_KELLY_USER_ID } : {}),
       });
+      // A public applicant must never be shown a success screen unless their
+      // submission is present in the recruitment pipeline.
+      const savedApplication = await getRecruitmentProspectById(prospect.id);
+      if (!savedApplication?.applicationSubmittedAt || savedApplication.pipelineStage !== "application_received") {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "We could not save your application. Please try again in a moment.",
+        });
+      }
       // Sync CRM prospect stage to "AR Submitted" if a matching CRM prospect exists
       try {
         const crmProspect = await getProspectByEmail(prospect.email);
