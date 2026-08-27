@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 
 type StatusFilter = "all" | "pending" | "scheduled" | "paid" | "late" | "overdue_scheduled";
 type ReimbursementSort = "oldest" | "newest";
+const REIMBURSEMENTS_PER_PAGE = 25;
 
 const STATUS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
   pending:   { label: "Pending",   color: "#92400e", bg: "#fef3c7" },
@@ -33,6 +34,7 @@ export default function AdminReimbursements() {
   const [maxAmount, setMaxAmount] = useState<string>("");
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<ReimbursementSort>("oldest");
+  const [currentPage, setCurrentPage] = useState(1);
   const utils = trpc.useUtils();
 
   const { data: allItems = [], isLoading, refetch } = trpc.reimbursements.list.useQuery({});
@@ -81,7 +83,15 @@ export default function AdminReimbursements() {
     const dateB = new Date(statusFilter === "overdue_scheduled" ? scheduledReference(b) : b.createdAt).getTime();
     return sortOrder === "oldest" ? dateA - dateB : dateB - dateA;
   });
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / REIMBURSEMENTS_PER_PAGE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStart = (safeCurrentPage - 1) * REIMBURSEMENTS_PER_PAGE;
+  const paginatedItems = filteredItems.slice(pageStart, pageStart + REIMBURSEMENTS_PER_PAGE);
   const hasExtraFilters = cardFilter !== "all" || agentFilter !== "all" || !!minAmount || !!maxAmount;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, cardFilter, agentFilter, minAmount, maxAmount, sortOrder]);
 
   const handleSchedule = (id: number) => {
     updateStatus.mutate({ id, status: "scheduled" });
@@ -298,7 +308,7 @@ export default function AdminReimbursements() {
                 </tr>
               </thead>
               <tbody>
-                {filteredItems.map((r) => {
+                {paginatedItems.map((r) => {
                   const sb = STATUS_BADGE[r.status] ?? STATUS_BADGE.pending;
                   return (
                     <tr key={r.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
@@ -410,6 +420,38 @@ export default function AdminReimbursements() {
                 })}
               </tbody>
             </table>
+          </div>
+          <div className="flex flex-col gap-3 border-t bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              Showing <span className="font-semibold text-foreground">{pageStart + 1}–{Math.min(pageStart + REIMBURSEMENTS_PER_PAGE, filteredItems.length)}</span> of <span className="font-semibold text-foreground">{filteredItems.length}</span> reimbursements
+            </p>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs"
+                  disabled={safeCurrentPage === 1}
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                >
+                  Previous
+                </Button>
+                <span className="min-w-20 text-center text-xs text-muted-foreground">
+                  Page {safeCurrentPage} of {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs"
+                  disabled={safeCurrentPage === totalPages}
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}
