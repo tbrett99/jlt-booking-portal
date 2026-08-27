@@ -78,6 +78,23 @@ export async function getRecruitmentProspectByEmail(
   return rows[0] ?? null;
 }
 
+/**
+ * Find a prospect directly from the prefix-stored application token. Public
+ * form submissions must not depend on a limited in-memory prospect list.
+ */
+export async function getRecruitmentProspectByApplicationToken(
+  token: string
+): Promise<RecruitmentProspect | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(recruitmentProspects)
+    .where(like(recruitmentProspects.adminNotes, `APP_TOKEN:${token}%`))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function getAllRecruitmentProspects(opts?: {
   stage?: string;
   search?: string;
