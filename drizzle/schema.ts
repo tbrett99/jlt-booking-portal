@@ -959,7 +959,7 @@ export const flightRequests = mysqlTable("flight_requests", {
   cancellationDepartureDate: timestamp("cancellationDepartureDate"),
   cancellationTicketingDeadline: timestamp("cancellationTicketingDeadline"),
   cancellationFlightCost: decimal("cancellationFlightCost", { precision: 10, scale: 2 }), // Cost of the flight (£) for cancellation request
-  status: varchar("status", { length: 20 }).notNull().default("pending"), // "pending" | "ticketed" | "cancelled" | "query"
+  status: varchar("status", { length: 32 }).notNull().default("pending"), // "pending" | "ticketed" | "cancelled" | "query" | "price_increase_pending"
   cancellationStatus: varchar("cancellationStatus", { length: 20 }).default("pending"), // only used when requestType = 'both': "pending" | "cancelled"
   invoiceAddedToPts: boolean("invoiceAddedToPts").notNull().default(false),
   queryMessage: text("queryMessage"),

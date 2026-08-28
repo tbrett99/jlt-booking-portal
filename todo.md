@@ -1,6 +1,8 @@
 # JLT Group Booking Portal - TODO
 
 ## Active Investigation
+- [x] Move Ann Johnston's currently rebooked recruitment record to Declined, despite the new discovery-call booking, as confirmed by the administrator
+- [x] Fix Railway production schema or data issue preventing flight price-increase notifications from saving and sending
 - [x] Diagnose and fix future VAT persistence from Commission Due into Commission Management
 - [ ] Backfill VAT on Railway claims 2T0138659, 2T0094707, and 2T0113252 once the original VAT figures are confirmed
 - [ ] Identify and correct any other historical claims where VAT is set on the booking but missing from the claim

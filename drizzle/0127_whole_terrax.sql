@@ -1,0 +1,1 @@
+ALTER TABLE `flight_requests` MODIFY COLUMN `status` varchar(32) NOT NULL DEFAULT 'pending';
