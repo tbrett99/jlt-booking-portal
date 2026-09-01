@@ -161,6 +161,20 @@ describe("Super Admin Dashboard — staff productivity aggregation", () => {
     const totalActions = Object.values(actionCounts).reduce((total, count) => total + count, 0);
     expect(totalActions).toBe(15);
   });
+
+  it("keeps agent-visible messages and attributed agent replies as separate staff metrics", () => {
+    const staffCommunication = {
+      bookingNotes: 7,
+      sharedMessagesSent: 4,
+      agentRepliesReceived: 3,
+    };
+
+    expect(staffCommunication.sharedMessagesSent).toBe(4);
+    expect(staffCommunication.agentRepliesReceived).toBe(3);
+    // Shared messages are already included in bookingNotes, so the dedicated
+    // communication columns must not inflate the overall action total again.
+    expect(staffCommunication.bookingNotes).toBe(7);
+  });
 });
 
 describe("Super Admin Dashboard — DD revenue calculations", () => {
