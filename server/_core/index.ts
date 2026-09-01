@@ -38,6 +38,7 @@ import { createAgentUser } from "../db";
 import { generateUniqueAgentIdForUser } from "../agent-crm-db";
 import { getMonthlyAmount } from "../../shared/membership";
 import bcrypt from "bcryptjs";
+import { completesJoinFlow } from "../join-payment-utils";
 
 // HTML escape helper to prevent XSS in server-rendered payment page
 function escHtml(str: string): string {
@@ -1012,8 +1013,15 @@ async function startServer() {
       for (const event of events) {
         console.log(`[GC Webhook] ${event.resource_type}.${event.action}`, event.links);
 
-        // ── Join Flow: billing_request fulfilled → create agent account + subscription ──
-        if (event.resource_type === "billing_requests" && event.action === "fulfilled") {
+        // ── Join Flow: create agent account after billing request fulfilment.
+        // GoCardless can confirm the joining-fee payment before (or without) delivering the
+        // billing_request.fulfilled event. A confirmed payment with a billing_request link is
+        // equally authoritative for completing this one-off onboarding flow.
+        if (completesJoinFlow({
+          resourceType: event.resource_type,
+          action: event.action,
+          billingRequestId: event.links.billing_request,
+        })) {
           const billingRequestId = event.links.billing_request;
           if (!billingRequestId) continue;
 
