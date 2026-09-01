@@ -1,6 +1,9 @@
 # JLT Group Booking Portal - TODO
 
 ## Active Investigation
+- [x] Default the admin portal shared Messages view to oldest-first conversation ordering
+- [x] Default the agent portal shared Messages view to oldest-first conversation ordering
+- [ ] Verify oldest-first ordering on the deployed admin and agent role-specific Messages views
 - [x] Add overall Super Admin communications metrics for shared portal messages sent and agent replies
 - [x] Add per-staff shared message and agent-reply metrics to Super Admin staff productivity tables
 - [ ] Verify the deployed weekly and monthly staff message metrics against Railway records

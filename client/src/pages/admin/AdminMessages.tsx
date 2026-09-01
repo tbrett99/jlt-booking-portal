@@ -181,7 +181,9 @@ export default function AdminMessages() {
     onError: (e) => toast.error(e.message),
   });
 
-  const sortedThreads = [...threads].sort((a, b) => new Date(b.latestMessageAt).getTime() - new Date(a.latestMessageAt).getTime());
+  // Surface the oldest outstanding conversation first so the team can work
+  // through messages in the order they have been waiting.
+  const sortedThreads = [...threads].sort((a, b) => new Date(a.latestMessageAt).getTime() - new Date(b.latestMessageAt).getTime());
 
   const baseFiltered = sortedThreads.filter((t) => {
     if (filter === "unread" && t.unreadCount === 0) return false;
