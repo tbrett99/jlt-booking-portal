@@ -1,6 +1,8 @@
 # JLT Group Booking Portal - TODO
 
 ## Active Investigation
+- [x] Restore Anna Louise Wareham's confirmed joining-fee onboarding session and add a payment-confirmation webhook fallback for future sign-ups
+- [ ] Verify a newly confirmed GoCardless joining-fee payment completes a join session after Railway deploys the fallback
 - [x] Move Ann Johnston's currently rebooked recruitment record to Declined, despite the new discovery-call booking, as confirmed by the administrator
 - [x] Fix Railway production schema or data issue preventing flight price-increase notifications from saving and sending
 - [x] Diagnose and fix future VAT persistence from Commission Due into Commission Management
