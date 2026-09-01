@@ -167,6 +167,7 @@ export default function AdminMessages() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "unread">("unread");
   const [tagFilter, setTagFilter] = useState<DeptTag | null>(null);
+  const [messageOrder, setMessageOrder] = useState<"oldest" | "newest">("oldest");
 
   const utils = trpc.useUtils();
   const { data: threads = [], isLoading, refetch } = trpc.notes.allThreads.useQuery();
@@ -181,9 +182,10 @@ export default function AdminMessages() {
     onError: (e) => toast.error(e.message),
   });
 
-  // Surface the oldest outstanding conversation first so the team can work
-  // through messages in the order they have been waiting.
-  const sortedThreads = [...threads].sort((a, b) => new Date(a.latestMessageAt).getTime() - new Date(b.latestMessageAt).getTime());
+  const sortedThreads = [...threads].sort((a, b) => {
+    const oldestFirst = new Date(a.latestMessageAt).getTime() - new Date(b.latestMessageAt).getTime();
+    return messageOrder === "oldest" ? oldestFirst : -oldestFirst;
+  });
 
   const baseFiltered = sortedThreads.filter((t) => {
     if (filter === "unread" && t.unreadCount === 0) return false;
@@ -270,6 +272,18 @@ export default function AdminMessages() {
             All ({threads.length})
           </button>
         </div>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+          Order
+          <select
+            value={messageOrder}
+            onChange={(e) => setMessageOrder(e.target.value as "oldest" | "newest")}
+            className="h-9 rounded-lg border border-border bg-background px-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-[#02E6D2]/40"
+            aria-label="Message order"
+          >
+            <option value="oldest">Oldest first</option>
+            <option value="newest">Newest first</option>
+          </select>
+        </label>
       </div>
 
       {/* Department tag filter bar */}

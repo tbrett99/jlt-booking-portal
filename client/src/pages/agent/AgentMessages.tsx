@@ -129,6 +129,7 @@ function ThreadCard({
 export default function AgentMessages() {
   const [tab, setTab] = useState<"unanswered" | "all">("unanswered");
   const [search, setSearch] = useState("");
+  const [messageOrder, setMessageOrder] = useState<"oldest" | "newest">("oldest");
   const utils = trpc.useUtils();
 
   const {
@@ -160,9 +161,10 @@ export default function AgentMessages() {
   const isLoading = tab === "unanswered" ? loadingUnanswered : loadingAll;
   const threads = tab === "unanswered" ? unanswered : allThreads;
 
-  const filtered = [...threads].sort(
-    (a, b) => new Date(a.latestMessageAt).getTime() - new Date(b.latestMessageAt).getTime()
-  ).filter((t) => {
+  const filtered = [...threads].sort((a, b) => {
+    const oldestFirst = new Date(a.latestMessageAt).getTime() - new Date(b.latestMessageAt).getTime();
+    return messageOrder === "oldest" ? oldestFirst : -oldestFirst;
+  }).filter((t) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -220,6 +222,19 @@ export default function AgentMessages() {
           All Conversations
         </button>
       </div>
+
+      <label className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+        Order
+        <select
+          value={messageOrder}
+          onChange={(e) => setMessageOrder(e.target.value as "oldest" | "newest")}
+          className="h-8 rounded-lg border border-border bg-background px-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-[#70FFE8]/60"
+          aria-label="Message order"
+        >
+          <option value="oldest">Oldest first</option>
+          <option value="newest">Newest first</option>
+        </select>
+      </label>
 
       {/* Search */}
       <div className="relative">

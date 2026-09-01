@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { useLocation } from "wouter";
 import {
   PoundSterling, Clock, CheckCircle2, AlertCircle, RefreshCw, Download, Trash2, CreditCard, Search
 } from "lucide-react";
@@ -26,7 +25,6 @@ const STATUS_BADGE: Record<string, { label: string; color: string; bg: string }>
 };
 
 export default function AdminReimbursements() {
-  const [, navigate] = useLocation();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [cardFilter, setCardFilter] = useState<CardFilter>("all");
   const [agentFilter, setAgentFilter] = useState<string>("all");
@@ -323,12 +321,15 @@ export default function AdminReimbursements() {
                   return (
                     <tr key={r.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
                       <td className="px-4 py-3">
-                        <button
+                        <a
+                          href={`/bookings/${r.bookingId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="font-medium hover:underline text-left"
-                          onClick={() => navigate(`/bookings/${r.bookingId}`)}
+                          title={`Open ${r.clientName ?? "booking"} in a new tab`}
                         >
                           {r.clientName ?? "—"}
-                        </button>
+                        </a>
                         {r.isLate && (
                           <span className="ml-2 text-xs font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "#fee2e2", color: "#991b1b" }}>Late</span>
                         )}
