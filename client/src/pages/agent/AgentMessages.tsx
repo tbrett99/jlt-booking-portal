@@ -160,7 +160,9 @@ export default function AgentMessages() {
   const isLoading = tab === "unanswered" ? loadingUnanswered : loadingAll;
   const threads = tab === "unanswered" ? unanswered : allThreads;
 
-  const filtered = threads.filter((t) => {
+  const filtered = [...threads].sort(
+    (a, b) => new Date(a.latestMessageAt).getTime() - new Date(b.latestMessageAt).getTime()
+  ).filter((t) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
