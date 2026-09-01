@@ -1,6 +1,8 @@
 # JLT Group Booking Portal - TODO
 
 ## Active Investigation
+- [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
+- [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
 - [x] Default the agent portal shared Messages view to oldest-first conversation ordering
 - [ ] Verify oldest-first ordering on the deployed admin and agent role-specific Messages views
