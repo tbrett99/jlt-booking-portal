@@ -662,6 +662,58 @@ export const superAdminRouter = router({
         ))
         .groupBy(notes.authorId);
 
+      // Shared messages authored by each staff member. Internal notes stay in
+      // the existing Notes metric; this is the agent-visible communication count.
+      const sharedMessagesByAdmin = await db
+        .select({
+          adminId: notes.authorId,
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(notes)
+        .where(and(
+          eq(notes.isInternal, false),
+          gte(notes.createdAt, weekStartDate),
+          lt(notes.createdAt, weekEndDate),
+          inArray(notes.authorId, adminIds),
+        ))
+        .groupBy(notes.authorId);
+
+      // Attribute an agent's reply to the staff member who most recently sent
+      // that booking's shared message before the reply. This gives each staff
+      // member a meaningful "Replies" figure without counting internal notes.
+      const agentRepliesByAdmin = (await db.execute(sql`
+        SELECT last_admin.adminId, COUNT(*) AS count
+        FROM notes AS agent_reply
+        INNER JOIN users AS replying_user ON replying_user.id = agent_reply.authorId
+        INNER JOIN (
+          SELECT reply.id AS replyId,
+            (
+              SELECT previous_note.authorId
+              FROM notes AS previous_note
+              INNER JOIN users AS previous_author ON previous_author.id = previous_note.authorId
+              WHERE previous_note.bookingId = reply.bookingId
+                AND previous_note.isInternal = 0
+                AND previous_author.role IN ('admin', 'super_admin')
+                AND (
+                  previous_note.createdAt < reply.createdAt
+                  OR (previous_note.createdAt = reply.createdAt AND previous_note.id < reply.id)
+                )
+              ORDER BY previous_note.createdAt DESC, previous_note.id DESC
+              LIMIT 1
+            ) AS adminId
+          FROM notes AS reply
+          INNER JOIN users AS reply_author ON reply_author.id = reply.authorId
+          WHERE reply.isInternal = 0
+            AND reply_author.role = 'agent'
+            AND reply.createdAt >= ${weekStartDate}
+            AND reply.createdAt < ${weekEndDate}
+        ) AS last_admin ON last_admin.replyId = agent_reply.id
+        WHERE agent_reply.isInternal = 0
+          AND replying_user.role = 'agent'
+          AND last_admin.adminId IS NOT NULL
+        GROUP BY last_admin.adminId
+      `) as unknown as [Array<{ adminId: number; count: number }>, unknown])[0];
+
       // Amendments actioned per admin
       const amendmentsActionedByAdmin = await db
         .select({
@@ -722,6 +774,8 @@ export const superAdminRouter = router({
         const reimbScheduled = reimbursementsScheduledByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
         const statusChanges = statusChangesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
         const bookingNotes = notesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
+        const sharedMessagesSent = sharedMessagesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
+        const agentRepliesReceived = agentRepliesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
         const amendmentsActioned = amendmentsActionedByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
         const recruitmentMoves = recruitmentMovesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0;
         const flightActions = flightActionsByAdmin.filter((r) => r.adminId === admin.id).reduce((total, r) => total + Number(r.count), 0);
@@ -741,6 +795,8 @@ export const superAdminRouter = router({
           reimbursementsScheduled: Number(reimbScheduled),
           statusChanges: Number(statusChanges),
           bookingNotes: Number(bookingNotes),
+          sharedMessagesSent: Number(sharedMessagesSent),
+          agentRepliesReceived: Number(agentRepliesReceived),
           amendmentsActioned: Number(amendmentsActioned),
           recruitmentMoves: Number(recruitmentMoves),
           flightActions,
@@ -829,9 +885,55 @@ export const superAdminRouter = router({
         .orderBy(sql`COUNT(*) DESC`)
         .limit(15);
 
+      // Shared portal messages: messages written by a staff member that an agent
+      // can see, and messages sent back by agents. Internal notes are deliberately
+      // excluded so the metric reflects two-way agent communication only.
+      const [sharedMessagesSentThisWeek, sharedMessagesSentPrevWeek, agentRepliesThisWeek, agentRepliesPrevWeek] = await Promise.all([
+        db.select({ count: sql<number>`COUNT(*)` })
+          .from(notes)
+          .innerJoin(users, eq(notes.authorId, users.id))
+          .where(and(
+            eq(notes.isInternal, false),
+            inArray(users.role, ["admin", "super_admin"]),
+            gte(notes.createdAt, weekStartDate),
+            lt(notes.createdAt, weekEndDate),
+          )),
+        db.select({ count: sql<number>`COUNT(*)` })
+          .from(notes)
+          .innerJoin(users, eq(notes.authorId, users.id))
+          .where(and(
+            eq(notes.isInternal, false),
+            inArray(users.role, ["admin", "super_admin"]),
+            gte(notes.createdAt, prevWeekStart),
+            lt(notes.createdAt, prevWeekEnd),
+          )),
+        db.select({ count: sql<number>`COUNT(*)` })
+          .from(notes)
+          .innerJoin(users, eq(notes.authorId, users.id))
+          .where(and(
+            eq(notes.isInternal, false),
+            eq(users.role, "agent"),
+            gte(notes.createdAt, weekStartDate),
+            lt(notes.createdAt, weekEndDate),
+          )),
+        db.select({ count: sql<number>`COUNT(*)` })
+          .from(notes)
+          .innerJoin(users, eq(notes.authorId, users.id))
+          .where(and(
+            eq(notes.isInternal, false),
+            eq(users.role, "agent"),
+            gte(notes.createdAt, prevWeekStart),
+            lt(notes.createdAt, prevWeekEnd),
+          )),
+      ]);
+
       const emailStats = {
         emailsSentThisWeek: Number(emailsSentThisWeek[0]?.count ?? 0),
         emailsSentPrevWeek: Number(emailsSentPrevWeek[0]?.count ?? 0),
+        sharedMessagesSentThisWeek: Number(sharedMessagesSentThisWeek[0]?.count ?? 0),
+        sharedMessagesSentPrevWeek: Number(sharedMessagesSentPrevWeek[0]?.count ?? 0),
+        agentRepliesThisWeek: Number(agentRepliesThisWeek[0]?.count ?? 0),
+        agentRepliesPrevWeek: Number(agentRepliesPrevWeek[0]?.count ?? 0),
         campaignEmailsThisWeek: Number(campaignEmailsThisWeek[0]?.count ?? 0),
         campaignOpenRate: campaignEmailsThisWeek[0]?.count
           ? Math.round((Number(campaignEmailsThisWeek[0].opened) / Number(campaignEmailsThisWeek[0].count)) * 100)
@@ -1269,14 +1371,14 @@ export const superAdminRouter = router({
         pipelineMoves: number; tasksCompleted: number; tasksCreated: number;
         commissionsPaid: number; commissionsTotal: number;
         reimbPaid: number; reimbTotal: number; reimbScheduled: number;
-        statusChanges: number; bookingNotes: number; amendmentsActioned: number;
+        statusChanges: number; bookingNotes: number; sharedMessagesSent: number; agentRepliesReceived: number; amendmentsActioned: number;
         recruitmentMoves: number; totalActions: number;
       }> = [];
       if (adminIds.length > 0) {
         const [
           pipelineMovesByAdmin, tasksCompletedByAdmin, tasksCreatedByAdmin,
           commissionsPaidByAdmin, reimbursementsPaidByAdmin, reimbursementsScheduledByAdmin,
-          statusChangesByAdmin, notesByAdmin, amendmentsActionedByAdmin, recruitmentMovesByAdmin,
+          statusChangesByAdmin, notesByAdmin, sharedMessagesByAdmin, agentRepliesByAdmin, amendmentsActionedByAdmin, recruitmentMovesByAdmin,
         ] = await Promise.all([
           db.select({ adminId: pipelineHistory.movedById, count: sql<number>`COUNT(*)` }).from(pipelineHistory).where(and(gte(pipelineHistory.movedAt, monthStartDate), lt(pipelineHistory.movedAt, monthEndDate), inArray(pipelineHistory.movedById, adminIds))).groupBy(pipelineHistory.movedById),
           db.select({ adminId: adminTasks.assigneeId, count: sql<number>`COUNT(*)` }).from(adminTasks).where(and(eq(adminTasks.status, "done"), gte(adminTasks.updatedAt, monthStartDate), lt(adminTasks.updatedAt, monthEndDate), isNotNull(adminTasks.assigneeId), inArray(adminTasks.assigneeId, adminIds))).groupBy(adminTasks.assigneeId),
@@ -1286,9 +1388,40 @@ export const superAdminRouter = router({
           db.select({ adminId: reimbursementAuditLogs.actedById, count: sql<number>`COUNT(*)` }).from(reimbursementAuditLogs).where(and(eq(reimbursementAuditLogs.action, "status_changed"), eq(reimbursementAuditLogs.newStatus, "scheduled"), gte(reimbursementAuditLogs.actedAt, monthStartDate), lt(reimbursementAuditLogs.actedAt, monthEndDate), inArray(reimbursementAuditLogs.actedById, adminIds))).groupBy(reimbursementAuditLogs.actedById),
           db.select({ adminId: agentStatusEvents.adminId, count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(gte(agentStatusEvents.createdAt, monthStartDate), lt(agentStatusEvents.createdAt, monthEndDate), inArray(agentStatusEvents.adminId, adminIds))).groupBy(agentStatusEvents.adminId),
           db.select({ adminId: notes.authorId, count: sql<number>`COUNT(*)` }).from(notes).where(and(gte(notes.createdAt, monthStartDate), lt(notes.createdAt, monthEndDate), inArray(notes.authorId, adminIds))).groupBy(notes.authorId),
+          db.select({ adminId: notes.authorId, count: sql<number>`COUNT(*)` }).from(notes).where(and(eq(notes.isInternal, false), gte(notes.createdAt, monthStartDate), lt(notes.createdAt, monthEndDate), inArray(notes.authorId, adminIds))).groupBy(notes.authorId),
+          db.execute(sql`
+            SELECT last_admin.adminId, COUNT(*) AS count
+            FROM notes AS agent_reply
+            INNER JOIN users AS replying_user ON replying_user.id = agent_reply.authorId
+            INNER JOIN (
+              SELECT reply.id AS replyId,
+                (
+                  SELECT previous_note.authorId
+                  FROM notes AS previous_note
+                  INNER JOIN users AS previous_author ON previous_author.id = previous_note.authorId
+                  WHERE previous_note.bookingId = reply.bookingId
+                    AND previous_note.isInternal = 0
+                    AND previous_author.role IN ('admin', 'super_admin')
+                    AND (previous_note.createdAt < reply.createdAt OR (previous_note.createdAt = reply.createdAt AND previous_note.id < reply.id))
+                  ORDER BY previous_note.createdAt DESC, previous_note.id DESC
+                  LIMIT 1
+                ) AS adminId
+              FROM notes AS reply
+              INNER JOIN users AS reply_author ON reply_author.id = reply.authorId
+              WHERE reply.isInternal = 0
+                AND reply_author.role = 'agent'
+                AND reply.createdAt >= ${monthStartDate}
+                AND reply.createdAt < ${monthEndDate}
+            ) AS last_admin ON last_admin.replyId = agent_reply.id
+            WHERE agent_reply.isInternal = 0
+              AND replying_user.role = 'agent'
+              AND last_admin.adminId IS NOT NULL
+            GROUP BY last_admin.adminId
+          `) as unknown as Promise<[Array<{ adminId: number; count: number }>, unknown]>,
           db.select({ adminId: amendments.actionedById, count: sql<number>`COUNT(*)` }).from(amendments).where(and(eq(amendments.status, "actioned"), isNotNull(amendments.actionedAt), gte(amendments.actionedAt, monthStartDate), lt(amendments.actionedAt, monthEndDate), isNotNull(amendments.actionedById), inArray(amendments.actionedById, adminIds))).groupBy(amendments.actionedById),
           db.select({ adminId: recruitmentStageHistory.changedById, count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(and(gte(recruitmentStageHistory.changedAt, monthStartDate), lt(recruitmentStageHistory.changedAt, monthEndDate), isNotNull(recruitmentStageHistory.changedById), inArray(recruitmentStageHistory.changedById, adminIds))).groupBy(recruitmentStageHistory.changedById),
         ]);
+        const typedAgentRepliesByAdmin = agentRepliesByAdmin as unknown as Array<{ adminId: number; count: number }>;
         staffProductivity = adminUsers.map((admin) => {
           const pipelineMoves = Number(pipelineMovesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
           const tasksCompleted = Number(tasksCompletedByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
@@ -1300,21 +1433,31 @@ export const superAdminRouter = router({
           const reimbScheduled = Number(reimbursementsScheduledByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
           const statusChanges = Number(statusChangesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
           const bookingNotes = Number(notesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          const sharedMessagesSent = Number(sharedMessagesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
+          const agentRepliesReceived = Number(typedAgentRepliesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
           const amendmentsActioned = Number(amendmentsActionedByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
           const recruitmentMoves = Number(recruitmentMovesByAdmin.find((r) => r.adminId === admin.id)?.count ?? 0);
           return {
             adminId: admin.id, adminName: admin.name ?? "", role: admin.role,
             pipelineMoves, tasksCompleted, tasksCreated, commissionsPaid, commissionsTotal,
-            reimbPaid, reimbTotal, reimbScheduled, statusChanges, bookingNotes, amendmentsActioned, recruitmentMoves,
+            reimbPaid, reimbTotal, reimbScheduled, statusChanges, bookingNotes, sharedMessagesSent, agentRepliesReceived, amendmentsActioned, recruitmentMoves,
             totalActions: pipelineMoves + tasksCompleted + tasksCreated + commissionsPaid + Number(reimbPaid) + Number(reimbScheduled) + statusChanges + bookingNotes + amendmentsActioned + recruitmentMoves,
           };
         }).sort((a, b) => b.totalActions - a.totalActions);
       }
 
       // ── Section 7: Communications ──
-      const [emailsSentThisMonth, emailsSentPrevMonth] = await Promise.all([
+      const [emailsSentThisMonth, emailsSentPrevMonth, sharedMessagesSentThisMonth, agentRepliesThisMonth] = await Promise.all([
         db.select({ count: sql<number>`COUNT(*)` }).from(agentEmails).where(and(gte(agentEmails.sentAt, monthStartDate), lt(agentEmails.sentAt, monthEndDate), eq(agentEmails.status, "sent"))),
         db.select({ count: sql<number>`COUNT(*)` }).from(agentEmails).where(and(gte(agentEmails.sentAt, prevMonthStart), lt(agentEmails.sentAt, prevMonthEnd), eq(agentEmails.status, "sent"))),
+        db.select({ count: sql<number>`COUNT(*)` })
+          .from(notes)
+          .innerJoin(users, eq(notes.authorId, users.id))
+          .where(and(eq(notes.isInternal, false), inArray(users.role, ["admin", "super_admin"]), gte(notes.createdAt, monthStartDate), lt(notes.createdAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)` })
+          .from(notes)
+          .innerJoin(users, eq(notes.authorId, users.id))
+          .where(and(eq(notes.isInternal, false), eq(users.role, "agent"), gte(notes.createdAt, monthStartDate), lt(notes.createdAt, monthEndDate))),
       ]);
 
       // ── 12-month trend (for charts) ──
@@ -1436,6 +1579,8 @@ export const superAdminRouter = router({
         communications: {
           emailsSentThisMonth: n(emailsSentThisMonth[0]?.count),
           emailsSentPrevMonth: n(emailsSentPrevMonth[0]?.count),
+          sharedMessagesSentThisMonth: n(sharedMessagesSentThisMonth[0]?.count),
+          agentRepliesThisMonth: n(agentRepliesThisMonth[0]?.count),
         },
         monthlyTrend,
       };
@@ -1928,6 +2073,8 @@ function buildResponse(data: {
     reimbursementsScheduled: number;
     statusChanges: number;
     bookingNotes: number;
+    sharedMessagesSent: number;
+    agentRepliesReceived: number;
     amendmentsActioned: number;
     recruitmentMoves: number;
     flightActions: number;
@@ -1937,6 +2084,10 @@ function buildResponse(data: {
   emailStats: {
     emailsSentThisWeek: number;
     emailsSentPrevWeek: number;
+    sharedMessagesSentThisWeek: number;
+    sharedMessagesSentPrevWeek: number;
+    agentRepliesThisWeek: number;
+    agentRepliesPrevWeek: number;
     campaignEmailsThisWeek: number;
     campaignOpenRate: number;
     campaignClickRate: number;

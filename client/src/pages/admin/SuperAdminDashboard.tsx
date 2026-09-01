@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
   Users, CreditCard, BookOpen, PoundSterling, UserPlus, Mail,
   AlertCircle, CheckCircle2, Clock, ArrowRight, Activity, FileEdit, RotateCcw,
-  Timer, X, BarChart2, Calendar, Target, Percent, Download, Tag, Plus, Trash2, Pencil,
+  Timer, X, BarChart2, Calendar, Target, Percent, Download, Tag, Plus, Trash2, Pencil, MessageSquare,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -908,6 +908,10 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
         {/* Staff */}
         <TabsContent value="staff" className="space-y-6">
           <SectionHeader title="Staff Productivity (This Month)" icon={Activity} />
+          <div className="grid grid-cols-2 gap-3 sm:max-w-md">
+            <StatCard title="Messages Sent" value={fmt(communications.sharedMessagesSentThisMonth)} icon={MessageSquare} accent="blue" />
+            <StatCard title="Agent Replies" value={fmt(communications.agentRepliesThisMonth)} icon={MessageSquare} accent="green" />
+          </div>
           {staffProductivity.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground text-sm">No staff activity recorded for this month.</div>
           ) : (
@@ -924,6 +928,8 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
                       <TableHead className="text-right">Reimb. Paid</TableHead>
                       <TableHead className="text-right">Status Changes</TableHead>
                       <TableHead className="text-right">Notes</TableHead>
+                      <TableHead className="text-right">Messages Sent</TableHead>
+                      <TableHead className="text-right">Agent Replies</TableHead>
                       <TableHead className="text-right">Recruitment</TableHead>
                       <TableHead className="text-right font-semibold bg-muted/50">Total</TableHead>
                     </TableRow>
@@ -944,6 +950,8 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
                         <TableCell className="text-right">{s.reimbursementsPaid || <span className="text-muted-foreground">—</span>}</TableCell>
                         <TableCell className="text-right">{s.statusChanges || <span className="text-muted-foreground">—</span>}</TableCell>
                         <TableCell className="text-right">{s.bookingNotes || <span className="text-muted-foreground">—</span>}</TableCell>
+                        <TableCell className="text-right">{s.sharedMessagesSent || <span className="text-muted-foreground">—</span>}</TableCell>
+                        <TableCell className="text-right">{s.agentRepliesReceived || <span className="text-muted-foreground">—</span>}</TableCell>
                         <TableCell className="text-right">{s.recruitmentMoves || <span className="text-muted-foreground">—</span>}</TableCell>
                         <TableCell className="text-right font-bold text-foreground bg-muted/50">{s.totalActions}</TableCell>
                       </TableRow>
@@ -1723,6 +1731,8 @@ export default function SuperAdminDashboard() {
                               <TableHead className="text-right">Reimb. Sched.</TableHead>
                               <TableHead className="text-right">Status Changes</TableHead>
                               <TableHead className="text-right">Notes Written</TableHead>
+                              <TableHead className="text-right">Messages Sent</TableHead>
+                              <TableHead className="text-right">Agent Replies</TableHead>
                               <TableHead className="text-right">Recruitment</TableHead>
                               <TableHead className="text-right">Flights Ticketed</TableHead>
                               <TableHead className="text-right">Flight Actions</TableHead>
@@ -1752,6 +1762,8 @@ export default function SuperAdminDashboard() {
                                 <TableCell className="text-right">{s.reimbursementsScheduled || <span className="text-muted-foreground">—</span>}</TableCell>
                                 <TableCell className="text-right">{s.statusChanges || <span className="text-muted-foreground">—</span>}</TableCell>
                                 <TableCell className="text-right">{s.bookingNotes || <span className="text-muted-foreground">—</span>}</TableCell>
+                                <TableCell className="text-right">{s.sharedMessagesSent || <span className="text-muted-foreground">—</span>}</TableCell>
+                                <TableCell className="text-right">{s.agentRepliesReceived || <span className="text-muted-foreground">—</span>}</TableCell>
                                 <TableCell className="text-right">{s.recruitmentMoves || <span className="text-muted-foreground">—</span>}</TableCell>
                                 <TableCell className="text-right">{s.flightsTicketed || <span className="text-muted-foreground">—</span>}</TableCell>
                                 <TableCell className="text-right">{s.flightActions || <span className="text-muted-foreground">—</span>}</TableCell>
@@ -1764,7 +1776,7 @@ export default function SuperAdminDashboard() {
                     </Card>
                   )}
                   <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">
-                    <strong>What's counted:</strong> Pipeline moves, tasks completed, tasks created, amendments actioned, commission claims marked paid, reimbursements marked paid, reimbursements scheduled, agent status changes, booking notes/messages written, recruitment stage moves, and flight request actions. “Flights Ticketed” is the subset of flight actions that completed ticketing.
+                    <strong>What's counted:</strong> Pipeline moves, tasks completed, tasks created, amendments actioned, commission claims marked paid, reimbursements marked paid, reimbursements scheduled, agent status changes, booking notes/messages written, recruitment stage moves, and flight request actions. <strong>Messages Sent</strong> counts agent-visible messages written by that staff member. <strong>Agent Replies</strong> counts agent messages attributed to the most recent staff member who messaged that booking. “Flights Ticketed” is the subset of flight actions that completed ticketing.
                   </div>
                 </TabsContent>
 
@@ -1773,9 +1785,13 @@ export default function SuperAdminDashboard() {
                   <SectionHeader title="Communications" icon={Mail} />
                   {data.communications ? (
                     <>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
                         <StatCard title="Emails Sent (Total)" value={fmt(data.communications.emailsSentThisWeek)} icon={Mail} accent="blue"
                           wow={{ current: data.communications.emailsSentThisWeek, prev: data.communications.emailsSentPrevWeek }} />
+                        <StatCard title="Portal Messages Sent" value={fmt(data.communications.sharedMessagesSentThisWeek)} icon={MessageSquare} accent="blue"
+                          wow={{ current: data.communications.sharedMessagesSentThisWeek, prev: data.communications.sharedMessagesSentPrevWeek }} />
+                        <StatCard title="Agent Replies" value={fmt(data.communications.agentRepliesThisWeek)} icon={MessageSquare} accent="green"
+                          wow={{ current: data.communications.agentRepliesThisWeek, prev: data.communications.agentRepliesPrevWeek }} />
                         <StatCard title="Campaign Emails" value={fmt(data.communications.campaignEmailsThisWeek)} sub="Via Resend API" />
                         <StatCard title="Campaign Open Rate" value={`${data.communications.campaignOpenRate}%`}
                           accent={data.communications.campaignOpenRate >= 30 ? "green" : data.communications.campaignOpenRate >= 15 ? "amber" : "red"} />

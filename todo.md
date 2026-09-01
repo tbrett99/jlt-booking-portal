@@ -1,6 +1,9 @@
 # JLT Group Booking Portal - TODO
 
 ## Active Investigation
+- [x] Add overall Super Admin communications metrics for shared portal messages sent and agent replies
+- [x] Add per-staff shared message and agent-reply metrics to Super Admin staff productivity tables
+- [ ] Verify the deployed weekly and monthly staff message metrics against Railway records
 - [x] Restore Anna Louise Wareham's confirmed joining-fee onboarding session and add a payment-confirmation webhook fallback for future sign-ups
 - [ ] Verify a newly confirmed GoCardless joining-fee payment completes a join session after Railway deploys the fallback
 - [x] Move Ann Johnston's currently rebooked recruitment record to Declined, despite the new discovery-call booking, as confirmed by the administrator
