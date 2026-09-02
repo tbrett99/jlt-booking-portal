@@ -1,5 +1,4 @@
 # JLT Group Booking Portal - TODO
-
 ## Active Investigation
 - [x] Add an In Contract toggle for agents in notice and display the status in CRM, Commission Due, and Commission Management; block related commission processing until the hold is removed after final client travel
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first

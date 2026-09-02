@@ -535,7 +535,6 @@ describe("bookings.moveStage payment date guardrail", () => {
     ).rejects.toThrow(/marked In Contract/i);
     expect(updateBookingStage).not.toHaveBeenCalled();
   });
-
   it("allows move to earlier stages without finalSupplierPaymentDate", async () => {
     const { getBookingById, updateBookingStage, getUserById, getNotificationTemplate, createInAppNotification, createNote } = await import("./db");
     vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITHOUT_PAYMENT_DATE as any);
