@@ -5,6 +5,7 @@ import type { TrpcContext } from "./_core/context";
 // ─── Mock DB helpers ──────────────────────────────────────────────────────────
 
 vi.mock("./db", () => ({
+  getDb: vi.fn(),
   getAllUsers: vi.fn().mockResolvedValue([]),
   getUserByEmail: vi.fn().mockResolvedValue(null),
   getUserById: vi.fn().mockResolvedValue(null),
@@ -490,7 +491,7 @@ describe("bookings.moveStage payment date guardrail", () => {
   });
 
   it("persists and verifies VAT before moving a booking to Commission Claimable", async () => {
-    const { getBookingById, updateBookingAdminFields, updateBookingStage, createNote } = await import("./db");
+    const { getBookingById, updateBookingAdminFields, updateBookingStage, createNote, getDb } = await import("./db");
     const commissionDueBooking = {
       ...BOOKING_WITH_PAYMENT_DATE,
       commissionPreAuthorised: false,
@@ -503,12 +504,36 @@ describe("bookings.moveStage payment date guardrail", () => {
     vi.mocked(updateBookingAdminFields).mockResolvedValueOnce({ ...commissionDueBooking, commissionVat: "12.50" } as any);
     vi.mocked(updateBookingStage).mockResolvedValueOnce({ id: 1, currentStage: "Commission Claimable" } as any);
     vi.mocked(createNote).mockResolvedValue({ id: 99 } as any);
+    vi.mocked(getDb).mockResolvedValue({
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }),
+        }),
+      }),
+    } as any);
 
     const caller = appRouter.createCaller(makeCtx("admin"));
     await caller.bookings.moveStage({ bookingId: 1, toStage: "Commission Claimable", vatAmount: 12.5 });
 
     expect(updateBookingAdminFields).toHaveBeenCalledWith(1, { commissionVat: 12.5 });
     expect(updateBookingStage).toHaveBeenCalledWith(1, "Commission Claimable", 2);
+  });
+
+  it("blocks an In Contract agent from moving a booking to Commission Claimable", async () => {
+    const { getBookingById, updateBookingStage, getDb } = await import("./db");
+    vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITH_PAYMENT_DATE as any);
+    vi.mocked(getDb).mockResolvedValue({
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([{ inContract: true }]) }),
+        }),
+      }),
+    } as any);
+
+    await expect(
+      appRouter.createCaller(makeCtx("admin")).bookings.moveStage({ bookingId: 1, toStage: "Commission Claimable" })
+    ).rejects.toThrow(/marked In Contract/i);
+    expect(updateBookingStage).not.toHaveBeenCalled();
   });
 
   it("allows move to earlier stages without finalSupplierPaymentDate", async () => {

@@ -101,6 +101,7 @@ type CrmProfile = {
   bankSortCode?: string | null;
   bankAccountNumber?: string | null;
   orbitEnabled?: boolean | null;
+  inContract?: boolean | null;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
 };
@@ -509,6 +510,11 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
                     <ShieldOff size={10} /> Payment Exempt
                   </span>
                 )}
+                {profile?.inContract && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800" title="Commission is held until the agent's final client has returned from travel">
+                    <FileSignature size={10} /> In Contract
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -755,6 +761,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
   const [noticeEndsAt, setNoticeEndsAt] = useState("");
   const [cancelledAt, setCancelledAt] = useState("");
   const [statusNotes, setStatusNotes] = useState("");
+  const [inContractChecked, setInContractChecked] = useState(false);
   const CANCEL_CHECKLIST_ITEMS = [
     "Supplier logins revoked",
     "Topdog login removed",
@@ -779,7 +786,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
     const prev = profile?.agentStatus ?? "active";
     if (newStatus === prev) return;
     if (newStatus === "paused") { setPauseEndsAt(""); setStatusNotes(""); setStatusDialog("paused"); return; }
-    if (newStatus === "in_notice") { setNoticeEndsAt(""); setStatusNotes(""); setStatusDialog("in_notice"); return; }
+    if (newStatus === "in_notice") { setNoticeEndsAt(""); setStatusNotes(""); setInContractChecked(!!profile?.inContract); setStatusDialog("in_notice"); return; }
     if (newStatus === "cancelled") { setCancelledAt(new Date().toISOString().split("T")[0]); setCancelChecklist([]); setStatusNotes(""); setStatusDialog("cancelled"); return; }
     if (newStatus === "suspended") { setStatusNotes(""); setStatusDialog("suspended"); return; }
     // active — no dialog needed, update directly
@@ -883,12 +890,19 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
               <Label className="text-xs text-muted-foreground mb-1.5 block">Admin Notes (optional)</Label>
               <Textarea value={statusNotes} onChange={(e) => setStatusNotes(e.target.value)} rows={2} placeholder="Reason for notice..." />
             </div>
+            <label className="flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 cursor-pointer">
+              <Checkbox checked={inContractChecked} onCheckedChange={(checked) => setInContractChecked(checked === true)} className="mt-0.5" />
+              <span>
+                <span className="block text-sm font-semibold text-rose-900">Keep agent In Contract</span>
+                <span className="block text-xs text-rose-700 mt-0.5">Use this when the agent remains active until their final client has returned. Commission Due and Commission Management will block commission processing until this status is removed.</span>
+              </span>
+            </label>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStatusDialog(null)}>Cancel</Button>
             <Button
               disabled={!noticeEndsAt || updateAgentStatus.isPending}
-              onClick={() => updateAgentStatus.mutate({ userId, newStatus: "in_notice", noticeEndsAt, notes: statusNotes || null })}
+              onClick={() => updateAgentStatus.mutate({ userId, newStatus: "in_notice", noticeEndsAt, notes: statusNotes || null, inContract: inContractChecked })}
             >
               {updateAgentStatus.isPending ? "Saving..." : "Confirm In Notice"}
             </Button>
@@ -1015,6 +1029,28 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
               <Field label="Agent Status">
                 <StatusBadge status={profile?.agentStatus} />
               </Field>
+              {profile?.agentStatus === "in_notice" && (
+                <Field label="Commission Hold">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className={profile.inContract ? "border-rose-500 bg-rose-50 text-rose-700" : "border-muted-foreground/30 text-muted-foreground"}>
+                      {profile.inContract ? "In Contract — commission held" : "Not In Contract"}
+                    </Badge>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className={profile.inContract ? "border-rose-300 text-rose-700 hover:bg-rose-50" : "border-rose-300 text-rose-700 hover:bg-rose-50"}
+                      disabled={updateProfile.isPending}
+                      onClick={() => updateProfile.mutate({ userId, inContract: !profile.inContract })}
+                    >
+                      {updateProfile.isPending ? "Saving..." : profile.inContract ? "Remove In Contract hold" : "Mark In Contract"}
+                    </Button>
+                    <p className="w-full text-xs text-muted-foreground">
+                      Only remove this after the agent’s final client has returned from travel. While active, related commission records cannot be processed or paid.
+                    </p>
+                  </div>
+                </Field>
+              )}
               <Field label="Membership Tier">
                 {profile?.membershipTier
                   ? <Badge variant="secondary">{profile.membershipTier}</Badge>

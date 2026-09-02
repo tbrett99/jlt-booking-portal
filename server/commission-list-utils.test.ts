@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getPage, sortRowsByDate } from "../client/src/lib/commission-list-utils";
+import { getPage, getSelectableCommissionRows, sortRowsByDate } from "../client/src/lib/commission-list-utils";
 
 describe("commission list controls", () => {
   const claims = [
@@ -20,5 +20,15 @@ describe("commission list controls", () => {
     expect(page.totalPages).toBe(3);
 
     expect(getPage([1, 2, 3], 99, 2).safePage).toBe(2);
+  });
+
+  it("excludes In Contract records from Commission Due and Management bulk actions", () => {
+    const rows = [
+      { id: 1, inContract: false },
+      { id: 2, inContract: true },
+      { id: 3 },
+    ];
+
+    expect(getSelectableCommissionRows(rows).map((row) => row.id)).toEqual([1, 3]);
   });
 });

@@ -1,0 +1,1 @@
+ALTER TABLE `agent_crm_profiles` ADD `inContract` boolean DEFAULT false NOT NULL;

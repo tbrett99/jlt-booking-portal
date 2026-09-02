@@ -1132,6 +1132,7 @@ export const crmRouter = router({
           orbitEnabled: z.boolean().optional(),
           paymentExempt: z.boolean().optional(),
           paymentExemptReason: z.string().max(255).optional().nullable(),
+          inContract: z.boolean().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -1804,6 +1805,7 @@ export const crmRouter = router({
         cancelledAt: z.string().optional().nullable(),      // ISO date string for cancelled
         cancelChecklist: z.array(z.string()).optional(),    // ticked items for cancelled
         notes: z.string().optional().nullable(),
+        inContract: z.boolean().optional(),                  // hold commission during notice until final client travel concludes
       }))
       .mutation(async ({ input, ctx }) => {
         const { getDb } = await import("./db");
@@ -1822,22 +1824,26 @@ export const crmRouter = router({
         const profileUpdate: Record<string, unknown> = { agentStatus: input.newStatus };
         if (input.newStatus === "paused") {
           profileUpdate.pauseEndsAt = input.pauseEndsAt ? new Date(input.pauseEndsAt) : null;
+          profileUpdate.inContract = false;
           profileUpdate.noticeEndsAt = null;
           profileUpdate.cancelledAt = null;
           profileUpdate.suspendedAt = null;
         } else if (input.newStatus === "in_notice") {
           profileUpdate.noticeEndsAt = input.noticeEndsAt ? new Date(input.noticeEndsAt) : null;
+          profileUpdate.inContract = input.inContract ?? false;
           profileUpdate.pauseEndsAt = null;
           profileUpdate.cancelledAt = null;
           profileUpdate.suspendedAt = null;
         } else if (input.newStatus === "cancelled") {
           profileUpdate.cancelledAt = input.cancelledAt ? new Date(input.cancelledAt) : new Date();
+          profileUpdate.inContract = false;
           profileUpdate.pauseEndsAt = null;
           profileUpdate.noticeEndsAt = null;
           profileUpdate.suspendedAt = null;
         } else if (input.newStatus === "suspended") {
           profileUpdate.suspendedAt = new Date();
           profileUpdate.suspensionReason = "manual";
+          profileUpdate.inContract = false;
           profileUpdate.pauseEndsAt = null;
           profileUpdate.noticeEndsAt = null;
           profileUpdate.cancelledAt = null;
@@ -1848,6 +1854,7 @@ export const crmRouter = router({
           profileUpdate.cancelledAt = null;
           profileUpdate.suspendedAt = null;
           profileUpdate.suspensionReason = null;
+          profileUpdate.inContract = false;
         }
 
         await upsertAgentCrmProfile(input.userId, profileUpdate as any);

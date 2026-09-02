@@ -13,7 +13,7 @@ import { Link } from "wouter";
 import { AlertCircle, Calendar, CheckCircle2, User, Square, CheckSquare, CalendarClock, Minus, Zap, AlertTriangle } from "lucide-react";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import CopyableRef from "@/components/CopyableRef";
-import { sortRowsByDate } from "@/lib/commission-list-utils";
+import { getSelectableCommissionRows, sortRowsByDate } from "@/lib/commission-list-utils";
 
 function MoveDatePopover({ bookingId, currentDate, onSuccess }: {
   bookingId: number;
@@ -202,15 +202,20 @@ export default function CommissionDue() {
     return sortRowsByDate(list, (booking) => booking.finalSupplierPaymentDate ?? booking.createdAt, sortOrder);
   }, [bookings, pastDepartureOnly, search, sortOrder]);
 
-  const allSelected = filtered.length > 0 && filtered.every((b) => selectedIds.has(b.id));
+  const selectableBookings = getSelectableCommissionRows(filtered);
+  const allSelected = selectableBookings.length > 0 && selectableBookings.every((b) => selectedIds.has(b.id));
   const someSelected = selectedIds.size > 0;
 
   function toggleAll() {
     if (allSelected) setSelectedIds(new Set());
-    else setSelectedIds(new Set(filtered.map((b) => b.id)));
+    else setSelectedIds(new Set(selectableBookings.map((b) => b.id)));
   }
 
   function toggleOne(id: number) {
+    if (filtered.find((booking) => booking.id === id)?.inContract) {
+      toast.error("This booking is held while the agent remains In Contract.");
+      return;
+    }
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -220,6 +225,7 @@ export default function CommissionDue() {
   }
 
   function handleBulkMove(toStage: string) {
+    if (selectedIds.size === 0) return;
     bulkMoveStage.mutate({ bookingIds: Array.from(selectedIds), toStage });
   }
 
@@ -288,12 +294,13 @@ export default function CommissionDue() {
         {filtered.length > 0 && (
           <button
             onClick={toggleAll}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground ml-auto"
+            disabled={selectableBookings.length === 0}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 ml-auto"
           >
             {allSelected
               ? <CheckSquare size={15} className="text-amber-500" />
               : <Square size={15} />}
-            {allSelected ? "Deselect all" : `Select all ${filtered.length}`}
+            {allSelected ? "Deselect all" : `Select all ${selectableBookings.length} eligible`}
           </button>
         )}
       </div>
@@ -359,19 +366,21 @@ export default function CommissionDue() {
 
           {filtered.map((booking) => {
             const isSelected = selectedIds.has(booking.id);
+            const isInContract = !!booking.inContract;
             const departed = booking.departureDate ? isPast(new Date(booking.departureDate)) : false;
             return (
               <Card
                 key={booking.id}
-                className={`border-l-4 transition-shadow ${isSelected ? "border-l-amber-500 ring-1 ring-amber-300" : "border-l-amber-400"} hover:shadow-md`}
+                className={`border-l-4 transition-shadow ${isSelected ? "border-l-amber-500 ring-1 ring-amber-300" : isInContract ? "border-l-rose-400" : "border-l-amber-400"} hover:shadow-md`}
               >
                 <CardContent className="p-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     {/* Checkbox */}
                     <button
                       onClick={() => toggleOne(booking.id)}
-                      className="flex-shrink-0 self-start mt-0.5"
-                      title="Select booking"
+                      disabled={isInContract}
+                      className="flex-shrink-0 self-start mt-0.5 disabled:cursor-not-allowed disabled:opacity-40"
+                      title={isInContract ? "Commission is held while the agent remains In Contract" : "Select booking"}
                     >
                       {isSelected
                         ? <CheckSquare size={17} className="text-amber-500" />
@@ -403,6 +412,12 @@ export default function CommissionDue() {
                           <Badge className="text-xs bg-orange-100 text-orange-800 border border-orange-300 gap-1 flex items-center">
                             <AlertTriangle size={10} />
                             Outstanding Amendment
+                          </Badge>
+                        )}
+                        {isInContract && (
+                          <Badge className="text-xs bg-rose-100 text-rose-800 border border-rose-300 gap-1 flex items-center" title="Agent remains in contract — do not pay commission until their final client has returned from travel">
+                            <AlertTriangle size={10} />
+                            In Contract — commission hold
                           </Badge>
                         )}
                       </div>
@@ -468,11 +483,17 @@ export default function CommissionDue() {
                           setPreAuthBooking({ id: booking.id, clientName: booking.clientName, isPreAuth: !!(booking as any).commissionPreAuthorised });
                           setVatInput("");
                         }}
-                        disabled={moveStage.isPending || bulkMoveStage.isPending}
+                        disabled={moveStage.isPending || bulkMoveStage.isPending || isInContract}
+                        title={isInContract ? "Commission is blocked until In Contract is removed in the agent CRM profile" : undefined}
                       >
                         <CheckCircle2 className="w-4 h-4 mr-1.5" />
                         {(booking as any).commissionPreAuthorised ? "Auto-Claim" : "Mark Claimable"}
                       </Button>
+                      {isInContract && (
+                        <span className="w-full text-right text-[11px] font-medium text-rose-700">
+                          Commission held until In Contract is removed in CRM after final client travel
+                        </span>
+                      )}
                     </div>
                   </div>
                 </CardContent>

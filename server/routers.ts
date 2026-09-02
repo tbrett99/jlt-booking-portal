@@ -179,6 +179,31 @@ const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+const COMMISSION_PROCESSING_STAGES = new Set(["Commission Claimable", "Commission Claimed"]);
+
+/**
+ * An active In Contract hold is a payment-control flag, so the safeguard lives
+ * server-side rather than relying on a disabled button in a specific page.
+ */
+async function assertAgentCanProgressCommission(agentId: number) {
+  const { getDb } = await import("./db");
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Unable to verify the agent’s In Contract status." });
+  const { agentCrmProfiles } = await import("../drizzle/schema");
+  const { eq } = await import("drizzle-orm");
+  const profile = await db
+    .select({ inContract: agentCrmProfiles.inContract })
+    .from(agentCrmProfiles)
+    .where(eq(agentCrmProfiles.userId, agentId))
+    .limit(1);
+  if (profile[0]?.inContract) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "This agent is marked In Contract. Commission cannot be progressed until their final client has returned from travel and the In Contract status is removed in CRM.",
+    });
+  }
+}
+
 // ─── Default notification templates seed ─────────────────────────────────────
 
 const DEFAULT_TEMPLATES = [
@@ -1029,6 +1054,10 @@ export const appRouter = router({
           });
         }
 
+        if (COMMISSION_PROCESSING_STAGES.has(input.toStage)) {
+          await assertAgentCanProgressCommission(booking.agentId);
+        }
+
         // Persist VAT before changing the pipeline stage. Previously the stage was
         // updated first, so a VAT write failure could leave the booking/claim in a
         // later stage without its entered VAT amount. Re-read and verify the value
@@ -1513,6 +1542,15 @@ export const appRouter = router({
           try {
             const booking = await getBookingById(bookingId);
             if (!booking) { results.push({ bookingId, success: false, error: "not_found" }); continue; }
+            if (COMMISSION_PROCESSING_STAGES.has(input.toStage)) {
+              try {
+                await assertAgentCanProgressCommission(booking.agentId);
+              } catch (error) {
+                const message = error instanceof TRPCError ? error.message : "in_contract";
+                results.push({ bookingId, success: false, error: message });
+                continue;
+              }
+            }
             if (STAGES_REQUIRING_PAYMENT_DATE.includes(input.toStage) && !booking.finalSupplierPaymentDate) {
               results.push({ bookingId, success: false, error: "missing_payment_date" }); continue;
             }
@@ -2734,8 +2772,23 @@ export const appRouter = router({
 
       // Fetch outstanding refunds and amendments for these bookings
       const bookingIds = dueBookings.map((b) => b.id);
+      const dueAgentIds = Array.from(new Set(dueBookings.map((b) => b.agentId)));
       const outstandingRefundBookingIds = new Set<number>();
       const outstandingAmendmentBookingIds = new Set<number>();
+      const inContractAgentIds = new Set<number>();
+      if (dueAgentIds.length > 0) {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (db) {
+          const { agentCrmProfiles } = await import('../drizzle/schema');
+          const { and, eq, inArray } = await import('drizzle-orm');
+          const inContractProfiles = await db
+            .select({ userId: agentCrmProfiles.userId })
+            .from(agentCrmProfiles)
+            .where(and(inArray(agentCrmProfiles.userId, dueAgentIds), eq(agentCrmProfiles.inContract, true)));
+          for (const profile of inContractProfiles) inContractAgentIds.add(profile.userId);
+        }
+      }
       if (bookingIds.length > 0) {
         const { getDb } = await import('./db');
         const db = await getDb();
@@ -2766,6 +2819,7 @@ export const appRouter = router({
         ...b,
         agentName: userMap.get(b.agentId)?.name ?? "Unknown",
         agentEmail: userMap.get(b.agentId)?.email ?? "",
+        inContract: inContractAgentIds.has(b.agentId),
         hasOutstandingRefund: outstandingRefundBookingIds.has(b.id),
         hasOutstandingAmendment: outstandingAmendmentBookingIds.has(b.id),
       }));
@@ -3036,6 +3090,20 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       // Fetch and decrypt bank details for all unique agents in this claim set
       const uniqueAgentIds = Array.from(new Set(claims.map((c) => c.agentId)));
       const bankDetailsMap = new Map<number, { bankAccountName: string | null; bankSortCode: string | null; bankAccountNumber: string | null }>();
+      const inContractAgentIds = new Set<number>();
+      if (uniqueAgentIds.length > 0) {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (db) {
+          const { agentCrmProfiles } = await import('../drizzle/schema');
+          const { and, eq, inArray } = await import('drizzle-orm');
+          const inContractProfiles = await db
+            .select({ userId: agentCrmProfiles.userId })
+            .from(agentCrmProfiles)
+            .where(and(inArray(agentCrmProfiles.userId, uniqueAgentIds), eq(agentCrmProfiles.inContract, true)));
+          for (const profile of inContractProfiles) inContractAgentIds.add(profile.userId);
+        }
+      }
       if (uniqueAgentIds.length > 0) {
         const { getDb } = await import('./db');
         const db = await getDb();
@@ -3101,6 +3169,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         agentName: userMap.get(c.agentId)?.name ?? "Unknown",
         agentEmail: userMap.get(c.agentId)?.email ?? "",
         agentPortalStatus: (userMap.get(c.agentId) as any)?.portalStatus ?? null,
+        inContract: inContractAgentIds.has(c.agentId),
         booking,
         paidByName: c.paidById ? (userMap.get(c.paidById)?.name ?? "Admin") : null,
         bankAccountName: bankDetailsMap.get(c.agentId)?.bankAccountName ?? null,
@@ -3119,11 +3188,24 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         const { getDb } = await import('./db');
         const dbInst = await getDb();
         if (!dbInst) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-        const { commissionClaims: claimsTable } = await import('../drizzle/schema');
+        const { agentCrmProfiles, commissionClaims: claimsTable } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
+        const claim = (await getAllCommissionClaims()).find((c) => c.id === input.claimId);
+        if (!claim) throw new TRPCError({ code: 'NOT_FOUND', message: 'Commission claim not found' });
+        const inContractProfile = await dbInst
+          .select({ userId: agentCrmProfiles.userId, inContract: agentCrmProfiles.inContract })
+          .from(agentCrmProfiles)
+          .where(eq(agentCrmProfiles.userId, claim.agentId))
+          .limit(1);
+        if (inContractProfile[0]?.inContract) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'This agent is marked In Contract. Keep the commission on hold until their final client has returned from travel, then remove the In Contract status in CRM.',
+          });
+        }
         await dbInst.update(claimsTable).set({ status: 'processing' }).where(eq(claimsTable.id, input.claimId));
         await createNote({
-          bookingId: (await getAllCommissionClaims()).find((c) => c.id === input.claimId)?.bookingId ?? 0,
+          bookingId: claim.bookingId,
           authorId: ctx.user.id,
           content: `[System] Notice period hold released — claim moved to Processing by ${ctx.user.name ?? 'Admin'}.`,
           isInternal: true,
@@ -3157,9 +3239,28 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     markPaid: adminProcedure
       .input(z.object({ claimIds: z.array(z.number()).min(1) }))
       .mutation(async ({ input, ctx }) => {
+        const allClaims = await getAllCommissionClaims();
+        const selectedClaims = allClaims.filter((claim) => input.claimIds.includes(claim.id));
+        const selectedAgentIds = Array.from(new Set(selectedClaims.map((claim) => claim.agentId)));
+        if (selectedAgentIds.length > 0) {
+          const { getDb } = await import('./db');
+          const dbInst = await getDb();
+          if (!dbInst) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+          const { agentCrmProfiles } = await import('../drizzle/schema');
+          const { and, eq, inArray } = await import('drizzle-orm');
+          const inContractProfiles = await dbInst
+            .select({ userId: agentCrmProfiles.userId })
+            .from(agentCrmProfiles)
+            .where(and(inArray(agentCrmProfiles.userId, selectedAgentIds), eq(agentCrmProfiles.inContract, true)));
+          if (inContractProfiles.length > 0) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'One or more selected claims belong to an agent marked In Contract. Commission cannot be processed until the agent’s final client has returned from travel and the In Contract status is removed in CRM.',
+            });
+          }
+        }
         await markCommissionPaid(input.claimIds, ctx.user.id);
         // Notify each affected agent
-        const allClaims = await getAllCommissionClaims();
         for (const claimId of input.claimIds) {
           const claim = allClaims.find((c) => c.id === claimId);
           if (!claim) continue;
@@ -3289,12 +3390,23 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         const { getDb } = await import('./db');
         const db = await getDb();
         if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-        const { commissionClaims: claimsTable } = await import('../drizzle/schema');
+        const { agentCrmProfiles, commissionClaims: claimsTable } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
         const allClaims = await getAllCommissionClaims();
         const claim = allClaims.find((c) => c.id === input.claimId);
         if (!claim) throw new TRPCError({ code: 'NOT_FOUND' });
         if (claim.status !== 'pending') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Claim is not in pending status' });
+        const inContractProfile = await db
+          .select({ userId: agentCrmProfiles.userId, inContract: agentCrmProfiles.inContract })
+          .from(agentCrmProfiles)
+          .where(eq(agentCrmProfiles.userId, claim.agentId))
+          .limit(1);
+        if (inContractProfile[0]?.inContract) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'This agent is marked In Contract. Keep the commission on hold until their final client has returned from travel, then remove the In Contract status in CRM.',
+          });
+        }
         await db.update(claimsTable).set({ status: 'processing' }).where(eq(claimsTable.id, input.claimId));
         // Add audit note to the booking
         await createNote({

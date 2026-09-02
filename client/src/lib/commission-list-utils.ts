@@ -23,3 +23,8 @@ export function getPage<T>(rows: T[], page: number, pageSize: number) {
     start,
   };
 }
+
+/** Claims held for an In Contract agent must never enter a payment-selection batch. */
+export function getSelectableCommissionRows<T extends { inContract?: boolean }>(rows: T[]) {
+  return rows.filter((row) => !row.inContract);
+}

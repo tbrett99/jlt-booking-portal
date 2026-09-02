@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle, CheckCircle2, TrendingDown, AlertTriangle } from "lucide-react";
 import CopyableRef from "@/components/CopyableRef";
 import { useLocation } from "wouter";
-import { getPage, sortRowsByDate } from "@/lib/commission-list-utils";
+import { getPage, getSelectableCommissionRows, sortRowsByDate } from "@/lib/commission-list-utils";
 
 type ClaimRow = {
   id: number;
@@ -24,6 +24,7 @@ type ClaimRow = {
   agentName: string;
   agentEmail: string;
   agentPortalStatus?: string | null;
+  inContract?: boolean;
   status: string;
   claimedAt: Date | string;
   paidAt: Date | string | null;
@@ -98,6 +99,7 @@ function ClaimTable({
   toggleSelectAll, toggleSelect, handleVatBlur,
   markPaidMutation, setDeleteTarget, navigate,
 }: ClaimTableProps) {
+  const selectableRows = getSelectableCommissionRows(rows);
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -106,8 +108,10 @@ function ClaimTable({
             {showSelect && (
               <th className="py-3 px-4 text-left w-10">
                 <Checkbox
-                  checked={rows.length > 0 && rows.every((r) => selectedIds.has(r.id))}
+                  checked={selectableRows.length > 0 && selectableRows.every((r) => selectedIds.has(r.id))}
                   onCheckedChange={() => toggleSelectAll(rows)}
+                  disabled={selectableRows.length === 0}
+                  aria-label="Select all commission claims that are not held In Contract"
                 />
               </th>
             )}
@@ -140,6 +144,8 @@ function ClaimTable({
                     <Checkbox
                       checked={selectedIds.has(c.id)}
                       onCheckedChange={() => toggleSelect(c.id)}
+                      disabled={!!c.inContract}
+                      aria-label={c.inContract ? "Commission held while agent remains In Contract" : `Select commission claim for ${c.booking?.clientName ?? c.agentName}`}
                     />
                   </td>
                 )}
@@ -155,6 +161,11 @@ function ClaimTable({
                       {c.hasOutstandingAmendment && (
                         <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 border border-orange-200 rounded px-1.5 py-0.5">
                           <AlertTriangle className="h-2.5 w-2.5" /> Amendment Pending
+                        </span>
+                      )}
+                      {c.inContract && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-rose-100 text-rose-800 border border-rose-200 rounded px-1.5 py-0.5" title="Agent remains in contract — do not pay commission until their final client has returned from travel">
+                          <AlertTriangle className="h-2.5 w-2.5" /> In Contract — Hold
                         </span>
                       )}
                     </div>
@@ -418,6 +429,10 @@ export default function AdminCommissions() {
   const { rows: pagedPaid, safePage: safePaidPage, totalPages: paidTotalPages } = getPage(paid, paidPage, PAID_CLAIMS_PER_PAGE);
 
   const toggleSelect = (id: number) => {
+    if (allClaims.find((claim) => claim.id === id)?.inContract) {
+      toast.error("This claim is held while the agent remains In Contract.");
+      return;
+    }
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -427,17 +442,22 @@ export default function AdminCommissions() {
   };
 
   const toggleSelectAll = (rows: ClaimRow[]) => {
-    const allSelected = rows.every((r) => selectedIds.has(r.id));
+    const selectableRows = getSelectableCommissionRows(rows);
+    if (selectableRows.length === 0) {
+      toast.error("All of these claims are held while their agents remain In Contract.");
+      return;
+    }
+    const allSelected = selectableRows.every((r) => selectedIds.has(r.id));
     if (allSelected) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        rows.forEach((r) => next.delete(r.id));
+        selectableRows.forEach((r) => next.delete(r.id));
         return next;
       });
     } else {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        rows.forEach((r) => next.add(r.id));
+        selectableRows.forEach((r) => next.add(r.id));
         return next;
       });
     }
@@ -713,7 +733,7 @@ export default function AdminCommissions() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base">Notice Period Claims</CardTitle>
-                  <p className="text-sm text-muted-foreground mt-1">These claims were submitted by agents currently serving their notice period. Commission cannot be processed until after the client has departed.</p>
+                  <p className="text-sm text-muted-foreground mt-1">These claims were submitted by agents serving notice. Claims marked <strong>In Contract</strong> remain blocked until the agent’s final client has returned from travel and the status is removed in CRM.</p>
                 </div>
               </div>
             </CardHeader>
@@ -749,8 +769,8 @@ export default function AdminCommissions() {
                               <div className="text-xs text-muted-foreground">{c.agentEmail}</div>
                             </td>
                             <td className="py-3 px-4">
-                              <Badge variant="outline" className="border-purple-500 text-purple-600 text-xs">
-                                {(c as any).agentPortalStatus === 'in_notice' ? 'In Notice' : ((c as any).agentPortalStatus ?? 'Unknown')}
+                              <Badge variant="outline" className={`text-xs ${c.inContract ? 'border-rose-500 text-rose-700 bg-rose-50' : 'border-purple-500 text-purple-600'}`}>
+                                {c.inContract ? 'In Contract — Hold' : ((c as any).agentPortalStatus === 'in_notice' ? 'In Notice' : ((c as any).agentPortalStatus ?? 'Unknown'))}
                               </Badge>
                             </td>
                             <td className="py-3 px-4">
@@ -769,7 +789,11 @@ export default function AdminCommissions() {
                             <td className="py-3 px-4 text-muted-foreground">{formatDate(c.claimedAt)}</td>
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-2">
-                                {departed && (
+                                {c.inContract ? (
+                                  <span className="max-w-[190px] text-xs font-medium leading-4 text-rose-700">
+                                    In Contract — held until removed in CRM after final client travel
+                                  </span>
+                                ) : departed && (
                                   <Button
                                     size="sm"
                                     className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs"
@@ -876,7 +900,7 @@ export default function AdminCommissions() {
                 <span>Processing — Claim in PTS to advance</span>
                 <div className="flex items-center gap-2">
                   {processing.length > 0 && selectedIds.size === 0 && (
-                    <Button variant="outline" size="sm" onClick={() => toggleSelectAll(processing)} className="text-xs">
+                    <Button variant="outline" size="sm" onClick={() => toggleSelectAll(processing)} disabled={!processing.some((claim) => !claim.inContract)} className="text-xs">
                       Select All
                     </Button>
                   )}

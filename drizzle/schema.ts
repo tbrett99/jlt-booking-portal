@@ -803,6 +803,8 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   // Payment exemption — Duo/Trio secondary members covered by lead's subscription
   paymentExempt: boolean("paymentExempt").default(false).notNull(),
   paymentExemptReason: varchar("paymentExemptReason", { length: 255 }), // e.g. "Duo secondary — covered by Jane Smith"
+  // Notice-period agents who remain contractually active until their final client has returned
+  inContract: boolean("inContract").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
