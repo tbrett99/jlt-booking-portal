@@ -483,6 +483,18 @@ export const superAdminRouter = router({
           lt(recruitmentStageHistory.changedAt, weekEndDate),
         ));
 
+      // Direct paid joins have no matching recruitment prospect and therefore
+      // belong to membership sign-ups rather than recruitment conversions.
+      const directJoinersThisWeekRaw = (await db.execute(sql`
+        SELECT COUNT(*) AS count
+        FROM gc_mandates m
+        INNER JOIN users u ON u.id = m.userId
+        LEFT JOIN recruitment_prospects p ON LOWER(TRIM(p.email)) = LOWER(TRIM(u.email))
+        WHERE m.joiningFeePaidAt >= ${weekStartDate}
+          AND m.joiningFeePaidAt < ${weekEndDate}
+          AND p.id IS NULL
+      `) as unknown as [Array<{ count: number }>, unknown])[0];
+
       // Current funnel snapshot
       const recruitmentFunnel = await db
         .select({
@@ -530,7 +542,7 @@ export const superAdminRouter = router({
           jltRevenueThisWeek, jltRevenuePrevWeek, agentPayoutsThisWeek,
           commissionClaimsThisWeek, commissionClaimsPaidThisWeek,
           reimbursementsPaidThisWeek, reimbursementsScheduled, reimbursementsPending,
-          newProspectsThisWeek, newProspectsPrevWeek, wonProspectsThisWeek,
+          newProspectsThisWeek, newProspectsPrevWeek, wonProspectsThisWeek, directJoinersThisWeekRaw,
           recruitmentFunnel, recruitmentStageMovesThisWeek,
           staffProductivity: [],
           emailStats: null,
@@ -963,7 +975,7 @@ export const superAdminRouter = router({
         jltRevenueThisWeek, jltRevenuePrevWeek, agentPayoutsThisWeek,
         commissionClaimsThisWeek, commissionClaimsPaidThisWeek,
         reimbursementsPaidThisWeek, reimbursementsScheduled, reimbursementsPending,
-        newProspectsThisWeek, newProspectsPrevWeek, wonProspectsThisWeek,
+        newProspectsThisWeek, newProspectsPrevWeek, wonProspectsThisWeek, directJoinersThisWeekRaw,
         recruitmentFunnel, recruitmentStageMovesThisWeek,
         staffProductivity,
         emailStats,
@@ -1355,6 +1367,15 @@ export const superAdminRouter = router({
       const wonAllTime = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(eq(recruitmentStageHistory.toStage, "won"));
       const totalEnquiries = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects);
       const totalApplications = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(isNotNull(recruitmentProspects.applicationSubmittedAt));
+      const directJoinersThisMonthRaw = (await db.execute(sql`
+        SELECT COUNT(*) AS count
+        FROM gc_mandates m
+        INNER JOIN users u ON u.id = m.userId
+        LEFT JOIN recruitment_prospects p ON LOWER(TRIM(p.email)) = LOWER(TRIM(u.email))
+        WHERE m.joiningFeePaidAt >= ${monthStartDate}
+          AND m.joiningFeePaidAt < ${monthEndDate}
+          AND p.id IS NULL
+      `) as unknown as [Array<{ count: number }>, unknown])[0];
       // Avg time from enquiry to won (days)
       const avgTimeToSignupRaw = await db.execute(sql`
         SELECT AVG(TIMESTAMPDIFF(DAY, rp.createdAt, rsh.changedAt)) AS avgDays
@@ -1567,6 +1588,7 @@ export const superAdminRouter = router({
           newProspectsThisMonth: n(newProspectsThisMonth[0]?.count),
           newProspectsPrevMonth: n(newProspectsPrevMonth[0]?.count),
           wonProspectsThisMonth: n(wonProspectsThisMonth[0]?.count),
+          directJoinersThisMonth: n(directJoinersThisMonthRaw[0]?.count),
           stageMovesThisMonth: n(recruitmentStageMovesThisMonth[0]?.count),
           funnel: recruitmentFunnel.map((r) => ({ stage: r.stage ?? "unknown", count: n(r.count) })),
           totalEnquiries: n(totalEnquiries[0]?.count),
@@ -2057,6 +2079,7 @@ function buildResponse(data: {
   newProspectsThisWeek: Array<{ count: number }>;
   newProspectsPrevWeek: Array<{ count: number }>;
   wonProspectsThisWeek: Array<{ count: number }>;
+  directJoinersThisWeekRaw: Array<{ count: number }>;
   recruitmentFunnel: Array<{ stage: string | null; count: number }>;
   recruitmentStageMovesThisWeek: Array<{ count: number }>;
   staffProductivity: Array<{
@@ -2209,6 +2232,7 @@ function buildResponse(data: {
       newProspectsThisWeek: n(data.newProspectsThisWeek[0]?.count),
       newProspectsPrevWeek: n(data.newProspectsPrevWeek[0]?.count),
       wonProspectsThisWeek: n(data.wonProspectsThisWeek[0]?.count),
+      directJoinersThisWeek: n(data.directJoinersThisWeekRaw[0]?.count),
       stageMovesThisWeek: n(data.recruitmentStageMovesThisWeek[0]?.count),
       funnel: data.recruitmentFunnel.map((r) => ({
         stage: r.stage ?? "unknown",

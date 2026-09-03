@@ -7,7 +7,7 @@ import { Resend } from "resend";
 import { ENV } from "./_core/env";
 import { getDb } from "./db";
 import { emailSends, emailUnsubscribes, agentEmails } from "../drizzle/schema";
-import { eq, isNotNull } from "drizzle-orm";
+import { eq, isNotNull, inArray } from "drizzle-orm";
 import crypto from "crypto";
 import { getEmailBrandingSettings } from "./crm-db";
 import type { EmailBrandingSettings } from "../drizzle/schema";
@@ -499,20 +499,29 @@ export async function enqueueCampaignRecipients(opts: {
  * Called by the scheduler every 15 minutes.
  * Restart-safe: progress is persisted in the database.
  */
-export async function processCampaignQueue(batchSize = 50): Promise<{ sent: number; failed: number; skipped: number }> {
+export async function processCampaignQueue(
+  batchSize = 50,
+  retrySendIds?: number[]
+): Promise<{ sent: number; failed: number; skipped: number }> {
   const db = await getDb();
   if (!db) return { sent: 0, failed: 0, skipped: 0 };
 
   const { and, isNotNull, isNull, sql: sqlFn } = await import("drizzle-orm");
   const { emailCampaigns } = await import("../drizzle/schema");
 
-  // Pick up to batchSize queued rows that belong to a campaign (not drip)
+  // The scheduler picks queued rows. A controlled resend may provide exact
+  // historical send IDs; this deliberately never picks unrelated failed rows.
+  const queueOrRetryCondition = retrySendIds?.length
+    ? inArray(emailSends.id, retrySendIds)
+    : sqlFn`${emailSends.status} = 'queued'`;
+
+  // Pick up to batchSize campaign rows (not drip)
   const rows = await db
     .select()
     .from(emailSends)
     .where(
       and(
-        sqlFn`${emailSends.status} = 'queued'`,
+        queueOrRetryCondition,
         isNotNull(emailSends.campaignId),
         isNull(emailSends.dripStepId)
       )

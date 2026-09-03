@@ -689,7 +689,7 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         {[
           { label: "Active Agents", value: fmt(membership.totalActiveAgents), color: "text-emerald-600" },
-          { label: "New Sign-Ups", value: fmt(membership.newSignupsThisMonth), color: "text-blue-600" },
+          { label: "Joining-Fee Sign-Ups", value: fmt(membership.newSignupsThisMonth), color: "text-blue-600" },
           { label: "Cancellations", value: fmt(membership.cancellationsThisMonth), color: "text-rose-600" },
           { label: "MRR", value: fmtGbp(ddRevenue.mrrGbp), color: "text-purple-600" },
           { label: "DD Paid Out", value: fmtGbp(ddRevenue.paidOutThisMonthGbp), color: "text-emerald-600" },
@@ -721,8 +721,9 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
           <SectionHeader title="Membership & Retention" icon={Users} />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard title="Total Active Agents" value={fmt(membership.totalActiveAgents)} icon={Users} accent="green" sub={`${fmt(membership.totalPayingAgents)} incl. paused`} />
-            <StatCard title="New Sign-Ups" value={fmt(membership.newSignupsThisMonth)} icon={UserPlus} accent="blue"
-              wow={{ current: membership.newSignupsThisMonth, prev: membership.newSignupsPrevMonth }} wowLabel="MoM" />
+            <StatCard title="Joining-Fee Sign-Ups" value={fmt(membership.newSignupsThisMonth)} icon={UserPlus} accent="blue"
+              wow={{ current: membership.newSignupsThisMonth, prev: membership.newSignupsPrevMonth }} wowLabel="MoM"
+              sub="Confirmed joining-fee payments" />
             <StatCard title="Cancellations / In Notice" value={fmt(membership.cancellationsThisMonth)} icon={TrendingDown}
               accent={membership.cancellationsThisMonth > 0 ? "red" : undefined}
               wow={{ current: membership.cancellationsThisMonth, prev: membership.cancellationsPrevMonth, invert: true }} wowLabel="MoM" />
@@ -872,14 +873,15 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard title="New Prospects" value={fmt(recruitment.newProspectsThisMonth)} icon={UserPlus} accent="blue"
               wow={{ current: recruitment.newProspectsThisMonth, prev: recruitment.newProspectsPrevMonth }} wowLabel="MoM" />
-            <StatCard title="Won This Month" value={fmt(recruitment.wonProspectsThisMonth)} icon={CheckCircle2} accent="green" sub="Converted to agents" />
+            <StatCard title="Won in Recruitment" value={fmt(recruitment.wonProspectsThisMonth)} icon={CheckCircle2} accent="green"
+              sub={`${fmt(recruitment.wonProspectsThisMonth)} CRM conversion${recruitment.wonProspectsThisMonth === 1 ? "" : "s"}${recruitment.directJoinersThisMonth ? ` • ${fmt(recruitment.directJoinersThisMonth)} direct join${recruitment.directJoinersThisMonth === 1 ? "" : "s"}` : ""}`} />
             <StatCard title="Conversion Rate (All Time)" value={fmtPct(recruitment.conversionRate)} icon={Target} accent="purple" />
             <StatCard title="Avg Time to Sign-Up" value={`${recruitment.avgTimeToSignupDays}d`} icon={Clock} sub="Enquiry to won" />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <StatCard title="Total Enquiries" value={fmt(recruitment.totalEnquiries)} />
             <StatCard title="Total Applications" value={fmt(recruitment.totalApplications)} />
-            <StatCard title="Total Won (All Time)" value={fmt(recruitment.totalWon)} accent="green" />
+            <StatCard title="Total Recruitment Wins" value={fmt(recruitment.totalWon)} accent="green" />
           </div>
           {recruitment.funnel.length > 0 && (
             <Card>
@@ -1376,7 +1378,7 @@ export default function SuperAdminDashboard() {
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
                 {[
                   { label: "Active Agents", value: fmt(data.membership.totalActiveAgents), color: "text-emerald-600" },
-                  { label: "New Sign-Ups", value: fmt(data.membership.newSignupsThisWeek), color: "text-blue-600" },
+                  { label: "Joining-Fee Sign-Ups", value: fmt(data.membership.newSignupsThisWeek), color: "text-blue-600" },
                   { label: "Cancellations", value: fmt(data.membership.cancellationsThisWeek), color: "text-rose-600" },
                   { label: "MRR", value: fmtGbp(data.ddRevenue.mrrGbp), color: "text-purple-600" },
                   { label: "DD Confirmed", value: fmtGbp(data.ddRevenue.confirmedThisWeekGbp), color: "text-emerald-600" },
@@ -1410,7 +1412,7 @@ export default function SuperAdminDashboard() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <StatCard title="Total Active Agents" value={fmt(data.membership.totalActiveAgents)} icon={Users} accent="green"
                       sub={`${fmt(data.membership.totalPayingAgents)} incl. paused`} />
-                    <StatCard title="New Sign-Ups" value={fmt(data.membership.newSignupsThisWeek)} icon={UserPlus} accent="blue"
+                    <StatCard title="Joining-Fee Sign-Ups" value={fmt(data.membership.newSignupsThisWeek)} icon={UserPlus} accent="blue"
                       wow={{ current: data.membership.newSignupsThisWeek, prev: data.membership.newSignupsPrevWeek }}
                       sub="Joining fee payments confirmed"
                       onClick={() => setDrillDown("signups")} />
@@ -1673,7 +1675,8 @@ export default function SuperAdminDashboard() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <StatCard title="New Prospects" value={fmt(data.recruitment.newProspectsThisWeek)} icon={UserPlus} accent="blue"
                       wow={{ current: data.recruitment.newProspectsThisWeek, prev: data.recruitment.newProspectsPrevWeek }} />
-                    <StatCard title="Won This Week" value={fmt(data.recruitment.wonProspectsThisWeek)} icon={CheckCircle2} accent="green" sub="Converted to agents" />
+                    <StatCard title="Won in Recruitment" value={fmt(data.recruitment.wonProspectsThisWeek)} icon={CheckCircle2} accent="green"
+                      sub={`${fmt(data.recruitment.wonProspectsThisWeek)} CRM conversion${data.recruitment.wonProspectsThisWeek === 1 ? "" : "s"}${data.recruitment.directJoinersThisWeek ? ` • ${fmt(data.recruitment.directJoinersThisWeek)} direct join${data.recruitment.directJoinersThisWeek === 1 ? "" : "s"}` : ""}`} />
                     <StatCard title="Stage Moves" value={fmt(data.recruitment.stageMovesThisWeek)} sub="Prospects moved through funnel" />
                   </div>
                   {data.recruitment.funnel.length > 0 && (

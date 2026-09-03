@@ -4,7 +4,10 @@
 - [x] Investigate failures in the Prospects Travel Updates email campaign sent yesterday and identify the delivery cause
 - [x] Review live prospect, mailing-contact, and unsubscribe totals; identify whether unsubscribed prospects remain in the marketing audience
 - [x] Urgently correct marketing unsubscribe confirmation and pre-send suppression, restore falsely suppressed prospects, and validate future campaign delivery
-- [ ] Validate the repaired prospect campaign workflow after the Railway deployment without sending an unapproved live test campaign
+- [x] Validate the repaired prospect campaign workflow through the approved resend; confirm confirmed opt-outs are excluded and no false unsubscribes are recorded
+- [ ] Validate a controlled confirmed-opt-out prospect after the Railway deployment; ensure it is excluded before queueing and is not reported as a campaign failure
+- [x] Resend Prospects Travel Updates only to the 174 recipients whose prior messages were not submitted (173 submitted; one example.com test record correctly rejected)
+- [x] Reconcile and correct inconsistent Super Admin weekly, monthly, and recruitment sign-up metrics against Railway records
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
