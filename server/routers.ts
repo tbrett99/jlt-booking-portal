@@ -2403,7 +2403,13 @@ export const appRouter = router({
   // ── Cancellations ─────────────────────────────────────────────────────────
   cancellations: router({
     submit: protectedProcedure
-      .input(z.object({ bookingId: z.number(), reason: z.string().optional() }))
+      .input(z.object({
+        bookingId: z.number(),
+        reason: z.string().optional(),
+        supplierCancellationConfirmed: z.boolean().refine((value) => value, {
+          message: "You must confirm that you have cancelled directly with the supplier before submitting this request.",
+        }),
+      }))
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
@@ -2417,7 +2423,7 @@ export const appRouter = router({
         await createNote({
           bookingId: input.bookingId,
           authorId: ctx.user.id,
-          content: `[System] Cancellation requested by ${ctx.user.name ?? "Agent"}.${reasonText} Booking moved to "Cancellation Requested" stage pending admin review.`,
+          content: `[System] Cancellation requested by ${ctx.user.name ?? "Agent"}. Agent confirmed they have cancelled directly with the supplier.${reasonText} Booking moved to "Cancellation Requested" stage pending admin review so JLT can update PTS and cancel any pending supplier payments.`,
           isInternal: false,
         });
         // Notify all admins in-app

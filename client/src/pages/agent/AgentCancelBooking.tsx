@@ -15,6 +15,7 @@ export default function AgentCancelBooking() {
   const [search, setSearch] = useState("");
   const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
   const [reason, setReason] = useState("");
+  const [supplierCancellationConfirmed, setSupplierCancellationConfirmed] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   const { data: bookings, isLoading } = trpc.bookings.myBookings.useQuery();
@@ -44,7 +45,11 @@ export default function AgentCancelBooking() {
       toast.error("Please select a booking and provide a reason.");
       return;
     }
-    cancelMutation.mutate({ bookingId: selectedBookingId, reason });
+    if (!supplierCancellationConfirmed) {
+      toast.error("Please confirm that you have cancelled directly with the supplier.");
+      return;
+    }
+    cancelMutation.mutate({ bookingId: selectedBookingId, reason, supplierCancellationConfirmed: true });
   };
 
   if (submitted) {
@@ -55,7 +60,7 @@ export default function AgentCancelBooking() {
             <CheckCircle className="h-12 w-12 text-[#02E6D2] mx-auto mb-4" />
             <h2 className="text-xl font-bold mb-2">Cancellation Request Submitted</h2>
             <p className="text-muted-foreground mb-6">
-              Our team will review your request and update the booking status shortly.
+              JLT has been informed that you have cancelled with the supplier. Our team will update PTS and cancel any pending supplier payments.
             </p>
             <Button onClick={() => navigate("/dashboard")} className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#414141]">
               Back to Dashboard
@@ -73,7 +78,7 @@ export default function AgentCancelBooking() {
           <XCircle className="h-6 w-6 text-red-500" />
           Cancel a Booking
         </h1>
-        <p className="text-muted-foreground mt-1">Search for the booking you wish to cancel and provide a reason.</p>
+        <p className="text-muted-foreground mt-1">First cancel directly with the supplier, then use this form to notify JLT so we can update PTS and cancel any pending supplier payments.</p>
       </div>
 
       {/* Step 1: Search & Select */}
@@ -149,13 +154,40 @@ export default function AgentCancelBooking() {
         </Card>
       )}
 
+      {selected && (
+        <Card className="mb-6 border-red-200 bg-red-50/50">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2 text-red-800">
+              <XCircle className="h-4 w-4" />
+              Step 3 — Confirm Supplier Cancellation
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-red-800 mb-4">
+              This request does not cancel the booking with the supplier. You are responsible for completing the supplier cancellation before notifying JLT.
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={supplierCancellationConfirmed}
+                onChange={(event) => setSupplierCancellationConfirmed(event.target.checked)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span className="text-sm text-red-900">
+                I confirm that I have already cancelled this booking directly with the supplier. I am submitting this request so JLT can update PTS and cancel any pending supplier payments.
+              </span>
+            </label>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex gap-3">
         <Button variant="outline" onClick={() => navigate("/dashboard")}>
           Back
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={!selectedBookingId || !reason.trim() || cancelMutation.isPending}
+          disabled={!selectedBookingId || !reason.trim() || !supplierCancellationConfirmed || cancelMutation.isPending}
           className="bg-red-500 hover:bg-red-600 text-white"
         >
           {cancelMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}

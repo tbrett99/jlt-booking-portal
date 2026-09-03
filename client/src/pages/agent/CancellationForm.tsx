@@ -10,7 +10,7 @@ export default function CancellationForm() {
   const { id } = useParams<{ id: string }>();
   const bookingId = Number(id);
   const [, navigate] = useLocation();
-  const [confirmed, setConfirmed] = useState(false);
+  const [supplierCancellationConfirmed, setSupplierCancellationConfirmed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { data: booking } = trpc.bookings.byId.useQuery({ id: bookingId });
@@ -18,11 +18,14 @@ export default function CancellationForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!confirmed) { toast.error("Please confirm the cancellation"); return; }
+    if (!supplierCancellationConfirmed) {
+      toast.error("Please confirm that you have cancelled directly with the supplier.");
+      return;
+    }
     setIsSubmitting(true);
     try {
-      await submitCancellation.mutateAsync({ bookingId });
-      toast.success("Cancellation submitted. Booking has been moved to Cancelled.");
+      await submitCancellation.mutateAsync({ bookingId, supplierCancellationConfirmed: true });
+      toast.success("Cancellation request submitted. JLT will now update PTS and cancel any pending supplier payments.");
       navigate(`/bookings/${bookingId}`);
     } catch (err: any) {
       toast.error(err.message || "Failed to submit cancellation");
@@ -52,31 +55,31 @@ export default function CancellationForm() {
         </CardHeader>
         <CardContent>
           <div className="p-4 rounded-lg mb-5" style={{ background: '#fee2e2' }}>
-            <p className="text-sm font-medium text-red-800">This action will cancel the entire booking.</p>
+            <p className="text-sm font-medium text-red-800">You must cancel the booking directly with the supplier before submitting this request.</p>
             <p className="text-sm text-red-700 mt-1">
-              If any amounts need to be refunded, please also submit a Refund Request from the booking page.
+              This form does not cancel the booking with the supplier. It informs JLT that the cancellation has been completed, so we can update the PTS file and cancel any pending supplier payments. If any amounts need to be refunded, please also submit a Refund Request from the booking page.
             </p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <label className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
-                checked={confirmed}
-                onChange={(e) => setConfirmed(e.target.checked)}
+                checked={supplierCancellationConfirmed}
+                onChange={(e) => setSupplierCancellationConfirmed(e.target.checked)}
                 className="mt-0.5 w-4 h-4"
               />
               <span className="text-sm">
-                I confirm that I want to cancel the full booking for <strong>{booking?.clientName}</strong> (Booking #{bookingId}).
+                I confirm that I have already cancelled the full booking directly with the supplier for <strong>{booking?.clientName}</strong> (Booking #{bookingId}). I am submitting this request to notify JLT so that PTS and any pending supplier payments can be updated.
               </span>
             </label>
             <div className="flex gap-3">
               <Button
                 type="submit"
-                disabled={isSubmitting || !confirmed}
+                disabled={isSubmitting || !supplierCancellationConfirmed}
                 variant="destructive"
                 className="font-semibold"
               >
-                {isSubmitting ? <><Loader2 size={16} className="animate-spin mr-2" />Processing...</> : "Confirm Cancellation"}
+                {isSubmitting ? <><Loader2 size={16} className="animate-spin mr-2" />Submitting...</> : "Submit Cancellation Request"}
               </Button>
               <Link href={`/bookings/${bookingId}`}><Button type="button" variant="outline">Go Back</Button></Link>
             </div>

@@ -681,6 +681,18 @@ describe("bookings.bulkImport", () => {
   });
 });
 
+// ─── Cancellations ────────────────────────────────────────────────────────────
+
+describe("cancellations.submit", () => {
+  it("requires an agent to acknowledge direct supplier cancellation before submitting", async () => {
+    const caller = appRouter.createCaller(makeCtx("agent"));
+
+    await expect(caller.cancellations.submit({ bookingId: 42, supplierCancellationConfirmed: false })).rejects.toThrow(
+      "You must confirm that you have cancelled directly with the supplier before submitting this request."
+    );
+  });
+});
+
 // ─── Cancellations.byBooking ──────────────────────────────────────────────────
 
 describe("cancellations.byBooking", () => {
