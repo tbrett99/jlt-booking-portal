@@ -25,6 +25,7 @@ type ClaimRow = {
   agentEmail: string;
   agentPortalStatus?: string | null;
   inContract?: boolean;
+  inContractHold?: boolean;
   status: string;
   claimedAt: Date | string;
   paidAt: Date | string | null;
@@ -144,8 +145,8 @@ function ClaimTable({
                     <Checkbox
                       checked={selectedIds.has(c.id)}
                       onCheckedChange={() => toggleSelect(c.id)}
-                      disabled={!!c.inContract}
-                      aria-label={c.inContract ? "Commission held while agent remains In Contract" : `Select commission claim for ${c.booking?.clientName ?? c.agentName}`}
+                      disabled={!!c.inContractHold}
+                      aria-label={c.inContractHold ? "Commission held until this booking's departure date has passed" : `Select commission claim for ${c.booking?.clientName ?? c.agentName}`}
                     />
                   </td>
                 )}
@@ -164,8 +165,8 @@ function ClaimTable({
                         </span>
                       )}
                       {c.inContract && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-rose-100 text-rose-800 border border-rose-200 rounded px-1.5 py-0.5" title="Agent remains in contract — do not pay commission until their final client has returned from travel">
-                          <AlertTriangle className="h-2.5 w-2.5" /> In Contract — Hold
+                        <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium rounded px-1.5 py-0.5 ${c.inContractHold ? "bg-rose-100 text-rose-800 border border-rose-200" : "bg-emerald-100 text-emerald-800 border border-emerald-200"}`} title={c.inContractHold ? "Commission remains held until this booking's departure date has passed" : "Agent remains In Contract, but this client has travelled and commission may proceed"}>
+                          <AlertTriangle className="h-2.5 w-2.5" /> {c.inContractHold ? "In Contract — Hold" : "In Contract — Travel Complete"}
                         </span>
                       )}
                     </div>
@@ -429,8 +430,8 @@ export default function AdminCommissions() {
   const { rows: pagedPaid, safePage: safePaidPage, totalPages: paidTotalPages } = getPage(paid, paidPage, PAID_CLAIMS_PER_PAGE);
 
   const toggleSelect = (id: number) => {
-    if (allClaims.find((claim) => claim.id === id)?.inContract) {
-      toast.error("This claim is held while the agent remains In Contract.");
+    if (allClaims.find((claim) => claim.id === id)?.inContractHold) {
+      toast.error("This claim is held because the booking's departure date has not yet passed.");
       return;
     }
     setSelectedIds((prev) => {
@@ -442,22 +443,22 @@ export default function AdminCommissions() {
   };
 
   const toggleSelectAll = (rows: ClaimRow[]) => {
-    const selectableRows = getSelectableCommissionRows(rows);
-    if (selectableRows.length === 0) {
-      toast.error("All of these claims are held while their agents remain In Contract.");
+    const selectable = getSelectableCommissionRows(rows);
+    if (selectable.length === 0) {
+      toast.error("All of these claims are held because their booking departure dates have not yet passed.");
       return;
     }
-    const allSelected = selectableRows.every((r) => selectedIds.has(r.id));
+    const allSelected = selectable.every((r) => selectedIds.has(r.id));
     if (allSelected) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        selectableRows.forEach((r) => next.delete(r.id));
+        selectable.forEach((r) => next.delete(r.id));
         return next;
       });
     } else {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        selectableRows.forEach((r) => next.add(r.id));
+        selectable.forEach((r) => next.add(r.id));
         return next;
       });
     }
@@ -733,7 +734,7 @@ export default function AdminCommissions() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base">Notice Period Claims</CardTitle>
-                  <p className="text-sm text-muted-foreground mt-1">These claims were submitted by agents serving notice. Claims marked <strong>In Contract</strong> remain blocked until the agent’s final client has returned from travel and the status is removed in CRM.</p>
+                  <p className="text-sm text-muted-foreground mt-1">These claims were submitted by agents serving notice. Claims marked <strong>In Contract — Hold</strong> remain blocked only until that booking’s departure date has passed.</p>
                 </div>
               </div>
             </CardHeader>
@@ -769,8 +770,8 @@ export default function AdminCommissions() {
                               <div className="text-xs text-muted-foreground">{c.agentEmail}</div>
                             </td>
                             <td className="py-3 px-4">
-                              <Badge variant="outline" className={`text-xs ${c.inContract ? 'border-rose-500 text-rose-700 bg-rose-50' : 'border-purple-500 text-purple-600'}`}>
-                                {c.inContract ? 'In Contract — Hold' : ((c as any).agentPortalStatus === 'in_notice' ? 'In Notice' : ((c as any).agentPortalStatus ?? 'Unknown'))}
+                              <Badge variant="outline" className={`text-xs ${c.inContractHold ? 'border-rose-500 text-rose-700 bg-rose-50' : c.inContract ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-purple-500 text-purple-600'}`}>
+                                {c.inContractHold ? 'In Contract — Hold' : c.inContract ? 'In Contract — Travel Complete' : ((c as any).agentPortalStatus === 'in_notice' ? 'In Notice' : ((c as any).agentPortalStatus ?? 'Unknown'))}
                               </Badge>
                             </td>
                             <td className="py-3 px-4">
@@ -789,9 +790,9 @@ export default function AdminCommissions() {
                             <td className="py-3 px-4 text-muted-foreground">{formatDate(c.claimedAt)}</td>
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-2">
-                                {c.inContract ? (
+                                {c.inContractHold ? (
                                   <span className="max-w-[190px] text-xs font-medium leading-4 text-rose-700">
-                                    In Contract — held until removed in CRM after final client travel
+                                    In Contract — held until the booking’s departure date has passed
                                   </span>
                                 ) : departed && (
                                   <Button
@@ -900,7 +901,7 @@ export default function AdminCommissions() {
                 <span>Processing — Claim in PTS to advance</span>
                 <div className="flex items-center gap-2">
                   {processing.length > 0 && selectedIds.size === 0 && (
-                    <Button variant="outline" size="sm" onClick={() => toggleSelectAll(processing)} disabled={!processing.some((claim) => !claim.inContract)} className="text-xs">
+                    <Button variant="outline" size="sm" onClick={() => toggleSelectAll(processing)} disabled={!processing.some((claim) => !claim.inContractHold)} className="text-xs">
                       Select All
                     </Button>
                   )}

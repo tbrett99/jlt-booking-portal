@@ -212,8 +212,8 @@ export default function CommissionDue() {
   }
 
   function toggleOne(id: number) {
-    if (filtered.find((booking) => booking.id === id)?.inContract) {
-      toast.error("This booking is held while the agent remains In Contract.");
+    if ((filtered.find((booking) => booking.id === id) as any)?.inContractHold) {
+      toast.error("This booking is held because the agent is In Contract and its departure date has not yet passed.");
       return;
     }
     setSelectedIds((prev) => {
@@ -367,20 +367,21 @@ export default function CommissionDue() {
           {filtered.map((booking) => {
             const isSelected = selectedIds.has(booking.id);
             const isInContract = !!booking.inContract;
+            const isInContractHold = !!(booking as any).inContractHold;
             const departed = booking.departureDate ? isPast(new Date(booking.departureDate)) : false;
             return (
               <Card
                 key={booking.id}
-                className={`border-l-4 transition-shadow ${isSelected ? "border-l-amber-500 ring-1 ring-amber-300" : isInContract ? "border-l-rose-400" : "border-l-amber-400"} hover:shadow-md`}
+                className={`border-l-4 transition-shadow ${isSelected ? "border-l-amber-500 ring-1 ring-amber-300" : isInContractHold ? "border-l-rose-400" : "border-l-amber-400"} hover:shadow-md`}
               >
                 <CardContent className="p-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     {/* Checkbox */}
                     <button
                       onClick={() => toggleOne(booking.id)}
-                      disabled={isInContract}
+                      disabled={isInContractHold}
                       className="flex-shrink-0 self-start mt-0.5 disabled:cursor-not-allowed disabled:opacity-40"
-                      title={isInContract ? "Commission is held while the agent remains In Contract" : "Select booking"}
+                      title={isInContractHold ? "Commission is held until this booking's departure date has passed" : "Select booking"}
                     >
                       {isSelected
                         ? <CheckSquare size={17} className="text-amber-500" />
@@ -415,9 +416,9 @@ export default function CommissionDue() {
                           </Badge>
                         )}
                         {isInContract && (
-                          <Badge className="text-xs bg-rose-100 text-rose-800 border border-rose-300 gap-1 flex items-center" title="Agent remains in contract — do not pay commission until their final client has returned from travel">
+                          <Badge className={`text-xs gap-1 flex items-center ${isInContractHold ? "bg-rose-100 text-rose-800 border border-rose-300" : "bg-emerald-100 text-emerald-800 border border-emerald-300"}`} title={isInContractHold ? "Commission is held until this booking's departure date has passed" : "Agent remains In Contract, but this client has travelled and the commission may proceed"}>
                             <AlertTriangle size={10} />
-                            In Contract — commission hold
+                            {isInContractHold ? "In Contract — commission hold" : "In Contract — travel complete"}
                           </Badge>
                         )}
                       </div>
@@ -483,15 +484,15 @@ export default function CommissionDue() {
                           setPreAuthBooking({ id: booking.id, clientName: booking.clientName, isPreAuth: !!(booking as any).commissionPreAuthorised });
                           setVatInput("");
                         }}
-                        disabled={moveStage.isPending || bulkMoveStage.isPending || isInContract}
-                        title={isInContract ? "Commission is blocked until In Contract is removed in the agent CRM profile" : undefined}
+                        disabled={moveStage.isPending || bulkMoveStage.isPending || isInContractHold}
+                        title={isInContractHold ? "Commission is blocked until this booking's departure date has passed" : undefined}
                       >
                         <CheckCircle2 className="w-4 h-4 mr-1.5" />
                         {(booking as any).commissionPreAuthorised ? "Auto-Claim" : "Mark Claimable"}
                       </Button>
-                      {isInContract && (
+                      {isInContractHold && (
                         <span className="w-full text-right text-[11px] font-medium text-rose-700">
-                          Commission held until In Contract is removed in CRM after final client travel
+                          Commission held until the booking's departure date has passed
                         </span>
                       )}
                     </div>

@@ -181,11 +181,23 @@ const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
 
 const COMMISSION_PROCESSING_STAGES = new Set(["Commission Claimable", "Commission Claimed"]);
 
+/** A departure is complete only after its recorded calendar date has passed. */
+function hasBookingDeparturePassed(departureDate: Date | string | null | undefined): boolean {
+  if (!departureDate) return false;
+  const departure = new Date(departureDate);
+  if (Number.isNaN(departure.getTime())) return false;
+  departure.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return departure < today;
+}
+
 /**
  * An active In Contract hold is a payment-control flag, so the safeguard lives
- * server-side rather than relying on a disabled button in a specific page.
+ * server-side rather than relying on a disabled button in a specific page. The
+ * hold releases for a booking once its recorded departure date has passed.
  */
-async function assertAgentCanProgressCommission(agentId: number) {
+async function assertAgentCanProgressCommission(agentId: number, departureDate: Date | string | null | undefined) {
   const { getDb } = await import("./db");
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Unable to verify the agent’s In Contract status." });
@@ -196,10 +208,10 @@ async function assertAgentCanProgressCommission(agentId: number) {
     .from(agentCrmProfiles)
     .where(eq(agentCrmProfiles.userId, agentId))
     .limit(1);
-  if (profile[0]?.inContract) {
+  if (profile[0]?.inContract && !hasBookingDeparturePassed(departureDate)) {
     throw new TRPCError({
       code: "BAD_REQUEST",
-      message: "This agent is marked In Contract. Commission cannot be progressed until their final client has returned from travel and the In Contract status is removed in CRM.",
+      message: "This agent is marked In Contract and this booking has not yet departed. Commission cannot be progressed until the booking's departure date has passed.",
     });
   }
 }
@@ -1055,7 +1067,7 @@ export const appRouter = router({
         }
 
         if (COMMISSION_PROCESSING_STAGES.has(input.toStage)) {
-          await assertAgentCanProgressCommission(booking.agentId);
+          await assertAgentCanProgressCommission(booking.agentId, booking.departureDate);
         }
 
         // Persist VAT before changing the pipeline stage. Previously the stage was
@@ -1544,7 +1556,7 @@ export const appRouter = router({
             if (!booking) { results.push({ bookingId, success: false, error: "not_found" }); continue; }
             if (COMMISSION_PROCESSING_STAGES.has(input.toStage)) {
               try {
-                await assertAgentCanProgressCommission(booking.agentId);
+                await assertAgentCanProgressCommission(booking.agentId, booking.departureDate);
               } catch (error) {
                 const message = error instanceof TRPCError ? error.message : "in_contract";
                 results.push({ bookingId, success: false, error: message });
@@ -2826,6 +2838,7 @@ export const appRouter = router({
         agentName: userMap.get(b.agentId)?.name ?? "Unknown",
         agentEmail: userMap.get(b.agentId)?.email ?? "",
         inContract: inContractAgentIds.has(b.agentId),
+        inContractHold: inContractAgentIds.has(b.agentId) && !hasBookingDeparturePassed(b.departureDate),
         hasOutstandingRefund: outstandingRefundBookingIds.has(b.id),
         hasOutstandingAmendment: outstandingAmendmentBookingIds.has(b.id),
       }));
@@ -3176,6 +3189,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         agentEmail: userMap.get(c.agentId)?.email ?? "",
         agentPortalStatus: (userMap.get(c.agentId) as any)?.portalStatus ?? null,
         inContract: inContractAgentIds.has(c.agentId),
+        inContractHold: inContractAgentIds.has(c.agentId) && !hasBookingDeparturePassed(booking?.departureDate),
         booking,
         paidByName: c.paidById ? (userMap.get(c.paidById)?.name ?? "Admin") : null,
         bankAccountName: bankDetailsMap.get(c.agentId)?.bankAccountName ?? null,
@@ -3198,15 +3212,16 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         const { eq } = await import('drizzle-orm');
         const claim = (await getAllCommissionClaims()).find((c) => c.id === input.claimId);
         if (!claim) throw new TRPCError({ code: 'NOT_FOUND', message: 'Commission claim not found' });
+        const booking = await getBookingById(claim.bookingId);
         const inContractProfile = await dbInst
           .select({ userId: agentCrmProfiles.userId, inContract: agentCrmProfiles.inContract })
           .from(agentCrmProfiles)
           .where(eq(agentCrmProfiles.userId, claim.agentId))
           .limit(1);
-        if (inContractProfile[0]?.inContract) {
+        if (inContractProfile[0]?.inContract && !hasBookingDeparturePassed(booking?.departureDate)) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
-            message: 'This agent is marked In Contract. Keep the commission on hold until their final client has returned from travel, then remove the In Contract status in CRM.',
+            message: "This agent is marked In Contract and this booking has not yet departed. Keep the commission on hold until the booking's departure date has passed.",
           });
         }
         await dbInst.update(claimsTable).set({ status: 'processing' }).where(eq(claimsTable.id, input.claimId));
@@ -3252,16 +3267,27 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           const { getDb } = await import('./db');
           const dbInst = await getDb();
           if (!dbInst) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-          const { agentCrmProfiles } = await import('../drizzle/schema');
+          const { agentCrmProfiles, bookings: bookingsTable } = await import('../drizzle/schema');
           const { and, eq, inArray } = await import('drizzle-orm');
-          const inContractProfiles = await dbInst
-            .select({ userId: agentCrmProfiles.userId })
-            .from(agentCrmProfiles)
-            .where(and(inArray(agentCrmProfiles.userId, selectedAgentIds), eq(agentCrmProfiles.inContract, true)));
-          if (inContractProfiles.length > 0) {
+          const [inContractProfiles, selectedBookings] = await Promise.all([
+            dbInst
+              .select({ userId: agentCrmProfiles.userId })
+              .from(agentCrmProfiles)
+              .where(and(inArray(agentCrmProfiles.userId, selectedAgentIds), eq(agentCrmProfiles.inContract, true))),
+            dbInst
+              .select({ id: bookingsTable.id, departureDate: bookingsTable.departureDate })
+              .from(bookingsTable)
+              .where(inArray(bookingsTable.id, selectedClaims.map((claim) => claim.bookingId))),
+          ]);
+          const inContractAgentIds = new Set(inContractProfiles.map((profile) => profile.userId));
+          const departureByBookingId = new Map(selectedBookings.map((booking) => [booking.id, booking.departureDate]));
+          const heldClaimExists = selectedClaims.some((claim) =>
+            inContractAgentIds.has(claim.agentId) && !hasBookingDeparturePassed(departureByBookingId.get(claim.bookingId))
+          );
+          if (heldClaimExists) {
             throw new TRPCError({
               code: 'BAD_REQUEST',
-              message: 'One or more selected claims belong to an agent marked In Contract. Commission cannot be processed until the agent’s final client has returned from travel and the In Contract status is removed in CRM.',
+              message: "One or more selected claims belong to an In Contract agent whose booking has not yet departed. Only claims with a passed departure date can be processed.",
             });
           }
         }
@@ -3402,15 +3428,16 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         const claim = allClaims.find((c) => c.id === input.claimId);
         if (!claim) throw new TRPCError({ code: 'NOT_FOUND' });
         if (claim.status !== 'pending') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Claim is not in pending status' });
+        const booking = await getBookingById(claim.bookingId);
         const inContractProfile = await db
           .select({ userId: agentCrmProfiles.userId, inContract: agentCrmProfiles.inContract })
           .from(agentCrmProfiles)
           .where(eq(agentCrmProfiles.userId, claim.agentId))
           .limit(1);
-        if (inContractProfile[0]?.inContract) {
+        if (inContractProfile[0]?.inContract && !hasBookingDeparturePassed(booking?.departureDate)) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
-            message: 'This agent is marked In Contract. Keep the commission on hold until their final client has returned from travel, then remove the In Contract status in CRM.',
+            message: "This agent is marked In Contract and this booking has not yet departed. Commission cannot be progressed until the booking's departure date has passed.",
           });
         }
         await db.update(claimsTable).set({ status: 'processing' }).where(eq(claimsTable.id, input.claimId));

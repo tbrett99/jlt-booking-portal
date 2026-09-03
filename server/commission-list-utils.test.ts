@@ -22,11 +22,11 @@ describe("commission list controls", () => {
     expect(getPage([1, 2, 3], 99, 2).safePage).toBe(2);
   });
 
-  it("excludes In Contract records from Commission Due and Management bulk actions", () => {
+  it("excludes only future-travel In Contract records from Commission Due and Management bulk actions", () => {
     const rows = [
-      { id: 1, inContract: false },
-      { id: 2, inContract: true },
-      { id: 3 },
+      { id: 1, inContract: true, inContractHold: false },
+      { id: 2, inContract: true, inContractHold: true },
+      { id: 3, inContract: false },
     ];
 
     expect(getSelectableCommissionRows(rows).map((row) => row.id)).toEqual([1, 3]);

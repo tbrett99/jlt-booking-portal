@@ -24,7 +24,7 @@ export function getPage<T>(rows: T[], page: number, pageSize: number) {
   };
 }
 
-/** Claims held for an In Contract agent must never enter a payment-selection batch. */
-export function getSelectableCommissionRows<T extends { inContract?: boolean }>(rows: T[]) {
-  return rows.filter((row) => !row.inContract);
+/** Only future-travel bookings for an In Contract agent are held from payment selection. */
+export function getSelectableCommissionRows<T extends { id: number; inContractHold?: boolean }>(rows: T[]) {
+  return rows.filter((row) => !row.inContractHold);
 }

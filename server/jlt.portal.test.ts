@@ -535,6 +535,27 @@ describe("bookings.moveStage payment date guardrail", () => {
     ).rejects.toThrow(/marked In Contract/i);
     expect(updateBookingStage).not.toHaveBeenCalled();
   });
+
+  it("allows an In Contract agent to move a past-departure booking to Commission Claimable", async () => {
+    const { getBookingById, updateBookingStage, getDb, getCommissionClaimByBooking } = await import("./db");
+    vi.mocked(getBookingById).mockResolvedValueOnce({
+      ...BOOKING_WITH_PAYMENT_DATE,
+      departureDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+    } as any);
+    vi.mocked(getCommissionClaimByBooking).mockResolvedValueOnce(null);
+    vi.mocked(updateBookingStage).mockResolvedValueOnce({ id: 1, currentStage: "Commission Claimable" } as any);
+    vi.mocked(getDb).mockResolvedValue({
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([{ inContract: true }]) }),
+        }),
+      }),
+    } as any);
+
+    await appRouter.createCaller(makeCtx("admin")).bookings.moveStage({ bookingId: 1, toStage: "Commission Claimable" });
+
+    expect(updateBookingStage).toHaveBeenCalledWith(1, "Commission Claimable", 2);
+  });
   it("allows move to earlier stages without finalSupplierPaymentDate", async () => {
     const { getBookingById, updateBookingStage, getUserById, getNotificationTemplate, createInAppNotification, createNote } = await import("./db");
     vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITHOUT_PAYMENT_DATE as any);
