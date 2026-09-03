@@ -1,0 +1,1 @@
+ALTER TABLE `email_unsubscribes` MODIFY COLUMN `unsubscribedAt` timestamp;

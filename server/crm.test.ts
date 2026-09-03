@@ -250,9 +250,9 @@ describe("CRM — Campaigns", () => {
       name: "May Update",
       subject: "May news",
       bodyHtml: "<p>Hello</p>",
-      segmentType: "all_agents",
+      audienceType: "agent",
     });
-    expect((result as any).success).toBe(true);
+    expect((result as any).id).toBe(1);
   });
 
   it("updates a campaign", async () => {

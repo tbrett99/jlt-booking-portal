@@ -7,7 +7,7 @@ import { Resend } from "resend";
 import { ENV } from "./_core/env";
 import { getDb } from "./db";
 import { emailSends, emailUnsubscribes, agentEmails } from "../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import crypto from "crypto";
 import { getEmailBrandingSettings } from "./crm-db";
 import type { EmailBrandingSettings } from "../drizzle/schema";
@@ -115,8 +115,27 @@ export async function processUnsubscribe(token: string): Promise<string | null> 
   if (!db) return null;
   const rows = await db.select().from(emailUnsubscribes).where(eq(emailUnsubscribes.token, token)).limit(1);
   if (rows.length === 0) return null;
-  // Already unsubscribed — just return the email
-  return rows[0].email;
+  const record = rows[0];
+  // Tokens are created when an email is prepared. Do not suppress the address
+  // until the recipient has deliberately used that token to opt out.
+  if (!record.unsubscribedAt) {
+    await db
+      .update(emailUnsubscribes)
+      .set({ unsubscribedAt: new Date() })
+      .where(eq(emailUnsubscribes.id, record.id));
+  }
+  return record.email;
+}
+
+/** Return only addresses that have explicitly completed an unsubscribe action. */
+export async function getConfirmedUnsubscribedEmailSet(): Promise<Set<string>> {
+  const db = await getDb();
+  if (!db) return new Set();
+  const rows = await db
+    .select({ email: emailUnsubscribes.email })
+    .from(emailUnsubscribes)
+    .where(isNotNull(emailUnsubscribes.unsubscribedAt));
+  return new Set(rows.map((row) => row.email.trim().toLowerCase()));
 }
 
 /**

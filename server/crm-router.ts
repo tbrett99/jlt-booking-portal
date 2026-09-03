@@ -3005,9 +3005,23 @@ export const crmRouter = router({
               console.warn("[Campaign Send] Could not run agent email safeguard check:", e);
             }
           }
-          recipients = filtered
+          const candidateRecipients = filtered
             .filter((p) => p.email && !agentEmailSet.has(p.email.toLowerCase()))
             .map((p) => ({ email: p.email!, name: `${p.firstName} ${p.lastName}`.trim(), id: p.id, type: "prospect" as const }));
+          // Exclude confirmed opt-outs before a send row is queued. They remain
+          // prospect records in CRM, but do not inflate campaign recipient or
+          // failure counts and are never handed to the email provider.
+          const { getConfirmedUnsubscribedEmailSet } = await import("./resend-email");
+          const unsubscribedEmails = await getConfirmedUnsubscribedEmailSet();
+          const skippedUnsubscribed = candidateRecipients.filter((recipient) =>
+            unsubscribedEmails.has(recipient.email.trim().toLowerCase())
+          ).length;
+          if (skippedUnsubscribed > 0) {
+            console.log(`[Campaign Send] Excluded ${skippedUnsubscribed} confirmed unsubscribe(s) before queueing`);
+          }
+          recipients = candidateRecipients.filter((recipient) =>
+            !unsubscribedEmails.has(recipient.email.trim().toLowerCase())
+          );
         } else {
           // Agents — join with agentCrmProfiles and agentTags for segmentation
           const { getDb } = await import("./db");

@@ -1,6 +1,10 @@
 # JLT Group Booking Portal - TODO
 ## Active Investigation
 - [x] Add an In Contract toggle for agents in notice and display the status in CRM, Commission Due, and Commission Management; block related commission processing until the hold is removed after final client travel
+- [x] Investigate failures in the Prospects Travel Updates email campaign sent yesterday and identify the delivery cause
+- [x] Review live prospect, mailing-contact, and unsubscribe totals; identify whether unsubscribed prospects remain in the marketing audience
+- [x] Urgently correct marketing unsubscribe confirmation and pre-send suppression, restore falsely suppressed prospects, and validate future campaign delivery
+- [ ] Validate the repaired prospect campaign workflow after the Railway deployment without sending an unapproved live test campaign
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

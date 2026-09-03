@@ -1271,7 +1271,9 @@ export const emailUnsubscribes = mysqlTable("email_unsubscribes", {
   email: varchar("email", { length: 255 }).notNull(),
   token: varchar("token", { length: 64 }).notNull().unique(),
   prospectId: int("prospectId"),
-  unsubscribedAt: timestamp("unsubscribedAt").notNull().defaultNow(),
+  // A token is created when an email is prepared. Only an explicit click on the
+  // unsubscribe route sets this timestamp and suppresses future marketing email.
+  unsubscribedAt: timestamp("unsubscribedAt"),
 });
 export type EmailUnsubscribe = typeof emailUnsubscribes.$inferSelect;
 export type InsertEmailUnsubscribe = typeof emailUnsubscribes.$inferInsert;
