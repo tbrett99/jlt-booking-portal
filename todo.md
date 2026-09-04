@@ -10,6 +10,7 @@
 - [x] Resend Prospects Travel Updates only to the 174 recipients whose prior messages were not submitted (173 submitted; one example.com test record correctly rejected)
 - [x] Reconcile and correct inconsistent Super Admin weekly, monthly, and recruitment sign-up metrics against Railway records
 - [x] Add a mandatory agent acknowledgment that they must cancel directly with suppliers before submitting a booking cancellation request
+- [x] Diagnose Mackay's missing recruitment application and audit Railway intake records for other potentially missed submissions; synchronise the legacy application route into the recruitment pipeline
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

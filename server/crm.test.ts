@@ -80,7 +80,23 @@ vi.mock("./crm-db", () => ({
     firstClassDay28Url: "https://pay.gocardless.com/fc28",
   }),
   upsertPaymentConfig: vi.fn().mockResolvedValue({ id: 1 }),
-  uploadProspectDoc: vi.fn().mockResolvedValue(undefined),
+}));
+
+// ── Mock recruitment pipeline helpers ───────────────────────────────────────
+vi.mock("./recruitment-db", () => ({
+  createRecruitmentProspect: vi.fn().mockResolvedValue(90),
+  getRecruitmentProspectByEmail: vi.fn().mockResolvedValue({
+    id: 90,
+    applicationSubmittedAt: null,
+    pipelineStage: "new_enquiry",
+  }),
+  getRecruitmentProspectById: vi.fn().mockResolvedValue({
+    id: 90,
+    applicationSubmittedAt: new Date(),
+    pipelineStage: "application_received",
+  }),
+  updateRecruitmentProspect: vi.fn().mockResolvedValue(undefined),
+  moveRecruitmentProspectStage: vi.fn().mockResolvedValue(undefined),
 }));
 
 // ── Mock storage ─────────────────────────────────────────────────────────────
@@ -222,6 +238,15 @@ describe("CRM — AR Form", () => {
       confirmationAccepted: true,
     });
     expect((result as any).success).toBe(true);
+    const { updateRecruitmentProspect, moveRecruitmentProspectStage } = await import("./recruitment-db");
+    expect(updateRecruitmentProspect).toHaveBeenCalledWith(90, expect.objectContaining({
+      applicationSubmittedAt: expect.any(Date),
+      applicationData: expect.objectContaining({ whyJlt: "I love travel" }),
+    }));
+    expect(moveRecruitmentProspectStage).toHaveBeenCalledWith(expect.objectContaining({
+      prospectId: 90,
+      toStage: "application_received",
+    }));
   });
 
   it("allows admin to review an AR form", async () => {

@@ -6,7 +6,13 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { isOnboardingEligible } from "./onboarding-eligibility";
-import { createRecruitmentProspect, getRecruitmentProspectByEmail } from "./recruitment-db";
+import {
+  createRecruitmentProspect,
+  getRecruitmentProspectByEmail,
+  getRecruitmentProspectById,
+  moveRecruitmentProspectStage,
+  updateRecruitmentProspect,
+} from "./recruitment-db";
 import {
   createProspect,
   getProspectById,
@@ -530,6 +536,66 @@ export const crmRouter = router({
         const prospect = await getProspectById(input.prospectId);
         if (!prospect) throw new TRPCError({ code: "NOT_FOUND", message: "Prospect not found" });
         await createArForm(input);
+
+        // Older links use /apply/:prospectId and write to prospect_ar_forms. Keep
+        // those real submissions visible in the authoritative recruitment pipeline
+        // as well, so staff never have to hunt in two separate prospect systems.
+        const applicationData = {
+          occupation: input.currentJob ?? "",
+          whyJlt: input.whyInterested ?? "",
+          experience: input.travelExperienceDetails ?? "",
+          fullOrPartTime: (input.weeklyHours ?? "").toLowerCase().includes("full time") ? "full_time" : "part_time",
+          anythingElse: input.biggestHesitation ?? "",
+          submittedAt: new Date().toISOString(),
+          selfEmployed: input.isSelfEmployed ?? "",
+          travelExperience: input.hasTravelExperience ?? "",
+          travelExperienceDetails: input.travelExperienceDetails ?? "",
+          mainGoal: input.businessGoal12Months ?? "",
+          travelSpecialism: input.travelSpecialisation ?? "",
+          hoursPerWeek: input.weeklyHours ?? "",
+          homeSupport: input.hasHomeSupport ?? "",
+          investmentReadiness: input.investmentReadiness ?? "",
+          selfEmployedAwareness: input.understandsSelfEmployed ?? "",
+          biggestWorry: input.biggestHesitation ?? "",
+          techConfidence: input.techConfidence ?? "",
+          financialReadiness: input.financialReadiness ?? "",
+          twoYearVision: input.twoYearVision ?? "",
+          heardAbout: input.hearAboutUs ? [input.hearAboutUs] : [],
+          heardAboutOther: input.hearAboutUsDetails ?? "",
+          lookingAtOthers: input.lookingAtOtherAgencies ?? "",
+          lookingAtOthersDetails: input.otherAgenciesDetails ?? "",
+        };
+        let recruitmentProspect = await getRecruitmentProspectByEmail(prospect.email);
+        if (!recruitmentProspect) {
+          const recruitmentProspectId = await createRecruitmentProspect({
+            firstName: prospect.firstName,
+            lastName: prospect.lastName,
+            email: prospect.email,
+            phone: prospect.phone ?? undefined,
+            source: prospect.source ?? "legacy_ar_form",
+            pipelineStage: "new_enquiry",
+          });
+          recruitmentProspect = await getRecruitmentProspectById(recruitmentProspectId);
+        }
+        if (!recruitmentProspect) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "We could not save your application. Please try again in a moment." });
+        }
+        if (!recruitmentProspect.applicationSubmittedAt) {
+          await updateRecruitmentProspect(recruitmentProspect.id, {
+            applicationData,
+            applicationSubmittedAt: new Date(),
+          });
+          await moveRecruitmentProspectStage({
+            prospectId: recruitmentProspect.id,
+            toStage: "application_received",
+            changedByName: "System (legacy application form)",
+            note: "Application form submitted by prospect",
+          });
+        }
+        const savedApplication = await getRecruitmentProspectById(recruitmentProspect.id);
+        if (!savedApplication?.applicationSubmittedAt || savedApplication.pipelineStage !== "application_received") {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "We could not save your application. Please try again in a moment." });
+        }
         // Move to AR Submitted stage
         await moveProspectStage(input.prospectId, "AR Submitted", null, "AR form submitted by prospect");
         return { success: true };

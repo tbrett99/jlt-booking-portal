@@ -83,9 +83,9 @@ function EnquiryForm({ embed = false }: { embed?: boolean }) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-2xl font-bold text-[#414141] mb-3">Check Your Inbox!</h2>
+          <h2 className="text-2xl font-bold text-[#414141] mb-3">Your Prospectus Is On Its Way</h2>
           <p className="text-[#414141]/70 text-base leading-relaxed">
-            We've sent your JLT Group Prospectus to <strong>{submittedEmail}</strong>. Check your inbox (and spam folder) for an email from us with a link to view the prospectus and complete your application.
+            We have received your enquiry and sent your JLT Group Prospectus to <strong>{submittedEmail}</strong>. This is not yet your completed application. Check your inbox (and spam folder) for our email with the link to view the prospectus and submit the full application form.
           </p>
           <p className="mt-4 text-sm text-[#414141]/50">
             Questions? Email us at{" "}
