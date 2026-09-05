@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import compression from "compression";
 import { createServer } from "http";
 import net from "net";
 import { eq } from "drizzle-orm";
@@ -165,6 +166,12 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Production responses are currently served directly by Railway. Compress API
+  // payloads and static HTML/assets before they cross the network; webhook routes
+  // above retain their raw request bodies because compression affects responses only.
+  if (process.env.NODE_ENV === "production") {
+    app.use(compression({ threshold: 1024 }));
+  }
   // Storage proxy for /manus-storage/* paths
   registerStorageProxy(app);
   // OAuth callback under /api/oauth/callback

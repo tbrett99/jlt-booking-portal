@@ -52,6 +52,11 @@ export async function setupVite(app: Express, server: Server) {
   });
 }
 
+export function isVersionedBuildAsset(filePath: string): boolean {
+  const normalizedPath = filePath.split(path.sep).join("/");
+  return normalizedPath.includes("/assets/") || normalizedPath.startsWith("assets/");
+}
+
 export function serveStatic(app: Express) {
   const distPath =
     process.env.NODE_ENV === "development"
@@ -63,7 +68,18 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // Vite filenames inside /assets are content-hashed on every build. Browsers can
+  // therefore cache them for a year without serving stale application code after a
+  // deployment. Keep index.html and public root files revalidated so they always
+  // reference the current build's assets.
+  app.use(
+    "/assets",
+    express.static(path.join(distPath, "assets"), {
+      maxAge: "1y",
+      immutable: true,
+    })
+  );
+  app.use(express.static(distPath, { index: false }));
 
   // fall through to index.html if the file doesn't exist
   // but let Express handle server-side routes like /pay/:token
