@@ -14,6 +14,8 @@
 - [x] Issue gfryer18@gmail.com a replacement discovery-call booking link without changing her accepted application status
 - [x] Assess live portal slowness and present prioritised speed-improvement options before making changes
 - [ ] Improve Railway baseline responsiveness and production asset compression/cache behaviour, then measure live impact
+- [x] Scope an Airwallex virtual single-use card request, approval, evidence, and reimbursement-recovery workflow before implementation
+- [x] Scope a 12-week departure-date commission safeguard covering manual claims and pre-authorised bookings
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
