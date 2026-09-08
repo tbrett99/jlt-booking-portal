@@ -10,6 +10,15 @@ describe("PTS booking CSV mapping", () => {
     });
   });
 
+  it("defaults a missing client title to Mr so the mandatory import field is never blank", () => {
+    expect(splitClientName("Anna Marie Smith-Jones")).toEqual({
+      title: "Mr",
+      firstName: "Anna",
+      lastName: "Marie Smith-Jones",
+    });
+    expect(splitClientName("").title).toBe("Mr");
+  });
+
   it("uses the agreed fixed values and existing Orbit reference", () => {
     const csv = buildPtsBookingCsv([{
       bookingId: 12,

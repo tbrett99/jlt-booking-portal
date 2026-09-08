@@ -66,10 +66,10 @@ function protectCsvCell(value: unknown): string {
 
 export function splitClientName(clientName: string): { title: string; firstName: string; lastName: string } {
   const parts = clientName.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return { title: "", firstName: "", lastName: "" };
+  if (!parts.length) return { title: "Mr", firstName: "", lastName: "" };
 
   const possibleTitle = parts[0].replace(/\.$/, "").toLowerCase();
-  const title = TITLES.has(possibleTitle) ? parts.shift()!.replace(/\.$/, "") : "";
+  const title = TITLES.has(possibleTitle) ? parts.shift()!.replace(/\.$/, "") : "Mr";
   const firstName = parts.shift() ?? "";
   return { title, firstName, lastName: parts.join(" ") };
 }
