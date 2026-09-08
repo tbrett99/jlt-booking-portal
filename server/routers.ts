@@ -132,7 +132,7 @@ import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, se
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { ENV } from "./_core/env";
-import { buildPtsBookingCsv, PTS_EXPORT_ELIGIBLE_STAGES, type PtsBookingExportSource } from "./pts-booking-export-utils";
+import { buildPtsBookingCsv, canExportPtsBooking, PTS_EXPORT_ELIGIBLE_STAGES, type PtsBookingExportSource } from "./pts-booking-export-utils";
 import { crmRouter } from "./crm-router";
 import { remittanceRouter } from "./remittance-router";
 import { flightRequestsRouter } from "./flight-requests-router";
@@ -1837,6 +1837,7 @@ export const appRouter = router({
         LEFT JOIN pts_booking_export_items i ON i.bookingId = b.id
         WHERE b.currentStage IN (${sql.join(PTS_EXPORT_ELIGIBLE_STAGES.map((stage) => sql`${stage}`), sql`, `)})
           AND i.bookingId IS NULL
+          AND (b.ptsRef IS NULL OR TRIM(b.ptsRef) = '')
       `);
       return { count: Number((rows as unknown as any[])[0]?.count ?? 0) };
     }),
@@ -1858,6 +1859,7 @@ export const appRouter = router({
             b.passengers,
             b.numberOfNights,
             b.crmRef AS orbitRef,
+            b.ptsRef,
             u.name AS agentName,
             u.email AS agentEmail
           FROM bookings b
@@ -1865,10 +1867,11 @@ export const appRouter = router({
           LEFT JOIN pts_booking_export_items i ON i.bookingId = b.id
           WHERE b.currentStage IN (${sql.join(PTS_EXPORT_ELIGIBLE_STAGES.map((stage) => sql`${stage}`), sql`, `)})
             AND i.bookingId IS NULL
+            AND (b.ptsRef IS NULL OR TRIM(b.ptsRef) = '')
           ORDER BY b.createdAt ASC, b.id ASC
           FOR UPDATE
         `);
-        const candidates = rows as unknown as PtsBookingExportSource[];
+        const candidates = (rows as unknown as PtsBookingExportSource[]).filter(canExportPtsBooking);
         if (!candidates.length) return null;
 
         const csvContent = buildPtsBookingCsv(candidates);

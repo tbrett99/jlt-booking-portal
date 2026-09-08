@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPtsBookingCsv, isPtsExportEligibleStage, PTS_BOOKING_EXPORT_HEADERS, splitClientName } from "./pts-booking-export-utils";
+import { buildPtsBookingCsv, canExportPtsBooking, isPtsExportEligibleStage, PTS_BOOKING_EXPORT_HEADERS, splitClientName } from "./pts-booking-export-utils";
 
 describe("PTS booking CSV mapping", () => {
   it("splits recognised titles and multi-part surnames", () => {
@@ -55,5 +55,11 @@ describe("PTS booking CSV mapping", () => {
     expect(isPtsExportEligibleStage("Creating own PTS file")).toBe(false);
     expect(isPtsExportEligibleStage("Added to PTS")).toBe(false);
     expect(isPtsExportEligibleStage("Commission Claimable")).toBe(false);
+  });
+
+  it("excludes a booking once a PTS reference has been saved", () => {
+    expect(canExportPtsBooking({ ptsRef: null })).toBe(true);
+    expect(canExportPtsBooking({ ptsRef: "   " })).toBe(true);
+    expect(canExportPtsBooking({ ptsRef: "2T0141312" })).toBe(false);
   });
 });

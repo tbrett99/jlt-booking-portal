@@ -42,7 +42,18 @@ export type PtsBookingExportSource = {
   passengers: number | null;
   numberOfNights: number | null;
   orbitRef: string | null;
+  ptsRef?: string | null;
 };
+
+/** A saved PTS reference means the booking has already been created in PTS. */
+export function hasExistingPtsReference(ptsRef: string | null | undefined): boolean {
+  return typeof ptsRef === "string" && ptsRef.trim().length > 0;
+}
+
+/** Defence in depth for callers in addition to the database eligibility filter. */
+export function canExportPtsBooking(row: Pick<PtsBookingExportSource, "ptsRef">): boolean {
+  return !hasExistingPtsReference(row.ptsRef);
+}
 
 const TITLES = new Set(["mr", "mrs", "ms", "miss", "dr", "prof", "mx"]);
 
