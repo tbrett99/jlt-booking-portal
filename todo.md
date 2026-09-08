@@ -20,6 +20,12 @@
 - [x] Publish the PTS export checkpoint to GitHub and verify the remote commit
 - [x] Exclude any booking with an existing PTS reference from all new PTS CSV exports
 - [x] Default missing client titles to Mr in every PTS booking CSV export row
+- [x] Diagnose and correct Mel Cleverly’s Friends & Family voucher balance, and audit for matching discrepancies
+- [x] Correct Friends & Family voucher balance calculations for all agents by selecting the newest active allocation deterministically
+- [x] Reconcile live Friends & Family voucher-use records attached to missing bookings and verify affected current balances
+- [x] Add regression coverage and enforce the agreed treatment of voucher uses whose bookings are missing; cancelled bookings retain the established manual replacement process
+- [x] Verify every agent affected by orphaned Friends & Family voucher-use repairs in Railway and confirm each post-repair current balance
+- [x] Add regression coverage proving cancelled-booking voucher uses remain countable until staff apply the established manual replacement or removal process
 - [x] Update Jill Hosy’s production portal email address to jillhosy@yahoo.com
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list

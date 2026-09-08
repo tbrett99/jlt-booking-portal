@@ -14,6 +14,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
+import { isCountableFnfVoucherUse, selectCurrentFnfVoucherAllocation } from "./fnf-voucher-utils";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
@@ -28,43 +29,50 @@ async function getActiveAllocation(db: any, agentId: number) {
   const {
     fnfVoucherAllocations,
     fnfVoucherUses,
+    bookings,
   } = await import("../drizzle/schema");
   const { eq, and, isNull, desc } = await import("drizzle-orm");
 
   const now = new Date();
 
-  // Get the most recent allocation for this agent (filter expiry in JS to avoid timezone issues)
+  // An allocation is the current voucher entitlement for its renewal period. When a
+  // replacement or fresh grant has the same renewal date, use its creation time to
+  // select the newest allocation deterministically rather than a database-tie order.
   const allocs = await db
     .select()
     .from(fnfVoucherAllocations)
     .where(eq(fnfVoucherAllocations.agentId, agentId))
-    .orderBy(desc(fnfVoucherAllocations.renewsAt))
-    .limit(5);
+    .orderBy(desc(fnfVoucherAllocations.renewsAt), desc(fnfVoucherAllocations.createdAt))
+    .limit(20);
 
-  // Find the first non-expired allocation
-  const alloc = allocs.find((a: any) => {
-    const renewsAt = a.renewsAt instanceof Date ? a.renewsAt : new Date(a.renewsAt);
-    return renewsAt > now;
-  });
+  const allocation = selectCurrentFnfVoucherAllocation(allocs, now);
+  if (!allocation) return null;
 
-  if (!alloc) return null;
-
-  // Count active uses (not removed) against this allocation
+  // Voucher returns are an explicit staff action. Count every use that has not been
+  // removed against the current allocation, even if its booking is later cancelled.
   const uses = await db
-    .select()
+    .select({
+      id: fnfVoucherUses.id,
+      removedAt: fnfVoucherUses.removedAt,
+      bookingId: bookings.id,
+      bookingStage: bookings.currentStage,
+    })
     .from(fnfVoucherUses)
+    .leftJoin(bookings, eq(bookings.id, fnfVoucherUses.bookingId))
     .where(
       and(
-        eq(fnfVoucherUses.allocationId, alloc.id),
+        eq(fnfVoucherUses.allocationId, allocation.id),
         isNull(fnfVoucherUses.removedAt),
       )
     );
 
+  const countableUses = uses.filter(isCountableFnfVoucherUse);
+
   return {
-    allocation: alloc,
-    used: uses.length,
-    remaining: alloc.totalGranted - uses.length,
-    uses,
+    allocation,
+    used: countableUses.length,
+    remaining: Math.max(0, allocation.totalGranted - countableUses.length),
+    uses: countableUses,
   };
 }
 
