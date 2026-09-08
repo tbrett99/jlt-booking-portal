@@ -99,6 +99,28 @@ export const pipelineHistory = mysqlTable("pipeline_history", {
 
 export type PipelineHistory = typeof pipelineHistory.$inferSelect;
 
+// ─── PTS Booking CSV Exports ──────────────────────────────────────────────────
+// A booking may appear in one export batch only. This ledger is deliberately
+// separate from the PTS pipeline state so staff can safely generate an export
+// more than once a day without adding the same booking to the CSV twice.
+export const ptsBookingExportBatches = mysqlTable("pts_booking_export_batches", {
+  id: int("id").autoincrement().primaryKey(),
+  exportedById: int("exportedById").notNull(), // FK → users.id
+  rowCount: int("rowCount").notNull(),
+  csvContent: longtext("csvContent").notNull(), // Immutable download snapshot
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const ptsBookingExportItems = mysqlTable("pts_booking_export_items", {
+  id: int("id").autoincrement().primaryKey(),
+  exportBatchId: int("exportBatchId").notNull(), // FK → pts_booking_export_batches.id
+  bookingId: int("bookingId").notNull().unique(), // Exactly one PTS CSV export per booking
+  exportedAt: timestamp("exportedAt").defaultNow().notNull(),
+});
+
+export type PtsBookingExportBatch = typeof ptsBookingExportBatches.$inferSelect;
+export type PtsBookingExportItem = typeof ptsBookingExportItems.$inferSelect;
+
 // ─── Amendments ───────────────────────────────────────────────────────────────
 
 export const amendments = mysqlTable("amendments", {

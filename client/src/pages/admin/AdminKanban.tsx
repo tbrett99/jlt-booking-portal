@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, ChevronRight, AlertTriangle, Calendar, Clock, Loader2, SlidersHorizontal, MessageSquare, PackageCheck, Eye, EyeOff, ChevronsUpDown, Check } from "lucide-react";
+import { Search, ChevronRight, AlertTriangle, Calendar, Clock, Loader2, SlidersHorizontal, MessageSquare, PackageCheck, Eye, EyeOff, ChevronsUpDown, Check, Download, FileSpreadsheet, History } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
@@ -117,6 +117,8 @@ export default function AdminKanban() {
   const [isSavingGuard, setIsSavingGuard] = useState(false);
   const [queryMove, setQueryMove] = useState<{ bookingId: number } | null>(null);
   const [queryMessage, setQueryMessage] = useState("");
+  const [ptsExportDialogOpen, setPtsExportDialogOpen] = useState(false);
+  const [ptsHistoryOpen, setPtsHistoryOpen] = useState(false);
   const utils = trpc.useUtils();
 
   // When searching or showing all stages, load all stages from the server.
@@ -134,6 +136,37 @@ export default function AdminKanban() {
   const STAGES = loadAllStages ? ALL_STAGES : ACTIVE_STAGES;
   const { data: unreadIds = [] } = trpc.notes.unreadBookingIds.useQuery();
   const unreadSet = new Set(unreadIds);
+  const { data: ptsExportPending = { count: 0 } } = trpc.bookings.ptsExportPendingCount.useQuery();
+  const { data: ptsExportHistory = [] } = trpc.bookings.ptsExportHistory.useQuery(undefined, {
+    enabled: ptsHistoryOpen,
+  });
+  const downloadPtsExport = (csvContent: string, batchId: number) => {
+    const blob = new Blob([`\uFEFF${csvContent}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `pts-import-bookings-batch-${batchId}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  const createPtsExport = trpc.bookings.exportNewPtsBookings.useMutation({
+    onSuccess: (batch) => {
+      utils.bookings.ptsExportPendingCount.invalidate();
+      utils.bookings.ptsExportHistory.invalidate();
+      setPtsExportDialogOpen(false);
+      if (!batch.id || !batch.csvContent) {
+        toast.info("There are no new bookings awaiting export to PTS.");
+        return;
+      }
+      downloadPtsExport(batch.csvContent, batch.id);
+      toast.success(`${batch.rowCount} new booking${batch.rowCount === 1 ? "" : "s"} exported. They will not appear in a future PTS export.`);
+    },
+    onError: (err) => toast.error(err.message || "Could not create the PTS export"),
+  });
+  const downloadPtsExportHistory = trpc.bookings.ptsExportDownload.useMutation({
+    onSuccess: (batch) => downloadPtsExport(batch.csvContent, batch.id),
+    onError: (err) => toast.error(err.message || "Could not download this PTS export"),
+  });
   const moveStage = trpc.bookings.moveStage.useMutation({
     onSuccess: () => {
       utils.bookings.all.invalidate();
@@ -245,6 +278,27 @@ export default function AdminKanban() {
               className="pl-9"
             />
           </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setPtsHistoryOpen(true)}
+              title="View previous PTS exports"
+            >
+              <History size={14} /> Export history
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5 bg-[#02E6D2] text-[#414141] hover:bg-[#70FFE8]"
+              onClick={() => setPtsExportDialogOpen(true)}
+              disabled={ptsExportPending.count === 0}
+              title={ptsExportPending.count === 0 ? "No new bookings are awaiting export to PTS" : "Export new bookings awaiting addition to PTS"}
+            >
+              <FileSpreadsheet size={14} />
+              Export new PTS bookings{ptsExportPending.count > 0 ? ` (${ptsExportPending.count})` : ""}
+            </Button>
+          </div>
         </div>
         {/* Filter & Sort bar */}
         <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl border bg-muted/30">
@@ -350,6 +404,51 @@ export default function AdminKanban() {
           )}
         </div>
       </div>
+
+      <Dialog open={ptsExportDialogOpen} onOpenChange={setPtsExportDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><FileSpreadsheet size={18} className="text-[#02E6D2]" /> Export new PTS bookings</DialogTitle>
+            <DialogDescription className="leading-relaxed pt-2">
+              This will create a CSV using the PTS import template for the <strong>{ptsExportPending.count}</strong> booking{ptsExportPending.count === 1 ? "" : "s"} still awaiting addition to PTS. Each exported booking is recorded in an export ledger and cannot appear in a later export.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <strong>Before importing:</strong> review the generated CSV. This export does not move booking pipeline stages; move a booking to <em>Added to PTS</em> after it has been imported successfully.
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPtsExportDialogOpen(false)} disabled={createPtsExport.isPending}>Cancel</Button>
+            <Button className="gap-1.5 bg-[#02E6D2] text-[#414141] hover:bg-[#70FFE8]" onClick={() => createPtsExport.mutate()} disabled={createPtsExport.isPending}>
+              {createPtsExport.isPending ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              Generate and download
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={ptsHistoryOpen} onOpenChange={setPtsHistoryOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><History size={18} /> PTS export history</DialogTitle>
+            <DialogDescription>Prior exports are immutable and can be downloaded again without re-exporting their bookings.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[55vh] overflow-y-auto space-y-2">
+            {ptsExportHistory.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No PTS booking exports have been created yet.</p>
+            ) : ptsExportHistory.map((batch) => (
+              <div key={batch.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                <div>
+                  <p className="font-medium text-sm">Batch #{batch.id} · {batch.rowCount} booking{batch.rowCount === 1 ? "" : "s"}</p>
+                  <p className="text-xs text-muted-foreground">{format(new Date(batch.createdAt), "dd MMM yyyy, HH:mm")} · Exported by {batch.exportedByName ?? "Unknown user"}</p>
+                </div>
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => downloadPtsExportHistory.mutate({ batchId: batch.id })} disabled={downloadPtsExportHistory.isPending}>
+                  <Download size={13} /> Download
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {isLoading ? (
         <div className="flex justify-center py-20">

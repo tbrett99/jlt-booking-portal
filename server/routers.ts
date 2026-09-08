@@ -132,6 +132,7 @@ import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, se
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { ENV } from "./_core/env";
+import { buildPtsBookingCsv, PTS_EXPORT_ELIGIBLE_STAGES, type PtsBookingExportSource } from "./pts-booking-export-utils";
 import { crmRouter } from "./crm-router";
 import { remittanceRouter } from "./remittance-router";
 import { flightRequestsRouter } from "./flight-requests-router";
@@ -1825,6 +1826,118 @@ export const appRouter = router({
         );
       return { count: rows.length };
     }),
+    // Admin: count bookings not yet represented in any PTS import export.
+    ptsExportPendingCount: adminProcedure.query(async () => {
+      const db = await (await import("./db")).getDb();
+      if (!db) return { count: 0 };
+      const { sql } = await import("drizzle-orm");
+      const [rows] = await db.execute(sql`
+        SELECT COUNT(*) AS count
+        FROM bookings b
+        LEFT JOIN pts_booking_export_items i ON i.bookingId = b.id
+        WHERE b.currentStage IN (${sql.join(PTS_EXPORT_ELIGIBLE_STAGES.map((stage) => sql`${stage}`), sql`, `)})
+          AND i.bookingId IS NULL
+      `);
+      return { count: Number((rows as unknown as any[])[0]?.count ?? 0) };
+    }),
+    // Admin: create one immutable CSV batch. Row locks plus the unique bookingId
+    // ledger entry ensure concurrent or repeated exports cannot duplicate a booking.
+    exportNewPtsBookings: adminProcedure.mutation(async ({ ctx }) => {
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { sql } = await import("drizzle-orm");
+      const { ptsBookingExportBatches, ptsBookingExportItems } = await import("../drizzle/schema");
+
+      const batch = await db.transaction(async (tx) => {
+        const [rows] = await tx.execute(sql`
+          SELECT
+            b.id AS bookingId,
+            b.clientName,
+            b.destination AS country,
+            b.departureDate,
+            b.passengers,
+            b.numberOfNights,
+            b.crmRef AS orbitRef,
+            u.name AS agentName,
+            u.email AS agentEmail
+          FROM bookings b
+          LEFT JOIN users u ON u.id = b.agentId
+          LEFT JOIN pts_booking_export_items i ON i.bookingId = b.id
+          WHERE b.currentStage IN (${sql.join(PTS_EXPORT_ELIGIBLE_STAGES.map((stage) => sql`${stage}`), sql`, `)})
+            AND i.bookingId IS NULL
+          ORDER BY b.createdAt ASC, b.id ASC
+          FOR UPDATE
+        `);
+        const candidates = rows as unknown as PtsBookingExportSource[];
+        if (!candidates.length) return null;
+
+        const csvContent = buildPtsBookingCsv(candidates);
+        const inserted = await tx.insert(ptsBookingExportBatches).values({
+          exportedById: ctx.user.id,
+          rowCount: candidates.length,
+          csvContent,
+        });
+        const batchId = Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId);
+        if (!batchId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Could not create PTS export batch" });
+
+        const recorded: PtsBookingExportSource[] = [];
+        for (const candidate of candidates) {
+          const [result] = await tx.execute(sql`
+            INSERT IGNORE INTO pts_booking_export_items (exportBatchId, bookingId)
+            VALUES (${batchId}, ${candidate.bookingId})
+          `);
+          if (Number((result as any)?.affectedRows ?? 0) === 1) recorded.push(candidate);
+        }
+
+        if (!recorded.length) {
+          await tx.execute(sql`DELETE FROM pts_booking_export_batches WHERE id = ${batchId}`);
+          return null;
+        }
+
+        const finalCsv = recorded.length === candidates.length ? csvContent : buildPtsBookingCsv(recorded);
+        if (recorded.length !== candidates.length) {
+          await tx.update(ptsBookingExportBatches)
+            .set({ rowCount: recorded.length, csvContent: finalCsv })
+            .where(sql`${ptsBookingExportBatches.id} = ${batchId}`);
+        }
+        return { id: batchId, rowCount: recorded.length, csvContent: finalCsv };
+      });
+
+      return batch ?? { id: null, rowCount: 0, csvContent: null };
+    }),
+    // Admin: view and re-download immutable prior batches without exporting again.
+    ptsExportHistory: adminProcedure.query(async () => {
+      const db = await (await import("./db")).getDb();
+      if (!db) return [];
+      const { ptsBookingExportBatches, users: usersTable } = await import("../drizzle/schema");
+      const { desc, eq } = await import("drizzle-orm");
+      return db.select({
+        id: ptsBookingExportBatches.id,
+        rowCount: ptsBookingExportBatches.rowCount,
+        createdAt: ptsBookingExportBatches.createdAt,
+        exportedByName: usersTable.name,
+      })
+        .from(ptsBookingExportBatches)
+        .leftJoin(usersTable, eq(ptsBookingExportBatches.exportedById, usersTable.id))
+        .orderBy(desc(ptsBookingExportBatches.createdAt))
+        .limit(12);
+    }),
+    ptsExportDownload: adminProcedure
+      .input(z.object({ batchId: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        const db = await (await import("./db")).getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+        const { ptsBookingExportBatches } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const batch = (await db.select({
+          id: ptsBookingExportBatches.id,
+          rowCount: ptsBookingExportBatches.rowCount,
+          csvContent: ptsBookingExportBatches.csvContent,
+          createdAt: ptsBookingExportBatches.createdAt,
+        }).from(ptsBookingExportBatches).where(eq(ptsBookingExportBatches.id, input.batchId)).limit(1))[0];
+        if (!batch) throw new TRPCError({ code: "NOT_FOUND", message: "PTS export batch not found" });
+        return batch;
+      }),
   }),
   // ── Notes ─────────────────────────────────────────────────────────────────
   notes: router({
