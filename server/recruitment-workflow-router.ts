@@ -43,6 +43,27 @@ function requireAdmin(ctx: { user?: { role?: string } | null }) {
   }
 }
 
+export async function buildBrandedRecruitmentWorkflowEmailHtml(opts: {
+  subject: string;
+  bodyHtml: string;
+}) {
+  const branding = await getEmailBrandingSettings();
+  const logoHtml = branding?.logoUrl
+    ? `<img src="${branding.logoUrl}" alt="JLT Group" style="max-height:60px;max-width:200px;display:block;margin:0 auto;object-fit:contain;mix-blend-mode:multiply;" />`
+    : `<span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:#414141;">JLT Group</span>`;
+  return `
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>${opts.subject}</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/></head>
+<body style="margin:0;padding:0;background-color:#FFF6ED;font-family:'Poppins',Arial,sans-serif;">
+  <div style="width:100%;background-color:#FFF6ED;padding:32px 0;">
+    <div style="max-width:600px;width:100%;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.07);">
+      <div style="background-color:#70FFE8;padding:28px 40px;text-align:center;">${logoHtml}</div>
+      <div style="padding:36px 40px;color:#414141;font-family:'Poppins',Arial,sans-serif;font-size:15px;line-height:1.8;">${opts.bodyHtml}</div>
+      <div style="padding:20px 40px;text-align:center;background-color:#FFF6ED;font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#888;">&copy; ${new Date().getFullYear()} JLT Group. All rights reserved.</div>
+    </div>
+  </div>
+</body></html>`;
+}
+
 async function sendWorkflowEmail(opts: {
   toEmail: string;
   toName: string;
@@ -54,21 +75,7 @@ async function sendWorkflowEmail(opts: {
     return;
   }
   const resend = new Resend(ENV.resendApiKey);
-  const branding = await getEmailBrandingSettings();
-  const logoHtml = branding?.logoUrl
-    ? `<img src="${branding.logoUrl}" alt="JLT Group" style="max-height:60px;max-width:200px;display:block;margin:0 auto;object-fit:contain;mix-blend-mode:multiply;" />`
-    : `<span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:#414141;">JLT Group</span>`;
-  const wrappedHtml = `
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>${opts.subject}</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/></head>
-<body style="margin:0;padding:0;background-color:#FFF6ED;font-family:'Poppins',Arial,sans-serif;">
-  <div style="width:100%;background-color:#FFF6ED;padding:32px 0;">
-    <div style="max-width:600px;width:100%;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.07);">
-      <div style="background-color:#70FFE8;padding:28px 40px;text-align:center;">${logoHtml}</div>
-      <div style="padding:36px 40px;color:#414141;font-family:'Poppins',Arial,sans-serif;font-size:15px;line-height:1.8;">${opts.bodyHtml}</div>
-      <div style="padding:20px 40px;text-align:center;background-color:#FFF6ED;font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#888;">&copy; ${new Date().getFullYear()} JLT Group. All rights reserved.</div>
-    </div>
-  </div>
-</body></html>`;
+  const wrappedHtml = await buildBrandedRecruitmentWorkflowEmailHtml(opts);
   await resend.emails.send({
     from: PROSPECT_FROM,
     to: [opts.toEmail],
@@ -84,6 +91,9 @@ function getApplicationLink(adminNotes: string | null | undefined): string {
     ? `https://portal.thejltgroup.co.uk/apply/form?token=${token}`
     : "https://portal.thejltgroup.co.uk/apply";
 }
+
+const DISCOVERY_CALL_LINK = "https://cal.com/jlt-group/jlt-discovery";
+const JOIN_LINK = "https://portal.thejltgroup.co.uk/join";
 
 async function sendConfiguredWorkflowStep(opts: {
   prospectId: number;
@@ -106,6 +116,8 @@ async function sendConfiguredWorkflowStep(opts: {
     lastName: prospect.lastName,
     email: prospect.email,
     applicationLink: getApplicationLink(prospect.adminNotes),
+    discoveryCallLink: DISCOVERY_CALL_LINK,
+    joinLink: JOIN_LINK,
     discoveryCallDate: formatDiscoveryCallDate(prospect.discoveryCallAt),
   };
   const subject = renderRecruitmentWorkflowTemplate(step.subject, templateContext);
@@ -342,6 +354,30 @@ export const recruitmentWorkflowRouter = router({
   /**
    * Save (create or update) a workflow email step.
    */
+  previewWorkflowEmail: protectedProcedure
+    .input(z.object({
+      subject: z.string().trim().max(255),
+      bodyHtml: z.string().trim().min(1).max(100_000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      requireAdmin(ctx);
+      const previewContext = {
+        firstName: "Grace",
+        lastName: "Fryer",
+        email: "grace@example.com",
+        applicationLink: "https://portal.thejltgroup.co.uk/apply/form?token=example",
+        discoveryCallLink: DISCOVERY_CALL_LINK,
+        joinLink: JOIN_LINK,
+        discoveryCallDate: "Friday, 12 September 2026 at 10:00",
+      };
+      const subject = renderRecruitmentWorkflowTemplate(input.subject, previewContext);
+      const bodyHtml = renderRecruitmentWorkflowTemplate(input.bodyHtml, previewContext);
+      return {
+        subject,
+        html: await buildBrandedRecruitmentWorkflowEmailHtml({ subject, bodyHtml }),
+      };
+    }),
+
   saveWorkflowEmail: protectedProcedure
     .input(
       z.object({
@@ -466,7 +502,7 @@ export async function processWorkflowEmailsInternal(opts?: { prospectId?: number
       const currentStepData = steps.find((s) => s.stepOrder === enrollment.currentStep);
       if (!currentStepData) {
         // Step not found — mark as done
-        await advanceEnrollment(enrollment.id, enrollment.workflowId, enrollment.currentStep + 1);
+        await advanceEnrollment(enrollment.id, enrollment.workflowId, enrollment.currentStep + 1, enrollment.enrolledAt);
         continue;
       }
 
@@ -477,7 +513,7 @@ export async function processWorkflowEmailsInternal(opts?: { prospectId?: number
       });
       if (sentStep) sent++;
       // Advance to next step
-      await advanceEnrollment(enrollment.id, enrollment.workflowId, enrollment.currentStep + 1);
+      await advanceEnrollment(enrollment.id, enrollment.workflowId, enrollment.currentStep + 1, enrollment.enrolledAt);
     } catch (err) {
       console.error(`[WorkflowProcessor] Error processing enrollment ${enrollment.id}:`, err);
       errors++;

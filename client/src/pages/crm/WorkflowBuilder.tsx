@@ -19,7 +19,26 @@ import {
   ChevronRight,
   AlertCircle,
   CheckCircle2,
+  Eye,
 } from "lucide-react";
+
+const WORKFLOW_CTA_OPTIONS = [
+  {
+    label: "Submit your application",
+    href: "{{applicationLink}}",
+    description: "Uses this prospect's unique, secure application link.",
+  },
+  {
+    label: "Book your discovery call",
+    href: "{{discoveryCallLink}}",
+    description: "Uses the standard JLT discovery-call booking link.",
+  },
+  {
+    label: "Get started",
+    href: "{{joinLink}}",
+    description: "Uses the standard JLT joining link for approved prospects.",
+  },
+];
 
 // ─── Stage metadata ───────────────────────────────────────────────────────────
 
@@ -77,6 +96,10 @@ function EmailStepDialog({
   const [subject, setSubject] = useState(email?.subject ?? "");
   const [bodyHtml, setBodyHtml] = useState(email?.bodyHtml ?? "");
   const [delayHours, setDelayHours] = useState(email?.delayHours ?? 0);
+  const [delayUnit, setDelayUnit] = useState<"hours" | "days">(
+    email && email.delayHours > 0 && email.delayHours % 24 === 0 ? "days" : "hours"
+  );
+  const [showPreview, setShowPreview] = useState(false);
 
   const save = trpc.recruitmentWorkflow.saveWorkflowEmail.useMutation({
     onSuccess: () => {
@@ -85,6 +108,10 @@ function EmailStepDialog({
       onClose();
     },
     onError: (e) => toast.error(e.message),
+  });
+
+  const preview = trpc.recruitmentWorkflow.previewWorkflowEmail.useMutation({
+    onError: (error) => toast.error(error.message),
   });
 
   const handleSave = () => {
@@ -102,6 +129,21 @@ function EmailStepDialog({
     });
   };
 
+  const delayValue = delayUnit === "days" ? delayHours / 24 : delayHours;
+  const updateDelayValue = (value: number) => {
+    const multiplier = delayUnit === "days" ? 24 : 1;
+    setDelayHours(Math.max(0, Math.round(value * multiplier)));
+  };
+
+  const openPreview = () => {
+    if (!bodyHtml.trim()) {
+      toast.error("Add email content before opening a preview");
+      return;
+    }
+    setShowPreview(true);
+    preview.mutate({ subject, bodyHtml });
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -111,17 +153,22 @@ function EmailStepDialog({
 
         <div className="space-y-4 py-2">
           <div className="space-y-1">
-            <Label>Delay after stage entry</Label>
+            <Label>Delay from entry into the {STAGE_META[stage]?.label ?? stage} stage</Label>
             <div className="flex items-center gap-2">
               <Input
                 type="number"
                 min={0}
-                value={delayHours}
-                onChange={(e) => setDelayHours(Number(e.target.value))}
+                step={delayUnit === "days" ? 0.25 : 1}
+                value={delayValue}
+                onChange={(e) => updateDelayValue(Number(e.target.value))}
                 className="w-28"
               />
-              <span className="text-sm text-muted-foreground">hours (0 = send immediately)</span>
+              <div className="inline-flex rounded-md border border-border overflow-hidden">
+                <button type="button" onClick={() => setDelayUnit("hours")} className={`px-2.5 py-1 text-sm ${delayUnit === "hours" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Hours</button>
+                <button type="button" onClick={() => setDelayUnit("days")} className={`px-2.5 py-1 text-sm border-l border-border ${delayUnit === "days" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Days</button>
+              </div>
             </div>
+            <p className="text-xs text-muted-foreground">0 sends immediately. Every step is timed from stage entry, not from the previous email.</p>
           </div>
 
           <div className="space-y-1">
@@ -139,7 +186,33 @@ function EmailStepDialog({
               value={bodyHtml}
               onChange={setBodyHtml}
               placeholder="Hi {{firstName}}, ..."
+              quickCtas={WORKFLOW_CTA_OPTIONS}
             />
+          </div>
+
+          <div className="rounded-lg border border-border bg-muted/20 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Prospect preview</p>
+                <p className="text-xs text-muted-foreground">Shows the branded email with sample prospect details and working button destinations.</p>
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={() => showPreview ? setShowPreview(false) : openPreview()}>
+                <Eye size={14} className="mr-1.5" /> {showPreview ? "Hide preview" : "Preview email"}
+              </Button>
+            </div>
+            {showPreview && (
+              <div className="mt-3 overflow-hidden rounded-lg border border-border bg-background">
+                <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Subject:</span> {preview.data?.subject || "Loading preview…"}
+                </div>
+                <iframe
+                  title="Prospect email preview"
+                  sandbox=""
+                  srcDoc={preview.data?.html ?? ""}
+                  className="h-[520px] w-full bg-[#fff6ed]"
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -350,7 +423,9 @@ export default function WorkflowBuilder() {
           <code className="bg-background border rounded px-1">{"{{firstName}}"}</code> — prospect's first name &nbsp;
           <code className="bg-background border rounded px-1">{"{{lastName}}"}</code> — prospect's last name &nbsp;
           <code className="bg-background border rounded px-1">{"{{email}}"}</code> — prospect's email address &nbsp;
-          <code className="bg-background border rounded px-1">{"{{applicationLink}}"}</code> — personal application link &nbsp;
+          <code className="bg-background border rounded px-1">{"{{applicationLink}}"}</code> — unique personal application link &nbsp;
+          <code className="bg-background border rounded px-1">{"{{discoveryCallLink}}"}</code> — discovery-call booking link &nbsp;
+          <code className="bg-background border rounded px-1">{"{{joinLink}}"}</code> — JLT joining link &nbsp;
           <code className="bg-background border rounded px-1">{"{{discoveryCallDate}}"}</code> — booked call date and time
         </p>
       </div>

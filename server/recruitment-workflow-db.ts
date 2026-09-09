@@ -13,6 +13,7 @@ import {
   recruitmentWorkflowEnrollments,
 } from "../drizzle/schema";
 import { eq, and, isNull, lte, isNotNull } from "drizzle-orm";
+import { calculateWorkflowStepSendAt } from "./recruitment-workflow-utils";
 
 // ─── Workflows ────────────────────────────────────────────────────────────────
 
@@ -166,7 +167,7 @@ export async function enrollProspectInWorkflow(prospectId: number, stage: string
     // No step 2+ exists — nothing to schedule
     return null;
   }
-  const nextSendAt = new Date(Date.now() + startStepData.delayHours * 60 * 60 * 1000);
+  const nextSendAt = calculateWorkflowStepSendAt(new Date(), startStepData.delayHours);
 
   const result = await db.insert(recruitmentWorkflowEnrollments).values({
     prospectId,
@@ -216,7 +217,12 @@ export async function getDueEnrollments() {
 /**
  * Advance an enrollment to the next step (or mark complete).
  */
-export async function advanceEnrollment(enrollmentId: number, workflowId: number, nextStep: number) {
+export async function advanceEnrollment(
+  enrollmentId: number,
+  workflowId: number,
+  nextStep: number,
+  stageEnteredAt: Date | string
+) {
   const db = await getDb();
   if (!db) return;
   const steps = await getWorkflowEmails(workflowId);
@@ -231,7 +237,7 @@ export async function advanceEnrollment(enrollmentId: number, workflowId: number
     return;
   }
 
-  const nextSendAt = new Date(Date.now() + nextStepData.delayHours * 60 * 60 * 1000);
+  const nextSendAt = calculateWorkflowStepSendAt(stageEnteredAt, nextStepData.delayHours);
   await db
     .update(recruitmentWorkflowEnrollments)
     .set({ currentStep: nextStep, nextSendAt })

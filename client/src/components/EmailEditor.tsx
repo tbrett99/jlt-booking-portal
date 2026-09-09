@@ -15,10 +15,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+export interface EmailEditorQuickCta {
+  label: string;
+  href: string;
+  description: string;
+}
+
 interface EmailEditorProps {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
+  quickCtas?: EmailEditorQuickCta[];
 }
 
 function ToolbarButton({
@@ -48,7 +55,7 @@ function ToolbarButton({
   );
 }
 
-export default function EmailEditor({ value, onChange, placeholder }: EmailEditorProps) {
+export default function EmailEditor({ value, onChange, placeholder, quickCtas = [] }: EmailEditorProps) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
   const [linkText, setLinkText] = useState("");
@@ -117,6 +124,16 @@ export default function EmailEditor({ value, onChange, placeholder }: EmailEdito
     setLinkUrl("");
     setLinkText("");
   }, [editor, linkUrl, linkText]);
+
+  const insertCta = useCallback((cta: EmailEditorQuickCta) => {
+    editor
+      ?.chain()
+      .focus()
+      .insertContent(
+        `<p style="text-align:center;margin:24px 0;"><a href="${cta.href}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:700;padding:14px 32px;border-radius:8px;text-decoration:none;">${cta.label}</a></p>`
+      )
+      .run();
+  }, [editor]);
 
   if (!editor) return null;
 
@@ -196,6 +213,17 @@ export default function EmailEditor({ value, onChange, placeholder }: EmailEdito
         >
           + Button
         </button>
+        {quickCtas.map((cta) => (
+          <button
+            key={cta.label}
+            type="button"
+            title={cta.description}
+            className="text-xs px-2 py-1 rounded border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
+            onClick={() => insertCta(cta)}
+          >
+            + {cta.label}
+          </button>
+        ))}
       </div>
 
       {/* Editor area */}
@@ -203,7 +231,7 @@ export default function EmailEditor({ value, onChange, placeholder }: EmailEdito
 
       {/* Template variable hint */}
       <div className="px-3 py-1.5 border-t border-border bg-muted/20 text-[11px] text-muted-foreground">
-        Variables: <code className="font-mono">{"{{firstName}}"}</code> · <code className="font-mono">{"{{lastName}}"}</code> · <code className="font-mono">{"{{email}}"}</code>
+        Variables: <code className="font-mono">{"{{firstName}}"}</code> · <code className="font-mono">{"{{lastName}}"}</code> · <code className="font-mono">{"{{email}}"}</code> · <code className="font-mono">{"{{applicationLink}}"}</code> · <code className="font-mono">{"{{discoveryCallLink}}"}</code> · <code className="font-mono">{"{{joinLink}}"}</code>
       </div>
 
       {/* Link dialog */}

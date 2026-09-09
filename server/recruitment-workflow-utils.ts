@@ -3,8 +3,26 @@ export type RecruitmentWorkflowTemplateContext = {
   lastName: string;
   email: string;
   applicationLink: string;
+  discoveryCallLink: string;
+  joinLink: string;
   discoveryCallDate: string;
 };
+
+/**
+ * Workflow delays are absolute offsets from entering a recruitment stage.
+ * This keeps a three-day email at exactly three days even when an earlier
+ * email was delayed by the scheduler.
+ */
+export function calculateWorkflowStepSendAt(
+  stageEnteredAt: Date | string,
+  delayHours: number
+): Date {
+  const enteredAt = stageEnteredAt instanceof Date
+    ? stageEnteredAt
+    : new Date(stageEnteredAt);
+  const safeEnteredAt = Number.isNaN(enteredAt.getTime()) ? new Date() : enteredAt;
+  return new Date(safeEnteredAt.getTime() + Math.max(0, delayHours) * 60 * 60 * 1000);
+}
 
 export function formatDiscoveryCallDate(value: Date | string | null | undefined): string {
   if (!value) return "your scheduled time";
@@ -26,6 +44,8 @@ export function renderRecruitmentWorkflowTemplate(
     lastName: context.lastName,
     email: context.email,
     applicationLink: context.applicationLink,
+    discoveryCallLink: context.discoveryCallLink,
+    joinLink: context.joinLink,
     discoveryCallDate: context.discoveryCallDate,
   };
 

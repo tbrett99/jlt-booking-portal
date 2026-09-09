@@ -30,6 +30,9 @@
 - [x] Investigate the Orbit-to-portal margin discrepancy on booking #5372970; audit confirms the portal value was manually entered after registration
 - [x] Map recruitment pipeline-stage emails and identify which are hardcoded versus configurable workflow messages
 - [x] Consolidate recruitment candidate emails into branded editable workflow templates and remove duplicate direct sends
+- [x] Add reusable application, discovery-call, and joining buttons plus prospect preview and hour-or-day delays measured from workflow stage entry
+- [x] Make workflow preview use the same live JLT branding settings and wrapper as delivered recruitment emails
+- [ ] Visually verify populated workflow editor buttons and the branded prospect preview before release
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
