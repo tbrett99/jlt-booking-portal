@@ -123,6 +123,10 @@ async function markRecruitmentProspectWonForPaidJoin(email: string | null | unde
         changedByName: "System (payment confirmed)",
         note: `Joining fee paid via GoCardless — agent account confirmed (user #${userId})`,
       });
+      const { enrollProspectInWorkflow } = await import("../recruitment-workflow-db");
+      const { processWorkflowEmailsInternal } = await import("../recruitment-workflow-router");
+      await enrollProspectInWorkflow(prospect.id, "won");
+      await processWorkflowEmailsInternal({ prospectId: prospect.id });
       console.log(`[GC Webhook] Recruitment prospect ${prospect.id} advanced to 'won'`);
     }
   } catch (recruitErr) {
@@ -2187,21 +2191,6 @@ async function startServer() {
               discoveryCallAt: startTime ? new Date(startTime) : null,
             });
           }
-          // Send booking confirmation email via Resend
-          const { Resend } = await import("resend");
-          const { ENV: env } = await import("./env");
-          const { PROSPECT_FROM, PROSPECT_REPLY_TO } = await import("../resend-email");
-          if (env.resendApiKey) {
-            const resend = new Resend(env.resendApiKey);
-            const callDateStr = startTime ? new Date(startTime).toLocaleString("en-GB", { dateStyle: "full", timeStyle: "short", timeZone: "Europe/London" }) : "the scheduled time";
-            await resend.emails.send({
-              from: PROSPECT_FROM,
-              to: [prospect.email],
-              replyTo: PROSPECT_REPLY_TO,
-              subject: "Discovery Call Confirmed — JLT Group",
-              html: `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#FFF6ED;border-radius:16px;"><h2 style="color:#414141;">Your Discovery Call is Confirmed!</h2><p style="color:#414141;">Hi ${prospect.firstName},</p><p style="color:#414141;">Great news — your discovery call with the JLT Group team is confirmed for <strong>${callDateStr}</strong>.</p><p style="color:#414141;">We look forward to speaking with you. If you need to reschedule, please use the link in your calendar invitation.</p><p style="color:#414141;">Warm regards,<br/><strong>The JLT Group Team</strong></p></div>`,
-            }).catch((e: any) => console.error("[Cal.com Webhook] Failed to send booking confirmation:", e?.message));
-          }
           // Notify support@ that a discovery call has been booked
           try {
             const { sendSupportEmail: notifySupport } = await import("../email");
@@ -2227,10 +2216,12 @@ async function startServer() {
           } catch (adminEmailErr) {
             console.error("[Cal.com Webhook] Failed to send admin discovery call notification:", adminEmailErr);
           }
-          // Enroll in discovery_call_booked workflow
+          // The configurable branded workflow owns the prospect confirmation.
           try {
             const { enrollProspectInWorkflow } = await import("../recruitment-workflow-db");
+            const { processWorkflowEmailsInternal } = await import("../recruitment-workflow-router");
             await enrollProspectInWorkflow(prospect.id, "discovery_call_booked");
+            await processWorkflowEmailsInternal({ prospectId: prospect.id });
           } catch {}
           console.log(`[Cal.com Webhook] Prospect ${prospect.id} advanced to discovery_call_booked`);
         }
@@ -2245,26 +2236,12 @@ async function startServer() {
               changedByName: "Cal.com (auto)",
               note: "Prospect cancelled their discovery call via Cal.com — rebook required",
             });
-            // Send rebook email inline (same pattern as booking confirmation above)
-            {
-              const { Resend } = await import("resend");
-              const { ENV: env } = await import("./env");
-              const { PROSPECT_FROM, PROSPECT_REPLY_TO } = await import("../resend-email");
-              if (env.resendApiKey) {
-                const resend = new Resend(env.resendApiKey);
-                await resend.emails.send({
-                  from: PROSPECT_FROM,
-                  to: [prospect.email],
-                  replyTo: PROSPECT_REPLY_TO,
-                  subject: "No problem — let's find a better time | JLT Group",
-                  html: `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#FFF6ED;border-radius:16px;"><h2 style="color:#414141;">No problem at all!</h2><p style="color:#414141;">Hi ${prospect.firstName},</p><p style="color:#414141;">We noticed you cancelled your discovery call — that's completely fine, life gets busy!</p><p style="color:#414141;">We'd love to find a time that works better for you. Simply use the link below to pick a new slot:</p><p style="text-align:center;margin:24px 0;"><a href="https://cal.com/jlt-group/jlt-discovery" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">Book a New Time</a></p><p style="color:#414141;">If you have any questions or would prefer to chat over email first, just reply to this message.</p><p style="color:#414141;">Warm regards,<br/><strong>The JLT Group Team</strong></p></div>`,
-                }).catch((e: any) => console.error("[Cal.com Webhook] Failed to send rebook email:", e?.message));
-              }
-            }
-            // Enroll in rebook_required workflow
+            // The configurable branded workflow owns the prospect rebooking email.
             try {
               const { enrollProspectInWorkflow } = await import("../recruitment-workflow-db");
+              const { processWorkflowEmailsInternal } = await import("../recruitment-workflow-router");
               await enrollProspectInWorkflow(prospect.id, "rebook_required");
+              await processWorkflowEmailsInternal({ prospectId: prospect.id });
             } catch {}
             console.log(`[Cal.com Webhook] Prospect ${prospect.id} moved to rebook_required`);
           }

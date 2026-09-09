@@ -27,6 +27,9 @@
 - [x] Verify every agent affected by orphaned Friends & Family voucher-use repairs in Railway and confirm each post-repair current balance
 - [x] Add regression coverage proving cancelled-booking voucher uses remain countable until staff apply the established manual replacement or removal process
 - [x] Update Jill Hosy’s production portal email address to jillhosy@yahoo.com
+- [x] Investigate the Orbit-to-portal margin discrepancy on booking #5372970; audit confirms the portal value was manually entered after registration
+- [x] Map recruitment pipeline-stage emails and identify which are hardcoded versus configurable workflow messages
+- [x] Consolidate recruitment candidate emails into branded editable workflow templates and remove duplicate direct sends
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

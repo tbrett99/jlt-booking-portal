@@ -349,7 +349,9 @@ export default function WorkflowBuilder() {
         <p>
           <code className="bg-background border rounded px-1">{"{{firstName}}"}</code> — prospect's first name &nbsp;
           <code className="bg-background border rounded px-1">{"{{lastName}}"}</code> — prospect's last name &nbsp;
-          <code className="bg-background border rounded px-1">{"{{email}}"}</code> — prospect's email address
+          <code className="bg-background border rounded px-1">{"{{email}}"}</code> — prospect's email address &nbsp;
+          <code className="bg-background border rounded px-1">{"{{applicationLink}}"}</code> — personal application link &nbsp;
+          <code className="bg-background border rounded px-1">{"{{discoveryCallDate}}"}</code> — booked call date and time
         </p>
       </div>
 

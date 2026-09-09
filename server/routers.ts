@@ -354,6 +354,10 @@ async function ensureProspectWon(email: string, name: string, userId: number): P
           changedByName: "System (account created)",
           note: `Agent account created (user #${userId}) — pipeline advanced to won`,
         });
+        const { enrollProspectInWorkflow } = await import("./recruitment-workflow-db");
+        const { processWorkflowEmailsInternal } = await import("./recruitment-workflow-router");
+        await enrollProspectInWorkflow(existing.id, "won");
+        await processWorkflowEmailsInternal({ prospectId: existing.id });
       }
     } else {
       const nameParts = name.trim().split(" ");
@@ -372,6 +376,10 @@ async function ensureProspectWon(email: string, name: string, userId: number): P
         changedByName: "System (account created)",
         note: `Agent account created (user #${userId}) — prospect record created automatically`,
       });
+      const { enrollProspectInWorkflow } = await import("./recruitment-workflow-db");
+      const { processWorkflowEmailsInternal } = await import("./recruitment-workflow-router");
+      await enrollProspectInWorkflow(newId, "won");
+      await processWorkflowEmailsInternal({ prospectId: newId });
     }
   } catch (err: any) {
     console.error("[ensureProspectWon] Non-fatal error:", err?.message);

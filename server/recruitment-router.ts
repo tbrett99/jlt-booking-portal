@@ -32,6 +32,10 @@ import { Resend } from "resend";
 import { ENV } from "./_core/env";
 import { getEmailBrandingSettings, getProspectByEmail, moveProspectStage, getAllProspects } from "./crm-db";
 import { enrollProspectInWorkflow } from "./recruitment-workflow-db";
+import {
+  processWorkflowEmailsInternal,
+  sendRecruitmentWorkflowEmailNow,
+} from "./recruitment-workflow-router";
 
 // ─── Bulk email background job state ────────────────────────────────────────
 
@@ -76,10 +80,7 @@ export function getApologyEmailJobState(): BulkEmailJobState {
   return { ...apologyEmailJob };
 }
 
-// ─── Prospectus / Application email helpers ───────────────────────────────────
-
-const PROSPECTUS_URL = "https://portal.thejltgroup.co.uk/api/prospectus";
-const FACEBOOK_GROUP_URL = "https://www.facebook.com/groups/jltgroup/";
+// ─── Manual and campaign email helpers ─────────────────────────────────────────
 
 function getResend(): Resend {
   const key = ENV.resendApiKey;
@@ -135,50 +136,6 @@ async function sendProspectEmail(opts: {
   } catch (err: any) {
     console.error("[Recruitment] Failed to send prospect email:", err?.message);
   }
-}
-
-async function sendProspectusEmail(opts: {
-  prospectId: number;
-  toEmail: string;
-  firstName: string;
-  applicationUrl: string;
-}): Promise<void> {
-  const subject = "Your JLT Group Prospectus — and Your Next Step";
-  const bodyHtml = `
-<p style="margin:0 0 16px;">Hi ${opts.firstName},</p>
-<p style="margin:0 0 16px;">Thank you for getting in touch — we are genuinely excited to share more about what we have built at JLT Group and what it could mean for you.</p>
-<p style="margin:0 0 16px;">Your prospectus is ready to read. It covers everything you need to know about life at JLT Group — our model, our support, and what makes us different from every other host agency out there:</p>
-<p style="text-align:center;margin:28px 0;">
-  <a href="${PROSPECTUS_URL}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Read the JLT Prospectus</a>
-</p>
-<p style="margin:0 0 16px;">We also have a brilliant Facebook community where current agents and prospective members connect, share wins, ask questions, and get a real feel for the JLT culture before they even join. We would love for you to be part of it — when you request to join, please answer the membership questions so we can approve you straight away:</p>
-<p style="text-align:center;margin:28px 0;">
-  <a href="${FACEBOOK_GROUP_URL}" style="display:inline-block;background:#414141;color:#ffffff;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Join the JLT Facebook Community</a>
-</p>
-<hr style="border:none;border-top:1px solid #e8e8e8;margin:28px 0;"/>
-<p style="margin:0 0 12px;"><strong>Your application — and why it matters</strong></p>
-<p style="margin:0 0 16px;">Once you have read the prospectus, the next step is your application form.</p>
-<p style="margin:0 0 16px;">We read every application personally, and we use it to prepare for your discovery call — so the more you share, the more useful that conversation will be for <em>you</em>. We are not looking for a CV or a list of qualifications. We want to understand where you are right now, what has drawn you to travel, and what you are hoping to build.</p>
-<p style="margin:0 0 16px;">The applications that lead to the best discovery calls are the ones where we can already picture the person behind the answers. Tell us about your background, your motivations, and what your ideal version of this looks like. There are no right or wrong answers — just yours.</p>
-<p style="text-align:center;margin:28px 0;">
-  <a href="${opts.applicationUrl}" style="display:inline-block;background:#70FFE8;color:#414141;font-weight:700;padding:15px 36px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:15px;">Complete Your Application</a>
-</p>
-<p style="margin:0 0 16px;">If anything is unclear or you have questions before you apply, just reply to this email. We are always happy to help.</p>
-<p style="margin:0;">Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
-
-  await sendProspectEmail({
-    toEmail: opts.toEmail,
-    toName: opts.firstName,
-    subject,
-    bodyHtml,
-  });
-
-  await logRecruitmentEmail({
-    prospectId: opts.prospectId,
-    stage: "new_enquiry",
-    emailKey: "prospectus_sent",
-    subject,
-  });
 }
 
 // ─── Application token helpers ──────────────────────────────────────────────────
@@ -246,19 +203,14 @@ export const recruitmentRouter = router({
         updatedAt: new Date(),
       });
 
-      // Send prospectus email
-      await sendProspectusEmail({
-        prospectId: id,
-        toEmail: email,
-        firstName: input.firstName,
-        applicationUrl,
-      });
-
-      // Update prospectusEmailSentAt
-      await updateRecruitmentProspect(id, { prospectusEmailSentAt: new Date() });
-
-      // Enroll in new_enquiry workflow (skip step 1 — prospectus already sent directly above)
-      try { await enrollProspectInWorkflow(id, "new_enquiry", { skipFirstStep: true }); } catch {}
+      // The first New Enquiry workflow step is the branded prospectus email.
+      // Send it from the editable workflow rather than a separate hardcoded template.
+      try {
+        await enrollProspectInWorkflow(id, "new_enquiry");
+        await processWorkflowEmailsInternal({ prospectId: id });
+      } catch (workflowError) {
+        console.error("[Recruitment] Failed to send New Enquiry workflow email:", workflowError);
+      }
 
       return { success: true, duplicate: false };
     }),
@@ -463,8 +415,13 @@ export const recruitmentRouter = router({
         console.error("[Recruitment] Failed to send admin application notification:", adminEmailErr);
       }
 
-      // Enroll in application_received workflow
-      try { await enrollProspectInWorkflow(prospect.id, "application_received"); } catch {}
+      // Send the acknowledgement from the branded, editable Application Received workflow.
+      try {
+        await enrollProspectInWorkflow(prospect.id, "application_received");
+        await processWorkflowEmailsInternal({ prospectId: prospect.id });
+      } catch (workflowError) {
+        console.error("[Recruitment] Failed to send Application Received workflow email:", workflowError);
+      }
 
       return { success: true, alreadySubmitted: false };
     }),
@@ -584,11 +541,14 @@ export const recruitmentRouter = router({
         });
       }
 
-      // Send stage-specific emails
-      await sendStageEmail(input.id, input.toStage, prospect);
-
-      // Enroll in the new stage's workflow (unenrolls from previous automatically)
-      try { await enrollProspectInWorkflow(input.id, input.toStage); } catch {}
+      // A single branded workflow now owns all candidate-facing stage email.
+      // It cancels prior pending messages, enrolls the new stage, then sends step 1 now.
+      try {
+        await enrollProspectInWorkflow(input.id, input.toStage);
+        await processWorkflowEmailsInternal({ prospectId: input.id });
+      } catch (workflowError) {
+        console.error(`[Recruitment] Failed to send ${input.toStage} workflow email:`, workflowError);
+      }
 
       return { success: true };
     }),
@@ -639,14 +599,10 @@ export const recruitmentRouter = router({
         ? `${input.origin}/apply/form?token=${token}`
         : `https://portal.thejltgroup.co.uk/apply/form?token=${token}`;
 
-      await sendProspectusEmail({
+      await sendRecruitmentWorkflowEmailNow({
         prospectId: input.id,
-        toEmail: prospect.email,
-        firstName: prospect.firstName,
-        applicationUrl,
+        stage: "new_enquiry",
       });
-
-      await updateRecruitmentProspect(input.id, { prospectusEmailSentAt: new Date() });
 
       return { success: true };
     }),
@@ -1008,63 +964,4 @@ export const recruitmentRouter = router({
       return getRecruitmentAnalytics({ dateFrom: input.dateFrom });
     }),
 });
-// ─── Stage-triggered emails ───────────────────────────────────────────────────
-
-async function sendStageEmail(
-  prospectId: number,
-  toStage: string,
-  prospect: Awaited<ReturnType<typeof getRecruitmentProspectById>>
-): Promise<void> {
-  if (!prospect) return;
-
-  const name = prospect.firstName;
-  const email = prospect.email;
-
-  // ar_approved: email is handled entirely by the branded workflow (enrollProspectInWorkflow).
-  // The plain sendStageEmail send was removed to prevent duplicate emails.
-
-  if (toStage === "ar_declined") {
-    const subject = "Update on Your JLT Group Application";
-    const bodyHtml = `
-<p>Hi ${name},</p>
-<p>Thank you for taking the time to apply to join the JLT Group team. We've carefully reviewed your application and, unfortunately, we won't be moving forward at this time.</p>
-<p>We appreciate your interest and wish you all the best in your future endeavours.</p>
-<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
-
-    await sendProspectEmail({ toEmail: email, toName: name, subject, bodyHtml });
-    await logRecruitmentEmail({ prospectId, stage: "ar_declined", emailKey: "ar_declined_notification", subject });
-  }
-
-  if (toStage === "waitlisted") {
-    const subject = "You're on Our Waitlist — JLT Group";
-    const bodyHtml = `
-<p>Hi ${name},</p>
-<p>Thank you for your interest in joining the JLT Group. While we're not able to move forward right now, we'd love to keep in touch and reach out when a suitable opportunity arises.</p>
-<p>We've added you to our waitlist and will be in touch as soon as something opens up.</p>
-<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
-
-    await sendProspectEmail({ toEmail: email, toName: name, subject, bodyHtml });
-    await logRecruitmentEmail({ prospectId, stage: "waitlisted", emailKey: "waitlisted_notification", subject });
-  }
-
-  if (toStage === "did_not_turn_up") {
-    const subject = "We Missed You — JLT Group Discovery Call";
-    const bodyHtml = `
-<p>Hi ${name},</p>
-<p>We noticed you weren't able to make it to your discovery call today. No worries — these things happen!</p>
-<p>If you'd still like to speak with us, please feel free to rebook at a time that suits you:</p>
-<p style="text-align:center;margin:24px 0;">
-  <a href="https://cal.com/jlt-group/jlt-discovery" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;">
-    Rebook Your Discovery Call
-  </a>
-</p>
-<p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`;
-
-    await sendProspectEmail({ toEmail: email, toName: name, subject, bodyHtml });
-    await logRecruitmentEmail({ prospectId, stage: "did_not_turn_up", emailKey: "dntu_notification", subject });
-  }
-
-  // onboarding_approved: email is handled entirely by the branded workflow (enrollProspectInWorkflow).
-  // The plain sendStageEmail send was removed to prevent duplicate emails.
-}
 import { createProspect } from "./crm-db";

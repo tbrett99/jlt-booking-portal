@@ -20,11 +20,20 @@ import {
   advanceEnrollment,
   enrollProspectInWorkflow,
 } from "./recruitment-workflow-db";
-import { getRecruitmentProspectById, logRecruitmentEmail } from "./recruitment-db";
-import { sendSupportEmail } from "./email";
+import {
+  extractApplicationToken,
+  getRecruitmentProspectById,
+  logRecruitmentEmail,
+  updateRecruitmentProspect,
+} from "./recruitment-db";
+import { getEmailBrandingSettings } from "./crm-db";
 import { PROSPECT_FROM, PROSPECT_REPLY_TO } from "./resend-email";
 import { Resend } from "resend";
 import { ENV } from "./_core/env";
+import {
+  formatDiscoveryCallDate,
+  renderRecruitmentWorkflowTemplate,
+} from "./recruitment-workflow-utils";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,14 +54,21 @@ async function sendWorkflowEmail(opts: {
     return;
   }
   const resend = new Resend(ENV.resendApiKey);
+  const branding = await getEmailBrandingSettings();
+  const logoHtml = branding?.logoUrl
+    ? `<img src="${branding.logoUrl}" alt="JLT Group" style="max-height:60px;max-width:200px;display:block;margin:0 auto;object-fit:contain;mix-blend-mode:multiply;" />`
+    : `<span style="font-family:'Poppins',Arial,sans-serif;font-size:22px;font-weight:700;color:#414141;">JLT Group</span>`;
   const wrappedHtml = `
-    <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#FFF6ED;border-radius:16px;">
-      ${opts.bodyHtml}
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
-      <p style="font-size:0.75rem;color:#9ca3af;text-align:center;">
-        JLT Group · <a href="mailto:jointheteam@thejltgroup.co.uk" style="color:#02E6D2;">jointheteam@thejltgroup.co.uk</a>
-      </p>
-    </div>`;
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>${opts.subject}</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/></head>
+<body style="margin:0;padding:0;background-color:#FFF6ED;font-family:'Poppins',Arial,sans-serif;">
+  <div style="width:100%;background-color:#FFF6ED;padding:32px 0;">
+    <div style="max-width:600px;width:100%;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.07);">
+      <div style="background-color:#70FFE8;padding:28px 40px;text-align:center;">${logoHtml}</div>
+      <div style="padding:36px 40px;color:#414141;font-family:'Poppins',Arial,sans-serif;font-size:15px;line-height:1.8;">${opts.bodyHtml}</div>
+      <div style="padding:20px 40px;text-align:center;background-color:#FFF6ED;font-family:'Poppins',Arial,sans-serif;font-size:12px;color:#888;">&copy; ${new Date().getFullYear()} JLT Group. All rights reserved.</div>
+    </div>
+  </div>
+</body></html>`;
   await resend.emails.send({
     from: PROSPECT_FROM,
     to: [opts.toEmail],
@@ -62,18 +78,85 @@ async function sendWorkflowEmail(opts: {
   });
 }
 
+function getApplicationLink(adminNotes: string | null | undefined): string {
+  const token = extractApplicationToken(adminNotes ?? "");
+  return token
+    ? `https://portal.thejltgroup.co.uk/apply/form?token=${token}`
+    : "https://portal.thejltgroup.co.uk/apply";
+}
+
+async function sendConfiguredWorkflowStep(opts: {
+  prospectId: number;
+  stage: string;
+  stepOrder: number;
+}): Promise<boolean> {
+  const workflow = await getWorkflowByStage(opts.stage);
+  if (!workflow?.isActive) return false;
+
+  const step = (await getWorkflowEmails(workflow.id)).find(
+    (email) => email.stepOrder === opts.stepOrder
+  );
+  if (!step) return false;
+
+  const prospect = await getRecruitmentProspectById(opts.prospectId);
+  if (!prospect) return false;
+
+  const templateContext = {
+    firstName: prospect.firstName,
+    lastName: prospect.lastName,
+    email: prospect.email,
+    applicationLink: getApplicationLink(prospect.adminNotes),
+    discoveryCallDate: formatDiscoveryCallDate(prospect.discoveryCallAt),
+  };
+  const subject = renderRecruitmentWorkflowTemplate(step.subject, templateContext);
+  const bodyHtml = renderRecruitmentWorkflowTemplate(step.bodyHtml, templateContext);
+
+  await sendWorkflowEmail({
+    toEmail: prospect.email,
+    toName: prospect.firstName,
+    subject,
+    bodyHtml,
+  });
+
+  await logRecruitmentEmail({
+    prospectId: prospect.id,
+    stage: workflow.stage,
+    emailKey: `workflow_${workflow.stage}_step${opts.stepOrder}`,
+    subject,
+  });
+
+  if (workflow.stage === "new_enquiry" && opts.stepOrder === 1) {
+    await updateRecruitmentProspect(prospect.id, { prospectusEmailSentAt: new Date() });
+  }
+
+  return true;
+}
+
+/** Send a configured workflow step on demand without changing active enrollment. */
+export async function sendRecruitmentWorkflowEmailNow(opts: {
+  prospectId: number;
+  stage: string;
+  stepOrder?: number;
+}): Promise<boolean> {
+  return sendConfiguredWorkflowStep({ ...opts, stepOrder: opts.stepOrder ?? 1 });
+}
+
 // ─── Default workflow email content ──────────────────────────────────────────
 // Pre-populated from the existing hardcoded stage emails.
 
 const DEFAULT_WORKFLOW_EMAILS: Record<string, { subject: string; bodyHtml: string }[]> = {
   new_enquiry: [
     {
-      subject: "Your JLT Group Prospectus is Ready!",
+      subject: "Your JLT Group Prospectus — and Your Next Step",
       bodyHtml: `<p>Hi {{firstName}},</p>
-<p>Thank you for your interest in joining the JLT Group travel agency network!</p>
-<p>We've attached your prospectus — please take a look and, when you're ready, complete your application using the link below.</p>
+<p>Thank you for getting in touch — we are genuinely excited to share more about what we have built at JLT Group and what it could mean for you.</p>
+<p>Your prospectus is ready to read. It covers our model, support, and what makes JLT Group different from every other host agency.</p>
 <p style="text-align:center;margin:24px 0;">
-  <a href="{{applicationLink}}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;">Complete Your Application</a>
+  <a href="https://portal.thejltgroup.co.uk/api/prospectus" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:700;padding:14px 32px;border-radius:8px;text-decoration:none;">Read the JLT Prospectus</a>
+</p>
+<p>Once you have read the prospectus, the next step is your application form. We read every application personally and use it to prepare for your discovery call.</p>
+<p style="text-align:center;margin:24px 0;">
+  <a href="{{applicationLink}}" style="display:inline-block;background:#70FFE8;color:#1a1a1a;font-weight:700;padding:14px 32px;border-radius:8px;text-decoration:none;">Complete Your Application</a>
 </p>
 <p>If you have any questions, just reply to this email — we'd love to hear from you.</p>
 <p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`,
@@ -115,7 +198,7 @@ const DEFAULT_WORKFLOW_EMAILS: Record<string, { subject: string; bodyHtml: strin
     {
       subject: "Your Discovery Call is Confirmed — JLT Group",
       bodyHtml: `<p>Hi {{firstName}},</p>
-<p>Great news — your discovery call with the JLT Group team is confirmed!</p>
+<p>Great news — your discovery call with the JLT Group team is confirmed for <strong>{{discoveryCallDate}}</strong>.</p>
 <p>We look forward to speaking with you. If you need to reschedule, please use the link in your calendar invitation.</p>
 <p>Warm regards,<br/><strong>The JLT Group Team</strong></p>`,
     },
@@ -364,14 +447,15 @@ export const recruitmentWorkflowRouter = router({
 
 // ─── Internal email processor ─────────────────────────────────────────────────
 
-export async function processWorkflowEmailsInternal() {
-  const due = await getDueEnrollments();
+export async function processWorkflowEmailsInternal(opts?: { prospectId?: number }) {
+  const due = (await getDueEnrollments()).filter(
+    (enrollment) => !opts?.prospectId || enrollment.prospectId === opts.prospectId
+  );
   let sent = 0;
   let errors = 0;
 
   for (const enrollment of due) {
     try {
-      // Get the workflow and current step
       const workflow = await getWorkflowById(enrollment.workflowId);
       if (!workflow || !workflow.isActive) {
         // Workflow disabled — skip but don't cancel enrollment
@@ -386,44 +470,12 @@ export async function processWorkflowEmailsInternal() {
         continue;
       }
 
-      // Get prospect details
-      const prospect = await getRecruitmentProspectById(enrollment.prospectId);
-      if (!prospect) {
-        await advanceEnrollment(enrollment.id, enrollment.workflowId, enrollment.currentStep + 1);
-        continue;
-      }
-
-      // Replace template variables
-      const subject = currentStepData.subject
-        .replace(/\{\{firstName\}\}/g, prospect.firstName)
-        .replace(/\{\{lastName\}\}/g, prospect.lastName)
-        .replace(/\{\{email\}\}/g, prospect.email);
-
-      const bodyHtml = currentStepData.bodyHtml
-        .replace(/\{\{firstName\}\}/g, prospect.firstName)
-        .replace(/\{\{lastName\}\}/g, prospect.lastName)
-        .replace(/\{\{email\}\}/g, prospect.email);
-
-      // Send the email
-      await sendWorkflowEmail({
-        toEmail: prospect.email,
-        toName: prospect.firstName,
-        subject,
-        bodyHtml,
+      const sentStep = await sendConfiguredWorkflowStep({
+        prospectId: enrollment.prospectId,
+        stage: workflow.stage,
+        stepOrder: enrollment.currentStep,
       });
-
-      sent++;
-      // Log the email so it appears in the prospect's Email Log on the portal
-      try {
-        await logRecruitmentEmail({
-          prospectId: enrollment.prospectId,
-          stage: workflow.stage,
-          emailKey: `workflow_${workflow.stage}_step${enrollment.currentStep}`,
-          subject,
-        });
-      } catch (_logErr) {
-        // Non-fatal — email was sent, logging failure should not block advancement
-      }
+      if (sentStep) sent++;
       // Advance to next step
       await advanceEnrollment(enrollment.id, enrollment.workflowId, enrollment.currentStep + 1);
     } catch (err) {
