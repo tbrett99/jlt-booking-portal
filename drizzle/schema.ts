@@ -10,6 +10,7 @@ import {
   varchar,
   decimal,
   json,
+  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -85,6 +86,22 @@ export const bookings = mysqlTable("bookings", {
 
 export type Booking = typeof bookings.$inferSelect;
 export type InsertBooking = typeof bookings.$inferInsert;
+
+// ─── Commission Readiness Reminders ──────────────────────────────────────────
+
+/** One durable record per booking/departure date prevents reminder duplicates. */
+export const commissionReadinessReminders = mysqlTable(
+  "commission_readiness_reminders",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    bookingId: int("bookingId").notNull(),
+    agentId: int("agentId").notNull(),
+    departureDate: timestamp("departureDate").notNull(),
+    sentAt: timestamp("sentAt").defaultNow().notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("commission_readiness_booking_departure_unique").on(table.bookingId, table.departureDate)]
+);
 
 // ─── Pipeline Stage History ───────────────────────────────────────────────────
 

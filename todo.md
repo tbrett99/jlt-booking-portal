@@ -38,6 +38,7 @@
 - [x] Add a manually generated Monthly Review for the prior calendar month with business-update and agent-win round-up plus Open Orbit Travel Updates button
 - [x] Make weekly and monthly digest test emails use the same shared rendering path as live sends, with regression coverage for title, period, and Orbit card parity
 - [x] Send support@thejltgroup.co.uk reminder emails every Tuesday and during the first week of each new month to prepare the manual weekly and monthly digests
+- [ ] Send agents one commission-readiness reminder 12 weeks before departure, covering extras, pre-claim checks, and post-claim amendment fees
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

@@ -2361,6 +2361,10 @@ async function startServer() {
   const { communityDigestReminderHandler } = await import("../community-digest-reminders");
   app.post("/api/scheduled/community-digest-reminders", communityDigestReminderHandler);
 
+  // Daily agent commission-readiness reminders — one per booking, exactly 12 weeks before travel.
+  const { commissionReadinessReminderHandler } = await import("../commission-readiness-reminders");
+  app.post("/api/scheduled/commission-readiness-reminders", commissionReadinessReminderHandler);
+
   // tRPC API
   app.use(
     "/api/trpc",
