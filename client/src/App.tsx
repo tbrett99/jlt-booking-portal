@@ -416,6 +416,8 @@ function AuthRouter() {
         <Route path="/competitions" component={Competitions} />
         <Route path="/admin/competitions" component={AdminCompetitions} />
         <Route path="/profile" component={ProfilePage} />
+        <Route path="/my-profile" component={MyProfile} />
+        <Route path="/my-public-profile" component={MyPublicProfile} />
         <Route path="/unsubscribe" component={UnsubscribePage} />
         {/* Terms & Policies — accessible to logged-in admins */}
         <Route path="/terms" component={TermsAndPolicies} />

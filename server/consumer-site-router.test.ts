@@ -59,6 +59,41 @@ function publicCaller() {
   return consumerSiteRouter.createCaller({ req: { ip: "198.51.100.9" }, res: {} } as any);
 }
 
+function agentCaller() {
+  return consumerSiteRouter.createCaller({
+    user: { id: 19, role: "agent", name: "Alex Travel", email: "alex@example.test" },
+    req: { ip: "198.51.100.9" },
+    res: {},
+  } as any);
+}
+
+function adminCaller(role: "admin" | "super_admin" = "super_admin") {
+  return consumerSiteRouter.createCaller({
+    user: { id: 1, role, name: "Max Kelly", email: "max@thejltgroup.co.uk" },
+    req: { ip: "198.51.100.9" },
+    res: {},
+  } as any);
+}
+
+const completedDraft = {
+  displayName: "Alex Travel",
+  businessName: "Alex Travel Co",
+  biography: "I create thoughtful tailor-made holidays for families and special celebrations around the world.",
+  listingTown: "Chester",
+  enquiryDeliveryEmail: "alex@example.test",
+  websiteUrl: null,
+  instagramUrl: null,
+  tiktokUrl: null,
+  facebookUrl: null,
+  linkedinUrl: null,
+  youtubeUrl: null,
+  pinterestUrl: null,
+  townLatitude: null,
+  townLongitude: null,
+  specialityTagIds: [],
+  consentConfirmed: true as const,
+};
+
 describe("consumerSite public API", () => {
   beforeEach(() => {
     selectResults.splice(0, selectResults.length);
@@ -67,9 +102,8 @@ describe("consumerSite public API", () => {
 
   it("returns only explicitly approved public fields from the public list endpoint", async () => {
     selectResults.push(
-      [{ profile: visibleProfile, agentStatus: "active" }],
-      [],
-      [{ id: 1, label: "Caribbean", category: "destination" }],
+      [{ profile: visibleProfile, agentStatus: "active", inContract: false, accountRole: "agent" }],
+      [{ id: 1, label: "Caribbean", category: "destination", slug: "caribbean" }],
     );
     const response = await publicCaller().public.listAgents({ tagIds: [] });
     expect(response).toHaveLength(1);
@@ -85,8 +119,7 @@ describe("consumerSite public API", () => {
 
   it("returns the same strict allow-list from the public agent-detail endpoint", async () => {
     selectResults.push(
-      [{ profile: visibleProfile, agentStatus: "active" }],
-      [{ inContract: false }],
+      [{ profile: visibleProfile, agentStatus: "active", inContract: false, accountRole: "agent" }],
       [{ id: 1, label: "Caribbean", category: "destination" }],
     );
     const response = await publicCaller().public.getAgent({ slug: "alex-travel-19" });
@@ -117,8 +150,7 @@ describe("consumerSite public API", () => {
 
   it("records a successful direct-to-agent enquiry and sends a separate customer acknowledgement", async () => {
     selectResults.push(
-      [{ profile: visibleProfile, agentStatus: "active" }],
-      [{ inContract: false }],
+      [{ profile: visibleProfile, agentStatus: "active", inContract: false, accountRole: "agent" }],
       [],
     );
     await expect(publicCaller().public.submitEnquiry({
@@ -145,8 +177,7 @@ describe("consumerSite public API", () => {
   it("records a failed agent delivery while keeping the customer acknowledgement path independent", async () => {
     vi.mocked(sendDirectEmail).mockResolvedValueOnce({ success: false, error: "Recipient rejected" } as any).mockResolvedValueOnce({ success: true } as any);
     selectResults.push(
-      [{ profile: visibleProfile, agentStatus: "active" }],
-      [{ inContract: false }],
+      [{ profile: visibleProfile, agentStatus: "active", inContract: false, accountRole: "agent" }],
       [],
     );
     await expect(publicCaller().public.submitEnquiry({
@@ -160,8 +191,7 @@ describe("consumerSite public API", () => {
   it("does not turn a successfully recorded enquiry into an error when customer acknowledgement delivery fails", async () => {
     vi.mocked(sendDirectEmail).mockResolvedValueOnce({ success: true } as any).mockRejectedValueOnce(new Error("Acknowledgement unavailable"));
     selectResults.push(
-      [{ profile: visibleProfile, agentStatus: "active" }],
-      [{ inContract: false }],
+      [{ profile: visibleProfile, agentStatus: "active", inContract: false, accountRole: "agent" }],
       [],
     );
     await expect(publicCaller().public.submitEnquiry({
@@ -172,8 +202,7 @@ describe("consumerSite public API", () => {
 
   it("rate-limits a fourth public enquiry from the same IP window before sending email", async () => {
     selectResults.push(
-      [{ profile: visibleProfile, agentStatus: "active" }],
-      [{ inContract: false }],
+      [{ profile: visibleProfile, agentStatus: "active", inContract: false, accountRole: "agent" }],
       [{ id: 1 }, { id: 2 }, { id: 3 }],
     );
     await expect(publicCaller().public.submitEnquiry({
@@ -185,5 +214,99 @@ describe("consumerSite public API", () => {
       consentConfirmed: true,
     })).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
     expect(sendDirectEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("consumerSite agent profile submission", () => {
+  beforeEach(() => {
+    selectResults.splice(0, selectResults.length);
+    vi.clearAllMocks();
+  });
+
+  it("allows a complete profile to enter review before staff have configured any speciality tags", async () => {
+    selectResults.push(
+      [],
+      [{ id: 9001, userId: 19, ...completedDraft, consentConfirmedAt: new Date() }],
+      [],
+      [],
+    );
+
+    await expect(agentCaller().profile.submitForReview(completedDraft)).resolves.toEqual({ success: true });
+  });
+
+  it("requires a selected speciality only after staff have configured active tag choices", async () => {
+    selectResults.push(
+      [],
+      [{ id: 9001, userId: 19, ...completedDraft, consentConfirmedAt: new Date() }],
+      [],
+      [{ id: 5 }],
+    );
+
+    await expect(agentCaller().profile.submitForReview(completedDraft)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Select at least one destination or travel-type speciality before submitting.",
+    });
+  });
+});
+
+describe("consumerSite staff profile eligibility", () => {
+  beforeEach(() => {
+    selectResults.splice(0, selectResults.length);
+    vi.clearAllMocks();
+  });
+
+  it("allows a super-admin profile to publish without an Active agent CRM record", async () => {
+    const staffProfile = {
+      id: 88,
+      userId: 1,
+      displayName: "Max Kelly",
+      biography: "I help customers arrange carefully considered holidays with clear advice, personal service and thoughtful travel planning.",
+      listingTown: "Chester",
+      enquiryDeliveryEmail: "max@thejltgroup.co.uk",
+      consentConfirmedAt: new Date(),
+      publicSlug: null,
+    };
+    selectResults.push(
+      [staffProfile],
+      [{ role: "super_admin" }],
+      [],
+      [{ id: 1, label: "Worldwide", category: "destination" }],
+    );
+
+    await expect(adminCaller().admin.reviewProfile({ userId: 1, action: "publish", note: null })).resolves.toEqual({ success: true });
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ isPublished: true, reviewStatus: "published" }));
+  });
+
+  it("allows a super admin without an agent CRM record to load, save, and submit their own profile", async () => {
+    selectResults.push([]);
+    await expect(adminCaller().profile.mine()).resolves.toEqual({ profile: null, selectedTagIds: [], history: [] });
+
+    selectResults.push([]);
+    await expect(adminCaller().profile.saveDraft(completedDraft)).resolves.toEqual({ success: true, profileId: 9001 });
+
+    selectResults.push(
+      [],
+      [{ id: 9001, userId: 1, ...completedDraft, consentConfirmedAt: new Date() }],
+      [],
+      [],
+    );
+    await expect(adminCaller().profile.submitForReview(completedDraft)).resolves.toEqual({ success: true });
+  });
+
+  it("allows a plain admin without an agent CRM record to load, save, and submit their own profile", async () => {
+    const caller = adminCaller("admin");
+    selectResults.push([]);
+    await expect(caller.profile.mine()).resolves.toEqual({ profile: null, selectedTagIds: [], history: [] });
+
+    selectResults.push([]);
+    await expect(caller.profile.saveDraft(completedDraft)).resolves.toEqual({ success: true, profileId: 9001 });
+
+    selectResults.push(
+      [],
+      [{ id: 9001, userId: 1, ...completedDraft, consentConfirmedAt: new Date() }],
+      [],
+      [],
+    );
+    await expect(caller.profile.submitForReview(completedDraft)).resolves.toEqual({ success: true });
   });
 });

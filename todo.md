@@ -67,6 +67,17 @@
 - [ ] Replace the current WordPress holding page at the JLT root domain by connecting www.thejltgroup.co.uk and the apex domain to the deployed consumer-site application, then verify canonical redirects and live public routing
 - [x] Fix public-profile review submission incorrectly rejecting a completed profile with confirmed consent
 - [x] Preserve all unsaved public-profile form values when an agent uploads or replaces a profile photograph
+- [x] Replace raw public-profile biography validation output with clear client-side remaining-character guidance and friendly submission feedback
+- [x] Allow public-profile submission without specialities when JLT has not configured any active controlled tags, while requiring selection once tags exist
+- [x] Replace raw public-profile speciality-limit errors with a visible selected-count and a friendly maximum-of-12 message before submission
+- [x] Include agents tagged Worldwide when customers filter the public directory by any specific destination, while keeping Worldwide as an explicit selectable destination filter
+- [x] Allow admin and super-admin accounts to have staff-approved public profiles without requiring an Active agent CRM status, while retaining Active-only rules for agent accounts
+- [x] Verify and, if needed, update consumerSite.profile.submitForReview server logic so zero specialities are accepted only when no active controlled tags exist
+- [x] Add endpoint-level coverage proving no-tag submissions succeed only before tags exist and remain rejected when active tags are available
+- [x] Trace and correct any admin-facing active-profile guard in the public-profile create and edit flow without weakening standard agent controls
+- [x] Add regression coverage proving an admin or super admin can load, save, and submit their own public profile without an agent CRM record
+- [x] Verify the admin self-service My Public Profile flow directly through mine, saveDraft, and submitForReview procedures without an agent CRM record
+- [x] Verify a plain admin without an agent CRM record can load, save, and submit their own public profile through the same self-service procedures
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

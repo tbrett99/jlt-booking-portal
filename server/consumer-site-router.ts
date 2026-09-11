@@ -16,7 +16,7 @@ import { sendDirectEmail } from "./email";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
-import { isApprovedPublicUrl, isPublicAgentProfileVisible, publicEnquiryAdmission, toPublicAgentResponse } from "./consumer-site-logic";
+import { isApprovedPublicUrl, isPublicAgentProfileVisible, matchesPublicDirectoryTags, publicEnquiryAdmission, toPublicAgentResponse } from "./consumer-site-logic";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
@@ -383,7 +383,8 @@ export const consumerSiteRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Complete and save your public profile, including consent, before submitting it for review." });
       }
       const selectedTags = await db.select({ id: publicAgentProfileTags.id }).from(publicAgentProfileTags).where(eq(publicAgentProfileTags.profileId, profile.id));
-      if (!selectedTags.length) {
+      const [availableTag] = await db.select({ id: publicSpecialityTags.id }).from(publicSpecialityTags).where(eq(publicSpecialityTags.isActive, true)).limit(1);
+      if (availableTag && !selectedTags.length) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Select at least one destination or travel-type speciality before submitting." });
       }
       await db.update(publicAgentProfiles).set({ reviewStatus: "in_review", submittedAt: new Date(), reviewNote: null }).where(eq(publicAgentProfiles.id, profile.id));
@@ -455,11 +456,13 @@ export const consumerSiteRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [profile] = await db.select().from(publicAgentProfiles).where(eq(publicAgentProfiles.userId, input.userId)).limit(1);
       if (!profile) throw new TRPCError({ code: "NOT_FOUND", message: "Public profile not found" });
-      const [crmProfile] = await db.select({ agentStatus: agentCrmProfiles.agentStatus }).from(agentCrmProfiles).where(eq(agentCrmProfiles.userId, input.userId)).limit(1);
+      const [account] = await db.select({ role: users.role }).from(users).where(eq(users.id, input.userId)).limit(1);
+      const [crmProfile] = await db.select({ agentStatus: agentCrmProfiles.agentStatus, inContract: agentCrmProfiles.inContract }).from(agentCrmProfiles).where(eq(agentCrmProfiles.userId, input.userId)).limit(1);
+      const isStaffAccount = account?.role === "admin" || account?.role === "super_admin";
 
       if (input.action === "publish") {
-        if (crmProfile?.agentStatus !== "active") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Only agents listed as Active can have a public profile published." });
+        if (!isStaffAccount && (crmProfile?.agentStatus !== "active" || crmProfile.inContract)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Only agents listed as Active and not In Contract can have a public profile published." });
         }
         if (!profile.displayName || !profile.biography || !profile.listingTown || !profile.enquiryDeliveryEmail || !profile.consentConfirmedAt) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "The profile is incomplete and cannot be published." });
@@ -531,23 +534,21 @@ export const consumerSiteRouter = router({
     }).optional()).query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
-      const profiles = await db.select({ profile: publicAgentProfiles, agentStatus: agentCrmProfiles.agentStatus })
+      const profiles = await db.select({ profile: publicAgentProfiles, agentStatus: agentCrmProfiles.agentStatus, inContract: agentCrmProfiles.inContract, accountRole: users.role })
         .from(publicAgentProfiles)
         .innerJoin(users, eq(publicAgentProfiles.userId, users.id))
-        .innerJoin(agentCrmProfiles, eq(publicAgentProfiles.userId, agentCrmProfiles.userId))
-        .where(and(eq(publicAgentProfiles.isPublished, true), eq(agentCrmProfiles.agentStatus, "active")));
-      const inContractRows = await db.select({ userId: agentCrmProfiles.userId }).from(agentCrmProfiles).where(eq(agentCrmProfiles.inContract, true));
-      const inContractUserIds = new Set(inContractRows.map(row => row.userId));
-      const allTagRows = await db.select({ id: publicSpecialityTags.id, label: publicSpecialityTags.label, category: publicSpecialityTags.category }).from(publicSpecialityTags).where(eq(publicSpecialityTags.isActive, true));
+        .leftJoin(agentCrmProfiles, eq(publicAgentProfiles.userId, agentCrmProfiles.userId))
+        .where(eq(publicAgentProfiles.isPublished, true));
+      const allTagRows = await db.select({ id: publicSpecialityTags.id, label: publicSpecialityTags.label, category: publicSpecialityTags.category, slug: publicSpecialityTags.slug }).from(publicSpecialityTags).where(eq(publicSpecialityTags.isActive, true));
       const tagMap = new Map(allTagRows.map((tag) => [tag.id, tag]));
       const query = input?.search?.trim().toLowerCase();
       const town = input?.town?.trim().toLowerCase();
-      return profiles.flatMap(({ profile }) => {
+      return profiles.flatMap(({ profile, agentStatus, inContract, accountRole }) => {
         const ids = Array.isArray(profile.publishedTagIds) ? profile.publishedTagIds.map(Number).filter(Number.isInteger) : [];
-        if (input?.tagIds?.some((id) => !ids.includes(id))) return [];
+        if (!matchesPublicDirectoryTags(ids, input?.tagIds ?? [], allTagRows)) return [];
         const tags = ids.map((id) => tagMap.get(id)).filter((tag): tag is NonNullable<typeof tag> => !!tag);
         const payload = publicProfilePayload(profile, tags);
-        if (!payload || !isPublicAgentProfileVisible({ isPublished: profile.isPublished, agentStatus: "active", inContract: inContractUserIds.has(profile.userId), hasPublishedSnapshot: true, hasPublicSlug: Boolean(profile.publicSlug) })) return [];
+        if (!payload || !isPublicAgentProfileVisible({ isPublished: profile.isPublished, agentStatus, inContract, accountRole, hasPublishedSnapshot: true, hasPublicSlug: Boolean(profile.publicSlug) })) return [];
         const searchable = `${payload.displayName} ${payload.businessName ?? ""} ${payload.listingTown} ${tags.map((tag) => tag.label).join(" ")}`.toLowerCase();
         if (query && !searchable.includes(query)) return [];
         if (town && !payload.listingTown.toLowerCase().includes(town)) return [];
@@ -558,14 +559,14 @@ export const consumerSiteRouter = router({
     getAgent: publicProcedure.input(z.object({ slug: z.string().min(3).max(180) })).query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [result] = await db.select({ profile: publicAgentProfiles, agentStatus: agentCrmProfiles.agentStatus })
+      const [result] = await db.select({ profile: publicAgentProfiles, agentStatus: agentCrmProfiles.agentStatus, inContract: agentCrmProfiles.inContract, accountRole: users.role })
         .from(publicAgentProfiles)
-        .innerJoin(agentCrmProfiles, eq(publicAgentProfiles.userId, agentCrmProfiles.userId))
-        .where(and(eq(publicAgentProfiles.publicSlug, input.slug), eq(publicAgentProfiles.isPublished, true), eq(agentCrmProfiles.agentStatus, "active")))
+        .innerJoin(users, eq(publicAgentProfiles.userId, users.id))
+        .leftJoin(agentCrmProfiles, eq(publicAgentProfiles.userId, agentCrmProfiles.userId))
+        .where(and(eq(publicAgentProfiles.publicSlug, input.slug), eq(publicAgentProfiles.isPublished, true)))
         .limit(1);
       if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "This travel-agent profile is not available." });
-      const [currentAgent] = await db.select({ inContract: agentCrmProfiles.inContract }).from(agentCrmProfiles).where(eq(agentCrmProfiles.userId, result.profile.userId)).limit(1);
-      if (!isPublicAgentProfileVisible({ isPublished: result.profile.isPublished, agentStatus: result.agentStatus, inContract: currentAgent?.inContract, hasPublishedSnapshot: Boolean(readSnapshot(result.profile.publishedSnapshot)), hasPublicSlug: Boolean(result.profile.publicSlug) })) throw new TRPCError({ code: "NOT_FOUND", message: "This travel-agent profile is not available." });
+      if (!isPublicAgentProfileVisible({ isPublished: result.profile.isPublished, agentStatus: result.agentStatus, inContract: result.inContract, accountRole: result.accountRole, hasPublishedSnapshot: Boolean(readSnapshot(result.profile.publishedSnapshot)), hasPublicSlug: Boolean(result.profile.publicSlug) })) throw new TRPCError({ code: "NOT_FOUND", message: "This travel-agent profile is not available." });
       const ids = Array.isArray(result.profile.publishedTagIds) ? result.profile.publishedTagIds.map(Number).filter(Number.isInteger) : [];
       const tags = ids.length ? await db.select({ id: publicSpecialityTags.id, label: publicSpecialityTags.label, category: publicSpecialityTags.category }).from(publicSpecialityTags).where(inArray(publicSpecialityTags.id, ids)) : [];
       const payload = publicProfilePayload(result.profile, tags);
@@ -583,16 +584,16 @@ export const consumerSiteRouter = router({
     })).mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [result] = await db.select({ profile: publicAgentProfiles, agentStatus: agentCrmProfiles.agentStatus })
+      const [result] = await db.select({ profile: publicAgentProfiles, agentStatus: agentCrmProfiles.agentStatus, inContract: agentCrmProfiles.inContract, accountRole: users.role })
         .from(publicAgentProfiles)
-        .innerJoin(agentCrmProfiles, eq(publicAgentProfiles.userId, agentCrmProfiles.userId))
-        .where(and(eq(publicAgentProfiles.publicSlug, input.slug), eq(publicAgentProfiles.isPublished, true), eq(agentCrmProfiles.agentStatus, "active")))
+        .innerJoin(users, eq(publicAgentProfiles.userId, users.id))
+        .leftJoin(agentCrmProfiles, eq(publicAgentProfiles.userId, agentCrmProfiles.userId))
+        .where(and(eq(publicAgentProfiles.publicSlug, input.slug), eq(publicAgentProfiles.isPublished, true)))
         .limit(1);
       if (!result || !result.profile.publishedEnquiryDeliveryEmail) {
         throw new TRPCError({ code: "NOT_FOUND", message: "This travel-agent profile is not available." });
       }
-      const [currentAgent] = await db.select({ inContract: agentCrmProfiles.inContract }).from(agentCrmProfiles).where(eq(agentCrmProfiles.userId, result.profile.userId)).limit(1);
-      const profileVisible = isPublicAgentProfileVisible({ isPublished: result.profile.isPublished, agentStatus: result.agentStatus, inContract: currentAgent?.inContract, hasPublishedSnapshot: Boolean(readSnapshot(result.profile.publishedSnapshot)), hasPublicSlug: Boolean(result.profile.publicSlug) });
+      const profileVisible = isPublicAgentProfileVisible({ isPublished: result.profile.isPublished, agentStatus: result.agentStatus, inContract: result.inContract, accountRole: result.accountRole, hasPublishedSnapshot: Boolean(readSnapshot(result.profile.publishedSnapshot)), hasPublicSlug: Boolean(result.profile.publicSlug) });
       if (publicEnquiryAdmission({ profileVisible, recentSubmissionCount: 0 }) === "profile_unavailable") {
         throw new TRPCError({ code: "NOT_FOUND", message: "This travel-agent profile is not available." });
       }

@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import { CheckCircle2, Clock3, FileImage, Globe2, Info, MapPin, Send, ShieldCheck, Sparkles, Upload } from "lucide-react";
 import {
   buildPublicProfileDraftPayload,
+  getPublicProfileDraftIssue,
+  getPublicProfileSubmissionIssue,
   preserveDraftDuringPhotoUpload,
   publicProfileInitialForm,
   type PublicProfileForm,
@@ -28,6 +30,7 @@ const channels = [
 ] as const;
 
 type FormState = PublicProfileForm;
+const MAX_SPECIALITY_TAGS = 12;
 
 const statusStyle: Record<string, string> = {
   draft: "bg-slate-100 text-slate-700 border-slate-200",
@@ -104,7 +107,15 @@ export default function MyPublicProfile() {
   const liveProfileUrl = profile?.isPublished && profile.publicSlug ? `https://www.thejltgroup.co.uk/travel-agents/${profile.publicSlug}` : null;
 
   const update = (field: keyof FormState, value: string) => setForm(current => ({ ...current, [field]: value }));
-  const toggleTag = (id: number, checked: boolean) => setSelectedTagIds(current => checked ? [...current, id] : current.filter(tagId => tagId !== id));
+  const toggleTag = (id: number, checked: boolean) => {
+    if (checked && !selectedTagIds.includes(id) && selectedTagIds.length >= MAX_SPECIALITY_TAGS) {
+      toast.error("You can choose up to 12 specialities. Untick one before choosing another.");
+      return;
+    }
+    setSelectedTagIds(current => checked ? [...current, id] : current.filter(tagId => tagId !== id));
+  };
+  const biographyLength = form.biography.trim().length;
+  const biographyRemaining = Math.max(0, 80 - biographyLength);
 
   const handlePhoto = (file?: File) => {
     if (!file) return;
@@ -126,19 +137,15 @@ export default function MyPublicProfile() {
   };
 
   const handleSave = () => {
-    if (!consent) {
-      toast.error("Please confirm that you understand the public-profile consent statement before saving.");
-      return;
-    }
-    saveDraft.mutate(buildPublicProfileDraftPayload(form, selectedTagIds, consent));
+    const issue = getPublicProfileDraftIssue(form, consent);
+    if (issue) return toast.error(issue);
+    saveDraft.mutate(buildPublicProfileDraftPayload(form, selectedTagIds, true));
   };
 
   const handleSubmitForReview = () => {
-    if (!consent) {
-      toast.error("Please confirm that you understand the public-profile consent statement before submitting for review.");
-      return;
-    }
-    submitForReview.mutate(buildPublicProfileDraftPayload(form, selectedTagIds, consent));
+    const issue = getPublicProfileSubmissionIssue(form, selectedTagIds, consent, tags.length > 0);
+    if (issue) return toast.error(issue);
+    submitForReview.mutate(buildPublicProfileDraftPayload(form, selectedTagIds, true));
   };
 
   if (isLoading) {
@@ -174,7 +181,10 @@ export default function MyPublicProfile() {
               </div>
               <Field label="About you" hint="At least 80 characters. Describe the kind of holidays you love arranging and the service customers can expect." required>
                 <Textarea value={form.biography} onChange={event => update("biography", event.target.value)} rows={7} maxLength={2000} placeholder="For example: I create tailor-made family adventures and special occasion escapes..." />
-                <p className="text-xs text-muted-foreground text-right">{form.biography.length}/2,000</p>
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <p aria-live="polite" className={biographyRemaining ? "font-medium text-amber-700" : "font-medium text-emerald-700"}>{biographyRemaining ? `${biographyRemaining} more character${biographyRemaining === 1 ? "" : "s"} needed to submit` : "Biography ready to submit"}</p>
+                  <p className="text-muted-foreground">{biographyLength}/2,000</p>
+                </div>
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Listing town" hint="Only your town will be shown on the map — never your address or postcode." required><Input value={form.listingTown} onChange={event => update("listingTown", event.target.value)} placeholder="e.g. Chester" /></Field>
@@ -186,9 +196,13 @@ export default function MyPublicProfile() {
           <Card className="rounded-2xl border-slate-200 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><MapPin size={18} className="text-[#02b9a6]" /> Your travel specialities</CardTitle>
-              <CardDescription>Choose the destinations and holiday types you want customers to be able to find you for. Select at least one before submitting.</CardDescription>
+              <CardDescription>{tags.length ? "Choose the destinations and holiday types you want customers to be able to find you for. Select at least one before submitting." : "JLT has not added speciality choices yet, so you can submit your profile without selecting one. You can add them when JLT makes the choices available."}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className={`flex items-center justify-between rounded-xl border px-3 py-2 text-sm ${selectedTagIds.length >= MAX_SPECIALITY_TAGS ? "border-amber-200 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-700"}`} aria-live="polite">
+                <span className="font-medium">{selectedTagIds.length} of {MAX_SPECIALITY_TAGS} specialities selected</span>
+                <span className="text-xs">Choose the places and trip styles you most want to be known for.</span>
+              </div>
               <TagPicker label="Destinations" emptyText="JLT has not added destination tags yet." tags={destinationTags} selectedTagIds={selectedTagIds} onToggle={toggleTag} />
               <TagPicker label="Travel types" emptyText="JLT has not added travel-type tags yet." tags={travelTypeTags} selectedTagIds={selectedTagIds} onToggle={toggleTag} />
             </CardContent>

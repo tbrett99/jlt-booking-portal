@@ -2,16 +2,17 @@ export type PublicAgentVisibilityInput = {
   isPublished: boolean;
   agentStatus: string | null | undefined;
   inContract: boolean | null | undefined;
+  accountRole?: string | null | undefined;
   hasPublishedSnapshot: boolean;
   hasPublicSlug: boolean;
 };
 
-/** The public site must never reveal a non-Active agent or a draft-only profile. */
+/** Staff accounts may be expressly approved; standard agent accounts must remain Active and not In Contract. */
 export function isPublicAgentProfileVisible(input: PublicAgentVisibilityInput): boolean {
+  const isStaffAccount = input.accountRole === "admin" || input.accountRole === "super_admin";
   return Boolean(
     input.isPublished
-      && input.agentStatus === "active"
-      && !input.inContract
+      && (isStaffAccount || (input.agentStatus === "active" && !input.inContract))
       && input.hasPublishedSnapshot
       && input.hasPublicSlug
   );
@@ -29,6 +30,32 @@ export function isApprovedPublicUrl(value: string | null | undefined, allowedHos
   } catch {
     return false;
   }
+}
+
+export type PublicDirectoryTag = {
+  id: number;
+  category: "destination" | "travel_type";
+  slug: string;
+};
+
+/**
+ * A Worldwide destination tag is broad coverage: it matches any selected specific destination,
+ * but remains an explicit option when a customer selects Worldwide itself. Travel-type filters
+ * always retain exact matching.
+ */
+export function matchesPublicDirectoryTags(profileTagIds: number[], selectedTagIds: number[], tags: PublicDirectoryTag[]): boolean {
+  if (!selectedTagIds.length) return true;
+  const tagsById = new Map(tags.map((tag) => [tag.id, tag]));
+  const worldwideTagId = tags.find((tag) => tag.category === "destination" && tag.slug === "worldwide")?.id;
+
+  return selectedTagIds.every((selectedTagId) => {
+    const selectedTag = tagsById.get(selectedTagId);
+    if (!selectedTag) return false;
+    if (selectedTag.category === "destination" && selectedTag.slug !== "worldwide") {
+      return profileTagIds.includes(selectedTagId) || (worldwideTagId !== undefined && profileTagIds.includes(worldwideTagId));
+    }
+    return profileTagIds.includes(selectedTagId);
+  });
 }
 
 export type PublicProfileSource = {

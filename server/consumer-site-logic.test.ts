@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isApprovedPublicUrl, isPublicAgentProfileVisible, publicEnquiryAdmission, toPublicAgentResponse } from "./consumer-site-logic";
+import { isApprovedPublicUrl, isPublicAgentProfileVisible, matchesPublicDirectoryTags, publicEnquiryAdmission, toPublicAgentResponse } from "./consumer-site-logic";
 
 describe("consumer public-profile visibility", () => {
   const approvedProfile = {
@@ -23,6 +23,12 @@ describe("consumer public-profile visibility", () => {
     }
     expect(isPublicAgentProfileVisible({ ...approvedProfile, inContract: true })).toBe(false);
   });
+
+  it("allows expressly staff-approved admin and super-admin profiles without a CRM agent record", () => {
+    expect(isPublicAgentProfileVisible({ ...approvedProfile, agentStatus: null, inContract: null, accountRole: "admin" })).toBe(true);
+    expect(isPublicAgentProfileVisible({ ...approvedProfile, agentStatus: null, inContract: null, accountRole: "super_admin" })).toBe(true);
+    expect(isPublicAgentProfileVisible({ ...approvedProfile, agentStatus: null, inContract: null, accountRole: "agent" })).toBe(false);
+  });
 });
 
 describe("consumer public-link validation", () => {
@@ -36,6 +42,27 @@ describe("consumer public-link validation", () => {
     expect(isApprovedPublicUrl("http://instagram.com/jlt", ["instagram.com"])).toBe(false);
     expect(isApprovedPublicUrl("not-a-url", ["instagram.com"])).toBe(false);
     expect(isApprovedPublicUrl("https://example.com/jlt", ["instagram.com"])).toBe(false);
+  });
+});
+
+describe("consumer directory destination matching", () => {
+  const tags = [
+    { id: 1, category: "destination" as const, slug: "worldwide" },
+    { id: 2, category: "destination" as const, slug: "italy" },
+    { id: 3, category: "destination" as const, slug: "caribbean" },
+    { id: 4, category: "travel_type" as const, slug: "honeymoons" },
+  ];
+
+  it("returns Worldwide agents when a customer filters for a specific destination", () => {
+    expect(matchesPublicDirectoryTags([1], [2], tags)).toBe(true);
+    expect(matchesPublicDirectoryTags([2], [2], tags)).toBe(true);
+    expect(matchesPublicDirectoryTags([3], [2], tags)).toBe(false);
+  });
+
+  it("keeps Worldwide and travel-type filters explicit", () => {
+    expect(matchesPublicDirectoryTags([2], [1], tags)).toBe(false);
+    expect(matchesPublicDirectoryTags([1, 4], [2, 4], tags)).toBe(true);
+    expect(matchesPublicDirectoryTags([1], [2, 4], tags)).toBe(false);
   });
 });
 
