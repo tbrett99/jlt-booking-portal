@@ -38,7 +38,14 @@
 - [x] Add a manually generated Monthly Review for the prior calendar month with business-update and agent-win round-up plus Open Orbit Travel Updates button
 - [x] Make weekly and monthly digest test emails use the same shared rendering path as live sends, with regression coverage for title, period, and Orbit card parity
 - [x] Send support@thejltgroup.co.uk reminder emails every Tuesday and during the first week of each new month to prepare the manual weekly and monthly digests
-- [ ] Send agents one commission-readiness reminder 12 weeks before departure, covering extras, pre-claim checks, and post-claim amendment fees
+- [x] Send agents one commission-readiness reminder 12 weeks before departure, covering extras, pre-claim checks, and post-claim amendment fees
+- [x] Scope a portal-linked consumer-facing JLT website with public agent profiles, protection content, and automatic status-based visibility
+- [x] Refine the consumer-site scope for www.thejltgroup.co.uk with staff approval required for every public agent-profile publication or update
+- [x] Define Active-only public visibility so profiles automatically hide for suspended, in-notice, In Contract, and cancelled agents
+- [x] Specify privacy-preserving agent enquiry forms that route only to the selected agent without publishing their contact details or copying support@
+- [x] Add consumer directory filters for agent-selected destination and travel-type speciality tags
+- [x] Define a town-level agent map that never exposes private or precise residential addresses
+- [x] Define approved optional social and website links that render as icons only when an agent has supplied a valid, staff-approved URL
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
