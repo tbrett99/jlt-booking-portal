@@ -310,3 +310,50 @@ describe("consumerSite staff profile eligibility", () => {
     await expect(caller.profile.submitForReview(completedDraft)).resolves.toEqual({ success: true });
   });
 });
+
+describe("consumerSite partner management", () => {
+  beforeEach(() => {
+    selectResults.splice(0, selectResults.length);
+    vi.clearAllMocks();
+  });
+
+  const partnerDraft = {
+    name: "Example Travel Co",
+    category: "Tour operator",
+    summary: "A carefully reviewed partner profile prepared for the JLT consumer website.",
+    logoUrl: "https://example.test/brand/logo.png",
+    websiteUrl: "https://example.test",
+    isPublished: false,
+    sortOrder: 10,
+  };
+
+  it("limits partner management to staff accounts", async () => {
+    await expect(agentCaller().admin.listPartners()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(agentCaller().admin.savePartner(partnerDraft)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("allows staff to create an unpublished partner draft", async () => {
+    await expect(adminCaller().admin.savePartner(partnerDraft)).resolves.toEqual({ id: 9001, created: true });
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Example Travel Co",
+      isPublished: false,
+      websiteUrl: "https://example.test/",
+      logoUrl: "https://example.test/brand/logo.png",
+    }));
+  });
+
+  it("exposes only the approved public partner fields", async () => {
+    selectResults.push([{ name: "Example Travel Co", slug: "example-travel-co-a1b2c", category: "Tour operator", summary: "Approved public summary", logoUrl: "https://example.test/logo.png", websiteUrl: "https://example.test" }]);
+    const response = await publicCaller().public.listPartners();
+    expect(response).toEqual([{ name: "Example Travel Co", slug: "example-travel-co-a1b2c", category: "Tour operator", summary: "Approved public summary", logoUrl: "https://example.test/logo.png", websiteUrl: "https://example.test" }]);
+    expect(response[0]).not.toHaveProperty("isPublished");
+    expect(response[0]).not.toHaveProperty("sortOrder");
+  });
+
+  it("rejects insecure partner URLs before they are stored", async () => {
+    await expect(adminCaller().admin.savePartner({ ...partnerDraft, websiteUrl: "http://example.test" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Public website and social links must use https://.",
+    });
+  });
+});

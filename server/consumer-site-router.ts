@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -8,6 +8,7 @@ import {
   publicAgentProfileTags,
   publicAgentProfiles,
   publicEnquiries,
+  publicPartnerProfiles,
   publicSpecialityTags,
   users,
 } from "../drizzle/schema";
@@ -70,6 +71,17 @@ const profileDraftSchema = z.object({
   pinterestUrl: z.string().trim().max(1_000).optional().nullable(),
   specialityTagIds: z.array(z.number().int().positive()).max(12),
   consentConfirmed: z.literal(true),
+});
+
+const partnerDraftSchema = z.object({
+  id: z.number().int().positive().optional(),
+  name: z.string().trim().min(2).max(255),
+  category: z.string().trim().max(120).optional().nullable(),
+  summary: z.string().trim().min(20).max(1_500).optional().nullable(),
+  logoUrl: z.string().trim().max(2_000).optional().nullable(),
+  websiteUrl: z.string().trim().max(1_000).optional().nullable(),
+  isPublished: z.boolean(),
+  sortOrder: z.number().int().min(0).max(9_999),
 });
 
 function normaliseOptional(value?: string | null): string | null {
@@ -524,9 +536,63 @@ export const consumerSiteRouter = router({
         agentName: users.name,
       }).from(publicEnquiries).innerJoin(users, eq(publicEnquiries.agentId, users.id)).orderBy(desc(publicEnquiries.createdAt)).limit(input?.limit ?? 50);
     }),
+
+    listPartners: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(publicPartnerProfiles).orderBy(asc(publicPartnerProfiles.sortOrder), asc(publicPartnerProfiles.name));
+    }),
+
+    savePartner: adminProcedure.input(partnerDraftSchema).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const values = {
+        name: input.name.trim(),
+        category: normaliseOptional(input.category),
+        summary: normaliseOptional(input.summary),
+        logoUrl: safeUrl(normaliseOptional(input.logoUrl)),
+        websiteUrl: safeUrl(normaliseOptional(input.websiteUrl)),
+        isPublished: input.isPublished,
+        sortOrder: input.sortOrder,
+      };
+      if (input.id) {
+        const [existing] = await db.select({ id: publicPartnerProfiles.id }).from(publicPartnerProfiles).where(eq(publicPartnerProfiles.id, input.id)).limit(1);
+        if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Partner profile not found." });
+        await db.update(publicPartnerProfiles).set(values).where(eq(publicPartnerProfiles.id, input.id));
+        return { id: input.id, created: false };
+      }
+      const slug = `${slugify(input.name)}-${nanoid(5).toLowerCase()}`;
+      const [result] = await db.insert(publicPartnerProfiles).values({ ...values, slug });
+      return { id: Number((result as any).insertId), created: true };
+    }),
+
+    uploadPartnerLogo: adminProcedure.input(z.object({
+      fileBase64: z.string().min(1),
+      fileName: z.string().min(1).max(255),
+      mimeType: z.enum(["image/jpeg", "image/jpg", "image/png", "image/webp"]),
+    })).mutation(async ({ input }) => {
+      const decoded = Buffer.from(input.fileBase64, "base64");
+      if (decoded.length > 3 * 1024 * 1024) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "Partner logos must be 3 MB or smaller." });
+      const extension = input.mimeType === "image/png" ? "png" : input.mimeType === "image/webp" ? "webp" : "jpg";
+      const { url } = await storagePut(`consumer-partners/${nanoid(14)}.${extension}`, decoded, input.mimeType === "image/jpg" ? "image/jpeg" : input.mimeType);
+      return { url };
+    }),
   }),
 
   public: router({
+    listPartners: publicProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        name: publicPartnerProfiles.name,
+        slug: publicPartnerProfiles.slug,
+        category: publicPartnerProfiles.category,
+        summary: publicPartnerProfiles.summary,
+        logoUrl: publicPartnerProfiles.logoUrl,
+        websiteUrl: publicPartnerProfiles.websiteUrl,
+      }).from(publicPartnerProfiles).where(eq(publicPartnerProfiles.isPublished, true)).orderBy(asc(publicPartnerProfiles.sortOrder), asc(publicPartnerProfiles.name));
+    }),
+
     listAgents: publicProcedure.input(z.object({
       tagIds: z.array(z.number().int().positive()).max(8).default([]),
       search: z.string().trim().max(120).optional(),

@@ -78,6 +78,11 @@
 - [x] Add regression coverage proving an admin or super admin can load, save, and submit their own public profile without an agent CRM record
 - [x] Verify the admin self-service My Public Profile flow directly through mine, saveDraft, and submitForReview procedures without an agent CRM record
 - [x] Verify a plain admin without an agent CRM record can load, save, and submit their own public profile through the same self-service procedures
+- [x] Redesign the consumer website with a more visual, editorial JLT brand direction and reduced text density across consumer pages
+- [x] Rework independent-agent messaging around behavioural value, personal advocacy, reduced decision effort, and the consequences of getting travel choices wrong
+- [x] Add staff-only partner management for approved name, logo, category or destination coverage, short description, website link, publication status, and display order
+- [x] Render only staff-approved partners on the public consumer Partners page with graceful empty and image-fallback states
+- [x] Expand the public consumer protection pages and homepage with accurate, plain-English PTS information, booking-specific protection guidance, and conditional ATOL context approved against official PTS materials
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
