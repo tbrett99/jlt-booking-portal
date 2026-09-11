@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, gt, inArray, isNull, or } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -8,6 +8,8 @@ import {
   publicAgentProfileTags,
   publicAgentProfiles,
   publicEnquiries,
+  publicHolidayShowcaseEvents,
+  publicHolidayShowcases,
   publicPartnerProfiles,
   publicSpecialityTags,
   users,
@@ -18,6 +20,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { isApprovedPublicUrl, isPublicAgentProfileVisible, matchesPublicDirectoryTags, publicEnquiryAdmission, toPublicAgentResponse } from "./consumer-site-logic";
+import { isPublicShowcaseVisible, toPublicShowcaseCard, toPublicShowcaseDetail } from "./holiday-showcase-logic";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
@@ -83,6 +86,58 @@ const partnerDraftSchema = z.object({
   isPublished: z.boolean(),
   sortOrder: z.number().int().min(0).max(9_999),
 });
+
+const showcaseIdSchema = z.object({ id: z.number().int().positive() });
+
+function toAgentShowcaseResponse(showcase: typeof publicHolidayShowcases.$inferSelect) {
+  return {
+    id: showcase.id,
+    publicSlug: showcase.publicSlug,
+    title: showcase.title,
+    destination: showcase.destination,
+    travelPeriodLabel: showcase.travelPeriodLabel,
+    durationNights: showcase.durationNights,
+    priceAmount: showcase.priceAmount ? Number(showcase.priceAmount) : null,
+    priceCurrency: showcase.priceCurrency,
+    heroImageUrl: showcase.heroImageUrl,
+    isPublished: showcase.isPublished,
+    expiresAt: showcase.expiresAt,
+    deletedAt: showcase.deletedAt,
+    sortOrder: showcase.sortOrder,
+    createdAt: showcase.createdAt,
+    updatedAt: showcase.updatedAt,
+  };
+}
+
+async function requireOwnedShowcase(showcaseId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [showcase] = await db.select().from(publicHolidayShowcases)
+    .where(and(eq(publicHolidayShowcases.id, showcaseId), eq(publicHolidayShowcases.agentId, userId)))
+    .limit(1);
+  if (!showcase) throw new TRPCError({ code: "NOT_FOUND", message: "Holiday showcase not found." });
+  return { db, showcase };
+}
+
+async function recordShowcaseEvent(params: {
+  showcaseId: number;
+  agentId: number;
+  action: "received" | "hidden" | "unpublished" | "reordered" | "expiry_set" | "expired" | "deleted";
+  actorUserId?: number | null;
+  note?: string | null;
+  metadata?: Record<string, unknown> | null;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(publicHolidayShowcaseEvents).values({
+    showcaseId: params.showcaseId,
+    agentId: params.agentId,
+    action: params.action,
+    actorUserId: params.actorUserId ?? null,
+    note: params.note ?? null,
+    metadata: params.metadata ?? null,
+  });
+}
 
 function normaliseOptional(value?: string | null): string | null {
   const trimmed = value?.trim();
@@ -428,6 +483,68 @@ export const consumerSiteRouter = router({
     }),
   }),
 
+  showcases: router({
+    mine: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const items = await db.select().from(publicHolidayShowcases)
+        .where(eq(publicHolidayShowcases.agentId, ctx.user.id))
+        .orderBy(asc(publicHolidayShowcases.sortOrder), desc(publicHolidayShowcases.createdAt));
+      return items.map(toAgentShowcaseResponse);
+    }),
+
+    setPublished: protectedProcedure.input(showcaseIdSchema.extend({ isPublished: z.boolean() })).mutation(async ({ input, ctx }) => {
+      const { db, showcase } = await requireOwnedShowcase(input.id, ctx.user.id);
+      if (showcase.deletedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Deleted showcases cannot be republished. Please create a new showcase in Orbit." });
+      await db.update(publicHolidayShowcases).set({
+        isPublished: input.isPublished,
+        unpublishedAt: input.isPublished ? null : new Date(),
+        unpublishedById: input.isPublished ? null : ctx.user.id,
+        unpublishedReason: input.isPublished ? null : "agent_unpublished",
+      }).where(eq(publicHolidayShowcases.id, showcase.id));
+      await recordShowcaseEvent({
+        showcaseId: showcase.id,
+        agentId: showcase.agentId,
+        action: input.isPublished ? "hidden" : "unpublished",
+        actorUserId: ctx.user.id,
+        note: input.isPublished ? "Agent restored the Portal-owned holiday showcase." : "Agent unpublished the holiday showcase.",
+      });
+      return { success: true };
+    }),
+
+    setExpiry: protectedProcedure.input(showcaseIdSchema.extend({ expiresAt: z.coerce.date().optional().nullable() })).mutation(async ({ input, ctx }) => {
+      const { db, showcase } = await requireOwnedShowcase(input.id, ctx.user.id);
+      await db.update(publicHolidayShowcases).set({ expiresAt: input.expiresAt ?? null }).where(eq(publicHolidayShowcases.id, showcase.id));
+      await recordShowcaseEvent({ showcaseId: showcase.id, agentId: showcase.agentId, action: "expiry_set", actorUserId: ctx.user.id, note: input.expiresAt ? `Expiry set for ${input.expiresAt.toISOString()}.` : "Expiry date cleared." });
+      return { success: true };
+    }),
+
+    reorder: protectedProcedure.input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) })).mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const owned = await db.select({ id: publicHolidayShowcases.id }).from(publicHolidayShowcases)
+        .where(and(eq(publicHolidayShowcases.agentId, ctx.user.id), inArray(publicHolidayShowcases.id, input.ids)));
+      if (owned.length !== input.ids.length) throw new TRPCError({ code: "FORBIDDEN", message: "You can only reorder your own holiday showcases." });
+      await Promise.all(input.ids.map((id, index) => db.update(publicHolidayShowcases).set({ sortOrder: index }).where(eq(publicHolidayShowcases.id, id))));
+      await Promise.all(input.ids.map((id) => recordShowcaseEvent({ showcaseId: id, agentId: ctx.user.id, action: "reordered", actorUserId: ctx.user.id, note: "Agent changed holiday showcase display order." })));
+      return { success: true };
+    }),
+
+    remove: protectedProcedure.input(showcaseIdSchema).mutation(async ({ input, ctx }) => {
+      const { db, showcase } = await requireOwnedShowcase(input.id, ctx.user.id);
+      await db.update(publicHolidayShowcases).set({
+        isPublished: false,
+        deletedAt: new Date(),
+        deletedById: ctx.user.id,
+        unpublishedAt: new Date(),
+        unpublishedById: ctx.user.id,
+        unpublishedReason: "agent_deleted",
+      }).where(eq(publicHolidayShowcases.id, showcase.id));
+      await recordShowcaseEvent({ showcaseId: showcase.id, agentId: showcase.agentId, action: "deleted", actorUserId: ctx.user.id, note: "Agent removed the Portal-owned holiday showcase." });
+      return { success: true };
+    }),
+  }),
+
   admin: router({
     listProfiles: adminProcedure.input(z.object({
       status: z.enum(["all", "draft", "in_review", "changes_requested", "published", "hidden"]).default("in_review"),
@@ -640,12 +757,50 @@ export const consumerSiteRouter = router({
       return payload;
     }),
 
+    listShowcasesForAgent: publicProcedure.input(z.object({ agentSlug: z.string().min(3).max(180) })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const [result] = await db.select({ profile: publicAgentProfiles, agentStatus: agentCrmProfiles.agentStatus, inContract: agentCrmProfiles.inContract, accountRole: users.role })
+        .from(publicAgentProfiles).innerJoin(users, eq(publicAgentProfiles.userId, users.id))
+        .leftJoin(agentCrmProfiles, eq(publicAgentProfiles.userId, agentCrmProfiles.userId))
+        .where(and(eq(publicAgentProfiles.publicSlug, input.agentSlug), eq(publicAgentProfiles.isPublished, true))).limit(1);
+      if (!result || !isPublicAgentProfileVisible({ isPublished: result.profile.isPublished, agentStatus: result.agentStatus, inContract: result.inContract, accountRole: result.accountRole, hasPublishedSnapshot: Boolean(readSnapshot(result.profile.publishedSnapshot)), hasPublicSlug: Boolean(result.profile.publicSlug) })) return [];
+      const now = new Date();
+      const rows = await db.select().from(publicHolidayShowcases).where(and(
+        eq(publicHolidayShowcases.publicProfileId, result.profile.id),
+        eq(publicHolidayShowcases.isPublished, true),
+        isNull(publicHolidayShowcases.deletedAt),
+        or(isNull(publicHolidayShowcases.expiresAt), gt(publicHolidayShowcases.expiresAt, now)),
+      )).orderBy(asc(publicHolidayShowcases.sortOrder), desc(publicHolidayShowcases.createdAt));
+      return rows.filter((row) => isPublicShowcaseVisible(row, now)).map(toPublicShowcaseCard);
+    }),
+
+    getShowcase: publicProcedure.input(z.object({ agentSlug: z.string().min(3).max(180), showcaseSlug: z.string().min(3).max(220) })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [result] = await db.select({ profile: publicAgentProfiles, agentStatus: agentCrmProfiles.agentStatus, inContract: agentCrmProfiles.inContract, accountRole: users.role })
+        .from(publicAgentProfiles).innerJoin(users, eq(publicAgentProfiles.userId, users.id))
+        .leftJoin(agentCrmProfiles, eq(publicAgentProfiles.userId, agentCrmProfiles.userId))
+        .where(and(eq(publicAgentProfiles.publicSlug, input.agentSlug), eq(publicAgentProfiles.isPublished, true))).limit(1);
+      if (!result || !isPublicAgentProfileVisible({ isPublished: result.profile.isPublished, agentStatus: result.agentStatus, inContract: result.inContract, accountRole: result.accountRole, hasPublishedSnapshot: Boolean(readSnapshot(result.profile.publishedSnapshot)), hasPublicSlug: Boolean(result.profile.publicSlug) })) throw new TRPCError({ code: "NOT_FOUND", message: "This holiday showcase is not available." });
+      const [showcase] = await db.select().from(publicHolidayShowcases).where(and(
+        eq(publicHolidayShowcases.publicProfileId, result.profile.id),
+        eq(publicHolidayShowcases.publicSlug, input.showcaseSlug),
+      )).limit(1);
+      if (!showcase || !isPublicShowcaseVisible(showcase)) throw new TRPCError({ code: "NOT_FOUND", message: "This holiday showcase is not available." });
+      const tags = await getProfileTagRows(result.profile.id);
+      const agent = publicProfilePayload(result.profile, tags);
+      if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "This holiday showcase is not available." });
+      return { agent, showcase: toPublicShowcaseDetail(showcase) };
+    }),
+
     submitEnquiry: publicProcedure.input(z.object({
       slug: z.string().min(3).max(180),
       customerName: z.string().trim().min(2).max(255),
       customerEmail: z.string().trim().email().max(320),
       customerPhone: z.string().trim().max(40).optional().nullable(),
       travelBrief: z.string().trim().min(20).max(4_000),
+      showcaseSlug: z.string().trim().min(3).max(220).optional(),
       consentConfirmed: z.literal(true),
     })).mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -663,6 +818,15 @@ export const consumerSiteRouter = router({
       if (publicEnquiryAdmission({ profileVisible, recentSubmissionCount: 0 }) === "profile_unavailable") {
         throw new TRPCError({ code: "NOT_FOUND", message: "This travel-agent profile is not available." });
       }
+      let showcase: typeof publicHolidayShowcases.$inferSelect | null = null;
+      if (input.showcaseSlug) {
+        const [found] = await db.select().from(publicHolidayShowcases).where(and(
+          eq(publicHolidayShowcases.publicProfileId, result.profile.id),
+          eq(publicHolidayShowcases.publicSlug, input.showcaseSlug),
+        )).limit(1);
+        if (!found || !isPublicShowcaseVisible(found)) throw new TRPCError({ code: "NOT_FOUND", message: "This holiday showcase is not available." });
+        showcase = found;
+      }
       const ipSource = `${ctx.req.ip ?? "unknown"}:${process.env.JWT_SECRET ?? "consumer-site"}`;
       const ipHash = createHash("sha256").update(ipSource).digest("hex");
       const windowStart = new Date(Date.now() - 15 * 60 * 1000);
@@ -675,6 +839,7 @@ export const consumerSiteRouter = router({
       const [insertResult] = await db.insert(publicEnquiries).values({
         profileId: result.profile.id,
         agentId: result.profile.userId,
+        showcaseId: showcase?.id ?? null,
         customerName: input.customerName.trim(),
         customerEmail: input.customerEmail.trim().toLowerCase(),
         customerPhone: normaliseOptional(input.customerPhone),
@@ -689,14 +854,15 @@ export const consumerSiteRouter = router({
       const safeEmail = escapeHtml(input.customerEmail.trim().toLowerCase());
       const safePhone = escapeHtml(normaliseOptional(input.customerPhone) ?? "Not supplied");
       const safeBrief = escapeHtml(input.travelBrief.trim()).replace(/\n/g, "<br />");
+      const safeShowcaseTitle = showcase ? escapeHtml(showcase.title) : null;
 
       const delivery = await sendDirectEmail({
         toEmail: result.profile.publishedEnquiryDeliveryEmail,
         toName: agentName,
         userId: result.profile.userId,
         triggerKey: "consumer_agent_enquiry",
-        subject: `New website enquiry from ${input.customerName.trim()}`,
-        html: `<p>Hello ${escapeHtml(agentName)},</p><p>You have received a new enquiry through your JLT public profile.</p><p><strong>Name:</strong> ${safeName}<br /><strong>Email:</strong> ${safeEmail}<br /><strong>Phone:</strong> ${safePhone}</p><p><strong>Travel plans:</strong><br />${safeBrief}</p><p>Please reply directly to the customer using the details above.</p>`,
+        subject: `${safeShowcaseTitle ? `Holiday showcase enquiry: ${showcase!.title}` : "New website enquiry"} from ${input.customerName.trim()}`,
+        html: `<p>Hello ${escapeHtml(agentName)},</p><p>You have received a new enquiry through your JLT public profile.${safeShowcaseTitle ? ` The customer is responding to your holiday showcase: <strong>${safeShowcaseTitle}</strong>.` : ""}</p><p><strong>Name:</strong> ${safeName}<br /><strong>Email:</strong> ${safeEmail}<br /><strong>Phone:</strong> ${safePhone}</p><p><strong>Travel plans:</strong><br />${safeBrief}</p><p>Please reply directly to the customer using the details above.</p>`,
       });
       await db.update(publicEnquiries).set(delivery.success ? {
         deliveryStatus: "sent",

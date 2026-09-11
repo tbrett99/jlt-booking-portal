@@ -84,6 +84,15 @@
 - [x] Render only staff-approved partners on the public consumer Partners page with graceful empty and image-fallback states
 - [x] Expand the public consumer protection pages and homepage with accurate, plain-English PTS information, booking-specific protection guidance, and conditional ATOL context approved against official PTS materials
 - [x] Diagnose why the established unchanged GitHub push path rejected the previously used credential, then push checkpoint d039a447 to the existing main branch without persisting credentials: the initial entry was truncated; the verified full token push completed and no credential file was retained
+- [x] Define and enforce a strict one-time Orbit holiday-showcase snapshot allowlist, authentication contract, idempotency key, image-source rule, and private-data rejection policy
+- [x] Create immutable snapshot, itinerary, accommodation, media, and lifecycle audit storage for Portal-owned published holiday showcases, including expiry and hide/unpublish controls
+- [x] Add authenticated external Orbit showcase intake using the existing X-API-Key convention and return only a showcase ID and public URL
+- [x] Add agent-owned My Holiday Showcases portal management for list, hide, unpublish/delete, reorder, expiry, and status visibility
+- [x] Render approved active-profile holiday showcase cards and consumer itinerary detail pages from Portal-owned snapshots only
+- [x] Tag public showcase enquiries with the showcase ID and route them solely through the existing selected-agent enquiry flow
+- [x] Add privacy, image-source, idempotency, ownership, public-status, expiry, enquiry-context, and public-route accessibility regression coverage
+- [ ] Apply Holiday Showcase migrations 0135, 0136, and 0137 to the existing Railway production portal database; verify the new tables, lifecycle fields, and enquiry context index
+- [ ] Save and push the fully validated Holiday Showcase implementation and Orbit API handover documentation to the existing JLT GitHub main branch
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

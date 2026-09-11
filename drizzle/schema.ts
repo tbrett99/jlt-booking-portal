@@ -947,6 +947,7 @@ export const publicEnquiries = mysqlTable("public_enquiries", {
   id: int("id").autoincrement().primaryKey(),
   profileId: int("profileId").notNull(),
   agentId: int("agentId").notNull(),
+  showcaseId: int("showcaseId"), // Optional Portal-owned holiday showcase context
   customerName: varchar("customerName", { length: 255 }).notNull(),
   customerEmail: varchar("customerEmail", { length: 320 }).notNull(),
   customerPhone: varchar("customerPhone", { length: 40 }),
@@ -959,6 +960,7 @@ export const publicEnquiries = mysqlTable("public_enquiries", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("public_enquiries_profile_idx").on(table.profileId, table.createdAt),
+  index("public_enquiries_showcase_idx").on(table.showcaseId, table.createdAt),
   index("public_enquiries_rate_limit_idx").on(table.ipHash, table.createdAt),
 ]);
 
@@ -978,6 +980,61 @@ export const publicPartnerProfiles = mysqlTable("public_partner_profiles", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
+// ─── Consumer website: Portal-owned holiday showcase snapshots ────────────────
+// Orbit sends one strict, public-only snapshot. It is never refreshed from Orbit:
+// public rendering and all lifecycle management happen solely in this portal.
+export const publicHolidayShowcases = mysqlTable("public_holiday_showcases", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: int("agentId").notNull(),
+  publicProfileId: int("publicProfileId").notNull(),
+  externalPublicationId: varchar("externalPublicationId", { length: 100 }).notNull().unique(),
+  publicSlug: varchar("publicSlug", { length: 220 }).notNull().unique(),
+  title: varchar("title", { length: 255 }).notNull(),
+  summary: text("summary").notNull(),
+  destination: varchar("destination", { length: 255 }).notNull(),
+  travelPeriodLabel: varchar("travelPeriodLabel", { length: 140 }),
+  durationNights: int("durationNights"),
+  priceMode: mysqlEnum("priceMode", ["from"]).default("from"),
+  priceAmount: decimal("priceAmount", { precision: 12, scale: 2 }),
+  priceCurrency: varchar("priceCurrency", { length: 3 }),
+  pricePerPerson: boolean("pricePerPerson").default(true),
+  heroImageUrl: text("heroImageUrl"),
+  heroImageSource: mysqlEnum("heroImageSource", ["supplier", "agent_upload"]),
+  itinerary: json("itinerary").notNull(),
+  accommodationOptions: json("accommodationOptions").notNull(),
+  inclusions: json("inclusions").notNull(),
+  practicalNotes: json("practicalNotes").notNull(),
+  sourceSnapshot: json("sourceSnapshot").notNull(),
+  isPublished: boolean("isPublished").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  expiresAt: timestamp("expiresAt"),
+  unpublishedAt: timestamp("unpublishedAt"),
+  unpublishedById: int("unpublishedById"),
+  unpublishedReason: varchar("unpublishedReason", { length: 100 }),
+  deletedAt: timestamp("deletedAt"),
+  deletedById: int("deletedById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("public_holiday_showcases_profile_visible_idx").on(table.publicProfileId, table.isPublished, table.expiresAt),
+  index("public_holiday_showcases_agent_idx").on(table.agentId, table.updatedAt),
+]);
+export type PublicHolidayShowcase = typeof publicHolidayShowcases.$inferSelect;
+
+// Append-only audit history for external receipt and portal-owned lifecycle events.
+export const publicHolidayShowcaseEvents = mysqlTable("public_holiday_showcase_events", {
+  id: int("id").autoincrement().primaryKey(),
+  showcaseId: int("showcaseId").notNull(),
+  agentId: int("agentId").notNull(),
+  action: mysqlEnum("action", ["received", "hidden", "unpublished", "reordered", "expiry_set", "expired", "deleted"]).notNull(),
+  actorUserId: int("actorUserId"),
+  note: varchar("note", { length: 500 }),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("public_holiday_showcase_events_showcase_idx").on(table.showcaseId, table.createdAt),
+]);
 
 // ─── Agent CRM: Tags ──────────────────────────────────────────────────────────
 export const agentTags = mysqlTable("agent_tags", {

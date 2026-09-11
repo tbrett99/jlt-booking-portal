@@ -101,6 +101,7 @@ const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const BookingDocuments = lazy(() => import("./pages/BookingDocuments"));
 const MyProfile = lazy(() => import("./pages/MyProfile"));
 const MyPublicProfile = lazy(() => import("./pages/agent/MyPublicProfile"));
+const MyHolidayShowcases = lazy(() => import("./pages/agent/MyHolidayShowcases"));
 const PublicProfiles = lazy(() => import("./pages/crm/PublicProfiles"));
 const ConsumerSite = lazy(() => import("./pages/consumer/ConsumerSite"));
 const TermsAndPolicies = lazy(() => import("./pages/TermsAndPolicies"));
@@ -171,6 +172,7 @@ function SuspendedGuard({ children }: { children: React.ReactNode }) {
 function AuthRouter() {
   const { user, loading } = useAuth();
   const { isAgentView } = useViewMode();
+  const [location] = useLocation();
 
   if (loading) {
     return (
@@ -230,6 +232,11 @@ function AuthRouter() {
   }
 
   const isAdminUser = user.role === "admin" || user.role === "super_admin";
+
+  if (location === "/my-holiday-showcases") {
+    const content = <PortalLayout><MyHolidayShowcases /></PortalLayout>;
+    return user.role === "agent" ? <SuspendedGuard><OnboardingGate>{content}</OnboardingGate></SuspendedGuard> : content;
+  }
 
   // Pure agent — always agent routes
   if (user.role === "agent") {

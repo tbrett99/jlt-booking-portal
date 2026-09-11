@@ -12,7 +12,9 @@ import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { eq, and } from "drizzle-orm";
 import { getDb, createBooking, updateBookingAdminFields, getBookingById } from "./db";
-import { apiKeys, users, ssoTokens, agentCrmProfiles } from "../drizzle/schema";
+import { apiKeys, users, ssoTokens, agentCrmProfiles, publicAgentProfiles, publicHolidayShowcaseEvents, publicHolidayShowcases } from "../drizzle/schema";
+import { orbitHolidayShowcaseSchema, slugifyShowcase } from "./holiday-showcase-logic";
+import { nanoid } from "nanoid";
 
 const router = Router();
 
@@ -177,6 +179,88 @@ router.post("/register-booking", async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error("[external-api] register-booking error:", err);
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── POST /api/external/quote-showcases ───────────────────────────────────────
+/**
+ * Receives a single, public-only holiday inspiration snapshot from Orbit.
+ * This is intentionally a one-way, one-time hand-off: the Portal owns all
+ * display, expiry, hide and deletion behaviour after accepting the snapshot.
+ */
+router.post("/quote-showcases", async (req: Request, res: Response) => {
+  try {
+    const rawKey = req.headers["x-api-key"] as string | undefined;
+    if (!rawKey) return res.status(401).json({ error: "Missing X-API-Key header" });
+    if (!await validateApiKey(rawKey)) return res.status(401).json({ error: "Invalid or inactive API key" });
+
+    const parsed = orbitHolidayShowcaseSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Invalid public holiday showcase payload",
+        fields: parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+      });
+    }
+    const payload = parsed.data;
+    const db = await getDb();
+    if (!db) return res.status(503).json({ error: "Database unavailable" });
+
+    const [agent] = await db.select({ userId: agentCrmProfiles.userId, agentStatus: agentCrmProfiles.agentStatus, inContract: agentCrmProfiles.inContract })
+      .from(agentCrmProfiles).where(eq(agentCrmProfiles.uniqueAgentId, payload.agentId)).limit(1);
+    if (!agent) return res.status(404).json({ error: "No JLT agent was found for the supplied agentId." });
+    if (agent.agentStatus !== "active" || agent.inContract) {
+      return res.status(409).json({ error: "This agent is not currently eligible to publish a public holiday showcase." });
+    }
+    const [profile] = await db.select({ id: publicAgentProfiles.id, publicSlug: publicAgentProfiles.publicSlug, isPublished: publicAgentProfiles.isPublished })
+      .from(publicAgentProfiles).where(eq(publicAgentProfiles.userId, agent.userId)).limit(1);
+    if (!profile?.isPublished || !profile.publicSlug) return res.status(409).json({ error: "This agent needs an approved, live Portal public profile before receiving holiday showcases." });
+
+    const [existing] = await db.select({ id: publicHolidayShowcases.id, agentId: publicHolidayShowcases.agentId, publicSlug: publicHolidayShowcases.publicSlug })
+      .from(publicHolidayShowcases).where(eq(publicHolidayShowcases.externalPublicationId, payload.externalPublicationId)).limit(1);
+    if (existing) {
+      if (existing.agentId !== agent.userId) return res.status(409).json({ error: "This externalPublicationId is already associated with another agent." });
+      return res.status(200).json({ success: true, idempotent: true, showcaseId: existing.id, publicUrl: `https://www.thejltgroup.co.uk/travel-agents/${profile.publicSlug}/holiday-showcases/${existing.publicSlug}` });
+    }
+
+    const publicSlug = `${slugifyShowcase(payload.title)}-${nanoid(7).toLowerCase()}`;
+    const [result] = await db.insert(publicHolidayShowcases).values({
+      agentId: agent.userId,
+      publicProfileId: profile.id,
+      externalPublicationId: payload.externalPublicationId,
+      publicSlug,
+      title: payload.title,
+      summary: payload.summary,
+      destination: payload.destination,
+      travelPeriodLabel: payload.travelPeriodLabel ?? null,
+      durationNights: payload.durationNights ?? null,
+      priceMode: payload.price?.mode ?? null,
+      priceAmount: payload.price?.amount === undefined ? null : String(payload.price.amount),
+      priceCurrency: payload.price?.currency ?? null,
+      pricePerPerson: payload.price?.perPerson ?? true,
+      heroImageUrl: payload.heroImage?.url ?? null,
+      heroImageSource: payload.heroImage?.source ?? null,
+      itinerary: payload.itinerary,
+      accommodationOptions: payload.accommodationOptions,
+      inclusions: payload.inclusions,
+      practicalNotes: payload.practicalNotes,
+      sourceSnapshot: payload,
+    });
+    const showcaseId = Number((result as any).insertId);
+    await db.insert(publicHolidayShowcaseEvents).values({
+      showcaseId,
+      agentId: agent.userId,
+      action: "received",
+      note: "Received an immutable public-only snapshot from Orbit.",
+      metadata: { externalPublicationId: payload.externalPublicationId },
+    });
+    return res.status(201).json({
+      success: true,
+      showcaseId,
+      publicUrl: `https://www.thejltgroup.co.uk/travel-agents/${profile.publicSlug}/holiday-showcases/${publicSlug}`,
+    });
+  } catch (error) {
+    console.error("[external-api] quote-showcases error", error);
+    return res.status(500).json({ error: "Unable to receive the holiday showcase." });
   }
 });
 

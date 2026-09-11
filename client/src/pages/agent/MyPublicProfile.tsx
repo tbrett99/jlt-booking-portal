@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { CheckCircle2, Clock3, FileImage, Globe2, Info, MapPin, Send, ShieldCheck, Sparkles, Upload } from "lucide-react";
+import { Link } from "wouter";
 import {
   buildPublicProfileDraftPayload,
   getPublicProfileDraftIssue,
@@ -256,6 +257,7 @@ export default function MyPublicProfile() {
               <Badge variant="outline" className={`capitalize ${statusStyle[profile?.reviewStatus ?? "draft"]}`}>{profile?.reviewStatus === "in_review" ? <Clock3 className="mr-1.5" size={13} /> : <Info className="mr-1.5" size={13} />}{statusLabel(profile?.reviewStatus)}</Badge>
               {profile?.reviewNote && <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 text-sm"><p className="font-medium text-slate-800">JLT review note</p><p className="mt-1 text-slate-600 leading-relaxed">{profile.reviewNote}</p></div>}
               {profile?.isPublished ? <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-900"><p className="font-medium flex items-center gap-1.5"><CheckCircle2 size={15} /> Profile live</p><p className="mt-1 text-emerald-800">Your currently approved profile is visible while your agent status remains Active.</p>{liveProfileUrl && <a href={liveProfileUrl} target="_blank" rel="noreferrer" className="inline-block mt-2 font-medium underline">View public profile</a>}</div> : <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 text-sm text-slate-600">Your profile is not public yet. It will only go live after a JLT team member approves it and your agent status is Active.</div>}
+              <div className="rounded-xl border border-[#bdebe3] bg-[#effbf8] p-3 text-sm text-[#315d59]"><p className="font-medium text-[#102632]">Share a holiday idea from Orbit</p><p className="mt-1 leading-relaxed">Create a public holiday showcase in Orbit, then control its visibility, order and expiry here in the Portal.</p><Link href="/my-holiday-showcases" className="mt-2 inline-block font-medium text-[#007e72] underline underline-offset-2">Manage My Holiday Showcases</Link></div>
               <div className="border-t pt-4 text-xs leading-relaxed text-muted-foreground"><p className="font-medium text-slate-700 mb-1">How it works</p><ol className="space-y-2 list-decimal list-inside"><li>Save your draft.</li><li>Submit it for JLT review.</li><li>JLT publishes your approved profile.</li><li>Any later update remains a draft until approved.</li></ol></div>
             </CardContent>
           </Card>

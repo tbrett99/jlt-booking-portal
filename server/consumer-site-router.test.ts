@@ -357,3 +357,71 @@ describe("consumerSite partner management", () => {
     });
   });
 });
+
+describe("consumerSite holiday showcases", () => {
+  const showcase = {
+    id: 501,
+    agentId: 19,
+    publicProfileId: 77,
+    externalPublicationId: "a1b2c3d4-e5f6-4a7b-8c9d-e0f1a2b3c4d5",
+    publicSlug: "new-york-and-finger-lakes-a1b2c",
+    title: "New York and Finger Lakes Escape",
+    summary: "A public-only itinerary snapshot created to inspire a thoughtful travel conversation.",
+    destination: "New York and Finger Lakes",
+    travelPeriodLabel: "Autumn 2026",
+    durationNights: 7,
+    priceAmount: "1495.00",
+    priceCurrency: "GBP",
+    pricePerPerson: true,
+    heroImageUrl: "https://supplier.example/hero.jpg",
+    isPublished: true,
+    expiresAt: null,
+    deletedAt: null,
+    sortOrder: 0,
+    itinerary: [{ day: 1, title: "Arrive in New York", highlights: ["Private transfer"] }],
+    accommodationOptions: [],
+    inclusions: ["Selected accommodation"],
+    practicalNotes: ["Subject to availability"],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  beforeEach(() => {
+    selectResults.splice(0, selectResults.length);
+    vi.clearAllMocks();
+  });
+
+  it("returns only active, visible public holiday showcase card fields on an approved agent profile", async () => {
+    selectResults.push(
+      [{ profile: visibleProfile, agentStatus: "active", inContract: false, accountRole: "agent" }],
+      [showcase],
+    );
+    const response = await publicCaller().public.listShowcasesForAgent({ agentSlug: "alex-travel-19" });
+    expect(response).toEqual([expect.objectContaining({ slug: showcase.publicSlug, title: showcase.title, price: expect.objectContaining({ amount: 1495 }) })]);
+    expect(response[0]).not.toHaveProperty("agentId");
+    expect(response[0]).not.toHaveProperty("externalPublicationId");
+    expect(response[0]).not.toHaveProperty("sourceSnapshot");
+  });
+
+  it("stores the selected visible showcase ID on an agent-directed consumer enquiry", async () => {
+    selectResults.push(
+      [{ profile: visibleProfile, agentStatus: "active", inContract: false, accountRole: "agent" }],
+      [showcase],
+      [],
+    );
+    await expect(publicCaller().public.submitEnquiry({
+      slug: "alex-travel-19", showcaseSlug: showcase.publicSlug, customerName: "Sam Customer", customerEmail: "sam@example.com", customerPhone: null,
+      travelBrief: "I would like to adapt this itinerary for a special family holiday next autumn.", consentConfirmed: true,
+    })).resolves.toEqual({ success: true });
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ showcaseId: 501, agentId: 19, profileId: 77 }));
+    expect(sendDirectEmail).toHaveBeenNthCalledWith(1, expect.objectContaining({ toEmail: "private.agent@example.co.uk", subject: expect.stringContaining(showcase.title) }));
+  });
+
+  it("lets an agent list and remove only their own received snapshot", async () => {
+    selectResults.push([showcase]);
+    await expect(agentCaller().showcases.mine()).resolves.toEqual([expect.objectContaining({ id: 501, publicSlug: showcase.publicSlug })]);
+    selectResults.push([showcase]);
+    await expect(agentCaller().showcases.remove({ id: 501 })).resolves.toEqual({ success: true });
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ isPublished: false, deletedAt: expect.any(Date), deletedById: 19 }));
+  });
+});

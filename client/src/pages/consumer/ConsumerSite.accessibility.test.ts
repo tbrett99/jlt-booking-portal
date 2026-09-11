@@ -27,4 +27,11 @@ describe("ConsumerSite accessibility contract", () => {
     expect(source).toContain("You can still use the accessible expert list below.");
     expect(source).toContain('aria-label="Travel expert results"');
   });
+
+  it("keeps holiday showcase inspiration discoverable through linked cards and a dedicated detail page", () => {
+    expect(source).toContain("function HolidayShowcaseCard");
+    expect(source).toContain("function HolidayShowcaseDetail");
+    expect(source).toContain("holiday-showcases/${showcase.slug}");
+    expect(source).toContain("This is travel inspiration, not a live quote.");
+  });
 });
