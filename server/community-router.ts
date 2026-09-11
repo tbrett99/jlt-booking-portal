@@ -31,6 +31,7 @@ import { sendDirectEmail } from "./email";
 import { getDb, getUpcomingAgentEvents } from "./db";
 import { users, agentCrmProfiles, suppliers } from "../drizzle/schema";
 import { eq, and, asc } from "drizzle-orm";
+import { prepareCommunityDigestDelivery } from "./community-digest-delivery-utils";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -421,12 +422,13 @@ export const communityRouter = router({
           origin: z.string().url(),
           customSubject: z.string().optional(),
           customIntro: z.string().optional(),
+          testToEmail: z.string().email().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
         const digest = await getDigest(input.digestId);
         if (!digest) throw new TRPCError({ code: "NOT_FOUND" });
-        if (digest.status === "sent") {
+        if (digest.status === "sent" && !input.testToEmail) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Digest already sent",
@@ -821,16 +823,25 @@ export const communityRouter = router({
         // connections, which previously caused silent failures for some recipients.
         const CONCURRENCY = 5;
         let sent = 0;
-        const eligibleAgents = agents.filter((a) => !!a.email);
+        const eligibleAgents = input.testToEmail
+          ? [{ id: -1, name: "Test recipient", email: input.testToEmail }]
+          : agents.filter((a) => !!a.email);
         for (let i = 0; i < eligibleAgents.length; i += CONCURRENCY) {
           const batch = eligibleAgents.slice(i, i + CONCURRENCY);
+          const delivery = prepareCommunityDigestDelivery({
+            html: emailHtml,
+            digestTitle,
+            periodLabel,
+            customSubject: input.customSubject,
+            isTest: Boolean(input.testToEmail),
+          });
           const results = await Promise.allSettled(
             batch.map((agent) =>
               sendDirectEmail({
                 toEmail: agent.email!,
                 toName: agent.name ?? "Agent",
-                subject: input.customSubject || `JLT Group ${digestTitle} — ${periodLabel}`,
-                html: emailHtml,
+                subject: delivery.subject,
+                html: delivery.html,
               })
             )
           );
@@ -841,8 +852,8 @@ export const communityRouter = router({
           }
         }
 
-        await markDigestSent(input.digestId, ctx.user.id, sent);
-        return { sent, sentCount: sent };
+        if (!input.testToEmail) await markDigestSent(input.digestId, ctx.user.id, sent);
+        return { sent, sentCount: sent, isTest: Boolean(input.testToEmail) };
       }),
 
     // Send test digest to a single email address
@@ -857,6 +868,14 @@ export const communityRouter = router({
         })
       )
       .mutation(async ({ input }) => {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Test emails are sent through the shared digest sender.",
+        });
+
+        /* Retired standalone test renderer. Tests now invoke digest.send with testToEmail,
+           ensuring test messages use the exact live weekly/monthly rendering path. */
+        /*
         const digest = await getDigest(input.digestId);
         if (!digest) throw new TRPCError({ code: "NOT_FOUND" });
 
@@ -977,6 +996,7 @@ export const communityRouter = router({
             .replace('padding:28px 32px;">', `padding:28px 32px;">${orbitSalesReportHtml}`),
         });
         return { sent: true };
+        */
       }),
 
     // Get booking highlights for digest preview

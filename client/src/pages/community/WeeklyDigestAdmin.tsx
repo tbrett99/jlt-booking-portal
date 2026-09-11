@@ -61,7 +61,7 @@ export default function WeeklyDigestAdmin() {
       && Math.abs(dStart.getTime() - periodStart.getTime()) <= 2 * 24 * 60 * 60 * 1000;
   });
 
-  const sendTest = trpc.community.digest.sendTest.useMutation({
+  const sendTest = trpc.community.digest.send.useMutation({
     onSuccess: () => {
       toast.success(`Test email sent to ${testEmailAddress}`);
       setTestEmailOpen(false);
@@ -74,7 +74,7 @@ export default function WeeklyDigestAdmin() {
     await sendTest.mutateAsync({
       digestId: draft.id,
       origin: window.location.origin,
-      toEmail: testEmailAddress,
+      testToEmail: testEmailAddress,
       customSubject: customSubject || undefined,
       customIntro: customIntro || undefined,
     });

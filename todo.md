@@ -33,10 +33,11 @@
 - [x] Add reusable application, discovery-call, and joining buttons plus prospect preview and hour-or-day delays measured from workflow stage entry
 - [x] Make workflow preview use the same live JLT branding settings and wrapper as delivered recruitment emails
 - [ ] Visually verify populated workflow editor buttons and the branded prospect preview before release
-- [ ] Send support@thejltgroup.co.uk an internal alert when an agent submits a Community win post
-- [ ] Redesign the manually generated Weekly Update for Tuesday use, covering the prior Monday–Sunday with business/community updates and an Open Orbit Travel Updates button
-- [ ] Add a manually generated Monthly Review for the prior calendar month with business-update and agent-win round-up plus Open Orbit Travel Updates button
-- [ ] Send support@thejltgroup.co.uk reminder emails every Tuesday and during the first week of each new month to prepare the manual weekly and monthly digests
+- [x] Send support@thejltgroup.co.uk an internal alert when an agent submits a Community win post
+- [x] Redesign the manually generated Weekly Update for Tuesday use, covering the prior Monday–Sunday with business/community updates and an Open Orbit Travel Updates button
+- [x] Add a manually generated Monthly Review for the prior calendar month with business-update and agent-win round-up plus Open Orbit Travel Updates button
+- [x] Make weekly and monthly digest test emails use the same shared rendering path as live sends, with regression coverage for title, period, and Orbit card parity
+- [x] Send support@thejltgroup.co.uk reminder emails every Tuesday and during the first week of each new month to prepare the manual weekly and monthly digests
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
