@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { getSystemSetting, setSystemSetting } from "./db";
 import { sendDirectEmail } from "./email";
+import { sdk } from "./_core/sdk";
 
 const SUPPORT_EMAIL = "support@thejltgroup.co.uk";
 const DIGEST_URL = "https://portal.thejltgroup.co.uk/admin/weekly-digest";
@@ -60,13 +61,10 @@ async function sendReminder({ kind, label, key }: { kind: "weekly" | "monthly"; 
  * first Tuesday of a new month, leaving both agent communications manually controlled.
  */
 export async function communityDigestReminderHandler(req: Request, res: Response) {
-  const authHeader = req.headers.authorization ?? "";
-  const exportToken = process.env.EXPORT_TRIGGER_TOKEN ?? "";
-  const isBearerAuth = exportToken && authHeader === `Bearer ${exportToken}`;
-  const isHeartbeat = Boolean(req.headers["x-manus-cron-task-uid"]);
-  if (!isBearerAuth && !isHeartbeat) return res.status(403).json({ error: "Unauthorized" });
-
   try {
+    const user = await sdk.authenticateRequest(req);
+    if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "Cron-only endpoint" });
+
     const now = new Date();
     const london = londonCalendarDate(now);
     if (london.weekday !== "Tue") return res.json({ ok: true, skipped: "Not Tuesday" });
