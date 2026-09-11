@@ -91,7 +91,7 @@
 - [x] Render approved active-profile holiday showcase cards and consumer itinerary detail pages from Portal-owned snapshots only
 - [x] Tag public showcase enquiries with the showcase ID and route them solely through the existing selected-agent enquiry flow
 - [x] Add privacy, image-source, idempotency, ownership, public-status, expiry, enquiry-context, and public-route accessibility regression coverage
-- [ ] Apply Holiday Showcase migrations 0135, 0136, and 0137 to the existing Railway production portal database; verify the new tables, lifecycle fields, and enquiry context index
+- [x] Verify in Railway that public_holiday_showcases includes deletedAt and deletedById, and that public_holiday_showcase_events.action includes deleted; then record the complete Holiday Showcase migration outcome: public_holiday_showcases, public_holiday_showcase_events, deletedAt/deletedById, deleted lifecycle action, and public_enquiries_showcase_idx verified in Railway on 11 September 2026
 - [ ] Save and push the fully validated Holiday Showcase implementation and Orbit API handover documentation to the existing JLT GitHub main branch
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
