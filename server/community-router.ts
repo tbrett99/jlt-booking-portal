@@ -19,7 +19,7 @@ import {
   getRecentCommunityPostsForDashboard,
   getAgentsNeedingConfirmationReminder,
   recordConfirmationReminder,
-  getOrCreateWeeklyDigestDraft,
+  getOrCreateCommunityDigestDraft,
   updateDigest,
   markDigestSent,
   listDigests,
@@ -155,6 +155,26 @@ export const communityRouter = router({
         authorId: ctx.user.id,
         authorName: ctx.user.name ?? "Agent",
       });
+
+      if (!isAdmin && input.category === "agent_win" && !input.isDraft) {
+        const portalBaseUrl = process.env.PORTAL_BASE_URL ?? "https://portal.thejltgroup.co.uk";
+        try {
+          const alert = await sendDirectEmail({
+            toEmail: "support@thejltgroup.co.uk",
+            toName: "JLT Support",
+            subject: `New agent win submitted: ${input.title}`,
+            html: `
+              <p><strong>${ctx.user.name ?? "An agent"}</strong> has submitted a new Agent Win in the Community Hub.</p>
+              <p><strong>Title:</strong> ${input.title}</p>
+              <p>Please review it in the portal and celebrate the win where appropriate.</p>
+              <p><a href="${portalBaseUrl}/community?postId=${postId}" style="display:inline-block;background:#70FFE8;color:#414141;padding:10px 18px;border-radius:6px;font-weight:700;text-decoration:none;">Review agent win</a></p>
+            `,
+          });
+          if (!alert.success) console.error("[Community] Agent win support alert failed:", alert.error);
+        } catch (error) {
+          console.error("[Community] Agent win support alert unexpected error:", error);
+        }
+      }
       return { postId };
     }),
 
@@ -367,9 +387,12 @@ export const communityRouter = router({
       }),
 
     getOrCreateDraft: adminProcedure
-      .input(z.object({ weekStarting: z.date() }))
+      .input(z.object({
+        periodStart: z.date(),
+        digestType: z.enum(["weekly", "monthly"]),
+      }))
       .mutation(async ({ input }) => {
-        const digest = await getOrCreateWeeklyDigestDraft(input.weekStarting);
+        const digest = await getOrCreateCommunityDigestDraft(input);
         if (!digest) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         return digest;
       }),
@@ -704,18 +727,30 @@ export const communityRouter = router({
           }
         } catch (_e) { /* non-fatal */ }
 
-        const weekLabel = new Date(digest.weekStarting).toLocaleDateString(
-          "en-GB",
-          { day: "numeric", month: "long", year: "numeric" }
-        );
+        const digestType = (digest as any).digestType === "monthly" ? "monthly" : "weekly";
+        const digestTitle = digestType === "monthly" ? "Monthly Review" : "Weekly Update";
+        const periodStart = new Date(digest.weekStarting);
+        const periodEnd = (digest as any).periodEnd
+          ? new Date((digest as any).periodEnd)
+          : new Date(periodStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const displayEnd = new Date(periodEnd.getTime() - 1);
+        const periodLabel = digestType === "monthly"
+          ? periodStart.toLocaleDateString("en-GB", { month: "long", year: "numeric" })
+          : `${periodStart.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${displayEnd.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
         const introText = input.customIntro || (digest as any).introText || "";
+        const orbitSalesReportHtml = `
+          <div style="margin-bottom:28px;background:#eefcff;border:1px solid #70FFE8;border-radius:12px;padding:18px 20px;text-align:center;">
+            <h3 style="margin:0 0 8px;font-size:15px;color:#414141;font-family:'Poppins',sans-serif;">📈 View this period's sales update in Orbit</h3>
+            <p style="margin:0 0 14px;font-size:13px;color:#555;line-height:1.5;font-family:'Poppins',sans-serif;">Open Travel Updates in Orbit to access the latest weekly or monthly sales report.</p>
+            <a href="https://orbit.thejltgroup.co.uk/travel-updates" style="display:inline-block;background:#414141;color:#70FFE8;font-weight:700;font-size:13px;padding:11px 22px;border-radius:50px;text-decoration:none;font-family:'Poppins',sans-serif;">Open Orbit</a>
+          </div>`;
 
         const emailHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>JLT Group Weekly Update</title>
+<title>JLT Group ${digestTitle}</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body style="margin:0;padding:0;background:#f5f5f5;font-family:'Poppins',Arial,sans-serif;">
@@ -726,8 +761,8 @@ export const communityRouter = router({
       <div style="display:inline-block;background:#70FFE8;border-radius:8px;padding:6px 16px;margin-bottom:16px;">
         <span style="font-size:12px;font-weight:700;color:#414141;letter-spacing:0.1em;text-transform:uppercase;">JLT Group</span>
       </div>
-      <h1 style="margin:0 0 6px;font-size:26px;font-weight:700;color:#ffffff;line-height:1.2;">Weekly Update</h1>
-      <p style="margin:0;font-size:13px;color:#70FFE8;font-weight:500;">Week of ${weekLabel}</p>
+      <h1 style="margin:0 0 6px;font-size:26px;font-weight:700;color:#ffffff;line-height:1.2;">${digestTitle}</h1>
+      <p style="margin:0;font-size:13px;color:#70FFE8;font-weight:500;">${periodLabel}</p>
     </div>
 
     <!-- Body -->
@@ -740,6 +775,7 @@ export const communityRouter = router({
       </div>
       ` : ""}
 
+      ${orbitSalesReportHtml}
       ${statsHtml}
       ${highlightsHtml}
       ${preferredPartnersHtml}
@@ -793,7 +829,7 @@ export const communityRouter = router({
               sendDirectEmail({
                 toEmail: agent.email!,
                 toName: agent.name ?? "Agent",
-                subject: input.customSubject || `JLT Group Weekly Update — ${weekLabel}`,
+                subject: input.customSubject || `JLT Group ${digestTitle} — ${periodLabel}`,
                 html: emailHtml,
               })
             )
@@ -915,15 +951,30 @@ export const communityRouter = router({
           }
         }
 
+        const digestType = (digest as any).digestType === "monthly" ? "monthly" : "weekly";
+        const digestTitle = digestType === "monthly" ? "Monthly Review" : "Weekly Update";
+        const periodStart = new Date(digest.weekStarting);
+        const periodEnd = (digest as any).periodEnd
+          ? new Date((digest as any).periodEnd)
+          : new Date(periodStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const displayEnd = new Date(periodEnd.getTime() - 1);
         const weekLabel = new Date(digest.weekStarting).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+        const periodLabel = digestType === "monthly"
+          ? periodStart.toLocaleDateString("en-GB", { month: "long", year: "numeric" })
+          : `${periodStart.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${displayEnd.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+        const orbitSalesReportHtml = `<div style="margin-bottom:28px;background:#eefcff;border:1px solid #70FFE8;border-radius:12px;padding:18px 20px;text-align:center;"><h3 style="margin:0 0 8px;font-size:15px;color:#414141;font-family:'Poppins',sans-serif;">View this period's sales update in Orbit</h3><p style="margin:0 0 14px;font-size:13px;color:#555;line-height:1.5;font-family:'Poppins',sans-serif;">Open Travel Updates in Orbit to access the latest weekly or monthly sales report.</p><a href="https://orbit.thejltgroup.co.uk/travel-updates" style="display:inline-block;background:#414141;color:#70FFE8;font-weight:700;font-size:13px;padding:11px 22px;border-radius:50px;text-decoration:none;font-family:'Poppins',sans-serif;">Open Orbit</a></div>`;
         const introText = input.customIntro || (digest as any).introText || "";
         const emailHtml = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>JLT Group Weekly Update</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/></head><body style="margin:0;padding:0;background:#f5f5f5;font-family:'Poppins',Arial,sans-serif;"><div style="max-width:620px;margin:0 auto;background:#f5f5f5;padding:24px 16px;"><div style="background:linear-gradient(135deg,#414141 0%,#2a2a2a 100%);border-radius:16px 16px 0 0;padding:32px 32px 24px;text-align:center;"><div style="display:inline-block;background:#70FFE8;border-radius:8px;padding:6px 16px;margin-bottom:16px;"><span style="font-size:12px;font-weight:700;color:#414141;letter-spacing:0.1em;text-transform:uppercase;">JLT Group</span></div><h1 style="margin:0 0 6px;font-size:26px;font-weight:700;color:#ffffff;line-height:1.2;">Weekly Update</h1><p style="margin:0;font-size:13px;color:#70FFE8;font-weight:500;">Week of ${weekLabel}</p></div><div style="background:#ffffff;border-radius:0 0 16px 16px;padding:28px 32px;">${introText ? `<div style="background:#FFF6ED;border-left:4px solid #FFC3BC;border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:28px;"><p style="margin:0;font-size:14px;color:#414141;line-height:1.6;">${introText}</p></div>` : ""}${statsHtml}${highlightsHtml}${eventsHtml}${snapshotHtml}<div style="margin-bottom:28px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;border-bottom:2px solid #70FFE8;padding-bottom:6px;"><span style="font-size:18px;">\uD83D\uDDDE\uFE0F</span><h3 style="margin:0;font-size:15px;font-weight:700;color:#414141;font-family:'Poppins',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">From the Community Hub</h3></div>${postsHtml}</div><div style="text-align:center;margin-top:32px;padding-top:24px;border-top:1px solid #f0f0f0;"><a href="${input.origin}/community" style="display:inline-block;background:linear-gradient(135deg,#70FFE8 0%,#02E6D2 100%);color:#414141;font-weight:700;font-size:14px;padding:14px 32px;border-radius:50px;text-decoration:none;font-family:'Poppins',sans-serif;">Visit the Community Hub</a><p style="margin:12px 0 0;font-size:12px;color:#aaa;"><a href="${input.origin}/events" style="color:#02E6D2;text-decoration:none;">View Calendar</a> \u00b7 <a href="${input.origin}/community" style="color:#02E6D2;text-decoration:none;">Community Hub</a></p></div></div><p style="margin:16px 0 0;text-align:center;font-size:11px;color:#aaa;font-family:'Poppins',sans-serif;">JLT Group Agent Portal \u2014 You're receiving this as an active JLT agent.<br/>\u00a9 ${new Date().getFullYear()} JLT Group. All rights reserved.</p></div></body></html>`;
 
         await sendDirectEmail({
           toEmail: input.toEmail,
           toName: input.toEmail,
-          subject: `[TEST] ${input.customSubject || `JLT Group Weekly Update \u2014 ${weekLabel}`}`,
-          html: emailHtml,
+          subject: `[TEST] ${input.customSubject || `JLT Group ${digestTitle} — ${periodLabel}`}`,
+          html: emailHtml
+            .replace("<title>JLT Group Weekly Update</title>", `<title>JLT Group ${digestTitle}</title>`)
+            .replace(">Weekly Update</h1>", `>${digestTitle}</h1>`)
+            .replace(`>Week of ${weekLabel}</p>`, `>${periodLabel}</p>`)
+            .replace('padding:28px 32px;">', `padding:28px 32px;">${orbitSalesReportHtml}`),
         });
         return { sent: true };
       }),

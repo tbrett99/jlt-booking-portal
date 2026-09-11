@@ -22,28 +22,43 @@ export default function WeeklyDigestAdmin() {
   const [testEmailAddress, setTestEmailAddress] = useState("");
   const [customSubject, setCustomSubject] = useState("");
   const [customIntro, setCustomIntro] = useState("");
+  const [digestType, setDigestType] = useState<"weekly" | "monthly">("weekly");
 
-  // Stable week start — the Friday that STARTED the current digest period
-  // Digest covers Fri (last week) → Fri (today/send day)
-  // On Friday: go back 7 days to last Friday. Other days: go back to most recent Friday.
-  const weekStart = useMemo(() => {
+  // Weekly updates always cover the previous completed Mon–Sun period.
+  // Monthly reviews always cover the previous completed calendar month.
+  const periodStart = useMemo(() => {
     const d = new Date();
-    const day = d.getDay(); // 0=Sun,1=Mon,...,5=Fri,6=Sat
-    // On Friday (day=5): go back 7 days. Otherwise go back to most recent Friday.
-    const daysSinceFriday = day === 5 ? 7 : (day + 2) % 7;
-    d.setDate(d.getDate() - daysSinceFriday);
+    if (digestType === "monthly") {
+      d.setMonth(d.getMonth() - 1, 1);
+    } else {
+      const daysSinceMonday = (d.getDay() + 6) % 7;
+      d.setDate(d.getDate() - daysSinceMonday - 7);
+    }
     d.setHours(0, 0, 0, 0);
     return d;
-  }, []);
+  }, [digestType]);
+  const periodEnd = useMemo(() => {
+    const d = new Date(periodStart);
+    if (digestType === "monthly") d.setMonth(d.getMonth() + 1, 1);
+    else d.setDate(d.getDate() + 7);
+    return d;
+  }, [digestType, periodStart]);
+  const periodLabel = useMemo(() => {
+    const lastDay = new Date(periodEnd.getTime() - 1);
+    return digestType === "monthly"
+      ? periodStart.toLocaleDateString("en-GB", { month: "long", year: "numeric" })
+      : `${periodStart.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${lastDay.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+  }, [digestType, periodEnd, periodStart]);
+  const digestTitle = digestType === "monthly" ? "Monthly Review" : "Weekly Update";
 
   const createDraft = trpc.community.digest.getOrCreateDraft.useMutation();
   const { data: digests, isLoading: digestsLoading, refetch: refetchDigests } = trpc.community.digest.list.useQuery();
 
-  // Match using weekStarting (the correct DB field name)
+  // Match using the fixed start of the selected reporting period.
   const draft = digests?.find((d: any) => {
     const dStart = new Date(d.weekStarting);
-    // Allow ±2 days tolerance to handle BST/UTC timezone offset (DB stores UTC midnight)
-    return Math.abs(dStart.getTime() - weekStart.getTime()) <= 2 * 24 * 60 * 60 * 1000;
+    return (d.digestType ?? "weekly") === digestType
+      && Math.abs(dStart.getTime() - periodStart.getTime()) <= 2 * 24 * 60 * 60 * 1000;
   });
 
   const sendTest = trpc.community.digest.sendTest.useMutation({
@@ -76,7 +91,7 @@ export default function WeeklyDigestAdmin() {
 
   const handleCreateOrRefresh = async () => {
     try {
-      await createDraft.mutateAsync({ weekStarting: weekStart });
+      await createDraft.mutateAsync({ periodStart, digestType });
       refetchDigests();
       toast.success("Digest draft ready");
     } catch (e: any) {
@@ -122,9 +137,9 @@ export default function WeeklyDigestAdmin() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Weekly Digest</h1>
+          <h1 className="text-2xl font-bold text-foreground">Agent Digests</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Review and send the weekly community digest to all active agents
+            Manually prepare and send the completed reporting period to all active agents
           </p>
         </div>
         <Button
@@ -139,11 +154,21 @@ export default function WeeklyDigestAdmin() {
         </Button>
       </div>
 
+      <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-muted/30 p-2">
+        <Button type="button" variant={digestType === "weekly" ? "default" : "ghost"} onClick={() => { setDigestType("weekly"); setCustomSubject(""); setCustomIntro(""); }}>
+          Weekly Update
+        </Button>
+        <Button type="button" variant={digestType === "monthly" ? "default" : "ghost"} onClick={() => { setDigestType("monthly"); setCustomSubject(""); setCustomIntro(""); }}>
+          Monthly Review
+        </Button>
+        <div className="ml-auto flex items-center px-2 text-sm font-medium text-muted-foreground">{periodLabel}</div>
+      </div>
+
       {!draft ? (
         <div className="text-center py-16 text-muted-foreground border border-dashed border-border rounded-xl">
           <Mail className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p className="font-medium">No digest draft for this week</p>
-          <p className="text-sm mt-1">Click "Generate Draft" to create this week's digest</p>
+          <p className="font-medium">No {digestTitle.toLowerCase()} draft for this period</p>
+          <p className="text-sm mt-1">Click "Generate Draft" to create the {periodLabel} draft</p>
         </div>
       ) : (
         <>
@@ -151,7 +176,7 @@ export default function WeeklyDigestAdmin() {
           {draft.status === "sent" && (
             <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm font-medium">
               <CheckCircle2 className="w-4 h-4" />
-              This week's digest was sent to {(draft as any).recipientCount ?? 0} agents
+              This {digestType === "monthly" ? "month's review" : "week's update"} was sent to {(draft as any).recipientCount ?? 0} agents
               {(draft as any).sentAt && ` on ${new Date((draft as any).sentAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}
             </div>
           )}
@@ -161,7 +186,7 @@ export default function WeeklyDigestAdmin() {
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-card border border-border rounded-xl p-4 text-center">
                 <p className="text-2xl font-bold text-foreground">{stats.bookingsThisWeek ?? 0}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Bookings this week</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Bookings this {digestType === "monthly" ? "month" : "week"}</p>
               </div>
               <div className="bg-card border border-border rounded-xl p-4 text-center">
                 <p className="text-2xl font-bold text-foreground">
@@ -200,7 +225,7 @@ export default function WeeklyDigestAdmin() {
             <div className="bg-card border border-border rounded-xl p-4">
               <h3 className="font-semibold text-sm text-foreground flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-primary" />
-                {includedPostIds.length} post{includedPostIds.length !== 1 ? "s" : ""} included from this week
+                {includedPostIds.length} post{includedPostIds.length !== 1 ? "s" : ""} included from this {digestType === "monthly" ? "month" : "week"}
               </h3>
             </div>
           )}
@@ -211,7 +236,7 @@ export default function WeeklyDigestAdmin() {
             <div className="space-y-1.5">
               <Label className="text-xs">Custom subject line</Label>
               <Input
-                placeholder={`JLT Weekly Digest — ${weekStart.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`}
+                placeholder={`JLT ${digestTitle} — ${periodLabel}`}
                 value={customSubject}
                 onChange={(e) => setCustomSubject(e.target.value)}
               />
@@ -225,6 +250,11 @@ export default function WeeklyDigestAdmin() {
                 rows={3}
               />
             </div>
+          </div>
+
+          <div className="rounded-xl border border-cyan-200 bg-cyan-50/50 p-4 text-sm text-slate-700">
+            <p className="font-semibold text-slate-900">Sales report access</p>
+            <p className="mt-1">Every digest includes an <strong>Open Orbit</strong> button linking agents to Travel Updates for the relevant sales report.</p>
           </div>
 
           {/* Actions */}
@@ -256,7 +286,7 @@ export default function WeeklyDigestAdmin() {
                   : <Clock className="w-4 h-4 text-amber-500 shrink-0" />}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground">
-                    Week of {new Date(d.weekStarting).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    {(d.digestType ?? "weekly") === "monthly" ? "Monthly Review" : "Weekly Update"} · {new Date(d.weekStarting).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {d.status === "sent"
@@ -282,10 +312,10 @@ export default function WeeklyDigestAdmin() {
             </DialogHeader>
             <div className="prose prose-sm max-w-none">
               <h2 className="text-lg font-bold">
-                {customSubject || `JLT Weekly Digest — ${weekStart.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`}
+                {customSubject || `JLT ${digestTitle} — ${periodLabel}`}
               </h2>
               {customIntro && <p className="text-muted-foreground italic">{customIntro}</p>}
-              <h3>This Week's Numbers</h3>
+              <h3>This {digestType === "monthly" ? "Month" : "Week"}'s Numbers</h3>
               {stats && (
                 <ul>
                   <li>📋 {stats.bookingsThisWeek ?? 0} bookings registered</li>
@@ -305,9 +335,10 @@ export default function WeeklyDigestAdmin() {
               )}
               {includedPostIds.length > 0 && (
                 <p className="text-muted-foreground text-sm">
-                  + {includedPostIds.length} community post{includedPostIds.length !== 1 ? "s" : ""} from this week
+                  + {includedPostIds.length} community post{includedPostIds.length !== 1 ? "s" : ""} from this {digestType === "monthly" ? "month" : "week"}
                 </p>
               )}
+              <p><a href="https://orbit.thejltgroup.co.uk/travel-updates" target="_blank" rel="noreferrer" className="font-medium text-primary underline">Open Orbit Travel Updates</a> to view the relevant sales report.</p>
             </div>
           </DialogContent>
         </Dialog>
@@ -353,7 +384,7 @@ export default function WeeklyDigestAdmin() {
         <Dialog open onOpenChange={() => setSendConfirmOpen(false)}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle>Send Weekly Digest?</DialogTitle>
+              <DialogTitle>Send {digestTitle}?</DialogTitle>
             </DialogHeader>
             <p className="text-sm text-muted-foreground">
               This will send the digest email to all active agents. This action cannot be undone.

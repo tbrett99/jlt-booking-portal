@@ -1742,7 +1742,9 @@ export type CommunityConfirmationReminder = typeof communityConfirmationReminder
 // ─── Community: Weekly Digests ────────────────────────────────────────────────
 export const communityDigests = mysqlTable("community_digests", {
   id: int("id").autoincrement().primaryKey(),
-  weekStarting: timestamp("weekStarting").notNull(),                       // Monday 00:00 UTC of the week covered
+  weekStarting: timestamp("weekStarting").notNull(),                       // Start of the covered period; retained for historical weekly records
+  digestType: mysqlEnum("digestType", ["weekly", "monthly"]).default("weekly").notNull(),
+  periodEnd: timestamp("periodEnd"),                                       // Exclusive end of the covered period
   status: mysqlEnum("status", ["draft", "sent"]).default("draft").notNull(),
   introText: text("introText"),                                            // Optional custom intro from admin
   includedPostIds: json("includedPostIds"),                                 // int[] — curated list of post IDs

@@ -2357,6 +2357,10 @@ async function startServer() {
   const { mondayDigestHandler } = await import("../monday-digest");
   app.post("/api/scheduled/monday-digest", mondayDigestHandler);
 
+  // Tuesday manual agent-digest reminders (weekly and, in the first week, monthly).
+  const { communityDigestReminderHandler } = await import("../community-digest-reminders");
+  app.post("/api/scheduled/community-digest-reminders", communityDigestReminderHandler);
+
   // tRPC API
   app.use(
     "/api/trpc",

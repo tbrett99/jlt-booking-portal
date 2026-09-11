@@ -703,22 +703,47 @@ export async function recordConfirmationReminder(
 
 // ─── Digest helpers ───────────────────────────────────────────────────────────
 
-export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
+export type CommunityDigestType = "weekly" | "monthly";
+
+export function getDigestPeriod(digestType: CommunityDigestType, periodStart: Date) {
+  const start = new Date(periodStart);
+  start.setHours(0, 0, 0, 0);
+
+  const periodEnd = new Date(start);
+  if (digestType === "weekly") {
+    periodEnd.setDate(periodEnd.getDate() + 7);
+  } else {
+    periodEnd.setMonth(periodEnd.getMonth() + 1, 1);
+  }
+
+  return { periodStart: start, periodEnd };
+}
+
+export async function getOrCreateCommunityDigestDraft({
+  digestType,
+  periodStart,
+}: {
+  digestType: CommunityDigestType;
+  periodStart: Date;
+}) {
   const db = await getDb();
   if (!db) return null;
+  const { periodStart: normalisedPeriodStart, periodEnd } = getDigestPeriod(digestType, periodStart);
   const [existing] = await db
     .select()
     .from(communityDigests)
     .where(
       and(
-        eq(communityDigests.weekStarting, weekStarting),
-        eq(communityDigests.status, "draft")
+        eq(communityDigests.weekStarting, normalisedPeriodStart),
+        eq(communityDigests.digestType, digestType)
       )
     );
-  // If a draft already exists, refresh its stats and posts so Regenerate works
-  // Auto-generate: collect posts from weekStarting up to now (current week)
-  const weekAgo = new Date(weekStarting.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const now = new Date();
+
+  // A sent period is immutable: do not create a second version that could be sent twice.
+  if (existing?.status === "sent") return existing;
+
+  // Refresh draft content only within the fixed reporting window. Weekly drafts
+  // therefore cover Mon–Sun; monthly drafts cover the complete prior calendar month.
   const posts = await db
     .select({ id: communityPosts.id })
     .from(communityPosts)
@@ -726,39 +751,23 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
       and(
         eq(communityPosts.isDraft, false),
         eq(communityPosts.isHidden, false),
-        gt(communityPosts.createdAt, weekStarting),
-        lt(communityPosts.createdAt, now)
+        gte(communityPosts.createdAt, normalisedPeriodStart),
+        lt(communityPosts.createdAt, periodEnd)
       )
     )
     .orderBy(desc(communityPosts.createdAt));
 
   const postIds = posts.map((p) => p.id);
 
-  // Stats snapshot — count bookings since the last digest was sent (not a fixed calendar window).
-  // This ensures a late digest run captures everything since the previous send.
+  // Stats are calculated from the same fixed reporting window as the included posts.
   const { bookings, commissionClaims, reimbursementItems } = await import("../drizzle/schema");
-
-  // Find the most recently SENT digest (not the current draft) to use as the period start
-  const [lastSentDigest] = await db
-    .select({ sentAt: communityDigests.sentAt })
-    .from(communityDigests)
-    .where(and(eq(communityDigests.status, "sent"), isNotNull(communityDigests.sentAt)))
-    .orderBy(desc(communityDigests.sentAt))
-    .limit(1);
-
-  // Fall back to 7 days ago if no previous digest has been sent
-  const periodStart: Date = lastSentDigest?.sentAt
-    ? new Date(lastSentDigest.sentAt)
-    : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-  const weekEnd = now; // period ends now
 
   const [bookingCount] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(bookings)
     .where(and(
-      gte(bookings.createdAt, periodStart),
-      lt(bookings.createdAt, weekEnd)
+      gte(bookings.createdAt, normalisedPeriodStart),
+      lt(bookings.createdAt, periodEnd)
     ));
 
   const claimedThisWeek = await db
@@ -766,8 +775,8 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     .from(commissionClaims)
     .where(
       and(
-        gt(commissionClaims.claimedAt, periodStart),
-        lt(commissionClaims.claimedAt, now),
+        gte(commissionClaims.claimedAt, normalisedPeriodStart),
+        lt(commissionClaims.claimedAt, periodEnd),
         or(
           eq(commissionClaims.status, "paid"),
           eq(commissionClaims.status, "awaiting_payment")
@@ -779,27 +788,27 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     0
   );
 
-  // Count reimbursement items moved to scheduled status since last digest
+  // Count reimbursement items moved to scheduled status during this reporting period.
   const [reimbCount] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(reimbursementItems)
     .where(
       and(
         eq(reimbursementItems.status, "scheduled"),
-        gt(reimbursementItems.scheduledAt, periodStart),
-        lt(reimbursementItems.scheduledAt, now)
+        gte(reimbursementItems.scheduledAt, normalisedPeriodStart),
+        lt(reimbursementItems.scheduledAt, periodEnd)
       )
     );
 
   const statsSnapshot = {
-    // Use field names the frontend expects
+    // Retain existing field names for the current editor while the label adapts by digest type.
     bookingsThisWeek: Number(bookingCount.count),
     totalCommissionClaimed: commissionTotal,
     reimbursementsCount: Number(reimbCount.count),
   };
 
   // Fetch booking highlights using the same period window
-  const highlights = await getBookingHighlights(periodStart, weekEnd);
+  const highlights = await getBookingHighlights(normalisedPeriodStart, periodEnd);
 
   if (existing) {
     // Refresh stats, posts, and highlights on the existing draft
@@ -810,6 +819,7 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
         statsSnapshot: statsSnapshot,
         bookingHighlightsOverride: highlights,
         includeBookingHighlights: true,
+        periodEnd,
       } as any)
       .where(eq(communityDigests.id, existing.id));
     const [refreshed] = await db
@@ -820,7 +830,9 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
   }
 
   const [result] = await db.insert(communityDigests).values({
-    weekStarting,
+    weekStarting: normalisedPeriodStart,
+    digestType,
+    periodEnd,
     status: "draft",
     includedPostIds: postIds,
     includeBookingHighlights: true,
@@ -834,6 +846,10 @@ export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
     .from(communityDigests)
     .where(eq(communityDigests.id, insertId));
   return created;
+}
+
+export async function getOrCreateWeeklyDigestDraft(weekStarting: Date) {
+  return getOrCreateCommunityDigestDraft({ digestType: "weekly", periodStart: weekStarting });
 }
 
 export async function updateDigest(
