@@ -61,10 +61,15 @@ async function sendReminder({ kind, label, key }: { kind: "weekly" | "monthly"; 
  * first Tuesday of a new month, leaving both agent communications manually controlled.
  */
 export async function communityDigestReminderHandler(req: Request, res: Response) {
+  let user;
   try {
-    const user = await sdk.authenticateRequest(req);
-    if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "Cron-only endpoint" });
+    user = await sdk.authenticateRequest(req);
+  } catch {
+    return res.status(403).json({ error: "Cron-only endpoint" });
+  }
+  if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "Cron-only endpoint" });
 
+  try {
     const now = new Date();
     const london = londonCalendarDate(now);
     if (london.weekday !== "Tue") return res.json({ ok: true, skipped: "Not Tuesday" });
