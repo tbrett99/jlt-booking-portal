@@ -93,6 +93,7 @@
 - [x] Add privacy, image-source, idempotency, ownership, public-status, expiry, enquiry-context, and public-route accessibility regression coverage
 - [x] Verify in Railway that public_holiday_showcases includes deletedAt and deletedById, and that public_holiday_showcase_events.action includes deleted; then record the complete Holiday Showcase migration outcome: public_holiday_showcases, public_holiday_showcase_events, deletedAt/deletedById, deleted lifecycle action, and public_enquiries_showcase_idx verified in Railway on 11 September 2026
 - [x] Save and push the fully validated Holiday Showcase implementation and Orbit API handover documentation to the existing JLT GitHub main branch: checkpoint 3a9a653 is verified on GitHub main and POST /api/external/quote-showcases returns the expected 401 without an API key in production
+- [x] Allow approved staff public profiles without a CRM uniqueAgentId to receive Orbit Holiday Showcase snapshots by their numeric Portal user ID, while retaining the standard CRM identifier route for agents: tested for active super-admin success and standard-agent numeric-ID rejection; Orbit handover updated
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

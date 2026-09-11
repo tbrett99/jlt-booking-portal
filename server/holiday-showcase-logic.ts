@@ -32,7 +32,12 @@ const accommodationOptionSchema = z.object({
 }).strict();
 
 export const orbitHolidayShowcaseSchema = z.object({
-  agentId: z.string().trim().regex(/^JLT-[A-Za-z0-9-]+$/, "agentId must use the JLT- identifier format").max(80),
+  // Standard agents use their CRM JLT identifier. Approved staff public profiles
+  // may instead use their numeric Portal account ID when no CRM profile exists.
+  agentId: z.union([
+    z.string().trim().regex(/^JLT-[A-Za-z0-9-]+$/, "agentId must use the JLT- identifier format").max(80),
+    z.number().int().positive(),
+  ]),
   externalPublicationId: z.string().uuid(),
   title: publicText(4, 255),
   summary: publicText(20, 2_000),

@@ -14,11 +14,11 @@ X-API-Key: <existing JLT integration API key>
 Content-Type: application/json
 ```
 
-The endpoint uses the established Portal `X-API-Key` convention. The `agentId` is matched to the existing CRM `uniqueAgentId`, for example `JLT-12345`.
+The endpoint uses the established Portal `X-API-Key` convention. For standard agents, `agentId` is matched to the existing CRM `uniqueAgentId`, for example `JLT-12345`. An approved active Portal staff account with a live public profile may instead use its numeric Portal user ID. This exception is intentionally restricted to `admin` and `super_admin` accounts that do not have a CRM `uniqueAgentId`.
 
 ## Required rules before Orbit sends
 
-The agent must have an **approved, live Portal public profile**. Orbit should use the existing JLT agent identifier rather than an email address. Orbit must never send client information, booking references, supplier credentials, price breakdowns, cost prices, commission, margin, rates, availability, or live quote links.
+The agent must have an **approved, live Portal public profile**. Orbit should use the existing JLT agent identifier rather than an email address. For an approved staff public profile with no CRM identifier, Orbit may send the numeric Portal user ID as a JSON number, for example `"agentId": 47`. Orbit must never send client information, booking references, supplier credentials, price breakdowns, cost prices, commission, margin, rates, availability, or live quote links.
 
 Only images marked `supplier` or `agent_upload` are accepted. Image URLs must use HTTPS and cannot be Google-hosted. Where Orbit has no permitted image, omit the image and the Portal will apply its JLT fallback visual.
 

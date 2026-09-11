@@ -205,26 +205,38 @@ router.post("/quote-showcases", async (req: Request, res: Response) => {
     const db = await getDb();
     if (!db) return res.status(503).json({ error: "Database unavailable" });
 
-    const [agent] = await db.select({ userId: agentCrmProfiles.userId, agentStatus: agentCrmProfiles.agentStatus, inContract: agentCrmProfiles.inContract })
-      .from(agentCrmProfiles).where(eq(agentCrmProfiles.uniqueAgentId, payload.agentId)).limit(1);
-    if (!agent) return res.status(404).json({ error: "No JLT agent was found for the supplied agentId." });
-    if (agent.agentStatus !== "active" || agent.inContract) {
-      return res.status(409).json({ error: "This agent is not currently eligible to publish a public holiday showcase." });
+    let recipientUserId: number;
+    if (typeof payload.agentId === "number") {
+      const [staffAccount] = await db.select({ id: users.id, role: users.role, isActive: users.isActive })
+        .from(users).where(eq(users.id, payload.agentId)).limit(1);
+      if (!staffAccount) return res.status(404).json({ error: "No Portal account was found for the supplied numeric agentId." });
+      if ((staffAccount.role !== "admin" && staffAccount.role !== "super_admin") || !staffAccount.isActive) {
+        return res.status(409).json({ error: "A numeric agentId can only be used by an active approved staff public profile." });
+      }
+      recipientUserId = staffAccount.id;
+    } else {
+      const [agent] = await db.select({ userId: agentCrmProfiles.userId, agentStatus: agentCrmProfiles.agentStatus, inContract: agentCrmProfiles.inContract })
+        .from(agentCrmProfiles).where(eq(agentCrmProfiles.uniqueAgentId, payload.agentId)).limit(1);
+      if (!agent) return res.status(404).json({ error: "No JLT agent was found for the supplied agentId." });
+      if (agent.agentStatus !== "active" || agent.inContract) {
+        return res.status(409).json({ error: "This agent is not currently eligible to publish a public holiday showcase." });
+      }
+      recipientUserId = agent.userId;
     }
     const [profile] = await db.select({ id: publicAgentProfiles.id, publicSlug: publicAgentProfiles.publicSlug, isPublished: publicAgentProfiles.isPublished })
-      .from(publicAgentProfiles).where(eq(publicAgentProfiles.userId, agent.userId)).limit(1);
+      .from(publicAgentProfiles).where(eq(publicAgentProfiles.userId, recipientUserId)).limit(1);
     if (!profile?.isPublished || !profile.publicSlug) return res.status(409).json({ error: "This agent needs an approved, live Portal public profile before receiving holiday showcases." });
 
     const [existing] = await db.select({ id: publicHolidayShowcases.id, agentId: publicHolidayShowcases.agentId, publicSlug: publicHolidayShowcases.publicSlug })
       .from(publicHolidayShowcases).where(eq(publicHolidayShowcases.externalPublicationId, payload.externalPublicationId)).limit(1);
     if (existing) {
-      if (existing.agentId !== agent.userId) return res.status(409).json({ error: "This externalPublicationId is already associated with another agent." });
+      if (existing.agentId !== recipientUserId) return res.status(409).json({ error: "This externalPublicationId is already associated with another agent." });
       return res.status(200).json({ success: true, idempotent: true, showcaseId: existing.id, publicUrl: `https://www.thejltgroup.co.uk/travel-agents/${profile.publicSlug}/holiday-showcases/${existing.publicSlug}` });
     }
 
     const publicSlug = `${slugifyShowcase(payload.title)}-${nanoid(7).toLowerCase()}`;
     const [result] = await db.insert(publicHolidayShowcases).values({
-      agentId: agent.userId,
+      agentId: recipientUserId,
       publicProfileId: profile.id,
       externalPublicationId: payload.externalPublicationId,
       publicSlug,
@@ -248,7 +260,7 @@ router.post("/quote-showcases", async (req: Request, res: Response) => {
     const showcaseId = Number((result as any).insertId);
     await db.insert(publicHolidayShowcaseEvents).values({
       showcaseId,
-      agentId: agent.userId,
+      agentId: recipientUserId,
       action: "received",
       note: "Received an immutable public-only snapshot from Orbit.",
       metadata: { externalPublicationId: payload.externalPublicationId },

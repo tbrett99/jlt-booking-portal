@@ -103,6 +103,32 @@ describe("POST /api/external/quote-showcases", () => {
     expect(insertValues).not.toHaveBeenCalled();
   });
 
+  it("accepts an approved super-admin public profile by numeric Portal user ID when no CRM identifier exists", async () => {
+    selectResults.push(
+      [{ id: 4, keyHash: "hash", isActive: true }],
+      [{ id: 47, role: "super_admin", isActive: true }],
+      [{ id: 88, publicSlug: "max-kelly", isPublished: true }],
+      [],
+    );
+    const res = response();
+    await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: { ...payload, agentId: 47 } }, res);
+    expect(res.statusCode).toBe(201);
+    expect(res.body).toEqual(expect.objectContaining({ success: true, showcaseId: 702, publicUrl: expect.stringContaining("/travel-agents/max-kelly/holiday-showcases/") }));
+    expect(insertValues).toHaveBeenNthCalledWith(1, expect.objectContaining({ agentId: 47, publicProfileId: 88 }));
+  });
+
+  it("does not allow a numeric Portal user ID to bypass the standard-agent CRM eligibility path", async () => {
+    selectResults.push(
+      [{ id: 4, keyHash: "hash", isActive: true }],
+      [{ id: 19, role: "agent", isActive: true }],
+    );
+    const res = response();
+    await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: { ...payload, agentId: 19 } }, res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: "A numeric agentId can only be used by an active approved staff public profile." });
+    expect(insertValues).not.toHaveBeenCalled();
+  });
+
   it("rejects unsafe payload fields after authenticating without storing a showcase", async () => {
     selectResults.push([{ id: 4, keyHash: "hash", isActive: true }]);
     const res = response();
