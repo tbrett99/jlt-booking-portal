@@ -48,7 +48,8 @@
 - [x] Define approved optional social and website links that render as icons only when an agent has supplied a valid, staff-approved URL
 - [x] Create the separate www.thejltgroup.co.uk consumer-site foundation with independent public routing, design system, legal pages, and canonical SEO settings
 - [x] Create public-agent profile, controlled speciality tag, private enquiry delivery, public enquiry audit, partner placeholder, and profile-change audit tables
-- [ ] Apply the consumer-site database migration to development and Railway production, and record the exact applied migration
+- [x] Verify the complete consumer-site Railway migration, including all public tables and indexes, before recording the exact production rollout outcome: six public tables and all expected indexes verified in Railway on 11 September 2026
+- [x] Verify the Railway consumer-site indexes on the public profile, speciality mapping, enquiry audit, and active-tag tables
 - [x] Add portal My Public Profile editing for public biography, business name, town, agent-selected speciality tags, private enquiry delivery address, and optional website/social URLs
 - [x] Add staff review, request-changes, publish, hide, and decision-recording controls for all agent public-profile content and public social links
 - [x] Display the public-profile audit history in the staff review workspace, including draft saves, submissions, decisions, hides, and reactivation-review events
@@ -62,7 +63,7 @@
 - [x] Complete a keyboard, focus, semantic-landmark, form-label, contrast, and map-list fallback accessibility pass for the consumer site
 - [x] Add delivery-failure and acknowledgement-failure test coverage for public-enquiry audit handling
 - [x] Extend public API contract tests to the agent-detail endpoint and all private CRM, document, payment, and internal fields
-- [ ] Save, push, and document the consumer-website implementation after Railway migration and validation
+- [x] Save, push, and document the consumer-website implementation after Railway migration and validation: pushed to the existing GitHub main branch at 6148250 and recorded in docs/consumer-site-rollout.md
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
