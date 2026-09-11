@@ -10,21 +10,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { CheckCircle2, Clock3, FileImage, Globe2, Info, MapPin, Send, ShieldCheck, Sparkles, Upload } from "lucide-react";
-
-const initialForm = {
-  displayName: "",
-  businessName: "",
-  biography: "",
-  listingTown: "",
-  enquiryDeliveryEmail: "",
-  websiteUrl: "",
-  instagramUrl: "",
-  tiktokUrl: "",
-  facebookUrl: "",
-  linkedinUrl: "",
-  youtubeUrl: "",
-  pinterestUrl: "",
-};
+import {
+  buildPublicProfileDraftPayload,
+  preserveDraftDuringPhotoUpload,
+  publicProfileInitialForm,
+  type PublicProfileForm,
+} from "./publicProfileForm";
 
 const channels = [
   ["websiteUrl", "Website"],
@@ -36,7 +27,7 @@ const channels = [
   ["pinterestUrl", "Pinterest"],
 ] as const;
 
-type FormState = typeof initialForm;
+type FormState = PublicProfileForm;
 
 const statusStyle: Record<string, string> = {
   draft: "bg-slate-100 text-slate-700 border-slate-200",
@@ -55,9 +46,10 @@ export default function MyPublicProfile() {
   const utils = trpc.useUtils();
   const { data: profileData, isLoading } = trpc.consumerSite.profile.mine.useQuery();
   const { data: tags = [] } = trpc.consumerSite.tags.list.useQuery();
-  const [form, setForm] = useState<FormState>(initialForm);
+  const [form, setForm] = useState<FormState>(publicProfileInitialForm);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [consent, setConsent] = useState(false);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [initialisedForProfileId, setInitialisedForProfileId] = useState<number | null | undefined>(undefined);
 
   const profile = profileData?.profile;
@@ -80,6 +72,7 @@ export default function MyPublicProfile() {
     });
     setSelectedTagIds(profileData?.selectedTagIds ?? []);
     setConsent(Boolean(profile?.consentConfirmedAt));
+    setPhotoPreviewUrl(profile?.profilePhotoUrl ?? null);
   }, [initialisedForProfileId, profile, profileData?.selectedTagIds, user?.name]);
 
   const saveDraft = trpc.consumerSite.profile.saveDraft.useMutation({
@@ -97,16 +90,17 @@ export default function MyPublicProfile() {
     onError: error => toast.error(error.message),
   });
   const uploadPhoto = trpc.consumerSite.profile.uploadPhoto.useMutation({
-    onSuccess: () => {
-      toast.success("Profile photograph uploaded. Remember to save your draft.");
-      utils.consumerSite.profile.mine.invalidate();
+    onSuccess: ({ url }) => {
+      const preserved = preserveDraftDuringPhotoUpload(form, url);
+      setForm(preserved.form);
+      setPhotoPreviewUrl(preserved.photoUrl);
+      toast.success("Profile photograph uploaded. Your other profile fields have been kept in place.");
     },
     onError: error => toast.error(error.message),
   });
 
   const destinationTags = useMemo(() => tags.filter(tag => tag.category === "destination"), [tags]);
   const travelTypeTags = useMemo(() => tags.filter(tag => tag.category === "travel_type"), [tags]);
-  const isSaved = Boolean(profile?.id);
   const liveProfileUrl = profile?.isPublished && profile.publicSlug ? `https://www.thejltgroup.co.uk/travel-agents/${profile.publicSlug}` : null;
 
   const update = (field: keyof FormState, value: string) => setForm(current => ({ ...current, [field]: value }));
@@ -136,13 +130,15 @@ export default function MyPublicProfile() {
       toast.error("Please confirm that you understand the public-profile consent statement before saving.");
       return;
     }
-    saveDraft.mutate({
-      ...form,
-      townLatitude: null,
-      townLongitude: null,
-      specialityTagIds: selectedTagIds,
-      consentConfirmed: true,
-    });
+    saveDraft.mutate(buildPublicProfileDraftPayload(form, selectedTagIds, consent));
+  };
+
+  const handleSubmitForReview = () => {
+    if (!consent) {
+      toast.error("Please confirm that you understand the public-profile consent statement before submitting for review.");
+      return;
+    }
+    submitForReview.mutate(buildPublicProfileDraftPayload(form, selectedTagIds, consent));
   };
 
   if (isLoading) {
@@ -215,7 +211,7 @@ export default function MyPublicProfile() {
             </CardHeader>
             <CardContent className="flex flex-col sm:flex-row sm:items-center gap-5">
               <div className="w-24 h-24 rounded-2xl bg-slate-100 overflow-hidden flex items-center justify-center border border-slate-200 shrink-0">
-                {profile?.profilePhotoUrl ? <img src={profile.profilePhotoUrl} alt="Your uploaded profile" className="w-full h-full object-cover" /> : <FileImage className="text-slate-400" size={28} />}
+                {photoPreviewUrl ? <img src={photoPreviewUrl} alt="Your uploaded profile" className="w-full h-full object-cover" /> : <FileImage className="text-slate-400" size={28} />}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="profile-photo" className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"><Upload size={16} /> Upload photograph</Label>
@@ -233,7 +229,7 @@ export default function MyPublicProfile() {
               </label>
               <div className="flex flex-col-reverse sm:flex-row gap-3 justify-end mt-6">
                 <Button variant="outline" onClick={handleSave} disabled={saveDraft.isPending || uploadPhoto.isPending}>{saveDraft.isPending ? "Saving…" : "Save draft"}</Button>
-                <Button className="bg-[#02b9a6] hover:bg-[#019b8c] text-white" onClick={() => submitForReview.mutate()} disabled={!isSaved || submitForReview.isPending}>{submitForReview.isPending ? "Submitting…" : <><Send size={16} className="mr-2" /> Submit for review</>}</Button>
+                <Button className="bg-[#02b9a6] hover:bg-[#019b8c] text-white" onClick={handleSubmitForReview} disabled={submitForReview.isPending || uploadPhoto.isPending}>{submitForReview.isPending ? "Submitting…" : <><Send size={16} className="mr-2" /> Submit for review</>}</Button>
               </div>
             </CardContent>
           </Card>

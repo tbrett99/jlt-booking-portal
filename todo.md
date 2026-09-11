@@ -64,6 +64,9 @@
 - [x] Add delivery-failure and acknowledgement-failure test coverage for public-enquiry audit handling
 - [x] Extend public API contract tests to the agent-detail endpoint and all private CRM, document, payment, and internal fields
 - [x] Save, push, and document the consumer-website implementation after Railway migration and validation: pushed to the existing GitHub main branch at 6148250 and recorded in docs/consumer-site-rollout.md
+- [ ] Replace the current WordPress holding page at the JLT root domain by connecting www.thejltgroup.co.uk and the apex domain to the deployed consumer-site application, then verify canonical redirects and live public routing
+- [x] Fix public-profile review submission incorrectly rejecting a completed profile with confirmed consent
+- [x] Preserve all unsaved public-profile form values when an agent uploads or replaces a profile photograph
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

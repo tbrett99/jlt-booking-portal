@@ -216,6 +216,40 @@ async function writeProfileChange(params: {
   });
 }
 
+async function savePublicProfileDraft(input: z.infer<typeof profileDraftSchema>, userId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const normalised = normaliseDraft(input);
+  const validTags = input.specialityTagIds.length
+    ? await db.select({ id: publicSpecialityTags.id }).from(publicSpecialityTags)
+      .where(and(eq(publicSpecialityTags.isActive, true), inArray(publicSpecialityTags.id, input.specialityTagIds)))
+    : [];
+  if (validTags.length !== input.specialityTagIds.length) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "One or more selected speciality tags are no longer available." });
+  }
+  const [existing] = await db.select().from(publicAgentProfiles).where(eq(publicAgentProfiles.userId, userId)).limit(1);
+  const update = {
+    ...normalised,
+    consentConfirmedAt: new Date(),
+    reviewStatus: existing?.isPublished ? existing.reviewStatus : "draft" as const,
+    reviewNote: null,
+  };
+  let profileId: number;
+  if (existing) {
+    await db.update(publicAgentProfiles).set(update).where(eq(publicAgentProfiles.id, existing.id));
+    profileId = existing.id;
+  } else {
+    const [result] = await db.insert(publicAgentProfiles).values({ userId, ...update });
+    profileId = Number((result as any).insertId);
+  }
+  await db.delete(publicAgentProfileTags).where(eq(publicAgentProfileTags.profileId, profileId));
+  if (input.specialityTagIds.length) {
+    await db.insert(publicAgentProfileTags).values(input.specialityTagIds.map((specialityTagId) => ({ profileId, specialityTagId })));
+  }
+  await writeProfileChange({ profileId, agentId: userId, action: "draft_saved", actorUserId: userId, note: "Agent saved public-profile draft." });
+  return { profileId };
+}
+
 /** Called only by the CRM's authoritative status update procedure. */
 export async function enforcePublicProfileVisibilityForStatus(params: {
   userId: number;
@@ -336,43 +370,15 @@ export const consumerSiteRouter = router({
     }),
 
     saveDraft: protectedProcedure.input(profileDraftSchema).mutation(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const normalised = normaliseDraft(input);
-      const validTags = input.specialityTagIds.length
-        ? await db.select({ id: publicSpecialityTags.id }).from(publicSpecialityTags)
-          .where(and(eq(publicSpecialityTags.isActive, true), inArray(publicSpecialityTags.id, input.specialityTagIds)))
-        : [];
-      if (validTags.length !== input.specialityTagIds.length) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "One or more selected speciality tags are no longer available." });
-      }
-      const [existing] = await db.select().from(publicAgentProfiles).where(eq(publicAgentProfiles.userId, ctx.user.id)).limit(1);
-      const update = {
-        ...normalised,
-        consentConfirmedAt: new Date(),
-        reviewStatus: existing?.isPublished ? existing.reviewStatus : "draft" as const,
-        reviewNote: null,
-      };
-      let profileId: number;
-      if (existing) {
-        await db.update(publicAgentProfiles).set(update).where(eq(publicAgentProfiles.id, existing.id));
-        profileId = existing.id;
-      } else {
-        const [result] = await db.insert(publicAgentProfiles).values({ userId: ctx.user.id, ...update });
-        profileId = Number((result as any).insertId);
-      }
-      await db.delete(publicAgentProfileTags).where(eq(publicAgentProfileTags.profileId, profileId));
-      if (input.specialityTagIds.length) {
-        await db.insert(publicAgentProfileTags).values(input.specialityTagIds.map((specialityTagId) => ({ profileId, specialityTagId })));
-      }
-      await writeProfileChange({ profileId, agentId: ctx.user.id, action: "draft_saved", actorUserId: ctx.user.id, note: "Agent saved public-profile draft." });
+      const { profileId } = await savePublicProfileDraft(input, ctx.user.id);
       return { success: true, profileId };
     }),
 
-    submitForReview: protectedProcedure.mutation(async ({ ctx }) => {
+    submitForReview: protectedProcedure.input(profileDraftSchema).mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [profile] = await db.select().from(publicAgentProfiles).where(eq(publicAgentProfiles.userId, ctx.user.id)).limit(1);
+      const { profileId } = await savePublicProfileDraft(input, ctx.user.id);
+      const [profile] = await db.select().from(publicAgentProfiles).where(eq(publicAgentProfiles.id, profileId)).limit(1);
       if (!profile || !profile.displayName || !profile.biography || !profile.listingTown || !profile.enquiryDeliveryEmail || !profile.consentConfirmedAt) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Complete and save your public profile, including consent, before submitting it for review." });
       }
