@@ -8,7 +8,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper, Activity, Rocket, Trophy
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper, Activity, Rocket, Trophy, Globe2
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { Link, useLocation } from "wouter";
@@ -388,11 +388,12 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
-       label: "My Account",
+      label: "My Account",
       icon: <UserCheck size={16} />,
       defaultOpen: false,
       items: [
         { label: "My Profile", href: "/my-profile", icon: <UserCheck size={16} /> },
+        { label: "My Public Profile", href: "/my-public-profile", icon: <Globe2 size={16} /> },
       ],
     },
     {
@@ -488,6 +489,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Sign-Up Applications", href: "/crm/join-sessions", icon: <UserSearch size={16} /> },
         { label: "Abandoned Sign-Ups", href: "/crm/abandoned-signups", icon: <UserX size={16} /> },
         { label: "Change Requests", href: "/crm/change-requests", icon: <ClipboardList size={16} /> },
+        { label: "Public Profiles", href: "/crm/public-profiles", icon: <Globe2 size={16} /> },
         { label: "Memberships", href: "/crm/memberships", icon: <CreditCard size={16} /> },
       ],
     },

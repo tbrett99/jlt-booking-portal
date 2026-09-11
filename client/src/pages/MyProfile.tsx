@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { PencilLine, CheckCircle2, Clock, XCircle, User, Mail, Phone, MapPin, Building2, CreditCard, Shield } from "lucide-react";
+import { PencilLine, CheckCircle2, Clock, XCircle, User, Mail, Phone, MapPin, Building2, CreditCard, Shield, Globe2, ArrowRight } from "lucide-react";
 
 const CHANGEABLE_FIELDS = [
   { name: "personalEmail", label: "Personal Email" },
@@ -68,6 +68,13 @@ export default function MyProfile() {
         <h1 className="text-2xl font-bold">My Profile</h1>
         <p className="text-muted-foreground text-sm mt-1">View your details on file. To update any information, submit a change request and our team will review it.</p>
       </div>
+
+      <Card className="border-teal-100 bg-teal-50/50">
+        <CardContent className="flex flex-col gap-4 pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-3"><div className="mt-0.5 rounded-xl bg-teal-100 p-2 text-teal-700"><Globe2 size={18} /></div><div><p className="font-semibold text-slate-900">My public travel profile</p><p className="mt-1 text-sm leading-relaxed text-slate-600">Create the profile consumers can discover on the JLT website. Nothing is public until the JLT team has approved it.</p></div></div>
+          <Button className="shrink-0 bg-[#02b9a6] hover:bg-[#019b8c]" onClick={() => { window.location.href = "/my-public-profile"; }}>Manage public profile <ArrowRight className="ml-2" size={16} /></Button>
+        </CardContent>
+      </Card>
 
       {/* Contact Details */}
       <Card>

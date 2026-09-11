@@ -46,6 +46,23 @@
 - [x] Add consumer directory filters for agent-selected destination and travel-type speciality tags
 - [x] Define a town-level agent map that never exposes private or precise residential addresses
 - [x] Define approved optional social and website links that render as icons only when an agent has supplied a valid, staff-approved URL
+- [x] Create the separate www.thejltgroup.co.uk consumer-site foundation with independent public routing, design system, legal pages, and canonical SEO settings
+- [x] Create public-agent profile, controlled speciality tag, private enquiry delivery, public enquiry audit, partner placeholder, and profile-change audit tables
+- [ ] Apply the consumer-site database migration to development and Railway production, and record the exact applied migration
+- [x] Add portal My Public Profile editing for public biography, business name, town, agent-selected speciality tags, private enquiry delivery address, and optional website/social URLs
+- [x] Add staff review, request-changes, publish, hide, and decision-recording controls for all agent public-profile content and public social links
+- [x] Display the public-profile audit history in the staff review workspace, including draft saves, submissions, decisions, hides, and reactivation-review events
+- [x] Enforce Active-only public visibility from the authoritative CRM status-change path and prevent automatic republishing after reactivation
+- [x] Build the consumer homepage, JLT and protection content, independent-agent benefits, legal/privacy routes, and supplier/partner placeholder
+- [x] Build public agent finder list and town-level map with controlled destination/travel-type filters, clustering, and an accessible list alternative
+- [x] Build public agent landing pages with approved optional icons, no public contact details, and a secure direct-to-agent enquiry form
+- [x] Add anti-spam, rate limiting, delivery audit, customer acknowledgement, status-security, and sensitive-data regression coverage for public enquiries
+- [x] Verify consumer-site accessibility, mobile layouts, public-indexing rules, and strict non-disclosure of private CRM data
+- [x] Add public-response contract tests proving private CRM emails, phone numbers, addresses, banking/payment fields, and internal notes cannot be returned by the consumer API
+- [x] Complete a keyboard, focus, semantic-landmark, form-label, contrast, and map-list fallback accessibility pass for the consumer site
+- [x] Add delivery-failure and acknowledgement-failure test coverage for public-enquiry audit handling
+- [x] Extend public API contract tests to the agent-detail endpoint and all private CRM, document, payment, and internal fields
+- [ ] Save, push, and document the consumer-website implementation after Railway migration and validation
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

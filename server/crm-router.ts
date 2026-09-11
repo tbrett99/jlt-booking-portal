@@ -1204,6 +1204,10 @@ export const crmRouter = router({
       .mutation(async ({ input }) => {
         const { userId, ...data } = input;
         await upsertAgentCrmProfile(userId, data as any);
+        if (data.inContract === true) {
+          const { enforcePublicProfileVisibilityForInContract } = await import("./consumer-site-router");
+          await enforcePublicProfileVisibilityForInContract({ userId });
+        }
         return { success: true };
       }),
 
@@ -1938,6 +1942,16 @@ export const crmRouter = router({
         // isActive must be false for cancelled/suspended/paused agents so they are excluded from all email sends
         const newIsActive = (input.newStatus === 'cancelled' || input.newStatus === 'suspended' || input.newStatus === 'paused') ? false : true;
         await db.update(users).set({ portalStatus: newPortalStatus as any, isActive: newIsActive }).where(eq(users.id, input.userId));
+
+        // Consumer profiles must be removed immediately whenever the agent is no
+        // longer Active. Reactivation deliberately returns the profile to staff
+        // review rather than publishing it automatically.
+        const { enforcePublicProfileVisibilityForStatus } = await import("./consumer-site-router");
+        await enforcePublicProfileVisibilityForStatus({
+          userId: input.userId,
+          agentStatus: input.newStatus,
+          actorUserId: ctx.user.id,
+        });
 
         // Log the status event
         await db.insert(agentStatusEvents).values({

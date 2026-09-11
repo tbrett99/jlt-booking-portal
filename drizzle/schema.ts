@@ -10,6 +10,7 @@ import {
   varchar,
   decimal,
   json,
+  index,
   uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
@@ -848,6 +849,135 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type AgentCrmProfile = typeof agentCrmProfiles.$inferSelect;
+
+// ─── Consumer website: published agent profiles ───────────────────────────────
+// These records intentionally remain separate from agent_crm_profiles. The CRM
+// contains private personal, banking, membership, compliance, and operational data
+// which must never be made available to the public website.
+export const publicAgentProfiles = mysqlTable("public_agent_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  displayName: varchar("displayName", { length: 255 }),
+  businessName: varchar("businessName", { length: 255 }),
+  biography: text("biography"),
+  profilePhotoUrl: text("profilePhotoUrl"),
+  profilePhotoKey: varchar("profilePhotoKey", { length: 500 }),
+  listingTown: varchar("listingTown", { length: 120 }),
+  townLatitude: decimal("townLatitude", { precision: 10, scale: 7 }),
+  townLongitude: decimal("townLongitude", { precision: 10, scale: 7 }),
+  enquiryDeliveryEmail: varchar("enquiryDeliveryEmail", { length: 320 }), // Never returned by a public procedure
+  // Draft columns above are never read by public callers. Each publish action
+  // copies safe public fields and approved tag IDs into this immutable-at-read
+  // snapshot, so subsequent agent edits remain private until re-approved.
+  publishedSnapshot: json("publishedSnapshot"),
+  publishedTagIds: json("publishedTagIds"),
+  publishedEnquiryDeliveryEmail: varchar("publishedEnquiryDeliveryEmail", { length: 320 }), // Private; only used to deliver an approved live form
+  websiteUrl: varchar("websiteUrl", { length: 1000 }),
+  instagramUrl: varchar("instagramUrl", { length: 1000 }),
+  tiktokUrl: varchar("tiktokUrl", { length: 1000 }),
+  facebookUrl: varchar("facebookUrl", { length: 1000 }),
+  linkedinUrl: varchar("linkedinUrl", { length: 1000 }),
+  youtubeUrl: varchar("youtubeUrl", { length: 1000 }),
+  pinterestUrl: varchar("pinterestUrl", { length: 1000 }),
+  consentConfirmedAt: timestamp("consentConfirmedAt"),
+  reviewStatus: mysqlEnum("reviewStatus", ["draft", "in_review", "changes_requested", "published", "hidden"]).default("draft").notNull(),
+  isPublished: boolean("isPublished").default(false).notNull(),
+  publicSlug: varchar("publicSlug", { length: 180 }).unique(),
+  submittedAt: timestamp("submittedAt"),
+  reviewedById: int("reviewedById"),
+  reviewedAt: timestamp("reviewedAt"),
+  reviewNote: text("reviewNote"),
+  publishedAt: timestamp("publishedAt"),
+  hiddenAt: timestamp("hiddenAt"),
+  hiddenReason: varchar("hiddenReason", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("public_agent_profiles_published_idx").on(table.isPublished),
+  index("public_agent_profiles_town_idx").on(table.listingTown),
+]);
+export type PublicAgentProfile = typeof publicAgentProfiles.$inferSelect;
+
+// JLT-managed directory choices. Agents select from these approved tags but never
+// create uncontrolled public labels themselves.
+export const publicSpecialityTags = mysqlTable("public_speciality_tags", {
+  id: int("id").autoincrement().primaryKey(),
+  category: mysqlEnum("category", ["destination", "travel_type"]).notNull(),
+  label: varchar("label", { length: 120 }).notNull(),
+  slug: varchar("slug", { length: 140 }).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("public_speciality_tags_category_slug_unique").on(table.category, table.slug),
+  index("public_speciality_tags_active_idx").on(table.isActive, table.category),
+]);
+export type PublicSpecialityTag = typeof publicSpecialityTags.$inferSelect;
+
+export const publicAgentProfileTags = mysqlTable("public_agent_profile_tags", {
+  id: int("id").autoincrement().primaryKey(),
+  profileId: int("profileId").notNull(),
+  specialityTagId: int("specialityTagId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("public_agent_profile_tags_profile_tag_unique").on(table.profileId, table.specialityTagId),
+  index("public_agent_profile_tags_tag_idx").on(table.specialityTagId),
+]);
+
+// Immutable timeline of agent edits, staff decisions, and automatic visibility
+// changes made from the authoritative CRM status transition.
+export const publicAgentProfileChanges = mysqlTable("public_agent_profile_changes", {
+  id: int("id").autoincrement().primaryKey(),
+  profileId: int("profileId").notNull(),
+  agentId: int("agentId").notNull(),
+  action: mysqlEnum("action", ["draft_saved", "submitted", "published", "changes_requested", "hidden_manual", "hidden_status", "reactivation_review"]).notNull(),
+  actorUserId: int("actorUserId"),
+  note: text("note"),
+  snapshot: json("snapshot"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("public_agent_profile_changes_profile_idx").on(table.profileId, table.createdAt),
+]);
+
+// Consumer messages are held apart from booking/CRM data. The selected agent's
+// private delivery address stays on public_agent_profiles and is never returned to
+// a public caller.
+export const publicEnquiries = mysqlTable("public_enquiries", {
+  id: int("id").autoincrement().primaryKey(),
+  profileId: int("profileId").notNull(),
+  agentId: int("agentId").notNull(),
+  customerName: varchar("customerName", { length: 255 }).notNull(),
+  customerEmail: varchar("customerEmail", { length: 320 }).notNull(),
+  customerPhone: varchar("customerPhone", { length: 40 }),
+  travelBrief: text("travelBrief").notNull(),
+  consentConfirmedAt: timestamp("consentConfirmedAt").notNull(),
+  ipHash: varchar("ipHash", { length: 128 }).notNull(),
+  deliveryStatus: mysqlEnum("deliveryStatus", ["pending", "sent", "failed"]).default("pending").notNull(),
+  deliveryError: varchar("deliveryError", { length: 500 }),
+  deliveredAt: timestamp("deliveredAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("public_enquiries_profile_idx").on(table.profileId, table.createdAt),
+  index("public_enquiries_rate_limit_idx").on(table.ipHash, table.createdAt),
+]);
+
+// Reserved for the later curated public supplier / partner showcase. This remains
+// separate from the private supplier directory and contains no credentials or
+// internal commercial terms.
+export const publicPartnerProfiles = mysqlTable("public_partner_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 180 }).notNull().unique(),
+  category: varchar("category", { length: 120 }),
+  summary: text("summary"),
+  logoUrl: text("logoUrl"),
+  websiteUrl: varchar("websiteUrl", { length: 1000 }),
+  isPublished: boolean("isPublished").default(false).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
 
 // ─── Agent CRM: Tags ──────────────────────────────────────────────────────────
 export const agentTags = mysqlTable("agent_tags", {

@@ -160,6 +160,33 @@ async function startServer() {
   app.set("trust proxy", true);
   const server = createServer(app);
 
+  const isPublicConsumerHost = (host: string) => host === "www.thejltgroup.co.uk";
+  // Keep www as the canonical public address. The portal remains on its existing
+  // subdomain and is never affected by this redirect.
+  app.use((req, res, next) => {
+    if (req.hostname.toLowerCase() === "thejltgroup.co.uk") {
+      res.redirect(301, `https://www.thejltgroup.co.uk${req.originalUrl}`);
+      return;
+    }
+    next();
+  });
+  // The same deployment hosts the private portal and public website. Respond to
+  // crawl controls based on host so portal pages are not accidentally indexed.
+  app.get("/robots.txt", (req, res) => {
+    res.type("text/plain").send(isPublicConsumerHost(req.hostname.toLowerCase())
+      ? "User-agent: *\nAllow: /\nSitemap: https://www.thejltgroup.co.uk/sitemap.xml\n"
+      : "User-agent: *\nDisallow: /\n");
+  });
+  app.get("/sitemap.xml", (req, res) => {
+    if (!isPublicConsumerHost(req.hostname.toLowerCase())) {
+      res.status(404).end();
+      return;
+    }
+    const urls = ["/", "/find-an-agent", "/why-jlt", "/your-protection", "/partners", "/privacy", "/terms"];
+    const entries = urls.map(path => `<url><loc>https://www.thejltgroup.co.uk${path}</loc></url>`).join("");
+    res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${entries}</urlset>`);
+  });
+
   // Capture raw body for PPS callback signature verification BEFORE urlencoded parser decodes it.
   // PPS signs the raw URL-encoded string; Express decodes it, so we must re-verify against raw.
   app.use("/api/pps/callback", express.raw({ type: "application/x-www-form-urlencoded", limit: "1mb" }));

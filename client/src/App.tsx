@@ -100,6 +100,9 @@ const RecruitmentDashboard = lazy(() => import("./pages/crm/RecruitmentDashboard
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const BookingDocuments = lazy(() => import("./pages/BookingDocuments"));
 const MyProfile = lazy(() => import("./pages/MyProfile"));
+const MyPublicProfile = lazy(() => import("./pages/agent/MyPublicProfile"));
+const PublicProfiles = lazy(() => import("./pages/crm/PublicProfiles"));
+const ConsumerSite = lazy(() => import("./pages/consumer/ConsumerSite"));
 const TermsAndPolicies = lazy(() => import("./pages/TermsAndPolicies"));
 const SupplierDirectory = lazy(() => import("./pages/SupplierDirectory"));
 const AdminSuppliers = lazy(() => import("./pages/admin/AdminSuppliers"));
@@ -258,6 +261,7 @@ function AuthRouter() {
           <Route path="/notifications" component={AgentNotifications} />
           <Route path="/messages" component={AgentMessages} />
           <Route path="/my-profile" component={MyProfile} />
+          <Route path="/my-public-profile" component={MyPublicProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
           <Route path="/suppliers" component={SupplierDirectory} />
@@ -312,6 +316,7 @@ function AuthRouter() {
           <Route path="/notifications" component={AgentNotifications} />
           <Route path="/messages" component={AgentMessages} />
           <Route path="/my-profile" component={MyProfile} />
+          <Route path="/my-public-profile" component={MyPublicProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
           <Route path="/suppliers" component={SupplierDirectory} />
@@ -393,6 +398,7 @@ function AuthRouter() {
         <Route path="/crm/join-sessions" component={JoinSessions} />
         <Route path="/crm/abandoned-signups" component={AbandonedSignups} />
         <Route path="/crm/change-requests" component={CrmChangeRequests} />
+        <Route path="/crm/public-profiles" component={PublicProfiles} />
         <Route path="/crm/memberships" component={Memberships} />
         {/* Recruitment Pipeline */}
         <Route path="/crm/recruitment/dashboard" component={RecruitmentDashboard} />
@@ -429,6 +435,14 @@ function AuthRouter() {
 }
 
 function App() {
+  const hostname = typeof window === "undefined" ? "" : window.location.hostname.toLowerCase();
+  const isConsumerSite = hostname === "www.thejltgroup.co.uk" || hostname === "thejltgroup.co.uk" || (typeof window !== "undefined" && window.location.pathname.startsWith("/consumer"));
+  if (!isConsumerSite && typeof document !== "undefined") {
+    document.title = "JLT Group Booking Portal";
+    let robots = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
+    if (!robots) { robots = document.createElement("meta"); robots.name = "robots"; document.head.appendChild(robots); }
+    robots.content = "noindex,nofollow";
+  }
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
@@ -448,7 +462,7 @@ function App() {
                 </div>
               </div>
             }>
-              <AuthRouter />
+              {isConsumerSite ? <ConsumerSite /> : <AuthRouter />}
             </Suspense>
           </TooltipProvider>
         </ViewModeProvider>
