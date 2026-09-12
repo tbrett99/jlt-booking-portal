@@ -25,4 +25,12 @@ describe("MyHolidayShowcases editing safeguards", () => {
     expect(source).toContain('safe changes update your live holiday page straight away');
     expect(source).not.toContain('Submit edits for review');
   });
+
+  it("provides customer itinerary section move and delete controls that preserve the resulting draft order", () => {
+    expect(source).toContain('const move = (index: number, direction: -1 | 1)');
+    expect(source).toContain('const remove = (sectionId: string) => onChange(sections.filter');
+    expect(source).toContain('aria-label={`Move ${section.title} up`}');
+    expect(source).toContain('aria-label={`Move ${section.title} down`}');
+    expect(source).toContain('aria-label={`Delete ${section.title}`}');
+  });
 });

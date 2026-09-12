@@ -218,8 +218,49 @@ export default function MyHolidayShowcases() {
 
 function CuratedSectionEditor({ sections, uploading, onUpload, onChange }: { sections: CuratedSection[]; uploading: boolean; onUpload: (file: File | undefined, sectionId: string) => void; onChange: (sections: CuratedSection[]) => void }) {
   const update = (sectionId: string, patch: Partial<CuratedSection>) => onChange(sections.map((section) => section.id === sectionId ? { ...section, ...patch } : section));
+  const move = (index: number, direction: -1 | 1) => {
+    const destination = index + direction;
+    if (destination < 0 || destination >= sections.length) return;
+    const next = [...sections];
+    [next[index], next[destination]] = [next[destination], next[index]];
+    onChange(next);
+  };
+  const remove = (sectionId: string) => onChange(sections.filter((section) => section.id !== sectionId));
   if (sections.length === 0) return null;
-  return <section className="rounded-2xl border border-[#bdebe3] bg-[#f7fffd] p-4 sm:p-5"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-[#008e81]">Itinerary sections</p><h3 className="mt-1 font-serif text-2xl text-[#102632]">Edit each customer-facing part of the trip</h3><p className="mt-1 text-sm leading-6 text-[#61727a]">For a stay, use the details list for items such as <em>Grand Suite with extra bed</em> and <em>Bed &amp; Breakfast</em>. Add photos directly to the relevant section.</p></div><div className="mt-5 space-y-5">{sections.map((section, sectionIndex) => <article key={section.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-[.14em] text-[#007e72]">{String(sectionIndex + 1).padStart(2, "0")} · {section.kind}</p><span className="rounded-full bg-[#eafbf8] px-3 py-1 text-xs font-medium text-[#2d746d]">Public section</span></div><div className="mt-4 grid gap-4 sm:grid-cols-2"><EditorField label="Section title"><Input value={section.title} onChange={(event) => update(section.id, { title: event.target.value })} /></EditorField><EditorField label="Customer details" hint="One short fact per line; maximum five."><Textarea value={section.facts.join("\n")} rows={4} onChange={(event) => update(section.id, { facts: textLines(event.target.value).slice(0, 5) })} /></EditorField></div><EditorField label="Section description"><Textarea value={section.summary} rows={4} maxLength={600} onChange={(event) => update(section.id, { summary: event.target.value })} /></EditorField><div className="mt-4 rounded-xl bg-slate-50 p-3"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-medium text-[#102632]">Images for this section</p><p className="mt-1 text-xs text-slate-500">Up to six customer-facing images. Use a short plain-English label.</p></div><Label htmlFor={`showcase-section-upload-${section.id}`} className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[#008e81] px-3 py-2 text-sm font-medium text-[#007e72]"><ImagePlus size={15} /> Add image</Label><Input id={`showcase-section-upload-${section.id}`} className="sr-only" type="file" disabled={uploading || section.images.length >= 6} accept="image/jpeg,image/png,image/webp" onChange={(event) => onUpload(event.target.files?.[0], section.id)} /></div><div className="mt-3 grid gap-3 sm:grid-cols-2">{section.images.map((image, imageIndex) => <ImageEditor key={`${image.url}-${imageIndex}`} image={image} index={imageIndex} onChange={(next) => update(section.id, { images: section.images.map((item, itemIndex) => itemIndex === imageIndex ? next : item) })} onRemove={() => update(section.id, { images: section.images.filter((_, itemIndex) => itemIndex !== imageIndex) })} />)}</div>{section.images.length === 0 && <p className="mt-3 text-sm text-slate-500">No images attached to this section yet.</p>}</div></article>)}</div></section>;
+  return <section className="rounded-2xl border border-[#bdebe3] bg-[#f7fffd] p-4 sm:p-5">
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-[.14em] text-[#008e81]">Itinerary sections</p>
+      <h3 className="mt-1 font-serif text-2xl text-[#102632]">Edit each customer-facing part of the trip</h3>
+      <p className="mt-1 text-sm leading-6 text-[#61727a]">For a stay, use the details list for items such as <em>Grand Suite with extra bed</em> and <em>Bed &amp; Breakfast</em>. Add photos directly to the relevant section. The order below is the order customers see.</p>
+    </div>
+    <div className="mt-5 space-y-5">
+      {sections.map((section, sectionIndex) => <article key={section.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[.14em] text-[#007e72]">{String(sectionIndex + 1).padStart(2, "0")} · {section.kind}</p>
+          <div className="flex items-center gap-1">
+            <span className="mr-1 rounded-full bg-[#eafbf8] px-3 py-1 text-xs font-medium text-[#2d746d]">Public section</span>
+            <Button type="button" variant="ghost" size="icon" disabled={sectionIndex === 0} aria-label={`Move ${section.title} up`} onClick={() => move(sectionIndex, -1)}><ArrowUp size={16} /></Button>
+            <Button type="button" variant="ghost" size="icon" disabled={sectionIndex === sections.length - 1} aria-label={`Move ${section.title} down`} onClick={() => move(sectionIndex, 1)}><ArrowDown size={16} /></Button>
+            <Button type="button" variant="ghost" size="icon" className="text-red-700 hover:bg-red-50 hover:text-red-800" aria-label={`Delete ${section.title}`} onClick={() => { if (window.confirm(`Remove “${section.title}” from this public itinerary?`)) remove(section.id); }}><Trash2 size={16} /></Button>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <EditorField label="Section title"><Input value={section.title} onChange={(event) => update(section.id, { title: event.target.value })} /></EditorField>
+          <EditorField label="Customer details" hint="One short fact per line; maximum five."><Textarea value={section.facts.join("\n")} rows={4} onChange={(event) => update(section.id, { facts: textLines(event.target.value).slice(0, 5) })} /></EditorField>
+        </div>
+        <EditorField label="Section description"><Textarea value={section.summary} rows={4} maxLength={600} onChange={(event) => update(section.id, { summary: event.target.value })} /></EditorField>
+        <div className="mt-4 rounded-xl bg-slate-50 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><p className="text-sm font-medium text-[#102632]">Images for this section</p><p className="mt-1 text-xs text-slate-500">Up to six customer-facing images. Use a short plain-English label.</p></div>
+            <Label htmlFor={`showcase-section-upload-${section.id}`} className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[#008e81] px-3 py-2 text-sm font-medium text-[#007e72]"><ImagePlus size={15} /> Add image</Label>
+            <Input id={`showcase-section-upload-${section.id}`} className="sr-only" type="file" disabled={uploading || section.images.length >= 6} accept="image/jpeg,image/png,image/webp" onChange={(event) => onUpload(event.target.files?.[0], section.id)} />
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">{section.images.map((image, imageIndex) => <ImageEditor key={`${image.url}-${imageIndex}`} image={image} index={imageIndex} onChange={(next) => update(section.id, { images: section.images.map((item, itemIndex) => itemIndex === imageIndex ? next : item) })} onRemove={() => update(section.id, { images: section.images.filter((_, itemIndex) => itemIndex !== imageIndex) })} />)}</div>
+          {section.images.length === 0 && <p className="mt-3 text-sm text-slate-500">No images attached to this section yet.</p>}
+        </div>
+      </article>)}
+    </div>
+  </section>;
 }
 
 function ImageEditor({ image, index, onChange, onRemove }: { image: GalleryImage; index: number; onChange: (image: GalleryImage) => void; onRemove: () => void }) {
