@@ -1,5 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useLayoutEffect } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation } from "wouter";
@@ -119,6 +119,51 @@ const AdminCompetitions = lazy(() => import("./pages/admin/AdminCompetitions"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
+
+function RouteScrollController() {
+  const [location] = useLocation();
+
+  useLayoutEffect(() => {
+    const previousRestoration = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    return () => { window.history.scrollRestoration = previousRestoration; };
+  }, []);
+
+  useLayoutEffect(() => {
+    const resetAllScrollRoots = () => {
+      const roots = [
+        document.scrollingElement as HTMLElement | null,
+        document.documentElement,
+        document.body,
+        ...Array.from(document.querySelectorAll<HTMLElement>("[data-portal-primary-scroll-root], [data-portal-scroll-root], [data-portal-route-content]")),
+      ].filter((root): root is HTMLElement => Boolean(root));
+      Array.from(new Set(roots)).forEach((root) => {
+        root.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
+        root.scrollTop = 0;
+      });
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    };
+
+    resetAllScrollRoots();
+    const frames = [
+      window.requestAnimationFrame(resetAllScrollRoots),
+      window.requestAnimationFrame(() => window.requestAnimationFrame(resetAllScrollRoots)),
+    ];
+    const timers = [80, 250, 600, 1_000].map((delay) => window.setTimeout(resetAllScrollRoots, delay));
+    const enforceInitialRoutePosition = () => resetAllScrollRoots();
+    document.addEventListener("scroll", enforceInitialRoutePosition, true);
+    const releaseGuard = window.setTimeout(() => document.removeEventListener("scroll", enforceInitialRoutePosition, true), 1_100);
+
+    return () => {
+      frames.forEach((frame) => window.cancelAnimationFrame(frame));
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.clearTimeout(releaseGuard);
+      document.removeEventListener("scroll", enforceInitialRoutePosition, true);
+    };
+  }, [location]);
+
+  return null;
+}
 
 // ── Onboarding gate — blocks all agent routes until admin activates portal access ──
 function OnboardingGate({ children }: { children: React.ReactNode }) {
@@ -457,6 +502,7 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <ViewModeProvider>
           <TooltipProvider>
+            <RouteScrollController />
             <Toaster />
             <Suspense fallback={
               <div className="min-h-screen flex items-center justify-center bg-background">
