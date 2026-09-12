@@ -127,7 +127,7 @@ All accepted fields are public-facing. `itineraryImages` is optional and accepts
 
 Every `curatedSections` item must contain `id` (UUID), `kind` (`flight`, `stay`, `transfer`, `cruise`, `experience`, or `note`), `title` (2–180 characters), and `summary` (2–600 characters). `facts` is optional and permits up to five strings of 2–240 characters. `images` is optional and permits up to six objects with exactly `url`, `source`, `label`, and `category`; `url` must be HTTPS and non-Google-hosted, `source` is `supplier` or `agent_upload`, `label` is 2–255 characters, and `category` is `hotel`, `cruise`, or `experience`.
 
-Unknown top-level and nested fields are rejected. A `400` response contains `validationErrors`, a maximum of 20 safe objects shaped as `{ "path", "code", "message" }`. Values from the supplied payload are never echoed in those errors. **Orbit must surface `validationErrors` to its own logs or operator feedback rather than showing only the top-level `error` string**, because the field path is the actionable diagnostic.
+Unknown top-level and nested fields are rejected. A `400` response contains `validationErrors`, a maximum of 20 safe objects shaped as `{ "path", "code", "message" }`. The top-level `error` also includes the first safe field path and rule so existing Orbit feedback can be actionable. Values from the supplied payload are never echoed in either location. Orbit should additionally retain the complete `validationErrors` array in its own logs or operator feedback.
 
 ## Response contract
 

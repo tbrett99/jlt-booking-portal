@@ -139,7 +139,7 @@ describe("POST /api/external/quote-showcases", () => {
     await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: { ...payload, clientName: "Private customer" } }, res);
     expect(res.statusCode).toBe(400);
     expect(res.body).toEqual(expect.objectContaining({
-      error: "Invalid public holiday showcase payload",
+      error: "Invalid public holiday showcase payload at payload: Unexpected field; remove fields not defined by the public showcase contract.",
       validationErrors: expect.arrayContaining([expect.objectContaining({ path: "payload", code: "unrecognized_keys", message: expect.any(String) })]),
     }));
     expect(res.body).not.toHaveProperty("fields");
@@ -165,7 +165,7 @@ describe("POST /api/external/quote-showcases", () => {
     await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: { ...payload, curatedSections: [{ ...payload.curatedSections[0], kind: "unknown" }] } }, invalid);
     expect(invalid.statusCode).toBe(400);
     expect(invalid.body).toEqual(expect.objectContaining({
-      error: "Invalid public holiday showcase payload",
+      error: "Invalid public holiday showcase payload at curatedSections[0].kind: Value is not one of the allowed public contract options.",
       validationErrors: expect.arrayContaining([expect.objectContaining({ path: "curatedSections[0].kind", code: expect.any(String), message: expect.any(String) })]),
     }));
     expect(JSON.stringify(invalid.body)).not.toContain("Private customer");

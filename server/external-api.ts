@@ -196,9 +196,15 @@ router.post("/quote-showcases", async (req: Request, res: Response) => {
 
     const parsed = orbitHolidayShowcaseSchema.safeParse(req.body);
     if (!parsed.success) {
+      const validationErrors = toSafePublicValidationIssues(parsed.error.issues);
+      const primaryError = validationErrors[0];
       return res.status(400).json({
-        error: "Invalid public holiday showcase payload",
-        validationErrors: toSafePublicValidationIssues(parsed.error.issues),
+        // Orbit currently displays only this established top-level field. Keep
+        // its wording, while appending a safe path/rule rather than any value.
+        error: primaryError
+          ? `Invalid public holiday showcase payload at ${primaryError.path}: ${primaryError.message}`
+          : "Invalid public holiday showcase payload",
+        validationErrors,
       });
     }
     const payload = parsed.data;
