@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPublicShowcaseVisible, orbitHolidayShowcaseSchema, toPublicShowcaseCard, toPublicShowcaseDetail, toSafePublicValidationIssues } from "./holiday-showcase-logic";
+import { holidayShowcaseEditDraftSchema, isConsumerSafeShowcaseText, isPublicShowcaseVisible, orbitHolidayShowcaseSchema, toPublicShowcaseCard, toPublicShowcaseDetail, toSafePublicValidationIssues } from "./holiday-showcase-logic";
 
 const validPayload = {
   agentId: "JLT-123",
@@ -120,6 +120,51 @@ describe("Orbit holiday showcase payload contract", () => {
     expect(detail.itineraryImages).toEqual([{ url: "https://assets.example.com/elser.jpg", label: "The Elser Hotel Miami", category: "hotel" }]);
     expect(JSON.stringify(detail)).not.toContain("orbitProductId");
     expect(JSON.stringify(detail)).not.toContain("supplier");
+  });
+
+  it("accepts customer-friendly agent edit drafts but rejects Orbit-derived rate and room wording", () => {
+    const safeDraft = {
+      title: "Cape Town coastal escape",
+      summary: "A relaxed city-and-coast itinerary with plenty of time to explore at your own pace.",
+      destination: "Cape Town",
+      travelPeriodLabel: "May 2027",
+      durationNights: 7,
+      priceAmount: 1895,
+      heroImage: null,
+      itineraryImages: [],
+      editorialTags: ["Culture", "Beach"],
+      inclusions: ["Seven nights of selected accommodation"],
+      practicalNotes: ["Your travel expert will tailor the final arrangements."],
+    };
+    expect(holidayShowcaseEditDraftSchema.parse(safeDraft).title).toBe("Cape Town coastal escape");
+    expect(() => holidayShowcaseEditDraftSchema.parse({ ...safeDraft, editorialTags: ["Deluxe Room–with Extra Bed ~ Non Refundable - Miles Attack: 1102 Miles (AP-TH-HOTDEAL2627 23% - 23%)"] })).toThrow();
+    expect(isConsumerSafeShowcaseText("Miles Attack: 1102 Miles (AP-TH-HOTDEAL2627 23%)")).toBe(false);
+  });
+
+  it("suppresses legacy room, board, and operational-rate data from public detail responses", () => {
+    const detail = toPublicShowcaseDetail({
+      ...validPayload,
+      publicSlug: "cape-town-safe-copy",
+      heroImageUrl: null,
+      priceAmount: null,
+      priceCurrency: null,
+      pricePerPerson: null,
+      accommodationOptions: [{
+        name: "Ocean-view hotel",
+        location: "Cape Town",
+        room: "Deluxe Room–with Extra Bed ~ Non Refundable",
+        board: "Miles Attack: 1102 Miles (AP-TH-HOTDEAL2627 23% - 23%)",
+        description: "A peaceful base near the waterfront.",
+      }],
+      inclusions: ["Selected accommodation", "AP-TH-HOTDEAL2627 23%"],
+      practicalNotes: ["A tailored quote will confirm local taxes.", "Non Refundable rate applies"],
+    });
+    expect(detail.accommodationOptions).toEqual([{ name: "Ocean-view hotel", location: "Cape Town", description: "A peaceful base near the waterfront." }]);
+    expect(detail.inclusions).toEqual(["Selected accommodation"]);
+    expect(detail.practicalNotes).toEqual(["A tailored quote will confirm local taxes."]);
+    expect(JSON.stringify(detail)).not.toContain("Miles Attack");
+    expect(JSON.stringify(detail)).not.toContain("HOTDEAL");
+    expect(JSON.stringify(detail)).not.toContain("Non Refundable");
   });
 
   it("returns only allowlisted curated section fields and leaves legacy snapshots on the fallback path", () => {

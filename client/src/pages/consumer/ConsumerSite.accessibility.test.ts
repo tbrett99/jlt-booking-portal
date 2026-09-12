@@ -54,6 +54,8 @@ describe("ConsumerSite accessibility contract", () => {
     expect(source).toContain('figcaption className="sr-only"');
     expect(source).toContain("holiday-showcases/${showcase.slug}");
     expect(source).toContain("This is travel inspiration, not a live quote.");
+    expect(source).toContain("resort, city or tourist taxes may apply at your destination");
+    expect(source).toContain("will confirm any applicable local charges clearly in your tailored quote before you book");
   });
 
   it("keeps public partner logos natural and explains travel protection through clear consumer questions", () => {

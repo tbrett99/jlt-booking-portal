@@ -3,6 +3,16 @@ import { z } from "zod";
 export const HOLIDAY_SHOWCASE_FALLBACK_IMAGE = "/manus-storage/jlt-editorial-reference-hero_30c23fe4.jpg";
 
 const publicText = (min: number, max: number) => z.string().trim().min(min).max(max);
+const consumerUnsafeEditorialPattern = /(?:\bmiles\s+attack\b|\b(?:orbit|supplier|product|quote)\s*(?:id|ref(?:erence)?)\b|\b(?:margin|commission|net\s*cost)\b|\b(?:rate|room)\s*(?:code|id)\b|\bnon[-\s]?refundable\b)/i;
+const orbitStyleIdentifierPattern = /\b[A-Z]{2,}(?:-[A-Z0-9]+){2,}\b/;
+
+export function isConsumerSafeShowcaseText(value: string): boolean {
+  return !consumerUnsafeEditorialPattern.test(value) && !orbitStyleIdentifierPattern.test(value);
+}
+
+function customerSafeText(min: number, max: number) {
+  return publicText(min, max).refine(isConsumerSafeShowcaseText, "Use customer-friendly wording without rate, room, supplier, quote, or Orbit operational references.");
+}
 const isPermittedPublicImageUrl = (value: string) => {
   try {
     const parsed = new URL(value);
@@ -49,6 +59,29 @@ const accommodationOptionSchema = z.object({
   description: publicText(2, 1_500).optional(),
   image: publicImageSchema.optional(),
 }).strict();
+
+const editableImageSchema = z.object({
+  url: z.string().url().max(2_000).refine(isPermittedPublicImageUrl, "Images must use https:// and cannot use Google-hosted sources."),
+  source: z.enum(["supplier", "agent_upload"]),
+  label: customerSafeText(2, 255).optional(),
+  category: z.enum(["hotel", "cruise", "experience"]).optional(),
+}).strict();
+
+export const holidayShowcaseEditDraftSchema = z.object({
+  title: customerSafeText(4, 255),
+  summary: customerSafeText(20, 2_000),
+  destination: customerSafeText(2, 255),
+  travelPeriodLabel: customerSafeText(2, 140).optional().nullable(),
+  durationNights: z.number().int().min(1).max(60).optional().nullable(),
+  priceAmount: z.number().positive().max(1_000_000).optional().nullable(),
+  heroImage: editableImageSchema.nullable(),
+  itineraryImages: z.array(editableImageSchema.extend({ label: customerSafeText(2, 255), category: z.enum(["hotel", "cruise", "experience"]) }).strict()).max(24),
+  editorialTags: z.array(customerSafeText(2, 60)).max(12),
+  inclusions: z.array(customerSafeText(2, 300)).max(40),
+  practicalNotes: z.array(customerSafeText(2, 500)).max(40),
+}).strict();
+
+export type HolidayShowcaseEditDraft = z.infer<typeof holidayShowcaseEditDraftSchema>;
 
 export const orbitHolidayShowcaseSchema = z.object({
   // Standard agents use their CRM JLT identifier. Approved staff public profiles
@@ -135,9 +168,36 @@ function toPublicItineraryGalleryImages(value: unknown): PublicItineraryGalleryI
     if (!image || typeof image !== "object") return [];
     const candidate = image as Record<string, unknown>;
     const category = candidate.category;
-    if (typeof candidate.url !== "string" || !isPermittedPublicImageUrl(candidate.url) || typeof candidate.label !== "string" || !["hotel", "cruise", "experience"].includes(String(category))) return [];
+    if (typeof candidate.url !== "string" || !isPermittedPublicImageUrl(candidate.url) || typeof candidate.label !== "string" || !isConsumerSafeShowcaseText(candidate.label) || !["hotel", "cruise", "experience"].includes(String(category))) return [];
     return [{ url: candidate.url, label: candidate.label, category: category as PublicItineraryGalleryImage["category"] }];
   });
+}
+
+function toPublicItinerary(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const parsed = itineraryItemSchema.safeParse(item);
+    if (!parsed.success) return [];
+    if (!isConsumerSafeShowcaseText(parsed.data.title) || (parsed.data.description && !isConsumerSafeShowcaseText(parsed.data.description)) || parsed.data.highlights.some((highlight) => !isConsumerSafeShowcaseText(highlight))) return [];
+    return [{ day: parsed.data.day, title: parsed.data.title, description: parsed.data.description, highlights: parsed.data.highlights }];
+  });
+}
+
+function toPublicAccommodationOptions(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const parsed = accommodationOptionSchema.safeParse(item);
+    if (!parsed.success) return [];
+    if (!isConsumerSafeShowcaseText(parsed.data.name) || (parsed.data.location && !isConsumerSafeShowcaseText(parsed.data.location)) || (parsed.data.description && !isConsumerSafeShowcaseText(parsed.data.description))) return [];
+    return [{ name: parsed.data.name, location: parsed.data.location, description: parsed.data.description }];
+  });
+}
+
+function toPublicTextList(value: unknown, maxItems: number, maxLength: number) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => typeof item === "string" && item.trim().length >= 2 && item.trim().length <= maxLength && isConsumerSafeShowcaseText(item.trim()) ? [item.trim()] : []).slice(0, maxItems);
 }
 
 function toPublicCuratedSections(value: unknown): PublicCuratedSection[] {
@@ -157,14 +217,14 @@ function toPublicCuratedSections(value: unknown): PublicCuratedSection[] {
         return { url: raw.url, source: raw.source, label: raw.label, category: raw.category };
       }),
     });
-    if (!parsed.success) return [];
+    if (!parsed.success || !isConsumerSafeShowcaseText(parsed.data.title) || !isConsumerSafeShowcaseText(parsed.data.summary)) return [];
     return [{
       id: parsed.data.id,
       kind: parsed.data.kind,
       title: parsed.data.title,
       summary: parsed.data.summary,
-      facts: parsed.data.facts,
-      images: parsed.data.images.map(({ url, label, category }) => ({ url, label, category })),
+      facts: parsed.data.facts.filter(isConsumerSafeShowcaseText),
+      images: parsed.data.images.filter((image) => isConsumerSafeShowcaseText(image.label)).map(({ url, label, category }) => ({ url, label, category })),
     }];
   });
 }
@@ -196,12 +256,16 @@ export function toPublicShowcaseCard(showcase: {
   priceCurrency?: string | null;
   pricePerPerson?: boolean | null;
   heroImageUrl?: string | null;
+  editorialTags?: unknown;
 }) {
+  const title = isConsumerSafeShowcaseText(showcase.title) ? showcase.title : "Holiday inspiration";
+  const summary = isConsumerSafeShowcaseText(showcase.summary) ? showcase.summary : "Speak to your JLT travel expert for a customer-tailored version of this holiday idea.";
+  const destination = isConsumerSafeShowcaseText(showcase.destination) ? showcase.destination : "Destination to be confirmed";
   return {
     slug: showcase.publicSlug,
-    title: showcase.title,
-    summary: showcase.summary,
-    destination: showcase.destination,
+    title,
+    summary,
+    destination,
     travelPeriodLabel: showcase.travelPeriodLabel ?? null,
     durationNights: showcase.durationNights ?? null,
     price: showcase.priceAmount === null || showcase.priceAmount === undefined ? null : {
@@ -211,6 +275,7 @@ export function toPublicShowcaseCard(showcase: {
       perPerson: showcase.pricePerPerson ?? true,
     },
     heroImageUrl: showcase.heroImageUrl ?? HOLIDAY_SHOWCASE_FALLBACK_IMAGE,
+    editorialTags: toPublicTextList(showcase.editorialTags, 12, 60),
   };
 }
 
@@ -227,6 +292,7 @@ export function toPublicShowcaseDetail(showcase: {
   heroImageUrl?: string | null;
   itineraryImages?: unknown;
   curatedSections?: unknown;
+  editorialTags?: unknown;
   itinerary: unknown;
   accommodationOptions: unknown;
   inclusions: unknown;
@@ -236,9 +302,10 @@ export function toPublicShowcaseDetail(showcase: {
     ...toPublicShowcaseCard(showcase),
     itineraryImages: toPublicItineraryGalleryImages(showcase.itineraryImages),
     curatedSections: toPublicCuratedSections(showcase.curatedSections),
-    itinerary: Array.isArray(showcase.itinerary) ? showcase.itinerary : [],
-    accommodationOptions: Array.isArray(showcase.accommodationOptions) ? showcase.accommodationOptions : [],
-    inclusions: Array.isArray(showcase.inclusions) ? showcase.inclusions : [],
-    practicalNotes: Array.isArray(showcase.practicalNotes) ? showcase.practicalNotes : [],
+    editorialTags: toPublicTextList(showcase.editorialTags, 12, 60),
+    itinerary: toPublicItinerary(showcase.itinerary),
+    accommodationOptions: toPublicAccommodationOptions(showcase.accommodationOptions),
+    inclusions: toPublicTextList(showcase.inclusions, 40, 300),
+    practicalNotes: toPublicTextList(showcase.practicalNotes, 40, 500),
   };
 }

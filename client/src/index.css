@@ -148,6 +148,18 @@
   }
 }
 
+/* Showcase inclusions answer the first consumer question, so place the existing
+   Included / Good to know card before editorial itinerary content on detail pages. */
+main > section.mx-auto.grid > article:has(> section > div > h2) {
+  display: flex;
+  flex-direction: column;
+}
+main > section.mx-auto.grid > article:has(> section > div > h2) > section:last-child {
+  order: -1;
+  margin-top: 0;
+  margin-bottom: 3rem;
+}
+
 /* ─── Supplier description HTML rendering ─────────────────────────────────── */
 .supplier-description {
   overflow-x: hidden;

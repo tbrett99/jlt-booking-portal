@@ -499,4 +499,24 @@ describe("consumerSite holiday showcases", () => {
     await expect(agentCaller().showcases.remove({ id: 501 })).resolves.toEqual({ success: true });
     expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ isPublished: false, deletedAt: expect.any(Date), deletedById: 19 }));
   });
+
+  it("stores an owned customer-safe showcase edit as pending review without overwriting the live snapshot", async () => {
+    selectResults.push([showcase], []);
+    const draft = {
+      title: "New York and Finger Lakes escape",
+      summary: "A relaxed city and countryside holiday idea, shaped around the pace and experiences that suit you.",
+      destination: "New York and Finger Lakes",
+      travelPeriodLabel: "Autumn 2027",
+      durationNights: 8,
+      priceAmount: 1795,
+      heroImage: { url: "https://supplier.example/hero.jpg", source: "supplier" as const },
+      itineraryImages: [],
+      editorialTags: ["Culture", "Scenic"],
+      inclusions: ["Selected accommodation"],
+      practicalNotes: ["Your expert will confirm the final arrangements."],
+    };
+    await expect(agentCaller().showcases.submitEdit({ id: 501, draft, agentNote: "Updated for customer clarity." })).resolves.toEqual({ success: true });
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ showcaseId: 501, agentId: 19, draft, agentNote: "Updated for customer clarity." }));
+    expect(updateSet).not.toHaveBeenCalledWith(expect.objectContaining({ title: draft.title }));
+  });
 });

@@ -1007,6 +1007,9 @@ export const publicHolidayShowcases = mysqlTable("public_holiday_showcases", {
   // Optional ordered public story supplied by Orbit. When present, it takes
   // precedence over the legacy day-by-day itinerary for consumer rendering.
   curatedSections: json("curatedSections"),
+  // Portal-managed, customer-facing discovery tags. These do not alter the
+  // immutable Orbit source snapshot and are reviewed before publication.
+  editorialTags: json("editorialTags"),
   itinerary: json("itinerary").notNull(),
   accommodationOptions: json("accommodationOptions").notNull(),
   inclusions: json("inclusions").notNull(),
@@ -1033,7 +1036,7 @@ export const publicHolidayShowcaseEvents = mysqlTable("public_holiday_showcase_e
   id: int("id").autoincrement().primaryKey(),
   showcaseId: int("showcaseId").notNull(),
   agentId: int("agentId").notNull(),
-  action: mysqlEnum("action", ["received", "hidden", "unpublished", "reordered", "expiry_set", "expired", "deleted"]).notNull(),
+  action: mysqlEnum("action", ["received", "hidden", "unpublished", "reordered", "expiry_set", "expired", "deleted", "edit_submitted", "edit_approved", "edit_rejected"]).notNull(),
   actorUserId: int("actorUserId"),
   note: varchar("note", { length: 500 }),
   metadata: json("metadata"),
@@ -1041,6 +1044,27 @@ export const publicHolidayShowcaseEvents = mysqlTable("public_holiday_showcase_e
 }, (table) => [
   index("public_holiday_showcase_events_showcase_idx").on(table.showcaseId, table.createdAt),
 ]);
+
+// Agent-authored public-copy changes wait here for staff review. The original
+// Orbit source snapshot remains immutable on public_holiday_showcases.
+export const publicHolidayShowcaseEditRequests = mysqlTable("public_holiday_showcase_edit_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  showcaseId: int("showcaseId").notNull(),
+  agentId: int("agentId").notNull(),
+  status: mysqlEnum("status", ["pending", "approved", "changes_requested", "rejected"]).default("pending").notNull(),
+  draft: json("draft").notNull(),
+  agentNote: varchar("agentNote", { length: 500 }),
+  reviewNote: varchar("reviewNote", { length: 500 }),
+  reviewedById: int("reviewedById"),
+  reviewedAt: timestamp("reviewedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("public_holiday_showcase_edit_requests_showcase_idx").on(table.showcaseId, table.createdAt),
+  index("public_holiday_showcase_edit_requests_status_idx").on(table.status, table.createdAt),
+  index("public_holiday_showcase_edit_requests_agent_idx").on(table.agentId, table.createdAt),
+]);
+export type PublicHolidayShowcaseEditRequest = typeof publicHolidayShowcaseEditRequests.$inferSelect;
 
 // ─── Agent CRM: Tags ──────────────────────────────────────────────────────────
 export const agentTags = mysqlTable("agent_tags", {

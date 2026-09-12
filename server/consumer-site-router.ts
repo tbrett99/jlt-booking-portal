@@ -8,6 +8,7 @@ import {
   publicAgentProfileTags,
   publicAgentProfiles,
   publicEnquiries,
+  publicHolidayShowcaseEditRequests,
   publicHolidayShowcaseEvents,
   publicHolidayShowcases,
   publicPartnerProfiles,
@@ -20,7 +21,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { isApprovedPublicUrl, isPublicAgentProfileVisible, matchesPublicDirectoryTags, publicEnquiryAdmission, toPublicAgentResponse } from "./consumer-site-logic";
-import { isPublicShowcaseVisible, toPublicShowcaseCard, toPublicShowcaseDetail } from "./holiday-showcase-logic";
+import { holidayShowcaseEditDraftSchema, isPublicShowcaseVisible, toPublicShowcaseCard, toPublicShowcaseDetail } from "./holiday-showcase-logic";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
@@ -122,7 +123,7 @@ async function requireOwnedShowcase(showcaseId: number, userId: number) {
 async function recordShowcaseEvent(params: {
   showcaseId: number;
   agentId: number;
-  action: "received" | "hidden" | "unpublished" | "reordered" | "expiry_set" | "expired" | "deleted";
+  action: "received" | "hidden" | "unpublished" | "reordered" | "expiry_set" | "expired" | "deleted" | "edit_submitted" | "edit_approved" | "edit_rejected";
   actorUserId?: number | null;
   note?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -493,6 +494,74 @@ export const consumerSiteRouter = router({
       return items.map(toAgentShowcaseResponse);
     }),
 
+    editable: protectedProcedure.input(showcaseIdSchema).query(async ({ input, ctx }) => {
+      const { db, showcase } = await requireOwnedShowcase(input.id, ctx.user.id);
+      if (showcase.deletedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Deleted showcases cannot be edited." });
+      const detail = toPublicShowcaseDetail(showcase);
+      const pending = await db.select().from(publicHolidayShowcaseEditRequests).where(and(
+        eq(publicHolidayShowcaseEditRequests.showcaseId, showcase.id),
+        eq(publicHolidayShowcaseEditRequests.agentId, ctx.user.id),
+        eq(publicHolidayShowcaseEditRequests.status, "pending"),
+      )).orderBy(desc(publicHolidayShowcaseEditRequests.updatedAt)).limit(1);
+      const currentDraft = {
+        title: showcase.title,
+        summary: showcase.summary,
+        destination: showcase.destination,
+        travelPeriodLabel: showcase.travelPeriodLabel,
+        durationNights: showcase.durationNights,
+        priceAmount: showcase.priceAmount === null ? null : Number(showcase.priceAmount),
+        heroImage: showcase.heroImageUrl ? { url: showcase.heroImageUrl, source: showcase.heroImageSource ?? "supplier" } : null,
+        itineraryImages: detail.itineraryImages.map((image) => ({ ...image, source: "supplier" as const })),
+        editorialTags: detail.editorialTags,
+        inclusions: detail.inclusions,
+        practicalNotes: detail.practicalNotes,
+      };
+      return { showcase: toAgentShowcaseResponse(showcase), draft: pending[0]?.draft ?? currentDraft, pending: pending[0] ? { id: pending[0].id, status: pending[0].status, createdAt: pending[0].createdAt, agentNote: pending[0].agentNote } : null };
+    }),
+
+    uploadEditorImage: protectedProcedure.input(showcaseIdSchema.extend({
+      fileBase64: z.string().min(1),
+      fileName: z.string().min(1).max(255),
+      mimeType: z.enum(["image/jpeg", "image/jpg", "image/png", "image/webp"]),
+    })).mutation(async ({ input, ctx }) => {
+      const { showcase } = await requireOwnedShowcase(input.id, ctx.user.id);
+      if (showcase.deletedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Deleted showcases cannot receive new images." });
+      const decoded = Buffer.from(input.fileBase64, "base64");
+      if (decoded.length > 6 * 1024 * 1024) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "Holiday Showcase images must be 6 MB or smaller." });
+      const extension = input.mimeType === "image/png" ? "png" : input.mimeType === "image/webp" ? "webp" : "jpg";
+      const { url } = await storagePut(`consumer-holiday-showcases/${ctx.user.id}/${showcase.id}/${nanoid(14)}.${extension}`, decoded, input.mimeType === "image/jpg" ? "image/jpeg" : input.mimeType);
+      return { url, source: "agent_upload" as const };
+    }),
+
+    submitEdit: protectedProcedure.input(showcaseIdSchema.extend({
+      draft: holidayShowcaseEditDraftSchema,
+      agentNote: z.string().trim().max(500).optional().nullable(),
+    })).mutation(async ({ input, ctx }) => {
+      const { db, showcase } = await requireOwnedShowcase(input.id, ctx.user.id);
+      if (showcase.deletedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Deleted showcases cannot be edited." });
+      const currentExternalUrls = new Set<string>([
+        ...(showcase.heroImageUrl ? [showcase.heroImageUrl] : []),
+        ...(Array.isArray(showcase.itineraryImages) ? showcase.itineraryImages.flatMap((image) => image && typeof image === "object" && typeof (image as Record<string, unknown>).url === "string" ? [(image as Record<string, unknown>).url as string] : []) : []),
+      ]);
+      const uploadPrefix = `/manus-storage/consumer-holiday-showcases/${ctx.user.id}/${showcase.id}/`;
+      const images = [input.draft.heroImage, ...input.draft.itineraryImages].filter((image): image is NonNullable<typeof image> => Boolean(image));
+      if (images.some((image) => image.source === "agent_upload" ? !image.url.startsWith(uploadPrefix) : !currentExternalUrls.has(image.url))) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Use an image already on this showcase or upload a new image through the Portal." });
+      }
+      const [existing] = await db.select({ id: publicHolidayShowcaseEditRequests.id }).from(publicHolidayShowcaseEditRequests).where(and(
+        eq(publicHolidayShowcaseEditRequests.showcaseId, showcase.id),
+        eq(publicHolidayShowcaseEditRequests.agentId, ctx.user.id),
+        eq(publicHolidayShowcaseEditRequests.status, "pending"),
+      )).orderBy(desc(publicHolidayShowcaseEditRequests.updatedAt)).limit(1);
+      if (existing) {
+        await db.update(publicHolidayShowcaseEditRequests).set({ draft: input.draft, agentNote: normaliseOptional(input.agentNote), reviewNote: null }).where(eq(publicHolidayShowcaseEditRequests.id, existing.id));
+      } else {
+        await db.insert(publicHolidayShowcaseEditRequests).values({ showcaseId: showcase.id, agentId: ctx.user.id, draft: input.draft, agentNote: normaliseOptional(input.agentNote) });
+      }
+      await recordShowcaseEvent({ showcaseId: showcase.id, agentId: showcase.agentId, action: "edit_submitted", actorUserId: ctx.user.id, note: "Agent submitted customer-facing Holiday Showcase edits for JLT review." });
+      return { success: true };
+    }),
+
     setPublished: protectedProcedure.input(showcaseIdSchema.extend({ isPublished: z.boolean() })).mutation(async ({ input, ctx }) => {
       const { db, showcase } = await requireOwnedShowcase(input.id, ctx.user.id);
       if (showcase.deletedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Deleted showcases cannot be republished. Please create a new showcase in Orbit." });
@@ -634,6 +703,69 @@ export const consumerSiteRouter = router({
           hiddenReason: "manual_staff_hide",
         }).where(eq(publicAgentProfiles.id, profile.id));
         await writeProfileChange({ profileId: profile.id, agentId: input.userId, action: "hidden_manual", actorUserId: ctx.user.id, note: normaliseOptional(input.note) });
+      }
+      return { success: true };
+    }),
+
+    listShowcaseEditRequests: adminProcedure.input(z.object({
+      status: z.enum(["pending", "approved", "changes_requested", "rejected"]).default("pending"),
+    }).optional()).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        request: publicHolidayShowcaseEditRequests,
+        showcaseTitle: publicHolidayShowcases.title,
+        destination: publicHolidayShowcases.destination,
+        agentName: users.name,
+      }).from(publicHolidayShowcaseEditRequests)
+        .innerJoin(publicHolidayShowcases, eq(publicHolidayShowcaseEditRequests.showcaseId, publicHolidayShowcases.id))
+        .innerJoin(users, eq(publicHolidayShowcaseEditRequests.agentId, users.id))
+        .where(eq(publicHolidayShowcaseEditRequests.status, input?.status ?? "pending"))
+        .orderBy(desc(publicHolidayShowcaseEditRequests.updatedAt));
+    }),
+
+    reviewShowcaseEdit: adminProcedure.input(z.object({
+      id: z.number().int().positive(),
+      action: z.enum(["approve", "request_changes", "reject"]),
+      note: z.string().trim().max(500).optional().nullable(),
+    })).mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [request] = await db.select().from(publicHolidayShowcaseEditRequests).where(eq(publicHolidayShowcaseEditRequests.id, input.id)).limit(1);
+      if (!request || request.status !== "pending") throw new TRPCError({ code: "NOT_FOUND", message: "That Holiday Showcase edit is no longer awaiting review." });
+      const [showcase] = await db.select().from(publicHolidayShowcases).where(and(
+        eq(publicHolidayShowcases.id, request.showcaseId),
+        eq(publicHolidayShowcases.agentId, request.agentId),
+      )).limit(1);
+      if (!showcase || showcase.deletedAt) throw new TRPCError({ code: "NOT_FOUND", message: "The related Holiday Showcase is no longer available." });
+      const reviewNote = normaliseOptional(input.note);
+      if (input.action === "approve") {
+        const parsed = holidayShowcaseEditDraftSchema.safeParse(request.draft);
+        if (!parsed.success) throw new TRPCError({ code: "BAD_REQUEST", message: "The saved Holiday Showcase edit no longer meets the public-content rules." });
+        const draft = parsed.data;
+        await db.update(publicHolidayShowcases).set({
+          title: draft.title,
+          summary: draft.summary,
+          destination: draft.destination,
+          travelPeriodLabel: draft.travelPeriodLabel ?? null,
+          durationNights: draft.durationNights ?? null,
+          priceMode: draft.priceAmount === null ? null : "from",
+          priceAmount: draft.priceAmount === null ? null : String(draft.priceAmount),
+          priceCurrency: draft.priceAmount === null ? null : "GBP",
+          pricePerPerson: draft.priceAmount === null ? true : true,
+          heroImageUrl: draft.heroImage?.url ?? null,
+          heroImageSource: draft.heroImage?.source ?? null,
+          itineraryImages: draft.itineraryImages.map(({ url, source, label, category }) => ({ url, source, label, category })),
+          editorialTags: draft.editorialTags,
+          inclusions: draft.inclusions,
+          practicalNotes: draft.practicalNotes,
+        }).where(eq(publicHolidayShowcases.id, showcase.id));
+        await db.update(publicHolidayShowcaseEditRequests).set({ status: "approved", reviewNote, reviewedById: ctx.user.id, reviewedAt: new Date() }).where(eq(publicHolidayShowcaseEditRequests.id, request.id));
+        await recordShowcaseEvent({ showcaseId: showcase.id, agentId: showcase.agentId, action: "edit_approved", actorUserId: ctx.user.id, note: reviewNote ?? "JLT approved the agent's customer-facing Holiday Showcase edits." });
+      } else {
+        const status = input.action === "request_changes" ? "changes_requested" : "rejected";
+        await db.update(publicHolidayShowcaseEditRequests).set({ status, reviewNote: reviewNote ?? (status === "changes_requested" ? "Please update the public showcase copy and resubmit." : "JLT did not approve this public showcase edit."), reviewedById: ctx.user.id, reviewedAt: new Date() }).where(eq(publicHolidayShowcaseEditRequests.id, request.id));
+        await recordShowcaseEvent({ showcaseId: showcase.id, agentId: showcase.agentId, action: "edit_rejected", actorUserId: ctx.user.id, note: reviewNote ?? "JLT did not approve the agent's Holiday Showcase edits." });
       }
       return { success: true };
     }),
@@ -806,7 +938,7 @@ export const consumerSiteRouter = router({
         const agent = publicProfilePayload(profile, []);
         if (!agent) return [];
         const card = toPublicShowcaseCard(showcase);
-        const searchable = `${card.title} ${card.summary} ${card.destination} ${agent.displayName}`.toLowerCase();
+        const searchable = `${card.title} ${card.summary} ${card.destination} ${card.editorialTags.join(" ")} ${agent.displayName}`.toLowerCase();
         if (search && !searchable.includes(search)) return [];
         if (destination && !card.destination.toLowerCase().includes(destination)) return [];
         if (travelPeriod && !(card.travelPeriodLabel ?? "").toLowerCase().includes(travelPeriod)) return [];

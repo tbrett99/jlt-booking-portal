@@ -120,6 +120,12 @@
 - [x] Expand public Holiday Ideas filtering with practical price and travel-period controls while retaining privacy-safe Active-only visibility: added server-enforced price, travel-period, and duration filters with accessible public controls
 - [x] Refine public Partner cards so brand logos sit naturally without grey backplates and use a more compact, polished tile proportion: changed the desktop grid to compact cards and removed the fixed grey logo backplate
 - [x] Rewrite the consumer Protection page with verified, booking-specific explanations of PTS Trust Account protection, SFI/SAFI where applicable, ATOL, ABTA, and the role of approved partners: source notes recorded from official PTS, ATOL/CAA, and ABTA guidance; desktop/mobile public presentation reviewed
+- [x] Make Holiday Showcase inclusions prominent at the top of the public itinerary, before editorial itinerary content: scoped detail-page layout promotes Included and Good to know above the itinerary storytelling
+- [x] Add agent-owned post-publication Holiday Showcase editing in the Public Profile area for customer-safe titles, descriptions, dates, durations, price, tags, inclusions, notes, and image galleries: edits are agent-owned, submitted to a dedicated staff review queue, and never mutate the immutable Orbit source snapshot
+- [x] Add secure agent image uploads and customer-safe image labels for Holiday Showcase hero and gallery imagery: ownership-checked JPG/PNG/WEBP uploads use managed storage and label/category controls
+- [x] Enforce public-safe editorial validation so internal Orbit room/rate/product references and similar operational strings cannot be published through agent edits: validation rejects operational strings and public mappers suppress legacy unsafe room, rate, board, product, supplier, and Orbit-derived content
+- [x] Add a clear Holiday Showcase notice that local resort, city, or tourist taxes may apply and will be confirmed in the tailored quote before booking: shown in an accessible booking-stage disclosure on every public Showcase page
+- [ ] Apply and verify Railway migration 0140 before deploying editable Holiday Showcases: adds public_holiday_showcase_edit_requests, editorialTags, and audited edit-review actions
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
