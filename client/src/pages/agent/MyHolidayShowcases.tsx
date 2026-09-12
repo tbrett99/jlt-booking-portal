@@ -44,6 +44,10 @@ function textLines(value: string) {
   return value.split("\n").map((item) => item.trim()).filter(Boolean);
 }
 
+function withDefaultImageLabel(image: GalleryImage): GalleryImage {
+  return { ...image, label: image.label?.trim() || "Holiday image" };
+}
+
 function asDraft(value: unknown): ShowcaseDraft {
   if (!value || typeof value !== "object") return emptyDraft;
   const source = value as Partial<ShowcaseDraft>;
@@ -55,8 +59,8 @@ function asDraft(value: unknown): ShowcaseDraft {
     durationNights: source.durationNights ?? null,
     priceAmount: source.priceAmount ?? null,
     heroImage: source.heroImage ?? null,
-    itineraryImages: Array.isArray(source.itineraryImages) ? source.itineraryImages as GalleryImage[] : [],
-    curatedSections: Array.isArray(source.curatedSections) ? source.curatedSections as CuratedSection[] : [],
+    itineraryImages: Array.isArray(source.itineraryImages) ? (source.itineraryImages as GalleryImage[]).map(withDefaultImageLabel) : [],
+    curatedSections: Array.isArray(source.curatedSections) ? (source.curatedSections as CuratedSection[]).map((section) => ({ ...section, images: Array.isArray(section.images) ? section.images.map(withDefaultImageLabel) : [] })) : [],
     editorialTags: Array.isArray(source.editorialTags) ? source.editorialTags : [],
     inclusions: Array.isArray(source.inclusions) ? source.inclusions : [],
     practicalNotes: Array.isArray(source.practicalNotes) ? source.practicalNotes : [],
@@ -165,7 +169,7 @@ export default function MyHolidayShowcases() {
           title: section.title.trim(),
           summary: section.summary.trim(),
           facts: section.facts.map((item) => item.trim()).filter(Boolean),
-          images: section.images.map((image) => ({ ...image, label: image.label.trim() })),
+          images: section.images.map((image) => ({ ...image, label: image.label.trim() || "Holiday image" })),
         })),
       },
       agentNote: agentNote.trim() || null,
