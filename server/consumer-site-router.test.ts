@@ -548,7 +548,7 @@ describe("consumerSite holiday showcases", () => {
     }));
   });
 
-  it("stores an owned customer-safe showcase edit as pending review without overwriting the live snapshot", async () => {
+  it("publishes an owned customer-safe showcase edit immediately and retains a recognised existing section image", async () => {
     selectResults.push([showcase], []);
     const draft = {
       title: "New York and Finger Lakes escape",
@@ -559,12 +559,20 @@ describe("consumerSite holiday showcases", () => {
       priceAmount: 1795,
       heroImage: { url: "https://supplier.example/hero.jpg", source: "supplier" as const },
       itineraryImages: [],
+      curatedSections: [{
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        kind: "stay" as const,
+        title: "Rembrandt Residences Bangkok",
+        summary: "A central hotel with easy access to the city sights, markets and dining scene.",
+        facts: ["2 nights", "Grand Suite with Extra Bed", "Bed & Breakfast", "Bangkok – Sukhumvit"],
+        images: [{ url: "https://supplier.example/rembrandt.jpg", source: "agent_upload" as const, label: "Holiday image", category: "hotel" as const }],
+      }],
       editorialTags: ["Culture", "Scenic"],
       inclusions: ["Selected accommodation"],
       practicalNotes: ["Your expert will confirm the final arrangements."],
     };
-    await expect(agentCaller().showcases.submitEdit({ id: 501, draft, agentNote: "Updated for customer clarity." })).resolves.toEqual({ success: true });
-    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ showcaseId: 501, agentId: 19, draft, agentNote: "Updated for customer clarity." }));
-    expect(updateSet).not.toHaveBeenCalledWith(expect.objectContaining({ title: draft.title }));
+    await expect(agentCaller().showcases.submitEdit({ id: 501, draft, agentNote: "Updated for customer clarity." })).resolves.toEqual({ success: true, published: true });
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ title: draft.title, curatedSections: expect.arrayContaining([expect.objectContaining({ title: "Rembrandt Residences Bangkok" })]) }));
+    expect(insertValues).not.toHaveBeenCalledWith(expect.objectContaining({ showcaseId: 501, agentId: 19, draft }));
   });
 });

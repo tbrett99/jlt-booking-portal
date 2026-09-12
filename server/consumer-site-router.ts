@@ -21,7 +21,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { isApprovedPublicUrl, isPublicAgentProfileVisible, matchesPublicDirectoryTags, publicEnquiryAdmission, toPublicAgentResponse } from "./consumer-site-logic";
-import { holidayShowcaseEditDraftSchema, isPublicShowcaseVisible, toPublicShowcaseCard, toPublicShowcaseDetail } from "./holiday-showcase-logic";
+import { holidayShowcaseEditDraftSchema, isPublicShowcaseVisible, toPublicShowcaseCard, toPublicShowcaseDetail, type HolidayShowcaseEditDraft } from "./holiday-showcase-logic";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
@@ -89,6 +89,49 @@ const partnerDraftSchema = z.object({
 });
 
 const showcaseIdSchema = z.object({ id: z.number().int().positive() });
+
+function imageUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((image) => image && typeof image === "object" && typeof (image as Record<string, unknown>).url === "string"
+    ? [(image as Record<string, unknown>).url as string]
+    : []);
+}
+
+function showcaseDraftImageUrls(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  const draft = value as Record<string, unknown>;
+  const heroUrl = draft.heroImage && typeof draft.heroImage === "object" && typeof (draft.heroImage as Record<string, unknown>).url === "string"
+    ? [(draft.heroImage as Record<string, unknown>).url as string]
+    : [];
+  const sectionUrls = Array.isArray(draft.curatedSections)
+    ? draft.curatedSections.flatMap((section) => section && typeof section === "object" ? imageUrls((section as Record<string, unknown>).images) : [])
+    : [];
+  return [...heroUrl, ...imageUrls(draft.itineraryImages), ...sectionUrls];
+}
+
+function showcaseEditValues(draft: HolidayShowcaseEditDraft, showcase: typeof publicHolidayShowcases.$inferSelect) {
+  return {
+    title: draft.title,
+    summary: draft.summary,
+    destination: draft.destination,
+    travelPeriodLabel: draft.travelPeriodLabel ?? null,
+    durationNights: draft.durationNights ?? null,
+    priceMode: draft.priceAmount === null ? null : "from" as const,
+    priceAmount: draft.priceAmount === null ? null : String(draft.priceAmount),
+    priceCurrency: draft.priceAmount === null ? null : "GBP",
+    pricePerPerson: true,
+    heroImageUrl: draft.heroImage?.url ?? null,
+    heroImageSource: draft.heroImage?.source ?? null,
+    itineraryImages: draft.itineraryImages.map(({ url, source, label, category }) => ({ url, source, label, category })),
+    curatedSections: draft.curatedSections ? draft.curatedSections.map(({ id, kind, title, summary, facts, images }) => ({
+      id, kind, title, summary, facts,
+      images: images.map(({ url, source, label, category }) => ({ url, source, label, category })),
+    })) : showcase.curatedSections,
+    editorialTags: draft.editorialTags,
+    inclusions: draft.inclusions,
+    practicalNotes: draft.practicalNotes,
+  };
+}
 
 function toAgentShowcaseResponse(showcase: typeof publicHolidayShowcases.$inferSelect) {
   return {
@@ -520,7 +563,7 @@ export const consumerSiteRouter = router({
         inclusions: detail.inclusions,
         practicalNotes: detail.practicalNotes,
       };
-      return { showcase: toAgentShowcaseResponse(showcase), draft: pending[0]?.draft ?? currentDraft, pending: pending[0] ? { id: pending[0].id, status: pending[0].status, createdAt: pending[0].createdAt, agentNote: pending[0].agentNote } : null };
+      return { showcase: toAgentShowcaseResponse(showcase), draft: currentDraft, pending: null };
     }),
 
     uploadEditorImage: protectedProcedure.input(showcaseIdSchema.extend({
@@ -543,28 +586,32 @@ export const consumerSiteRouter = router({
     })).mutation(async ({ input, ctx }) => {
       const { db, showcase } = await requireOwnedShowcase(input.id, ctx.user.id);
       if (showcase.deletedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Deleted showcases cannot be edited." });
-      const currentExternalUrls = new Set<string>([
-        ...(showcase.heroImageUrl ? [showcase.heroImageUrl] : []),
-        ...(Array.isArray(showcase.itineraryImages) ? showcase.itineraryImages.flatMap((image) => image && typeof image === "object" && typeof (image as Record<string, unknown>).url === "string" ? [(image as Record<string, unknown>).url as string] : []) : []),
-        ...(Array.isArray(showcase.curatedSections) ? showcase.curatedSections.flatMap((section) => section && typeof section === "object" && Array.isArray((section as Record<string, unknown>).images) ? ((section as Record<string, unknown>).images as unknown[]).flatMap((image) => image && typeof image === "object" && typeof (image as Record<string, unknown>).url === "string" ? [(image as Record<string, unknown>).url as string] : []) : []) : []),
-      ]);
-      const uploadPrefix = `/manus-storage/consumer-holiday-showcases/${ctx.user.id}/${showcase.id}/`;
-      const images = [input.draft.heroImage, ...input.draft.itineraryImages, ...(input.draft.curatedSections ?? []).flatMap((section) => section.images)].filter((image): image is NonNullable<typeof image> => Boolean(image));
-      if (images.some((image) => image.source === "agent_upload" ? !image.url.startsWith(uploadPrefix) : !currentExternalUrls.has(image.url))) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Use an image already on this showcase or upload a new image through the Portal." });
-      }
-      const [existing] = await db.select({ id: publicHolidayShowcaseEditRequests.id }).from(publicHolidayShowcaseEditRequests).where(and(
+      const [existing] = await db.select({ id: publicHolidayShowcaseEditRequests.id, draft: publicHolidayShowcaseEditRequests.draft }).from(publicHolidayShowcaseEditRequests).where(and(
         eq(publicHolidayShowcaseEditRequests.showcaseId, showcase.id),
         eq(publicHolidayShowcaseEditRequests.agentId, ctx.user.id),
         eq(publicHolidayShowcaseEditRequests.status, "pending"),
       )).orderBy(desc(publicHolidayShowcaseEditRequests.updatedAt)).limit(1);
-      if (existing) {
-        await db.update(publicHolidayShowcaseEditRequests).set({ draft: input.draft, agentNote: normaliseOptional(input.agentNote), reviewNote: null }).where(eq(publicHolidayShowcaseEditRequests.id, existing.id));
-      } else {
-        await db.insert(publicHolidayShowcaseEditRequests).values({ showcaseId: showcase.id, agentId: ctx.user.id, draft: input.draft, agentNote: normaliseOptional(input.agentNote) });
+      const currentExternalUrls = new Set<string>([
+        ...(showcase.heroImageUrl ? [showcase.heroImageUrl] : []),
+        ...imageUrls(showcase.itineraryImages),
+        ...(Array.isArray(showcase.curatedSections) ? showcase.curatedSections.flatMap((section) => section && typeof section === "object" ? imageUrls((section as Record<string, unknown>).images) : []) : []),
+        ...showcaseDraftImageUrls(existing?.draft),
+      ]);
+      const uploadPrefix = `/manus-storage/consumer-holiday-showcases/${ctx.user.id}/${showcase.id}/`;
+      const images = [input.draft.heroImage, ...input.draft.itineraryImages, ...(input.draft.curatedSections ?? []).flatMap((section) => section.images)].filter((image): image is NonNullable<typeof image> => Boolean(image));
+      if (images.some((image) => !currentExternalUrls.has(image.url) && !(image.source === "agent_upload" && image.url.startsWith(uploadPrefix)))) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Use an image already on this showcase or upload a new image through the Portal." });
       }
-      await recordShowcaseEvent({ showcaseId: showcase.id, agentId: showcase.agentId, action: "edit_submitted", actorUserId: ctx.user.id, note: "Agent submitted customer-facing Holiday Showcase edits for JLT review." });
-      return { success: true };
+      if (existing) {
+        await db.update(publicHolidayShowcaseEditRequests).set({
+          status: "approved",
+          reviewNote: "Superseded by the agent’s later immediate public Showcase edit.",
+          reviewedAt: new Date(),
+        }).where(eq(publicHolidayShowcaseEditRequests.id, existing.id));
+      }
+      await db.update(publicHolidayShowcases).set(showcaseEditValues(input.draft, showcase)).where(eq(publicHolidayShowcases.id, showcase.id));
+      await recordShowcaseEvent({ showcaseId: showcase.id, agentId: showcase.agentId, action: "edit_approved", actorUserId: ctx.user.id, note: "Agent saved customer-safe Holiday Showcase edits directly to the public page." });
+      return { success: true, published: true };
     }),
 
     setPublished: protectedProcedure.input(showcaseIdSchema.extend({ isPublished: z.boolean() })).mutation(async ({ input, ctx }) => {
