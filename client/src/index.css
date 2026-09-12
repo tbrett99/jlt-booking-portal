@@ -159,6 +159,17 @@ main > section.mx-auto.grid > article:has(> section > div > h2) > section:last-c
   margin-top: 0;
   margin-bottom: 3rem;
 }
+main > section.mx-auto.grid.max-w-6xl > article::after {
+  content: "Please note: Resort, city or tourist taxes may apply at your destination. Your JLT travel expert will confirm any applicable local charges clearly in your tailored quote before you book.";
+  display: block;
+  order: 2;
+  margin-top: 2.5rem;
+  border-top: 1px solid oklch(0.9 0.01 80);
+  padding-top: 1.25rem;
+  color: #687881;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
 
 /* ─── Supplier description HTML rendering ─────────────────────────────────── */
 .supplier-description {
