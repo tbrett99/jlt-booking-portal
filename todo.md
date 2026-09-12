@@ -111,7 +111,7 @@
 - [ ] Verify in Railway with the pasted read-only information_schema result that migration 0139 added nullable public_holiday_showcases.curatedSections JSON storage, then confirm the first Orbit v2 snapshot renders only its ordered public sections
 - [ ] Send and verify the first Orbit v2 snapshot with sections, confirming the public page renders only the supplied ordered sections
 - [x] Push the checkpointed Holiday Showcase v2 release to the existing JLT GitHub main branch: commit 144129a verified on GitHub main and Railway health checks returned consumer 200 and secured intake 401
-- [ ] Fix the Orbit Holiday Showcase v2 400 payload rejection by accepting the documented curatedSections key and returning safe field-level validation errors without echoing client, quote, supplier, or raw payload data
+- [x] Fix the Orbit Holiday Showcase v2 400 payload rejection by accepting the documented curatedSections key and returning safe field-level validation errors without echoing client, quote, supplier, or raw payload data: validated with 18 focused tests, TypeScript, and production build; checkpoint 7674372 pushed to GitHub main and live health checks returned consumer 200 and secured intake 401 on 12 September 2026
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
