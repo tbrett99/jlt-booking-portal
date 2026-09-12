@@ -123,14 +123,25 @@ function DashboardLayoutContent({
   }, [isCollapsed]);
 
   useEffect(() => {
+    const priorRestoration = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    return () => { window.history.scrollRestoration = priorRestoration; };
+  }, []);
+
+  useEffect(() => {
     const scrollToTop = () => {
       window.scrollTo({ top: 0, left: 0, behavior: "auto" });
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
+      document.querySelectorAll<HTMLElement>("[data-portal-scroll-root], [data-portal-route-content]").forEach((element) => {
+        element.scrollTo({ top: 0, left: 0, behavior: "auto" });
+        element.scrollTop = 0;
+      });
     };
     scrollToTop();
     const frame = window.requestAnimationFrame(scrollToTop);
-    return () => window.cancelAnimationFrame(frame);
+    const timeout = window.setTimeout(scrollToTop, 120);
+    return () => { window.cancelAnimationFrame(frame); window.clearTimeout(timeout); };
   }, [location]);
 
   useEffect(() => {
@@ -254,7 +265,7 @@ function DashboardLayoutContent({
         />
       </div>
 
-      <SidebarInset>
+      <SidebarInset data-portal-scroll-root>
         <ImpersonationBanner />
         {isMobile && (
           <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
@@ -270,7 +281,7 @@ function DashboardLayoutContent({
             </div>
           </div>
         )}
-        <main className="flex-1 p-4">{children}</main>
+        <main data-portal-route-content className="flex-1 p-4">{children}</main>
       </SidebarInset>
     </>
   );
