@@ -36,9 +36,17 @@ describe("ConsumerSite accessibility contract", () => {
   it("keeps holiday showcase inspiration discoverable through linked cards and a dedicated detail page", () => {
     expect(source).toContain("function HolidayShowcaseCard");
     expect(source).toContain("function HolidayShowcaseDetail");
+    expect(source).toContain("function HolidayIdeas");
+    expect(source).toContain("function FeaturedHolidayIdeas");
+    expect(source).toContain('href={publicHref("/holiday-ideas")}');
+    expect(source).toContain('aria-label="Search holiday ideas"');
+    expect(source).toContain('aria-label="Filter holiday ideas by destination"');
+    expect(source).toContain("Holiday ideas, by JLT experts");
+    expect(source).toContain("https://janinelovestravel.co.uk");
     expect(source).toContain("function ItineraryGallery");
     expect(source).toContain("Visual itinerary");
     expect(source).toContain('loading="lazy"');
+    expect(source).toContain('figcaption className="sr-only"');
     expect(source).toContain("holiday-showcases/${showcase.slug}");
     expect(source).toContain("This is travel inspiration, not a live quote.");
   });

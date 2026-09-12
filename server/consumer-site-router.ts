@@ -775,6 +775,40 @@ export const consumerSiteRouter = router({
       return rows.filter((row) => isPublicShowcaseVisible(row, now)).map(toPublicShowcaseCard);
     }),
 
+    listShowcases: publicProcedure.input(z.object({
+      search: z.string().trim().max(120).optional(),
+      destination: z.string().trim().max(120).optional(),
+    }).optional()).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const now = new Date();
+      const rows = await db.select({ showcase: publicHolidayShowcases, profile: publicAgentProfiles, agentStatus: agentCrmProfiles.agentStatus, inContract: agentCrmProfiles.inContract, accountRole: users.role })
+        .from(publicHolidayShowcases)
+        .innerJoin(publicAgentProfiles, eq(publicHolidayShowcases.publicProfileId, publicAgentProfiles.id))
+        .innerJoin(users, eq(publicAgentProfiles.userId, users.id))
+        .leftJoin(agentCrmProfiles, eq(publicAgentProfiles.userId, agentCrmProfiles.userId))
+        .where(and(
+          eq(publicHolidayShowcases.isPublished, true),
+          eq(publicAgentProfiles.isPublished, true),
+          isNull(publicHolidayShowcases.deletedAt),
+          or(isNull(publicHolidayShowcases.expiresAt), gt(publicHolidayShowcases.expiresAt, now)),
+        ))
+        .orderBy(asc(publicHolidayShowcases.sortOrder), desc(publicHolidayShowcases.createdAt));
+      const search = input?.search?.toLowerCase();
+      const destination = input?.destination?.toLowerCase();
+      return rows.flatMap(({ showcase, profile, agentStatus, inContract, accountRole }) => {
+        if (!isPublicShowcaseVisible(showcase, now)) return [];
+        if (!isPublicAgentProfileVisible({ isPublished: profile.isPublished, agentStatus, inContract, accountRole, hasPublishedSnapshot: Boolean(readSnapshot(profile.publishedSnapshot)), hasPublicSlug: Boolean(profile.publicSlug) })) return [];
+        const agent = publicProfilePayload(profile, []);
+        if (!agent) return [];
+        const card = toPublicShowcaseCard(showcase);
+        const searchable = `${card.title} ${card.summary} ${card.destination} ${agent.displayName}`.toLowerCase();
+        if (search && !searchable.includes(search)) return [];
+        if (destination && !card.destination.toLowerCase().includes(destination)) return [];
+        return [{ ...card, agent: { slug: agent.slug, displayName: agent.displayName } }];
+      });
+    }),
+
     getShowcase: publicProcedure.input(z.object({ agentSlug: z.string().min(3).max(180), showcaseSlug: z.string().min(3).max(220) })).query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });

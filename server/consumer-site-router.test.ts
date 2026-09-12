@@ -435,6 +435,30 @@ describe("consumerSite holiday showcases", () => {
     expect(response[0]).not.toHaveProperty("sourceSnapshot");
   });
 
+  it("lists only safe cards from public, currently eligible agent profiles for the cross-agent holiday directory", async () => {
+    selectResults.push([{
+      showcase,
+      profile: visibleProfile,
+      agentStatus: "active",
+      inContract: false,
+      accountRole: "agent",
+    }, {
+      showcase: { ...showcase, id: 502, publicSlug: "hidden-private-trip", externalPublicationId: "private-orbit-reference", agentId: 44 },
+      profile: { ...visibleProfile, id: 78, userId: 44, publicSlug: "hidden-agent" },
+      agentStatus: "in_notice",
+      inContract: false,
+      accountRole: "agent",
+    }]);
+    const response = await publicCaller().public.listShowcases({ search: "finger lakes", destination: "new york" });
+    expect(response).toEqual([expect.objectContaining({
+      slug: showcase.publicSlug,
+      title: showcase.title,
+      agent: { slug: "alex-travel-19", displayName: "Alex Travel" },
+    })]);
+    expect(JSON.stringify(response)).not.toContain("private-orbit-reference");
+    expect(JSON.stringify(response)).not.toContain("agentId");
+  });
+
   it("stores the selected visible showcase ID on an agent-directed consumer enquiry", async () => {
     selectResults.push(
       [{ profile: visibleProfile, agentStatus: "active", inContract: false, accountRole: "agent" }],
