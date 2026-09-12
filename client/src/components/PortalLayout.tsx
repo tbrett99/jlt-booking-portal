@@ -10,7 +10,7 @@ import {
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
   RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper, Activity, Rocket, Trophy, Globe2
 } from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 
@@ -249,6 +249,7 @@ function SidebarGroup({
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [location] = useLocation();
+  const contentScrollRef = useRef<HTMLElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -256,6 +257,29 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
   const isAdminUser = user?.role === "admin" || user?.role === "super_admin";
   const isAgent = user?.role === "agent";
+
+  useEffect(() => {
+    const previousRestoration = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    return () => { window.history.scrollRestoration = previousRestoration; };
+  }, []);
+
+  useEffect(() => {
+    const resetPortalContentScroll = () => {
+      contentScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      if (contentScrollRef.current) contentScrollRef.current.scrollTop = 0;
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    };
+    resetPortalContentScroll();
+    const frame = window.requestAnimationFrame(resetPortalContentScroll);
+    const followUp = window.setTimeout(resetPortalContentScroll, 180);
+    const lazyRouteFollowUp = window.setTimeout(resetPortalContentScroll, 500);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(followUp);
+      window.clearTimeout(lazyRouteFollowUp);
+    };
+  }, [location]);
 
   // Orbit beta access — only fetch for agents (admins always see it)
   // No staleTime so the flag is always fresh on page load/navigation
@@ -831,7 +855,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         <TermsSigningBanner />
 
         {/* Page content */}
-        <main className="flex-1 p-4 md:p-6 overflow-auto">
+        <main ref={contentScrollRef} data-portal-primary-scroll-root className="flex-1 p-4 md:p-6 overflow-auto">
           {children}
         </main>
       </div>
