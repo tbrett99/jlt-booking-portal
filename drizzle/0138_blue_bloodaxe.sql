@@ -1,0 +1,1 @@
+ALTER TABLE `public_holiday_showcases` ADD `itineraryImages` json;

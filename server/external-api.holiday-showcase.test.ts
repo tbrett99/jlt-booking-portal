@@ -37,6 +37,7 @@ const payload = {
   durationNights: 7,
   price: { mode: "from", amount: 1495, currency: "GBP", perPerson: true },
   heroImage: { url: "https://supplier.example/hero.jpg", source: "supplier" },
+  itineraryImages: [{ url: "https://supplier.example/elser-hotel.jpg", source: "supplier" as const, label: "The Elser Hotel Miami", category: "hotel" as const }],
   itinerary: [{ day: 1, title: "Arrive in New York", highlights: ["Private airport transfer"] }],
   accommodationOptions: [],
   inclusions: ["Selected accommodation"],
@@ -85,6 +86,7 @@ describe("POST /api/external/quote-showcases", () => {
       agentId: 19,
       publicProfileId: 77,
       externalPublicationId: payload.externalPublicationId,
+      itineraryImages: payload.itineraryImages,
       sourceSnapshot: payload,
     }));
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPublicShowcaseVisible, orbitHolidayShowcaseSchema, toPublicShowcaseCard } from "./holiday-showcase-logic";
+import { isPublicShowcaseVisible, orbitHolidayShowcaseSchema, toPublicShowcaseCard, toPublicShowcaseDetail } from "./holiday-showcase-logic";
 
 const validPayload = {
   agentId: "JLT-123",
@@ -33,6 +33,20 @@ describe("Orbit holiday showcase payload contract", () => {
     expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, heroImage: { url: "https://maps.google.com/photo.jpg", source: "supplier" } })).toThrow();
   });
 
+  it("accepts up to twenty-four labelled public itinerary images and rejects unsafe gallery data", () => {
+    const itineraryImages = Array.from({ length: 24 }, (_, index) => ({
+      url: `https://assets.example.com/gallery-${index}.jpg`,
+      source: "supplier" as const,
+      label: `The Elser Hotel Miami ${index + 1}`,
+      category: "hotel" as const,
+    }));
+    expect(orbitHolidayShowcaseSchema.parse({ ...validPayload, itineraryImages }).itineraryImages).toHaveLength(24);
+    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, itineraryImages: [...itineraryImages, itineraryImages[0]] })).toThrow();
+    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, itineraryImages: [{ ...itineraryImages[0], url: "http://assets.example.com/unsafe.jpg" }] })).toThrow();
+    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, itineraryImages: [{ ...itineraryImages[0], url: "https://lh3.googleusercontent.com/unsafe.jpg" }] })).toThrow();
+    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, itineraryImages: [{ ...itineraryImages[0], source: "orbit" }] })).toThrow();
+  });
+
   it("hides unpublished, expired, and deleted snapshots", () => {
     const now = new Date("2026-09-11T12:00:00Z");
     expect(isPublicShowcaseVisible({ isPublished: true }, now)).toBe(true);
@@ -46,5 +60,26 @@ describe("Orbit holiday showcase payload contract", () => {
     expect(card).toEqual(expect.objectContaining({ slug: "new-york-escape", title: validPayload.title, price: expect.objectContaining({ amount: 1495 }) }));
     expect(card).not.toHaveProperty("agentId");
     expect(card).not.toHaveProperty("externalPublicationId");
+  });
+
+  it("returns only public gallery fields and strips image source or unknown metadata from detail responses", () => {
+    const detail = toPublicShowcaseDetail({
+      ...validPayload,
+      publicSlug: "new-york-escape",
+      heroImageUrl: null,
+      priceAmount: null,
+      priceCurrency: null,
+      pricePerPerson: null,
+      itineraryImages: [{
+        url: "https://assets.example.com/elser.jpg",
+        source: "supplier",
+        label: "The Elser Hotel Miami",
+        category: "hotel",
+        orbitProductId: "private-product-id",
+      }],
+    });
+    expect(detail.itineraryImages).toEqual([{ url: "https://assets.example.com/elser.jpg", label: "The Elser Hotel Miami", category: "hotel" }]);
+    expect(JSON.stringify(detail)).not.toContain("orbitProductId");
+    expect(JSON.stringify(detail)).not.toContain("supplier");
   });
 });

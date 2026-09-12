@@ -1001,6 +1001,9 @@ export const publicHolidayShowcases = mysqlTable("public_holiday_showcases", {
   pricePerPerson: boolean("pricePerPerson").default(true),
   heroImageUrl: text("heroImageUrl"),
   heroImageSource: mysqlEnum("heroImageSource", ["supplier", "agent_upload"]),
+  // Optional public-only gallery for itinerary detail pages. This is separate
+  // from the hero image used for profile-card thumbnails.
+  itineraryImages: json("itineraryImages"),
   itinerary: json("itinerary").notNull(),
   accommodationOptions: json("accommodationOptions").notNull(),
   inclusions: json("inclusions").notNull(),

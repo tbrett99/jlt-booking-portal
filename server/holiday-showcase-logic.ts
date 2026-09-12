@@ -4,14 +4,23 @@ export const HOLIDAY_SHOWCASE_FALLBACK_IMAGE = "/manus-storage/jlt-editorial-ref
 
 const publicText = (min: number, max: number) => z.string().trim().min(min).max(max);
 const isPermittedPublicImageUrl = (value: string) => {
-  const parsed = new URL(value);
-  const host = parsed.hostname.toLowerCase();
-  return parsed.protocol === "https:" && !host.endsWith("google.com") && !host.endsWith("googleusercontent.com") && !host.endsWith("gstatic.com");
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    return parsed.protocol === "https:" && !host.endsWith("google.com") && !host.endsWith("googleusercontent.com") && !host.endsWith("gstatic.com");
+  } catch {
+    return false;
+  }
 };
 
 const publicImageSchema = z.object({
   url: z.string().url().max(2_000).refine(isPermittedPublicImageUrl, "Images must use https:// and cannot use Google-hosted sources."),
   source: z.enum(["supplier", "agent_upload"]),
+}).strict();
+
+const itineraryGalleryImageSchema = publicImageSchema.extend({
+  label: publicText(2, 255),
+  category: z.enum(["hotel", "cruise", "experience"]),
 }).strict();
 
 const itineraryItemSchema = z.object({
@@ -51,6 +60,7 @@ export const orbitHolidayShowcaseSchema = z.object({
     perPerson: z.literal(true),
   }).strict().optional(),
   heroImage: publicImageSchema.optional(),
+  itineraryImages: z.array(itineraryGalleryImageSchema).max(24).default([]),
   itinerary: z.array(itineraryItemSchema).min(1).max(60),
   accommodationOptions: z.array(accommodationOptionSchema).max(20).default([]),
   inclusions: z.array(publicText(2, 300)).max(40).default([]),
@@ -59,6 +69,23 @@ export const orbitHolidayShowcaseSchema = z.object({
 }).strict();
 
 export type OrbitHolidayShowcasePayload = z.infer<typeof orbitHolidayShowcaseSchema>;
+
+type PublicItineraryGalleryImage = {
+  url: string;
+  label: string;
+  category: "hotel" | "cruise" | "experience";
+};
+
+function toPublicItineraryGalleryImages(value: unknown): PublicItineraryGalleryImage[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((image): PublicItineraryGalleryImage[] => {
+    if (!image || typeof image !== "object") return [];
+    const candidate = image as Record<string, unknown>;
+    const category = candidate.category;
+    if (typeof candidate.url !== "string" || !isPermittedPublicImageUrl(candidate.url) || typeof candidate.label !== "string" || !["hotel", "cruise", "experience"].includes(String(category))) return [];
+    return [{ url: candidate.url, label: candidate.label, category: category as PublicItineraryGalleryImage["category"] }];
+  });
+}
 
 export function slugifyShowcase(value: string): string {
   const slug = value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
@@ -116,6 +143,7 @@ export function toPublicShowcaseDetail(showcase: {
   priceCurrency?: string | null;
   pricePerPerson?: boolean | null;
   heroImageUrl?: string | null;
+  itineraryImages?: unknown;
   itinerary: unknown;
   accommodationOptions: unknown;
   inclusions: unknown;
@@ -123,6 +151,7 @@ export function toPublicShowcaseDetail(showcase: {
 }) {
   return {
     ...toPublicShowcaseCard(showcase),
+    itineraryImages: toPublicItineraryGalleryImages(showcase.itineraryImages),
     itinerary: Array.isArray(showcase.itinerary) ? showcase.itinerary : [],
     accommodationOptions: Array.isArray(showcase.accommodationOptions) ? showcase.accommodationOptions : [],
     inclusions: Array.isArray(showcase.inclusions) ? showcase.inclusions : [],

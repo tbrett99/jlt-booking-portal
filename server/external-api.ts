@@ -251,6 +251,7 @@ router.post("/quote-showcases", async (req: Request, res: Response) => {
       pricePerPerson: payload.price?.perPerson ?? true,
       heroImageUrl: payload.heroImage?.url ?? null,
       heroImageSource: payload.heroImage?.source ?? null,
+      itineraryImages: payload.itineraryImages,
       itinerary: payload.itinerary,
       accommodationOptions: payload.accommodationOptions,
       inclusions: payload.inclusions,

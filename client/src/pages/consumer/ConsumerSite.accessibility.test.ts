@@ -24,13 +24,19 @@ describe("ConsumerSite accessibility contract", () => {
   it("keeps the map supplementary with a named region and accessible list fallback", () => {
     expect(source).toContain('aria-labelledby="agent-map-heading"');
     expect(source).toContain('aria-label="Map of JLT travel experts by town"');
-    expect(source).toContain("You can still use the accessible expert list below.");
+    expect(source).toContain("Select a town marker to meet the experts there.");
+    expect(source).toContain('aria-label="Choose a town to view its experts"');
+    expect(source).toContain("aria-pressed={selectedTown === town}");
+    expect(source).toContain("The interactive map is temporarily unavailable.");
     expect(source).toContain('aria-label="Travel expert results"');
   });
 
   it("keeps holiday showcase inspiration discoverable through linked cards and a dedicated detail page", () => {
     expect(source).toContain("function HolidayShowcaseCard");
     expect(source).toContain("function HolidayShowcaseDetail");
+    expect(source).toContain("function ItineraryGallery");
+    expect(source).toContain("Visual itinerary");
+    expect(source).toContain('loading="lazy"');
     expect(source).toContain("holiday-showcases/${showcase.slug}");
     expect(source).toContain("This is travel inspiration, not a live quote.");
   });

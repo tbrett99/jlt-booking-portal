@@ -135,6 +135,38 @@ describe("consumerSite public API", () => {
     expect(response).toMatchObject({ slug: "alex-travel-19", listingTown: "Chester", tags: [{ label: "Caribbean" }] });
   });
 
+  it("returns only sanitised public itinerary-gallery fields from the Holiday Showcase detail endpoint", async () => {
+    selectResults.push(
+      [{ profile: visibleProfile, agentStatus: "active", inContract: false, accountRole: "agent" }],
+      [{
+        id: 501,
+        publicProfileId: 77,
+        publicSlug: "miami-escape",
+        externalPublicationId: "internal-orbit-publication-id",
+        title: "Miami Escape",
+        summary: "A considered city and beach escape with room to make every day your own.",
+        destination: "Miami",
+        travelPeriodLabel: null,
+        durationNights: 5,
+        priceAmount: "1895.00",
+        priceCurrency: "GBP",
+        pricePerPerson: true,
+        heroImageUrl: "https://supplier.example/hero.jpg",
+        itineraryImages: [{ url: "https://supplier.example/elser.jpg", source: "supplier", label: "The Elser Hotel Miami", category: "hotel", orbitProductId: "private-product-id" }],
+        itinerary: [], accommodationOptions: [], inclusions: [], practicalNotes: [],
+        sourceSnapshot: { quoteReference: "private-quote-reference" },
+        isPublished: true, deletedAt: null, expiresAt: null,
+      }],
+      [],
+    );
+    const response = await publicCaller().public.getShowcase({ agentSlug: "alex-travel-19", showcaseSlug: "miami-escape" });
+    expect(response.showcase.itineraryImages).toEqual([{ url: "https://supplier.example/elser.jpg", label: "The Elser Hotel Miami", category: "hotel" }]);
+    const publicPayload = JSON.stringify(response);
+    expect(publicPayload).not.toContain("private-product-id");
+    expect(publicPayload).not.toContain("private-quote-reference");
+    expect(publicPayload).not.toContain("externalPublicationId");
+  });
+
   it("rejects a public enquiry when the target profile is unavailable", async () => {
     selectResults.push([]);
     await expect(publicCaller().public.submitEnquiry({

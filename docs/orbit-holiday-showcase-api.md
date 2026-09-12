@@ -20,7 +20,7 @@ The endpoint uses the established Portal `X-API-Key` convention. For standard ag
 
 The agent must have an **approved, live Portal public profile**. Orbit should use the existing JLT agent identifier rather than an email address. For an approved staff public profile with no CRM identifier, Orbit may send the numeric Portal user ID as a JSON number, for example `"agentId": 47`. Orbit must never send client information, booking references, supplier credentials, price breakdowns, cost prices, commission, margin, rates, availability, or live quote links.
 
-Only images marked `supplier` or `agent_upload` are accepted. Image URLs must use HTTPS and cannot be Google-hosted. Where Orbit has no permitted image, omit the image and the Portal will apply its JLT fallback visual.
+Only images marked `supplier` or `agent_upload` are accepted. Image URLs must use HTTPS and cannot be Google-hosted. Where Orbit has no permitted hero image, omit `heroImage` and the Portal will apply its JLT fallback visual. The optional `itineraryImages` gallery is detached from `heroImage`: the hero remains the profile-card thumbnail, while itinerary-gallery images appear only on the public itinerary detail page.
 
 ## Request body
 
@@ -43,6 +43,20 @@ Only images marked `supplier` or `agent_upload` are accepted. Image URLs must us
     "url": "https://supplier-cdn.example.com/new-york-hero.jpg",
     "source": "supplier"
   },
+  "itineraryImages": [
+    {
+      "url": "https://supplier-cdn.example.com/the-elser-hotel-miami.jpg",
+      "source": "supplier",
+      "label": "The Elser Hotel Miami",
+      "category": "hotel"
+    },
+    {
+      "url": "https://supplier-cdn.example.com/miami-bay-experience.jpg",
+      "source": "supplier",
+      "label": "Miami Bay experience",
+      "category": "experience"
+    }
+  ],
   "itinerary": [
     {
       "day": 1,
@@ -72,7 +86,7 @@ Only images marked `supplier` or `agent_upload` are accepted. Image URLs must us
 }
 ```
 
-All accepted fields are public-facing. The API rejects unknown fields rather than silently retaining them.
+All accepted fields are public-facing. `itineraryImages` is optional and accepts a maximum of 24 objects. Each object must contain a public HTTPS URL, `source` of `supplier` or `agent_upload`, a public `label`, and a `category` of `hotel`, `cruise`, or `experience`. The API rejects unknown fields rather than silently retaining them. It never accepts or returns Orbit product IDs, quote references, or supplier metadata.
 
 ## Response contract
 
