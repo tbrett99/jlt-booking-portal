@@ -86,17 +86,26 @@ declare global {
   }
 }
 
-const API_KEY = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+const FORGE_API_KEY = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
 const FORGE_BASE_URL =
   import.meta.env.VITE_FRONTEND_FORGE_API_URL ||
   "https://forge.butterfly-effect.dev";
 const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
 
+function mapScriptUrl() {
+  const params = "v=weekly&libraries=marker,places,geocoding,geometry";
+  if (GOOGLE_MAPS_API_KEY) {
+    return `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GOOGLE_MAPS_API_KEY)}&${params}`;
+  }
+  return `${MAPS_PROXY_URL}/maps/api/js?key=${encodeURIComponent(FORGE_API_KEY ?? "")}&${params}`;
+}
+
 function loadMapScript() {
   if (window.google?.maps) return Promise.resolve();
   return new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
+    script.src = mapScriptUrl();
     script.async = true;
     script.crossOrigin = "anonymous";
     const timeout = window.setTimeout(() => {
