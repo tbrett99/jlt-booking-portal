@@ -72,15 +72,47 @@ export const orbitHolidayShowcaseSchema = z.object({
   heroImage: publicImageSchema.optional(),
   itineraryImages: z.array(itineraryGalleryImageSchema).max(24).default([]),
   // Optional v2 public story. Consumer rendering preserves this exact order.
-  sections: z.array(curatedSectionSchema).min(1).max(60).optional(),
-  itinerary: z.array(itineraryItemSchema).min(1).max(60),
+  curatedSections: z.array(curatedSectionSchema).min(1).max(60).optional(),
+  // Legacy content is required only when no curated public story is provided.
+  itinerary: z.array(itineraryItemSchema).max(60).default([]),
   accommodationOptions: z.array(accommodationOptionSchema).max(20).default([]),
   inclusions: z.array(publicText(2, 300)).max(40).default([]),
   practicalNotes: z.array(publicText(2, 500)).max(40).default([]),
   enquiryContext: z.object({ showcaseId: z.string().uuid() }).strict().optional(),
-}).strict();
+}).strict().superRefine((payload, ctx) => {
+  if (!payload.curatedSections?.length && payload.itinerary.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.too_small,
+      minimum: 1,
+      inclusive: true,
+      origin: "array",
+      path: ["itinerary"],
+      message: "Provide at least one itinerary item when curatedSections is omitted.",
+    });
+  }
+});
 
 export type OrbitHolidayShowcasePayload = z.infer<typeof orbitHolidayShowcaseSchema>;
+
+export function toSafePublicValidationIssues(issues: z.ZodIssue[]) {
+  return issues.slice(0, 20).map((issue) => {
+    const path = issue.path.length > 0
+      ? issue.path.map((segment) => typeof segment === "number" ? `[${segment}]` : segment).join(".").replace(/\.\[/g, "[")
+      : "payload";
+    const message = issue.code === "unrecognized_keys"
+      ? "Unexpected field; remove fields not defined by the public showcase contract."
+      : issue.code === "invalid_type"
+        ? "Expected the documented public field type."
+        : issue.code === "invalid_value"
+          ? "Value is not one of the allowed public contract options."
+          : issue.code === "too_big"
+            ? "Value exceeds the public contract limit."
+            : issue.code === "too_small"
+              ? "Required public field is missing or below the minimum length."
+              : "Public field does not meet the showcase contract.";
+    return { path, code: issue.code, message };
+  });
+}
 
 type PublicItineraryGalleryImage = {
   url: string;

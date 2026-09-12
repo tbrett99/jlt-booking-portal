@@ -13,7 +13,7 @@ import crypto from "crypto";
 import { eq, and } from "drizzle-orm";
 import { getDb, createBooking, updateBookingAdminFields, getBookingById } from "./db";
 import { apiKeys, users, ssoTokens, agentCrmProfiles, publicAgentProfiles, publicHolidayShowcaseEvents, publicHolidayShowcases } from "../drizzle/schema";
-import { orbitHolidayShowcaseSchema, slugifyShowcase } from "./holiday-showcase-logic";
+import { orbitHolidayShowcaseSchema, slugifyShowcase, toSafePublicValidationIssues } from "./holiday-showcase-logic";
 import { nanoid } from "nanoid";
 
 const router = Router();
@@ -198,7 +198,7 @@ router.post("/quote-showcases", async (req: Request, res: Response) => {
     if (!parsed.success) {
       return res.status(400).json({
         error: "Invalid public holiday showcase payload",
-        fields: parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+        validationErrors: toSafePublicValidationIssues(parsed.error.issues),
       });
     }
     const payload = parsed.data;
@@ -252,7 +252,7 @@ router.post("/quote-showcases", async (req: Request, res: Response) => {
       heroImageUrl: payload.heroImage?.url ?? null,
       heroImageSource: payload.heroImage?.source ?? null,
       itineraryImages: payload.itineraryImages,
-      curatedSections: payload.sections ?? null,
+      curatedSections: payload.curatedSections ?? null,
       itinerary: payload.itinerary,
       accommodationOptions: payload.accommodationOptions,
       inclusions: payload.inclusions,

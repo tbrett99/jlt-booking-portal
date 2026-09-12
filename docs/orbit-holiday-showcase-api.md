@@ -24,7 +24,7 @@ Only images marked `supplier` or `agent_upload` are accepted. Image URLs must us
 
 ### Curated public sections (v2)
 
-Orbit may additionally send an optional ordered `sections` array. It is a public editorial story, not a day-by-day schedule. When `sections` is present, the Portal preserves its supplied order and renders it in place of the legacy itinerary, accommodation cards, and category gallery strips. When it is omitted, the existing v1 layout remains unchanged.
+Orbit may additionally send an optional ordered `curatedSections` array. It is a public editorial story, not a day-by-day schedule. When `curatedSections` is present, the Portal preserves its supplied order and renders it in place of the legacy itinerary, accommodation cards, and category gallery strips. When it is omitted, the existing v1 layout remains unchanged.
 
 Each section must have an opaque publication-local UUID `id`, one `kind` of `flight`, `stay`, `transfer`, `cruise`, `experience`, or `note`, plus a public `title`, `summary` of no more than 600 characters, up to five public `facts`, and up to six labelled public images. A section ID must never be an Orbit product ID, quote reference, supplier identifier, or booking reference.
 
@@ -63,7 +63,7 @@ Each section must have an opaque publication-local UUID `id`, one `kind` of `fli
       "category": "experience"
     }
   ],
-  "sections": [
+  "curatedSections": [
     {
       "id": "f3a5b1f1-6799-4b56-a8de-5b0dceea5ba6",
       "kind": "flight",
@@ -88,14 +88,7 @@ Each section must have an opaque publication-local UUID `id`, one `kind` of `fli
       ]
     }
   ],
-  "itinerary": [
-    {
-      "day": 1,
-      "title": "Arrive in New York",
-      "description": "Arrive and settle into your chosen hotel.",
-      "highlights": ["Private airport transfer"]
-    }
-  ],
+  "itinerary": [],
   "accommodationOptions": [
     {
       "name": "Example Hotel",
@@ -117,7 +110,24 @@ Each section must have an opaque publication-local UUID `id`, one `kind` of `fli
 }
 ```
 
-All accepted fields are public-facing. `itineraryImages` is optional and accepts a maximum of 24 objects. Each object must contain a public HTTPS URL, `source` of `supplier` or `agent_upload`, a public `label`, and a `category` of `hotel`, `cruise`, or `experience`. `sections` is optional and accepts at most 60 sections, each with up to five facts and six images. The API rejects unknown fields rather than silently retaining them. It never accepts or returns Orbit product IDs, quote references, supplier metadata, booking references, or internal section metadata.
+All accepted fields are public-facing. `itineraryImages` is optional and accepts a maximum of 24 objects. Each object must contain a public HTTPS URL, `source` of `supplier` or `agent_upload`, a public `label`, and a `category` of `hotel`, `cruise`, or `experience`. `curatedSections` is optional and accepts at most 60 sections, each with up to five facts and six images. The API rejects unknown fields rather than silently retaining them. It never accepts or returns Orbit product IDs, quote references, supplier metadata, booking references, or internal section metadata.
+
+### Exact v2 field rules
+
+| Field | Required | Accepted value |
+|---|---:|---|
+| `agentId` | Yes | A `JLT-…` CRM identifier string, or a positive numeric Portal user ID for an approved active admin/super-admin public profile. |
+| `externalPublicationId` | Yes | UUID string, unique and stable for this snapshot. |
+| `title` | Yes | Public string, 4–255 characters. |
+| `summary` | Yes | Public string, 20–2,000 characters. |
+| `destination` | Yes | Public string, 2–255 characters. |
+| `curatedSections` | No | Ordered array of 1–60 public sections. This is the **only** accepted v2 top-level story key. |
+| `itinerary` | Conditional | Array of 1–60 legacy items when `curatedSections` is omitted; use `[]` when supplying `curatedSections`. |
+| `travelPeriodLabel`, `durationNights`, `price`, `heroImage`, `itineraryImages`, `accommodationOptions`, `inclusions`, `practicalNotes`, `enquiryContext` | No | Optional v1 public snapshot fields shown in the request example. |
+
+Every `curatedSections` item must contain `id` (UUID), `kind` (`flight`, `stay`, `transfer`, `cruise`, `experience`, or `note`), `title` (2–180 characters), and `summary` (2–600 characters). `facts` is optional and permits up to five strings of 2–240 characters. `images` is optional and permits up to six objects with exactly `url`, `source`, `label`, and `category`; `url` must be HTTPS and non-Google-hosted, `source` is `supplier` or `agent_upload`, `label` is 2–255 characters, and `category` is `hotel`, `cruise`, or `experience`.
+
+Unknown top-level and nested fields are rejected. A `400` response contains `validationErrors`, a maximum of 20 safe objects shaped as `{ "path", "code", "message" }`. Values from the supplied payload are never echoed in those errors.
 
 ## Response contract
 

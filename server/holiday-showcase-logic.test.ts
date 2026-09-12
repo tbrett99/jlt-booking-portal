@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPublicShowcaseVisible, orbitHolidayShowcaseSchema, toPublicShowcaseCard, toPublicShowcaseDetail } from "./holiday-showcase-logic";
+import { isPublicShowcaseVisible, orbitHolidayShowcaseSchema, toPublicShowcaseCard, toPublicShowcaseDetail, toSafePublicValidationIssues } from "./holiday-showcase-logic";
 
 const validPayload = {
   agentId: "JLT-123",
@@ -21,10 +21,34 @@ describe("Orbit holiday showcase payload contract", () => {
     expect(orbitHolidayShowcaseSchema.parse(validPayload).title).toContain("New York");
   });
 
+  it("accepts Orbit's exact curated flight section without a legacy itinerary", () => {
+    const curatedSections = [{
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      kind: "flight" as const,
+      title: "Fly to Cape Town",
+      summary: "Start your holiday with a flight to Cape Town.",
+      facts: ["Edinburgh to Cape Town", "Economy"],
+      images: [],
+    }];
+    const parsed = orbitHolidayShowcaseSchema.parse({ ...validPayload, itinerary: [], curatedSections });
+    expect(parsed.curatedSections).toEqual(curatedSections);
+    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, itinerary: [] })).toThrow();
+  });
+
   it("rejects client, internal, supplier-token, and margin fields", () => {
     expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, clientName: "Private client" })).toThrow();
     expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, margin: 33 })).toThrow();
     expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, supplierToken: "private" })).toThrow();
+  });
+
+  it("maps rejected payload issues without returning rejected key names or submitted values", () => {
+    const result = orbitHolidayShowcaseSchema.safeParse({ ...validPayload, privateQuoteReference: "Orbit-private-782" });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issues = toSafePublicValidationIssues(result.error.issues);
+    expect(issues).toEqual(expect.arrayContaining([expect.objectContaining({ path: "payload", code: "unrecognized_keys" })]));
+    expect(JSON.stringify(issues)).not.toContain("privateQuoteReference");
+    expect(JSON.stringify(issues)).not.toContain("Orbit-private-782");
   });
 
   it("rejects Google and unknown image sources", () => {
@@ -56,10 +80,10 @@ describe("Orbit holiday showcase payload contract", () => {
       facts: ["5 nights", "Bed & Breakfast", "Bantry Bay"],
       images: [{ url: "https://assets.example.com/president.jpg", source: "supplier" as const, label: "President Hotel", category: "hotel" as const }],
     }];
-    expect(orbitHolidayShowcaseSchema.parse({ ...validPayload, sections }).sections).toHaveLength(1);
-    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, sections: [{ ...sections[0], orbitProductId: "private" }] })).toThrow();
-    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, sections: [{ ...sections[0], facts: Array.from({ length: 6 }, (_, index) => `Fact ${index + 1}`) }] })).toThrow();
-    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, sections: [{ ...sections[0], images: [{ ...sections[0].images[0], url: "https://lh3.googleusercontent.com/private.jpg" }] }] })).toThrow();
+    expect(orbitHolidayShowcaseSchema.parse({ ...validPayload, curatedSections: sections }).curatedSections).toHaveLength(1);
+    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, curatedSections: [{ ...sections[0], orbitProductId: "private" }] })).toThrow();
+    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, curatedSections: [{ ...sections[0], facts: Array.from({ length: 6 }, (_, index) => `Fact ${index + 1}`) }] })).toThrow();
+    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, curatedSections: [{ ...sections[0], images: [{ ...sections[0].images[0], url: "https://lh3.googleusercontent.com/private.jpg" }] }] })).toThrow();
   });
 
   it("hides unpublished, expired, and deleted snapshots", () => {
