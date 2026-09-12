@@ -117,6 +117,9 @@
 - [x] Create a public all-holidays directory with privacy-safe, filterable live showcase discovery: server filtering and public-only Active-profile visibility are covered by regression tests
 - [x] Add a clear external call to action for prospective JLT agents linking to https://janinelovestravel.co.uk: displayed in desktop/mobile navigation and the homepage Holiday Ideas feature section
 - [x] Align the consumer-site visual treatment more closely with the current Janine Loves Travel brand direction without replacing the existing information architecture: introduced restrained aqua feature/filter surfaces and bolder editorial hierarchy; desktop/mobile screenshots reviewed
+- [x] Expand public Holiday Ideas filtering with practical price and travel-period controls while retaining privacy-safe Active-only visibility: added server-enforced price, travel-period, and duration filters with accessible public controls
+- [x] Refine public Partner cards so brand logos sit naturally without grey backplates and use a more compact, polished tile proportion: changed the desktop grid to compact cards and removed the fixed grey logo backplate
+- [x] Rewrite the consumer Protection page with verified, booking-specific explanations of PTS Trust Account protection, SFI/SAFI where applicable, ATOL, ABTA, and the role of approved partners: source notes recorded from official PTS, ATOL/CAA, and ABTA guidance; desktop/mobile public presentation reviewed
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

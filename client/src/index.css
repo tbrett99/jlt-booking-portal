@@ -142,6 +142,12 @@
   }
 }
 
+@media (min-width: 1280px) {
+  .xl\:grid-cols-5:has(input[aria-label="Search holiday ideas"]) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
 /* ─── Supplier description HTML rendering ─────────────────────────────────── */
 .supplier-description {
   overflow-x: hidden;

@@ -778,6 +778,9 @@ export const consumerSiteRouter = router({
     listShowcases: publicProcedure.input(z.object({
       search: z.string().trim().max(120).optional(),
       destination: z.string().trim().max(120).optional(),
+      travelPeriod: z.string().trim().max(120).optional(),
+      priceBand: z.enum(["under_1000", "1000_1999", "2000_2999", "3000_plus", "price_on_request"]).optional(),
+      durationBand: z.enum(["short_break", "week", "longer", "flexible"]).optional(),
     }).optional()).query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -796,6 +799,7 @@ export const consumerSiteRouter = router({
         .orderBy(asc(publicHolidayShowcases.sortOrder), desc(publicHolidayShowcases.createdAt));
       const search = input?.search?.toLowerCase();
       const destination = input?.destination?.toLowerCase();
+      const travelPeriod = input?.travelPeriod?.toLowerCase();
       return rows.flatMap(({ showcase, profile, agentStatus, inContract, accountRole }) => {
         if (!isPublicShowcaseVisible(showcase, now)) return [];
         if (!isPublicAgentProfileVisible({ isPublished: profile.isPublished, agentStatus, inContract, accountRole, hasPublishedSnapshot: Boolean(readSnapshot(profile.publishedSnapshot)), hasPublicSlug: Boolean(profile.publicSlug) })) return [];
@@ -805,6 +809,16 @@ export const consumerSiteRouter = router({
         const searchable = `${card.title} ${card.summary} ${card.destination} ${agent.displayName}`.toLowerCase();
         if (search && !searchable.includes(search)) return [];
         if (destination && !card.destination.toLowerCase().includes(destination)) return [];
+        if (travelPeriod && !(card.travelPeriodLabel ?? "").toLowerCase().includes(travelPeriod)) return [];
+        if (input?.priceBand === "price_on_request" && card.price) return [];
+        if (input?.priceBand === "under_1000" && (!card.price || card.price.amount >= 1_000)) return [];
+        if (input?.priceBand === "1000_1999" && (!card.price || card.price.amount < 1_000 || card.price.amount >= 2_000)) return [];
+        if (input?.priceBand === "2000_2999" && (!card.price || card.price.amount < 2_000 || card.price.amount >= 3_000)) return [];
+        if (input?.priceBand === "3000_plus" && (!card.price || card.price.amount < 3_000)) return [];
+        if (input?.durationBand === "flexible" && card.durationNights !== null) return [];
+        if (input?.durationBand === "short_break" && (card.durationNights === null || card.durationNights > 4)) return [];
+        if (input?.durationBand === "week" && (card.durationNights === null || card.durationNights < 5 || card.durationNights > 9)) return [];
+        if (input?.durationBand === "longer" && (card.durationNights === null || card.durationNights < 10)) return [];
         return [{ ...card, agent: { slug: agent.slug, displayName: agent.displayName } }];
       });
     }),

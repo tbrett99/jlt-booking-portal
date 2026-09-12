@@ -40,7 +40,12 @@ describe("ConsumerSite accessibility contract", () => {
     expect(source).toContain("function FeaturedHolidayIdeas");
     expect(source).toContain('href={publicHref("/holiday-ideas")}');
     expect(source).toContain('aria-label="Search holiday ideas"');
-    expect(source).toContain('aria-label="Filter holiday ideas by destination"');
+    expect(source).toContain('label="Filter holiday ideas by destination"');
+    expect(source).toContain('label="Filter holiday ideas by travel period"');
+    expect(source).toContain('label="Filter holiday ideas by price"');
+    expect(source).toContain('label="Filter holiday ideas by duration"');
+    expect(source).toContain("price_on_request");
+    expect(source).toContain("Clear all filters");
     expect(source).toContain("Holiday ideas, by JLT experts");
     expect(source).toContain("https://janinelovestravel.co.uk");
     expect(source).toContain("function ItineraryGallery");
@@ -49,6 +54,19 @@ describe("ConsumerSite accessibility contract", () => {
     expect(source).toContain('figcaption className="sr-only"');
     expect(source).toContain("holiday-showcases/${showcase.slug}");
     expect(source).toContain("This is travel inspiration, not a live quote.");
+  });
+
+  it("keeps public partner logos natural and explains travel protection through clear consumer questions", () => {
+    expect(source).toContain("max-h-16 max-w-full object-contain object-left");
+    expect(source).toContain("min-h-[230px]");
+    expect(source).toContain("Know how your holiday is protected before you pay.");
+    expect(source).toContain("PTS Trust Account");
+    expect(source).toContain("SFI & SAFI, where included");
+    expect(source).toContain("ATOL, where applicable");
+    expect(source).toContain("Am I ABTA protected?");
+    expect(source).toContain("ProtectionDetailCard");
+    expect(source).toContain("https://www.atol.org/about-atol/what-does-atol-protection-mean/");
+    expect(source).toContain("https://www.abta.com/tips-and-advice/is-my-money-protected");
   });
 
   it("renders ordered curated public sections without imposing day labels and supplies showcase metadata", () => {

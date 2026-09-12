@@ -459,6 +459,25 @@ describe("consumerSite holiday showcases", () => {
     expect(JSON.stringify(response)).not.toContain("agentId");
   });
 
+  it("filters cross-agent holiday cards by displayed travel period, price range, and duration without weakening visibility safeguards", async () => {
+    selectResults.push([{
+      showcase,
+      profile: visibleProfile,
+      agentStatus: "active",
+      inContract: false,
+      accountRole: "agent",
+    }]);
+    await expect(publicCaller().public.listShowcases({ travelPeriod: "autumn", priceBand: "1000_1999", durationBand: "week" })).resolves.toHaveLength(1);
+    selectResults.push([{
+      showcase,
+      profile: visibleProfile,
+      agentStatus: "active",
+      inContract: false,
+      accountRole: "agent",
+    }]);
+    await expect(publicCaller().public.listShowcases({ priceBand: "under_1000" })).resolves.toEqual([]);
+  });
+
   it("stores the selected visible showcase ID on an agent-directed consumer enquiry", async () => {
     selectResults.push(
       [{ profile: visibleProfile, agentStatus: "active", inContract: false, accountRole: "agent" }],
