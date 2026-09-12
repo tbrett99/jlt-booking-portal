@@ -96,8 +96,8 @@
 - [x] Allow approved staff public profiles without a CRM uniqueAgentId to receive Orbit Holiday Showcase snapshots by their numeric Portal user ID, while retaining the standard CRM identifier route for agents: tested for active super-admin success and standard-agent numeric-ID rejection; Orbit handover updated
 - [x] Render interactive privacy-safe town-level pins for approved public agent profiles in the consumer agent-finder map, with accessible profile links and filter-aware markers
 - [x] Implement a resilient consumer agent map fallback with explicit AdvancedMarker pin logic, town geocoding, visible pin styling, and keyboard-accessible selected-agent profile links
-- [ ] Verify the live consumer agent map renders actual Google map tiles and visible town-level pins for approved profiles after Railway configuration, including town selection and public profile links
-- [ ] Configure the live Railway build with VITE_GOOGLE_MAPS_API_KEY so the direct Google Maps loader can render the approved agent town pins in production
+- [x] Verify the live consumer agent map renders actual Google map tiles and visible town-level pins for approved profiles after Railway configuration, including town selection and public profile links: 7 accessible town pins verified live on 12 September 2026
+- [x] Configure the live Railway build with VITE_GOOGLE_MAPS_API_KEY so the direct Google Maps loader can render the approved agent town pins in production
 - [x] Configure the user-provided Google Maps JavaScript API key as a managed environment variable, update the map loader without hardcoding it, and validate the Maps JavaScript bootstrap response
 - [x] Complete Orbit Holiday Showcase itinerary galleries by placing each image collection alongside its matching hotel, cruise, or experience content while preserving existing hero-thumbnail behaviour
 - [x] Apply Railway migration 0138 to add the nullable public_holiday_showcases.itineraryImages JSON field: user confirmed the live Railway column is present after release 0958a57
@@ -107,7 +107,9 @@
 - [ ] Verify the live public Holiday Showcase response returns only sanitised itineraryImages fields and excludes Orbit product IDs, quote references, and supplier metadata after the first gallery snapshot
 - [x] Extend Holiday Showcase snapshots with optional ordered Orbit-curated public sections, including strict section/image allowlists, six kinds, legacy itinerary fallback, privacy validation, and agent-curated ordering
 - [x] Render curated Holiday Showcase sections without automatic day labels and add snapshot-derived SEO metadata, structured data, canonical URLs, sitemap lastmod, and Orbit v2 handover documentation
-- [ ] Apply Railway migration 0139 to add nullable public_holiday_showcases.curatedSections JSON storage, then verify the first Orbit v2 snapshot renders only its ordered public sections
+- [x] Verify in Railway with a read-only information_schema query that migration 0139 added nullable public_holiday_showcases.curatedSections JSON storage: user confirmed `curatedSections` is present with JSON type on 12 September 2026
+- [ ] Send and verify the first Orbit v2 snapshot with sections, confirming the public page renders only the supplied ordered sections
+- [ ] Push the checkpointed Holiday Showcase v2 release to the existing JLT GitHub main branch after the established GitHub authentication is available
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

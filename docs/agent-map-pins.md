@@ -8,6 +8,6 @@ When a visitor selects a marker, the finder reveals the approved public profiles
 
 The development preview currently has no approved-directory and showcase fixture data, so it displays the existing loading or empty states rather than live marker and gallery content. The rendered map and gallery behaviour is therefore covered by the source accessibility contract and focused API/payload regression tests; final visual verification will use a populated approved profile or an authenticated Orbit test snapshot after the Railway migration is applied.
 
-## Live configuration finding — 12 September 2026
+## Live verification — 12 September 2026
 
-The deployed finder has seven approved public profiles and now shows every approved town as an interactive, privacy-safe fallback selection with direct public-profile links. The live Google map cannot initialise because its generated script URL contains `key=undefined`. Railway must provide the build-time `VITE_FRONTEND_FORGE_API_KEY` and `VITE_FRONTEND_FORGE_API_URL` values before Google tiles and AdvancedMarker town pins can load. The fallback remains deliberate and usable until that configuration is present.
+Railway now has `VITE_GOOGLE_MAPS_API_KEY` configured for the Portal build. The live consumer finder at `https://portal.thejltgroup.co.uk/consumer/find-an-agent` loads Google map tiles and seven accessible AdvancedMarker town pins: Lincoln, Bury St Edmunds, Leeds, Edinburgh, Johnstone, Northamptonshire, and Stratford Upon Avon. Each marker is announced with its town and expert count, and the existing town buttons remain a keyboard-accessible alternative.
