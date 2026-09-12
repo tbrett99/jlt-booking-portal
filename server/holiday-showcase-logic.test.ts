@@ -132,12 +132,22 @@ describe("Orbit holiday showcase payload contract", () => {
       priceAmount: 1895,
       heroImage: null,
       itineraryImages: [],
+      curatedSections: [{
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        kind: "stay" as const,
+        title: "Rembrandt Residences Bangkok",
+        summary: "A central hotel with easy access to the city sights, markets and dining scene.",
+        facts: ["2 nights", "Grand Suite with Extra Bed", "Bed & Breakfast", "Bangkok – Sukhumvit"],
+        images: [{ url: "https://assets.example.com/rembrandt.jpg", source: "agent_upload" as const, label: "Rembrandt Residences exterior", category: "hotel" as const }],
+      }],
       editorialTags: ["Culture", "Beach"],
       inclusions: ["Seven nights of selected accommodation"],
       practicalNotes: ["Your travel expert will tailor the final arrangements."],
     };
     expect(holidayShowcaseEditDraftSchema.parse(safeDraft).title).toBe("Cape Town coastal escape");
+    expect(holidayShowcaseEditDraftSchema.parse(safeDraft).curatedSections?.[0].facts).toContain("Bed & Breakfast");
     expect(() => holidayShowcaseEditDraftSchema.parse({ ...safeDraft, editorialTags: ["Deluxe Room–with Extra Bed ~ Non Refundable - Miles Attack: 1102 Miles (AP-TH-HOTDEAL2627 23% - 23%)"] })).toThrow();
+    expect(() => holidayShowcaseEditDraftSchema.parse({ ...safeDraft, curatedSections: [{ ...safeDraft.curatedSections[0], facts: ["Miles Attack: 1102 Miles (AP-TH-HOTDEAL2627 23%)"] }] })).toThrow();
     expect(isConsumerSafeShowcaseText("Miles Attack: 1102 Miles (AP-TH-HOTDEAL2627 23%)")).toBe(false);
   });
 

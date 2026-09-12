@@ -411,6 +411,14 @@ describe("consumerSite holiday showcases", () => {
     deletedAt: null,
     sortOrder: 0,
     itinerary: [{ day: 1, title: "Arrive in New York", highlights: ["Private transfer"] }],
+    curatedSections: [{
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      kind: "stay",
+      title: "Rembrandt Residences Bangkok",
+      summary: "A central hotel with easy access to the city sights, markets and dining scene.",
+      facts: ["2 nights", "Grand Suite with Extra Bed", "Bed & Breakfast", "Bangkok – Sukhumvit"],
+      images: [{ url: "https://supplier.example/rembrandt.jpg", source: "supplier", label: "Rembrandt Residences Bangkok", category: "hotel" }],
+    }],
     accommodationOptions: [],
     inclusions: ["Selected accommodation"],
     practicalNotes: ["Subject to availability"],
@@ -498,6 +506,46 @@ describe("consumerSite holiday showcases", () => {
     selectResults.push([showcase]);
     await expect(agentCaller().showcases.remove({ id: 501 })).resolves.toEqual({ success: true });
     expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ isPublished: false, deletedAt: expect.any(Date), deletedById: 19 }));
+  });
+
+  it("returns customer-safe curated sections to the owning agent editor, including editable section images and facts", async () => {
+    selectResults.push([showcase], []);
+    const response = await agentCaller().showcases.editable({ id: 501 });
+    expect(response.draft.curatedSections).toEqual([expect.objectContaining({
+      title: "Rembrandt Residences Bangkok",
+      facts: expect.arrayContaining(["Grand Suite with Extra Bed", "Bed & Breakfast"]),
+      images: [expect.objectContaining({ url: "https://supplier.example/rembrandt.jpg", category: "hotel" })],
+    })]);
+  });
+
+  it("applies an approved section-level edit only through the staff review procedure", async () => {
+    const sectionDraft = {
+      title: "New York and Finger Lakes Escape",
+      summary: "A public-only itinerary snapshot created to inspire a thoughtful travel conversation.",
+      destination: "New York and Finger Lakes",
+      travelPeriodLabel: "Autumn 2026",
+      durationNights: 7,
+      priceAmount: 1495,
+      heroImage: { url: "https://supplier.example/hero.jpg", source: "supplier" as const },
+      itineraryImages: [],
+      curatedSections: [{
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        kind: "stay" as const,
+        title: "Rembrandt Residences Bangkok",
+        summary: "A central hotel with easy access to the city sights, markets and dining scene.",
+        facts: ["2 nights", "Grand Suite with Extra Bed", "Bed & Breakfast", "Bangkok – Sukhumvit"],
+        images: [{ url: "https://supplier.example/rembrandt.jpg", source: "supplier" as const, label: "Rembrandt Residences Bangkok", category: "hotel" as const }],
+      }],
+      editorialTags: ["City break"],
+      inclusions: ["Selected accommodation"],
+      practicalNotes: ["Your expert will confirm the final arrangements."],
+    };
+    const request = { id: 611, showcaseId: 501, agentId: 19, status: "pending", draft: sectionDraft };
+    selectResults.push([request], [showcase]);
+    await expect(adminCaller().admin.reviewShowcaseEdit({ id: 611, action: "approve", note: "Clear customer copy." })).resolves.toEqual({ success: true });
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({
+      curatedSections: [expect.objectContaining({ title: "Rembrandt Residences Bangkok", facts: expect.arrayContaining(["Bed & Breakfast"]) })],
+    }));
   });
 
   it("stores an owned customer-safe showcase edit as pending review without overwriting the live snapshot", async () => {

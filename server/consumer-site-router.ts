@@ -512,6 +512,10 @@ export const consumerSiteRouter = router({
         priceAmount: showcase.priceAmount === null ? null : Number(showcase.priceAmount),
         heroImage: showcase.heroImageUrl ? { url: showcase.heroImageUrl, source: showcase.heroImageSource ?? "supplier" } : null,
         itineraryImages: detail.itineraryImages.map((image) => ({ ...image, source: "supplier" as const })),
+        curatedSections: detail.curatedSections.map((section) => ({
+          ...section,
+          images: section.images.map((image) => ({ ...image, source: "supplier" as const })),
+        })),
         editorialTags: detail.editorialTags,
         inclusions: detail.inclusions,
         practicalNotes: detail.practicalNotes,
@@ -542,9 +546,10 @@ export const consumerSiteRouter = router({
       const currentExternalUrls = new Set<string>([
         ...(showcase.heroImageUrl ? [showcase.heroImageUrl] : []),
         ...(Array.isArray(showcase.itineraryImages) ? showcase.itineraryImages.flatMap((image) => image && typeof image === "object" && typeof (image as Record<string, unknown>).url === "string" ? [(image as Record<string, unknown>).url as string] : []) : []),
+        ...(Array.isArray(showcase.curatedSections) ? showcase.curatedSections.flatMap((section) => section && typeof section === "object" && Array.isArray((section as Record<string, unknown>).images) ? ((section as Record<string, unknown>).images as unknown[]).flatMap((image) => image && typeof image === "object" && typeof (image as Record<string, unknown>).url === "string" ? [(image as Record<string, unknown>).url as string] : []) : []) : []),
       ]);
       const uploadPrefix = `/manus-storage/consumer-holiday-showcases/${ctx.user.id}/${showcase.id}/`;
-      const images = [input.draft.heroImage, ...input.draft.itineraryImages].filter((image): image is NonNullable<typeof image> => Boolean(image));
+      const images = [input.draft.heroImage, ...input.draft.itineraryImages, ...(input.draft.curatedSections ?? []).flatMap((section) => section.images)].filter((image): image is NonNullable<typeof image> => Boolean(image));
       if (images.some((image) => image.source === "agent_upload" ? !image.url.startsWith(uploadPrefix) : !currentExternalUrls.has(image.url))) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Use an image already on this showcase or upload a new image through the Portal." });
       }
@@ -756,6 +761,10 @@ export const consumerSiteRouter = router({
           heroImageUrl: draft.heroImage?.url ?? null,
           heroImageSource: draft.heroImage?.source ?? null,
           itineraryImages: draft.itineraryImages.map(({ url, source, label, category }) => ({ url, source, label, category })),
+          curatedSections: draft.curatedSections ? draft.curatedSections.map(({ id, kind, title, summary, facts, images }) => ({
+            id, kind, title, summary, facts,
+            images: images.map(({ url, source, label, category }) => ({ url, source, label, category })),
+          })) : showcase.curatedSections,
           editorialTags: draft.editorialTags,
           inclusions: draft.inclusions,
           practicalNotes: draft.practicalNotes,

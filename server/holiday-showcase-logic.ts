@@ -67,6 +67,18 @@ const editableImageSchema = z.object({
   category: z.enum(["hotel", "cruise", "experience"]).optional(),
 }).strict();
 
+const editableCuratedSectionSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(["flight", "stay", "transfer", "cruise", "experience", "note"]),
+  title: customerSafeText(2, 180),
+  summary: customerSafeText(2, 600),
+  facts: z.array(customerSafeText(2, 240)).max(5),
+  images: z.array(editableImageSchema.extend({
+    label: customerSafeText(2, 255),
+    category: z.enum(["hotel", "cruise", "experience"]),
+  }).strict()).max(6),
+}).strict();
+
 export const holidayShowcaseEditDraftSchema = z.object({
   title: customerSafeText(4, 255),
   summary: customerSafeText(20, 2_000),
@@ -76,6 +88,7 @@ export const holidayShowcaseEditDraftSchema = z.object({
   priceAmount: z.number().positive().max(1_000_000).optional().nullable(),
   heroImage: editableImageSchema.nullable(),
   itineraryImages: z.array(editableImageSchema.extend({ label: customerSafeText(2, 255), category: z.enum(["hotel", "cruise", "experience"]) }).strict()).max(24),
+  curatedSections: z.array(editableCuratedSectionSchema).max(60).optional(),
   editorialTags: z.array(customerSafeText(2, 60)).max(12),
   inclusions: z.array(customerSafeText(2, 300)).max(40),
   practicalNotes: z.array(customerSafeText(2, 500)).max(40),

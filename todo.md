@@ -127,6 +127,7 @@
 - [x] Add a clear Holiday Showcase notice that local resort, city, or tourist taxes may apply and will be confirmed in the tailored quote before booking: shown in an accessible booking-stage disclosure on every public Showcase page
 - [x] Apply and verify Railway migration 0140 before deploying editable Holiday Showcases: user confirmed Railway production SQL completed; checkpoint f74f367 pushed to GitHub main and production Holiday Ideas and My Holiday Showcases routes returned HTTP 200 on 12 September 2026
 - [x] Move the Holiday Showcase local-tax notice from the top of the page to a discreet end-of-itinerary disclaimer: removed the top banner and added quiet end-of-content styling; consumer regression test, TypeScript, and production build pass
+- [x] Add staff-reviewed agent editing for each Holiday Showcase curated itinerary section, including title, description, customer-facing facts such as room type and board basis, and per-section images: section type/order are retained, with up to five customer facts and six managed images per section; ownership, staff approval persistence, public-safe validation, and UI routes verified
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
