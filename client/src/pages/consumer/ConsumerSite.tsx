@@ -208,9 +208,11 @@ function ItineraryGallery({ images }: { images: ItineraryGalleryImage[] }) {
 
 function AgentMap({ agents }: { agents: Agent[] }) {
   const mapRef = useRef<google.maps.Map | null>(null);
+  const townPositionsRef = useRef<Record<string, google.maps.LatLngLiteral>>({});
   const [ready, setReady] = useState(false);
   const [mapError, setMapError] = useState(false);
   const [selectedTown, setSelectedTown] = useState<string | null>(null);
+  const [visiblePinCount, setVisiblePinCount] = useState(0);
   const groupedTowns = useMemo(() => Object.values(agents.reduce<Record<string, Agent[]>>((acc, agent) => { const town = agent.listingTown.trim(); if (town) (acc[town] ??= []).push(agent); return acc; }, {})), [agents]);
   const selectedTownAgents = selectedTown ? groupedTowns.find((townAgents) => townAgents[0]?.listingTown === selectedTown) ?? [] : [];
   useEffect(() => {
@@ -219,34 +221,67 @@ function AgentMap({ agents }: { agents: Agent[] }) {
     const map = mapRef.current;
     const bounds = new window.google.maps.LatLngBounds();
     const geocoder = new window.google.maps.Geocoder();
-    const markers: Array<{ setMap: (map: google.maps.Map | null) => void }> = [];
-    groupedTowns.forEach((townAgents) => {
+    const markers: Array<{ remove: () => void }> = [];
+    setVisiblePinCount(0);
+    townPositionsRef.current = {};
+    const geocodeTown = (town: string) => new Promise<google.maps.LatLngLiteral | null>((resolve) => {
+      geocoder.geocode({ address: `${town}, United Kingdom`, region: "GB" }, (results, status) => {
+        resolve(status === "OK" && results?.[0] ? results[0].geometry.location.toJSON() : null);
+      });
+    });
+    const addMarker = (townAgents: Agent[], point: google.maps.LatLngLiteral) => {
+      const first = townAgents[0];
+      if (cancelled || !first) return;
+      townPositionsRef.current[first.listingTown] = point;
+      const markerContent = document.createElement("button");
+      markerContent.type = "button";
+      markerContent.className = "jlt-agent-map-pin";
+      Object.assign(markerContent.style, { alignItems: "center", background: "#70ffe8", border: "2px solid #102632", borderRadius: "999px", boxShadow: "0 5px 14px rgba(16,38,50,.28)", color: "#102632", cursor: "pointer", display: "grid", fontSize: "14px", fontWeight: "700", height: "38px", justifyContent: "center", minWidth: "38px", padding: "0 9px" });
+      markerContent.setAttribute("aria-label", `${townAgents.length} JLT travel ${townAgents.length === 1 ? "expert" : "experts"} in ${first.listingTown}`);
+      markerContent.innerHTML = `<span>${townAgents.length}</span>`;
+      const marker = new window.google.maps.marker.AdvancedMarkerElement({ map, position: point, title: markerContent.getAttribute("aria-label") ?? undefined, content: markerContent });
+      const selectTown = () => {
+        setSelectedTown(first.listingTown);
+        map.panTo(point);
+        map.setZoom(Math.max(map.getZoom() ?? 8, 9));
+      };
+      marker.addListener("click", selectTown);
+      markerContent.addEventListener("click", selectTown);
+      markers.push({ remove: () => { marker.map = null; markerContent.removeEventListener("click", selectTown); } });
+      bounds.extend(point);
+    };
+    const placePins = async () => {
+      const locations = await Promise.all(groupedTowns.map(async (townAgents) => {
       const first = townAgents[0];
       const position = first.townLatitude !== null && first.townLongitude !== null ? { lat: first.townLatitude, lng: first.townLongitude } : null;
-      const addMarker = (point: google.maps.LatLngLiteral) => {
-        if (cancelled) return;
-        const marker = new window.google.maps.Marker({
-          map,
-          position: point,
-          title: `${townAgents.length} JLT travel ${townAgents.length === 1 ? "expert" : "experts"} in ${first.listingTown}`,
-          label: { text: String(townAgents.length), color: "#102632", fontWeight: "700" },
-          icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: "#70ffe8", fillOpacity: 1, strokeColor: "#102632", strokeWeight: 2, scale: 15 },
-          optimized: false,
-        });
-        marker.addListener("click", () => {
-          setSelectedTown(first.listingTown);
-          map.panTo(point);
-          map.setZoom(Math.max(map.getZoom() ?? 8, 9));
-        });
-        markers.push(marker); bounds.extend(point);
-      };
-      if (position) addMarker(position); else geocoder.geocode({ address: `${first.listingTown}, United Kingdom` }, (results, status) => { if (status === "OK" && results?.[0]) addMarker(results[0].geometry.location.toJSON()); });
-    });
-    const timer = window.setTimeout(() => { if (!cancelled && !bounds.isEmpty()) map.fitBounds(bounds, 72); }, 800);
-    return () => { cancelled = true; clearTimeout(timer); markers.forEach(marker => marker.setMap(null)); };
+      return { townAgents, point: position ?? await geocodeTown(first.listingTown) };
+      }));
+      if (cancelled) return;
+      locations.forEach(({ townAgents, point }) => { if (point) addMarker(townAgents, point); });
+      setVisiblePinCount(bounds.isEmpty() ? 0 : locations.filter(({ point }) => point).length);
+      if (!bounds.isEmpty()) {
+        if (locations.filter(({ point }) => point).length === 1) {
+          map.setCenter(bounds.getCenter());
+          map.setZoom(9);
+        } else {
+          map.fitBounds(bounds, 72);
+        }
+      }
+    };
+    void placePins();
+    return () => { cancelled = true; markers.forEach(marker => marker.remove()); };
   }, [groupedTowns, ready]);
   if (!agents.length) return null;
-  return <section aria-labelledby="agent-map-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4"><div><h2 id="agent-map-heading" className="font-semibold">Where our experts are based</h2><p className="mt-0.5 text-xs text-[#64747d]">Select a town marker to meet the experts there. Town-level markers only — never a precise address.</p></div><MapPin className="text-[#008e81]" size={20} aria-hidden="true" /></div><div className="relative h-[330px] bg-[#eafbf8]" aria-label="Map of JLT travel experts by town">{mapError ? <div className="grid h-full place-items-center px-6 text-center text-sm text-[#61727a]">The interactive map is temporarily unavailable. Select a town below or use the accessible expert list.</div> : <MapView className="h-full w-full" initialCenter={{ lat: 54.5, lng: -3.2 }} initialZoom={5} onMapReady={map => { mapRef.current = map; setReady(true); }} onMapError={() => setMapError(true)} />}</div><div className="border-t border-slate-100 px-5 py-4"><p className="text-xs font-semibold uppercase tracking-[.12em] text-[#64747d]">Town markers</p><div className="mt-2 flex flex-wrap gap-2" aria-label="Choose a town to view its experts">{groupedTowns.map(townAgents => { const town = townAgents[0].listingTown; return <button key={town} type="button" onClick={() => setSelectedTown(town)} aria-pressed={selectedTown === town} className={`rounded-full px-3 py-1.5 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#008e81] ${selectedTown === town ? "bg-[#102632] text-white" : "bg-[#eafbf8] text-[#27746c] hover:bg-[#d2f7ef]"}`}>{town} · {townAgents.length}</button>; })}</div>{selectedTown && selectedTownAgents.length > 0 && <div className="mt-4 rounded-xl bg-[#f4fbf9] p-4" aria-live="polite"><p className="text-sm font-semibold text-[#102632]">Experts in {selectedTown}</p><div className="mt-3 flex flex-wrap gap-2">{selectedTownAgents.map(agent => <Link key={agent.slug} href={publicHref(`/travel-agents/${agent.slug}`)} className="rounded-full border border-[#bde9e1] bg-white px-3 py-1.5 text-sm font-medium text-[#0a7669] transition hover:border-[#008e81] hover:text-[#102632]">{agent.displayName} <ArrowRight className="ml-1 inline" size={14} /></Link>)}</div></div>}</div></section>;
+  const selectTown = (town: string) => {
+    setSelectedTown(town);
+    const point = townPositionsRef.current[town];
+    if (point && mapRef.current) { mapRef.current.panTo(point); mapRef.current.setZoom(Math.max(mapRef.current.getZoom() ?? 8, 9)); }
+  };
+  return <section aria-labelledby="agent-map-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4"><div><h2 id="agent-map-heading" className="font-semibold">Where our experts are based</h2><p className="mt-0.5 text-xs text-[#64747d]">Select a town marker to meet the experts there. Town-level markers only — never a precise address.</p></div><MapPin className="text-[#008e81]" size={20} aria-hidden="true" /></div><div className="relative h-[330px] bg-[#eafbf8]" aria-label="Map of JLT travel experts by town">{mapError ? <TownMapFallback towns={groupedTowns} selectedTown={selectedTown} onSelectTown={selectTown} /> : <><MapView className="h-full w-full" initialCenter={{ lat: 54.5, lng: -3.2 }} initialZoom={5} onMapReady={map => { mapRef.current = map; setReady(true); }} onMapError={() => setMapError(true)} />{(!ready || visiblePinCount === 0) && <div className="pointer-events-none absolute inset-0 grid place-items-center bg-[#eafbf8]/80 px-6 text-center"><div className="rounded-2xl bg-white/95 px-5 py-4 shadow-sm"><MapPin className="mx-auto text-[#008e81]" size={22} /><p className="mt-2 text-sm font-semibold text-[#102632]">Pinning our experts by town…</p><p className="mt-1 text-xs text-[#61727a]">Use the town buttons below while the map finishes loading.</p></div></div>}</>}</div><div className="border-t border-slate-100 px-5 py-4"><p className="text-xs font-semibold uppercase tracking-[.12em] text-[#64747d]">Town markers</p><div className="mt-2 flex flex-wrap gap-2" aria-label="Choose a town to view its experts">{groupedTowns.map(townAgents => { const town = townAgents[0].listingTown; return <button key={town} type="button" onClick={() => selectTown(town)} aria-pressed={selectedTown === town} className={`rounded-full px-3 py-1.5 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#008e81] ${selectedTown === town ? "bg-[#102632] text-white" : "bg-[#eafbf8] text-[#27746c] hover:bg-[#d2f7ef]"}`}>{town} · {townAgents.length}</button>; })}</div>{selectedTown && selectedTownAgents.length > 0 && <div className="mt-4 rounded-xl bg-[#f4fbf9] p-4" aria-live="polite"><p className="text-sm font-semibold text-[#102632]">Experts in {selectedTown}</p><div className="mt-3 flex flex-wrap gap-2">{selectedTownAgents.map(agent => <Link key={agent.slug} href={publicHref(`/travel-agents/${agent.slug}`)} className="rounded-full border border-[#bde9e1] bg-white px-3 py-1.5 text-sm font-medium text-[#0a7669] transition hover:border-[#008e81] hover:text-[#102632]">{agent.displayName} <ArrowRight className="ml-1 inline" size={14} /></Link>)}</div></div>}</div></section>;
+}
+
+function TownMapFallback({ towns, selectedTown, onSelectTown }: { towns: Agent[][]; selectedTown: string | null; onSelectTown: (town: string) => void }) {
+  return <div className="relative h-full overflow-hidden bg-[#e5f6f2] p-5"><div className="absolute inset-0 opacity-60 [background-image:radial-gradient(#9ccfc7_1px,transparent_1px)] [background-size:18px_18px]" /><div className="relative grid h-full place-items-center text-center"><div><MapPin className="mx-auto text-[#008e81]" size={28} /><p className="mt-3 font-serif text-2xl text-[#102632]">Explore our experts by town</p><p className="mx-auto mt-2 max-w-md text-sm text-[#52666e]">The interactive map is temporarily unavailable. Choose a town marker to see the approved travel experts based there.</p><div className="mt-5 flex max-w-xl flex-wrap justify-center gap-2">{towns.map(townAgents => { const town = townAgents[0]?.listingTown; if (!town) return null; return <button key={town} type="button" onClick={() => onSelectTown(town)} aria-pressed={selectedTown === town} className={`rounded-full border px-3 py-2 text-sm font-semibold transition ${selectedTown === town ? "border-[#102632] bg-[#102632] text-white" : "border-[#88c9bf] bg-white text-[#0a7669] hover:border-[#008e81]"}`}><MapPin className="mr-1 inline" size={14} />{town}</button>; })}</div></div></div></div>;
 }
 
 function EnquiryForm({ agent, showcaseSlug }: { agent: Agent; showcaseSlug?: string }) {

@@ -99,11 +99,16 @@ function loadMapScript() {
     script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
     script.async = true;
     script.crossOrigin = "anonymous";
+    const timeout = window.setTimeout(() => {
+      script.remove();
+      reject(new Error("Google Maps timed out"));
+    }, 12_000);
     script.onload = () => {
+      window.clearTimeout(timeout);
       resolve();
-      script.remove(); // Clean up immediately
     };
     script.onerror = () => {
+      window.clearTimeout(timeout);
       console.error("Failed to load Google Maps script");
       reject(new Error("Failed to load Google Maps"));
     };
@@ -149,6 +154,7 @@ export function MapView({
       zoomControl: true,
       streetViewControl: true,
       mapId: "DEMO_MAP_ID",
+      gestureHandling: "cooperative",
     });
     if (onMapReady) {
       onMapReady(map.current);

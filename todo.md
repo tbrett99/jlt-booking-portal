@@ -95,10 +95,13 @@
 - [x] Save and push the fully validated Holiday Showcase implementation and Orbit API handover documentation to the existing JLT GitHub main branch: checkpoint 3a9a653 is verified on GitHub main and POST /api/external/quote-showcases returns the expected 401 without an API key in production
 - [x] Allow approved staff public profiles without a CRM uniqueAgentId to receive Orbit Holiday Showcase snapshots by their numeric Portal user ID, while retaining the standard CRM identifier route for agents: tested for active super-admin success and standard-agent numeric-ID rejection; Orbit handover updated
 - [x] Render interactive privacy-safe town-level pins for approved public agent profiles in the consumer agent-finder map, with accessible profile links and filter-aware markers
+- [ ] Finish the consumer agent map so approved town-level markers visibly render with a reliable interactive fallback and selected-agent profile links
 - [x] Complete Orbit Holiday Showcase itinerary galleries by placing each image collection alongside its matching hotel, cruise, or experience content while preserving existing hero-thumbnail behaviour
-- [ ] Apply Railway migration 0138 to add the nullable public_holiday_showcases.itineraryImages JSON field, then verify the live Orbit gallery contract and public itinerary rendering
+- [x] Apply Railway migration 0138 to add the nullable public_holiday_showcases.itineraryImages JSON field: user confirmed the live Railway column is present after release 0958a57
 - [x] Add endpoint-level regression coverage proving public Holiday Showcase detail responses return only sanitised itinerary gallery fields, with no Orbit product IDs, quote references, or supplier metadata
 - [ ] Verify a populated public Holiday Showcase page after Orbit sends a gallery snapshot, including compact labelled images beside the matching content
+- [ ] Send an authenticated Orbit test snapshot containing itineraryImages and verify production intake persists the accepted public gallery end to end
+- [ ] Verify the live public Holiday Showcase response returns only sanitised itineraryImages fields and excludes Orbit product IDs, quote references, and supplier metadata after the first gallery snapshot
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

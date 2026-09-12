@@ -28,6 +28,8 @@ describe("ConsumerSite accessibility contract", () => {
     expect(source).toContain('aria-label="Choose a town to view its experts"');
     expect(source).toContain("aria-pressed={selectedTown === town}");
     expect(source).toContain("The interactive map is temporarily unavailable.");
+    expect(source).toContain("AdvancedMarkerElement");
+    expect(source).toContain("TownMapFallback");
     expect(source).toContain('aria-label="Travel expert results"');
   });
 
