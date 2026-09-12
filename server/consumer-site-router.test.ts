@@ -575,4 +575,32 @@ describe("consumerSite holiday showcases", () => {
     expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ title: draft.title, curatedSections: expect.arrayContaining([expect.objectContaining({ title: "Rembrandt Residences Bangkok" })]) }));
     expect(insertValues).not.toHaveBeenCalledWith(expect.objectContaining({ showcaseId: 501, agentId: 19, draft }));
   });
+
+  it("accepts a retained section image found in the immutable Orbit source snapshot when the live column no longer contains it", async () => {
+    const snapshotOnlyShowcase = {
+      ...showcase,
+      curatedSections: null,
+      sourceSnapshot: { curatedSections: showcase.curatedSections },
+    };
+    selectResults.push([snapshotOnlyShowcase], []);
+    const draft = {
+      title: "New York and Finger Lakes escape",
+      summary: "A relaxed city and countryside holiday idea, shaped around the pace and experiences that suit you.",
+      destination: "New York and Finger Lakes",
+      travelPeriodLabel: "Autumn 2027",
+      durationNights: 8,
+      priceAmount: 1795,
+      heroImage: { url: "https://supplier.example/hero.jpg", source: "supplier" as const },
+      itineraryImages: [],
+      curatedSections: [{
+        ...showcase.curatedSections[0],
+        images: [{ ...showcase.curatedSections[0].images[0], source: "supplier" as const }],
+      }],
+      editorialTags: ["Culture"],
+      inclusions: ["Selected accommodation"],
+      practicalNotes: ["Your expert will confirm the final arrangements."],
+    };
+    await expect(agentCaller().showcases.submitEdit({ id: 501, draft, agentNote: null })).resolves.toEqual({ success: true, published: true });
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ curatedSections: expect.arrayContaining([expect.objectContaining({ title: "Rembrandt Residences Bangkok" })]) }));
+  });
 });

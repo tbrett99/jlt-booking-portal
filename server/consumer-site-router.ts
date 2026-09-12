@@ -90,11 +90,36 @@ const partnerDraftSchema = z.object({
 
 const showcaseIdSchema = z.object({ id: z.number().int().positive() });
 
+function jsonValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
 function imageUrls(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((image) => image && typeof image === "object" && typeof (image as Record<string, unknown>).url === "string"
+  const images = jsonValue(value);
+  if (!Array.isArray(images)) return [];
+  return images.flatMap((image) => image && typeof image === "object" && typeof (image as Record<string, unknown>).url === "string"
     ? [(image as Record<string, unknown>).url as string]
     : []);
+}
+
+function showcaseSourceImageUrls(value: unknown): string[] {
+  const snapshot = jsonValue(value);
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return [];
+  const source = snapshot as Record<string, unknown>;
+  const heroImage = source.heroImage && typeof source.heroImage === "object" && typeof (source.heroImage as Record<string, unknown>).url === "string"
+    ? [(source.heroImage as Record<string, unknown>).url as string]
+    : [];
+  const sectionImages = Array.isArray(jsonValue(source.curatedSections))
+    ? (jsonValue(source.curatedSections) as unknown[]).flatMap((section) => section && typeof section === "object" ? imageUrls((section as Record<string, unknown>).images) : [])
+    : [];
+  const legacyItineraryImages = Array.isArray(jsonValue(source.itinerary))
+    ? (jsonValue(source.itinerary) as unknown[]).flatMap((item) => item && typeof item === "object" ? imageUrls([(item as Record<string, unknown>).image]) : [])
+    : [];
+  const accommodationImages = Array.isArray(jsonValue(source.accommodationOptions))
+    ? (jsonValue(source.accommodationOptions) as unknown[]).flatMap((item) => item && typeof item === "object" ? imageUrls([(item as Record<string, unknown>).image]) : [])
+    : [];
+  return [...heroImage, ...imageUrls(source.itineraryImages), ...sectionImages, ...legacyItineraryImages, ...accommodationImages];
 }
 
 function showcaseDraftImageUrls(value: unknown): string[] {
@@ -595,6 +620,7 @@ export const consumerSiteRouter = router({
         ...(showcase.heroImageUrl ? [showcase.heroImageUrl] : []),
         ...imageUrls(showcase.itineraryImages),
         ...(Array.isArray(showcase.curatedSections) ? showcase.curatedSections.flatMap((section) => section && typeof section === "object" ? imageUrls((section as Record<string, unknown>).images) : []) : []),
+        ...showcaseSourceImageUrls(showcase.sourceSnapshot),
         ...showcaseDraftImageUrls(existing?.draft),
       ]);
       const uploadPrefix = `/manus-storage/consumer-holiday-showcases/${ctx.user.id}/${showcase.id}/`;
