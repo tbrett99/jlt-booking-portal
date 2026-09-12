@@ -96,6 +96,7 @@
 - [x] Allow approved staff public profiles without a CRM uniqueAgentId to receive Orbit Holiday Showcase snapshots by their numeric Portal user ID, while retaining the standard CRM identifier route for agents: tested for active super-admin success and standard-agent numeric-ID rejection; Orbit handover updated
 - [x] Render interactive privacy-safe town-level pins for approved public agent profiles in the consumer agent-finder map, with accessible profile links and filter-aware markers
 - [ ] Finish the consumer agent map so approved town-level markers visibly render with a reliable interactive fallback and selected-agent profile links
+- [ ] Configure the live Railway build with VITE_FRONTEND_FORGE_API_KEY and VITE_FRONTEND_FORGE_API_URL so the Google Maps proxy no longer loads with key=undefined and can render the approved agent town pins
 - [x] Complete Orbit Holiday Showcase itinerary galleries by placing each image collection alongside its matching hotel, cruise, or experience content while preserving existing hero-thumbnail behaviour
 - [x] Apply Railway migration 0138 to add the nullable public_holiday_showcases.itineraryImages JSON field: user confirmed the live Railway column is present after release 0958a57
 - [x] Add endpoint-level regression coverage proving public Holiday Showcase detail responses return only sanitised itinerary gallery fields, with no Orbit product IDs, quote references, or supplier metadata
