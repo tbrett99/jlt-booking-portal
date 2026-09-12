@@ -133,6 +133,7 @@
 - [x] Add resilient autosave and recovery for in-progress Holiday Showcase edits so closing the editor never loses work: loaded drafts and private notes persist in the current browser until a successful publish, with visible saved-state feedback
 - [x] Publish an eligible agent’s own Holiday Showcase edits immediately after customer-safe validation, while retaining staff approval for agent profile changes: direct Showcase updates retain public-content validation, ownership checks, event audit, and immutable source snapshot; no new staff-review request is created
 - [x] Diagnose and fix the remaining live false rejection of retained Holiday Showcase photos using the actual stored image representation: validation now includes original hero, gallery, legacy itinerary, accommodation, and curated-section images from the immutable Orbit source snapshot, including JSON-string storage cases; focused regression, TypeScript, and production build pass
+- [x] Fix the retained Holiday Showcase photo matcher to recognise full Portal upload URLs as well as internal path fragments: validates configured R2 public-origin/path and owning `consumer-holiday-showcases/{agent}/{showcase}/` key; full URL regression, TypeScript, and production build pass
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

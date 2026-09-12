@@ -603,4 +603,29 @@ describe("consumerSite holiday showcases", () => {
     await expect(agentCaller().showcases.submitEdit({ id: 501, draft, agentNote: null })).resolves.toEqual({ success: true, published: true });
     expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ curatedSections: expect.arrayContaining([expect.objectContaining({ title: "Rembrandt Residences Bangkok" })]) }));
   });
+
+  it("accepts a newly uploaded full public R2 URL only when it belongs to the owning agent and showcase path", async () => {
+    const priorPublicUrl = process.env.S3_PUBLIC_URL;
+    process.env.S3_PUBLIC_URL = "https://uploads.example.test/public";
+    try {
+      selectResults.push([showcase], []);
+      const draft = {
+        title: "New York and Finger Lakes escape",
+        summary: "A relaxed city and countryside holiday idea, shaped around the pace and experiences that suit you.",
+        destination: "New York and Finger Lakes",
+        travelPeriodLabel: "Autumn 2027",
+        durationNights: 8,
+        priceAmount: 1795,
+        heroImage: { url: "https://supplier.example/hero.jpg", source: "supplier" as const },
+        itineraryImages: [{ url: "https://uploads.example.test/public/consumer-holiday-showcases/19/501/new-photo.jpg", source: "agent_upload" as const, label: "Holiday image", category: "experience" as const }],
+        editorialTags: ["Culture"],
+        inclusions: ["Selected accommodation"],
+        practicalNotes: ["Your expert will confirm the final arrangements."],
+      };
+      await expect(agentCaller().showcases.submitEdit({ id: 501, draft, agentNote: null })).resolves.toEqual({ success: true, published: true });
+    } finally {
+      if (priorPublicUrl === undefined) delete process.env.S3_PUBLIC_URL;
+      else process.env.S3_PUBLIC_URL = priorPublicUrl;
+    }
+  });
 });

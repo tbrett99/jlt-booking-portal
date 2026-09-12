@@ -134,6 +134,23 @@ function showcaseDraftImageUrls(value: unknown): string[] {
   return [...heroUrl, ...imageUrls(draft.itineraryImages), ...sectionUrls];
 }
 
+function isOwnedShowcaseUploadUrl(value: string, agentId: number, showcaseId: number): boolean {
+  const keyPrefix = `consumer-holiday-showcases/${agentId}/${showcaseId}/`;
+  try {
+    const uploaded = new URL(value);
+    const configuredPublicUrl = process.env.S3_PUBLIC_URL;
+    if (configuredPublicUrl) {
+      const storage = new URL(configuredPublicUrl);
+      if (uploaded.origin !== storage.origin) return false;
+      const storagePath = storage.pathname.replace(/\/+$/, "");
+      return uploaded.pathname.startsWith(`${storagePath}/${keyPrefix}`.replace(/^\/(?!\/)/, "/"));
+    }
+    return uploaded.pathname.replace(/^\/+/, "").startsWith(keyPrefix);
+  } catch {
+    return value.replace(/^\/+/, "").startsWith(keyPrefix);
+  }
+}
+
 function showcaseEditValues(draft: HolidayShowcaseEditDraft, showcase: typeof publicHolidayShowcases.$inferSelect) {
   return {
     title: draft.title,
@@ -623,9 +640,8 @@ export const consumerSiteRouter = router({
         ...showcaseSourceImageUrls(showcase.sourceSnapshot),
         ...showcaseDraftImageUrls(existing?.draft),
       ]);
-      const uploadPrefix = `/manus-storage/consumer-holiday-showcases/${ctx.user.id}/${showcase.id}/`;
       const images = [input.draft.heroImage, ...input.draft.itineraryImages, ...(input.draft.curatedSections ?? []).flatMap((section) => section.images)].filter((image): image is NonNullable<typeof image> => Boolean(image));
-      if (images.some((image) => !currentExternalUrls.has(image.url) && !(image.source === "agent_upload" && image.url.startsWith(uploadPrefix)))) {
+      if (images.some((image) => !currentExternalUrls.has(image.url) && !(image.source === "agent_upload" && isOwnedShowcaseUploadUrl(image.url, ctx.user.id, showcase.id)))) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Use an image already on this showcase or upload a new image through the Portal." });
       }
       if (existing) {
