@@ -125,7 +125,7 @@
 - [x] Add secure agent image uploads and customer-safe image labels for Holiday Showcase hero and gallery imagery: ownership-checked JPG/PNG/WEBP uploads use managed storage and label/category controls
 - [x] Enforce public-safe editorial validation so internal Orbit room/rate/product references and similar operational strings cannot be published through agent edits: validation rejects operational strings and public mappers suppress legacy unsafe room, rate, board, product, supplier, and Orbit-derived content
 - [x] Add a clear Holiday Showcase notice that local resort, city, or tourist taxes may apply and will be confirmed in the tailored quote before booking: shown in an accessible booking-stage disclosure on every public Showcase page
-- [ ] Apply and verify Railway migration 0140 before deploying editable Holiday Showcases: adds public_holiday_showcase_edit_requests, editorialTags, and audited edit-review actions
+- [x] Apply and verify Railway migration 0140 before deploying editable Holiday Showcases: user confirmed Railway production SQL completed; checkpoint f74f367 pushed to GitHub main and production Holiday Ideas and My Holiday Showcases routes returned HTTP 200 on 12 September 2026
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
