@@ -35,6 +35,35 @@ describe("Orbit holiday showcase payload contract", () => {
     expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, itinerary: [] })).toThrow();
   });
 
+  it("accepts null serialization for optional fields in a curated-only Orbit payload", () => {
+    const curatedSections = [{
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      kind: "flight" as const,
+      title: "Fly to Cape Town",
+      summary: "Start your holiday with a flight to Cape Town.",
+      facts: ["Edinburgh to Cape Town", "Economy"],
+      images: [],
+    }];
+    const parsed = orbitHolidayShowcaseSchema.parse({
+      ...validPayload,
+      travelPeriodLabel: null,
+      durationNights: null,
+      price: null,
+      heroImage: null,
+      itineraryImages: null,
+      itinerary: null,
+      accommodationOptions: null,
+      inclusions: null,
+      practicalNotes: null,
+      enquiryContext: null,
+      curatedSections,
+    });
+    expect(parsed.curatedSections).toEqual(curatedSections);
+    expect(parsed.itinerary).toEqual([]);
+    expect(parsed.itineraryImages).toEqual([]);
+    expect(parsed.price).toBeUndefined();
+  });
+
   it("rejects client, internal, supplier-token, and margin fields", () => {
     expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, clientName: "Private client" })).toThrow();
     expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, margin: 33 })).toThrow();

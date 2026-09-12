@@ -122,12 +122,12 @@ All accepted fields are public-facing. `itineraryImages` is optional and accepts
 | `summary` | Yes | Public string, 20–2,000 characters. |
 | `destination` | Yes | Public string, 2–255 characters. |
 | `curatedSections` | No | Ordered array of 1–60 public sections. This is the **only** accepted v2 top-level story key. |
-| `itinerary` | Conditional | Array of 1–60 legacy items when `curatedSections` is omitted; use `[]` when supplying `curatedSections`. |
-| `travelPeriodLabel`, `durationNights`, `price`, `heroImage`, `itineraryImages`, `accommodationOptions`, `inclusions`, `practicalNotes`, `enquiryContext` | No | Optional v1 public snapshot fields shown in the request example. |
+| `itinerary` | Conditional | Array of 1–60 legacy items when `curatedSections` is omitted; use `[]` or `null` when supplying `curatedSections`. |
+| `travelPeriodLabel`, `durationNights`, `price`, `heroImage`, `itineraryImages`, `accommodationOptions`, `inclusions`, `practicalNotes`, `enquiryContext` | No | Optional v1 public snapshot fields shown in the request example. They may be omitted or sent as `null`; the Portal normalises `null` to an omitted field or empty public list. |
 
 Every `curatedSections` item must contain `id` (UUID), `kind` (`flight`, `stay`, `transfer`, `cruise`, `experience`, or `note`), `title` (2–180 characters), and `summary` (2–600 characters). `facts` is optional and permits up to five strings of 2–240 characters. `images` is optional and permits up to six objects with exactly `url`, `source`, `label`, and `category`; `url` must be HTTPS and non-Google-hosted, `source` is `supplier` or `agent_upload`, `label` is 2–255 characters, and `category` is `hotel`, `cruise`, or `experience`.
 
-Unknown top-level and nested fields are rejected. A `400` response contains `validationErrors`, a maximum of 20 safe objects shaped as `{ "path", "code", "message" }`. Values from the supplied payload are never echoed in those errors.
+Unknown top-level and nested fields are rejected. A `400` response contains `validationErrors`, a maximum of 20 safe objects shaped as `{ "path", "code", "message" }`. Values from the supplied payload are never echoed in those errors. **Orbit must surface `validationErrors` to its own logs or operator feedback rather than showing only the top-level `error` string**, because the field path is the actionable diagnostic.
 
 ## Response contract
 

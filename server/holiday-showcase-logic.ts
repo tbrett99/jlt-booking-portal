@@ -33,6 +33,13 @@ const itineraryGalleryImageSchema = publicImageSchema.extend({
   category: z.enum(["hotel", "cruise", "experience"]),
 }).strict();
 
+const priceSchema = z.object({
+  mode: z.literal("from"),
+  amount: z.number().positive().max(1_000_000),
+  currency: z.literal("GBP"),
+  perPerson: z.literal(true),
+}).strict();
+
 const curatedSectionSchema = z.object({
   // Publication-local opaque UUIDs only; Orbit product identifiers are never accepted.
   id: z.string().uuid(),
@@ -107,24 +114,21 @@ export const orbitHolidayShowcaseSchema = z.object({
   title: publicText(4, 255),
   summary: publicText(20, 2_000),
   destination: publicText(2, 255),
-  travelPeriodLabel: publicText(2, 140).optional(),
-  durationNights: z.number().int().min(1).max(60).optional(),
-  price: z.object({
-    mode: z.literal("from"),
-    amount: z.number().positive().max(1_000_000),
-    currency: z.literal("GBP"),
-    perPerson: z.literal(true),
-  }).strict().optional(),
-  heroImage: publicImageSchema.optional(),
-  itineraryImages: z.array(itineraryGalleryImageSchema).max(24).default([]),
+  // Orbit serialises absent optional values as null in some quote shapes. Treat
+  // null exactly like omission, but keep any supplied public object strict.
+  travelPeriodLabel: publicText(2, 140).nullish().transform((value) => value ?? undefined),
+  durationNights: z.number().int().min(1).max(60).nullish().transform((value) => value ?? undefined),
+  price: priceSchema.nullish().transform((value) => value ?? undefined),
+  heroImage: publicImageSchema.nullish().transform((value) => value ?? undefined),
+  itineraryImages: z.array(itineraryGalleryImageSchema).max(24).nullish().transform((value) => value ?? []),
   // Optional v2 public story. Consumer rendering preserves this exact order.
-  curatedSections: z.array(curatedSectionSchema).min(1).max(60).optional(),
+  curatedSections: z.array(curatedSectionSchema).min(1).max(60).nullish().transform((value) => value ?? undefined),
   // Legacy content is required only when no curated public story is provided.
-  itinerary: z.array(itineraryItemSchema).max(60).default([]),
-  accommodationOptions: z.array(accommodationOptionSchema).max(20).default([]),
-  inclusions: z.array(publicText(2, 300)).max(40).default([]),
-  practicalNotes: z.array(publicText(2, 500)).max(40).default([]),
-  enquiryContext: z.object({ showcaseId: z.string().uuid() }).strict().optional(),
+  itinerary: z.array(itineraryItemSchema).max(60).nullish().transform((value) => value ?? []),
+  accommodationOptions: z.array(accommodationOptionSchema).max(20).nullish().transform((value) => value ?? []),
+  inclusions: z.array(publicText(2, 300)).max(40).nullish().transform((value) => value ?? []),
+  practicalNotes: z.array(publicText(2, 500)).max(40).nullish().transform((value) => value ?? []),
+  enquiryContext: z.object({ showcaseId: z.string().uuid() }).strict().nullish().transform((value) => value ?? undefined),
 }).strict().superRefine((payload, ctx) => {
   if (!payload.curatedSections?.length && payload.itinerary.length === 0) {
     ctx.addIssue({
