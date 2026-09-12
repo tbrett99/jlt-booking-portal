@@ -103,6 +103,24 @@ function imageUrls(value: unknown): string[] {
     : []);
 }
 
+function curatedSectionImageUrls(value: unknown): string[] {
+  const sections = jsonValue(value);
+  if (!Array.isArray(sections)) return [];
+  return sections.flatMap((section) => section && typeof section === "object"
+    ? imageUrls((section as Record<string, unknown>).images)
+    : []);
+}
+
+function canonicalImageUrl(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return value.trim();
+  }
+}
+
 function showcaseSourceImageUrls(value: unknown): string[] {
   const snapshot = jsonValue(value);
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return [];
@@ -110,9 +128,7 @@ function showcaseSourceImageUrls(value: unknown): string[] {
   const heroImage = source.heroImage && typeof source.heroImage === "object" && typeof (source.heroImage as Record<string, unknown>).url === "string"
     ? [(source.heroImage as Record<string, unknown>).url as string]
     : [];
-  const sectionImages = Array.isArray(jsonValue(source.curatedSections))
-    ? (jsonValue(source.curatedSections) as unknown[]).flatMap((section) => section && typeof section === "object" ? imageUrls((section as Record<string, unknown>).images) : [])
-    : [];
+  const sectionImages = curatedSectionImageUrls(source.curatedSections ?? source.sections);
   const legacyItineraryImages = Array.isArray(jsonValue(source.itinerary))
     ? (jsonValue(source.itinerary) as unknown[]).flatMap((item) => item && typeof item === "object" ? imageUrls([(item as Record<string, unknown>).image]) : [])
     : [];
@@ -128,9 +144,7 @@ function showcaseDraftImageUrls(value: unknown): string[] {
   const heroUrl = draft.heroImage && typeof draft.heroImage === "object" && typeof (draft.heroImage as Record<string, unknown>).url === "string"
     ? [(draft.heroImage as Record<string, unknown>).url as string]
     : [];
-  const sectionUrls = Array.isArray(draft.curatedSections)
-    ? draft.curatedSections.flatMap((section) => section && typeof section === "object" ? imageUrls((section as Record<string, unknown>).images) : [])
-    : [];
+  const sectionUrls = curatedSectionImageUrls(draft.curatedSections);
   return [...heroUrl, ...imageUrls(draft.itineraryImages), ...sectionUrls];
 }
 
@@ -636,12 +650,12 @@ export const consumerSiteRouter = router({
       const currentExternalUrls = new Set<string>([
         ...(showcase.heroImageUrl ? [showcase.heroImageUrl] : []),
         ...imageUrls(showcase.itineraryImages),
-        ...(Array.isArray(showcase.curatedSections) ? showcase.curatedSections.flatMap((section) => section && typeof section === "object" ? imageUrls((section as Record<string, unknown>).images) : []) : []),
+        ...curatedSectionImageUrls(showcase.curatedSections),
         ...showcaseSourceImageUrls(showcase.sourceSnapshot),
         ...showcaseDraftImageUrls(existing?.draft),
-      ]);
+      ].map(canonicalImageUrl));
       const images = [input.draft.heroImage, ...input.draft.itineraryImages, ...(input.draft.curatedSections ?? []).flatMap((section) => section.images)].filter((image): image is NonNullable<typeof image> => Boolean(image));
-      if (images.some((image) => !currentExternalUrls.has(image.url) && !(image.source === "agent_upload" && isOwnedShowcaseUploadUrl(image.url, ctx.user.id, showcase.id)))) {
+      if (images.some((image) => !currentExternalUrls.has(canonicalImageUrl(image.url)) && !(image.source === "agent_upload" && isOwnedShowcaseUploadUrl(image.url, ctx.user.id, showcase.id)))) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Use an image already on this showcase or upload a new image through the Portal." });
       }
       if (existing) {
