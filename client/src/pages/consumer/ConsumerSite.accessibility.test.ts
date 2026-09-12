@@ -42,4 +42,13 @@ describe("ConsumerSite accessibility contract", () => {
     expect(source).toContain("holiday-showcases/${showcase.slug}");
     expect(source).toContain("This is travel inspiration, not a live quote.");
   });
+
+  it("renders ordered curated public sections without imposing day labels and supplies showcase metadata", () => {
+    expect(source).toContain("function CuratedShowcaseSectionCard");
+    expect(source).toContain("function ShowcaseMeta");
+    expect(source).toContain("Curated holiday story");
+    expect(source).toContain("curatedSections.length > 0");
+    expect(source).toContain("application/ld+json");
+    expect(source).toContain("BreadcrumbList");
+  });
 });

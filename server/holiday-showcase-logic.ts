@@ -23,6 +23,16 @@ const itineraryGalleryImageSchema = publicImageSchema.extend({
   category: z.enum(["hotel", "cruise", "experience"]),
 }).strict();
 
+const curatedSectionSchema = z.object({
+  // Publication-local opaque UUIDs only; Orbit product identifiers are never accepted.
+  id: z.string().uuid(),
+  kind: z.enum(["flight", "stay", "transfer", "cruise", "experience", "note"]),
+  title: publicText(2, 180),
+  summary: publicText(2, 600),
+  facts: z.array(publicText(2, 240)).max(5).default([]),
+  images: z.array(itineraryGalleryImageSchema).max(6).default([]),
+}).strict();
+
 const itineraryItemSchema = z.object({
   day: z.number().int().min(1).max(60).optional(),
   title: publicText(2, 180),
@@ -61,6 +71,8 @@ export const orbitHolidayShowcaseSchema = z.object({
   }).strict().optional(),
   heroImage: publicImageSchema.optional(),
   itineraryImages: z.array(itineraryGalleryImageSchema).max(24).default([]),
+  // Optional v2 public story. Consumer rendering preserves this exact order.
+  sections: z.array(curatedSectionSchema).min(1).max(60).optional(),
   itinerary: z.array(itineraryItemSchema).min(1).max(60),
   accommodationOptions: z.array(accommodationOptionSchema).max(20).default([]),
   inclusions: z.array(publicText(2, 300)).max(40).default([]),
@@ -76,6 +88,15 @@ type PublicItineraryGalleryImage = {
   category: "hotel" | "cruise" | "experience";
 };
 
+type PublicCuratedSection = {
+  id: string;
+  kind: "flight" | "stay" | "transfer" | "cruise" | "experience" | "note";
+  title: string;
+  summary: string;
+  facts: string[];
+  images: PublicItineraryGalleryImage[];
+};
+
 function toPublicItineraryGalleryImages(value: unknown): PublicItineraryGalleryImage[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((image): PublicItineraryGalleryImage[] => {
@@ -84,6 +105,35 @@ function toPublicItineraryGalleryImages(value: unknown): PublicItineraryGalleryI
     const category = candidate.category;
     if (typeof candidate.url !== "string" || !isPermittedPublicImageUrl(candidate.url) || typeof candidate.label !== "string" || !["hotel", "cruise", "experience"].includes(String(category))) return [];
     return [{ url: candidate.url, label: candidate.label, category: category as PublicItineraryGalleryImage["category"] }];
+  });
+}
+
+function toPublicCuratedSections(value: unknown): PublicCuratedSection[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((section): PublicCuratedSection[] => {
+    if (!section || typeof section !== "object") return [];
+    const candidate = section as Record<string, unknown>;
+    const rawImages = Array.isArray(candidate.images) ? candidate.images : [];
+    const parsed = curatedSectionSchema.safeParse({
+      id: candidate.id,
+      kind: candidate.kind,
+      title: candidate.title,
+      summary: candidate.summary,
+      facts: candidate.facts,
+      images: rawImages.map((image) => {
+        const raw = image && typeof image === "object" ? image as Record<string, unknown> : {};
+        return { url: raw.url, source: raw.source, label: raw.label, category: raw.category };
+      }),
+    });
+    if (!parsed.success) return [];
+    return [{
+      id: parsed.data.id,
+      kind: parsed.data.kind,
+      title: parsed.data.title,
+      summary: parsed.data.summary,
+      facts: parsed.data.facts,
+      images: parsed.data.images.map(({ url, label, category }) => ({ url, label, category })),
+    }];
   });
 }
 
@@ -144,6 +194,7 @@ export function toPublicShowcaseDetail(showcase: {
   pricePerPerson?: boolean | null;
   heroImageUrl?: string | null;
   itineraryImages?: unknown;
+  curatedSections?: unknown;
   itinerary: unknown;
   accommodationOptions: unknown;
   inclusions: unknown;
@@ -152,6 +203,7 @@ export function toPublicShowcaseDetail(showcase: {
   return {
     ...toPublicShowcaseCard(showcase),
     itineraryImages: toPublicItineraryGalleryImages(showcase.itineraryImages),
+    curatedSections: toPublicCuratedSections(showcase.curatedSections),
     itinerary: Array.isArray(showcase.itinerary) ? showcase.itinerary : [],
     accommodationOptions: Array.isArray(showcase.accommodationOptions) ? showcase.accommodationOptions : [],
     inclusions: Array.isArray(showcase.inclusions) ? showcase.inclusions : [],

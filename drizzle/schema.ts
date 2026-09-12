@@ -1004,6 +1004,9 @@ export const publicHolidayShowcases = mysqlTable("public_holiday_showcases", {
   // Optional public-only gallery for itinerary detail pages. This is separate
   // from the hero image used for profile-card thumbnails.
   itineraryImages: json("itineraryImages"),
+  // Optional ordered public story supplied by Orbit. When present, it takes
+  // precedence over the legacy day-by-day itinerary for consumer rendering.
+  curatedSections: json("curatedSections"),
   itinerary: json("itinerary").notNull(),
   accommodationOptions: json("accommodationOptions").notNull(),
   inclusions: json("inclusions").notNull(),

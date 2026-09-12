@@ -3,7 +3,7 @@ import express from "express";
 import compression from "compression";
 import { createServer } from "http";
 import net from "net";
-import { eq } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
@@ -34,7 +34,7 @@ import { notifyOwner } from "./notification";
 import { externalApiRouter } from "../external-api";
 import { oauth2Router } from "../oauth2-server";
 import { supplierApiRouter } from "../supplier-api";
-import { joinSessions, agentCrmProfiles, teamInvites, users as usersTable } from "../../drizzle/schema";
+import { joinSessions, agentCrmProfiles, publicAgentProfiles, publicHolidayShowcases, teamInvites, users as usersTable } from "../../drizzle/schema";
 import { createAgentUser } from "../db";
 import { generateUniqueAgentIdForUser } from "../agent-crm-db";
 import { getMonthlyAmount } from "../../shared/membership";
@@ -177,14 +177,39 @@ async function startServer() {
       ? "User-agent: *\nAllow: /\nSitemap: https://www.thejltgroup.co.uk/sitemap.xml\n"
       : "User-agent: *\nDisallow: /\n");
   });
-  app.get("/sitemap.xml", (req, res) => {
+  app.get("/sitemap.xml", async (req, res) => {
     if (!isPublicConsumerHost(req.hostname.toLowerCase())) {
       res.status(404).end();
       return;
     }
+    const base = "https://www.thejltgroup.co.uk";
     const urls = ["/", "/find-an-agent", "/why-jlt", "/your-protection", "/partners", "/privacy", "/terms"];
-    const entries = urls.map(path => `<url><loc>https://www.thejltgroup.co.uk${path}</loc></url>`).join("");
-    res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${entries}</urlset>`);
+    const xml = (path: string, updatedAt?: Date | null) => `<url><loc>${base}${path}</loc>${updatedAt ? `<lastmod>${updatedAt.toISOString().slice(0, 10)}</lastmod>` : ""}</url>`;
+    try {
+      const db = await getDb();
+      const now = new Date();
+      const rows = db ? await db.select({ agentSlug: publicAgentProfiles.publicSlug, showcaseSlug: publicHolidayShowcases.publicSlug, updatedAt: publicHolidayShowcases.updatedAt })
+        .from(publicHolidayShowcases)
+        .innerJoin(publicAgentProfiles, eq(publicHolidayShowcases.publicProfileId, publicAgentProfiles.id))
+        .innerJoin(usersTable, eq(publicAgentProfiles.userId, usersTable.id))
+        .leftJoin(agentCrmProfiles, eq(publicAgentProfiles.userId, agentCrmProfiles.userId))
+        .where(and(
+          eq(publicHolidayShowcases.isPublished, true),
+          eq(publicAgentProfiles.isPublished, true),
+          isNull(publicHolidayShowcases.deletedAt),
+          or(isNull(publicHolidayShowcases.expiresAt), gt(publicHolidayShowcases.expiresAt, now)),
+          or(
+            inArray(usersTable.role, ["admin", "super_admin"]),
+            and(eq(agentCrmProfiles.agentStatus, "active"), or(isNull(agentCrmProfiles.inContract), eq(agentCrmProfiles.inContract, false))),
+          ),
+        )) : [];
+      const showcaseEntries = rows.filter((row) => row.agentSlug && row.showcaseSlug)
+        .map((row) => xml(`/travel-agents/${row.agentSlug}/holiday-showcases/${row.showcaseSlug}`, row.updatedAt));
+      res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map((path) => xml(path)).join("")}${showcaseEntries.join("")}</urlset>`);
+    } catch (error) {
+      console.error("[Sitemap] Unable to load live showcase URLs", error);
+      res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map((path) => xml(path)).join("")}</urlset>`);
+    }
   });
 
   // Capture raw body for PPS callback signature verification BEFORE urlencoded parser decodes it.

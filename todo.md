@@ -105,6 +105,9 @@
 - [ ] Verify a populated public Holiday Showcase page after Orbit sends a gallery snapshot, including compact labelled images beside the matching content
 - [ ] Send an authenticated Orbit test snapshot containing itineraryImages and verify production intake persists the accepted public gallery end to end
 - [ ] Verify the live public Holiday Showcase response returns only sanitised itineraryImages fields and excludes Orbit product IDs, quote references, and supplier metadata after the first gallery snapshot
+- [x] Extend Holiday Showcase snapshots with optional ordered Orbit-curated public sections, including strict section/image allowlists, six kinds, legacy itinerary fallback, privacy validation, and agent-curated ordering
+- [x] Render curated Holiday Showcase sections without automatic day labels and add snapshot-derived SEO metadata, structured data, canonical URLs, sitemap lastmod, and Orbit v2 handover documentation
+- [ ] Apply Railway migration 0139 to add nullable public_holiday_showcases.curatedSections JSON storage, then verify the first Orbit v2 snapshot renders only its ordered public sections
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering

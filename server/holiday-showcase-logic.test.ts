@@ -47,6 +47,21 @@ describe("Orbit holiday showcase payload contract", () => {
     expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, itineraryImages: [{ ...itineraryImages[0], source: "orbit" }] })).toThrow();
   });
 
+  it("accepts an ordered curated public story but rejects unsafe section data", () => {
+    const sections = [{
+      id: "b1a2c3d4-e5f6-4a7b-8c9d-e0f1a2b3c4d5",
+      kind: "stay" as const,
+      title: "Cape Town coastal stay",
+      summary: "Settle into a relaxed oceanfront base with time to explore the city and peninsula.",
+      facts: ["5 nights", "Bed & Breakfast", "Bantry Bay"],
+      images: [{ url: "https://assets.example.com/president.jpg", source: "supplier" as const, label: "President Hotel", category: "hotel" as const }],
+    }];
+    expect(orbitHolidayShowcaseSchema.parse({ ...validPayload, sections }).sections).toHaveLength(1);
+    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, sections: [{ ...sections[0], orbitProductId: "private" }] })).toThrow();
+    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, sections: [{ ...sections[0], facts: Array.from({ length: 6 }, (_, index) => `Fact ${index + 1}`) }] })).toThrow();
+    expect(() => orbitHolidayShowcaseSchema.parse({ ...validPayload, sections: [{ ...sections[0], images: [{ ...sections[0].images[0], url: "https://lh3.googleusercontent.com/private.jpg" }] }] })).toThrow();
+  });
+
   it("hides unpublished, expired, and deleted snapshots", () => {
     const now = new Date("2026-09-11T12:00:00Z");
     expect(isPublicShowcaseVisible({ isPublished: true }, now)).toBe(true);
@@ -80,6 +95,32 @@ describe("Orbit holiday showcase payload contract", () => {
     });
     expect(detail.itineraryImages).toEqual([{ url: "https://assets.example.com/elser.jpg", label: "The Elser Hotel Miami", category: "hotel" }]);
     expect(JSON.stringify(detail)).not.toContain("orbitProductId");
+    expect(JSON.stringify(detail)).not.toContain("supplier");
+  });
+
+  it("returns only allowlisted curated section fields and leaves legacy snapshots on the fallback path", () => {
+    const legacy = toPublicShowcaseDetail({ ...validPayload, publicSlug: "legacy", heroImageUrl: null, priceAmount: null, priceCurrency: null, pricePerPerson: null });
+    expect(legacy.curatedSections).toEqual([]);
+    const detail = toPublicShowcaseDetail({
+      ...validPayload,
+      publicSlug: "cape-town",
+      heroImageUrl: null,
+      priceAmount: null,
+      priceCurrency: null,
+      pricePerPerson: null,
+      curatedSections: [{
+        id: "b1a2c3d4-e5f6-4a7b-8c9d-e0f1a2b3c4d5",
+        kind: "stay",
+        title: "Cape Town coastal stay",
+        summary: "Settle into a relaxed oceanfront base with time to explore the city and peninsula.",
+        facts: ["5 nights"],
+        images: [{ url: "https://assets.example.com/president.jpg", source: "supplier", label: "President Hotel", category: "hotel", quoteReference: "private" }],
+        orbitProductId: "private-product-id",
+      }],
+    });
+    expect(detail.curatedSections).toEqual([{ id: "b1a2c3d4-e5f6-4a7b-8c9d-e0f1a2b3c4d5", kind: "stay", title: "Cape Town coastal stay", summary: "Settle into a relaxed oceanfront base with time to explore the city and peninsula.", facts: ["5 nights"], images: [{ url: "https://assets.example.com/president.jpg", label: "President Hotel", category: "hotel" }] }]);
+    expect(JSON.stringify(detail)).not.toContain("private-product-id");
+    expect(JSON.stringify(detail)).not.toContain("quoteReference");
     expect(JSON.stringify(detail)).not.toContain("supplier");
   });
 });
