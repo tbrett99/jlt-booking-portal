@@ -1,0 +1,48 @@
+{
+  "actor_user_id": "310419663026820811",
+  "jobs": [
+    {
+      "callback_method": "POST",
+      "callback_path": "/api/scheduled/commission-readiness-reminders",
+      "callback_payload": "",
+      "created_at": "2026-09-11T13:07:42Z",
+      "cron_expression": "0 0 8 * * *",
+      "description": "Daily 08:00 UTC one-time agent reminder 12 weeks before booking departure",
+      "is_enable": true,
+      "last_executed_at": "2026-09-15T08:01:54Z",
+      "name": "commission-readiness-reminders",
+      "next_execution_at": "2026-09-16T08:00:00Z",
+      "task_uid": "JWzV6evTAc237V4FG7rTPb",
+      "user_id": "310419663026820811"
+    },
+    {
+      "callback_method": "POST",
+      "callback_path": "/api/scheduled/community-digest-reminders",
+      "callback_payload": "",
+      "created_at": "2026-09-11T10:01:38Z",
+      "cron_expression": "0 0 9 * * 2",
+      "description": "Every Tuesday: remind support to prepare the prior Monday–Sunday Weekly Update; during the first week also remind support to prepare the prior-month Monthly Review.",
+      "is_enable": true,
+      "last_executed_at": "2026-09-15T09:06:25Z",
+      "name": "community-digest-reminders",
+      "next_execution_at": "2026-09-22T09:00:00Z",
+      "task_uid": "ExT57mUXnmxzW3rGLVa9j6",
+      "user_id": "310419663026820811"
+    },
+    {
+      "callback_method": "POST",
+      "callback_path": "/api/scheduled/inbox-import",
+      "callback_payload": "",
+      "created_at": "2026-06-04T13:20:17Z",
+      "cron_expression": "0 */15 * * * *",
+      "description": "Incremental IMAP inbox import every 15 minutes — keeps the Booking Documents email cache up to date",
+      "is_enable": true,
+      "last_executed_at": "2026-09-15T12:17:12Z",
+      "name": "inbox-import-15min",
+      "next_execution_at": "2026-09-15T12:30:00Z",
+      "task_uid": "6fVfffNsYmGaDMTi7FzhKA",
+      "user_id": "310419663026820811"
+    }
+  ],
+  "total": 3
+}

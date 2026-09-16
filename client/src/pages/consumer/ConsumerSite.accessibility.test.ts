@@ -71,6 +71,17 @@ describe("ConsumerSite accessibility contract", () => {
     expect(source).toContain("https://www.abta.com/tips-and-advice/is-my-money-protected");
   });
 
+  it("applies the JLT editorial brand system while keeping functional navigation clear", () => {
+    expect(source).toContain('className="jlt-public min-h-screen');
+    expect(source).toContain('className="jlt-brand-mark"');
+    expect(source).toContain("Independent travel agency");
+    expect(source).toContain('className="jlt-hero-grain');
+    expect(source).toContain('className="jlt-page-hero');
+    expect(source).toContain('className="jlt-kicker"');
+    expect(source).toContain('className="jlt-editorial-card');
+    expect(source).toContain('bg-[#bcead5]');
+  });
+
   it("renders ordered curated public sections without imposing day labels and supplies showcase metadata", () => {
     expect(source).toContain("function CuratedShowcaseSectionCard");
     expect(source).toContain("function ShowcaseMeta");
