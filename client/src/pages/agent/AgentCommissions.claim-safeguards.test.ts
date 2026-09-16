@@ -14,6 +14,14 @@ describe("agent manual commission claim safeguards", () => {
     expect(source).toContain("hasKeyTransferSupplier,");
   });
 
+  it("uses one consolidated confirmation dialog rather than a separate amendment warning step", () => {
+    expect(source).not.toContain("amendmentWarningTarget");
+    expect(source).not.toContain("openClaimWithWarning");
+    expect(source.match(/<Dialog open=/g)).toHaveLength(1);
+    expect(source).toContain("Once you claim commission on a booking");
+    expect(source).toContain("new PTS file will need to be created");
+  });
+
   it("explains that pre-authorised claims wait until seven days after departure", () => {
     expect(source).toContain("seven full days have passed after the client’s departure date");
     expect(source).toContain("Claims wait until seven full days after departure");

@@ -71,7 +71,6 @@ export default function AgentCommissions() {
   const { data: bookings, isLoading } = trpc.commissionClaims.myCommissions.useQuery();
 
   const [claimTarget, setClaimTarget] = useState<BookingWithClaim | null>(null);
-  const [amendmentWarningTarget, setAmendmentWarningTarget] = useState<BookingWithClaim | null>(null);
   const [notifyTopUpId, setNotifyTopUpId] = useState<number | null>(null);
 
   const notifyTopUpMutation = trpc.commissionClaims.agentNotifyTopUpComplete.useMutation({
@@ -152,11 +151,6 @@ export default function AgentCommissions() {
     setBookingCompleteConfirmed(false);
     setHasKeyTransferSupplier(null);
     setClaimTarget(booking);
-  };
-
-  const openClaimWithWarning = (booking: BookingWithClaim) => {
-    // Show amendment lock warning before opening the claim dialog
-    setAmendmentWarningTarget(booking);
   };
 
   const submitClaim = () => {
@@ -276,7 +270,7 @@ export default function AgentCommissions() {
             <Button
               size="sm"
               className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#414141] font-semibold"
-              onClick={() => openClaimWithWarning(booking)}
+              onClick={() => openClaimDialog(booking)}
             >
               Claim Commission
             </Button>
@@ -1029,51 +1023,8 @@ export default function AgentCommissions() {
         </TabsContent>
       </Tabs>
 
-      {/* Booking Type Dialog */}
-      {/* Amendment lock warning — shown before the claim dialog */}
-      <Dialog open={!!amendmentWarningTarget} onOpenChange={(open) => { if (!open) setAmendmentWarningTarget(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
-              Important: Amendments After Commission Claim
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 space-y-2">
-              <p className="text-sm font-semibold text-amber-900">Please read before claiming commission</p>
-              <p className="text-sm text-amber-800">
-                Once you claim commission on a booking, <strong>amendments cannot be made to that file</strong>.
-              </p>
-              <p className="text-sm text-amber-800">
-                If an amendment is required after commission has been claimed, a <strong>new PTS file will need to be created</strong> and new PTS booking fees will apply.
-              </p>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Please ensure all amendments have been completed and confirmed before proceeding with your commission claim for <strong>{amendmentWarningTarget?.clientName}</strong>.
-            </p>
-          </div>
-          <DialogFooter className="flex gap-2">
-            <Button variant="outline" onClick={() => setAmendmentWarningTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#414141] font-semibold"
-              onClick={() => {
-                if (amendmentWarningTarget) {
-                  setAmendmentWarningTarget(null);
-                  openClaimDialog(amendmentWarningTarget);
-                }
-              }}
-            >
-              I understand — Proceed to Claim
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={!!claimTarget} onOpenChange={(open) => { if (!open) setClaimTarget(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Claim Commission</DialogTitle>
             <DialogDescription>
@@ -1087,6 +1038,19 @@ export default function AgentCommissions() {
           </DialogHeader>
 
           <div className="py-4 space-y-5">
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-2">
+              <div className="flex items-center gap-2 text-amber-900">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                <p className="text-sm font-semibold">Please read before claiming commission</p>
+              </div>
+              <p className="text-sm text-amber-800">
+                Once you claim commission on a booking, <strong>amendments cannot be made to that file</strong>.
+              </p>
+              <p className="text-sm text-amber-800">
+                If an amendment is required after commission has been claimed, a <strong>new PTS file will need to be created</strong> and new PTS booking fees will apply.
+              </p>
+            </div>
+
             {/* Required: gross commission amount */}
             <div className="space-y-2">
               <Label className="text-sm font-semibold" htmlFor="gross-amount">
