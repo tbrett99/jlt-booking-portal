@@ -42,6 +42,14 @@ type BookingActivityItem = {
   icon: "cancellation" | "refund" | "amendment" | "reimbursement" | "document";
 };
 
+type BookingOverviewItem = {
+  id: string;
+  label: string;
+  detail: string;
+  tone: "urgent" | "warning" | "info" | "success";
+  icon: BookingActivityItem["icon"] | "notes" | "history";
+};
+
 function BookingActivityBar({ items }: { items: BookingActivityItem[] }) {
   const scrollToSection = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -87,6 +95,65 @@ function BookingActivityBar({ items }: { items: BookingActivityItem[] }) {
         )}
       </div>
     </section>
+  );
+}
+
+function BookingWorkspaceOverview({
+  currentStage,
+  items,
+}: {
+  currentStage: string;
+  items: BookingOverviewItem[];
+}) {
+  const scrollToSection = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const toneClass = {
+    urgent: "border-red-100 bg-red-50 text-red-900 hover:border-red-200 hover:bg-red-100",
+    warning: "border-amber-100 bg-amber-50 text-amber-900 hover:border-amber-200 hover:bg-amber-100",
+    info: "border-sky-100 bg-sky-50 text-sky-900 hover:border-sky-200 hover:bg-sky-100",
+    success: "border-emerald-100 bg-emerald-50 text-emerald-900 hover:border-emerald-200 hover:bg-emerald-100",
+  };
+  const icon = (kind: BookingOverviewItem["icon"]) => {
+    const className = "h-4 w-4 shrink-0";
+    if (kind === "cancellation") return <XCircle className={className} />;
+    if (kind === "refund") return <DollarSign className={className} />;
+    if (kind === "amendment") return <RefreshCw className={className} />;
+    if (kind === "reimbursement") return <CreditCard className={className} />;
+    if (kind === "document") return <FileText className={className} />;
+    if (kind === "notes") return <Mail className={className} />;
+    return <History className={className} />;
+  };
+
+  return (
+    <aside aria-label="Booking quick overview" className="rounded-2xl border border-border bg-card p-4 shadow-sm xl:sticky xl:top-5 xl:max-h-[calc(100vh-2.5rem)] xl:overflow-y-auto">
+      <div className="flex items-start justify-between gap-3 border-b border-border pb-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Booking overview</p>
+          <h2 className="mt-1 text-base font-semibold">Jump to what needs attention</h2>
+        </div>
+        <Badge variant="outline" className="max-w-28 truncate text-[10px]">{currentStage}</Badge>
+      </div>
+      <p className="py-3 text-xs leading-relaxed text-muted-foreground">A compact view of the records on this booking. Select an item to continue where the detail lives below.</p>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => scrollToSection(item.id)}
+            className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-[#02E6D2] focus:ring-offset-2 ${toneClass[item.tone]}`}
+          >
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/80 shadow-sm">{icon(item.icon)}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold leading-tight">{item.label}</span>
+              <span className="mt-0.5 block truncate text-xs font-medium opacity-75">{item.detail}</span>
+            </span>
+            <ArrowRight className="h-4 w-4 shrink-0 opacity-60 transition-transform group-hover:translate-x-0.5" />
+          </button>
+        ))}
+      </div>
+    </aside>
   );
 }
 
@@ -1354,9 +1421,60 @@ export default function AdminBookingDetail() {
     ...(reimbursementDocumentsMissing ? [{ id: "booking-reimbursements", label: "Reimbursement documents missing", tone: "urgent" as const, icon: "document" as const }] : []),
     ...((bookingDocumentCount + reimbursementDocumentCount) > 0 ? [{ id: "booking-documents", label: `${bookingDocumentCount + reimbursementDocumentCount} document${bookingDocumentCount + reimbursementDocumentCount === 1 ? "" : "s"} uploaded`, tone: "success" as const, icon: "document" as const }] : []),
   ];
+  const bookingOverviewItems: BookingOverviewItem[] = [
+    {
+      id: "booking-notes",
+      label: "Notes & messages",
+      detail: `${sharedNotes.length} shared · ${internalNotes.length} internal${unreadAgentCount > 0 ? ` · ${unreadAgentCount} unread` : ""}`,
+      tone: unreadAgentCount > 0 ? "warning" : "info",
+      icon: "notes",
+    },
+    ...(cancellationsList.length > 0 ? [{
+      id: "booking-cancellations",
+      label: "Cancellations",
+      detail: activeCancellationRequests.length > 0 ? `${activeCancellationRequests.length} awaiting action` : `${cancellationsList.length} recorded`,
+      tone: activeCancellationRequests.length > 0 ? "urgent" as const : "success" as const,
+      icon: "cancellation" as const,
+    }] : []),
+    ...(amendments.length > 0 ? [{
+      id: "booking-amendments",
+      label: "Amendments",
+      detail: outstandingAmendments.length > 0 ? `${outstandingAmendments.length} awaiting action` : `${amendments.length} recorded`,
+      tone: outstandingAmendments.length > 0 ? "warning" as const : "success" as const,
+      icon: "amendment" as const,
+    }] : []),
+    ...(refundsList.length > 0 ? [{
+      id: "booking-refunds",
+      label: "Refunds",
+      detail: outstandingRefunds.length > 0 ? `${outstandingRefunds.length} awaiting action` : `${refundsList.length} recorded`,
+      tone: outstandingRefunds.length > 0 ? "urgent" as const : "success" as const,
+      icon: "refund" as const,
+    }] : []),
+    ...(outstandingReimbursements.length > 0 ? [{
+      id: "booking-reimbursements",
+      label: "Reimbursements",
+      detail: `${outstandingReimbursements.length} to process`,
+      tone: reimbursementDocumentsMissing ? "urgent" as const : "warning" as const,
+      icon: "reimbursement" as const,
+    }] : []),
+    {
+      id: "booking-documents",
+      label: "Documents",
+      detail: bookingDocumentCount + reimbursementDocumentCount > 0 ? `${bookingDocumentCount + reimbursementDocumentCount} uploaded` : "No documents uploaded",
+      tone: reimbursementDocumentsMissing ? "urgent" : "info",
+      icon: "document",
+    },
+    {
+      id: "booking-history",
+      label: "Booking history",
+      detail: "Stages, actions and activity timeline",
+      tone: "info",
+      icon: "history",
+    },
+  ];
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="mx-auto max-w-[96rem] space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <Link href={backHref}>
@@ -1418,9 +1536,11 @@ export default function AdminBookingDetail() {
 
       <BookingActivityBar items={activityItems} />
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_21rem] xl:items-start xl:gap-8">
+        <main className="min-w-0 space-y-6">
+          <div className="grid gap-6 lg:grid-cols-2">
         {/* Booking info */}
-        <Card id="booking-reimbursements">
+        <Card id="booking-details" className="scroll-mt-6">
           <CardHeader><CardTitle className="text-base">Booking Details</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <dl className="grid grid-cols-2 gap-3 text-sm">
@@ -1569,7 +1689,7 @@ export default function AdminBookingDetail() {
 
             {/* Reimbursement Items Panel */}
             {(reimbItems as any[]).length > 0 && (
-              <div className="pt-2 border-t space-y-3">
+              <div id="booking-reimbursements" className="scroll-mt-6 space-y-3 border-t pt-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Reimbursement Items ({(reimbItems as any[]).length})</p>
                 {(reimbItems as any[]).map((item: any) => {
                   const statusColor = item.status === 'paid' ? '#065f46' : item.status === 'scheduled' ? '#1d4ed8' : '#92400e';
@@ -1756,7 +1876,7 @@ export default function AdminBookingDetail() {
         </Card>
 
         {/* Notes */}
-        <Card>
+        <Card id="booking-notes" className="scroll-mt-6">
           <CardHeader><CardTitle className="text-base">Notes</CardTitle></CardHeader>
           <CardContent>
             {/* Unread message banner */}
@@ -1955,7 +2075,7 @@ export default function AdminBookingDetail() {
 
       {/* Full History Overview */}
       {/* expandedHistoryItems tracks which timeline event IDs are expanded */}
-      <Card>
+      <Card id="booking-history" className="scroll-mt-6">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <History size={16} style={{ color: '#02E6D2' }} />
@@ -2177,8 +2297,14 @@ export default function AdminBookingDetail() {
       <PaymentsCard bookingId={bookingId} booking={booking} />
 
       {/* Booking Documents */}
-      <div id="booking-documents">
+      <div id="booking-documents" className="scroll-mt-6">
         <AdminBookingDocumentsSection bookingId={bookingId} />
+      </div>
+        </main>
+
+        <div className="mt-6 xl:mt-0">
+          <BookingWorkspaceOverview currentStage={booking.currentStage} items={bookingOverviewItems} />
+        </div>
       </div>
 
       <Dialog open={!!cancellationActionTarget} onOpenChange={(open) => { if (!open) setCancellationActionTarget(null); }}>
