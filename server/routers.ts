@@ -129,6 +129,7 @@ import {
   decryptPassword,
 } from "./imap";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
+import { isPreAuthorisedCommissionEligibleAfterDeparture } from "./commission-readiness-utils";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { ENV } from "./_core/env";
@@ -1080,6 +1081,17 @@ export const appRouter = router({
           await assertAgentCanProgressCommission(booking.agentId, booking.departureDate);
         }
 
+        if (
+          ["Commission Claimable", "Commission Claimed"].includes(input.toStage) &&
+          (booking as any).commissionPreAuthorised &&
+          !isPreAuthorisedCommissionEligibleAfterDeparture((booking as any).departureDate, new Date())
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This booking is pre-authorised for commission. It can only enter the commission workflow seven full days after the departure date.",
+          });
+        }
+
         // Persist VAT before changing the pipeline stage. Previously the stage was
         // updated first, so a VAT write failure could leave the booking/claim in a
         // later stage without its entered VAT amount. Re-read and verify the value
@@ -1111,8 +1123,9 @@ export const appRouter = router({
         // skip the claimable stage and auto-create the commission claim, then move straight to Commission Claimed.
         // Guards:
         //  1. finalSupplierPaymentDate must be set AND on/before today
-        //  2. No commission claim already exists for this booking
-        //  3. Booking is not already in Commission Claimed
+        //  2. Departure must be at least seven complete days ago
+        //  3. No commission claim already exists for this booking
+        //  4. Booking is not already in Commission Claimed
         const paymentDatePassed = (() => {
           const d = (booking as any).finalSupplierPaymentDate;
           if (!d) return false;
@@ -1141,6 +1154,7 @@ export const appRouter = router({
           input.toStage === "Commission Claimable" &&
           (booking as any).commissionPreAuthorised &&
           paymentDatePassed &&
+          isPreAuthorisedCommissionEligibleAfterDeparture((booking as any).departureDate, new Date()) &&
           !existingClaim &&
           !alreadyClaimed
         ) {
@@ -3114,6 +3128,10 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         bookingId: z.number(),
         bookingType: z.enum(["lapland", "cruise", "disney", "other"]).default("other"),
         grossAmount: z.number().positive({ message: "Please enter your expected gross commission amount" }),
+        bookingCompleteConfirmed: z.boolean().refine((value) => value, {
+          message: "Confirm that the booking is complete before claiming commission",
+        }),
+        hasKeyTransferSupplier: z.boolean(),
       }))
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
@@ -3123,6 +3141,16 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         }
         if (booking.currentStage !== "Commission Claimable") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Booking is not in Commission Claimable stage" });
+        }
+
+        if (
+          (booking as any).commissionPreAuthorised &&
+          !isPreAuthorisedCommissionEligibleAfterDeparture((booking as any).departureDate, new Date())
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Pre-authorised commission can only be claimed seven full days after the departure date.",
+          });
         }
 
         // ── 12-week departure rule ──────────────────────────────────────────────
@@ -3143,7 +3171,13 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         const agentInNotice = (ctx.user as any).portalStatus === "in_notice";
         const claimStatus = agentInNotice ? "notice_hold" : "processing";
 
-        const claim = await createCommissionClaim(input.bookingId, ctx.user.id, input.bookingType, input.grossAmount, claimStatus as any);
+        const claimNow = new Date();
+        const claim = await createCommissionClaim(input.bookingId, ctx.user.id, input.bookingType, input.grossAmount, claimStatus as any, {
+          bookingCompleteConfirmed: true,
+          bookingCompleteConfirmedAt: claimNow,
+          hasKeyTransferSupplier: input.hasKeyTransferSupplier,
+          keyTransferSupplierDeclaredAt: claimNow,
+        });
         // Auto-apply admin-set VAT to the claim if it was recorded when the booking was marked claimable
         if (claim && (booking as any).commissionVat != null) {
           await updateCommissionVat(claim.id, parseFloat(String((booking as any).commissionVat)));

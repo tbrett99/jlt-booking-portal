@@ -26,6 +26,7 @@ import {
   communityConfirmations,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { isPreAuthorisedCommissionEligibleAfterDeparture } from "./commission-readiness-utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _db: any | null = null;
@@ -1045,7 +1046,9 @@ export async function getCommissionDueBookings() {
       b.finalSupplierPaymentDate &&
       b.finalSupplierPaymentDate <= now &&
       !terminalStages.includes(b.currentStage) &&
-      !(b as any).isPersonalBooking
+      !(b as any).isPersonalBooking &&
+      (!(b as any).commissionPreAuthorised ||
+        isPreAuthorisedCommissionEligibleAfterDeparture((b as any).departureDate, now))
   );
 }
 
@@ -1166,7 +1169,14 @@ export async function getUnreadNotificationCount(userId: number) {
 
 // ─── Commission Claims ────────────────────────────────────────────────────────
 
-export async function createCommissionClaim(bookingId: number, agentId: number, bookingType: "lapland" | "cruise" | "disney" | "other" = "other", grossAmount?: number, initialStatus?: "pending" | "processing" | "awaiting_payment", extraFields?: { paidAt?: Date; paidById?: number }) {
+export async function createCommissionClaim(bookingId: number, agentId: number, bookingType: "lapland" | "cruise" | "disney" | "other" = "other", grossAmount?: number, initialStatus?: "pending" | "processing" | "awaiting_payment", extraFields?: {
+  paidAt?: Date;
+  paidById?: number;
+  bookingCompleteConfirmed?: boolean;
+  bookingCompleteConfirmedAt?: Date;
+  hasKeyTransferSupplier?: boolean;
+  keyTransferSupplierDeclaredAt?: Date;
+}) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   // Prevent duplicate claims

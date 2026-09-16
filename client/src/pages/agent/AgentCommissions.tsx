@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
@@ -83,6 +84,8 @@ export default function AgentCommissions() {
   });
   const [selectedType, setSelectedType] = useState<BookingType>("other");
   const [grossAmount, setGrossAmount] = useState<string>("");
+  const [bookingCompleteConfirmed, setBookingCompleteConfirmed] = useState(false);
+  const [hasKeyTransferSupplier, setHasKeyTransferSupplier] = useState<boolean | null>(null);
   const [markPaidIds, setMarkPaidIds] = useState<number[]>([]);
   const [activeTab, setActiveTab] = useState<string>("claimable");
 
@@ -146,6 +149,8 @@ export default function AgentCommissions() {
     setSelectedType("other");
     // Pre-fill with the booking's existing expected commission if set
     setGrossAmount(booking.expectedCommission != null ? String(Number(booking.expectedCommission).toFixed(2)) : "");
+    setBookingCompleteConfirmed(false);
+    setHasKeyTransferSupplier(null);
     setClaimTarget(booking);
   };
 
@@ -161,7 +166,21 @@ export default function AgentCommissions() {
       toast.error("Please enter your expected gross commission amount");
       return;
     }
-    claimMutation.mutate({ bookingId: claimTarget.id, bookingType: selectedType, grossAmount: amount });
+    if (!bookingCompleteConfirmed) {
+      toast.error("Please confirm that the booking is complete before claiming commission");
+      return;
+    }
+    if (hasKeyTransferSupplier === null) {
+      toast.error("Please confirm whether this booking includes Suntransfers, Transferz, or Holiday Extras");
+      return;
+    }
+    claimMutation.mutate({
+      bookingId: claimTarget.id,
+      bookingType: selectedType,
+      grossAmount: amount,
+      bookingCompleteConfirmed,
+      hasKeyTransferSupplier,
+    });
   };
 
   const BookingRow = ({
@@ -287,9 +306,9 @@ export default function AgentCommissions() {
               <Zap size={22} className="text-[#414141]" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-bold text-base" style={{ color: '#0f4c4a' }}>Commission Pre-Authorisation — get paid faster, automatically</p>
+              <p className="font-bold text-base" style={{ color: '#0f4c4a' }}>Commission Pre-Authorisation — scheduled after travel</p>
               <p className="text-sm mt-1 leading-relaxed" style={{ color: '#0f4c4a', opacity: 0.85 }}>
-                Pre-authorisation allows JLT to automatically process your commission the moment a booking becomes claimable — no need to log in and claim it manually. Once enabled, your claim is submitted instantly and you'll receive your payment sooner.
+                Pre-authorisation lets JLT process your commission without a manual claim, but only once seven full days have passed after the client’s departure date.
               </p>
             </div>
           </div>
@@ -297,8 +316,8 @@ export default function AgentCommissions() {
             <div className="flex items-start gap-2 rounded-lg p-3" style={{ background: 'rgba(2,230,210,0.18)' }}>
               <span className="text-lg mt-0.5">⚡</span>
               <div>
-                <p className="text-xs font-bold" style={{ color: '#0f4c4a' }}>Instant processing</p>
-                <p className="text-xs mt-0.5" style={{ color: '#0f4c4a', opacity: 0.75 }}>Your claim is submitted the moment the file is ready — no delays, no manual steps.</p>
+                <p className="text-xs font-bold" style={{ color: '#0f4c4a' }}>Post-travel safeguard</p>
+                <p className="text-xs mt-0.5" style={{ color: '#0f4c4a', opacity: 0.75 }}>Claims wait until seven full days after departure before entering the commission workflow.</p>
               </div>
             </div>
             <div className="flex items-start gap-2 rounded-lg p-3" style={{ background: 'rgba(2,230,210,0.18)' }}>
@@ -1116,6 +1135,41 @@ export default function AgentCommissions() {
             </RadioGroup>
             </div>
 
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-4">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="booking-complete-confirmation"
+                  checked={bookingCompleteConfirmed}
+                  onCheckedChange={(checked) => setBookingCompleteConfirmed(checked === true)}
+                  className="mt-0.5"
+                />
+                <Label htmlFor="booking-complete-confirmation" className="cursor-pointer text-sm leading-relaxed text-amber-950">
+                  <strong>I confirm this booking is complete</strong> and that no further amendments, reimbursements, or refunds are due.
+                </Label>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-amber-950">
+                  Does this booking include Suntransfers, Transferz, or Holiday Extras? <span className="text-red-600">*</span>
+                </Label>
+                <p className="text-xs text-amber-900/80">This helps JLT verify these suppliers have been added to and paid through PTS where required.</p>
+                <RadioGroup
+                  value={hasKeyTransferSupplier === null ? undefined : hasKeyTransferSupplier ? "yes" : "no"}
+                  onValueChange={(value) => setHasKeyTransferSupplier(value === "yes")}
+                  className="flex gap-3"
+                >
+                  <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-white px-3 py-2">
+                    <RadioGroupItem value="yes" id="key-supplier-yes" />
+                    <Label htmlFor="key-supplier-yes" className="cursor-pointer">Yes</Label>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-white px-3 py-2">
+                    <RadioGroupItem value="no" id="key-supplier-no" />
+                    <Label htmlFor="key-supplier-no" className="cursor-pointer">No</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+            </div>
+
           </div>
 
           <DialogFooter>
@@ -1125,7 +1179,7 @@ export default function AgentCommissions() {
             <Button
               className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#414141] font-semibold"
               onClick={submitClaim}
-              disabled={claimMutation.isPending}
+              disabled={claimMutation.isPending || !bookingCompleteConfirmed || hasKeyTransferSupplier === null}
             >
               {claimMutation.isPending ? (
                 <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Submitting...</>

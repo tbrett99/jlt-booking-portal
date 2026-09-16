@@ -18,3 +18,20 @@ export function isCommissionReadinessEligible(booking: {
     && booking.departureDate >= start
     && booking.departureDate < end;
 }
+
+/**
+ * Pre-authorised commission claims stay unavailable until seven complete
+ * calendar days have passed since the departure date.
+ */
+export function isPreAuthorisedCommissionEligibleAfterDeparture(
+  departureDate: Date | string | null | undefined,
+  now: Date,
+) {
+  if (!departureDate) return false;
+  const departure = new Date(departureDate);
+  if (Number.isNaN(departure.getTime())) return false;
+  const eligibleFrom = new Date(
+    Date.UTC(departure.getUTCFullYear(), departure.getUTCMonth(), departure.getUTCDate() + 7),
+  );
+  return now.getTime() >= eligibleFrom.getTime();
+}

@@ -32,6 +32,10 @@ type ClaimRow = {
   paidByName: string | null;
   bookingType?: string | null;
   vatAmount?: string | number | null;
+  bookingCompleteConfirmed?: boolean;
+  bookingCompleteConfirmedAt?: Date | string | null;
+  hasKeyTransferSupplier?: boolean;
+  keyTransferSupplierDeclaredAt?: Date | string | null;
   bankAccountName?: string | null;
   bankSortCode?: string | null;
   bankAccountNumber?: string | null;
@@ -123,6 +127,7 @@ function ClaimTable({
             <th className="py-3 px-4 text-left font-medium">Expected Comm.</th>
             <th className="py-3 px-4 text-left font-medium">VAT (£)</th>
             <th className="py-3 px-4 text-left font-medium">Type</th>
+            <th className="py-3 px-4 text-left font-medium">Key suppliers</th>
             <th className="py-3 px-4 text-left font-medium">Claimed On</th>
             {!showSelect && <th className="py-3 px-4 text-left font-medium">Processed On</th>}
             {!showSelect && <th className="py-3 px-4 text-left font-medium">Processed By</th>}
@@ -133,7 +138,7 @@ function ClaimTable({
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={showSelect ? 10 : 11} className="py-12 text-center text-muted-foreground">
+              <td colSpan={showSelect ? 11 : 12} className="py-12 text-center text-muted-foreground">
                 No records found.
               </td>
             </tr>
@@ -203,6 +208,20 @@ function ClaimTable({
                   />
                 </td>
                 <td className="py-3 px-4 capitalize">{c.bookingType ?? "—"}</td>
+                <td className="py-3 px-4">
+                  {c.hasKeyTransferSupplier ? (
+                    <div className="space-y-1">
+                      <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-800 whitespace-nowrap">
+                        Check PTS suppliers
+                      </Badge>
+                      <p className="text-[11px] text-muted-foreground">Suntransfers / Transferz / Holiday Extras</p>
+                    </div>
+                  ) : c.bookingCompleteConfirmed ? (
+                    <span className="text-xs text-muted-foreground">No declared</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Historic claim</span>
+                  )}
+                </td>
                 <td className="py-3 px-4">{formatDate(c.claimedAt)}</td>
                 {!showSelect && <td className="py-3 px-4">{formatDate(c.paidAt)}</td>}
                 {!showSelect && <td className="py-3 px-4">{c.paidByName ?? "—"}</td>}
