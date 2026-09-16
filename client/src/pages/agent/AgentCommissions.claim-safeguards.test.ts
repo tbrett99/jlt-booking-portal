@@ -22,6 +22,15 @@ describe("agent manual commission claim safeguards", () => {
     expect(source).toContain("new PTS file will need to be created");
   });
 
+  it("splits the declaration and claim-entry content into compact confirmation and details steps", () => {
+    expect(source).toContain('useState<"confirmation" | "details">("confirmation")');
+    expect(source).toContain("Step 1 of 2 — confirm the booking is ready for commission");
+    expect(source).toContain("Continue to claim details");
+    expect(source).toContain("Step 2 of 2 — add the claim details");
+    expect(source).toContain('onClick={() => setClaimStep("confirmation")}');
+    expect(source).toContain("Booking readiness and supplier declaration confirmed.");
+  });
+
   it("explains that pre-authorised claims wait until seven days after departure", () => {
     expect(source).toContain("seven full days have passed after the client’s departure date");
     expect(source).toContain("Claims wait until seven full days after departure");

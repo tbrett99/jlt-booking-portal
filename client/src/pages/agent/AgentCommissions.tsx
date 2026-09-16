@@ -85,6 +85,7 @@ export default function AgentCommissions() {
   const [grossAmount, setGrossAmount] = useState<string>("");
   const [bookingCompleteConfirmed, setBookingCompleteConfirmed] = useState(false);
   const [hasKeyTransferSupplier, setHasKeyTransferSupplier] = useState<boolean | null>(null);
+  const [claimStep, setClaimStep] = useState<"confirmation" | "details">("confirmation");
   const [markPaidIds, setMarkPaidIds] = useState<number[]>([]);
   const [activeTab, setActiveTab] = useState<string>("claimable");
 
@@ -150,6 +151,7 @@ export default function AgentCommissions() {
     setGrossAmount(booking.expectedCommission != null ? String(Number(booking.expectedCommission).toFixed(2)) : "");
     setBookingCompleteConfirmed(false);
     setHasKeyTransferSupplier(null);
+    setClaimStep("confirmation");
     setClaimTarget(booking);
   };
 
@@ -1023,83 +1025,42 @@ export default function AgentCommissions() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={!!claimTarget} onOpenChange={(open) => { if (!open) setClaimTarget(null); }}>
-        <DialogContent className="sm:max-w-lg">
+      <Dialog open={!!claimTarget} onOpenChange={(open) => { if (!open) { setClaimTarget(null); setClaimStep("confirmation"); } }}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Claim Commission</DialogTitle>
+            <DialogTitle>{claimStep === "confirmation" ? "Before you claim" : "Claim Commission"}</DialogTitle>
             <DialogDescription>
-              Please select the booking type for <strong>{claimTarget?.clientName}</strong> before submitting your claim.
-              {claimTarget?.expectedCommission && (
-                <span className="block mt-1 font-semibold" style={{ color: '#065f46' }}>
-                  Expected commission: £{Number(claimTarget.expectedCommission).toFixed(2)}
-                </span>
+              {claimStep === "confirmation" ? (
+                <>Step 1 of 2 — confirm the booking is ready for commission for <strong>{claimTarget?.clientName}</strong>.</>
+              ) : (
+                <>
+                  Step 2 of 2 — add the claim details for <strong>{claimTarget?.clientName}</strong>.
+                  {claimTarget?.expectedCommission && (
+                    <span className="block mt-1 font-semibold" style={{ color: '#065f46' }}>
+                      Expected commission: £{Number(claimTarget.expectedCommission).toFixed(2)}
+                    </span>
+                  )}
+                </>
               )}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4 space-y-5">
-            <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-2">
-              <div className="flex items-center gap-2 text-amber-900">
-                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                <p className="text-sm font-semibold">Please read before claiming commission</p>
-              </div>
-              <p className="text-sm text-amber-800">
-                Once you claim commission on a booking, <strong>amendments cannot be made to that file</strong>.
-              </p>
-              <p className="text-sm text-amber-800">
-                If an amendment is required after commission has been claimed, a <strong>new PTS file will need to be created</strong> and new PTS booking fees will apply.
-              </p>
-            </div>
-
-            {/* Required: gross commission amount */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold" htmlFor="gross-amount">
-                Expected Gross Commission <span className="text-red-500">*</span>
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Enter the total commission before PTS fees, card charges, and any commission split.
-              </p>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
-                <Input
-                  id="gross-amount"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={grossAmount}
-                  onChange={(e) => setGrossAmount(e.target.value)}
-                  className="pl-7"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label className="text-sm font-semibold mb-2 block">Booking Type</Label>
-            <RadioGroup
-              value={selectedType}
-              onValueChange={(v) => setSelectedType(v as BookingType)}
-              className="grid grid-cols-2 gap-3"
-            >
-              {(Object.entries(BOOKING_TYPE_LABELS) as [BookingType, string][]).map(([value, label]) => (
-                <div key={value} className="relative">
-                  <RadioGroupItem value={value} id={`type-${value}`} className="sr-only" />
-                  <Label
-                    htmlFor={`type-${value}`}
-                    className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 cursor-pointer text-sm font-medium transition-all ${
-                      selectedType === value
-                        ? "border-[#02E6D2] bg-[#02E6D2]/10 text-foreground"
-                        : "border-border bg-card text-muted-foreground hover:border-[#70FFE8]"
-                    }`}
-                  >
-                    {label}
-                  </Label>
+          {claimStep === "confirmation" ? (
+            <div className="py-4 space-y-4">
+              <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-2">
+                <div className="flex items-center gap-2 text-amber-900">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                  <p className="text-sm font-semibold">Please read before claiming commission</p>
                 </div>
-              ))}
-            </RadioGroup>
-            </div>
+                <p className="text-sm text-amber-800">
+                  Once you claim commission on a booking, <strong>amendments cannot be made to that file</strong>.
+                </p>
+                <p className="text-sm text-amber-800">
+                  If an amendment is required after commission has been claimed, a <strong>new PTS file will need to be created</strong> and new PTS booking fees will apply.
+                </p>
+              </div>
 
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-4">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-4">
               <div className="flex items-start gap-3">
                 <Checkbox
                   id="booking-complete-confirmation"
@@ -1132,25 +1093,90 @@ export default function AgentCommissions() {
                   </div>
                 </RadioGroup>
               </div>
+              </div>
             </div>
+          ) : (
+            <div className="py-4 space-y-5">
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                Booking readiness and supplier declaration confirmed.
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold" htmlFor="gross-amount">
+                  Expected Gross Commission <span className="text-red-500">*</span>
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Enter the total commission before PTS fees, card charges, and any commission split.
+                </p>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                  <Input
+                    id="gross-amount"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={grossAmount}
+                    onChange={(e) => setGrossAmount(e.target.value)}
+                    className="pl-7"
+                  />
+                </div>
+              </div>
 
-          </div>
+              <div>
+                <Label className="text-sm font-semibold mb-2 block">Booking Type</Label>
+                <RadioGroup
+                  value={selectedType}
+                  onValueChange={(v) => setSelectedType(v as BookingType)}
+                  className="grid grid-cols-2 gap-3"
+                >
+                  {(Object.entries(BOOKING_TYPE_LABELS) as [BookingType, string][]).map(([value, label]) => (
+                    <div key={value} className="relative">
+                      <RadioGroupItem value={value} id={`type-${value}`} className="sr-only" />
+                      <Label
+                        htmlFor={`type-${value}`}
+                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 cursor-pointer text-sm font-medium transition-all ${
+                          selectedType === value
+                            ? "border-[#02E6D2] bg-[#02E6D2]/10 text-foreground"
+                            : "border-border bg-card text-muted-foreground hover:border-[#70FFE8]"
+                        }`}
+                      >
+                        {label}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+              </div>
+            </div>
+          )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setClaimTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#414141] font-semibold"
-              onClick={submitClaim}
-              disabled={claimMutation.isPending || !bookingCompleteConfirmed || hasKeyTransferSupplier === null}
-            >
-              {claimMutation.isPending ? (
-                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Submitting...</>
-              ) : (
-                "Submit Claim"
-              )}
-            </Button>
+            {claimStep === "confirmation" ? (
+              <>
+                <Button variant="outline" onClick={() => setClaimTarget(null)}>Cancel</Button>
+                <Button
+                  className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#414141] font-semibold"
+                  onClick={() => setClaimStep("details")}
+                  disabled={!bookingCompleteConfirmed || hasKeyTransferSupplier === null}
+                >
+                  Continue to claim details
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setClaimStep("confirmation")}>Back</Button>
+                <Button
+                  className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#414141] font-semibold"
+                  onClick={submitClaim}
+                  disabled={claimMutation.isPending}
+                >
+                  {claimMutation.isPending ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Submitting...</>
+                  ) : (
+                    "Submit Claim"
+                  )}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
