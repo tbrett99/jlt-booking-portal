@@ -2933,6 +2933,8 @@ export const appRouter = router({
       const outstandingRefundBookingIds = new Set<number>();
       const outstandingAmendmentBookingIds = new Set<number>();
       const inContractAgentIds = new Set<number>();
+      const commissionClaimByBookingId = new Map<number, any>();
+      const orbitFinancialSnapshotByBookingId = new Map<number, any>();
       if (dueAgentIds.length > 0) {
         const { getDb } = await import('./db');
         const db = await getDb();
@@ -2950,7 +2952,12 @@ export const appRouter = router({
         const { getDb } = await import('./db');
         const db = await getDb();
         if (db) {
-          const { refunds: refundsTable, amendments: amendmentsTable } = await import('../drizzle/schema');
+          const {
+            refunds: refundsTable,
+            amendments: amendmentsTable,
+            commissionClaims,
+            orbitFinancialSnapshots,
+          } = await import('../drizzle/schema');
           const { inArray, and, ne } = await import('drizzle-orm');
           const outstandingRefunds = await db
             .select({ bookingId: refundsTable.bookingId })
@@ -2969,6 +2976,20 @@ export const appRouter = router({
               ne(amendmentsTable.status, 'rejected'),
             ));
           for (const a of outstandingAmendments) outstandingAmendmentBookingIds.add(a.bookingId);
+          const commissionClaimsForDueBookings = await db
+            .select()
+            .from(commissionClaims)
+            .where(inArray(commissionClaims.bookingId, bookingIds));
+          for (const claim of commissionClaimsForDueBookings) {
+            commissionClaimByBookingId.set(claim.bookingId, claim);
+          }
+          const orbitFinancialSnapshotsForDueBookings = await db
+            .select()
+            .from(orbitFinancialSnapshots)
+            .where(inArray(orbitFinancialSnapshots.bookingId, bookingIds));
+          for (const snapshot of orbitFinancialSnapshotsForDueBookings) {
+            orbitFinancialSnapshotByBookingId.set(snapshot.bookingId, snapshot);
+          }
         }
       }
 
@@ -2980,6 +3001,8 @@ export const appRouter = router({
         inContractHold: inContractAgentIds.has(b.agentId) && !hasBookingDeparturePassed(b.departureDate),
         hasOutstandingRefund: outstandingRefundBookingIds.has(b.id),
         hasOutstandingAmendment: outstandingAmendmentBookingIds.has(b.id),
+        commissionClaim: commissionClaimByBookingId.get(b.id) ?? null,
+        orbitFinancialSnapshot: orbitFinancialSnapshotByBookingId.get(b.id) ?? null,
       }));
     }),
     requestTopUp: adminProcedure

@@ -2845,7 +2845,7 @@
 - [x] CommissionDue admin page: warning badges on booking cards + warning panel in Mark Claimable dialog
 - [x] AdminCommissions page: Refund Pending / Amendment Pending badges on claim rows
 - [x] AgentCommissions: pre-claim amendment lock warning modal before claim dialog
-
+- [x] Commission Due: show the current Orbit financial snapshot plus the saved Suntransfers / Transferz / Holiday Extras declaration, with neutral not-yet-declared state and no automatic PTS matching claim
 ## Action Audit & Flight Productivity (Aug 12)
 - [x] Record the staff member who completes, cancels, queries, or sends a price-increase notice for each flight request
 - [x] Show the responsible staff member and action timestamps on the admin flight request pipeline

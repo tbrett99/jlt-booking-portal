@@ -15,6 +15,56 @@ import { format, formatDistanceToNow, isPast } from "date-fns";
 import CopyableRef from "@/components/CopyableRef";
 import { getSelectableCommissionRows, sortRowsByDate } from "@/lib/commission-list-utils";
 
+type OrbitFinancialSnapshot = {
+  grossBookingValue: number | string | null;
+  totalNetCost: number | string | null;
+  netCostSubtotal: number | string | null;
+  netCostStatus: "complete" | "incomplete" | "unavailable";
+  missingNetCostProducts: number;
+  grossMargin: number | string | null;
+  marginPct: number | string | null;
+  expectedCommission: number | string | null;
+  financialSnapshotAt: Date | string;
+};
+
+function formatGbp(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return "—";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "—";
+  return `£${parsed.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function OrbitFinancialSnapshotSummary({ snapshot }: { snapshot?: OrbitFinancialSnapshot | null }) {
+  if (!snapshot) {
+    return <span className="text-xs text-muted-foreground">Orbit financials awaiting snapshot</span>;
+  }
+
+  if (snapshot.netCostStatus === "unavailable") {
+    return <span className="text-xs text-muted-foreground">Orbit financial snapshot unavailable</span>;
+  }
+
+  if (snapshot.netCostStatus === "incomplete") {
+    const productLabel = snapshot.missingNetCostProducts === 1 ? "product" : "products";
+    return (
+      <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-950">
+        <p className="font-semibold">Net cost incomplete — {snapshot.missingNetCostProducts} active {productLabel} missing</p>
+        <p className="mt-0.5">Orbit subtotal: <strong>{formatGbp(snapshot.netCostSubtotal)}</strong></p>
+        <p className="mt-0.5 leading-snug">Do not use this as the full PTS comparison figure.</p>
+        <p className="mt-1 text-[10px] text-amber-800">Orbit updated {format(new Date(snapshot.financialSnapshotAt), "dd MMM yyyy, HH:mm")}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs leading-snug text-slate-800">
+      <p className="font-semibold text-slate-900">Orbit financial snapshot</p>
+      <p className="mt-0.5"><span className="text-slate-600">Gross:</span> <strong>{formatGbp(snapshot.grossBookingValue)}</strong> · <span className="text-slate-600">Orbit total net:</span> <strong>{formatGbp(snapshot.totalNetCost)}</strong></p>
+      <p><span className="text-slate-600">Margin:</span> <strong>{formatGbp(snapshot.grossMargin)} · {snapshot.marginPct === null ? "—" : `${Number(snapshot.marginPct).toFixed(2)}%`}</strong> · <span className="text-slate-600">Expected:</span> <strong>{formatGbp(snapshot.expectedCommission)}</strong></p>
+      <p className="mt-1 text-[10px] text-slate-500">Orbit updated {format(new Date(snapshot.financialSnapshotAt), "dd MMM yyyy, HH:mm")} · Compare the complete net total to PTS manually.</p>
+    </div>
+  );
+}
+
 function MoveDatePopover({ bookingId, currentDate, onSuccess }: {
   bookingId: number;
   currentDate?: string | Date | null;
@@ -453,6 +503,40 @@ export default function CommissionDue() {
                         {booking.expectedCommission && (
                           <span>Commission: <strong>£{Number(booking.expectedCommission).toFixed(2)}</strong></span>
                         )}
+                      </div>
+                      <div className="grid gap-2 pt-0.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                        <OrbitFinancialSnapshotSummary snapshot={(booking as any).orbitFinancialSnapshot} />
+                        {(() => {
+                          const claim = (booking as any).commissionClaim as {
+                            bookingCompleteConfirmed?: boolean;
+                            hasKeyTransferSupplier?: boolean;
+                            keyTransferSupplierDeclaredAt?: Date | string | null;
+                          } | null;
+                          if (!claim?.bookingCompleteConfirmed) {
+                            return (
+                              <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-700 lg:max-w-64">
+                                <p className="font-semibold text-slate-900">Key suppliers</p>
+                                <p className="mt-0.5">Not declared yet</p>
+                              </div>
+                            );
+                          }
+                          if (claim.hasKeyTransferSupplier) {
+                            return (
+                              <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900 lg:max-w-64">
+                                <p className="font-semibold">Check PTS suppliers</p>
+                                <p className="mt-0.5">Suntransfers / Transferz / Holiday Extras</p>
+                                {claim.keyTransferSupplierDeclaredAt && <p className="mt-1 text-[10px] text-amber-800">Declared {format(new Date(claim.keyTransferSupplierDeclaredAt), "dd MMM yyyy, HH:mm")}</p>}
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-900 lg:max-w-64">
+                              <p className="font-semibold">No key suppliers declared</p>
+                              <p className="mt-0.5">Suntransfers / Transferz / Holiday Extras: No</p>
+                              {claim.keyTransferSupplierDeclaredAt && <p className="mt-1 text-[10px] text-emerald-800">Declared {format(new Date(claim.keyTransferSupplierDeclaredAt), "dd MMM yyyy, HH:mm")}</p>}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
 
