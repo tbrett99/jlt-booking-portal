@@ -24,12 +24,9 @@ describe("admin booking workspace overview", () => {
     expect(source).toContain('id: "booking-history"');
   });
 
-  it("shows the stored manual commission declarations directly on the booking record", () => {
-    expect(source).toContain('trpc.commissionClaims.byBooking.useQuery');
-    expect(source).toContain('id="commission-claim-audit"');
-    expect(source).toContain("Commission claim confirmation");
-    expect(source).toContain("File complete:");
-    expect(source).toContain("Suntransfers, Transferz, or Holiday Extras:");
-    expect(source).toContain("immutable internal audit note");
+  it("keeps manual commission declarations in the existing internal notes audit trail", () => {
+    expect(source).not.toContain('trpc.commissionClaims.byBooking.useQuery');
+    expect(source).not.toContain('id="commission-claim-audit"');
+    expect(source).not.toContain("Commission claim confirmation");
   });
 });

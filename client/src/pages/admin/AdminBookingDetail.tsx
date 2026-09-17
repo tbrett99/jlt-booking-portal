@@ -1119,7 +1119,6 @@ export default function AdminBookingDetail() {
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
-  const { data: commissionClaim } = trpc.commissionClaims.byBooking.useQuery({ bookingId }, { enabled: !!bookingId });
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const { data: bookingDocs = [] } = trpc.bookingDocs.list.useQuery({ bookingId }, { enabled: !!bookingId, staleTime: 0 });
   const { data: reimbDocs = [] } = trpc.bookings.listReimbDocs.useQuery({ bookingId }, { enabled: !!bookingId });
@@ -1540,39 +1539,6 @@ export default function AdminBookingDetail() {
       <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_21rem] xl:items-start xl:gap-8">
         <main className="min-w-0 space-y-6">
           <div className="grid gap-6 lg:grid-cols-2">
-        {commissionClaim && (
-          <Card id="commission-claim-audit" className="scroll-mt-6 border-emerald-200 bg-emerald-50/40">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base text-emerald-950">
-                <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-                Commission claim confirmation
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <p className="text-emerald-950">
-                <strong>File complete:</strong>{" "}
-                {commissionClaim.bookingCompleteConfirmed ? "Confirmed by the agent" : "Historic claim — no confirmation recorded"}
-                {commissionClaim.bookingCompleteConfirmedAt && ` on ${format(new Date(commissionClaim.bookingCompleteConfirmedAt), "dd MMM yyyy, HH:mm")}`}
-              </p>
-              <p className="text-emerald-950">
-                <strong>Suntransfers, Transferz, or Holiday Extras:</strong>{" "}
-                {commissionClaim.keyTransferSupplierDeclaredAt
-                  ? commissionClaim.hasKeyTransferSupplier
-                    ? "Yes — check relevant suppliers are on PTS and paid where required."
-                    : "No"
-                  : "Historic claim — no declaration recorded"}
-              </p>
-              {commissionClaim.keyTransferSupplierDeclaredAt && (
-                <p className="text-xs text-emerald-800">
-                  Supplier declaration recorded {format(new Date(commissionClaim.keyTransferSupplierDeclaredAt), "dd MMM yyyy, HH:mm")}.
-                </p>
-              )}
-              <p className="border-t border-emerald-200 pt-3 text-xs text-emerald-800">
-                An immutable internal audit note is also recorded in the booking’s Internal notes.
-              </p>
-            </CardContent>
-          </Card>
-        )}
         {/* Booking info */}
         <Card id="booking-details" className="scroll-mt-6">
           <CardHeader><CardTitle className="text-base">Booking Details</CardTitle></CardHeader>
