@@ -318,6 +318,38 @@ export const commissionClaims = mysqlTable("commission_claims", {
 export type CommissionClaim = typeof commissionClaims.$inferSelect;
 export type InsertCommissionClaim = typeof commissionClaims.$inferInsert;
 
+// ─── Orbit Financial Snapshots ───────────────────────────────────────────────
+// One current, immutable-by-revision financial comparison snapshot per booking.
+// This intentionally does not replace the Portal's claim or PTS payment status.
+export const orbitFinancialSnapshots = mysqlTable(
+  "orbit_financial_snapshots",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    bookingId: int("bookingId").notNull(), // FK → bookings.id
+    crmRef: varchar("crmRef", { length: 100 }).notNull(),
+    currency: varchar("currency", { length: 3 }).notNull().default("GBP"),
+    grossBookingValue: decimal("grossBookingValue", { precision: 12, scale: 2 }),
+    totalNetCost: decimal("totalNetCost", { precision: 12, scale: 2 }),
+    netCostSubtotal: decimal("netCostSubtotal", { precision: 12, scale: 2 }),
+    netCostStatus: mysqlEnum("netCostStatus", ["complete", "incomplete", "unavailable"]).notNull(),
+    missingNetCostProducts: int("missingNetCostProducts").notNull().default(0),
+    grossMargin: decimal("grossMargin", { precision: 12, scale: 2 }),
+    marginPct: decimal("marginPct", { precision: 7, scale: 3 }),
+    expectedCommission: decimal("expectedCommission", { precision: 12, scale: 2 }),
+    financialRevision: varchar("financialRevision", { length: 64 }).notNull(),
+    financialSnapshotAt: timestamp("financialSnapshotAt").notNull(),
+    receivedAt: timestamp("receivedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("orbit_financial_snapshots_booking_unique").on(table.bookingId),
+    index("orbit_financial_snapshots_crm_ref_idx").on(table.crmRef),
+  ]
+);
+
+export type OrbitFinancialSnapshot = typeof orbitFinancialSnapshots.$inferSelect;
+export type InsertOrbitFinancialSnapshot = typeof orbitFinancialSnapshots.$inferInsert;
+
 // ─── Password Reset Tokens ─────────────────────────────────────────────────────────────────────────────────
 export const passwordResetTokens = mysqlTable("password_reset_tokens", {
   id: int("id").autoincrement().primaryKey(),

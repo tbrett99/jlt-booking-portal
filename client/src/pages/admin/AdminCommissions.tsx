@@ -17,6 +17,19 @@ import CopyableRef from "@/components/CopyableRef";
 import { useLocation } from "wouter";
 import { getPage, getSelectableCommissionRows, sortRowsByDate } from "@/lib/commission-list-utils";
 
+type OrbitFinancialSnapshot = {
+  currency: "GBP";
+  grossBookingValue: number | string | null;
+  totalNetCost: number | string | null;
+  netCostSubtotal: number | string | null;
+  netCostStatus: "complete" | "incomplete" | "unavailable";
+  missingNetCostProducts: number;
+  grossMargin: number | string | null;
+  marginPct: number | string | null;
+  expectedCommission: number | string | null;
+  financialSnapshotAt: Date | string;
+};
+
 type ClaimRow = {
   id: number;
   bookingId: number;
@@ -47,6 +60,7 @@ type ClaimRow = {
     expectedCommission: number | null;
     ptsRef?: string | null;
     topdogRef?: string | null;
+    orbitFinancialSnapshot?: OrbitFinancialSnapshot | null;
   } | null;
 };
 
@@ -81,6 +95,46 @@ function parseCsvToObjects(text: string): Record<string, string>[] {
 function formatDate(d: Date | string | null | undefined) {
   if (!d) return "—";
   return format(new Date(d), "dd/MM/yyyy");
+}
+
+function formatGbp(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return "—";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "—";
+  return `£${parsed.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function OrbitFinancialSummary({ snapshot }: { snapshot?: OrbitFinancialSnapshot | null }) {
+  if (!snapshot) {
+    return <span className="text-xs text-muted-foreground">Awaiting financial snapshot</span>;
+  }
+
+  if (snapshot.netCostStatus === "unavailable") {
+    return <span className="text-xs text-muted-foreground">Financial snapshot unavailable</span>;
+  }
+
+  if (snapshot.netCostStatus === "incomplete") {
+    const productLabel = snapshot.missingNetCostProducts === 1 ? "product" : "products";
+    return (
+      <div className="min-w-52 space-y-1 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-950">
+        <p className="font-semibold">Net cost incomplete — {snapshot.missingNetCostProducts} active {productLabel} missing</p>
+        <p>Subtotal: <strong>{formatGbp(snapshot.netCostSubtotal)}</strong></p>
+        <p className="leading-snug">Do not use this as the full PTS comparison figure.</p>
+        <p className="pt-0.5 text-[10px] text-amber-800">Orbit updated {format(new Date(snapshot.financialSnapshotAt), "dd MMM yyyy, HH:mm")}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-w-52 space-y-1 text-xs leading-snug">
+      <p><span className="text-muted-foreground">Gross booking:</span> <strong>{formatGbp(snapshot.grossBookingValue)}</strong></p>
+      <p><span className="text-muted-foreground">Orbit total net:</span> <strong>{formatGbp(snapshot.totalNetCost)}</strong></p>
+      <p><span className="text-muted-foreground">Margin:</span> <strong>{formatGbp(snapshot.grossMargin)} · {snapshot.marginPct === null ? "—" : `${Number(snapshot.marginPct).toFixed(2)}%`}</strong></p>
+      <p><span className="text-muted-foreground">Orbit expected:</span> <strong>{formatGbp(snapshot.expectedCommission)}</strong></p>
+      <p className="pt-0.5 text-[10px] text-muted-foreground">Orbit updated {format(new Date(snapshot.financialSnapshotAt), "dd MMM yyyy, HH:mm")}</p>
+      <p className="text-[10px] text-muted-foreground">Compare the complete net total to PTS manually.</p>
+    </div>
+  );
 }
 
 // ─── ClaimTable defined at MODULE SCOPE so React never remounts it on vatEditing state changes ───
@@ -125,6 +179,7 @@ function ClaimTable({
             <th className="py-3 px-4 text-left font-medium">Agent</th>
             <th className="py-3 px-4 text-left font-medium">Departure</th>
             <th className="py-3 px-4 text-left font-medium">Expected Comm.</th>
+            <th className="py-3 px-4 text-left font-medium">Orbit financials</th>
             <th className="py-3 px-4 text-left font-medium">VAT (£)</th>
             <th className="py-3 px-4 text-left font-medium">Type</th>
             <th className="py-3 px-4 text-left font-medium">Key suppliers</th>
@@ -138,7 +193,7 @@ function ClaimTable({
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={showSelect ? 11 : 12} className="py-12 text-center text-muted-foreground">
+              <td colSpan={showSelect ? 12 : 13} className="py-12 text-center text-muted-foreground">
                 No records found.
               </td>
             </tr>
@@ -194,6 +249,7 @@ function ClaimTable({
                 <td className="py-3 px-4">
                   {c.booking?.expectedCommission != null ? `£${Number(c.booking.expectedCommission).toFixed(2)}` : "—"}
                 </td>
+                <td className="py-3 px-4 align-top"><OrbitFinancialSummary snapshot={c.booking?.orbitFinancialSnapshot} /></td>
                 <td className="py-3 px-4">
                   <input
                     type="number"
@@ -770,6 +826,7 @@ export default function AdminCommissions() {
                         <th className="py-3 px-4 text-left">Agent Status</th>
                         <th className="py-3 px-4 text-left">Departure Date</th>
                         <th className="py-3 px-4 text-left">Commission</th>
+                        <th className="py-3 px-4 text-left">Orbit financials</th>
                         <th className="py-3 px-4 text-left">Claimed On</th>
                         <th className="py-3 px-4 text-left">Actions</th>
                       </tr>
@@ -806,6 +863,7 @@ export default function AdminCommissions() {
                             <td className="py-3 px-4 font-semibold">
                               {c.booking?.expectedCommission != null ? `£${Number(c.booking.expectedCommission).toFixed(2)}` : '—'}
                             </td>
+                            <td className="py-3 px-4 align-top"><OrbitFinancialSummary snapshot={c.booking?.orbitFinancialSnapshot} /></td>
                             <td className="py-3 px-4 text-muted-foreground">{formatDate(c.claimedAt)}</td>
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-2">
@@ -862,6 +920,7 @@ export default function AdminCommissions() {
                         <th className="py-3 px-4 text-left">Agent</th>
                         <th className="py-3 px-4 text-left">Departure</th>
                         <th className="py-3 px-4 text-left">Commission</th>
+                        <th className="py-3 px-4 text-left">Orbit financials</th>
                         <th className="py-3 px-4 text-left">Top-Up Amount</th>
                         <th className="py-3 px-4 text-left">Note</th>
                         <th className="py-3 px-4 text-left">Requested</th>
@@ -883,6 +942,7 @@ export default function AdminCommissions() {
                           <td className="py-3 px-4 font-semibold">
                             {c.booking?.expectedCommission != null ? `£${Number(c.booking.expectedCommission).toFixed(2)}` : "—"}
                           </td>
+                          <td className="py-3 px-4 align-top"><OrbitFinancialSummary snapshot={c.booking?.orbitFinancialSnapshot} /></td>
                           <td className="py-3 px-4 font-semibold text-red-500">
                             {(c as any).topUpAmountPence != null ? `£${(Number((c as any).topUpAmountPence) / 100).toFixed(2)}` : "—"}
                           </td>

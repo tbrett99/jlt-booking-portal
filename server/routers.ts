@@ -3318,11 +3318,16 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       const bookingIds = Array.from(new Set(claims.map((c) => c.bookingId)));
       const outstandingRefundBookingIds = new Set<number>();
       const outstandingAmendmentBookingIds = new Set<number>();
+      const orbitFinancialSnapshotByBookingId = new Map<number, any>();
       if (bookingIds.length > 0) {
         const { getDb } = await import('./db');
         const db = await getDb();
         if (db) {
-          const { refunds: refundsTable, amendments: amendmentsTable } = await import('../drizzle/schema');
+          const {
+            refunds: refundsTable,
+            amendments: amendmentsTable,
+            orbitFinancialSnapshots,
+          } = await import('../drizzle/schema');
           const { inArray, and, ne } = await import('drizzle-orm');
           // Outstanding refunds: status is pending or processing (not completed)
           const outstandingRefunds = await db
@@ -3343,11 +3348,21 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
               ne(amendmentsTable.status, 'rejected'),
             ));
           for (const a of outstandingAmendments) outstandingAmendmentBookingIds.add(a.bookingId);
+          const orbitFinancialSnapshotsForClaims = await db
+            .select()
+            .from(orbitFinancialSnapshots)
+            .where(inArray(orbitFinancialSnapshots.bookingId, bookingIds));
+          for (const snapshot of orbitFinancialSnapshotsForClaims) {
+            orbitFinancialSnapshotByBookingId.set(snapshot.bookingId, snapshot);
+          }
         }
       }
 
       return claims.map((c) => {
-        const booking = bookingMap.get(c.bookingId) ?? null;
+        const baseBooking = bookingMap.get(c.bookingId) ?? null;
+        const booking = baseBooking
+          ? { ...baseBooking, orbitFinancialSnapshot: orbitFinancialSnapshotByBookingId.get(c.bookingId) ?? null }
+          : null;
         return {
         ...c,
         // A historical claim may have been created before VAT was copied from the

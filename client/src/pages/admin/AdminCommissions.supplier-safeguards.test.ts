@@ -11,4 +11,13 @@ describe("commission management supplier safeguard", () => {
     expect(source).toContain("Check PTS suppliers");
     expect(source).toContain("Suntransfers / Transferz / Holiday Extras");
   });
+
+  it("shows a manual Orbit financial comparison without claiming an automatic PTS match", () => {
+    expect(source).toContain("Orbit financials");
+    expect(source).toContain("Orbit total net:");
+    expect(source).toContain("Net cost incomplete");
+    expect(source).toContain("Do not use this as the full PTS comparison figure.");
+    expect(source).toContain("Compare the complete net total to PTS manually.");
+    expect(source).not.toContain("PTS matched");
+  });
 });

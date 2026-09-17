@@ -11,9 +11,22 @@
 import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { eq, and } from "drizzle-orm";
-import { getDb, createBooking, updateBookingAdminFields, getBookingById } from "./db";
+import {
+  getDb,
+  createBooking,
+  updateBookingAdminFields,
+  getBookingById,
+  getOrbitFinancialSnapshotByBooking,
+  createOrbitFinancialSnapshot,
+  updateOrbitFinancialSnapshot,
+} from "./db";
 import { apiKeys, users, ssoTokens, agentCrmProfiles, publicAgentProfiles, publicHolidayShowcaseEvents, publicHolidayShowcases } from "../drizzle/schema";
 import { orbitHolidayShowcaseSchema, slugifyShowcase, toSafePublicValidationIssues } from "./holiday-showcase-logic";
+import {
+  isOrbitFinancialSnapshotPayload,
+  orbitFinancialSnapshotSchema,
+  toSafeFinancialSnapshotIssues,
+} from "./orbit-financial-snapshot";
 import { nanoid } from "nanoid";
 
 const router = Router();
@@ -295,13 +308,98 @@ router.post("/quote-showcases", async (req: Request, res: Response) => {
  */
 router.post("/update-commission", async (req: Request, res: Response) => {
   try {
-    // Log full request body for debugging margin issues
-    console.log("[update-commission] incoming body:", JSON.stringify(req.body));
     // 1. Auth
     const rawKey = req.headers["x-api-key"] as string | undefined;
     if (!rawKey) return res.status(401).json({ error: "Missing X-API-Key header" });
     const keyRecord = await validateApiKey(rawKey);
     if (!keyRecord) return res.status(401).json({ error: "Invalid or inactive API key" });
+
+    // Orbit's richer financial snapshot uses the established endpoint while
+    // keeping the older commission/margin update payload fully compatible.
+    if (isOrbitFinancialSnapshotPayload(req.body)) {
+      const parsedSnapshot = orbitFinancialSnapshotSchema.safeParse(req.body);
+      if (!parsedSnapshot.success) {
+        return res.status(400).json({
+          error: "Invalid Orbit financial snapshot payload",
+          validationErrors: toSafeFinancialSnapshotIssues(parsedSnapshot.error.issues),
+        });
+      }
+      const snapshot = parsedSnapshot.data;
+      const snapshotAt = new Date(snapshot.financialSnapshotAt);
+      const db = await getDb();
+      if (!db) return res.status(503).json({ error: "Database unavailable" });
+
+      const { bookings: bookingsTable } = await import("../drizzle/schema");
+      let booking: any;
+      if (snapshot.bookingId !== undefined) {
+        booking = await getBookingById(snapshot.bookingId);
+      } else {
+        const matches = await db
+          .select()
+          .from(bookingsTable)
+          .where(eq(bookingsTable.crmRef, snapshot.crmRef))
+          .limit(1);
+        booking = matches[0];
+      }
+      if (!booking) {
+        return res.status(404).json({ error: "No booking found for the supplied Portal booking ID or Orbit booking reference." });
+      }
+      if (booking.crmRef && booking.crmRef !== snapshot.crmRef) {
+        return res.status(409).json({ error: "The supplied Orbit booking reference does not match this Portal booking." });
+      }
+
+      const existingSnapshot = await getOrbitFinancialSnapshotByBooking(booking.id);
+      const incomingRevision = snapshot.financialRevision.toLowerCase();
+      if (existingSnapshot?.financialRevision === incomingRevision) {
+        return res.status(200).json({
+          success: true,
+          idempotent: true,
+          bookingId: booking.id,
+          financialRevision: existingSnapshot.financialRevision,
+        });
+      }
+      if (existingSnapshot && snapshotAt.getTime() < new Date(existingSnapshot.financialSnapshotAt).getTime()) {
+        return res.status(200).json({
+          success: true,
+          stale: true,
+          bookingId: booking.id,
+          financialRevision: existingSnapshot.financialRevision,
+        });
+      }
+
+      const snapshotValues = {
+        bookingId: booking.id,
+        crmRef: snapshot.crmRef,
+        currency: snapshot.currency,
+        grossBookingValue: snapshot.grossBookingValue === null ? null : String(snapshot.grossBookingValue),
+        totalNetCost: snapshot.totalNetCost === null ? null : String(snapshot.totalNetCost),
+        netCostSubtotal: snapshot.netCostSubtotal === null ? null : String(snapshot.netCostSubtotal),
+        netCostStatus: snapshot.netCostStatus,
+        missingNetCostProducts: snapshot.missingNetCostProducts,
+        grossMargin: snapshot.grossMargin === null ? null : String(snapshot.grossMargin),
+        marginPct: snapshot.marginPct === null ? null : String(snapshot.marginPct),
+        expectedCommission: snapshot.expectedCommission === null ? null : String(snapshot.expectedCommission),
+        financialRevision: incomingRevision,
+        financialSnapshotAt: snapshotAt,
+        receivedAt: new Date(),
+      } as const;
+
+      if (existingSnapshot) {
+        await updateOrbitFinancialSnapshot(existingSnapshot.id, snapshotValues);
+      } else {
+        await createOrbitFinancialSnapshot(snapshotValues);
+      }
+      // A direct Portal booking ID may be supplied before the legacy booking has
+      // been linked to Orbit. Record the stable reference once, but never replace
+      // a different existing reference.
+      if (!booking.crmRef) await updateBookingAdminFields(booking.id, { crmRef: snapshot.crmRef });
+
+      return res.status(200).json({
+        success: true,
+        bookingId: booking.id,
+        financialRevision: snapshotValues.financialRevision,
+      });
+    }
 
     // 2. Parse body
     const {

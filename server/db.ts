@@ -13,6 +13,7 @@ import {
   inAppNotifications,
   notificationTemplates,
   notes,
+  orbitFinancialSnapshots,
   passwordResetTokens,
   pipelineHistory,
   refundSuppliers,
@@ -1290,6 +1291,39 @@ export async function updateCommissionVat(claimId: number, vatAmount: number | n
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(commissionClaims).set({ vatAmount: vatAmount !== null ? String(vatAmount) : null }).where(eq(commissionClaims.id, claimId));
+}
+
+// ─── Orbit Financial Snapshots ───────────────────────────────────────────────
+
+export async function getOrbitFinancialSnapshotByBooking(bookingId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(orbitFinancialSnapshots)
+    .where(eq(orbitFinancialSnapshots.bookingId, bookingId))
+    .limit(1);
+  return result[0];
+}
+
+export async function createOrbitFinancialSnapshot(data: typeof orbitFinancialSnapshots.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db.insert(orbitFinancialSnapshots).values(data);
+  const id = Number((result as any).insertId);
+  const stored = await db.select().from(orbitFinancialSnapshots).where(eq(orbitFinancialSnapshots.id, id)).limit(1);
+  return stored[0];
+}
+
+export async function updateOrbitFinancialSnapshot(
+  snapshotId: number,
+  data: Partial<typeof orbitFinancialSnapshots.$inferInsert>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(orbitFinancialSnapshots).set(data).where(eq(orbitFinancialSnapshots.id, snapshotId));
+  const stored = await db.select().from(orbitFinancialSnapshots).where(eq(orbitFinancialSnapshots.id, snapshotId)).limit(1);
+  return stored[0];
 }
 
 // ─── Password Reset Tokens ────────────────────────────────────────────────────
