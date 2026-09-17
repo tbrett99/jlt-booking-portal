@@ -3193,6 +3193,12 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           content: `[System] Commission claimed by ${ctx.user.name ?? "Agent"}.`,
           isInternal: false,
         });
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[Commission claim audit] ${ctx.user.name ?? "Agent"} confirmed the booking is complete with no further amendments, reimbursements, or refunds due. Suntransfers, Transferz, or Holiday Extras: ${input.hasKeyTransferSupplier ? "Yes — confirm the relevant suppliers are on PTS and paid where required." : "No"}.`,
+          isInternal: true,
+        });
         // Notify admins
         const allUsers = await getAllUsers();
         const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
@@ -3206,6 +3212,10 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         }
         return claim;
       }),
+
+    byBooking: adminProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .query(async ({ input }) => getCommissionClaimByBooking(input.bookingId) ?? null),
 
     // Agent: get own commission claims with booking info
     myCommissions: protectedProcedure.query(async ({ ctx }) => {
