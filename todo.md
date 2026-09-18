@@ -2695,6 +2695,7 @@
 - [x] Fix: Team invitee (Claire Douglas) not prompted to sign contract — add "Resend Invite" button in CRM Onboarding tab + fix invite flow to preserve return URL after login/register
 - [x] Fix: CRM missing data (trainingStage, membershipTier) — manually patched Claire's record in DB (Business Class, Training, teamId 150002)
 - [x] Fix: Supplier access toggles not clickable — added optimistic state updates and loading guard to prevent stale re-render
+- [x] Add Ambassador Cruises to the CRM supplier portal access options
 
 ## Bug Fixes — June 2026 (cont.)
 

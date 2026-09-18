@@ -54,6 +54,7 @@ const MEMBERSHIP_TIERS = [
 
 const SUPPLIERS = [
   "Ace Rooms",
+  "Ambassador Cruises",
   "Aviate",
   "Easyjet",
   "Etihad Holidays",
