@@ -2106,7 +2106,7 @@ export async function deleteReimbursementItem(id: number) {
 }
 
 export async function getReimbursementsAdmin(filters?: {
-  status?: "pending" | "scheduled" | "paid";
+  status?: "pending" | "awaiting_agent" | "scheduled" | "paid";
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -2140,6 +2140,34 @@ export async function getReimbursementsAdmin(filters?: {
         .leftJoin(bookings, eq(reimbursementItems.bookingId, bookings.id))
         .leftJoin(users, eq(reimbursementItems.agentId, users.id))
         .orderBy(desc(reimbursementItems.createdAt)));
+  const reimbursementItemIds = rows.map((row) => row.item.id);
+  const latestChaseByItemId = new Map<number, {
+    note: string | null;
+    actedAt: Date;
+    actedByName: string | null;
+  }>();
+  if (reimbursementItemIds.length > 0) {
+    const { reimbursementAuditLogs } = await import("../drizzle/schema");
+    const chaseRows = await db
+      .select({
+        reimbursementItemId: reimbursementAuditLogs.reimbursementItemId,
+        note: reimbursementAuditLogs.note,
+        actedAt: reimbursementAuditLogs.actedAt,
+        actedByName: users.name,
+      })
+      .from(reimbursementAuditLogs)
+      .leftJoin(users, eq(reimbursementAuditLogs.actedById, users.id))
+      .where(and(
+        inArray(reimbursementAuditLogs.reimbursementItemId, reimbursementItemIds),
+        eq(reimbursementAuditLogs.action, "agent_chased"),
+      ))
+      .orderBy(desc(reimbursementAuditLogs.actedAt));
+    for (const chase of chaseRows) {
+      if (!latestChaseByItemId.has(chase.reimbursementItemId)) {
+        latestChaseByItemId.set(chase.reimbursementItemId, chase);
+      }
+    }
+  }
   return rows.map((r) => ({
     ...r.item,
     clientName: r.clientName ?? null,
@@ -2147,6 +2175,9 @@ export async function getReimbursementsAdmin(filters?: {
     departureDate: r.departureDate ?? null,
     agentName: r.agentName ?? null,
     agentEmail: r.agentEmail ?? null,
+    lastChaseNote: latestChaseByItemId.get(r.item.id)?.note ?? null,
+    lastChaseAt: latestChaseByItemId.get(r.item.id)?.actedAt ?? null,
+    lastChasedByName: latestChaseByItemId.get(r.item.id)?.actedByName ?? null,
   }));
 }
 
@@ -2209,8 +2240,9 @@ export async function updateReimbursementStatus(
   const existing = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
   const oldStatus = existing[0]?.status ?? null;
   const updates: Record<string, unknown> = { status };
-  if (status === "scheduled") { updates.scheduledAt = now; updates.actionedAt = now; }
-  if (status === "paid") { updates.paidAt = now; updates.paidById = actorId; updates.actionedAt = now; }
+  if (status === "pending") updates.nextFollowUpAt = null;
+  if (status === "scheduled") { updates.scheduledAt = now; updates.actionedAt = now; updates.nextFollowUpAt = null; }
+  if (status === "paid") { updates.paidAt = now; updates.paidById = actorId; updates.actionedAt = now; updates.nextFollowUpAt = null; }
   await db.update(reimbursementItems).set(updates as any).where(eq(reimbursementItems.id, id));
   const rows = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
   const updated = rows[0];
@@ -2226,6 +2258,38 @@ export async function updateReimbursementStatus(
     });
   }
   return updated;
+}
+
+export async function setReimbursementAwaitingAgent(
+  id: number,
+  actorId: number,
+  note: string,
+  nextFollowUpAt: Date,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const existing = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
+  const item = existing[0];
+  if (!item) throw new Error("Reimbursement item not found");
+  if (item.status === "paid") throw new Error("A paid reimbursement cannot be moved to Awaiting agent");
+  const now = new Date();
+  await db.update(reimbursementItems).set({
+    status: "awaiting_agent",
+    nextFollowUpAt,
+    lastChasedAt: now,
+    lastChasedById: actorId,
+  } as any).where(eq(reimbursementItems.id, id));
+  await writeReimbursementAuditLog({
+    reimbursementItemId: id,
+    bookingId: item.bookingId,
+    action: "agent_chased",
+    oldStatus: item.status,
+    newStatus: "awaiting_agent",
+    actedById: actorId,
+    note,
+  });
+  const updated = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
+  return updated[0];
 }
 
 export async function scheduleReimbursementsForBooking(bookingId: number) {
@@ -2384,7 +2448,7 @@ export async function getReimbItemsWithMissingDocsByAgent(agentId: number) {
   }));
 }
 
-// Count reimbursement items that are pending (not yet scheduled or paid)
+// Count reimbursement items that still need action before PTS scheduling, including agent chases.
 export async function getOutstandingReimbursementsCount() {
   const db = await getDb();
   if (!db) return 0;
@@ -2392,7 +2456,7 @@ export async function getOutstandingReimbursementsCount() {
   const rows = await db
     .select({ id: reimbursementItems.id })
     .from(reimbursementItems)
-    .where(and(eq(reimbursementItems.status, "pending"), eq(reimbursementItems.isLate, false)));
+    .where(and(inArray(reimbursementItems.status, ["pending", "awaiting_agent"]), eq(reimbursementItems.isLate, false)));
   return rows.length;
 }
 

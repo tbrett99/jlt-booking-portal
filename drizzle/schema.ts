@@ -465,7 +465,7 @@ export const reimbursementItems = mysqlTable("reimbursement_items", {
   agentId: int("agentId").notNull(),              // FK → users.id
   supplierName: varchar("supplierName", { length: 255 }).notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  status: mysqlEnum("status", ["pending", "scheduled", "paid"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "awaiting_agent", "scheduled", "paid"]).default("pending").notNull(),
   isLate: boolean("isLate").default(false).notNull(), // true if added after booking reached Added to PTS
   scheduledAt: timestamp("scheduledAt"),          // when status moved to scheduled
   paidAt: timestamp("paidAt"),                    // when admin marked as paid
@@ -473,9 +473,14 @@ export const reimbursementItems = mysqlTable("reimbursement_items", {
   assignedToId: int("assignedToId"),               // FK → users.id (admin assigned to handle this item)
   actionedAt: timestamp("actionedAt"),             // when admin marked as actioned (for late items)
   jltCompanyCard: boolean("jltCompanyCard").default(false).notNull(), // true = paid with JLT card, funds stay with JLT
+  nextFollowUpAt: timestamp("nextFollowUpAt"),     // only set while JLT is awaiting a response from the agent
+  lastChasedAt: timestamp("lastChasedAt"),         // most recent request for information/evidence
+  lastChasedById: int("lastChasedById"),           // FK → users.id (admin who most recently chased)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  index("reimbursement_items_status_followup_idx").on(table.status, table.nextFollowUpAt),
+]);
 export type ReimbursementItem = typeof reimbursementItems.$inferSelect;
 export type InsertReimbursementItem = typeof reimbursementItems.$inferInsert;
 

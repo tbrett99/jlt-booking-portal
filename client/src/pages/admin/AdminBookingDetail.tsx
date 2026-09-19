@@ -20,6 +20,7 @@ import CopyableRef from "@/components/CopyableRef";
 import CountrySelect from "@/components/CountrySelect";
 import TaskFormDialog from "./TaskFormDialog";
 import AmendmentMessageThread from "@/components/AmendmentMessageThread";
+import { ReimbursementAwaitingAgentDialog } from "@/components/ReimbursementAwaitingAgentDialog";
 
 const STAGES = [
   "New Booking", "Creating own PTS file", "Incomplete Booking", "Query",
@@ -1110,6 +1111,7 @@ export default function AdminBookingDetail() {
   const [moveCancellationToCancelled, setMoveCancellationToCancelled] = useState(true);
   const [mergeTarget, setMergeTarget] = useState<{ id: number; clientName: string } | null>(null);
   const [mergeSearchQuery, setMergeSearchQuery] = useState("");
+  const [awaitingReimbursementTarget, setAwaitingReimbursementTarget] = useState<any | null>(null);
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
   // @mention state
@@ -1148,12 +1150,24 @@ export default function AdminBookingDetail() {
     },
     onError: (error) => toast.error(error.message || "Unable to action cancellation request"),
   });
+  const refreshReimbursements = async () => {
+    await Promise.all([
+      refetchReimbItems(),
+      utils.reimbursements.auditLog.invalidate({ bookingId }),
+      utils.reimbursements.list.invalidate(),
+      utils.reimbursements.dashboardStats.invalidate(),
+    ]);
+  };
   const updateReimbStatus = trpc.reimbursements.updateStatus.useMutation({
-    onSuccess: () => { refetchReimbItems(); toast.success('Reimbursement status updated'); },
+    onSuccess: () => { void refreshReimbursements(); toast.success('Reimbursement status updated'); },
+    onError: (e) => toast.error(e.message),
+  });
+  const awaitReimbursementAgent = trpc.reimbursements.awaitAgent.useMutation({
+    onSuccess: () => { setAwaitingReimbursementTarget(null); toast.success('Reimbursement moved to Awaiting agent'); void refreshReimbursements(); },
     onError: (e) => toast.error(e.message),
   });
   const deleteReimbItem = trpc.reimbursements.deleteItem.useMutation({
-    onSuccess: () => { refetchReimbItems(); toast.success('Reimbursement item deleted'); },
+    onSuccess: () => { void refreshReimbursements(); toast.success('Reimbursement item deleted'); },
     onError: (e) => toast.error(e.message),
   });
   const toggleSuppliersAndDocs = trpc.bookings.toggleSuppliersAndDocs.useMutation({
@@ -1666,6 +1680,10 @@ export default function AdminBookingDetail() {
                           <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                         </div>
                         <div className="flex-1 min-w-0">
+                          {(() => {
+                            const item = (reimbItems as any[]).find((reimbursement) => reimbursement.id === entry.reimbursementItemId);
+                            return item ? <span className="mr-1 text-muted-foreground">{item.supplierName} —</span> : null;
+                          })()}
                           <span className="font-medium">{entry.actedByName ?? 'Admin'}</span>
                           {entry.action === 'status_changed' && (
                             <span className="text-muted-foreground">
@@ -1674,6 +1692,15 @@ export default function AdminBookingDetail() {
                               {' '}to{' '}
                               <span className="font-medium capitalize" style={{ color: entry.newStatus === 'paid' ? '#065f46' : entry.newStatus === 'scheduled' ? '#1d4ed8' : '#92400e' }}>{entry.newStatus}</span>
                             </span>
+                          )}
+                          {entry.action === 'agent_chased' && (
+                            <span className="text-muted-foreground"> set this reimbursement to <span className="font-medium text-orange-800">Awaiting agent</span></span>
+                          )}
+                          {entry.action === 'agent_response_checked' && (
+                            <span className="text-muted-foreground"> confirmed the requested information was checked and returned it to <span className="font-medium text-amber-800">Pending</span></span>
+                          )}
+                          {entry.note && !isBackfill && (
+                            <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-foreground">{entry.note}</p>
                           )}
                           {isBackfill && <span className="text-muted-foreground italic"> (historical record)</span>}
                         </div>
@@ -1692,9 +1719,9 @@ export default function AdminBookingDetail() {
               <div id="booking-reimbursements" className="scroll-mt-6 space-y-3 border-t pt-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Reimbursement Items ({(reimbItems as any[]).length})</p>
                 {(reimbItems as any[]).map((item: any) => {
-                  const statusColor = item.status === 'paid' ? '#065f46' : item.status === 'scheduled' ? '#1d4ed8' : '#92400e';
-                  const statusBg = item.status === 'paid' ? '#d1fae5' : item.status === 'scheduled' ? '#dbeafe' : '#fef3c7';
-                  const statusLabel = item.status === 'paid' ? 'Paid' : item.status === 'scheduled' ? 'Scheduled' : 'Pending';
+                  const statusColor = item.status === 'paid' ? '#065f46' : item.status === 'scheduled' ? '#1d4ed8' : item.status === 'awaiting_agent' ? '#9a3412' : '#92400e';
+                  const statusBg = item.status === 'paid' ? '#d1fae5' : item.status === 'scheduled' ? '#dbeafe' : item.status === 'awaiting_agent' ? '#ffedd5' : '#fef3c7';
+                  const statusLabel = item.status === 'paid' ? 'Paid' : item.status === 'scheduled' ? 'Scheduled' : item.status === 'awaiting_agent' ? 'Awaiting agent' : 'Pending';
                   const docs: any[] = item.docs ?? [];
                   return (
                     <div key={item.id} className="rounded-lg border overflow-hidden" style={{ background: item.isLate ? '#fffbeb' : '#fafafa', borderColor: item.isLate ? '#f59e0b' : undefined }}>
@@ -1712,15 +1739,37 @@ export default function AdminBookingDetail() {
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: statusBg, color: statusColor }}>
                           {statusLabel}
                         </span>
-                        {item.status !== 'paid' && (
+                        {item.status === 'pending' && (
                           <Button
                             size="sm"
                             variant="outline"
                             className="text-xs h-6 px-2 flex-shrink-0"
                             disabled={updateReimbStatus.isPending}
-                            onClick={() => updateReimbStatus.mutate({ id: item.id, status: item.status === 'pending' ? 'scheduled' : 'paid' })}
+                            onClick={() => updateReimbStatus.mutate({ id: item.id, status: 'scheduled' })}
                           >
-                            {item.status === 'pending' ? 'Mark Scheduled' : 'Mark Paid'}
+                            Mark Scheduled
+                          </Button>
+                        )}
+                        {item.status === 'awaiting_agent' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-6 px-2 flex-shrink-0"
+                            disabled={updateReimbStatus.isPending}
+                            onClick={() => updateReimbStatus.mutate({ id: item.id, status: 'scheduled' })}
+                          >
+                            Mark Scheduled
+                          </Button>
+                        )}
+                        {item.status === 'scheduled' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-6 px-2 flex-shrink-0"
+                            disabled={updateReimbStatus.isPending}
+                            onClick={() => updateReimbStatus.mutate({ id: item.id, status: 'paid' })}
+                          >
+                            Mark Paid
                           </Button>
                         )}
                         <button
@@ -1750,6 +1799,36 @@ export default function AdminBookingDetail() {
                               <span className="text-muted-foreground flex-shrink-0">{doc.createdAt ? new Date(doc.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : ''}</span>
                             </div>
                           ))
+                        )}
+                        {item.status === 'awaiting_agent' && item.nextFollowUpAt && (
+                          <p className={`pt-1 text-xs font-medium ${new Date(item.nextFollowUpAt).getTime() < new Date().setHours(0, 0, 0, 0) ? 'text-red-700' : 'text-orange-800'}`}>
+                            Next follow-up: {format(new Date(item.nextFollowUpAt), 'dd MMM yyyy')}
+                          </p>
+                        )}
+                        {item.status !== 'paid' && (
+                          <div className="flex flex-wrap gap-2 pt-2">
+                            {item.status !== 'awaiting_agent' ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 border-orange-300 text-xs text-orange-800 hover:bg-orange-50"
+                                onClick={() => setAwaitingReimbursementTarget(item)}
+                              >
+                                Awaiting agent
+                              </Button>
+                            ) : (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 border-orange-300 text-xs text-orange-800 hover:bg-orange-50"
+                                  onClick={() => setAwaitingReimbursementTarget(item)}
+                                >
+                                  Chase again
+                                </Button>
+                              </>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -2563,6 +2642,20 @@ export default function AdminBookingDetail() {
           }}
         />
       )}
+      <ReimbursementAwaitingAgentDialog
+        open={!!awaitingReimbursementTarget}
+        target={awaitingReimbursementTarget ? {
+          id: awaitingReimbursementTarget.id,
+          supplierName: awaitingReimbursementTarget.supplierName,
+          clientName: booking?.clientName,
+        } : null}
+        isPending={awaitReimbursementAgent.isPending}
+        onClose={() => setAwaitingReimbursementTarget(null)}
+        onSubmit={({ note, nextFollowUpAt }) => {
+          if (!awaitingReimbursementTarget || !nextFollowUpAt) return;
+          awaitReimbursementAgent.mutate({ id: awaitingReimbursementTarget.id, note, nextFollowUpAt });
+        }}
+      />
     </div>
   );
 }

@@ -159,6 +159,7 @@
 - [x] Allow agents to delete and reorder individual Holiday Showcase itinerary sections in the public editor: every section has accessible move-up, move-down, and delete controls, and the saved array order remains the public itinerary order
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
+- [x] Add the streamlined reimbursement Awaiting agent workflow: Pending → Awaiting agent → Scheduled → Paid, with a required internal chase note and follow-up date; latest complete chase note, staff author, timestamp, and overdue follow-up date appear directly in the existing Reimbursements list, while the booking reimbursement activity shows the immutable chase history. Chase notes and staff-only dates remain hidden from agents.
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
 - [x] Default the agent portal shared Messages view to oldest-first conversation ordering
 - [ ] Verify oldest-first ordering on the deployed admin and agent role-specific Messages views

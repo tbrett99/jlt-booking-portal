@@ -13,15 +13,17 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import { ReimbursementAwaitingAgentDialog } from "@/components/ReimbursementAwaitingAgentDialog";
 
-type StatusFilter = "all" | "pending" | "scheduled" | "paid" | "late" | "overdue_scheduled";
+type StatusFilter = "all" | "pending" | "awaiting_agent" | "scheduled" | "paid" | "late" | "overdue_scheduled" | "follow_up_overdue";
 type ReimbursementSort = "oldest" | "newest";
 const REIMBURSEMENTS_PER_PAGE = 25;
 
 const STATUS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
-  pending:   { label: "Pending",   color: "#92400e", bg: "#fef3c7" },
-  scheduled: { label: "Scheduled", color: "#065f46", bg: "#d1fae5" },
-  paid:      { label: "Paid",      color: "#1e3a5f", bg: "#dbeafe" },
+  pending:        { label: "Pending",        color: "#92400e", bg: "#fef3c7" },
+  awaiting_agent: { label: "Awaiting agent", color: "#9a3412", bg: "#ffedd5" },
+  scheduled:      { label: "Scheduled",      color: "#065f46", bg: "#d1fae5" },
+  paid:           { label: "Paid",           color: "#1e3a5f", bg: "#dbeafe" },
 };
 
 export default function AdminReimbursements() {
@@ -34,19 +36,30 @@ export default function AdminReimbursements() {
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<ReimbursementSort>("oldest");
   const [currentPage, setCurrentPage] = useState(1);
+  const [awaitingTarget, setAwaitingTarget] = useState<any | null>(null);
   const utils = trpc.useUtils();
 
   const { data: allItems = [], isLoading, refetch } = trpc.reimbursements.list.useQuery({});
   const { data: stats } = trpc.reimbursements.dashboardStats.useQuery();
   const { data: adminUsersForAssign = [] } = trpc.reimbursements.listAdminsForAssign.useQuery();
+  const refreshReimbursements = async () => {
+    await Promise.all([
+      refetch(),
+      utils.reimbursements.dashboardStats.invalidate(),
+    ]);
+  };
   const updateStatus = trpc.reimbursements.updateStatus.useMutation({
-    onSuccess: () => { refetch(); },
+    onSuccess: () => { void refreshReimbursements(); },
     onError: (e) => toast.error(e.message),
   });
-  const assignReimb = trpc.reimbursements.assign.useMutation({ onSuccess: () => refetch() });
-  const markActioned = trpc.reimbursements.markActioned.useMutation({ onSuccess: () => refetch() });
+  const awaitAgent = trpc.reimbursements.awaitAgent.useMutation({
+    onSuccess: () => { toast.success("Reimbursement moved to Awaiting agent"); setAwaitingTarget(null); void refreshReimbursements(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const assignReimb = trpc.reimbursements.assign.useMutation({ onSuccess: () => void refreshReimbursements() });
+  const markActioned = trpc.reimbursements.markActioned.useMutation({ onSuccess: () => void refreshReimbursements() });
   const deleteItem = trpc.reimbursements.deleteItem.useMutation({
-    onSuccess: () => { toast.success("Reimbursement item deleted"); refetch(); },
+    onSuccess: () => { toast.success("Reimbursement item deleted"); void refreshReimbursements(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -62,9 +75,11 @@ export default function AdminReimbursements() {
     return Math.floor((Date.now() - new Date(reference).getTime()) / (1000 * 60 * 60 * 24));
   };
   const isOverdueScheduled = (item: any) => item.status === "scheduled" && daysSinceScheduled(item) >= 5;
+  const isFollowUpOverdue = (item: any) => item.status === "awaiting_agent" && item.nextFollowUpAt && new Date(item.nextFollowUpAt).getTime() < new Date().setHours(0, 0, 0, 0);
   const items = statusFilter === "all" ? allItems
     : statusFilter === "late" ? allItems.filter((r) => r.isLate)
     : statusFilter === "overdue_scheduled" ? allItems.filter(isOverdueScheduled)
+    : statusFilter === "follow_up_overdue" ? allItems.filter(isFollowUpOverdue)
     : allItems.filter((r) => r.status === statusFilter);
 
   const agentNames = Array.from(new Set(allItems.map((r: any) => r.agentName).filter(Boolean))).sort() as string[];
@@ -79,6 +94,20 @@ export default function AdminReimbursements() {
     if (maxAmount && amt > Number(maxAmount)) return false;
     return true;
   }).sort((a: any, b: any) => {
+    if (statusFilter === "all") {
+      const priority = (item: any) => {
+        if (isFollowUpOverdue(item)) return 0;
+        if (item.status === "awaiting_agent") return 1;
+        if (item.status === "pending") return 2;
+        if (item.status === "scheduled") return 3;
+        return 4;
+      };
+      const priorityDifference = priority(a) - priority(b);
+      if (priorityDifference !== 0) return priorityDifference;
+      const dateA = new Date(a.status === "awaiting_agent" ? a.nextFollowUpAt ?? a.createdAt : a.createdAt).getTime();
+      const dateB = new Date(b.status === "awaiting_agent" ? b.nextFollowUpAt ?? b.createdAt : b.createdAt).getTime();
+      return sortOrder === "oldest" ? dateA - dateB : dateB - dateA;
+    }
     const dateA = new Date(statusFilter === "overdue_scheduled" ? scheduledReference(a) : a.createdAt).getTime();
     const dateB = new Date(statusFilter === "overdue_scheduled" ? scheduledReference(b) : b.createdAt).getTime();
     return sortOrder === "oldest" ? dateA - dateB : dateB - dateA;
@@ -98,6 +127,13 @@ export default function AdminReimbursements() {
   };
   const handlePaid = (id: number) => {
     updateStatus.mutate({ id, status: "paid" });
+  };
+  const openAwaitingDialog = (item: any) => {
+    setAwaitingTarget(item);
+  };
+  const submitAwaitingDialog = ({ note, nextFollowUpAt }: { note: string; nextFollowUpAt?: Date }) => {
+    if (!awaitingTarget || !nextFollowUpAt) return;
+    awaitAgent.mutate({ id: awaitingTarget.id, note, nextFollowUpAt });
   };
 
   const exportCsv = () => {
@@ -131,6 +167,8 @@ export default function AdminReimbursements() {
   const late = allItems.filter((r) => r.isLate ?? false);
   const overdueScheduled = allItems.filter(isOverdueScheduled);
   const overdueScheduledTotal = overdueScheduled.reduce((sum, item) => sum + Number(item.amount), 0);
+  const awaitingAgentItems = allItems.filter((item) => item.status === "awaiting_agent");
+  const followUpOverdue = allItems.filter(isFollowUpOverdue);
 
   return (
     <div className="space-y-6">
@@ -147,7 +185,7 @@ export default function AdminReimbursements() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
         <button
           onClick={() => setStatusFilter("pending")}
           className={`text-left rounded-xl p-4 border-2 transition-all ${statusFilter === "pending" ? "border-amber-400 shadow-sm" : "border-transparent"}`}
@@ -176,6 +214,32 @@ export default function AdminReimbursements() {
           <p className="text-xs" style={{ color: "#065f46", opacity: 0.8 }}>
             £{(stats?.scheduledTotal ?? scheduled.reduce((s, r) => s + Number(r.amount), 0)).toFixed(2)}
           </p>
+        </button>
+
+        <button
+          onClick={() => setStatusFilter("awaiting_agent")}
+          className={`text-left rounded-xl p-4 border-2 transition-all ${statusFilter === "awaiting_agent" ? "border-orange-400 shadow-sm" : "border-transparent"}`}
+          style={{ background: "#ffedd5" }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <AlertCircle size={15} style={{ color: "#c2410c" }} />
+            <span className="text-xs text-muted-foreground font-medium">Awaiting agent</span>
+          </div>
+          <p className="text-2xl font-bold" style={{ color: "#9a3412" }}>{awaitingAgentItems.length}</p>
+          <p className="text-xs" style={{ color: "#9a3412", opacity: 0.8 }}>Evidence or reply needed</p>
+        </button>
+
+        <button
+          onClick={() => setStatusFilter("follow_up_overdue")}
+          className={`text-left rounded-xl p-4 border-2 transition-all ${statusFilter === "follow_up_overdue" ? "border-red-400 shadow-sm" : "border-transparent"}`}
+          style={{ background: "#fff1f2" }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Clock size={15} style={{ color: followUpOverdue.length > 0 ? "#e11d48" : "#9ca3af" }} />
+            <span className="text-xs text-muted-foreground font-medium">Follow-up overdue</span>
+          </div>
+          <p className="text-2xl font-bold" style={{ color: followUpOverdue.length > 0 ? "#be123c" : "#414141" }}>{followUpOverdue.length}</p>
+          <p className="text-xs" style={{ color: followUpOverdue.length > 0 ? "#be123c" : "#6b7280", opacity: 0.8 }}>Agent chases due</p>
         </button>
 
         <button
@@ -209,13 +273,13 @@ export default function AdminReimbursements() {
 
       {/* Filter tabs */}
       <div className="flex gap-2 flex-wrap">
-        {(["all", "pending", "scheduled", "overdue_scheduled", "paid", "late"] as StatusFilter[]).map((f) => (
+        {(["all", "pending", "awaiting_agent", "follow_up_overdue", "scheduled", "overdue_scheduled", "paid", "late"] as StatusFilter[]).map((f) => (
           <button
             key={f}
             onClick={() => setStatusFilter(f)}
             className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${statusFilter === f ? "border-[#70FFE8] bg-[#70FFE8]/20 text-[#414141]" : "border-border text-muted-foreground hover:bg-muted"}`}
           >
-            {f === "all" ? "All" : f === "overdue_scheduled" ? "Scheduled 5+ days" : f.charAt(0).toUpperCase() + f.slice(1)}
+            {f === "all" ? "All" : f === "awaiting_agent" ? "Awaiting agent" : f === "follow_up_overdue" ? "Follow-up overdue" : f === "overdue_scheduled" ? "Scheduled 5+ days" : f.charAt(0).toUpperCase() + f.slice(1)}
           </button>
         ))}
       </div>
@@ -310,6 +374,8 @@ export default function AdminReimbursements() {
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Supplier</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Amount</th>
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Status</th>
+                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground min-w-64">Latest chase</th>
+                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Next follow-up</th>
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Departure</th>
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Assigned To</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Action</th>
@@ -362,6 +428,26 @@ export default function AdminReimbursements() {
                           </p>
                         )}
                       </td>
+                      <td className="px-4 py-3 align-top">
+                        {r.status === "awaiting_agent" ? (
+                          r.lastChaseNote ? (
+                            <div className="space-y-1">
+                              <p className="max-w-sm whitespace-pre-wrap text-xs leading-relaxed text-foreground">{r.lastChaseNote}</p>
+                              <p className="text-[10px] text-muted-foreground">
+                                {r.lastChasedByName ?? "Admin"}{r.lastChaseAt ? ` · ${format(new Date(r.lastChaseAt), "dd MMM, HH:mm")}` : ""}
+                              </p>
+                            </div>
+                          ) : <span className="text-xs italic text-muted-foreground">No chase note recorded</span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        {r.status === "awaiting_agent" && r.nextFollowUpAt ? (
+                          <div className={`text-xs font-medium ${isFollowUpOverdue(r) ? "text-red-700" : "text-amber-800"}`}>
+                            {format(new Date(r.nextFollowUpAt), "dd MMM yyyy")}
+                            {isFollowUpOverdue(r) && <p className="mt-0.5 text-[10px] font-semibold">Overdue</p>}
+                          </div>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">
                         {r.departureDate ? format(new Date(r.departureDate), "dd MMM yyyy") : "—"}
                       </td>
@@ -383,6 +469,37 @@ export default function AdminReimbursements() {
                             <Button size="sm" variant="outline" className="text-xs h-7" disabled={updateStatus.isPending} onClick={() => handleSchedule(r.id)}>
                               Mark Scheduled
                             </Button>
+                          )}
+                          {r.status === "pending" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 border-orange-300 text-xs text-orange-800 hover:bg-orange-50"
+                              onClick={() => openAwaitingDialog(r)}
+                            >
+                              Awaiting agent
+                            </Button>
+                          )}
+                          {r.status === "awaiting_agent" && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 border-orange-300 text-xs text-orange-800 hover:bg-orange-50"
+                                onClick={() => openAwaitingDialog(r)}
+                              >
+                                Chase again
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs font-semibold"
+                                style={{ background: "#70FFE8", color: "#414141" }}
+                                disabled={updateStatus.isPending}
+                                onClick={() => handleSchedule(r.id)}
+                              >
+                                Mark Scheduled
+                              </Button>
+                            </>
                           )}
                           {r.status === "scheduled" && (
                             <>
@@ -466,6 +583,17 @@ export default function AdminReimbursements() {
           </div>
         </div>
       )}
+      <ReimbursementAwaitingAgentDialog
+        open={!!awaitingTarget}
+        target={awaitingTarget ? {
+          id: awaitingTarget.id,
+          supplierName: awaitingTarget.supplierName,
+          clientName: awaitingTarget.clientName,
+        } : null}
+        isPending={awaitAgent.isPending}
+        onClose={() => setAwaitingTarget(null)}
+        onSubmit={submitAwaitingDialog}
+      />
     </div>
   );
 }

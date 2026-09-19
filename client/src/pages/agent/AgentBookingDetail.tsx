@@ -1134,9 +1134,10 @@ export default function AgentBookingDetail() {
             )}
             {reimbItems.map((item: any) => {
               const statusColors: Record<string, { bg: string; color: string }> = {
-                pending:   { bg: '#fef3c7', color: '#92400e' },
-                scheduled: { bg: '#dbeafe', color: '#1d4ed8' },
-                paid:      { bg: '#d1fae5', color: '#065f46' },
+                pending:        { bg: '#fef3c7', color: '#92400e' },
+                awaiting_agent: { bg: '#ffedd5', color: '#9a3412' },
+                scheduled:      { bg: '#dbeafe', color: '#1d4ed8' },
+                paid:           { bg: '#d1fae5', color: '#065f46' },
               };
               const sc = statusColors[item.status] ?? statusColors.pending;
               const isExpanded = expandedItemId === item.id;
@@ -1161,7 +1162,7 @@ export default function AgentBookingDetail() {
                           <AlertCircle size={10} /> {docCount === 0 ? 'Docs needed' : `${docCount}/2 docs`}
                         </span>
                       )}
-                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold capitalize" style={sc}>{item.status}</span>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={sc}>{item.status === 'awaiting_agent' ? 'Awaiting agent' : item.status}</span>
                       <button
                         type="button"
                         className={`text-xs flex-shrink-0 underline ${docsMissing ? 'font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
@@ -1172,6 +1173,9 @@ export default function AgentBookingDetail() {
                       </button>
                     </div>
                   </div>
+                  {item.status === 'awaiting_agent' && (
+                    <p className="text-xs font-medium" style={{ color: '#9a3412' }}>JLT needs further information before this reimbursement can be processed. Please check your Messages and upload any requested evidence here.</p>
+                  )}
                   {(isExpanded || needsMoreDocs) && (
                     <div className="pt-2 border-t space-y-2">
                       {/* Always-visible 2-doc requirement banner */}

@@ -260,7 +260,7 @@ export const dashboardRouter = router({
         `),
         db.execute(sql`
           SELECT
-            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS outstanding,
+            SUM(CASE WHEN status IN ('pending','awaiting_agent') THEN 1 ELSE 0 END) AS outstanding,
             SUM(CASE WHEN isLate = 1 AND actionedAt IS NULL AND status NOT IN ('scheduled','paid') THEN 1 ELSE 0 END) AS lateUnactioned
           FROM reimbursement_items
         `),

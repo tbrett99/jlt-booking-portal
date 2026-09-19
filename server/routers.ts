@@ -106,6 +106,7 @@ import {
   getReimbursementsByBooking,
   getReimbursementsAdmin,
   updateReimbursementStatus,
+  setReimbursementAwaitingAgent,
   scheduleReimbursementsForBooking,
   getReimbursementDashboardStats,
   getReimbursementAuditLog,
@@ -4423,7 +4424,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
 
     // Admin: list all reimbursements with optional status filter
     list: adminProcedure
-      .input(z.object({ status: z.enum(["pending", "scheduled", "paid"]).optional() }))
+      .input(z.object({ status: z.enum(["pending", "awaiting_agent", "scheduled", "paid"]).optional() }))
       .query(async ({ input }) => {
         return getReimbursementsAdmin(input);
       }),
@@ -4469,6 +4470,26 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           } catch { /* email failure is non-fatal */ }
         }
         return { success: true };
+      }),
+
+    // Admin: record a request for information or evidence from the agent.
+    awaitAgent: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        note: z.string().trim().min(3).max(3000),
+        nextFollowUpAt: z.date(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.nextFollowUpAt.getTime() < Date.now() - 60_000) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "The follow-up date must be today or later." });
+        }
+        const item = await setReimbursementAwaitingAgent(
+          input.id,
+          ctx.user.id,
+          input.note,
+          input.nextFollowUpAt,
+        );
+        return { success: true, item };
       }),
 
     // Agent: add late reimbursement items to an existing booking
@@ -4605,6 +4626,11 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           const { getBookingById: getBooking } = await import("./db");
           const booking = await getBooking(input.bookingId);
           if (!booking || booking.agentId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+          // Chase notes and staff follow-up dates are internal. Agents see only the
+          // established payment-status history for their own reimbursements.
+          return (await getReimbursementAuditLog(input.bookingId))
+            .filter((entry) => entry.action === "status_changed")
+            .map(({ note: _note, ...entry }) => entry);
         }
         return getReimbursementAuditLog(input.bookingId);
       }),
