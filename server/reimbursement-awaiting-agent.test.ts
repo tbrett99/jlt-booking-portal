@@ -56,5 +56,7 @@ describe("reimbursement Awaiting agent workflow", () => {
     expect(bookingDetail).toContain("set this reimbursement to");
     expect(bookingDetail).toContain("Next follow-up:");
     expect(bookingDetail).toContain("ReimbursementAwaitingAgentDialog");
+    expect(bookingDetail).toContain("utils.notes.list.invalidate({ bookingId })");
+    expect(bookingDetail).toContain("Request sent to the agent and reimbursement moved to Awaiting agent");
   });
 });

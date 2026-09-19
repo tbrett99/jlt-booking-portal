@@ -1156,6 +1156,10 @@ export default function AdminBookingDetail() {
       utils.reimbursements.auditLog.invalidate({ bookingId }),
       utils.reimbursements.list.invalidate(),
       utils.reimbursements.dashboardStats.invalidate(),
+      // Awaiting agent also creates a shared booking message. Refresh the open
+      // conversation immediately so staff can see the full communication trail.
+      utils.notes.list.invalidate({ bookingId }),
+      utils.notes.allThreads.invalidate(),
     ]);
   };
   const updateReimbStatus = trpc.reimbursements.updateStatus.useMutation({
@@ -1163,7 +1167,11 @@ export default function AdminBookingDetail() {
     onError: (e) => toast.error(e.message),
   });
   const awaitReimbursementAgent = trpc.reimbursements.awaitAgent.useMutation({
-    onSuccess: () => { setAwaitingReimbursementTarget(null); toast.success('Reimbursement moved to Awaiting agent'); void refreshReimbursements(); },
+    onSuccess: async () => {
+      setAwaitingReimbursementTarget(null);
+      await refreshReimbursements();
+      toast.success('Request sent to the agent and reimbursement moved to Awaiting agent');
+    },
     onError: (e) => toast.error(e.message),
   });
   const deleteReimbItem = trpc.reimbursements.deleteItem.useMutation({
