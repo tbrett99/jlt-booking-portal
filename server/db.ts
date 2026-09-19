@@ -2147,25 +2147,30 @@ export async function getReimbursementsAdmin(filters?: {
     actedByName: string | null;
   }>();
   if (reimbursementItemIds.length > 0) {
-    const { reimbursementAuditLogs } = await import("../drizzle/schema");
-    const chaseRows = await db
-      .select({
-        reimbursementItemId: reimbursementAuditLogs.reimbursementItemId,
-        note: reimbursementAuditLogs.note,
-        actedAt: reimbursementAuditLogs.actedAt,
-        actedByName: users.name,
-      })
-      .from(reimbursementAuditLogs)
-      .leftJoin(users, eq(reimbursementAuditLogs.actedById, users.id))
-      .where(and(
-        inArray(reimbursementAuditLogs.reimbursementItemId, reimbursementItemIds),
-        eq(reimbursementAuditLogs.action, "agent_chased"),
-      ))
-      .orderBy(desc(reimbursementAuditLogs.actedAt));
-    for (const chase of chaseRows) {
-      if (!latestChaseByItemId.has(chase.reimbursementItemId)) {
-        latestChaseByItemId.set(chase.reimbursementItemId, chase);
+    try {
+      const { reimbursementAuditLogs } = await import("../drizzle/schema");
+      const chaseRows = await db
+        .select({
+          reimbursementItemId: reimbursementAuditLogs.reimbursementItemId,
+          note: reimbursementAuditLogs.note,
+          actedAt: reimbursementAuditLogs.actedAt,
+          actedByName: users.name,
+        })
+        .from(reimbursementAuditLogs)
+        .leftJoin(users, eq(reimbursementAuditLogs.actedById, users.id))
+        .where(and(
+          inArray(reimbursementAuditLogs.reimbursementItemId, reimbursementItemIds),
+          eq(reimbursementAuditLogs.action, "agent_chased"),
+        ))
+        .orderBy(desc(reimbursementAuditLogs.actedAt));
+      for (const chase of chaseRows) {
+        if (!latestChaseByItemId.has(chase.reimbursementItemId)) {
+          latestChaseByItemId.set(chase.reimbursementItemId, chase);
+        }
       }
+    } catch (error) {
+      // Audit summaries enhance the list but must never hide the reimbursement queue.
+      console.error("[Reimbursements] Unable to load latest chase summaries:", error);
     }
   }
   return rows.map((r) => ({

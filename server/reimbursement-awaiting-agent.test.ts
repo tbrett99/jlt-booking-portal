@@ -39,6 +39,7 @@ describe("reimbursement Awaiting agent workflow", () => {
   it("makes latest chase note and next follow-up directly visible on the existing list", () => {
     expect(db).toContain("latestChaseByItemId");
     expect(db).toContain("lastChaseNote");
+    expect(db).toContain("Audit summaries enhance the list but must never hide the reimbursement queue.");
     expect(adminList).toContain("Latest chase");
     expect(adminList).toContain("Next follow-up");
     expect(adminList).toContain("Follow-up overdue");
