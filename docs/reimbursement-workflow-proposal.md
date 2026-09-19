@@ -22,7 +22,7 @@ For example, a staff member could record:
 
 The **Awaiting agent** action should require the staff member to record what has been requested and set a follow-up date. This creates an unambiguous record of who chased the request, what was asked for, and when it must be reviewed again.
 
-Staff can continue using the established booking Messages section when they need to send the request to the agent. The reimbursement chase note records the internal operational summary; the agent does not see internal notes or staff-only follow-up dates.
+Setting Awaiting agent sends the same request automatically into the established booking Messages thread, alongside an in-portal notification and email. The reimbursement audit preserves the staff activity record and follow-up date; the agent does not see staff-only follow-up dates.
 
 The current document controls stay where they are. When the agent uploads evidence, the item history records the upload. The item stays Awaiting agent until staff have checked the evidence and processed the reimbursement in PTS, at which point they change it directly to Scheduled.
 

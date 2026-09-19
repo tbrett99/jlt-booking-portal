@@ -51,7 +51,7 @@ export function ReimbursementAwaitingAgentDialog({
         <DialogHeader>
           <DialogTitle>Awaiting information from agent</DialogTitle>
           <DialogDescription>
-            Record exactly what JLT has asked the agent for. This note will be visible in the reimbursement list and activity history.
+            Send one clear request to the agent. The same text is sent to their booking Messages thread and recorded in the reimbursement list and activity history.
           </DialogDescription>
         </DialogHeader>
         {subject && (
@@ -72,7 +72,7 @@ export function ReimbursementAwaitingAgentDialog({
               className="resize-y"
               autoFocus
             />
-            <p className="text-xs text-muted-foreground">This is an internal reimbursement activity note. The agent does not see it unless staff also send a message through the booking Messages section.</p>
+            <p className="text-xs text-muted-foreground">The agent will receive this request in the booking Messages thread, as an in-portal notification, and by email. Your internal reimbursement activity record keeps the same request and follow-up date.</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="reimbursement-follow-up">Next follow-up date <span className="text-red-500">*</span></Label>
@@ -97,7 +97,7 @@ export function ReimbursementAwaitingAgentDialog({
               nextFollowUpAt: new Date(`${followUpDate}T12:00:00`),
             })}
           >
-            {isPending ? "Saving…" : "Set Awaiting agent"}
+            {isPending ? "Sending…" : "Send request & set Awaiting agent"}
           </Button>
         </DialogFooter>
       </DialogContent>

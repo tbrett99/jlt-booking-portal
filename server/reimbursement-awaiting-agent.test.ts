@@ -27,6 +27,9 @@ describe("reimbursement Awaiting agent workflow", () => {
     expect(db).toContain('updates.nextFollowUpAt = null');
     expect(router).toContain("awaitAgent: adminProcedure");
     expect(router).toContain('note: z.string().trim().min(3).max(3000)');
+    expect(router).toContain("Reimbursement information needed — ${item.supplierName}");
+    expect(router).toContain("Please reply to this message once the information has been provided");
+    expect(router).toContain("Reimbursement information is needed for ${item.supplierName}");
   });
 
   it("keeps staff chase notes internal to administrators", () => {
@@ -34,6 +37,7 @@ describe("reimbursement Awaiting agent workflow", () => {
     expect(router).toContain("Chase notes and staff follow-up dates are internal");
     expect(agentBookingDetail).toContain("Awaiting agent");
     expect(agentBookingDetail).toContain("Please check your Messages and upload any requested evidence here.");
+    expect(read("client/src/components/ReimbursementAwaitingAgentDialog.tsx")).toContain("Send request & set Awaiting agent");
   });
 
   it("makes latest chase note and next follow-up directly visible on the existing list", () => {

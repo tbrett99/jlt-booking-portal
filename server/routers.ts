@@ -4489,6 +4489,56 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           input.note,
           input.nextFollowUpAt,
         );
+        if (!item) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Reimbursement item not found" });
+        }
+        const booking = await getBookingById(item.bookingId);
+        if (!booking) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Booking not found" });
+        }
+        const messageContent = [
+          `Reimbursement information needed — ${item.supplierName}`,
+          `Client: ${booking.clientName}`,
+          "",
+          input.note,
+          "",
+          "Please reply to this message once the information has been provided, and upload any requested evidence to the reimbursement on your booking.",
+        ].join("\n");
+        // One action deliberately records both the staff-only operational audit and
+        // the agent-visible message in the established booking conversation.
+        await createNote({
+          bookingId: booking.id,
+          authorId: ctx.user.id,
+          content: messageContent,
+          isInternal: false,
+        });
+        await createInAppNotification({
+          userId: item.agentId,
+          bookingId: booking.id,
+          message: `Reimbursement information is needed for ${item.supplierName} on booking "${booking.clientName}".`,
+          linkUrl: `/bookings/${booking.id}`,
+        });
+        const agent = await getUserById(item.agentId);
+        if (agent?.email) {
+          const safeMessage = messageContent
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\n/g, "<br>");
+          void sendDirectEmail({
+            toEmail: agent.email,
+            toName: agent.name ?? "Agent",
+            subject: `Reimbursement information needed: ${booking.clientName}`,
+            injectPortalFooter: true,
+            bookingId: booking.id,
+            html: `
+              <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+                <h2 style="color:#1a1a2e;">Reimbursement information needed</h2>
+                <p>JLT has sent you a message about a reimbursement on your booking for <strong>${booking.clientName}</strong>.</p>
+                <div style="background:#f5f5f5;border-left:4px solid #70FFE8;padding:12px 16px;margin:16px 0;border-radius:4px;color:#333;">${safeMessage}</div>
+              </div>`,
+          });
+        }
         return { success: true, item };
       }),
 
