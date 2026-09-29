@@ -2638,6 +2638,7 @@
 - [x] Frontend: Business Update confirmation button on post cards
 - [x] Frontend: ComplianceLog admin view — confirmed/unconfirmed agents per post
 - [x] Frontend: WeeklyDigestAdmin page — preview, edit highlights, send
+- [x] Weekly Digest personal introduction: preserve entered line breaks and blank paragraphs in preview and recipient emails, with safe plain-text HTML escaping
 - [x] Agent dashboard: Action Required amber banner for unconfirmed Business Updates
 - [x] Agent dashboard: What's New community widget (latest 4 posts)
 - [x] Scheduler: daily 08:00 UTC confirmation reminder emails (14-day threshold)

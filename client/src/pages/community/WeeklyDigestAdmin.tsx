@@ -244,11 +244,12 @@ export default function WeeklyDigestAdmin() {
             <div className="space-y-1.5">
               <Label className="text-xs">Personal intro message (optional)</Label>
               <Textarea
-                placeholder="Add a personal message from the team..."
+                placeholder={"Add a personal message from the team...\n\nPress Enter for a new line or paragraph."}
                 value={customIntro}
                 onChange={(e) => setCustomIntro(e.target.value)}
                 rows={3}
               />
+              <p className="text-xs text-muted-foreground">Line breaks and blank lines are preserved in the email.</p>
             </div>
           </div>
 
@@ -314,7 +315,7 @@ export default function WeeklyDigestAdmin() {
               <h2 className="text-lg font-bold">
                 {customSubject || `JLT ${digestTitle} — ${periodLabel}`}
               </h2>
-              {customIntro && <p className="text-muted-foreground italic">{customIntro}</p>}
+              {customIntro && <p className="whitespace-pre-wrap text-muted-foreground italic">{customIntro}</p>}
               <h3>This {digestType === "monthly" ? "Month" : "Week"}'s Numbers</h3>
               {stats && (
                 <ul>
