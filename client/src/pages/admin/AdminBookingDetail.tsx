@@ -21,6 +21,11 @@ import CountrySelect from "@/components/CountrySelect";
 import TaskFormDialog from "./TaskFormDialog";
 import AmendmentMessageThread from "@/components/AmendmentMessageThread";
 import { ReimbursementAwaitingAgentDialog } from "@/components/ReimbursementAwaitingAgentDialog";
+import {
+  hasOutstandingAmendmentAction,
+  hasOutstandingRefundAction,
+  hasOutstandingReimbursementAction,
+} from "./booking-overview-status";
 
 const STAGES = [
   "New Booking", "Creating own PTS file", "Incomplete Booking", "Query",
@@ -1422,19 +1427,15 @@ export default function AdminBookingDetail() {
   if (!booking) return <div className="text-center py-20 text-muted-foreground">Booking not found.</div>;
 
   const missingPaymentDate = !booking.finalSupplierPaymentDate && !editPaymentDate;
-  const outstandingRefunds = (refundsList as any[]).filter((refund) => {
-    const status = String(refund.pipelineStage ?? refund.status ?? "").toLowerCase();
-    return !["actioned", "completed", "rejected", "cancelled"].includes(status);
-  });
-  const outstandingAmendments = (amendments as any[]).filter((amendment) => {
-    const status = String(amendment.status ?? amendment.pipelineStage ?? "").toLowerCase();
-    return !["actioned", "completed", "rejected", "cancelled"].includes(status);
-  });
-  const outstandingReimbursements = (reimbItems as any[]).filter((item) => item.status !== "paid");
+  const outstandingRefunds = (refundsList as any[]).filter(hasOutstandingRefundAction);
+  const outstandingAmendments = (amendments as any[]).filter(hasOutstandingAmendmentAction);
+  const outstandingReimbursements = (reimbItems as any[]).filter(hasOutstandingReimbursementAction);
   const activeCancellationRequests = (cancellationsList as any[]).filter((cancellation) => cancellation.status === "pending");
   const reimbursementDocumentCount = (reimbDocs as any[]).length + (reimbItems as any[]).reduce((total, item) => total + ((item.docs as any[] | undefined)?.length ?? 0), 0);
   const bookingDocumentCount = (bookingDocs as any[]).length;
-  const reimbursementDocumentsMissing = booking.reimbursementsRequired && reimbursementDocumentCount === 0;
+  const reimbursementDocumentsMissing = booking.reimbursementsRequired
+    && outstandingReimbursements.length > 0
+    && reimbursementDocumentCount === 0;
   const activityItems: BookingActivityItem[] = [
     ...(activeCancellationRequests.length > 0 ? [{ id: "booking-cancellations", label: `${activeCancellationRequests.length} cancellation request${activeCancellationRequests.length === 1 ? "" : "s"} awaiting action`, tone: "urgent" as const, icon: "cancellation" as const }] : []),
     ...(outstandingRefunds.length > 0 ? [{ id: "booking-refunds", label: `${outstandingRefunds.length} outstanding refund${outstandingRefunds.length === 1 ? "" : "s"}`, tone: "urgent" as const, icon: "refund" as const }] : []),

@@ -29,4 +29,10 @@ describe("admin booking workspace overview", () => {
     expect(source).not.toContain('id="commission-claim-audit"');
     expect(source).not.toContain("Commission claim confirmation");
   });
+
+  it("derives booking attention items from the completed workflow states", () => {
+    expect(source).toContain('hasOutstandingAmendmentAction');
+    expect(source).toContain('hasOutstandingRefundAction');
+    expect(source).toContain('hasOutstandingReimbursementAction');
+  });
 });
