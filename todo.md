@@ -2579,6 +2579,11 @@
 - [x] Diagnose why agents receive multiple receipts for the same GoCardless payment (reported by Adam Griffith)
 - [x] Fix: receipt was sent on both 'confirmed' AND 'paid_out' events — changed to 'confirmed' only
 
+## GoCardless Consecutive-Failure Suspension Safeguard
+- [x] Diagnose missed automatic suspensions: webhook acknowledgements were sent before background ledger/counter processing, leaving payment events stale after 29 May 2026
+- [x] Make GoCardless webhook acknowledgement wait for completed database processing and add hourly live-payment reconciliation as a failure-safe
+- [x] Reconcile current active subscriptions and apply the approved non-payment suspensions to Helena Coupland (JLT-0161) and Shelley Jeffery (JLT-0374); Bethany Saunders (JLT-0045) remains active because later paid collections reset her streak
+
 ## Campaign Resend Rate Limit Bug
 - [x] Fix resendUnopenedAll to add rate-limit delay between sends (max 3/sec)
 - [x] Resend to the 73 failed recipients from the "We've listened" campaign (campaign 120001) — all 73 sent successfully

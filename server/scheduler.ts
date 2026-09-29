@@ -21,6 +21,7 @@ import { eq, desc } from "drizzle-orm";
 import { format } from "date-fns";
 import { importInbox, decryptPassword } from "./imap";
 import { notifyOwner } from "./_core/notification";
+import { reconcilePaymentFailureSuspensions } from "./payment-failure-reconciliation";
 
 // ─── Inbox auto-import state ──────────────────────────────────────────────────
 
@@ -522,6 +523,18 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
+  // Membership payment safety net: rebuild each active agent's current failure
+  // streak from GoCardless hourly. This catches any webhook that a deployment or
+  // provider retry might otherwise acknowledge without completing locally.
+  cron.schedule("17 * * * *", async () => {
+    try {
+      const result = await reconcilePaymentFailureSuspensions();
+      console.log(`[PaymentFailureReconciliation] Scanned ${result.scannedSubscriptions} subscriptions, updated ${result.updatedFailureCounters} counters, suspended ${result.suspendedAgentCodes.length} agents`);
+    } catch (err: any) {
+      console.error("[PaymentFailureReconciliation] Error:", err?.message);
+    }
+  }, { timezone: "UTC" });
+
   // Database backup to S3: DISABLED — Railway native backups are used instead.
   // cron.schedule("0 */4 * * *", async () => { ... }, { timezone: "UTC" });
 
@@ -617,7 +630,7 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: task reminders (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — nightly export DISABLED, inbox auto-import DISABLED");
+  console.log("[Scheduler] Cron jobs registered: task reminders (hourly), payment failure reconciliation (hourly), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — nightly export DISABLED, inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────
