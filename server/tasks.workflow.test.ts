@@ -57,7 +57,14 @@ describe("admin task workflow safeguards", () => {
   it("uses native mysql2 prepared inserts for manual and recurring tasks", () => {
     expect(dbSource).toContain("INSERT INTO admin_tasks");
     expect(dbSource).toContain("recurrenceRule, recurrenceInterval");
-    expect(dbSource).toContain("return getAdminTaskById(Number(id));");
+    expect(dbSource).toContain("return getAdminTaskById(Number((result as any).insertId));");
     expect(dbSource).toContain("Do not\n  // route task lifecycle writes through Drizzle's raw execute path");
+  });
+
+  it("keeps one-off tasks usable before the recurrence migration and names the required migration for repeat rules", () => {
+    expect(dbSource).toContain('error?.code !== "ER_BAD_FIELD_ERROR"');
+    expect(dbSource).toContain("Recurring tasks need the admin_tasks recurrence migration");
+    expect(dbSource).toContain("Keep one-off tasks available on a live database awaiting migration 0146");
+    expect(dbSource).toContain("'none' AS recurrenceRule, 1 AS recurrenceInterval");
   });
 });

@@ -1554,29 +1554,58 @@ export async function createAdminTask(data: {
   // The live table accepts this exact prepared statement through mysql2. Do not
   // route task lifecycle writes through Drizzle's raw execute path: it has
   // incorrectly rejected valid Date values/parameters in this environment.
-  const [result] = await _pool.execute(
-    `INSERT INTO admin_tasks (
-      title, description, priority, assigneeId, createdById, dueDate,
-      linkedType, linkedId, sourceNoteId, createdFrom,
-      recurrenceRule, recurrenceInterval
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      data.title,
-      data.description ?? null,
-      data.priority ?? "medium",
-      data.assigneeId ?? null,
-      data.createdById,
-      data.dueDate ?? null,
-      data.linkedType ?? "none",
-      data.linkedId ?? null,
-      data.sourceNoteId ?? null,
-      data.createdFrom ?? "manual",
-      data.recurrenceRule ?? "none",
-      data.recurrenceInterval ?? 1,
-    ],
-  );
-  const id = (result as any).insertId;
-  return getAdminTaskById(Number(id));
+  try {
+    const [result] = await _pool.execute(
+      `INSERT INTO admin_tasks (
+        title, description, priority, assigneeId, createdById, dueDate,
+        linkedType, linkedId, sourceNoteId, createdFrom,
+        recurrenceRule, recurrenceInterval
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        data.title,
+        data.description ?? null,
+        data.priority ?? "medium",
+        data.assigneeId ?? null,
+        data.createdById,
+        data.dueDate ?? null,
+        data.linkedType ?? "none",
+        data.linkedId ?? null,
+        data.sourceNoteId ?? null,
+        data.createdFrom ?? "manual",
+        data.recurrenceRule ?? "none",
+        data.recurrenceInterval ?? 1,
+      ],
+    );
+    return getAdminTaskById(Number((result as any).insertId));
+  } catch (error: any) {
+    if (error?.code !== "ER_BAD_FIELD_ERROR") throw error;
+
+    const requestedRecurrence = data.recurrenceRule ?? "none";
+    if (requestedRecurrence !== "none") {
+      throw new Error("Recurring tasks need the admin_tasks recurrence migration. Please apply migration 0146 before creating a repeating task.");
+    }
+
+    // Keep one-off tasks available on a live database awaiting migration 0146.
+    const [legacyResult] = await _pool.execute(
+      `INSERT INTO admin_tasks (
+        title, description, priority, assigneeId, createdById, dueDate,
+        linkedType, linkedId, sourceNoteId, createdFrom
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        data.title,
+        data.description ?? null,
+        data.priority ?? "medium",
+        data.assigneeId ?? null,
+        data.createdById,
+        data.dueDate ?? null,
+        data.linkedType ?? "none",
+        data.linkedId ?? null,
+        data.sourceNoteId ?? null,
+        data.createdFrom ?? "manual",
+      ],
+    );
+    return getAdminTaskById(Number((legacyResult as any).insertId));
+  }
 }
 
 export async function getAllAdminTasks() {
@@ -1635,18 +1664,34 @@ export async function getAdminTaskBySourceNoteAndAssignee(sourceNoteId: number, 
 export async function getAdminTaskById(id: number) {
   const db = await getDb();
   if (!db || !_pool) return undefined;
-  const [rows] = await _pool.execute(
-    `SELECT
-      id, title, description, status, priority, assigneeId, createdById,
-      dueDate, linkedType, linkedId, sourceNoteId, createdFrom,
-      acknowledgedAt, acknowledgedById, completedAt, completedById,
-      recurrenceRule, recurrenceInterval, createdAt, updatedAt
-    FROM admin_tasks
-    WHERE id = ?
-    LIMIT 1`,
-    [id],
-  );
-  return (rows as typeof adminTasks.$inferSelect[])[0];
+  try {
+    const [rows] = await _pool.execute(
+      `SELECT
+        id, title, description, status, priority, assigneeId, createdById,
+        dueDate, linkedType, linkedId, sourceNoteId, createdFrom,
+        acknowledgedAt, acknowledgedById, completedAt, completedById,
+        recurrenceRule, recurrenceInterval, createdAt, updatedAt
+      FROM admin_tasks
+      WHERE id = ?
+      LIMIT 1`,
+      [id],
+    );
+    return (rows as typeof adminTasks.$inferSelect[])[0];
+  } catch (error: any) {
+    if (error?.code !== "ER_BAD_FIELD_ERROR") throw error;
+    const [rows] = await _pool.execute(
+      `SELECT
+        id, title, description, status, priority, assigneeId, createdById,
+        dueDate, linkedType, linkedId, sourceNoteId, createdFrom,
+        acknowledgedAt, acknowledgedById, completedAt, completedById,
+        'none' AS recurrenceRule, 1 AS recurrenceInterval, createdAt, updatedAt
+      FROM admin_tasks
+      WHERE id = ?
+      LIMIT 1`,
+      [id],
+    );
+    return (rows as typeof adminTasks.$inferSelect[])[0];
+  }
 }
 
 export async function updateAdminTask(id: number, data: {
