@@ -2,6 +2,7 @@ import { adminProcedure, router } from "./_core/trpc";
 import { sql } from "drizzle-orm";
 import { buildPipelineHealth } from "../shared/dashboard-workboard-utils";
 import { normaliseTaskIdentityEmail } from "../shared/task-identity";
+import { calendarDayWindow, expandCalendarOccurrences } from "../shared/calendar-occurrences";
 
 /**
  * Dashboard stats router — returns all counts needed by the Admin Dashboard
@@ -229,13 +230,14 @@ export const dashboardRouter = router({
    * page's entire dataset.
    */
   workboard: adminProcedure.query(async ({ ctx }) => {
-    const { getDb } = await import("./db");
+    const { getCalendarEvents, getDb } = await import("./db");
     const db = await getDb();
     if (!db) throw new Error("Database not available");
 
     const unwrap = (result: any): any[] => Array.isArray(result[0]) ? result[0] : result;
     const unwrapOne = (result: any): any => unwrap(result)[0] ?? {};
     const now = new Date();
+    const todayWindow = calendarDayWindow(now);
     const taskOwnerEmail = normaliseTaskIdentityEmail(ctx.user.email);
 
     const [
@@ -248,6 +250,7 @@ export const dashboardRouter = router({
       claimableMissingResult,
       missedMandatesResult,
       todayCalendarResult,
+      cancellationsResult,
       queueHealthResult,
       pipelineRowsResult,
       membershipSummaryResult,
@@ -362,27 +365,18 @@ export const dashboardRouter = router({
         ORDER BY u.name ASC
         LIMIT 4
       `),
+      // Use the exact source query that powers Team Calendar, then expand the
+      // same recurrence rules within a UK calendar-day window below.
+      getCalendarEvents(todayWindow.start, todayWindow.end),
       db.execute(sql`
-        SELECT e.id, e.title, e.type, e.startDate, e.endDate, e.allDay,
-               e.assigneeId, u.name AS assigneeName, e.dueDate
-        FROM calendar_events e
-        LEFT JOIN users u ON u.id = e.assigneeId
-        WHERE (
-          (e.recurrenceRule = 'none' AND e.startDate <= DATE_ADD(CURDATE(), INTERVAL 1 DAY) AND e.endDate >= CURDATE())
-          OR (e.recurrenceRule = 'daily' AND e.startDate <= DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-              AND (e.recurrenceEndDate IS NULL OR e.recurrenceEndDate >= CURDATE()))
-          OR (e.recurrenceRule = 'weekly' AND WEEKDAY(e.startDate) = WEEKDAY(CURDATE())
-              AND e.startDate <= DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-              AND (e.recurrenceEndDate IS NULL OR e.recurrenceEndDate >= CURDATE()))
-          OR (e.recurrenceRule = 'monthly' AND DAY(e.startDate) = DAY(CURDATE())
-              AND e.startDate <= DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-              AND (e.recurrenceEndDate IS NULL OR e.recurrenceEndDate >= CURDATE()))
-          OR (e.recurrenceRule = 'yearly' AND DATE_FORMAT(e.startDate, '%m-%d') = DATE_FORMAT(CURDATE(), '%m-%d')
-              AND e.startDate <= DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-              AND (e.recurrenceEndDate IS NULL OR e.recurrenceEndDate >= CURDATE()))
-        )
-        ORDER BY e.allDay DESC, e.startDate ASC
-        LIMIT 10
+        SELECT c.id, c.bookingId, c.status, c.confirmedAt,
+               b.clientName, b.ptsRef, b.topdogRef, agent.name AS agentName
+        FROM cancellations c
+        INNER JOIN bookings b ON b.id = c.bookingId
+        LEFT JOIN users agent ON agent.id = c.agentId
+        WHERE c.status = 'pending'
+        ORDER BY c.confirmedAt ASC
+        LIMIT 5
       `),
       db.execute(sql`
         SELECT 'Amendments' AS label, '/amendments/pipeline' AS href,
@@ -469,7 +463,18 @@ export const dashboardRouter = router({
     const controls = unwrapOne(controlCountsResult);
     const membership = unwrapOne(membershipSummaryResult);
     const changeRequests = unwrapOne(changeRequestCountResult);
-    const todayEvents = unwrap(todayCalendarResult);
+    const todayEvents = unwrap(todayCalendarResult)
+      .flatMap((event) => expandCalendarOccurrences(event, todayWindow.start, todayWindow.end))
+      .map(({ occurrenceStart, occurrenceEnd, ...event }) => ({
+        ...event,
+        startDate: occurrenceStart,
+        endDate: occurrenceEnd,
+      }))
+      .sort((left, right) => {
+        if (left.allDay !== right.allDay) return left.allDay ? -1 : 1;
+        return new Date(left.startDate).getTime() - new Date(right.startDate).getTime();
+      });
+    const cancellationRecords = unwrap(cancellationsResult);
     const membershipWatch = unwrap(membershipWatchResult).map((row) => ({
       ...row,
       endDate: row.noticeEndsAt ?? row.pauseEndsAt,
@@ -497,6 +502,10 @@ export const dashboardRouter = router({
       today: {
         events: todayEvents,
         away: todayEvents.filter((event) => event.type === 'holiday'),
+      },
+      cancellations: {
+        count: cancellationRecords.length,
+        records: cancellationRecords,
       },
       queues: unwrap(queueHealthResult).map((row) => ({
         ...row,

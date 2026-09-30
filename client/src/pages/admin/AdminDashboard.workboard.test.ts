@@ -54,5 +54,27 @@ describe("Admin Dashboard operational workboard", () => {
     expect(source).toContain("refetchOnMount: \"always\"");
     expect(source).toContain("refetchInterval: 30_000");
     expect(source).toContain("formatJltEventTime(event.startDate)");
+    expect(dataSource).toContain("getCalendarEvents(todayWindow.start, todayWindow.end)");
+    expect(dataSource).toContain("expandCalendarOccurrences(event, todayWindow.start, todayWindow.end)");
+  });
+
+  it("shows cancellation requests alongside the daily operational work", () => {
+    expect(source).toContain("Cancellation requests");
+    expect(source).toContain('href="/cancellations"');
+    expect(dataSource).toContain("WHERE c.status = 'pending'");
+    expect(dataSource).toContain("cancellations: {");
+  });
+
+  it("provides a persistent jump bar for every major dashboard section", () => {
+    expect(source).toContain("WORKBOARD_SECTIONS");
+    expect(source).toContain('aria-label="Jump to dashboard section"');
+    expect(source).toContain('id="tasks"');
+    expect(source).toContain('id="messages"');
+    expect(source).toContain('id="calendar"');
+    expect(source).toContain('id="cancellations"');
+    expect(source).toContain('id="checks"');
+    expect(source).toContain('id="queues"');
+    expect(source).toContain('id="membership"');
+    expect(source).toContain('id="wins"');
   });
 });

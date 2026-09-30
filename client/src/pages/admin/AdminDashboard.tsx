@@ -73,6 +73,17 @@ const CONTROL_TILES = [
   },
 ] as const;
 
+const WORKBOARD_SECTIONS = [
+  { id: "tasks", label: "Tasks" },
+  { id: "messages", label: "Messages" },
+  { id: "calendar", label: "Today" },
+  { id: "cancellations", label: "Cancellations" },
+  { id: "checks", label: "Checks" },
+  { id: "queues", label: "Queues" },
+  { id: "membership", label: "Membership" },
+  { id: "wins", label: "Agent Wins" },
+] as const;
+
 function daysLabel(value: number) {
   if (value <= 0) return "today";
   return `${value}d`;
@@ -261,7 +272,13 @@ export default function AdminDashboard() {
   const agentWins = (workboard?.agentWins ?? []) as any[];
   const todayEvents = (workboard?.today?.events ?? []) as any[];
   const todayAway = (workboard?.today?.away ?? []) as any[];
+  const cancellations = (workboard?.cancellations?.records ?? []) as any[];
   const adminUsers = (workboard?.adminUsers ?? []) as { id: number; name: string }[];
+
+  const jumpToSection = (event: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    event.preventDefault();
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const taskAttentionCount = useMemo(() => {
     return myTasks.filter((task) => !task.acknowledgedAt || (task.dueDate && new Date(task.dueDate) <= now)).length;
@@ -308,8 +325,23 @@ export default function AdminDashboard() {
         </div>
       </section>
 
+      <nav aria-label="Jump to dashboard section" className="sticky top-2 z-20 rounded-xl border bg-card/95 p-2 shadow-sm backdrop-blur">
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+          {WORKBOARD_SECTIONS.map((section) => (
+            <a
+              key={section.id}
+              href={`#${section.id}`}
+              onClick={(event) => jumpToSection(event, section.id)}
+              className="shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-[#ecfffb] hover:text-[#0f766e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#02E6D2]"
+            >
+              {section.label}
+            </a>
+          ))}
+        </div>
+      </nav>
+
       {/* Personal and team work */}
-      <section className="grid gap-4 xl:grid-cols-3">
+      <section id="tasks" className="scroll-mt-24 grid gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2 border-t-4 border-t-[#02E6D2]">
           <CardHeader className="pb-3 pt-4 px-4">
             <SectionHeader icon={ListChecks} title="My task focus" count={myTasks.length} href="/admin/tasks" accent="#0f766e" />
@@ -350,7 +382,7 @@ export default function AdminDashboard() {
 
       {/* Inbox zero and today */}
       <section className="grid gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-3 border-t-4 border-t-[#7c3aed]">
+        <Card id="messages" className="scroll-mt-24 lg:col-span-3 border-t-4 border-t-[#7c3aed]">
           <CardHeader className="pb-3 pt-4 px-4">
             <SectionHeader icon={MessageSquare} title="Message inbox zero" count={workboard.unreadMessageCount} href="/messages" accent="#7c3aed" />
             <p className="text-[11px] text-muted-foreground mt-2">Agent conversations still awaiting an admin response, shown oldest first.</p>
@@ -384,43 +416,71 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2 border-t-4 border-t-[#f6bc72]">
-          <CardHeader className="pb-3 pt-4 px-4">
-            <SectionHeader icon={CalendarDays} title="Today at JLT" count={todayEvents.length} href="/admin/calendar" accent="#d97706" />
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            {todayEvents.length === 0 ? <EmptyState icon={CalendarDays} message="Nothing is scheduled for today." /> : (
-              <div className="space-y-2">
-                {todayEvents.map((event, index) => {
-                  const eventStyle = EVENT_STYLES[event.type] ?? EVENT_STYLES.event;
-                  return (
-                    <div key={`${event.id}-${index}`} className="flex items-start gap-2.5 rounded-xl border bg-card p-2.5">
-                      <Badge className={`mt-0.5 h-5 text-[9px] border-0 ${eventStyle.className}`}>{eventStyle.label}</Badge>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold truncate">{event.title}</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          {event.allDay ? "All day" : formatJltEventTime(event.startDate)}{event.assigneeName ? ` · ${event.assigneeName}` : ""}
-                        </p>
+        <div className="lg:col-span-2 space-y-4">
+          <Card id="calendar" className="scroll-mt-24 border-t-4 border-t-[#f6bc72]">
+            <CardHeader className="pb-3 pt-4 px-4">
+              <SectionHeader icon={CalendarDays} title="Today at JLT" count={todayEvents.length} href="/admin/calendar" accent="#d97706" />
+              <p className="text-[11px] text-muted-foreground mt-2">This is the same live recurrence view as Team Calendar.</p>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              {todayEvents.length === 0 ? <EmptyState icon={CalendarDays} message="Nothing is scheduled for today." /> : (
+                <div className="space-y-2">
+                  {todayEvents.map((event, index) => {
+                    const eventStyle = EVENT_STYLES[event.type] ?? EVENT_STYLES.event;
+                    return (
+                      <div key={`${event.id}-${index}`} className="flex items-start gap-2.5 rounded-xl border bg-card p-2.5">
+                        <Badge className={`mt-0.5 h-5 text-[9px] border-0 ${eventStyle.className}`}>{eventStyle.label}</Badge>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold truncate">{event.title}</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {event.allDay ? "All day" : formatJltEventTime(event.startDate)}{event.assigneeName ? ` · ${event.assigneeName}` : ""}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {todayAway.length > 0 && (
-              <div className="mt-3 pt-3 border-t">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Away today</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {todayAway.map((event, index) => <Badge key={`${event.id}-away-${index}`} className="bg-[#FFC3BC] text-[#414141] text-[10px] border-0">{event.assigneeName ?? event.title}</Badge>)}
+                    );
+                  })}
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+              {todayAway.length > 0 && (
+                <div className="mt-3 pt-3 border-t">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Away today</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {todayAway.map((event, index) => <Badge key={`${event.id}-away-${index}`} className="bg-[#FFC3BC] text-[#414141] text-[10px] border-0">{event.assigneeName ?? event.title}</Badge>)}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card id="cancellations" className="scroll-mt-24 border-t-4 border-t-red-400">
+            <CardHeader className="pb-3 pt-4 px-4">
+              <SectionHeader icon={CircleAlert} title="Cancellation requests" count={workboard.cancellations.count} href="/cancellations" actionLabel="Open requests" accent="#dc2626" />
+              <p className="text-[11px] text-muted-foreground mt-2">Agent requests awaiting a cancellation decision, oldest first.</p>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              {cancellations.length === 0 ? <EmptyState icon={CheckCircle2} message="No cancellation requests are waiting." /> : (
+                <div className="space-y-2">
+                  {cancellations.map((cancellation) => (
+                    <Link key={cancellation.id} href={`/bookings/${cancellation.bookingId}`}>
+                      <div className="flex items-center gap-2.5 rounded-xl border border-red-100 bg-red-50/40 p-2.5 transition-colors hover:bg-red-50 cursor-pointer">
+                        <span className="h-7 w-7 rounded-lg bg-red-100 text-red-700 flex items-center justify-center shrink-0"><CircleAlert size={13} /></span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold truncate">{cancellation.clientName}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{cancellation.agentName ?? "Agent"} · {cancellation.ptsRef ?? cancellation.topdogRef ?? "No reference"}</p>
+                        </div>
+                        <span className="text-[10px] font-medium text-red-700 shrink-0">{formatDistanceToNowStrict(new Date(cancellation.confirmedAt), { addSuffix: true })}</span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </section>
 
       {/* Requested controls only */}
-      <section>
+      <section id="checks" className="scroll-mt-24">
         <div className="flex items-center gap-2 mb-3">
           <ShieldAlert size={16} className="text-[#b45309]" />
           <div>
@@ -468,7 +528,7 @@ export default function AdminDashboard() {
       </section>
 
       {/* Queue health and stage age */}
-      <section className="grid gap-4 xl:grid-cols-5">
+      <section id="queues" className="scroll-mt-24 grid gap-4 xl:grid-cols-5">
         <Card className="xl:col-span-2">
           <CardHeader className="pb-3 pt-4 px-4">
             <SectionHeader icon={Clock3} title="Active queues" href="/pipeline" actionLabel="Open pipeline" accent="#b45309" />
@@ -529,7 +589,7 @@ export default function AdminDashboard() {
       </section>
 
       {/* Membership and change workflow */}
-      <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-5">
+      <section id="membership" className="scroll-mt-24 grid gap-4 lg:grid-cols-2 xl:grid-cols-5">
         <Card className="xl:col-span-3">
           <CardHeader className="pb-3 pt-4 px-4">
             <SectionHeader icon={Users} title="Membership dates to watch" count={membershipWatch.length} href="/crm/memberships" accent="#0f766e" />
@@ -589,7 +649,7 @@ export default function AdminDashboard() {
       </section>
 
       {/* Agent Wins */}
-      <section>
+      <section id="wins" className="scroll-mt-24">
         <Card className="border-t-4 border-t-[#f6bc72]">
           <CardHeader className="pb-3 pt-4 px-4">
             <SectionHeader icon={Gift} title="Latest Agent Wins" count={agentWins.length} href="/community" actionLabel="Open Community" accent="#d97706" />

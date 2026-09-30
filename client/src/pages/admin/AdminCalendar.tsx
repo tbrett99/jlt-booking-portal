@@ -18,9 +18,10 @@ import {
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addMonths, subMonths, addWeeks, subWeeks, eachDayOfInterval,
-  isSameMonth, isSameDay, isToday, addDays, addYears,
-  differenceInDays, isBefore, isAfter, startOfDay, endOfDay
+  isSameMonth, isSameDay, isToday, addDays,
+  differenceInDays, startOfDay, endOfDay
 } from "date-fns";
+import { expandCalendarOccurrences } from "@shared/calendar-occurrences";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,57 +99,9 @@ function toLocalDateTimeString(d: Date) {
   return format(d, "yyyy-MM-dd'T'HH:mm");
 }
 
-/**
- * Expand a recurring event into all occurrences that overlap [rangeFrom, rangeTo].
- * Returns an array of CalEventOccurrence objects.
- */
+/** Shared recurrence expansion keeps the calendar and dashboard in lockstep. */
 function expandRecurring(ev: CalEvent, rangeFrom: Date, rangeTo: Date): CalEventOccurrence[] {
-  if (ev.recurrenceRule === "none") {
-    return [{
-      ...ev,
-      occurrenceStart: new Date(ev.startDate),
-      occurrenceEnd: new Date(ev.endDate),
-      isRecurring: false,
-    }];
-  }
-
-  const duration = differenceInDays(new Date(ev.endDate), new Date(ev.startDate));
-  const recEnd = ev.recurrenceEndDate ? new Date(ev.recurrenceEndDate) : addYears(new Date(ev.startDate), 3); // cap at 3 years if no end
-  const occurrences: CalEventOccurrence[] = [];
-  let cursor = new Date(ev.startDate);
-  let safety = 0;
-
-  while (!isAfter(cursor, rangeTo) && !isAfter(cursor, recEnd) && safety < 500) {
-    safety++;
-    const occEnd = addDays(cursor, duration);
-    // Check if this occurrence overlaps the range
-    if (!isBefore(occEnd, rangeFrom) && !isAfter(cursor, rangeTo)) {
-      occurrences.push({
-        ...ev,
-        occurrenceStart: new Date(cursor),
-        occurrenceEnd: occEnd,
-        isRecurring: true,
-      });
-    }
-    // Advance cursor
-    switch (ev.recurrenceRule) {
-      case "daily":   cursor = addDays(cursor, 1); break;
-      case "weekly":  cursor = addDays(cursor, 7); break;
-      case "monthly": {
-        const next = new Date(cursor);
-        next.setMonth(next.getMonth() + 1);
-        cursor = next;
-        break;
-      }
-      case "yearly": {
-        const next = new Date(cursor);
-        next.setFullYear(next.getFullYear() + 1);
-        cursor = next;
-        break;
-      }
-    }
-  }
-  return occurrences;
+  return expandCalendarOccurrences(ev, rangeFrom, rangeTo) as CalEventOccurrence[];
 }
 
 // ─── Event Form Dialog ────────────────────────────────────────────────────────
