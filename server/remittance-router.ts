@@ -9,7 +9,7 @@ import {
   users,
   commissionClaims,
 } from "../drizzle/schema";
-import { eq, and, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, desc, inArray, isNotNull, like, or, sql } from "drizzle-orm";
 import { sendDirectEmail } from "./email";
 import { createInAppNotification } from "./db";
 import { pushClaimStatusToOrbit } from "./orbit-sync";
@@ -348,6 +348,62 @@ export const remittanceRouter = router({
         claimStatus: l.bookingId ? (claimMap[l.bookingId]?.status ?? null) : null,
       }));
       return result;
+    }),
+
+  // ── Pushed remittances: paginated and searchable ──────────────────────────
+  getPushedLines: protectedProcedure
+    .input(z.object({
+      batchId: z.number().int().positive().optional(),
+      search: z.string().trim().max(100).optional(),
+      page: z.number().int().min(1).default(1),
+      pageSize: z.number().int().min(10).max(100).default(50),
+    }))
+    .query(async ({ ctx, input }) => {
+      if (!['admin', 'super_admin'].includes(ctx.user.role)) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const db = await getDb();
+      if (!db) return { lines: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 1 };
+
+      const filters = [eq(remittanceLines.pushedToAgent, true)];
+      if (input.batchId) filters.push(eq(remittanceLines.batchId, input.batchId));
+      if (input.search) {
+        const pattern = `%${input.search}%`;
+        const searchFilter = or(
+          like(remittanceLines.ptsRef, pattern),
+          like(remittanceLines.clientName, pattern),
+        );
+        if (searchFilter) filters.push(searchFilter);
+      }
+      const whereClause = and(...filters);
+      const totalRows = await db
+        .select({ total: sql<number>`count(*)` })
+        .from(remittanceLines)
+        .where(whereClause);
+      const total = Number(totalRows[0]?.total ?? 0);
+      const totalPages = Math.max(1, Math.ceil(total / input.pageSize));
+      const page = Math.min(input.page, totalPages);
+      const offset = (page - 1) * input.pageSize;
+      const lines = await db
+        .select({
+          id: remittanceLines.id,
+          batchId: remittanceLines.batchId,
+          batchName: remittanceBatches.name,
+          weekOf: remittanceBatches.weekOf,
+          clientName: remittanceLines.clientName,
+          ptsRef: remittanceLines.ptsRef,
+          agentName: remittanceLines.agentName,
+          remit80: remittanceLines.remit80,
+          pushedAt: remittanceLines.pushedAt,
+        })
+        .from(remittanceLines)
+        .leftJoin(remittanceBatches, eq(remittanceBatches.id, remittanceLines.batchId))
+        .where(whereClause)
+        .orderBy(desc(remittanceLines.pushedAt), desc(remittanceLines.id))
+        .limit(input.pageSize)
+        .offset(offset);
+
+      return { lines, total, page, pageSize: input.pageSize, totalPages };
     }),
 
   // ── Get Agent View (matched lines grouped by agent) ─────────────────────────

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -619,6 +619,109 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
   );
 }
 
+// ─── Pushed to agents ─────────────────────────────────────────────────────────
+
+function PushedLinesView({ batchId }: { batchId?: number }) {
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  const { data, isLoading, isFetching } = trpc.remittance.getPushedLines.useQuery(
+    { batchId, search: search.trim() || undefined, page, pageSize },
+    { staleTime: 0 },
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [batchId, search]);
+
+  const lines = data?.lines ?? [];
+  const total = data?.total ?? 0;
+  const currentPage = data?.page ?? page;
+  const totalPages = data?.totalPages ?? 1;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-medium">Pushed to agents</p>
+          <p className="text-sm text-muted-foreground">
+            {total.toLocaleString()} remittance line{total === 1 ? "" : "s"} sent to agents
+          </p>
+        </div>
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search client name or PTS reference…"
+            className="pl-9"
+            aria-label="Search pushed remittances by client name or PTS reference"
+          />
+        </div>
+      </div>
+
+      <div className="rounded-md border overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Client</TableHead>
+              <TableHead>PTS Ref</TableHead>
+              <TableHead>Agent</TableHead>
+              <TableHead>Batch</TableHead>
+              <TableHead>Agent 80%</TableHead>
+              <TableHead>Pushed</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">Loading pushed remittances…</TableCell>
+              </TableRow>
+            ) : lines.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                  {search ? "No pushed remittances match that client name or PTS reference." : "No remittances have been pushed to agents yet."}
+                </TableCell>
+              </TableRow>
+            ) : (
+              lines.map((line) => (
+                <TableRow key={line.id}>
+                  <TableCell className="font-medium">{line.clientName}</TableCell>
+                  <TableCell className="font-mono text-xs">{line.ptsRef}</TableCell>
+                  <TableCell className="text-sm">{line.agentName ?? "—"}</TableCell>
+                  <TableCell className="text-xs">{line.batchName ?? "—"}</TableCell>
+                  <TableCell className="font-semibold text-green-700 dark:text-green-400">{fmt(line.remit80)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {line.pushedAt ? new Date(line.pushedAt).toLocaleString("en-GB") : "—"}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {total > 0 && (
+        <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <span>
+            Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, total)} of {total.toLocaleString()}
+            {isFetching && " · Updating…"}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={currentPage <= 1 || isFetching}>
+              Previous
+            </Button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <Button size="sm" variant="outline" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={currentPage >= totalPages || isFetching}>
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Needs Review Panel ──────────────────────────────────────────────────────
 
 function NeedsReviewPanel({ batchId }: { batchId?: number }) {
@@ -987,6 +1090,7 @@ export default function RemittanceManagement() {
             <TabsList>
               <TabsTrigger value="janines">Janine's View</TabsTrigger>
               <TabsTrigger value="agents">Agent View</TabsTrigger>
+              <TabsTrigger value="pushed">Pushed to agents</TabsTrigger>
               <TabsTrigger value="review" className="relative">
                 Needs Review
                 {reviewCount > 0 && (
@@ -1009,6 +1113,9 @@ export default function RemittanceManagement() {
             </TabsContent>
             <TabsContent value="agents" className="mt-4">
               <AgentView batchId={selectedBatchId} batchName={selectedBatch?.name} />
+            </TabsContent>
+            <TabsContent value="pushed" className="mt-4">
+              <PushedLinesView batchId={selectedBatchId} />
             </TabsContent>
             <TabsContent value="review" className="mt-4">
               <NeedsReviewPanel batchId={selectedBatchId} />
