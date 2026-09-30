@@ -83,6 +83,15 @@ export function getReplyTo(audienceType: "prospect" | "agent"): string {
 }
 
 /**
+ * The API route performs the opt-out and then returns the recipient to the
+ * public confirmation page. Keeping the token out of the client route means
+ * every prospect-email link completes the same server-side action.
+ */
+export function buildUnsubscribeUrl(baseUrl: string, token: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/api/unsubscribe?token=${encodeURIComponent(token)}`;
+}
+
+/**
  * Generate a unique unsubscribe token for a recipient.
  */
 async function getOrCreateUnsubscribeToken(email: string, prospectId?: number): Promise<string> {
@@ -349,7 +358,7 @@ export async function sendMarketingEmail(opts: {
   let unsubscribeUrl: string | undefined;
   if (opts.audienceType === "prospect") {
     const token = await getOrCreateUnsubscribeToken(opts.to, opts.recipientId);
-    unsubscribeUrl = `${opts.baseUrl}/unsubscribe?token=${token}`;
+    unsubscribeUrl = buildUnsubscribeUrl(opts.baseUrl, token);
   }
 
   // Load branding settings (cached per process — acceptable for email sends)
@@ -567,7 +576,10 @@ export async function processCampaignQueue(
     let unsubscribeUrl: string | undefined;
     if (audienceType === "prospect") {
       const token = await getOrCreateUnsubscribeToken(row.recipientEmail, row.recipientId ?? undefined);
-      unsubscribeUrl = `${process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk"}/unsubscribe?token=${token}`;
+      unsubscribeUrl = buildUnsubscribeUrl(
+        process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk",
+        token,
+      );
     }
 
     const branding = await getEmailBrandingSettings();

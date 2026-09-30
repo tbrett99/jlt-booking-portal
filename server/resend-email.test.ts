@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "./db";
-import { getConfirmedUnsubscribedEmailSet, isUnsubscribed, processUnsubscribe } from "./resend-email";
+import {
+  buildUnsubscribeUrl,
+  getConfirmedUnsubscribedEmailSet,
+  isUnsubscribed,
+  processUnsubscribe,
+} from "./resend-email";
 
 vi.mock("./db", () => ({ getDb: vi.fn() }));
 
@@ -49,5 +54,11 @@ describe("marketing unsubscribe confirmation", () => {
     } as any);
 
     await expect(getConfirmedUnsubscribedEmailSet()).resolves.toEqual(new Set(["optedout@example.com"]));
+  });
+
+  it("sends prospect email links to the server-side unsubscribe handler", () => {
+    expect(buildUnsubscribeUrl("https://portal.thejltgroup.co.uk/", "a&b")).toBe(
+      "https://portal.thejltgroup.co.uk/api/unsubscribe?token=a%26b",
+    );
   });
 });

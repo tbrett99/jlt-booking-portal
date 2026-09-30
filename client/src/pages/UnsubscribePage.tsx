@@ -12,6 +12,15 @@ export default function UnsubscribePage() {
     const success = params.get("success");
     const error = params.get("error");
     const emailParam = params.get("email");
+    const token = params.get("token");
+
+    // Earlier prospect emails pointed to this public page directly. Preserve
+    // those links by handing their token to the server-side unsubscribe route,
+    // which records the opt-out and redirects back with a confirmation state.
+    if (token) {
+      window.location.replace(`/api/unsubscribe?token=${encodeURIComponent(token)}`);
+      return;
+    }
 
     if (success === "1") {
       setState("success");
