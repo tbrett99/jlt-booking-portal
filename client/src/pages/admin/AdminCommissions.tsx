@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle, CheckCircle2, TrendingDown, AlertTriangle } from "lucide-react";
+import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle, CheckCircle2, TrendingDown, AlertTriangle, Search, X } from "lucide-react";
 import CopyableRef from "@/components/CopyableRef";
 import { useLocation } from "wouter";
 import { getPage, getSelectableCommissionRows, sortRowsByDate } from "@/lib/commission-list-utils";
@@ -102,6 +102,33 @@ function formatGbp(value: number | string | null | undefined) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return "—";
   return `£${parsed.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function normaliseCommissionSearch(value: unknown) {
+  return String(value ?? "").trim().toLocaleLowerCase();
+}
+
+function claimMatchesCommissionSearch(claim: ClaimRow, query: string) {
+  const normalisedQuery = normaliseCommissionSearch(query);
+  if (!normalisedQuery) return true;
+
+  return [
+    claim.booking?.clientName,
+    claim.agentName,
+    claim.agentEmail,
+    claim.booking?.ptsRef,
+    claim.booking?.topdogRef,
+    claim.bookingId,
+  ].some((value) => normaliseCommissionSearch(value).includes(normalisedQuery));
+}
+
+function AgentCell({ claim }: { claim: Pick<ClaimRow, "agentName" | "agentEmail"> }) {
+  return (
+    <div className="w-36 max-w-[9rem] sm:w-40 sm:max-w-[10rem]">
+      <p className="truncate font-medium" title={claim.agentName}>{claim.agentName}</p>
+      <p className="truncate text-xs text-muted-foreground" title={claim.agentEmail}>{claim.agentEmail}</p>
+    </div>
+  );
 }
 
 function OrbitFinancialSummary({ snapshot }: { snapshot?: OrbitFinancialSnapshot | null }) {
@@ -240,10 +267,7 @@ function ClaimTable({
                   )}
                 </td>
                 <td className="py-3 px-4">
-                  <div>
-                    <p>{c.agentName}</p>
-                    <p className="text-xs text-muted-foreground">{c.agentEmail}</p>
-                  </div>
+                  <AgentCell claim={c} />
                 </td>
                 <td className="py-3 px-4">{formatDate(c.booking?.departureDate)}</td>
                 <td className="py-3 px-4">
@@ -342,6 +366,8 @@ export default function AdminCommissions() {
   const [vatEditing, setVatEditing] = useState<Record<number, string>>({});
   const [sortOrder, setSortOrder] = useState<"oldest" | "newest">("oldest");
   const [paidPage, setPaidPage] = useState(1);
+  const [commissionSearch, setCommissionSearch] = useState("");
+  const [agentFilter, setAgentFilter] = useState("all");
   const PAID_CLAIMS_PER_PAGE = 20;
 
   // VAT import state
@@ -494,14 +520,33 @@ export default function AdminCommissions() {
   });
 
   const allClaims = (claims ?? []) as ClaimRow[];
+  const commissionAgents = useMemo(
+    () => Array.from(new Map(
+      allClaims.map((claim) => [claim.agentId, { id: claim.agentId, name: claim.agentName }]),
+    ).values()).sort((a, b) => a.name.localeCompare(b.name, "en-GB")),
+    [allClaims],
+  );
+  const filteredClaims = useMemo(
+    () => allClaims.filter((claim) => {
+      const matchesAgent = agentFilter === "all" || claim.agentId === Number(agentFilter);
+      return matchesAgent && claimMatchesCommissionSearch(claim, commissionSearch);
+    }),
+    [allClaims, agentFilter, commissionSearch],
+  );
+  const hasCommissionFilters = agentFilter !== "all" || commissionSearch.trim().length > 0;
+
+  useEffect(() => {
+    setPaidPage(1);
+  }, [agentFilter, commissionSearch]);
+
   const sortClaims = (rows: ClaimRow[]) => sortRowsByDate(rows, (claim) => claim.claimedAt, sortOrder);
-  const pendingReview = sortClaims(allClaims.filter((c) => c.status === "pending"));
-  const topUpRequired = sortClaims(allClaims.filter((c) => c.status === "top_up_required"));
-  const processing = sortClaims(allClaims.filter((c) => c.status === "processing"));
-  const awaitingPayment = sortClaims(allClaims.filter((c) => c.status === "awaiting_payment"));
+  const pendingReview = sortClaims(filteredClaims.filter((c) => c.status === "pending"));
+  const topUpRequired = sortClaims(filteredClaims.filter((c) => c.status === "top_up_required"));
+  const processing = sortClaims(filteredClaims.filter((c) => c.status === "processing"));
+  const awaitingPayment = sortClaims(filteredClaims.filter((c) => c.status === "awaiting_payment"));
   const claimed = awaitingPayment;
-  const paid = sortClaims(allClaims.filter((c) => c.status === "paid"));
-  const noticeHold = sortClaims(allClaims.filter((c) => c.status === "notice_hold"));
+  const paid = sortClaims(filteredClaims.filter((c) => c.status === "paid"));
+  const noticeHold = sortClaims(filteredClaims.filter((c) => c.status === "notice_hold"));
   const { rows: pagedPaid, safePage: safePaidPage, totalPages: paidTotalPages } = getPage(paid, paidPage, PAID_CLAIMS_PER_PAGE);
 
   const toggleSelect = (id: number) => {
@@ -695,6 +740,51 @@ export default function AdminCommissions() {
         </div>
       </div>
 
+      <div className="mb-6 rounded-xl border border-border bg-card p-4 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <label className="block flex-1">
+            <span className="mb-1.5 block text-sm font-medium text-foreground">Search claims</span>
+            <span className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={commissionSearch}
+                onChange={(event) => setCommissionSearch(event.target.value)}
+                placeholder="Client, agent, PTS ref, Topdog ref or booking ID…"
+                className="pl-9"
+                aria-label="Search commission claims by client, agent or reference"
+              />
+            </span>
+          </label>
+          <label className="block lg:w-60">
+            <span className="mb-1.5 block text-sm font-medium text-foreground">Agent</span>
+            <select
+              value={agentFilter}
+              onChange={(event) => setAgentFilter(event.target.value)}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#02E6D2]"
+              aria-label="Filter commission claims by agent"
+            >
+              <option value="all">All agents</option>
+              {commissionAgents.map((agent) => (
+                <option key={agent.id} value={agent.id}>{agent.name}</option>
+              ))}
+            </select>
+          </label>
+          {hasCommissionFilters && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-10 gap-1.5 text-muted-foreground"
+              onClick={() => { setCommissionSearch(""); setAgentFilter("all"); }}
+            >
+              <X className="h-4 w-4" />Clear filters
+            </Button>
+          )}
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Showing <strong className="text-foreground">{filteredClaims.length}</strong> of {allClaims.length} commission claim{allClaims.length === 1 ? "" : "s"} across every status.
+        </p>
+      </div>
+
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <Card className="border-yellow-400">
@@ -757,8 +847,8 @@ export default function AdminCommissions() {
             <div className="flex items-center gap-2">
               <Banknote className="h-4 w-4 text-muted-foreground" />
               <div>
-                <p className="text-2xl font-bold">{allClaims.length}</p>
-                <p className="text-xs text-muted-foreground">Total Claims</p>
+                <p className="text-2xl font-bold">{filteredClaims.length}</p>
+                <p className="text-xs text-muted-foreground">{hasCommissionFilters ? "Matching Claims" : "Total Claims"}</p>
               </div>
             </div>
           </CardContent>
@@ -842,8 +932,7 @@ export default function AdminCommissions() {
                               {c.booking?.ptsRef && <div className="text-xs text-muted-foreground">{c.booking.ptsRef}</div>}
                             </td>
                             <td className="py-3 px-4">
-                              <div>{c.agentName}</div>
-                              <div className="text-xs text-muted-foreground">{c.agentEmail}</div>
+                              <AgentCell claim={c} />
                             </td>
                             <td className="py-3 px-4">
                               <Badge variant="outline" className={`text-xs ${c.inContractHold ? 'border-rose-500 text-rose-700 bg-rose-50' : c.inContract ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-purple-500 text-purple-600'}`}>
@@ -935,8 +1024,7 @@ export default function AdminCommissions() {
                             {c.booking?.ptsRef && <div className="text-xs text-muted-foreground">{c.booking.ptsRef}</div>}
                           </td>
                           <td className="py-3 px-4">
-                            <div>{c.agentName}</div>
-                            <div className="text-xs text-muted-foreground">{c.agentEmail}</div>
+                            <AgentCell claim={c} />
                           </td>
                           <td className="py-3 px-4">{c.booking?.departureDate ? format(new Date(c.booking.departureDate), "dd/MM/yyyy") : "—"}</td>
                           <td className="py-3 px-4 font-semibold">
