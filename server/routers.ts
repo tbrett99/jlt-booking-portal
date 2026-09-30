@@ -4077,25 +4077,43 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
   tasks: router({
     list: adminProcedure.query(async () => {
       const tasks = await getAllAdminTasks();
-      // Enrich with assignee and creator names
-      const enriched = await Promise.all(tasks.map(async (t) => {
-        const [assignee, creator, acknowledgedBy, completedBy, linkedBooking] = await Promise.all([
-          t.assigneeId ? getUserById(t.assigneeId) : null,
-          getUserById(t.createdById),
-          t.acknowledgedById ? getUserById(t.acknowledgedById) : null,
-          t.completedById ? getUserById(t.completedById) : null,
-          t.linkedType === "booking" && t.linkedId ? getBookingById(t.linkedId) : null,
-        ]);
+      const usersById = new Map((await getAllUsers()).map((user) => [user.id, user]));
+
+      // A task must remain visible even if an old linked booking can no longer be
+      // read. Resolve those optional display names separately and fail safely.
+      const bookingTasks = tasks.filter((task) => task.linkedType === "booking" && task.linkedId);
+      const bookingResults = await Promise.allSettled(
+        bookingTasks.map((task) => getBookingById(task.linkedId!)),
+      );
+      const bookingNameByTaskId = new Map<number, string | null>();
+      bookingResults.forEach((result, index) => {
+        const task = bookingTasks[index];
+        if (result.status === "fulfilled") {
+          bookingNameByTaskId.set(task.id, result.value?.clientName ?? null);
+          return;
+        }
+        console.error("[Tasks] Linked booking enrichment failed", {
+          taskId: task.id,
+          bookingId: task.linkedId,
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
+        bookingNameByTaskId.set(task.id, null);
+      });
+
+      return tasks.map((t) => {
+        const assignee = t.assigneeId ? usersById.get(t.assigneeId) : null;
+        const creator = usersById.get(t.createdById);
+        const acknowledgedBy = t.acknowledgedById ? usersById.get(t.acknowledgedById) : null;
+        const completedBy = t.completedById ? usersById.get(t.completedById) : null;
         return {
           ...t,
           assigneeName: assignee?.name ?? null,
           creatorName: creator?.name ?? null,
           acknowledgedByName: acknowledgedBy?.name ?? null,
           completedByName: completedBy?.name ?? null,
-          linkedBookingClientName: linkedBooking?.clientName ?? null,
+          linkedBookingClientName: bookingNameByTaskId.get(t.id) ?? null,
         };
-      }));
-      return enriched;
+      });
     }),
     byBooking: adminProcedure
       .input(z.object({ bookingId: z.number().int().positive() }))

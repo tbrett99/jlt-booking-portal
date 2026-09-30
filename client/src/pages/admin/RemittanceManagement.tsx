@@ -643,7 +643,7 @@ function PushedLinesView({ batchId }: { batchId?: number }) {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="font-medium">Pushed to agents</p>
+          <p className="font-medium">Pushed remittance history</p>
           <p className="text-sm text-muted-foreground">
             {total.toLocaleString()} remittance line{total === 1 ? "" : "s"} sent to agents
           </p>
@@ -953,6 +953,7 @@ function NeedsReviewBadge({
 export default function RemittanceManagement() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<number | undefined>(undefined);
+  const [activeTab, setActiveTab] = useState("janines");
   const utils = trpc.useUtils();
 
   const { data: batches = [], isLoading: batchesLoading } = trpc.remittance.getBatches.useQuery();
@@ -991,9 +992,14 @@ export default function RemittanceManagement() {
             Upload weekly PTS remittance CSVs, match to bookings, and push to agents.
           </p>
         </div>
-        <Button onClick={() => setUploadOpen(true)}>
-          <Upload className="h-4 w-4 mr-2" />Upload Remittance
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setActiveTab("pushed")}>
+            <Search className="h-4 w-4 mr-2" />Search pushed history
+          </Button>
+          <Button onClick={() => setUploadOpen(true)}>
+            <Upload className="h-4 w-4 mr-2" />Upload Remittance
+          </Button>
+        </div>
       </div>
 
       {/* Batch selector */}
@@ -1086,11 +1092,11 @@ export default function RemittanceManagement() {
       {/* Views */}
       <NeedsReviewBadge batchId={selectedBatchId}>
         {(reviewCount) => (
-          <Tabs defaultValue="janines">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList>
               <TabsTrigger value="janines">Janine's View</TabsTrigger>
               <TabsTrigger value="agents">Agent View</TabsTrigger>
-              <TabsTrigger value="pushed">Pushed to agents</TabsTrigger>
+              <TabsTrigger value="pushed">Pushed history</TabsTrigger>
               <TabsTrigger value="review" className="relative">
                 Needs Review
                 {reviewCount > 0 && (

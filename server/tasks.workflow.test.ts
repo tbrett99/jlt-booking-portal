@@ -32,4 +32,11 @@ describe("admin task workflow safeguards", () => {
     expect(workbenchSource).toContain("All assignees");
     expect(workbenchSource).toContain("value={`user:${admin.id}`}");
   });
+
+  it("keeps the full task list available when an optional linked booking cannot be enriched", () => {
+    expect(routerSource).toContain("Promise.allSettled");
+    expect(routerSource).toContain("[Tasks] Linked booking enrichment failed");
+    expect(routerSource).toContain("const usersById = new Map");
+    expect(routerSource).toContain("linkedBookingClientName: bookingNameByTaskId.get(t.id) ?? null");
+  });
 });

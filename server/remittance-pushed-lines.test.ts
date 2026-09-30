@@ -26,11 +26,13 @@ describe("pushed remittance list", () => {
     expect(routerSource).toContain("orderBy(desc(remittanceLines.pushedAt), desc(remittanceLines.id))");
   });
 
-  it("renders a separate searchable, paginated Pushed to agents tab", () => {
+  it("renders an immediately accessible searchable, paginated pushed-history view", () => {
     expect(pageSource).toContain("function PushedLinesView");
     expect(pageSource).toContain("trpc.remittance.getPushedLines.useQuery");
     expect(pageSource).toContain("Search client name or PTS reference");
     expect(pageSource).toContain("TabsTrigger value=\"pushed\"");
+    expect(pageSource).toContain("Search pushed history");
+    expect(pageSource).toContain("Pushed remittance history");
     expect(pageSource).toContain("Page {currentPage} of {totalPages}");
   });
 });
