@@ -811,8 +811,8 @@
 
 ### Proposed: Booking @Mention Action Tasks (Awaiting Approval)
 - [x] Scope an integrated internal-note mention → linked Admin Task workflow, including booking status chips, acknowledgement/completion audit, and Super Admin outstanding-work oversight
-- [ ] Add prospective action-task creation for selected colleague mentions in internal booking notes, with an FYI-only opt-out
-- [ ] Add linked-task states to booking notes/Booking Overview and an outstanding mention-task queue to the existing Super Admin Staff tab
+- [x] Add prospective action-task creation for selected colleague mentions in internal booking notes, with an FYI-only opt-out
+- [x] Add linked-task states to booking notes/Booking Overview and an outstanding mention-task queue to the existing Super Admin Staff tab
 
 ## Bugs - Apr 11 (Reimbursement & Duplicate Booking)
 - [x] Bug: booking appears twice in pipeline when registered (duplicate booking creation)
