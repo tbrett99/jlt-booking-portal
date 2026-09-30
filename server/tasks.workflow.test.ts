@@ -47,21 +47,17 @@ describe("admin task workflow safeguards", () => {
     expect(dbSource).toContain("1 AS recurrenceInterval");
   });
 
-  it("uses a direct task projection for lifecycle actions instead of an ORM re-read", () => {
+  it("uses native mysql2 prepared statements for lifecycle task reads", () => {
     expect(dbSource).toContain("FROM admin_tasks");
-    expect(dbSource).toContain("WHERE id = ${id}");
+    expect(dbSource).toContain("WHERE id = ?");
     expect(dbSource).toContain("return getAdminTaskById(id);");
+    expect(dbSource).toContain("await _pool.execute(");
   });
 
-  it("uses the production-compatible insert path for manual and recurring tasks", () => {
+  it("uses native mysql2 prepared inserts for manual and recurring tasks", () => {
     expect(dbSource).toContain("INSERT INTO admin_tasks");
     expect(dbSource).toContain("recurrenceRule, recurrenceInterval");
     expect(dbSource).toContain("return getAdminTaskById(Number(id));");
-  });
-
-  it("retries task creation and reads without optional booking-mention metadata", () => {
-    expect(dbSource).toContain("Retrying task insert without mention metadata");
-    expect(dbSource).toContain("Retrying task read without mention metadata");
-    expect(dbSource).toContain("NULL AS sourceNoteId, 'manual' AS createdFrom");
+    expect(dbSource).toContain("Do not\n  // route task lifecycle writes through Drizzle's raw execute path");
   });
 });
