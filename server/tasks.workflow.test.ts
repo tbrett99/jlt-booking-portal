@@ -4,6 +4,7 @@ import path from "node:path";
 
 const routerSource = fs.readFileSync(path.join(process.cwd(), "server/routers.ts"), "utf8");
 const dashboardSource = fs.readFileSync(path.join(process.cwd(), "server/dashboard-router.ts"), "utf8");
+const dbSource = fs.readFileSync(path.join(process.cwd(), "server/db.ts"), "utf8");
 const dialogSource = fs.readFileSync(path.join(process.cwd(), "client/src/pages/admin/TaskFormDialog.tsx"), "utf8");
 const workbenchSource = fs.readFileSync(path.join(process.cwd(), "client/src/pages/admin/AdminTasks.tsx"), "utf8");
 
@@ -38,5 +39,11 @@ describe("admin task workflow safeguards", () => {
     expect(routerSource).toContain("[Tasks] Linked booking enrichment failed");
     expect(routerSource).toContain("const usersById = new Map");
     expect(routerSource).toContain("linkedBookingClientName: bookingNameByTaskId.get(t.id) ?? null");
+  });
+
+  it("falls back to a non-recurring task projection when a legacy database is missing optional columns", () => {
+    expect(dbSource).toContain("[Tasks] Falling back to legacy-compatible task list");
+    expect(dbSource).toContain("'none' AS recurrenceRule");
+    expect(dbSource).toContain("1 AS recurrenceInterval");
   });
 });

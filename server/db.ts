@@ -1575,8 +1575,31 @@ export async function createAdminTask(data: {
 export async function getAllAdminTasks() {
   const db = await getDb();
   if (!db) return [];
-  const { adminTasks } = await import("../drizzle/schema");
-  return db.select().from(adminTasks).orderBy(desc(adminTasks.createdAt));
+  try {
+    return await db.select().from(adminTasks).orderBy(desc(adminTasks.createdAt));
+  } catch (error) {
+    // Recurrence was introduced after the task workbench was already live. Keep
+    // the whole team task list usable if a production database has not yet been
+    // given those optional columns; the values simply fall back to non-recurring.
+    console.error("[Tasks] Falling back to legacy-compatible task list", error);
+    const [rows] = await db.execute(sql`
+      SELECT
+        id, title, description, status, priority, assigneeId, createdById,
+        dueDate, linkedType, linkedId,
+        NULL AS sourceNoteId,
+        'manual' AS createdFrom,
+        NULL AS acknowledgedAt,
+        NULL AS acknowledgedById,
+        NULL AS completedAt,
+        NULL AS completedById,
+        'none' AS recurrenceRule,
+        1 AS recurrenceInterval,
+        createdAt, updatedAt
+      FROM admin_tasks
+      ORDER BY createdAt DESC
+    `);
+    return rows as unknown as typeof adminTasks.$inferSelect[];
+  }
 }
 
 export async function getAdminTasksByBooking(bookingId: number) {

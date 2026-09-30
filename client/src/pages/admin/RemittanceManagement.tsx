@@ -185,7 +185,16 @@ function JaninesView({ batchId }: { batchId?: number }) {
   const utils = trpc.useUtils();
   const [vatEditing, setVatEditing] = useState<Record<number, string>>({});
   const [showAll, setShowAll] = useState(false);
-  const displayLines = showAll ? lines : lines.filter((l) => !(l as any).pushedToAgent);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  const allDisplayLines = showAll ? lines : lines.filter((l) => !(l as any).pushedToAgent);
+  const totalPages = Math.max(1, Math.ceil(allDisplayLines.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const displayLines = allDisplayLines.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [batchId, showAll]);
   const updateVatMutation = trpc.remittance.updateLineVat.useMutation({
     onSuccess: () => utils.remittance.getJaninesView.invalidate(),
     onError: (e) => toast.error(`VAT update failed: ${e.message}`),
@@ -199,7 +208,7 @@ function JaninesView({ batchId }: { batchId?: number }) {
   };
 
   const exportJanines = () => {
-    const rows = displayLines.map((l) => ({
+    const rows = allDisplayLines.map((l) => ({
       "Batch": l.batchName,
       "Week Of": l.weekOf ? new Date(l.weekOf).toLocaleDateString("en-GB") : "",
       "Client": l.clientName,
@@ -225,11 +234,11 @@ function JaninesView({ batchId }: { batchId?: number }) {
     }));
     // Add totals row
     const sumField = (field: (l: typeof lines[0]) => string | number | null | undefined) =>
-      displayLines.reduce((acc, l) => acc + (parseFloat(String(field(l) ?? 0)) || 0), 0);
+      allDisplayLines.reduce((acc, l) => acc + (parseFloat(String(field(l) ?? 0)) || 0), 0);
     const totalsRow: Record<string, string> = {
       "Batch": "TOTALS",
       "Week Of": "",
-      "Client": `${displayLines.length} bookings`,
+      "Client": `${allDisplayLines.length} bookings`,
       "Booking Reference": "",
       "Return Date": "",
       "PAX": String(lines.reduce((acc, l) => acc + (Number(l.pax) || 0), 0)),
@@ -358,6 +367,22 @@ function JaninesView({ batchId }: { batchId?: number }) {
           </TableBody>
         </Table>
       </div>
+      {allDisplayLines.length > pageSize && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+          <p className="text-muted-foreground">
+            Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, allDisplayLines.length)} of {allDisplayLines.length} rows
+          </p>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+              Previous
+            </Button>
+            <span className="text-muted-foreground">Page {currentPage} of {totalPages}</span>
+            <Button size="sm" variant="outline" disabled={currentPage === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

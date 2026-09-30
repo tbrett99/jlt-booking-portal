@@ -35,4 +35,11 @@ describe("pushed remittance list", () => {
     expect(pageSource).toContain("Pushed remittance history");
     expect(pageSource).toContain("Page {currentPage} of {totalPages}");
   });
+
+  it("also paginates the legacy Show all path in Janine's View", () => {
+    expect(pageSource).toContain("const allDisplayLines = showAll ? lines");
+    expect(pageSource).toContain("const pageSize = 50");
+    expect(pageSource).toContain("Showing {(currentPage - 1) * pageSize + 1}");
+    expect(pageSource).toContain("Hide pushed");
+  });
 });
