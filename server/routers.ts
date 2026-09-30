@@ -4059,11 +4059,12 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       const tasks = await getAllAdminTasks();
       // Enrich with assignee and creator names
       const enriched = await Promise.all(tasks.map(async (t) => {
-        const [assignee, creator, acknowledgedBy, completedBy] = await Promise.all([
+        const [assignee, creator, acknowledgedBy, completedBy, linkedBooking] = await Promise.all([
           t.assigneeId ? getUserById(t.assigneeId) : null,
           getUserById(t.createdById),
           t.acknowledgedById ? getUserById(t.acknowledgedById) : null,
           t.completedById ? getUserById(t.completedById) : null,
+          t.linkedType === "booking" && t.linkedId ? getBookingById(t.linkedId) : null,
         ]);
         return {
           ...t,
@@ -4071,6 +4072,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           creatorName: creator?.name ?? null,
           acknowledgedByName: acknowledgedBy?.name ?? null,
           completedByName: completedBy?.name ?? null,
+          linkedBookingClientName: linkedBooking?.clientName ?? null,
         };
       }));
       return enriched;

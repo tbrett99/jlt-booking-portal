@@ -1,12 +1,31 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link } from "wouter";
 import { format, isPast, isToday, isTomorrow } from "date-fns";
 import {
-  CheckSquare, Square, Plus, MessageSquare, ChevronDown, ChevronUp,
-  Calendar, User, Tag, Link2, Trash2, Edit3, Send, Loader2,
-  AlertCircle, Clock, CheckCircle2, Filter, ArrowLeft,
+  AlertCircle,
+  ArrowLeft,
+  Calendar,
+  CheckCircle2,
+  CheckSquare,
+  ChevronDown,
+  ChevronUp,
+  CircleDot,
+  Clock,
+  Edit3,
+  Filter,
+  Flag,
+  Link2,
+  Loader2,
+  MessageSquare,
+  Plus,
+  Send,
+  Square,
+  Tag,
+  Trash2,
+  User,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,23 +36,24 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import TaskFormDialog from "./TaskFormDialog";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 type TaskStatus = "open" | "in_progress" | "done";
 type TaskPriority = "low" | "medium" | "high" | "urgent";
 type LinkedType = "booking" | "amendment" | "refund" | "cancellation" | "none";
+type TaskView = "focus" | "team" | "done";
+type FocusFilter = "all" | "unacknowledged" | "due_today" | "overdue";
+type OwnerFilter = "all" | "mine" | "unassigned";
 
-const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  open: { label: "Open", color: "bg-slate-100 text-slate-700 border-slate-200", icon: <Square size={12} /> },
-  in_progress: { label: "In Progress", color: "bg-blue-100 text-blue-700 border-blue-200", icon: <Clock size={12} /> },
-  done: { label: "Done", color: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: <CheckCircle2 size={12} /> },
+const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
+  open: { label: "Unacknowledged", color: "border-amber-200 bg-amber-50 text-amber-800" },
+  in_progress: { label: "In progress", color: "border-sky-200 bg-sky-50 text-sky-800" },
+  done: { label: "Completed", color: "border-emerald-200 bg-emerald-50 text-emerald-800" },
 };
 
 const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: string }> = {
-  low: { label: "Low", color: "bg-slate-100 text-slate-600 border-slate-200" },
-  medium: { label: "Medium", color: "bg-amber-100 text-amber-700 border-amber-200" },
-  high: { label: "High", color: "bg-orange-100 text-orange-700 border-orange-200" },
-  urgent: { label: "Urgent", color: "bg-red-100 text-red-700 border-red-200" },
+  low: { label: "Low", color: "border-slate-200 bg-slate-50 text-slate-600" },
+  medium: { label: "Medium", color: "border-amber-200 bg-amber-50 text-amber-700" },
+  high: { label: "High", color: "border-orange-200 bg-orange-50 text-orange-700" },
+  urgent: { label: "Urgent", color: "border-rose-200 bg-rose-50 text-rose-700" },
 };
 
 const LINKED_TYPE_LABELS: Record<LinkedType, string> = {
@@ -44,58 +64,175 @@ const LINKED_TYPE_LABELS: Record<LinkedType, string> = {
   none: "None",
 };
 
-function dueDateLabel(dueDate: Date | null | undefined): { text: string; urgent: boolean } | null {
+function dueDateLabel(dueDate: Date | null | undefined): { text: string; tone: "urgent" | "today" | "neutral" } | null {
   if (!dueDate) return null;
-  const d = new Date(dueDate);
-  if (isToday(d)) return { text: "Due today", urgent: true };
-  if (isTomorrow(d)) return { text: "Due tomorrow", urgent: true };
-  if (isPast(d)) return { text: `Overdue (${format(d, "dd MMM")})`, urgent: true };
-  return { text: `Due ${format(d, "dd MMM")}`, urgent: false };
+  const date = new Date(dueDate);
+  if (isToday(date)) return { text: "Due today", tone: "today" };
+  if (isTomorrow(date)) return { text: "Due tomorrow", tone: "neutral" };
+  if (isPast(date)) return { text: `Overdue · ${format(date, "dd MMM")}`, tone: "urgent" };
+  return { text: `Due ${format(date, "dd MMM")}`, tone: "neutral" };
 }
 
-// ─── Task Row / Card ──────────────────────────────────────────────────────────
+function isOverdue(task: any) {
+  return task.status !== "done" && !!task.dueDate && isPast(new Date(task.dueDate)) && !isToday(new Date(task.dueDate));
+}
 
-function TaskRow({
+function isDueToday(task: any) {
+  return task.status !== "done" && !!task.dueDate && isToday(new Date(task.dueDate));
+}
+
+function taskSort(a: any, b: any) {
+  const priorityOrder: Record<TaskPriority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+  if (isOverdue(a) !== isOverdue(b)) return isOverdue(a) ? -1 : 1;
+  if (a.status !== b.status) return a.status === "open" ? -1 : 1;
+  if (priorityOrder[a.priority as TaskPriority] !== priorityOrder[b.priority as TaskPriority]) {
+    return priorityOrder[a.priority as TaskPriority] - priorityOrder[b.priority as TaskPriority];
+  }
+  if (a.dueDate && b.dueDate) return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+  if (a.dueDate) return -1;
+  if (b.dueDate) return 1;
+  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+}
+
+function WorkMetric({
+  label,
+  value,
+  detail,
+  tone = "slate",
+  icon: Icon,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  tone?: "slate" | "amber" | "sky" | "rose" | "emerald";
+  icon: React.ElementType;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  const styles = {
+    slate: "border-slate-200 bg-slate-50 text-slate-700",
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    sky: "border-sky-200 bg-sky-50 text-sky-800",
+    rose: "border-rose-200 bg-rose-50 text-rose-800",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  }[tone];
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm ${styles} ${active ? "ring-2 ring-offset-2 ring-[#70FFE8]" : ""}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-2xl font-bold leading-none">{value}</p>
+          <p className="mt-1 text-sm font-semibold">{label}</p>
+        </div>
+        <Icon size={18} className="opacity-80 transition-transform group-hover:scale-110" />
+      </div>
+      <p className="mt-2 text-xs opacity-75">{detail}</p>
+    </button>
+  );
+}
+
+function TaskSection({
+  title,
+  description,
+  tasks,
+  emptyMessage,
+  adminUsers,
+  currentUserId,
+  onRefresh,
+}: {
+  title: string;
+  description: string;
+  tasks: any[];
+  emptyMessage: string;
+  adminUsers: { id: number; name: string }[];
+  currentUserId: number;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-foreground">{title}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        </div>
+        <Badge variant="outline" className="border-slate-200 bg-white text-slate-600">
+          {tasks.length} {tasks.length === 1 ? "task" : "tasks"}
+        </Badge>
+      </div>
+      {tasks.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 px-5 py-6 text-sm text-muted-foreground">
+          {emptyMessage}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {tasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              adminUsers={adminUsers}
+              currentUserId={currentUserId}
+              onRefresh={onRefresh}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function TaskCard({
   task,
   adminUsers,
-  onRefresh,
   currentUserId,
+  onRefresh,
 }: {
   task: any;
   adminUsers: { id: number; name: string }[];
-  onRefresh: () => void;
   currentUserId: number;
+  onRefresh: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState("");
   const [editOpen, setEditOpen] = useState(false);
-
   const { data: comments = [], refetch: refetchComments } = trpc.tasks.getComments.useQuery(
     { taskId: task.id },
-    { enabled: expanded }
+    { enabled: expanded },
   );
 
   const updateTask = trpc.tasks.update.useMutation({
-    onSuccess: () => onRefresh(),
-    onError: (err) => toast.error(err.message || "Failed to update"),
+    onSuccess: (_result, input) => {
+      const feedback = input.status === "in_progress"
+        ? "Task acknowledged and moved to In Progress"
+        : input.status === "done"
+        ? "Task marked complete"
+        : "Task reopened";
+      toast.success(feedback);
+      onRefresh();
+    },
+    onError: (err) => toast.error(err.message || "Failed to update task"),
   });
   const deleteTask = trpc.tasks.delete.useMutation({
     onSuccess: () => { toast.success("Task deleted"); onRefresh(); },
-    onError: (err) => toast.error(err.message || "Failed to delete"),
+    onError: (err) => toast.error(err.message || "Failed to delete task"),
   });
   const addComment = trpc.tasks.addComment.useMutation({
-    onSuccess: () => { setComment(""); refetchComments(); },
-    onError: (err) => toast.error(err.message || "Failed to add comment"),
+    onSuccess: () => { setComment(""); refetchComments(); toast.success("Update added"); },
+    onError: (err) => toast.error(err.message || "Failed to add update"),
   });
 
   const due = dueDateLabel(task.dueDate);
-  const statusCfg = STATUS_CONFIG[task.status as TaskStatus];
-  const priorityCfg = PRIORITY_CONFIG[task.priority as TaskPriority];
-
-  function cycleStatus() {
-    const next: Record<TaskStatus, TaskStatus> = { open: "in_progress", in_progress: "done", done: "open" };
-    updateTask.mutate({ id: task.id, status: next[task.status as TaskStatus] });
-  }
+  const status = task.status as TaskStatus;
+  const priority = task.priority as TaskPriority;
+  const isMine = task.assigneeId === currentUserId;
+  const isAtRisk = isOverdue(task) || priority === "urgent";
+  const bookingLabel = task.linkedBookingClientName ?? (task.linkedId ? `Booking #${task.linkedId}` : null);
+  const lastActivity = task.completedAt ?? task.acknowledgedAt ?? task.updatedAt ?? task.createdAt;
 
   function handleSendComment() {
     if (!comment.trim()) return;
@@ -104,189 +241,116 @@ function TaskRow({
 
   return (
     <>
-      <Card className={`transition-all ${task.status === "done" ? "opacity-60" : ""}`}>
-        <CardContent className="px-4 py-3">
-          <div className="flex items-start gap-3">
-            {/* Status toggle */}
-            <button
-              onClick={cycleStatus}
-              className="mt-0.5 flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-              title={task.status === "open" ? "Acknowledge and start this task" : task.status === "in_progress" ? "Mark this task done" : "Reopen this task"}
-            >
-              {task.status === "done"
-                ? <CheckSquare size={18} className="text-emerald-500" />
-                : task.status === "in_progress"
-                ? <Clock size={18} className="text-blue-500" />
-                : <Square size={18} />}
-            </button>
-
-            {/* Main content */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start gap-2 flex-wrap">
-                <span className={`text-sm font-medium ${task.status === "done" ? "line-through text-muted-foreground" : ""}`}>
-                  {task.title}
-                </span>
-                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${priorityCfg.color}`}>
-                  {priorityCfg.label}
-                </Badge>
-                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${statusCfg.color}`}>
-                  {task.status === "open" && task.createdFrom === "booking_mention" ? "Unacknowledged" : statusCfg.label}
-                </Badge>
-                {task.createdFrom === "booking_mention" && (
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-200 bg-violet-50 text-violet-700">
-                    <MessageSquare size={10} className="mr-1" /> Booking mention
+      <Card className={`overflow-hidden border transition-shadow hover:shadow-md ${isAtRisk ? "border-rose-200" : isMine && status !== "done" ? "border-[#70FFE8]/70" : "border-border"}`}>
+        <CardContent className="p-0">
+          <div className={`h-1 ${status === "done" ? "bg-emerald-400" : isAtRisk ? "bg-rose-400" : status === "in_progress" ? "bg-sky-400" : "bg-amber-400"}`} />
+          <div className="p-4 sm:p-5">
+            <div className="flex gap-3">
+              <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${status === "done" ? "bg-emerald-50 text-emerald-600" : status === "in_progress" ? "bg-sky-50 text-sky-600" : "bg-amber-50 text-amber-700"}`}>
+                {status === "done" ? <CheckCircle2 size={19} /> : status === "in_progress" ? <Clock size={19} /> : <Square size={18} />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-start gap-2">
+                  <h3 className={`text-[15px] font-bold leading-6 ${status === "done" ? "text-muted-foreground line-through" : "text-foreground"}`}>{task.title}</h3>
+                  <Badge variant="outline" className={`text-[10px] ${PRIORITY_CONFIG[priority].color}`}>
+                    <Flag size={10} className="mr-1" />{PRIORITY_CONFIG[priority].label}
                   </Badge>
-                )}
-                {due && (
-                  <span className={`flex items-center gap-1 text-[10px] font-medium ${due.urgent ? "text-red-600" : "text-muted-foreground"}`}>
-                    <Calendar size={10} />
-                    {due.text}
-                  </span>
-                )}
-              </div>
-
-              {task.description && (
-                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{task.description}</p>
-              )}
-
-              <div className="flex items-center gap-3 mt-1.5 flex-wrap text-[11px] text-muted-foreground">
-                {task.assigneeName && (
-                  <span className="flex items-center gap-1">
-                    <User size={10} />
-                    {task.assigneeName}
-                  </span>
-                )}
-                {!task.assigneeName && (
-                  <span className="flex items-center gap-1 italic">
-                    <User size={10} />
-                    Unassigned
-                  </span>
-                )}
-                <span className="flex items-center gap-1">
-                  <Tag size={10} />
-                  Created by {task.creatorName ?? "Admin"}
-                </span>
-                {task.acknowledgedAt && (
-                  <span className="flex items-center gap-1 text-blue-700">
-                    <Clock size={10} />
-                    Acknowledged by {task.acknowledgedByName ?? "Admin"}
-                  </span>
-                )}
-                {task.completedAt && (
-                  <span className="flex items-center gap-1 text-emerald-700">
-                    <CheckCircle2 size={10} />
-                    Completed by {task.completedByName ?? "Admin"}
-                  </span>
-                )}
-                {task.linkedType !== "none" && task.linkedId && (
-                  <Link href={task.linkedType === "booking" ? `/bookings/${task.linkedId}` : `/${task.linkedType}s`}>
-                    <span className="flex items-center gap-1 text-[#70FFE8] hover:underline cursor-pointer">
-                      <Link2 size={10} />
-                      {LINKED_TYPE_LABELS[task.linkedType as LinkedType]} #{task.linkedId}
-                    </span>
-                  </Link>
-                )}
-                <span>{format(new Date(task.createdAt), "dd MMM yyyy")}</span>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-1 flex-shrink-0">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                onClick={() => setExpanded((v) => !v)}
-                title="Comments"
-              >
-                <MessageSquare size={14} />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                onClick={() => setEditOpen(true)}
-                title="Edit"
-              >
-                <Edit3 size={14} />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
-                onClick={() => {
-                  if (confirm("Delete this task?")) deleteTask.mutate({ id: task.id });
-                }}
-                title="Delete"
-              >
-                <Trash2 size={14} />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0 text-muted-foreground"
-                onClick={() => setExpanded((v) => !v)}
-              >
-                {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </Button>
-            </div>
-          </div>
-
-          {/* Expanded comments section */}
-          {expanded && (
-            <div className="mt-3 pl-7 border-t pt-3 space-y-3">
-              {comments.length === 0 && (
-                <p className="text-xs text-muted-foreground italic">No comments yet.</p>
-              )}
-              {comments.map((c: any) => (
-                <div key={c.id} className="flex gap-2">
-                  <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-[10px] font-bold uppercase">
-                    {(c.authorName ?? "A")[0]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs font-semibold">{c.authorName ?? "Admin"}</span>
-                      <span className="text-[10px] text-muted-foreground">{format(new Date(c.createdAt), "dd MMM, HH:mm")}</span>
-                      {task.linkedType === "booking" && task.linkedId && (
-                        <span className="text-[10px] text-emerald-600 flex items-center gap-0.5">
-                          <Link2 size={9} /> mirrored to booking
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-foreground mt-0.5 whitespace-pre-wrap">{c.content}</p>
-                  </div>
+                  <Badge variant="outline" className={`text-[10px] ${STATUS_CONFIG[status].color}`}>
+                    {STATUS_CONFIG[status].label}
+                  </Badge>
+                  {task.createdFrom === "booking_mention" && (
+                    <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">
+                      <MessageSquare size={10} className="mr-1" />From booking note
+                    </Badge>
+                  )}
                 </div>
-              ))}
+                {task.description && (
+                  <p className="mt-1.5 max-w-4xl whitespace-pre-line text-sm leading-5 text-muted-foreground">{task.description}</p>
+                )}
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                  <span className={`inline-flex items-center gap-1 ${isMine ? "font-semibold text-foreground" : ""}`}><User size={12} />{task.assigneeName ?? "Unassigned"}{isMine ? " · You" : ""}</span>
+                  {due && <span className={`inline-flex items-center gap-1 font-medium ${due.tone === "urgent" ? "text-rose-700" : due.tone === "today" ? "text-amber-800" : ""}`}><Calendar size={12} />{due.text}</span>}
+                  {bookingLabel && task.linkedType === "booking" && task.linkedId && (
+                    <Link href={`/bookings/${task.linkedId}`} className="inline-flex items-center gap-1 font-medium text-[#168c7a] hover:underline">
+                      <Link2 size={12} />{bookingLabel}
+                    </Link>
+                  )}
+                  {task.linkedType !== "booking" && task.linkedType !== "none" && task.linkedId && (
+                    <span className="inline-flex items-center gap-1"><Link2 size={12} />{LINKED_TYPE_LABELS[task.linkedType as LinkedType]} #{task.linkedId}</span>
+                  )}
+                  <span className="inline-flex items-center gap-1"><Clock size={12} />Updated {format(new Date(lastActivity), "dd MMM, HH:mm")}</span>
+                </div>
+                {(task.acknowledgedAt || task.completedAt) && (
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                    {task.acknowledgedAt && <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-800">Acknowledged by {task.acknowledgedByName ?? "Admin"} · {format(new Date(task.acknowledgedAt), "dd MMM, HH:mm")}</span>}
+                    {task.completedAt && <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-800">Completed by {task.completedByName ?? "Admin"} · {format(new Date(task.completedAt), "dd MMM, HH:mm")}</span>}
+                  </div>
+                )}
+              </div>
+            </div>
 
-              {/* Add comment */}
-              <div className="flex gap-2 pt-1">
-                <Textarea
-                  placeholder="Add a comment…"
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  rows={2}
-                  className="text-sm resize-none"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSendComment();
-                  }}
-                />
-                <Button
-                  size="sm"
-                  className="self-end h-8 px-3"
-                  onClick={handleSendComment}
-                  disabled={!comment.trim() || addComment.isPending}
-                >
-                  {addComment.isPending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {status === "open" && (
+                  <Button size="sm" className="gap-1.5 bg-[#168c7a] text-white hover:bg-[#116f61]" onClick={() => updateTask.mutate({ id: task.id, status: "in_progress" })} disabled={updateTask.isPending}>
+                    {updateTask.isPending ? <Loader2 size={13} className="animate-spin" /> : <CircleDot size={13} />}Acknowledge & start
+                  </Button>
+                )}
+                {status === "in_progress" && (
+                  <Button size="sm" className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => updateTask.mutate({ id: task.id, status: "done" })} disabled={updateTask.isPending}>
+                    {updateTask.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckSquare size={13} />}Mark complete
+                  </Button>
+                )}
+                {status === "done" && (
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => updateTask.mutate({ id: task.id, status: "open" })} disabled={updateTask.isPending}>
+                    <Square size={13} />Reopen
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-muted-foreground" onClick={() => setExpanded((value) => !value)}>
+                  <MessageSquare size={13} />{(comments as any[]).length > 0 ? `${(comments as any[]).length} updates` : "Add update"}
+                  {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                 </Button>
               </div>
-              {task.linkedType === "booking" && task.linkedId && (
-                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                  <AlertCircle size={9} />
-                  Comments on this task are automatically mirrored as internal notes on Booking #{task.linkedId}.
-                </p>
-              )}
+              <div className="flex items-center gap-1">
+                <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => setEditOpen(true)} title="Edit task"><Edit3 size={14} /></Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-rose-600" onClick={() => { if (confirm("Delete this task?")) deleteTask.mutate({ id: task.id }); }} title="Delete task"><Trash2 size={14} /></Button>
+              </div>
             </div>
-          )}
+
+            {expanded && (
+              <div className="mt-4 border-t border-border pt-4">
+                <div className="space-y-3">
+                  {(comments as any[]).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No updates yet. Add a note so the next person can see what has happened.</p>
+                  ) : (
+                    (comments as any[]).map((entry) => (
+                      <div key={entry.id} className="flex gap-2.5">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{(entry.authorName ?? "A")[0]}</div>
+                        <div className="min-w-0 flex-1 rounded-xl bg-muted/50 px-3 py-2">
+                          <p className="text-xs font-semibold">{entry.authorName ?? "Admin"} <span className="font-normal text-muted-foreground">· {format(new Date(entry.createdAt), "dd MMM, HH:mm")}</span></p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{entry.content}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <Textarea
+                    placeholder="Add a useful progress update…"
+                    value={comment}
+                    onChange={(event) => setComment(event.target.value)}
+                    rows={2}
+                    className="resize-none text-sm"
+                    onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) handleSendComment(); }}
+                  />
+                  <Button size="sm" className="self-end gap-1.5" onClick={handleSendComment} disabled={!comment.trim() || addComment.isPending}>
+                    {addComment.isPending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}Post
+                  </Button>
+                </div>
+                {task.linkedType === "booking" && task.linkedId && <p className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground"><AlertCircle size={11} />This update is also added to the booking’s internal notes.</p>}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -305,6 +369,7 @@ function TaskRow({
             dueDate: task.dueDate,
             linkedType: task.linkedType,
             linkedId: task.linkedId,
+            linkedBookingLabel: task.linkedBookingClientName ?? undefined,
           }}
         />
       )}
@@ -312,157 +377,160 @@ function TaskRow({
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
 export default function AdminTasks() {
   const { user } = useAuth();
   const [createOpen, setCreateOpen] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<"all" | TaskStatus>("all");
-  const [filterAssignee, setFilterAssignee] = useState<"all" | "mine">("all");
-  const [filterPriority, setFilterPriority] = useState<"all" | TaskPriority>("all");
+  const [view, setView] = useState<TaskView>("focus");
+  const [focusFilter, setFocusFilter] = useState<FocusFilter>("all");
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | TaskPriority>("all");
   const [search, setSearch] = useState("");
 
   const { data: tasks = [], isLoading, refetch } = trpc.tasks.list.useQuery();
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
+  const allTasks = tasks as any[];
+  const currentUserId = user?.id ?? 0;
 
-  const filtered = useMemo(() => {
-    let list = tasks as any[];
-    if (filterStatus !== "all") list = list.filter((t) => t.status === filterStatus);
-    if (filterAssignee === "mine") list = list.filter((t) => t.assigneeId === user?.id);
-    if (filterPriority !== "all") list = list.filter((t) => t.priority === filterPriority);
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter((t) =>
-        t.title.toLowerCase().includes(q) ||
-        (t.description ?? "").toLowerCase().includes(q) ||
-        (t.assigneeName ?? "").toLowerCase().includes(q)
+  const stats = useMemo(() => {
+    const active = allTasks.filter((task) => task.status !== "done");
+    const mine = active.filter((task) => task.assigneeId === currentUserId);
+    return {
+      active: active.length,
+      mine: mine.length,
+      unacknowledged: mine.filter((task) => task.status === "open").length,
+      inProgress: mine.filter((task) => task.status === "in_progress").length,
+      dueToday: mine.filter(isDueToday).length,
+      overdue: active.filter(isOverdue).length,
+      completed: allTasks.filter((task) => task.status === "done").length,
+    };
+  }, [allTasks, currentUserId]);
+
+  const visibleTasks = useMemo(() => {
+    let list = [...allTasks];
+    if (view === "focus") list = list.filter((task) => task.assigneeId === currentUserId && task.status !== "done");
+    if (view === "team") list = list.filter((task) => task.status !== "done");
+    if (view === "done") list = list.filter((task) => task.status === "done");
+
+    if (view !== "focus") {
+      if (ownerFilter === "mine") list = list.filter((task) => task.assigneeId === currentUserId);
+      if (ownerFilter === "unassigned") list = list.filter((task) => !task.assigneeId);
+    }
+    if (priorityFilter !== "all") list = list.filter((task) => task.priority === priorityFilter);
+    if (focusFilter === "unacknowledged") list = list.filter((task) => task.status === "open");
+    if (focusFilter === "due_today") list = list.filter(isDueToday);
+    if (focusFilter === "overdue") list = list.filter(isOverdue);
+    if (search.trim()) {
+      const query = search.trim().toLowerCase();
+      list = list.filter((task) =>
+        task.title.toLowerCase().includes(query)
+        || (task.description ?? "").toLowerCase().includes(query)
+        || (task.assigneeName ?? "").toLowerCase().includes(query)
+        || (task.linkedBookingClientName ?? "").toLowerCase().includes(query),
       );
     }
-    // Sort: urgent first, then by due date, then by created
-    list = [...list].sort((a, b) => {
-      const pOrder: Record<TaskPriority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
-      if (a.status === "done" && b.status !== "done") return 1;
-      if (b.status === "done" && a.status !== "done") return -1;
-      if (pOrder[a.priority as TaskPriority] !== pOrder[b.priority as TaskPriority]) {
-        return pOrder[a.priority as TaskPriority] - pOrder[b.priority as TaskPriority];
-      }
-      if (a.dueDate && b.dueDate) return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-      if (a.dueDate) return -1;
-      if (b.dueDate) return 1;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
-    return list;
-  }, [tasks, filterStatus, filterAssignee, filterPriority, search, user?.id]);
+    return list.sort(taskSort);
+  }, [allTasks, currentUserId, focusFilter, ownerFilter, priorityFilter, search, view]);
 
-  const openCount = (tasks as any[]).filter((t) => t.status !== "done").length;
-  const myCount = (tasks as any[]).filter((t) => t.assigneeId === user?.id && t.status !== "done").length;
+  const immediateTasks = visibleTasks.filter((task) => task.status === "open" || isOverdue(task) || isDueToday(task));
+  const plannedTasks = visibleTasks.filter((task) => !immediateTasks.some((immediate) => immediate.id === task.id));
+  const isFiltered = search.trim() || priorityFilter !== "all" || ownerFilter !== "all" || focusFilter !== "all";
+
+  function switchView(next: TaskView) {
+    setView(next);
+    setFocusFilter("all");
+    setOwnerFilter("all");
+  }
+
+  function applyFocusFilter(filter: FocusFilter, targetView: TaskView = "focus") {
+    setView(targetView);
+    setFocusFilter(filter);
+  }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <Link href="/dashboard">
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <ArrowLeft size={16} />
-          </Button>
-        </Link>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <CheckSquare size={20} className="text-[#70FFE8]" />
-            Admin Tasks
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {isLoading ? "Loading…" : `${openCount} open task${openCount !== 1 ? "s" : ""}${myCount > 0 ? ` · ${myCount} assigned to you` : ""}`}
-          </p>
+    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
+      <header className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-white to-emerald-50/70 p-5 shadow-sm sm:p-7">
+        <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
+          <div className="max-w-2xl">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#168c7a]"><CheckSquare size={17} />Task workbench</div>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Make the next action obvious.</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Start with your priorities, acknowledge work that needs your attention, and leave a useful update before handing anything on.</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link href="/dashboard"><Button variant="outline" size="icon" className="h-9 w-9" title="Back to dashboard"><ArrowLeft size={16} /></Button></Link>
+            <Button onClick={() => setCreateOpen(true)} className="h-9 gap-2 bg-[#168c7a] text-white hover:bg-[#116f61]"><Plus size={15} />New task</Button>
+          </div>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-2 flex-shrink-0" size="sm">
-          <Plus size={14} />
-          New task
-        </Button>
-      </div>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <WorkMetric label="Needs your acknowledgement" value={stats.unacknowledged} detail="Start these first so the team knows you own them." tone="amber" icon={Square} active={view === "focus" && focusFilter === "unacknowledged"} onClick={() => applyFocusFilter("unacknowledged")} />
+          <WorkMetric label="Your work in progress" value={stats.inProgress} detail="Keep these moving with a short update when needed." tone="sky" icon={Clock} active={view === "focus" && focusFilter === "all"} onClick={() => applyFocusFilter("all")} />
+          <WorkMetric label="Due today" value={stats.dueToday} detail="Prioritise these before the day gets away from you." tone="emerald" icon={Calendar} active={view === "focus" && focusFilter === "due_today"} onClick={() => applyFocusFilter("due_today")} />
+          <WorkMetric label="Team tasks overdue" value={stats.overdue} detail="A shared risk view so important work does not drift." tone="rose" icon={AlertCircle} active={view === "team" && focusFilter === "overdue"} onClick={() => applyFocusFilter("overdue", "team")} />
+        </div>
+      </header>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 mb-5">
-        <Input
-          placeholder="Search tasks…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="h-9 max-w-xs"
-        />
-        <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as any)}>
-          <SelectTrigger className="h-9 w-36">
-            <Filter size={12} className="mr-1.5 text-muted-foreground" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="in_progress">In Progress</SelectItem>
-            <SelectItem value="done">Done</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={filterPriority} onValueChange={(v) => setFilterPriority(v as any)}>
-          <SelectTrigger className="h-9 w-36">
-            <SelectValue placeholder="All priorities" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All priorities</SelectItem>
-            <SelectItem value="urgent">Urgent</SelectItem>
-            <SelectItem value="high">High</SelectItem>
-            <SelectItem value="medium">Medium</SelectItem>
-            <SelectItem value="low">Low</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button
-          variant={filterAssignee === "mine" ? "default" : "outline"}
-          size="sm"
-          className={`h-9 gap-1.5 ${filterAssignee === "mine" ? "bg-[#70FFE8] text-[#1a1a2e] hover:bg-[#5ae0d0] border-[#70FFE8]" : ""}`}
-          onClick={() => setFilterAssignee((v) => v === "mine" ? "all" : "mine")}
-        >
-          <User size={13} />
-          My tasks
-        </Button>
-        {filtered.length > 0 && (
-          <span className="text-sm text-muted-foreground ml-auto">
-            {filtered.length} task{filtered.length !== 1 ? "s" : ""}
-          </span>
-        )}
-      </div>
-
-      {/* Task list */}
-      {isLoading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="animate-spin" size={28} style={{ color: "#70FFE8" }} />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-muted-foreground">
-          {search || filterStatus !== "all" || filterAssignee !== "all" || filterPriority !== "all"
-            ? "No tasks match your filters."
-            : "No tasks yet. Create one to get started."}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              adminUsers={adminUsers as any[]}
-              onRefresh={refetch}
-              currentUserId={user?.id ?? 0}
-            />
+      <div className="flex flex-col gap-3 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Task views">
+          {([
+            ["focus", "My focus", stats.mine, User],
+            ["team", "Team queue", stats.active, Users],
+            ["done", "Completed", stats.completed, CheckCircle2],
+          ] as const).map(([value, label, count, Icon]) => (
+            <Button
+              key={value}
+              type="button"
+              size="sm"
+              variant={view === value ? "default" : "outline"}
+              className={`gap-1.5 ${view === value ? "bg-slate-900 text-white hover:bg-slate-800" : ""}`}
+              onClick={() => switchView(value)}
+            >
+              <Icon size={14} />{label}<span className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] ${view === value ? "bg-white/20" : "bg-muted"}`}>{count}</span>
+            </Button>
           ))}
         </div>
+        <p className="text-xs text-muted-foreground">{view === "focus" ? "Your personal daily queue" : view === "team" ? "Every active task across the team" : "Recently completed work"}</p>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-3 sm:flex-row sm:items-center sm:p-4">
+        <Input placeholder="Search a task, colleague or booking…" value={search} onChange={(event) => setSearch(event.target.value)} className="h-9 flex-1" />
+        <div className="flex flex-wrap gap-2">
+          {view !== "focus" && (
+            <Select value={ownerFilter} onValueChange={(value) => setOwnerFilter(value as OwnerFilter)}>
+              <SelectTrigger className="h-9 w-36"><User size={13} className="mr-1.5 text-muted-foreground" /><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Everyone</SelectItem>
+                <SelectItem value="mine">Assigned to me</SelectItem>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value as "all" | TaskPriority)}>
+            <SelectTrigger className="h-9 w-36"><Filter size={13} className="mr-1.5 text-muted-foreground" /><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All priorities</SelectItem>
+              <SelectItem value="urgent">Urgent</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
+            </SelectContent>
+          </Select>
+          {isFiltered && <Button size="sm" variant="ghost" className="h-9 text-muted-foreground" onClick={() => { setSearch(""); setPriorityFilter("all"); setOwnerFilter("all"); setFocusFilter("all"); }}>Clear filters</Button>}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-20"><Loader2 className="animate-spin text-[#168c7a]" size={28} /></div>
+      ) : view === "done" ? (
+        <TaskSection title="Completed work" description="Completed tasks stay here as a useful record. Reopen only when work genuinely needs to resume." tasks={visibleTasks} emptyMessage="No completed tasks match this view." adminUsers={adminUsers as any[]} currentUserId={currentUserId} onRefresh={refetch} />
+      ) : isFiltered && focusFilter !== "all" ? (
+        <TaskSection title={focusFilter === "unacknowledged" ? "Tasks waiting for acknowledgement" : focusFilter === "due_today" ? "Tasks due today" : "Overdue tasks"} description="Filtered from the current work view." tasks={visibleTasks} emptyMessage="Nothing matches this focused view." adminUsers={adminUsers as any[]} currentUserId={currentUserId} onRefresh={refetch} />
+      ) : (
+        <div className="space-y-8">
+          <TaskSection title={view === "focus" ? "Act on these first" : "Needs attention"} description={view === "focus" ? "Acknowledge new requests, deal with overdue work, and protect today’s deadlines." : "Unacknowledged, overdue, or due today across the team."} tasks={immediateTasks} emptyMessage={view === "focus" ? "You are clear on urgent work. Check your planned work below or help the team queue." : "No team tasks need immediate attention."} adminUsers={adminUsers as any[]} currentUserId={currentUserId} onRefresh={refetch} />
+          <TaskSection title={view === "focus" ? "Your planned work" : "Everything else in the queue"} description={view === "focus" ? "Use these to plan the rest of your day and add an update whenever circumstances change." : "Active work that is currently on track."} tasks={plannedTasks} emptyMessage={view === "focus" ? "No further tasks are assigned to you." : "The active team queue is clear."} adminUsers={adminUsers as any[]} currentUserId={currentUserId} onRefresh={refetch} />
+        </div>
       )}
 
-      {/* Create dialog */}
-      {createOpen && (
-        <TaskFormDialog
-          open={createOpen}
-          onClose={() => setCreateOpen(false)}
-          onSaved={refetch}
-          adminUsers={adminUsers as any[]}
-        />
-      )}
+      {createOpen && <TaskFormDialog open={createOpen} onClose={() => setCreateOpen(false)} onSaved={refetch} adminUsers={adminUsers as any[]} />}
     </div>
   );
 }

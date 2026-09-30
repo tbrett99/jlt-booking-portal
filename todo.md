@@ -809,6 +809,11 @@
 - [x] Replace manual "Booking ID" number input with a searchable booking picker
 - [x] Add "Create Task" button on AdminBookingDetail page (pre-fills linkedType=booking and linkedId)
 
+### Admin Tasks - Daily Workbench Overhaul
+- [x] Replace the passive flat task list with a personal-focus workbench, team queue, and completed-work view
+- [x] Surface acknowledgement, due-today, in-progress, and overdue workload signals ahead of task records
+- [x] Replace opaque status cycling with explicit Acknowledge & start, Mark complete, and Reopen actions; preserve audit history and booking-linked context
+
 ### Proposed: Booking @Mention Action Tasks (Awaiting Approval)
 - [x] Scope an integrated internal-note mention → linked Admin Task workflow, including booking status chips, acknowledgement/completion audit, and Super Admin outstanding-work oversight
 - [x] Add prospective action-task creation for selected colleague mentions in internal booking notes, with an FYI-only opt-out
