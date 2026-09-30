@@ -26,6 +26,11 @@ describe("Admin Dashboard operational workboard", () => {
     expect(source).toContain("New task");
   });
 
+  it("opens dashboard task cards in the task workbench rather than a linked booking", () => {
+    expect(source).toContain("const taskHref = `/admin/tasks?task=${task.id}`");
+    expect(source).toContain('title="Open task in the task workbench"');
+  });
+
   it("keeps only the requested controls and replaces the former generic urgent block", () => {
     expect(source).toContain("PTS files missing payment date");
     expect(source).toContain("Claimable files missing payment date");

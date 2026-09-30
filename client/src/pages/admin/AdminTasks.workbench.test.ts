@@ -41,4 +41,10 @@ describe("Admin Tasks workbench", () => {
     expect(source).toContain("Showing the active team queue instead");
     expect(source).toContain("retry: 2");
   });
+
+  it("opens and scrolls to a task selected from the dashboard", () => {
+    expect(source).toContain('new URLSearchParams(window.location.search).get("task")');
+    expect(source).toContain('scrollIntoView({ behavior: "smooth", block: "center" })');
+    expect(source).toContain("autoExpand={task.id === openTaskId}");
+  });
 });

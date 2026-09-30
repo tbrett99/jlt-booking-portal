@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link } from "wouter";
@@ -147,6 +147,7 @@ function TaskSection({
   adminUsers,
   currentUserIds,
   onRefresh,
+  openTaskId,
 }: {
   title: string;
   description: string;
@@ -155,6 +156,7 @@ function TaskSection({
   adminUsers: { id: number; name: string }[];
   currentUserIds: number[];
   onRefresh: () => void;
+  openTaskId?: number | null;
 }) {
   return (
     <section className="space-y-3">
@@ -180,6 +182,7 @@ function TaskSection({
               adminUsers={adminUsers}
               currentUserIds={currentUserIds}
               onRefresh={onRefresh}
+              autoExpand={task.id === openTaskId}
             />
           ))}
         </div>
@@ -193,15 +196,20 @@ function TaskCard({
   adminUsers,
   currentUserIds,
   onRefresh,
+  autoExpand = false,
 }: {
   task: any;
   adminUsers: { id: number; name: string }[];
   currentUserIds: number[];
   onRefresh: () => void;
+  autoExpand?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(autoExpand);
   const [comment, setComment] = useState("");
   const [editOpen, setEditOpen] = useState(false);
+  useEffect(() => {
+    if (autoExpand) setExpanded(true);
+  }, [autoExpand]);
   const { data: comments = [], refetch: refetchComments } = trpc.tasks.getComments.useQuery(
     { taskId: task.id },
     { enabled: expanded },
@@ -243,7 +251,7 @@ function TaskCard({
 
   return (
     <>
-      <Card className={`overflow-hidden border transition-shadow hover:shadow-md ${isAtRisk ? "border-rose-200" : isMine && status !== "done" ? "border-[#70FFE8]/70" : "border-border"}`}>
+      <Card id={`task-${task.id}`} className={`overflow-hidden border transition-shadow hover:shadow-md ${isAtRisk ? "border-rose-200" : isMine && status !== "done" ? "border-[#70FFE8]/70" : "border-border"}`}>
         <CardContent className="p-0">
           <div className={`h-1 ${status === "done" ? "bg-emerald-400" : isAtRisk ? "bg-rose-400" : status === "in_progress" ? "bg-sky-400" : "bg-amber-400"}`} />
           <div className="p-4 sm:p-5">
@@ -394,6 +402,11 @@ export default function AdminTasks() {
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
   const [priorityFilter, setPriorityFilter] = useState<"all" | TaskPriority>("all");
   const [search, setSearch] = useState("");
+  const [openTaskId] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    const value = Number(new URLSearchParams(window.location.search).get("task"));
+    return Number.isInteger(value) && value > 0 ? value : null;
+  });
 
   const taskList = trpc.tasks.list.useQuery(undefined, { retry: 2 });
   const { data: tasks = [], isLoading, isError: taskListError, error: taskListFailure, refetch } = taskList;
@@ -463,6 +476,22 @@ export default function AdminTasks() {
 
   const hasPersonalTasks = stats.mine > 0;
   const shouldShowTeamFallback = view === "focus" && !isLoading && !taskListError && !hasPersonalTasks && stats.active > 0;
+
+  useEffect(() => {
+    if (!openTaskId) return;
+    setView("team");
+    setFocusFilter("all");
+    setOwnerFilter("all");
+    setSearch("");
+  }, [openTaskId]);
+
+  useEffect(() => {
+    if (!openTaskId || isLoading) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(`task-${openTaskId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isLoading, openTaskId, visibleTasks]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
@@ -551,22 +580,22 @@ export default function AdminTasks() {
           {import.meta.env.DEV && taskListFailure?.message && <p className="mt-3 text-xs text-rose-700">{taskListFailure.message}</p>}
         </div>
       ) : view === "done" ? (
-        <TaskSection title="Completed work" description="Completed tasks stay here as a useful record. Reopen only when work genuinely needs to resume." tasks={visibleTasks} emptyMessage="No completed tasks match this view." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
+        <TaskSection title="Completed work" description="Completed tasks stay here as a useful record. Reopen only when work genuinely needs to resume." tasks={visibleTasks} emptyMessage="No completed tasks match this view." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} openTaskId={openTaskId} />
       ) : isFiltered && focusFilter !== "all" ? (
-        <TaskSection title={focusFilter === "unacknowledged" ? "Tasks waiting for acknowledgement" : focusFilter === "due_today" ? "Tasks due today" : "Overdue tasks"} description="Filtered from the current work view." tasks={visibleTasks} emptyMessage="Nothing matches this focused view." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
+        <TaskSection title={focusFilter === "unacknowledged" ? "Tasks waiting for acknowledgement" : focusFilter === "due_today" ? "Tasks due today" : "Overdue tasks"} description="Filtered from the current work view." tasks={visibleTasks} emptyMessage="Nothing matches this focused view." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} openTaskId={openTaskId} />
       ) : shouldShowTeamFallback ? (
         <div className="space-y-8">
           <div className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-950">
             <p className="font-semibold">No tasks are assigned to you yet.</p>
             <p className="mt-1 text-sky-800">Showing the active team queue instead, so work is still visible and nothing is missed. Use <strong>New task</strong> to add one for yourself.</p>
           </div>
-          <TaskSection title="Team work needing attention" description="Unacknowledged, overdue, or due-today tasks across the team." tasks={allTasks.filter((task) => task.status !== "done" && (task.status === "open" || isOverdue(task) || isDueToday(task))).sort(taskSort)} emptyMessage="No team tasks need immediate attention." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
-          <TaskSection title="Everything else in the team queue" description="Active work that is currently on track." tasks={allTasks.filter((task) => task.status !== "done" && task.status !== "open" && !isOverdue(task) && !isDueToday(task)).sort(taskSort)} emptyMessage="The active team queue is clear." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
+          <TaskSection title="Team work needing attention" description="Unacknowledged, overdue, or due-today tasks across the team." tasks={allTasks.filter((task) => task.status !== "done" && (task.status === "open" || isOverdue(task) || isDueToday(task))).sort(taskSort)} emptyMessage="No team tasks need immediate attention." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} openTaskId={openTaskId} />
+          <TaskSection title="Everything else in the team queue" description="Active work that is currently on track." tasks={allTasks.filter((task) => task.status !== "done" && task.status !== "open" && !isOverdue(task) && !isDueToday(task)).sort(taskSort)} emptyMessage="The active team queue is clear." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} openTaskId={openTaskId} />
         </div>
       ) : (
         <div className="space-y-8">
-          <TaskSection title={view === "focus" ? "Act on these first" : "Needs attention"} description={view === "focus" ? "Acknowledge new requests, deal with overdue work, and protect today’s deadlines." : "Unacknowledged, overdue, or due today across the team."} tasks={immediateTasks} emptyMessage={view === "focus" ? "You are clear on urgent work. Check your planned work below or help the team queue." : "No team tasks need immediate attention."} adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
-          <TaskSection title={view === "focus" ? "Your planned work" : "Everything else in the queue"} description={view === "focus" ? "Use these to plan the rest of your day and add an update whenever circumstances change." : "Active work that is currently on track."} tasks={plannedTasks} emptyMessage={view === "focus" ? "No further tasks are assigned to you." : "The active team queue is clear."} adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
+          <TaskSection title={view === "focus" ? "Act on these first" : "Needs attention"} description={view === "focus" ? "Acknowledge new requests, deal with overdue work, and protect today’s deadlines." : "Unacknowledged, overdue, or due today across the team."} tasks={immediateTasks} emptyMessage={view === "focus" ? "You are clear on urgent work. Check your planned work below or help the team queue." : "No team tasks need immediate attention."} adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} openTaskId={openTaskId} />
+          <TaskSection title={view === "focus" ? "Your planned work" : "Everything else in the queue"} description={view === "focus" ? "Use these to plan the rest of your day and add an update whenever circumstances change." : "Active work that is currently on track."} tasks={plannedTasks} emptyMessage={view === "focus" ? "No further tasks are assigned to you." : "The active team queue is clear."} adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} openTaskId={openTaskId} />
         </div>
       )}
 

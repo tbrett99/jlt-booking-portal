@@ -1628,9 +1628,20 @@ export async function getAdminTaskBySourceNoteAndAssignee(sourceNoteId: number, 
 export async function getAdminTaskById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const { adminTasks } = await import("../drizzle/schema");
-  const rows = await db.select().from(adminTasks).where(eq(adminTasks.id, id)).limit(1);
-  return rows[0];
+  // Keep lifecycle actions available to legacy task tables too. A direct
+  // projection is deliberate: it avoids making a status update depend on an
+  // ORM re-read of optional task-workbench columns.
+  const [rows] = await db.execute(sql`
+    SELECT
+      id, title, description, status, priority, assigneeId, createdById,
+      dueDate, linkedType, linkedId, sourceNoteId, createdFrom,
+      acknowledgedAt, acknowledgedById, completedAt, completedById,
+      recurrenceRule, recurrenceInterval, createdAt, updatedAt
+    FROM admin_tasks
+    WHERE id = ${id}
+    LIMIT 1
+  `);
+  return (rows as unknown as typeof adminTasks.$inferSelect[])[0];
 }
 
 export async function updateAdminTask(id: number, data: {
@@ -1651,10 +1662,8 @@ export async function updateAdminTask(id: number, data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const { adminTasks } = await import("../drizzle/schema");
   await db.update(adminTasks).set(data as any).where(eq(adminTasks.id, id));
-  const rows = await db.select().from(adminTasks).where(eq(adminTasks.id, id)).limit(1);
-  return rows[0];
+  return getAdminTaskById(id);
 }
 
 export async function deleteAdminTask(id: number) {

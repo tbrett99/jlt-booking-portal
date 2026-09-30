@@ -46,4 +46,9 @@ describe("admin task workflow safeguards", () => {
     expect(dbSource).toContain("'none' AS recurrenceRule");
     expect(dbSource).toContain("1 AS recurrenceInterval");
   });
+
+  it("uses a direct task projection for lifecycle actions instead of an ORM re-read", () => {
+    expect(dbSource).toContain("FROM admin_tasks\n    WHERE id = ${id}");
+    expect(dbSource).toContain("return getAdminTaskById(id);");
+  });
 });

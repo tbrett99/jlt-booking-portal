@@ -154,7 +154,7 @@ function TaskRow({
 }) {
   const priority = PRIORITY_STYLES[(task.priority as TaskPriority) ?? "medium"] ?? PRIORITY_STYLES.medium;
   const dueIsOverdue = task.dueDate && isPast(new Date(task.dueDate)) && !isToday(new Date(task.dueDate));
-  const taskHref = task.linkedType === "booking" && task.linkedId ? `/bookings/${task.linkedId}` : "/admin/tasks";
+  const taskHref = `/admin/tasks?task=${task.id}`;
 
   return (
     <div className={`rounded-xl border p-3 transition-colors ${taskTone(task)}`}>
@@ -195,7 +195,7 @@ function TaskRow({
               Start
             </button>
           )}
-          <Link href={taskHref} className="p-1 text-muted-foreground hover:text-foreground" title="Open task or booking">
+          <Link href={taskHref} className="p-1 text-muted-foreground hover:text-foreground" title="Open task in the task workbench">
             <ChevronRight size={14} />
           </Link>
         </div>
