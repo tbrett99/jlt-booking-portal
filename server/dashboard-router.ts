@@ -1,5 +1,6 @@
 import { adminProcedure, router } from "./_core/trpc";
 import { sql } from "drizzle-orm";
+import { buildPipelineHealth } from "../shared/dashboard-workboard-utils";
 
 /**
  * Dashboard stats router — returns all counts needed by the Admin Dashboard
@@ -218,6 +219,290 @@ export const dashboardRouter = router({
         `);
         return unwrap(rows);
       })(),
+    };
+  }),
+
+  /**
+   * Daily operational data for the Admin Dashboard. This is intentionally a
+   * compact internal workboard payload rather than a copy of each specialist
+   * page's entire dataset.
+   */
+  workboard: adminProcedure.query(async ({ ctx }) => {
+    const { getDb } = await import("./db");
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    const unwrap = (result: any): any[] => Array.isArray(result[0]) ? result[0] : result;
+    const unwrapOne = (result: any): any => unwrap(result)[0] ?? {};
+    const now = new Date();
+
+    const [
+      myTasksResult,
+      teamTasksResult,
+      unreadMessagesResult,
+      unreadMessageCountResult,
+      controlCountsResult,
+      ptsMissingResult,
+      claimableMissingResult,
+      missedMandatesResult,
+      todayCalendarResult,
+      queueHealthResult,
+      pipelineRowsResult,
+      membershipSummaryResult,
+      membershipWatchResult,
+      changeRequestsResult,
+      changeRequestCountResult,
+      agentWinsResult,
+      adminUsersResult,
+    ] = await Promise.all([
+      db.execute(sql`
+        SELECT t.id, t.title, t.status, t.priority, t.dueDate, t.acknowledgedAt,
+               t.createdFrom, t.linkedType, t.linkedId, t.createdAt,
+               assignee.name AS assigneeName, b.clientName AS linkedBookingClientName
+        FROM admin_tasks t
+        LEFT JOIN users assignee ON assignee.id = t.assigneeId
+        LEFT JOIN bookings b ON t.linkedType = 'booking' AND b.id = t.linkedId
+        WHERE t.status != 'done'
+          AND (t.assigneeId = ${ctx.user.id} OR (t.assigneeId IS NULL AND t.createdById = ${ctx.user.id}))
+        ORDER BY
+          CASE WHEN t.dueDate IS NOT NULL AND t.dueDate < NOW() THEN 0
+               WHEN t.acknowledgedAt IS NULL THEN 1
+               WHEN DATE(t.dueDate) = CURDATE() THEN 2
+               ELSE 3 END,
+          t.dueDate IS NULL,
+          t.dueDate ASC,
+          t.createdAt DESC
+        LIMIT 6
+      `),
+      db.execute(sql`
+        SELECT t.id, t.title, t.status, t.priority, t.dueDate, t.acknowledgedAt,
+               t.createdFrom, t.linkedType, t.linkedId, t.createdAt,
+               assignee.name AS assigneeName, b.clientName AS linkedBookingClientName
+        FROM admin_tasks t
+        LEFT JOIN users assignee ON assignee.id = t.assigneeId
+        LEFT JOIN bookings b ON t.linkedType = 'booking' AND b.id = t.linkedId
+        WHERE t.status != 'done'
+          AND (t.assigneeId IS NULL OR t.dueDate < NOW())
+        ORDER BY
+          CASE WHEN t.assigneeId IS NULL THEN 0 ELSE 1 END,
+          CASE WHEN t.dueDate IS NOT NULL AND t.dueDate < NOW() THEN 0 ELSE 1 END,
+          t.dueDate IS NULL,
+          t.dueDate ASC,
+          t.createdAt ASC
+        LIMIT 6
+      `),
+      db.execute(sql`
+        SELECT n.bookingId, b.clientName, agent.name AS agentName, n.content AS latestMessage,
+               n.createdAt AS latestMessageAt, n.tag, COUNT(*) AS unreadCount
+        FROM notes n
+        INNER JOIN users author ON author.id = n.authorId
+        INNER JOIN bookings b ON b.id = n.bookingId
+        LEFT JOIN users agent ON agent.id = b.agentId
+        WHERE n.isInternal = 0
+          AND n.isReadByAdmin = 0
+          AND author.role = 'agent'
+          AND n.content NOT LIKE '[System]%'
+        GROUP BY n.bookingId, b.clientName, agent.name, n.content, n.createdAt, n.tag
+        ORDER BY n.createdAt ASC
+        LIMIT 5
+      `),
+      db.execute(sql`
+        SELECT COUNT(DISTINCT n.bookingId) AS count
+        FROM notes n
+        INNER JOIN users author ON author.id = n.authorId
+        WHERE n.isInternal = 0
+          AND n.isReadByAdmin = 0
+          AND author.role = 'agent'
+          AND n.content NOT LIKE '[System]%'
+      `),
+      db.execute(sql`
+        SELECT
+          SUM(CASE WHEN b.currentStage NOT IN ('Cancelled', 'Commission Claimable')
+                        AND b.finalSupplierPaymentDate IS NULL
+                        AND b.paymentDateDismissed = 0 THEN 1 ELSE 0 END) AS ptsMissingCount,
+          SUM(CASE WHEN b.currentStage = 'Commission Claimable'
+                        AND b.finalSupplierPaymentDate IS NULL
+                        AND b.paymentDateDismissed = 0 THEN 1 ELSE 0 END) AS claimableMissingCount
+        FROM bookings b
+      `),
+      db.execute(sql`
+        SELECT id, clientName, currentStage
+        FROM bookings
+        WHERE currentStage NOT IN ('Cancelled', 'Commission Claimable')
+          AND finalSupplierPaymentDate IS NULL
+          AND paymentDateDismissed = 0
+        ORDER BY createdAt ASC
+        LIMIT 4
+      `),
+      db.execute(sql`
+        SELECT id, clientName, currentStage
+        FROM bookings
+        WHERE currentStage = 'Commission Claimable'
+          AND finalSupplierPaymentDate IS NULL
+          AND paymentDateDismissed = 0
+        ORDER BY createdAt ASC
+        LIMIT 4
+      `),
+      db.execute(sql`
+        SELECT m.userId, u.name AS userName, u.email AS userEmail, m.mandateId,
+               p.membershipTier
+        FROM gc_mandates m
+        INNER JOIN users u ON u.id = m.userId
+        LEFT JOIN agent_crm_profiles p ON p.userId = m.userId
+        LEFT JOIN gc_subscriptions s ON s.userId = m.userId
+        WHERE m.status = 'active' AND s.id IS NULL
+        ORDER BY u.name ASC
+        LIMIT 4
+      `),
+      db.execute(sql`
+        SELECT e.id, e.title, e.type, e.startDate, e.endDate, e.allDay,
+               e.assigneeId, u.name AS assigneeName, e.dueDate
+        FROM calendar_events e
+        LEFT JOIN users u ON u.id = e.assigneeId
+        WHERE (
+          (e.recurrenceRule = 'none' AND e.startDate <= DATE_ADD(CURDATE(), INTERVAL 1 DAY) AND e.endDate >= CURDATE())
+          OR (e.recurrenceRule = 'daily' AND e.startDate <= DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+              AND (e.recurrenceEndDate IS NULL OR e.recurrenceEndDate >= CURDATE()))
+          OR (e.recurrenceRule = 'weekly' AND WEEKDAY(e.startDate) = WEEKDAY(CURDATE())
+              AND e.startDate <= DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+              AND (e.recurrenceEndDate IS NULL OR e.recurrenceEndDate >= CURDATE()))
+          OR (e.recurrenceRule = 'monthly' AND DAY(e.startDate) = DAY(CURDATE())
+              AND e.startDate <= DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+              AND (e.recurrenceEndDate IS NULL OR e.recurrenceEndDate >= CURDATE()))
+          OR (e.recurrenceRule = 'yearly' AND DATE_FORMAT(e.startDate, '%m-%d') = DATE_FORMAT(CURDATE(), '%m-%d')
+              AND e.startDate <= DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+              AND (e.recurrenceEndDate IS NULL OR e.recurrenceEndDate >= CURDATE()))
+        )
+        ORDER BY e.allDay DESC, e.startDate ASC
+        LIMIT 10
+      `),
+      db.execute(sql`
+        SELECT 'Amendments' AS label, '/amendments/pipeline' AS href,
+               COUNT(*) AS count, DATEDIFF(CURDATE(), MIN(createdAt)) AS oldestAgeDays,
+               SUM(CASE WHEN createdAt < DATE_SUB(CURDATE(), INTERVAL 3 DAY) THEN 1 ELSE 0 END) AS overTargetCount
+        FROM amendments
+        WHERE pipelineStage != 'Actioned' AND isReimbursementDoc = 0
+        UNION ALL
+        SELECT 'Refunds', '/refunds/pipeline', COUNT(*), DATEDIFF(CURDATE(), MIN(createdAt)),
+               SUM(CASE WHEN createdAt < DATE_SUB(CURDATE(), INTERVAL 3 DAY) THEN 1 ELSE 0 END)
+        FROM refunds WHERE pipelineStage != 'Refund Processed'
+        UNION ALL
+        SELECT 'Reimbursements', '/admin/reimbursements', COUNT(*), DATEDIFF(CURDATE(), MIN(createdAt)),
+               SUM(CASE WHEN createdAt < DATE_SUB(CURDATE(), INTERVAL 3 DAY) THEN 1 ELSE 0 END)
+        FROM reimbursement_items WHERE status IN ('pending', 'awaiting_agent')
+        UNION ALL
+        SELECT 'Cancellations', '/pipeline', COUNT(*), DATEDIFF(CURDATE(), MIN(confirmedAt)),
+               SUM(CASE WHEN confirmedAt < DATE_SUB(CURDATE(), INTERVAL 3 DAY) THEN 1 ELSE 0 END)
+        FROM cancellations WHERE status != 'actioned'
+        UNION ALL
+        SELECT 'Flight requests', '/flights', COUNT(*), DATEDIFF(CURDATE(), MIN(createdAt)),
+               SUM(CASE WHEN createdAt < DATE_SUB(CURDATE(), INTERVAL 3 DAY) THEN 1 ELSE 0 END)
+        FROM flight_requests WHERE status NOT IN ('ticketed', 'cancelled', 'completed')
+        UNION ALL
+        SELECT 'Commission claims', '/commissions-admin', COUNT(*), DATEDIFF(CURDATE(), MIN(createdAt)),
+               SUM(CASE WHEN createdAt < DATE_SUB(CURDATE(), INTERVAL 3 DAY) THEN 1 ELSE 0 END)
+        FROM commission_claims WHERE status = 'processing'
+      `),
+      db.execute(sql`
+        SELECT b.id, b.clientName, b.currentStage,
+               COALESCE((
+                 SELECT MAX(h.movedAt)
+                 FROM pipeline_history h
+                 WHERE h.bookingId = b.id AND h.toStage = b.currentStage
+               ), b.createdAt) AS stageEntered
+        FROM bookings b
+        WHERE b.currentStage != 'Cancelled'
+      `),
+      db.execute(sql`
+        SELECT
+          SUM(CASE WHEN agentStatus = 'active' THEN 1 ELSE 0 END) AS active,
+          SUM(CASE WHEN agentStatus = 'paused' THEN 1 ELSE 0 END) AS paused,
+          SUM(CASE WHEN agentStatus = 'in_notice' THEN 1 ELSE 0 END) AS inNotice,
+          SUM(CASE WHEN agentStatus = 'suspended' THEN 1 ELSE 0 END) AS suspended
+        FROM agent_crm_profiles
+      `),
+      db.execute(sql`
+        SELECT p.userId, p.agentStatus, p.noticeEndsAt, p.pauseEndsAt,
+               u.name, p.uniqueAgentId
+        FROM agent_crm_profiles p
+        INNER JOIN users u ON u.id = p.userId
+        WHERE (p.agentStatus = 'in_notice' AND p.noticeEndsAt IS NOT NULL AND p.noticeEndsAt <= DATE_ADD(CURDATE(), INTERVAL 14 DAY))
+           OR (p.agentStatus = 'paused' AND p.pauseEndsAt IS NOT NULL AND p.pauseEndsAt <= DATE_ADD(CURDATE(), INTERVAL 14 DAY))
+        ORDER BY COALESCE(p.noticeEndsAt, p.pauseEndsAt) ASC
+        LIMIT 8
+      `),
+      db.execute(sql`
+        SELECT r.id, r.fieldLabel, r.createdAt, u.name AS agentName
+        FROM agent_change_requests r
+        INNER JOIN users u ON u.id = r.userId
+        WHERE r.status = 'pending'
+        ORDER BY r.createdAt ASC
+        LIMIT 5
+      `),
+      db.execute(sql`SELECT COUNT(*) AS count FROM agent_change_requests WHERE status = 'pending'`),
+      db.execute(sql`
+        SELECT id, authorName, title, createdAt
+        FROM community_posts
+        WHERE category = 'agent_win'
+          AND isHidden = 0
+          AND isDraft = 0
+          AND (expiresAt IS NULL OR expiresAt >= NOW())
+        ORDER BY createdAt DESC
+        LIMIT 5
+      `),
+      db.execute(sql`
+        SELECT id, name
+        FROM users
+        WHERE role IN ('admin', 'super_admin')
+        ORDER BY name ASC
+      `),
+    ]);
+
+    const controls = unwrapOne(controlCountsResult);
+    const membership = unwrapOne(membershipSummaryResult);
+    const changeRequests = unwrapOne(changeRequestCountResult);
+    const todayEvents = unwrap(todayCalendarResult);
+    const membershipWatch = unwrap(membershipWatchResult).map((row) => ({
+      ...row,
+      endDate: row.noticeEndsAt ?? row.pauseEndsAt,
+    }));
+
+    return {
+      generatedAt: now,
+      myTasks: unwrap(myTasksResult),
+      teamTasks: unwrap(teamTasksResult),
+      unreadMessages: unwrap(unreadMessagesResult),
+      unreadMessageCount: Number(unwrapOne(unreadMessageCountResult).count ?? 0),
+      controls: {
+        ptsMissing: { count: Number(controls.ptsMissingCount ?? 0), records: unwrap(ptsMissingResult) },
+        claimableMissing: { count: Number(controls.claimableMissingCount ?? 0), records: unwrap(claimableMissingResult) },
+        missedMandates: { count: unwrap(missedMandatesResult).length, records: unwrap(missedMandatesResult) },
+      },
+      today: {
+        events: todayEvents,
+        away: todayEvents.filter((event) => event.type === 'holiday'),
+      },
+      queues: unwrap(queueHealthResult).map((row) => ({
+        ...row,
+        count: Number(row.count ?? 0),
+        oldestAgeDays: Number(row.oldestAgeDays ?? 0),
+        overTargetCount: Number(row.overTargetCount ?? 0),
+        targetDays: 3,
+      })),
+      pipelineHealth: buildPipelineHealth(unwrap(pipelineRowsResult), now),
+      membership: {
+        active: Number(membership.active ?? 0),
+        paused: Number(membership.paused ?? 0),
+        inNotice: Number(membership.inNotice ?? 0),
+        suspended: Number(membership.suspended ?? 0),
+        watch: membershipWatch,
+      },
+      changeRequests: {
+        count: Number(changeRequests.count ?? 0),
+        records: unwrap(changeRequestsResult),
+      },
+      agentWins: unwrap(agentWinsResult),
+      adminUsers: unwrap(adminUsersResult),
     };
   }),
 

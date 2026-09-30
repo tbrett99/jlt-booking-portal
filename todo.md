@@ -163,9 +163,9 @@
 - [x] Add visible oldest/newest order controls to portal Messages, defaulting to oldest first
 - [x] Open reimbursement booking/client links in a new browser tab while retaining the filtered reimbursement list
 
-## Admin Dashboard Operational Workboard — Scoped September 2026
+## Admin Dashboard Operational Workboard — Completed September 2026
 - [x] Scope and document an operational-first redesign: prioritise personal/team tasks, unread agent messages, today’s calendar, the three requested payment/mandate controls, queue and pipeline ageing, membership end dates, change requests, and Agent Wins; remove generic urgency, departures, and recent-booking modules; no Phase 1 schema migration expected (see `docs/admin-dashboard-workboard-proposal.md`)
-- [ ] Build the scoped Admin Dashboard operational workboard after approval
+- [x] Build the Admin Dashboard operational workboard: new compact data aggregation drives personal and team task focus, Inbox Zero, today’s calendar, only the three requested control checks, actionable queue/ageing and pipeline-stage health, membership dates, change requests, and Agent Wins; all cards drill through to their existing specialist area and no migration was required
 - [x] Add the streamlined reimbursement Awaiting agent workflow: Pending → Awaiting agent → Scheduled → Paid, with a required internal chase note and follow-up date; latest complete chase note, staff author, timestamp, and overdue follow-up date appear directly in the existing Reimbursements list, while the booking reimbursement activity shows the immutable chase history. Chase notes and staff-only dates remain hidden from agents.
 - [x] Default the admin portal shared Messages view to oldest-first conversation ordering
 - [x] Default the agent portal shared Messages view to oldest-first conversation ordering
