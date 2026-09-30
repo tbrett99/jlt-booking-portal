@@ -87,6 +87,15 @@ function dueLabel(dueDate: Date | string | null | undefined) {
   return `Due in ${days}d`;
 }
 
+function formatJltEventTime(date: Date | string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(date));
+}
+
 function taskTone(task: any) {
   if (task.dueDate && isPast(new Date(task.dueDate)) && !isToday(new Date(task.dueDate))) {
     return "border-red-200 bg-red-50/60";
@@ -222,8 +231,12 @@ function LoadingWorkboard() {
 export default function AdminDashboard() {
   const { user } = useAuth();
   const { data: workboard, isLoading, isError } = trpc.dashboard.workboard.useQuery(undefined, {
-    staleTime: 60_000,
+    // Calendar changes may be made by another member of staff in a different
+    // tab, so this live workboard should not retain an old "today" snapshot.
+    staleTime: 0,
     refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+    refetchInterval: 30_000,
   });
   const utils = trpc.useUtils();
   const [newTaskOpen, setNewTaskOpen] = useState(false);
@@ -386,7 +399,7 @@ export default function AdminDashboard() {
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold truncate">{event.title}</p>
                         <p className="text-[10px] text-muted-foreground mt-0.5">
-                          {event.allDay ? "All day" : format(new Date(event.startDate), "HH:mm")}{event.assigneeName ? ` · ${event.assigneeName}` : ""}
+                          {event.allDay ? "All day" : formatJltEventTime(event.startDate)}{event.assigneeName ? ` · ${event.assigneeName}` : ""}
                         </p>
                       </div>
                     </div>

@@ -48,4 +48,11 @@ describe("Admin Dashboard operational workboard", () => {
     expect(source).toContain("Change requests");
     expect(source).toContain("Latest Agent Wins");
   });
+
+  it("keeps the live calendar card fresh and formats timed events in UK time", () => {
+    expect(source).toContain('timeZone: "Europe/London"');
+    expect(source).toContain("refetchOnMount: \"always\"");
+    expect(source).toContain("refetchInterval: 30_000");
+    expect(source).toContain("formatJltEventTime(event.startDate)");
+  });
 });
