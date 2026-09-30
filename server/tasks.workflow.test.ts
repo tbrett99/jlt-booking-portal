@@ -48,7 +48,8 @@ describe("admin task workflow safeguards", () => {
   });
 
   it("uses a direct task projection for lifecycle actions instead of an ORM re-read", () => {
-    expect(dbSource).toContain("FROM admin_tasks\n    WHERE id = ${id}");
+    expect(dbSource).toContain("FROM admin_tasks");
+    expect(dbSource).toContain("WHERE id = ${id}");
     expect(dbSource).toContain("return getAdminTaskById(id);");
   });
 
@@ -56,5 +57,11 @@ describe("admin task workflow safeguards", () => {
     expect(dbSource).toContain("INSERT INTO admin_tasks");
     expect(dbSource).toContain("recurrenceRule, recurrenceInterval");
     expect(dbSource).toContain("return getAdminTaskById(Number(id));");
+  });
+
+  it("retries task creation and reads without optional booking-mention metadata", () => {
+    expect(dbSource).toContain("Retrying task insert without mention metadata");
+    expect(dbSource).toContain("Retrying task read without mention metadata");
+    expect(dbSource).toContain("NULL AS sourceNoteId, 'manual' AS createdFrom");
   });
 });

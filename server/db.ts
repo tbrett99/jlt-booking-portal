@@ -1554,21 +1554,41 @@ export async function createAdminTask(data: {
   // A direct statement matches the live MySQL defaults exactly and avoids the
   // ORM's full-column insert projection, which has caused otherwise valid task
   // creation (including recurrence) to fail in production.
-  const [result] = await db.execute(sql`
-    INSERT INTO admin_tasks (
-      title, description, priority, assigneeId, createdById, dueDate,
-      linkedType, linkedId, sourceNoteId, createdFrom,
-      recurrenceRule, recurrenceInterval
-    ) VALUES (
-      ${data.title}, ${data.description ?? null}, ${data.priority ?? "medium"},
-      ${data.assigneeId ?? null}, ${data.createdById}, ${data.dueDate ?? null},
-      ${data.linkedType ?? "none"}, ${data.linkedId ?? null},
-      ${data.sourceNoteId ?? null}, ${data.createdFrom ?? "manual"},
-      ${data.recurrenceRule ?? "none"}, ${data.recurrenceInterval ?? 1}
-    )
-  `);
-  const id = (result as any)[0]?.insertId ?? (result as any).insertId;
-  return getAdminTaskById(Number(id));
+  try {
+    const [result] = await db.execute(sql`
+      INSERT INTO admin_tasks (
+        title, description, priority, assigneeId, createdById, dueDate,
+        linkedType, linkedId, sourceNoteId, createdFrom,
+        recurrenceRule, recurrenceInterval
+      ) VALUES (
+        ${data.title}, ${data.description ?? null}, ${data.priority ?? "medium"},
+        ${data.assigneeId ?? null}, ${data.createdById}, ${data.dueDate ?? null},
+        ${data.linkedType ?? "none"}, ${data.linkedId ?? null},
+        ${data.sourceNoteId ?? null}, ${data.createdFrom ?? "manual"},
+        ${data.recurrenceRule ?? "none"}, ${data.recurrenceInterval ?? 1}
+      )
+    `);
+    const id = (result as any)[0]?.insertId ?? (result as any).insertId;
+    return getAdminTaskById(Number(id));
+  } catch (error) {
+    // Some live task tables pre-date booking-mention metadata but already have
+    // recurrence. Retain the actual task and its repeat rule rather than
+    // rejecting ordinary staff work because that optional metadata is absent.
+    console.warn("[Tasks] Retrying task insert without mention metadata", error);
+    const [result] = await db.execute(sql`
+      INSERT INTO admin_tasks (
+        title, description, priority, assigneeId, createdById, dueDate,
+        linkedType, linkedId, recurrenceRule, recurrenceInterval
+      ) VALUES (
+        ${data.title}, ${data.description ?? null}, ${data.priority ?? "medium"},
+        ${data.assigneeId ?? null}, ${data.createdById}, ${data.dueDate ?? null},
+        ${data.linkedType ?? "none"}, ${data.linkedId ?? null},
+        ${data.recurrenceRule ?? "none"}, ${data.recurrenceInterval ?? 1}
+      )
+    `);
+    const id = (result as any)[0]?.insertId ?? (result as any).insertId;
+    return getAdminTaskById(Number(id));
+  }
 }
 
 export async function getAllAdminTasks() {
@@ -1630,17 +1650,34 @@ export async function getAdminTaskById(id: number) {
   // Keep lifecycle actions available to legacy task tables too. A direct
   // projection is deliberate: it avoids making a status update depend on an
   // ORM re-read of optional task-workbench columns.
-  const [rows] = await db.execute(sql`
-    SELECT
-      id, title, description, status, priority, assigneeId, createdById,
-      dueDate, linkedType, linkedId, sourceNoteId, createdFrom,
-      acknowledgedAt, acknowledgedById, completedAt, completedById,
-      recurrenceRule, recurrenceInterval, createdAt, updatedAt
-    FROM admin_tasks
-    WHERE id = ${id}
-    LIMIT 1
-  `);
-  return (rows as unknown as typeof adminTasks.$inferSelect[])[0];
+  try {
+    const [rows] = await db.execute(sql`
+      SELECT
+        id, title, description, status, priority, assigneeId, createdById,
+        dueDate, linkedType, linkedId, sourceNoteId, createdFrom,
+        acknowledgedAt, acknowledgedById, completedAt, completedById,
+        recurrenceRule, recurrenceInterval, createdAt, updatedAt
+      FROM admin_tasks
+      WHERE id = ${id}
+      LIMIT 1
+    `);
+    return (rows as unknown as typeof adminTasks.$inferSelect[])[0];
+  } catch (error) {
+    console.warn("[Tasks] Retrying task read without mention metadata", error);
+    const [rows] = await db.execute(sql`
+      SELECT
+        id, title, description, status, priority, assigneeId, createdById,
+        dueDate, linkedType, linkedId,
+        NULL AS sourceNoteId, 'manual' AS createdFrom,
+        NULL AS acknowledgedAt, NULL AS acknowledgedById,
+        NULL AS completedAt, NULL AS completedById,
+        recurrenceRule, recurrenceInterval, createdAt, updatedAt
+      FROM admin_tasks
+      WHERE id = ${id}
+      LIMIT 1
+    `);
+    return (rows as unknown as typeof adminTasks.$inferSelect[])[0];
+  }
 }
 
 export async function updateAdminTask(id: number, data: {
