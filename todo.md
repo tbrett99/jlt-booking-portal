@@ -1289,6 +1289,7 @@
 - [x] Admin CRM: Activity tab on agent profile sheet — booking stats, commission stats, refund/reimbursement counts, recent activity feed
 - [x] Agent portal: My Profile page — read-only view of own CRM data (status, tier, address, bank, suppliers, docs)
 - [x] Agent portal: Change Request form — agent selects field, enters new value, submits for admin review
+- [x] Clarify agent bank-detail updates: the My Profile bank card and bank-change request dialog now state that changes apply only to commission and reimbursement payments; Direct Debit bank-account changes must be emailed to support@thejltgroup.co.uk
 - [x] Admin: Change Requests page — list of pending/reviewed requests with approve/reject actions
 - [x] Auto-link: when prospect moved to Won, auto-create/link agent_crm_profile to their portal userId
 - [x] Sidebar: add My Profile link to agent sidebar nav

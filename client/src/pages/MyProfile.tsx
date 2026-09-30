@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { PencilLine, CheckCircle2, Clock, XCircle, User, Mail, Phone, MapPin, Building2, CreditCard, Shield, Globe2, ArrowRight } from "lucide-react";
+import { PencilLine, CheckCircle2, Clock, XCircle, User, Mail, Phone, MapPin, Building2, CreditCard, Shield, Globe2, ArrowRight, Info } from "lucide-react";
 
 const CHANGEABLE_FIELDS = [
   { name: "personalEmail", label: "Personal Email" },
@@ -115,13 +115,25 @@ export default function MyProfile() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2"><CreditCard className="h-4 w-4" /> Bank Details</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <ProfileField label="Account Name" value={profile?.bankAccountName} icon={<CreditCard className="h-3.5 w-3.5" />}
-            onRequest={() => openRequest("bankAccountName", "Bank Account Name", profile?.bankAccountName ?? "")} />
-          <ProfileField label="Sort Code" value={profile?.bankSortCode ? "••-••-••" : undefined}
-            onRequest={() => openRequest("bankSortCode", "Bank Sort Code", "")} />
-          <ProfileField label="Account Number" value={profile?.bankAccountNumber ? "••••••••" : undefined}
-            onRequest={() => openRequest("bankAccountNumber", "Bank Account Number", "")} />
+        <CardContent className="space-y-4">
+          <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+            <div className="space-y-1">
+              <p className="font-semibold">For commission and reimbursement payments only</p>
+              <p className="leading-relaxed">
+                Updating these bank details changes where JLT sends your commission and reimbursement payments. It does <strong>not</strong> update the bank account used for your monthly Direct Debit. To change your Direct Debit bank account, please email{" "}
+                <a className="font-medium underline underline-offset-2" href="mailto:support@thejltgroup.co.uk">support@thejltgroup.co.uk</a>.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <ProfileField label="Account Name" value={profile?.bankAccountName} icon={<CreditCard className="h-3.5 w-3.5" />}
+              onRequest={() => openRequest("bankAccountName", "Bank Account Name", profile?.bankAccountName ?? "")} />
+            <ProfileField label="Sort Code" value={profile?.bankSortCode ? "••-••-••" : undefined}
+              onRequest={() => openRequest("bankSortCode", "Bank Sort Code", "")} />
+            <ProfileField label="Account Number" value={profile?.bankAccountNumber ? "••••••••" : undefined}
+              onRequest={() => openRequest("bankAccountNumber", "Bank Account Number", "")} />
+          </div>
         </CardContent>
       </Card>
 
@@ -197,6 +209,12 @@ export default function MyProfile() {
             <DialogTitle>Request Update: {form.fieldLabel}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {form.fieldName.startsWith("bank") && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-950">
+                This update is for <strong>commission and reimbursement payments only</strong>. It will not change the account used for your monthly Direct Debit. To change your Direct Debit bank account, email{" "}
+                <a className="font-semibold underline underline-offset-2" href="mailto:support@thejltgroup.co.uk">support@thejltgroup.co.uk</a>.
+              </div>
+            )}
             {form.currentValue && (
               <div>
                 <Label className="text-xs text-muted-foreground">Current Value</Label>
