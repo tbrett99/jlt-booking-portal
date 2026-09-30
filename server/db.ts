@@ -499,7 +499,10 @@ export async function createNote(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.insert(notes).values(data);
+  const result = await db.insert(notes).values(data);
+  const id = (result as any)[0]?.insertId ?? (result as any).insertId;
+  const rows = await db.select().from(notes).where(eq(notes.id, id)).limit(1);
+  return rows[0];
 }
 
 export async function getNotesByBooking(bookingId: number, includeInternal: boolean) {
@@ -1541,6 +1544,8 @@ export async function createAdminTask(data: {
   dueDate?: Date;
   linkedType?: "booking" | "amendment" | "refund" | "cancellation" | "none";
   linkedId?: number;
+  sourceNoteId?: number;
+  createdFrom?: "manual" | "booking_mention";
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -1554,6 +1559,8 @@ export async function createAdminTask(data: {
     dueDate: data.dueDate ?? null,
     linkedType: data.linkedType ?? "none",
     linkedId: data.linkedId ?? null,
+    sourceNoteId: data.sourceNoteId ?? null,
+    createdFrom: data.createdFrom ?? "manual",
   } as any);
   const id = (result as any)[0]?.insertId ?? (result as any).insertId;
   const { adminTasks: at } = await import("../drizzle/schema");
@@ -1566,6 +1573,29 @@ export async function getAllAdminTasks() {
   if (!db) return [];
   const { adminTasks } = await import("../drizzle/schema");
   return db.select().from(adminTasks).orderBy(desc(adminTasks.createdAt));
+}
+
+export async function getAdminTasksByBooking(bookingId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { adminTasks } = await import("../drizzle/schema");
+  return db
+    .select()
+    .from(adminTasks)
+    .where(and(eq(adminTasks.linkedType, "booking"), eq(adminTasks.linkedId, bookingId)))
+    .orderBy(desc(adminTasks.updatedAt), desc(adminTasks.createdAt));
+}
+
+export async function getAdminTaskBySourceNoteAndAssignee(sourceNoteId: number, assigneeId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const { adminTasks } = await import("../drizzle/schema");
+  const rows = await db
+    .select()
+    .from(adminTasks)
+    .where(and(eq(adminTasks.sourceNoteId, sourceNoteId), eq(adminTasks.assigneeId, assigneeId)))
+    .limit(1);
+  return rows[0];
 }
 
 export async function getAdminTaskById(id: number) {
@@ -1585,6 +1615,10 @@ export async function updateAdminTask(id: number, data: {
   dueDate?: Date | null;
   linkedType?: "booking" | "amendment" | "refund" | "cancellation" | "none";
   linkedId?: number | null;
+  acknowledgedAt?: Date | null;
+  acknowledgedById?: number | null;
+  completedAt?: Date | null;
+  completedById?: number | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

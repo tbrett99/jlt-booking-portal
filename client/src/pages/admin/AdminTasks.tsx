@@ -111,7 +111,7 @@ function TaskRow({
             <button
               onClick={cycleStatus}
               className="mt-0.5 flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-              title={`Status: ${statusCfg.label} — click to advance`}
+              title={task.status === "open" ? "Acknowledge and start this task" : task.status === "in_progress" ? "Mark this task done" : "Reopen this task"}
             >
               {task.status === "done"
                 ? <CheckSquare size={18} className="text-emerald-500" />
@@ -130,8 +130,13 @@ function TaskRow({
                   {priorityCfg.label}
                 </Badge>
                 <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${statusCfg.color}`}>
-                  {statusCfg.label}
+                  {task.status === "open" && task.createdFrom === "booking_mention" ? "Unacknowledged" : statusCfg.label}
                 </Badge>
+                {task.createdFrom === "booking_mention" && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-200 bg-violet-50 text-violet-700">
+                    <MessageSquare size={10} className="mr-1" /> Booking mention
+                  </Badge>
+                )}
                 {due && (
                   <span className={`flex items-center gap-1 text-[10px] font-medium ${due.urgent ? "text-red-600" : "text-muted-foreground"}`}>
                     <Calendar size={10} />
@@ -161,6 +166,18 @@ function TaskRow({
                   <Tag size={10} />
                   Created by {task.creatorName ?? "Admin"}
                 </span>
+                {task.acknowledgedAt && (
+                  <span className="flex items-center gap-1 text-blue-700">
+                    <Clock size={10} />
+                    Acknowledged by {task.acknowledgedByName ?? "Admin"}
+                  </span>
+                )}
+                {task.completedAt && (
+                  <span className="flex items-center gap-1 text-emerald-700">
+                    <CheckCircle2 size={10} />
+                    Completed by {task.completedByName ?? "Admin"}
+                  </span>
+                )}
                 {task.linkedType !== "none" && task.linkedId && (
                   <Link href={task.linkedType === "booking" ? `/bookings/${task.linkedId}` : `/${task.linkedType}s`}>
                     <span className="flex items-center gap-1 text-[#70FFE8] hover:underline cursor-pointer">

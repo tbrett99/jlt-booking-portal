@@ -399,9 +399,21 @@ export const adminTasks = mysqlTable("admin_tasks", {
   dueDate: timestamp("dueDate"),
   linkedType: mysqlEnum("linkedType", ["booking", "amendment", "refund", "cancellation", "none"]).default("none").notNull(),
   linkedId: int("linkedId"),
+  // Set only for tasks created from an internal booking-note mention. This gives
+  // the booking note a durable, one-to-one link to each assignee's action task.
+  sourceNoteId: int("sourceNoteId"),
+  createdFrom: mysqlEnum("createdFrom", ["manual", "booking_mention"]).default("manual").notNull(),
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  acknowledgedById: int("acknowledgedById"),
+  completedAt: timestamp("completedAt"),
+  completedById: int("completedById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("admin_tasks_source_note_assignee_unique").on(table.sourceNoteId, table.assigneeId),
+  index("admin_tasks_assignee_status_due_idx").on(table.assigneeId, table.status, table.dueDate),
+  index("admin_tasks_created_from_status_idx").on(table.createdFrom, table.status),
+]);
 export type AdminTask = typeof adminTasks.$inferSelect;
 export type InsertAdminTask = typeof adminTasks.$inferInsert;
 

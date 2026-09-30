@@ -45,7 +45,7 @@ type BookingActivityItem = {
   id: string;
   label: string;
   tone: "urgent" | "warning" | "info" | "success";
-  icon: "cancellation" | "refund" | "amendment" | "reimbursement" | "document";
+  icon: "cancellation" | "refund" | "amendment" | "reimbursement" | "document" | "task";
 };
 
 type BookingOverviewItem = {
@@ -73,6 +73,7 @@ function BookingActivityBar({ items }: { items: BookingActivityItem[] }) {
     if (kind === "refund") return <DollarSign className={className} />;
     if (kind === "amendment") return <RefreshCw className={className} />;
     if (kind === "reimbursement") return <CreditCard className={className} />;
+    if (kind === "task") return <CheckSquare className={className} />;
     return <FileText className={className} />;
   };
 
@@ -129,6 +130,7 @@ function BookingWorkspaceOverview({
     if (kind === "reimbursement") return <CreditCard className={className} />;
     if (kind === "document") return <FileText className={className} />;
     if (kind === "notes") return <Mail className={className} />;
+    if (kind === "task") return <CheckSquare className={className} />;
     return <History className={className} />;
   };
 
@@ -1122,11 +1124,14 @@ export default function AdminBookingDetail() {
   // @mention state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
+  const [selectedMentionedAdmins, setSelectedMentionedAdmins] = useState<{ id: number; name: string }[]>([]);
+  const [createMentionTasks, setCreateMentionTasks] = useState(true);
   const [expandedHistoryItems, setExpandedHistoryItems] = useState<Set<string>>(new Set());
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
+  const { data: bookingTasks = [] } = trpc.tasks.byBooking.useQuery({ bookingId }, { enabled: !!bookingId && isAdmin });
   const { data: bookingDocs = [] } = trpc.bookingDocs.list.useQuery({ bookingId }, { enabled: !!bookingId, staleTime: 0 });
   const { data: reimbDocs = [] } = trpc.bookings.listReimbDocs.useQuery({ bookingId }, { enabled: !!bookingId });
   const { data: reimbItems = [], refetch: refetchReimbItems } = trpc.reimbursements.getByBooking.useQuery({ bookingId }, { enabled: !!bookingId });
@@ -1222,6 +1227,12 @@ export default function AdminBookingDetail() {
   const mergeSearchFiltered = (quickSearchResults as any[]).filter((r: any) => r.id !== bookingId);
   const sharedNotes = allNotes.filter(n => !n.isInternal);
   const internalNotes = allNotes.filter(n => n.isInternal);
+  const mentionTasksByNote = new Map<number, any[]>();
+  (bookingTasks as any[]).filter((task) => task.sourceNoteId).forEach((task) => {
+    const tasksForNote = mentionTasksByNote.get(task.sourceNoteId) ?? [];
+    tasksForNote.push(task);
+    mentionTasksByNote.set(task.sourceNoteId, tasksForNote);
+  });
 
   const addNote = trpc.notes.add.useMutation({
     onMutate: async (newNote) => {
@@ -1254,6 +1265,8 @@ export default function AdminBookingDetail() {
     },
     onSettled: () => {
       utils.notes.list.invalidate({ bookingId });
+      utils.tasks.byBooking.invalidate({ bookingId });
+      utils.tasks.myOpenCount.invalidate();
     },
   });
   const markNotesRead = trpc.notes.markBookingNotesRead.useMutation({
@@ -1301,15 +1314,18 @@ export default function AdminBookingDetail() {
     }
   };
 
-  const insertMention = (name: string) => {
+  const insertMention = (admin: { id: number; name: string }) => {
     const textarea = internalTextareaRef.current;
     if (!textarea) return;
     const cursorPos = textarea.selectionStart ?? internalNote.length;
     const textBeforeCursor = internalNote.slice(0, cursorPos);
     const textAfterCursor = internalNote.slice(cursorPos);
     // Replace the partial @mention with the full name
-    const replaced = textBeforeCursor.replace(/@([A-Za-z][A-Za-z0-9 ]*)?$/, `@${name} `);
+    const replaced = textBeforeCursor.replace(/@([A-Za-z][A-Za-z0-9 ]*)?$/, `@${admin.name} `);
     setInternalNote(replaced + textAfterCursor);
+    setSelectedMentionedAdmins((current) => current.some((selected) => selected.id === admin.id)
+      ? current
+      : [...current, admin]);
     setMentionDropdownOpen(false);
     setMentionQuery(null);
     setTimeout(() => textarea.focus(), 0);
@@ -1374,11 +1390,19 @@ export default function AdminBookingDetail() {
   const handleSendNote = async (isInternal: boolean) => {
     const content = isInternal ? internalNote : sharedNote;
     if (!content.trim()) return;
+    const mentionUserIds = isInternal ? selectedMentionedAdmins.map((admin) => admin.id) : [];
+    const shouldCreateActionTasks = isInternal && mentionUserIds.length > 0 && createMentionTasks;
     // Clear input immediately for instant feedback
     if (isInternal) setInternalNote(""); else setSharedNote("");
     if (isInternal) setIsSendingInternal(true); else setIsSendingShared(true);
     try {
-      await addNote.mutateAsync({ bookingId, content, isInternal });
+      await addNote.mutateAsync({
+        bookingId,
+        content,
+        isInternal,
+        ...(isInternal ? { mentionUserIds, createActionTasks: shouldCreateActionTasks } : {}),
+      });
+      if (isInternal) setSelectedMentionedAdmins([]);
       // When admin replies via a shared note, auto-mark all unread agent messages as read
       if (!isInternal) { markNotesRead.mutate({ bookingId }); }
     } catch (err: any) {
@@ -1430,6 +1454,7 @@ export default function AdminBookingDetail() {
   const outstandingRefunds = (refundsList as any[]).filter(hasOutstandingRefundAction);
   const outstandingAmendments = (amendments as any[]).filter(hasOutstandingAmendmentAction);
   const outstandingReimbursements = (reimbItems as any[]).filter(hasOutstandingReimbursementAction);
+  const outstandingMentionTasks = (bookingTasks as any[]).filter((task) => task.createdFrom === "booking_mention" && task.status !== "done");
   const activeCancellationRequests = (cancellationsList as any[]).filter((cancellation) => cancellation.status === "pending");
   const reimbursementDocumentCount = (reimbDocs as any[]).length + (reimbItems as any[]).reduce((total, item) => total + ((item.docs as any[] | undefined)?.length ?? 0), 0);
   const bookingDocumentCount = (bookingDocs as any[]).length;
@@ -1441,6 +1466,7 @@ export default function AdminBookingDetail() {
     ...(outstandingRefunds.length > 0 ? [{ id: "booking-refunds", label: `${outstandingRefunds.length} outstanding refund${outstandingRefunds.length === 1 ? "" : "s"}`, tone: "urgent" as const, icon: "refund" as const }] : []),
     ...(outstandingAmendments.length > 0 ? [{ id: "booking-amendments", label: `${outstandingAmendments.length} outstanding amendment${outstandingAmendments.length === 1 ? "" : "s"}`, tone: "warning" as const, icon: "amendment" as const }] : []),
     ...(outstandingReimbursements.length > 0 ? [{ id: "booking-reimbursements", label: `${outstandingReimbursements.length} reimbursement${outstandingReimbursements.length === 1 ? "" : "s"} to process`, tone: "warning" as const, icon: "reimbursement" as const }] : []),
+    ...(outstandingMentionTasks.length > 0 ? [{ id: "booking-notes", label: `${outstandingMentionTasks.length} admin task${outstandingMentionTasks.length === 1 ? "" : "s"} outstanding`, tone: "warning" as const, icon: "task" as const }] : []),
     ...(reimbursementDocumentsMissing ? [{ id: "booking-reimbursements", label: "Reimbursement documents missing", tone: "urgent" as const, icon: "document" as const }] : []),
     ...((bookingDocumentCount + reimbursementDocumentCount) > 0 ? [{ id: "booking-documents", label: `${bookingDocumentCount + reimbursementDocumentCount} document${bookingDocumentCount + reimbursementDocumentCount === 1 ? "" : "s"} uploaded`, tone: "success" as const, icon: "document" as const }] : []),
   ];
@@ -1448,10 +1474,17 @@ export default function AdminBookingDetail() {
     {
       id: "booking-notes",
       label: "Notes & messages",
-      detail: `${sharedNotes.length} shared · ${internalNotes.length} internal${unreadAgentCount > 0 ? ` · ${unreadAgentCount} unread` : ""}`,
-      tone: unreadAgentCount > 0 ? "warning" : "info",
+      detail: `${sharedNotes.length} shared · ${internalNotes.length} internal${outstandingMentionTasks.length > 0 ? ` · ${outstandingMentionTasks.length} task${outstandingMentionTasks.length === 1 ? "" : "s"} outstanding` : ""}${unreadAgentCount > 0 ? ` · ${unreadAgentCount} unread` : ""}`,
+      tone: unreadAgentCount > 0 || outstandingMentionTasks.length > 0 ? "warning" : "info",
       icon: "notes",
     },
+    ...(outstandingMentionTasks.length > 0 ? [{
+      id: "booking-notes",
+      label: "Admin tasks",
+      detail: `${outstandingMentionTasks.filter((task) => task.status === "open").length} unacknowledged · ${outstandingMentionTasks.filter((task) => task.status === "in_progress").length} in progress`,
+      tone: "warning" as const,
+      icon: "task" as const,
+    }] : []),
     ...(cancellationsList.length > 0 ? [{
       id: "booking-cancellations",
       label: "Cancellations",
@@ -2086,6 +2119,7 @@ export default function AdminBookingDetail() {
                       );
                     }
 
+                    const linkedMentionTasks = mentionTasksByNote.get(note.id) ?? [];
                     return (
                       <div key={note.id} className={`p-3 rounded-lg border text-sm ${isMe ? 'ml-4' : 'mr-4'}`}
                         style={{
@@ -2098,6 +2132,26 @@ export default function AdminBookingDetail() {
                           {isMe && <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: '#7c3aed', color: 'white' }}>You</span>}
                         </div>
                         <NoteContent content={note.content} />
+                        {linkedMentionTasks.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {linkedMentionTasks.map((task) => {
+                              const isDone = task.status === "done";
+                              const isInProgress = task.status === "in_progress";
+                              const statusLabel = isDone ? "Done" : isInProgress ? "Acknowledged" : "Awaiting acknowledgement";
+                              const statusClass = isDone
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : isInProgress
+                                ? "border-blue-200 bg-blue-50 text-blue-700"
+                                : "border-amber-200 bg-amber-50 text-amber-800";
+                              return (
+                                <Link key={task.id} href="/admin/tasks" className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${statusClass}`}>
+                                  <CheckSquare size={10} />
+                                  {task.assigneeName ?? "Admin"}: {statusLabel}
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        )}
                         <p className="text-xs opacity-50 mt-1">{format(new Date(note.createdAt), 'dd MMM, HH:mm')}</p>
                       </div>
                     );
@@ -2105,6 +2159,33 @@ export default function AdminBookingDetail() {
                 </div>
                 {/* @mention textarea with dropdown */}
                 <div className="relative pt-2 border-t">
+                  {selectedMentionedAdmins.length > 0 && (
+                    <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="mr-1 text-xs font-semibold text-amber-900">Tagged colleagues</span>
+                        {selectedMentionedAdmins.map((admin) => (
+                          <span key={admin.id} className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-white px-2 py-0.5 text-xs font-medium text-amber-900">
+                            @{admin.name}
+                            <button
+                              type="button"
+                              aria-label={`Remove ${admin.name} from action task recipients`}
+                              onClick={() => setSelectedMentionedAdmins((current) => current.filter((selected) => selected.id !== admin.id))}
+                              className="rounded-full text-amber-700 hover:text-amber-950"
+                            >
+                              <X size={11} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold text-amber-950">Create action tasks for tagged colleagues</p>
+                          <p className="text-[11px] text-amber-800">Creates one booking-linked task per person. Turn off for an FYI-only tag.</p>
+                        </div>
+                        <Switch checked={createMentionTasks} onCheckedChange={setCreateMentionTasks} aria-label="Create action tasks for tagged colleagues" />
+                      </div>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <div className="flex-1 relative">
                       <Textarea
@@ -2131,7 +2212,7 @@ export default function AdminBookingDetail() {
                               key={admin.id}
                               type="button"
                               className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-                              onMouseDown={(e) => { e.preventDefault(); insertMention(admin.name); }}
+                              onMouseDown={(e) => { e.preventDefault(); insertMention(admin); }}
                             >
                               <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
                                 style={{ background: '#70FFE8', color: '#414141' }}>

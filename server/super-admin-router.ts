@@ -982,6 +982,81 @@ export const superAdminRouter = router({
       });
     }),
 
+  outstandingMentionTasks: superAdminProcedure.query(async () => {
+    const { getDb } = await import("./db");
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+    const { adminTasks, bookings, users } = await import("../drizzle/schema");
+    const { and, eq, ne, inArray } = await import("drizzle-orm");
+    const now = new Date();
+    const [taskRows, adminUsers] = await Promise.all([
+      db.select({
+        id: adminTasks.id,
+        title: adminTasks.title,
+        description: adminTasks.description,
+        status: adminTasks.status,
+        priority: adminTasks.priority,
+        assigneeId: adminTasks.assigneeId,
+        dueDate: adminTasks.dueDate,
+        linkedId: adminTasks.linkedId,
+        sourceNoteId: adminTasks.sourceNoteId,
+        createdAt: adminTasks.createdAt,
+        updatedAt: adminTasks.updatedAt,
+        acknowledgedAt: adminTasks.acknowledgedAt,
+        acknowledgedById: adminTasks.acknowledgedById,
+        completedAt: adminTasks.completedAt,
+        completedById: adminTasks.completedById,
+        bookingClientName: bookings.clientName,
+      })
+        .from(adminTasks)
+        .leftJoin(bookings, and(eq(adminTasks.linkedType, "booking"), eq(adminTasks.linkedId, bookings.id)))
+        .where(and(eq(adminTasks.createdFrom, "booking_mention"), ne(adminTasks.status, "done"))),
+      db.select({ id: users.id, name: users.name, role: users.role })
+        .from(users)
+        .where(inArray(users.role, ["admin", "super_admin"])),
+    ]);
+
+    const adminById = new Map(adminUsers.map((admin) => [admin.id, admin]));
+    const tasks = taskRows.map((task) => ({
+      ...task,
+      assigneeName: task.assigneeId ? adminById.get(task.assigneeId)?.name ?? "Unassigned" : "Unassigned",
+      isOverdue: !!task.dueDate && task.dueDate.getTime() < now.getTime(),
+      ageDays: Math.max(0, Math.floor((now.getTime() - task.createdAt.getTime()) / 86_400_000)),
+    })).sort((a, b) => {
+      if (a.isOverdue !== b.isOverdue) return a.isOverdue ? -1 : 1;
+      if (a.status !== b.status) return a.status === "open" ? -1 : 1;
+      if (a.dueDate && b.dueDate) return a.dueDate.getTime() - b.dueDate.getTime();
+      if (a.dueDate) return -1;
+      if (b.dueDate) return 1;
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    });
+
+    const byAssignee = adminUsers.map((admin) => {
+      const assigned = tasks.filter((task) => task.assigneeId === admin.id);
+      return {
+        adminId: admin.id,
+        adminName: admin.name ?? "Admin",
+        role: admin.role,
+        open: assigned.filter((task) => task.status === "open").length,
+        inProgress: assigned.filter((task) => task.status === "in_progress").length,
+        overdue: assigned.filter((task) => task.isOverdue).length,
+        total: assigned.length,
+      };
+    }).filter((admin) => admin.total > 0).sort((a, b) => b.overdue - a.overdue || b.open - a.open || b.total - a.total);
+
+    return {
+      summary: {
+        outstanding: tasks.length,
+        unacknowledged: tasks.filter((task) => task.status === "open").length,
+        inProgress: tasks.filter((task) => task.status === "in_progress").length,
+        overdue: tasks.filter((task) => task.isOverdue).length,
+      },
+      byAssignee,
+      tasks,
+    };
+  }),
+
   /**
    * 13-week trend data for sparklines / charts
    */

@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
   Users, CreditCard, BookOpen, PoundSterling, UserPlus, Mail,
   AlertCircle, CheckCircle2, Clock, ArrowRight, Activity, FileEdit, RotateCcw,
-  Timer, X, BarChart2, Calendar, Target, Percent, Download, Tag, Plus, Trash2, Pencil, MessageSquare,
+  Timer, X, BarChart2, Calendar, Target, Percent, Download, Tag, Plus, Trash2, Pencil, MessageSquare, CheckSquare,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1249,6 +1249,7 @@ export default function SuperAdminDashboard() {
   const [currentMonday, setCurrentMonday] = useState(() => getMondayOfWeek(new Date()));
   const [currentMonth, setCurrentMonth] = useState(() => getFirstOfMonth(new Date()));
   const [drillDown, setDrillDown] = useState<DrillDownType>(null);
+  const [mentionTaskFilter, setMentionTaskFilter] = useState<"all" | "open" | "in_progress" | "overdue">("all");
   const weekStartStr = useMemo(() => toISODate(currentMonday), [currentMonday]);
   const monthStartStr = useMemo(() => toISODate(currentMonth), [currentMonth]);
 
@@ -1284,6 +1285,16 @@ export default function SuperAdminDashboard() {
   const { data, isLoading, error } = trpc.superAdmin.weeklyStats.useQuery(
     { weekStart: weekStartStr },
     { staleTime: 60_000, enabled: viewMode === "week" }
+  );
+  const { data: mentionTaskOversight } = trpc.superAdmin.outstandingMentionTasks.useQuery(undefined, {
+    staleTime: 30_000,
+  });
+  const filteredMentionTasks = (mentionTaskOversight?.tasks ?? []).filter((task) =>
+    mentionTaskFilter === "all"
+      ? true
+      : mentionTaskFilter === "overdue"
+      ? task.isOverdue
+      : task.status === mentionTaskFilter
   );
 
   function prevWeek() {
@@ -1716,6 +1727,107 @@ export default function SuperAdminDashboard() {
                 <TabsContent value="staff" className="space-y-6">
                   <SectionHeader title="Staff Productivity" icon={Activity} />
                   <p className="text-sm text-muted-foreground -mt-2">Actions recorded for each team member during the selected week.</p>
+                  <section className="space-y-4" aria-label="Outstanding booking mention tasks">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <h3 className="text-base font-semibold">Outstanding Admin Tasks</h3>
+                        <p className="text-xs text-muted-foreground">Live booking-note action tasks. Open means not yet acknowledged.</p>
+                      </div>
+                      <Link href="/admin/tasks">
+                        <Button variant="outline" size="sm" className="gap-1.5">Open Tasks <ArrowRight size={13} /></Button>
+                      </Link>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                      <StatCard title="Outstanding" value={fmt(mentionTaskOversight?.summary.outstanding ?? 0)} icon={CheckSquare}
+                        accent={(mentionTaskOversight?.summary.outstanding ?? 0) > 0 ? "amber" : "green"} />
+                      <StatCard title="Unacknowledged" value={fmt(mentionTaskOversight?.summary.unacknowledged ?? 0)} icon={AlertCircle}
+                        accent={(mentionTaskOversight?.summary.unacknowledged ?? 0) > 0 ? "amber" : "green"} sub="Still open" />
+                      <StatCard title="In Progress" value={fmt(mentionTaskOversight?.summary.inProgress ?? 0)} icon={Clock}
+                        accent={(mentionTaskOversight?.summary.inProgress ?? 0) > 0 ? "blue" : undefined} sub="Acknowledged" />
+                      <StatCard title="Overdue" value={fmt(mentionTaskOversight?.summary.overdue ?? 0)} icon={AlertCircle}
+                        accent={(mentionTaskOversight?.summary.overdue ?? 0) > 0 ? "red" : "green"} />
+                    </div>
+                    {(mentionTaskOversight?.byAssignee.length ?? 0) > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {mentionTaskOversight!.byAssignee.map((admin) => (
+                          <div key={admin.adminId} className="rounded-lg border bg-card px-3 py-2 text-xs">
+                            <span className="font-semibold">{admin.adminName}</span>
+                            <span className="ml-2 text-muted-foreground">{admin.open} open · {admin.inProgress} in progress</span>
+                            {admin.overdue > 0 && <Badge variant="outline" className="ml-2 border-rose-200 bg-rose-50 text-rose-700">{admin.overdue} overdue</Badge>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {([
+                        ["all", "All outstanding"],
+                        ["open", "Unacknowledged"],
+                        ["in_progress", "In progress"],
+                        ["overdue", "Overdue"],
+                      ] as const).map(([filter, label]) => (
+                        <Button
+                          key={filter}
+                          size="sm"
+                          variant={mentionTaskFilter === filter ? "default" : "outline"}
+                          className={mentionTaskFilter === filter ? "bg-[#1a8a78] hover:bg-[#147061]" : ""}
+                          onClick={() => setMentionTaskFilter(filter)}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+                    <Card>
+                      <CardContent className="p-0 overflow-x-auto">
+                        {filteredMentionTasks.length === 0 ? (
+                          <p className="px-4 py-6 text-center text-sm text-muted-foreground">No outstanding booking-note tasks match this view.</p>
+                        ) : (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Booking</TableHead>
+                                <TableHead>Requested action</TableHead>
+                                <TableHead>Owner</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Due / age</TableHead>
+                                <TableHead>Last activity</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {filteredMentionTasks.map((task) => (
+                                <TableRow key={task.id}>
+                                  <TableCell>
+                                    {task.linkedId ? (
+                                      <Link href={`/bookings/${task.linkedId}`} className="font-medium text-[#1a8a78] hover:underline">
+                                        {task.bookingClientName ?? `Booking #${task.linkedId}`}
+                                      </Link>
+                                    ) : "—"}
+                                  </TableCell>
+                                  <TableCell className="max-w-[20rem]">
+                                    <p className="line-clamp-2 text-sm font-medium">{task.title}</p>
+                                  </TableCell>
+                                  <TableCell>{task.assigneeName}</TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline" className={task.status === "open" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-blue-200 bg-blue-50 text-blue-700"}>
+                                      {task.status === "open" ? "Unacknowledged" : "In progress"}
+                                    </Badge>
+                                    {task.priority === "urgent" && <Badge variant="outline" className="ml-1 border-rose-200 bg-rose-50 text-rose-700">Urgent</Badge>}
+                                  </TableCell>
+                                  <TableCell>
+                                    <span className={task.isOverdue ? "font-semibold text-rose-700" : "text-muted-foreground"}>
+                                      {task.dueDate ? new Date(task.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : `${task.ageDays}d old`}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground">
+                                    {new Date(task.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </section>
                   {data.staffProductivity.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground text-sm">No staff activity recorded for this week.</div>
                   ) : (

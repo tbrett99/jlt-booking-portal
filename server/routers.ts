@@ -81,6 +81,8 @@ import {
   isAdminEmailEnabledForTrigger,
   createAdminTask,
   getAllAdminTasks,
+  getAdminTasksByBooking,
+  getAdminTaskBySourceNoteAndAssignee,
   getAdminTaskById,
   updateAdminTask,
   deleteAdminTask,
@@ -182,6 +184,20 @@ const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
   }
   return next({ ctx });
 });
+
+function buildMentionTaskTitle(content: string, mentionedNames: string[]) {
+  let withoutMentions = content;
+  for (const name of mentionedNames.filter(Boolean)) {
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    withoutMentions = withoutMentions.replace(new RegExp(`@${escapedName}(?=\\s|$)`, "gi"), "");
+  }
+  const firstMeaningfulLine = withoutMentions
+    .split(/\r?\n/)
+    .map((line) => line.replace(/@[A-Za-z][A-Za-z0-9_-]*/g, "").replace(/\s+/g, " ").trim())
+    .find(Boolean);
+  const title = firstMeaningfulLine || "Action requested from booking note";
+  return title.length > 180 ? `${title.slice(0, 177)}...` : title;
+}
 
 const COMMISSION_PROCESSING_STAGES = new Set(["Commission Claimable", "Commission Claimed"]);
 
@@ -2208,6 +2224,8 @@ export const appRouter = router({
           amendmentId: z.number().optional(),
           content: z.string().min(1),
           isInternal: z.boolean().default(false),
+          mentionUserIds: z.array(z.number().int().positive()).max(20).optional(),
+          createActionTasks: z.boolean().default(false),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -2229,7 +2247,7 @@ export const appRouter = router({
             throw new TRPCError({ code: "BAD_REQUEST", message: "This amendment does not belong to the selected booking" });
           }
         }
-        await createNote({
+        const createdNote = await createNote({
           bookingId: input.bookingId,
           amendmentId: input.amendmentId,
           authorId: ctx.user.id,
@@ -2237,53 +2255,84 @@ export const appRouter = router({
           isInternal: input.isInternal,
         });
 
-        // Parse @mentions in internal notes and notify mentioned admins
+        // Selected mention recipients are passed as IDs by the internal-note
+        // composer and always verified server-side. The legacy name parser stays
+        // as a fallback for callers that only send the note text.
+        const createdActionTaskIds: number[] = [];
         if (input.isInternal) {
           const mentionRegex = /@([A-Za-z][A-Za-z0-9 ]*?)(?=\s+[a-z]|\s*$|[^A-Za-z0-9 ])/g;
-          const mentions = Array.from(input.content.matchAll(mentionRegex)).map((m) => m[1].trim());
-          if (mentions.length > 0) {
-            const allUsers = await getAllUsers();
-            const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
-            for (const mentionedName of mentions) {
-              const mentioned = admins.find(
-                (u) => (u.name ?? "").toLowerCase() === mentionedName.toLowerCase()
-              );
-              if (mentioned && mentioned.id !== ctx.user.id) {
-                await createInAppNotification({
-                  userId: mentioned.id,
-                  bookingId: input.bookingId,
-                  message: `${ctx.user.name ?? "Admin"} mentioned you in a note on booking "${booking.clientName}"`,
-                  linkUrl: `/bookings/${input.bookingId}`,
+          const mentionedNames = Array.from(input.content.matchAll(mentionRegex)).map((m) => m[1].trim());
+          const allUsers = await getAllUsers();
+          const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
+          const recipients = (input.mentionUserIds?.length
+            ? admins.filter((candidate) => input.mentionUserIds!.includes(candidate.id))
+            : admins.filter((candidate) => mentionedNames.some((name) => (candidate.name ?? "").toLowerCase() === name.toLowerCase()))
+          ).filter((candidate, index, all) => candidate.id !== ctx.user.id && all.findIndex((other) => other.id === candidate.id) === index);
+
+          const requestedRecipientIds = new Set((input.mentionUserIds ?? []).filter((id) => id !== ctx.user.id));
+          if (requestedRecipientIds.size > 0 && recipients.length !== requestedRecipientIds.size) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "One or more selected colleagues are no longer available for task assignment." });
+          }
+
+          for (const mentioned of recipients) {
+            const isActionTask = input.createActionTasks;
+            if (isActionTask && createdNote?.id) {
+              const existingTask = await getAdminTaskBySourceNoteAndAssignee(createdNote.id, mentioned.id);
+              if (!existingTask) {
+                const task = await createAdminTask({
+                  title: buildMentionTaskTitle(input.content, recipients.map((recipient) => recipient.name ?? "")),
+                  description: input.content,
+                  priority: "medium",
+                  assigneeId: mentioned.id,
+                  createdById: ctx.user.id,
+                  linkedType: "booking",
+                  linkedId: input.bookingId,
+                  sourceNoteId: createdNote.id,
+                  createdFrom: "booking_mention",
                 });
-                // Also send email to the mentioned admin (fire-and-forget)
-                if (mentioned.email) {
-                  const mentionerName = ctx.user.name ?? "An admin";
-                  const notePreview = input.content.length > 300 ? input.content.slice(0, 300) + "..." : input.content;
-                  void sendDirectEmail({
-                    toEmail: mentioned.email,
-                    toName: mentioned.name ?? mentioned.email,
-                    subject: `You were mentioned in a note — ${booking.clientName}`,
-                    html: `
-                      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-                        <div style="background:#1a1a2e;padding:20px;border-radius:8px 8px 0 0;">
-                          <h2 style="color:#70FFE8;margin:0;font-size:18px;">You were mentioned in a note</h2>
-                        </div>
-                        <div style="background:#f9f9f9;padding:20px;border:1px solid #e0e0e0;">
-                          <p style="margin:0 0 12px;"><strong>${mentionerName}</strong> mentioned you in an internal note on booking <strong>${booking.clientName}</strong>.</p>
-                          <div style="background:#fff;border-left:4px solid #70FFE8;padding:12px 16px;border-radius:4px;margin:12px 0;font-style:italic;color:#333;">
-                            ${notePreview.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>")}
-                          </div>
-                          <p style="margin-top:16px;">
-                            <a href="https://portal.thejltgroup.co.uk/bookings/${input.bookingId}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">View Booking &rarr;</a>
-                          </p>
-                        </div>
-                        <div style="background:#e8e8e8;padding:12px 20px;border-radius:0 0 8px 8px;font-size:12px;color:#666;">
-                          JLT Group Booking Portal &bull; Internal notification
-                        </div>
-                      </div>`,
-                  });
-                }
+                if (task?.id) createdActionTaskIds.push(task.id);
               }
+            }
+
+            const mentionerName = ctx.user.name ?? "An admin";
+            const notePreview = input.content.length > 300 ? `${input.content.slice(0, 300)}...` : input.content;
+            const notificationLabel = isActionTask ? "assigned you an action task" : "mentioned you in a note";
+            await createInAppNotification({
+              userId: mentioned.id,
+              bookingId: input.bookingId,
+              message: `${mentionerName} ${notificationLabel} on booking "${booking.clientName}"`,
+              linkUrl: isActionTask ? "/admin/tasks" : `/bookings/${input.bookingId}`,
+            });
+            if (mentioned.email) {
+              const heading = isActionTask ? "New action task from a booking note" : "You were mentioned in a note";
+              const intro = isActionTask
+                ? `<strong>${mentionerName}</strong> has assigned you an action task from an internal note on booking <strong>${booking.clientName}</strong>.`
+                : `<strong>${mentionerName}</strong> mentioned you in an internal note on booking <strong>${booking.clientName}</strong>.`;
+              const destination = isActionTask ? "Open My Tasks" : "View Booking";
+              const destinationUrl = isActionTask ? "https://portal.thejltgroup.co.uk/admin/tasks" : `https://portal.thejltgroup.co.uk/bookings/${input.bookingId}`;
+              void sendDirectEmail({
+                toEmail: mentioned.email,
+                toName: mentioned.name ?? mentioned.email,
+                subject: `${isActionTask ? "Action task assigned" : "You were mentioned in a note"} — ${booking.clientName}`,
+                html: `
+                  <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+                    <div style="background:#1a1a2e;padding:20px;border-radius:8px 8px 0 0;">
+                      <h2 style="color:#70FFE8;margin:0;font-size:18px;">${heading}</h2>
+                    </div>
+                    <div style="background:#f9f9f9;padding:20px;border:1px solid #e0e0e0;">
+                      <p style="margin:0 0 12px;">${intro}</p>
+                      <div style="background:#fff;border-left:4px solid #70FFE8;padding:12px 16px;border-radius:4px;margin:12px 0;font-style:italic;color:#333;">
+                        ${notePreview.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>")}
+                      </div>
+                      <p style="margin-top:16px;">
+                        <a href="${destinationUrl}" style="display:inline-block;background:#70FFE8;color:#1a1a2e;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">${destination} &rarr;</a>
+                      </p>
+                    </div>
+                    <div style="background:#e8e8e8;padding:12px 20px;border-radius:0 0 8px 8px;font-size:12px;color:#666;">
+                      JLT Group Booking Portal &bull; Internal notification
+                    </div>
+                  </div>`,
+              });
             }
           }
         }
@@ -2354,7 +2403,7 @@ export const appRouter = router({
             void markNotesReadByAdmin(input.bookingId);
           }
         }
-        return { success: true };
+        return { success: true, noteId: createdNote?.id ?? null, actionTaskIds: createdActionTaskIds };
       }),
   }),
 
@@ -4010,16 +4059,43 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       const tasks = await getAllAdminTasks();
       // Enrich with assignee and creator names
       const enriched = await Promise.all(tasks.map(async (t) => {
-        const assignee = t.assigneeId ? await getUserById(t.assigneeId) : null;
-        const creator = await getUserById(t.createdById);
+        const [assignee, creator, acknowledgedBy, completedBy] = await Promise.all([
+          t.assigneeId ? getUserById(t.assigneeId) : null,
+          getUserById(t.createdById),
+          t.acknowledgedById ? getUserById(t.acknowledgedById) : null,
+          t.completedById ? getUserById(t.completedById) : null,
+        ]);
         return {
           ...t,
           assigneeName: assignee?.name ?? null,
           creatorName: creator?.name ?? null,
+          acknowledgedByName: acknowledgedBy?.name ?? null,
+          completedByName: completedBy?.name ?? null,
         };
       }));
       return enriched;
     }),
+    byBooking: adminProcedure
+      .input(z.object({ bookingId: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        const tasks = await getAdminTasksByBooking(input.bookingId);
+        const enriched = await Promise.all(tasks.map(async (task) => {
+          const [assignee, creator, acknowledgedBy, completedBy] = await Promise.all([
+            task.assigneeId ? getUserById(task.assigneeId) : null,
+            getUserById(task.createdById),
+            task.acknowledgedById ? getUserById(task.acknowledgedById) : null,
+            task.completedById ? getUserById(task.completedById) : null,
+          ]);
+          return {
+            ...task,
+            assigneeName: assignee?.name ?? null,
+            creatorName: creator?.name ?? null,
+            acknowledgedByName: acknowledgedBy?.name ?? null,
+            completedByName: completedBy?.name ?? null,
+          };
+        }));
+        return enriched;
+      }),
     create: adminProcedure
       .input(z.object({
         title: z.string().min(1),
@@ -4057,7 +4133,26 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       .mutation(async ({ input, ctx }) => {
         const { id, ...data } = input;
         const existing = await getAdminTaskById(id);
-        const updated = await updateAdminTask(id, data as any);
+        if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Task not found" });
+        const now = new Date();
+        const lifecycleData: Record<string, unknown> = {};
+        if (data.status === "in_progress" && existing.status === "open" && !existing.acknowledgedAt) {
+          lifecycleData.acknowledgedAt = now;
+          lifecycleData.acknowledgedById = ctx.user.id;
+        }
+        if (data.status === "done" && existing.status !== "done") {
+          lifecycleData.completedAt = now;
+          lifecycleData.completedById = ctx.user.id;
+          if (!existing.acknowledgedAt) {
+            lifecycleData.acknowledgedAt = now;
+            lifecycleData.acknowledgedById = ctx.user.id;
+          }
+        }
+        if (data.status === "open" && existing.status === "done") {
+          lifecycleData.completedAt = null;
+          lifecycleData.completedById = null;
+        }
+        const updated = await updateAdminTask(id, { ...data, ...lifecycleData } as any);
         // Notify new assignee if changed
         if (data.assigneeId && data.assigneeId !== existing?.assigneeId && data.assigneeId !== ctx.user.id) {
           await createInAppNotification({

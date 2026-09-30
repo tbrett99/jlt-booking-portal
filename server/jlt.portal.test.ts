@@ -82,6 +82,8 @@ vi.mock("./db", () => ({
   isAdminEmailEnabledForTrigger: vi.fn().mockResolvedValue(true),
   createAdminTask: vi.fn().mockResolvedValue({ id: 1 }),
   getAllAdminTasks: vi.fn().mockResolvedValue([]),
+  getAdminTasksByBooking: vi.fn().mockResolvedValue([]),
+  getAdminTaskBySourceNoteAndAssignee: vi.fn().mockResolvedValue(undefined),
   getAdminTaskById: vi.fn().mockResolvedValue(null),
   updateAdminTask: vi.fn().mockResolvedValue(undefined),
   deleteAdminTask: vi.fn().mockResolvedValue(undefined),
@@ -622,6 +624,75 @@ describe("notes @mention notifications", () => {
     expect(vi.mocked(createInAppNotification)).not.toHaveBeenCalledWith(
       expect.objectContaining({ userId: 2 })
     );
+  });
+
+  it("creates one linked action task for a selected internal-note recipient", async () => {
+    const {
+      getBookingById,
+      createNote,
+      getAllUsers,
+      createAdminTask,
+      getAdminTaskBySourceNoteAndAssignee,
+      createInAppNotification,
+    } = await import("./db");
+    vi.mocked(getBookingById).mockResolvedValueOnce(BOOKING_WITHOUT_PAYMENT_DATE as any);
+    vi.mocked(createNote).mockResolvedValueOnce({ id: 19 } as any);
+    vi.mocked(getAllUsers).mockResolvedValueOnce([
+      { id: 2, name: "Admin Alice", email: "alice@jlt.test", role: "admin" } as any,
+    ]);
+    vi.mocked(getAdminTaskBySourceNoteAndAssignee).mockResolvedValueOnce(undefined);
+    vi.mocked(createAdminTask).mockResolvedValueOnce({ id: 701 } as any);
+
+    const caller = appRouter.createCaller(makeCtx("super_admin"));
+    const result = await caller.notes.add({
+      bookingId: 1,
+      content: "@Admin Alice please confirm the supplier invoice is on file.",
+      isInternal: true,
+      mentionUserIds: [2],
+      createActionTasks: true,
+    });
+
+    expect(createAdminTask).toHaveBeenCalledWith(expect.objectContaining({
+      assigneeId: 2,
+      linkedType: "booking",
+      linkedId: 1,
+      sourceNoteId: 19,
+      createdFrom: "booking_mention",
+      title: "please confirm the supplier invoice is on file.",
+    }));
+    expect(createInAppNotification).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 2,
+      message: expect.stringContaining("assigned you an action task"),
+      linkUrl: "/admin/tasks",
+    }));
+    expect(result).toMatchObject({ success: true, noteId: 19, actionTaskIds: [701] });
+  });
+});
+
+describe("tasks acknowledgement audit", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("records the admin who acknowledges a task", async () => {
+    const { getAdminTaskById, updateAdminTask } = await import("./db");
+    vi.mocked(getAdminTaskById).mockResolvedValueOnce({
+      id: 42,
+      title: "Check booking",
+      status: "open",
+      acknowledgedAt: null,
+      assigneeId: 2,
+      createdById: 1,
+    } as any);
+    vi.mocked(updateAdminTask).mockResolvedValueOnce({ id: 42, status: "in_progress" } as any);
+
+    await appRouter.createCaller(makeCtx("admin")).tasks.update({ id: 42, status: "in_progress" });
+
+    expect(updateAdminTask).toHaveBeenCalledWith(42, expect.objectContaining({
+      status: "in_progress",
+      acknowledgedById: 2,
+      acknowledgedAt: expect.any(Date),
+    }));
   });
 });
 
