@@ -1,0 +1,2 @@
+ALTER TABLE `admin_tasks` ADD `recurrenceRule` enum('none','daily','weekly','fortnightly','monthly') DEFAULT 'none' NOT NULL;--> statement-breakpoint
+ALTER TABLE `admin_tasks` ADD `recurrenceInterval` int DEFAULT 1 NOT NULL;

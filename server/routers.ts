@@ -1,5 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
+import { normaliseTaskIdentityEmail } from "@shared/task-identity";
+import { nextRecurringTaskDate, TASK_RECURRENCE_RULES } from "@shared/task-recurrence";
 import { pushClaimStatusToOrbit } from "./orbit-sync";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -561,11 +563,29 @@ export const appRouter = router({
         .filter((u) => u.role === "agent" || u.role === "admin" || u.role === "super_admin")
         .map((u) => ({ id: u.id, name: u.name ?? "", email: u.email ?? "", role: u.role, phone: (u as any).phone ?? "", credentialsSentAt: (u as any).credentialsSentAt ?? null }));
     }),
-    listAdmins: protectedProcedure.query(async () => {
+    listAdmins: protectedProcedure.query(async ({ ctx }) => {
       const all = await getAllUsers();
-      return all
-        .filter((u) => u.role === "admin" || u.role === "super_admin")
-        .map((u) => ({ id: u.id, name: u.name ?? "", email: u.email }));
+      const adminsByEmail = new Map<string, { id: number; name: string; email: string | null; identityUserIds: number[] }>();
+      all
+        .filter((user) => user.role === "admin" || user.role === "super_admin")
+        .forEach((user) => {
+          const email = normaliseTaskIdentityEmail(user.email);
+          const key = email || `user:${user.id}`;
+          const existing = adminsByEmail.get(key);
+          if (existing) {
+            existing.identityUserIds.push(user.id);
+            if (user.id === ctx.user.id) {
+              existing.id = user.id;
+              existing.name = user.name ?? "";
+              existing.email = user.email ?? null;
+            }
+            return;
+          }
+          // Keep one sensible dropdown option for legacy duplicate accounts while
+          // returning every equivalent ID for My Focus filtering.
+          adminsByEmail.set(key, { id: user.id, name: user.name ?? "", email: user.email ?? null, identityUserIds: [user.id] });
+        });
+      return Array.from(adminsByEmail.values()).sort((a, b) => a.name.localeCompare(b.name));
     }),
     create: adminProcedure
       .input(
@@ -4105,15 +4125,22 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
         assigneeId: z.number().optional(),
         dueDate: z.date().optional(),
+        recurrenceRule: z.enum(TASK_RECURRENCE_RULES).optional(),
+        recurrenceInterval: z.number().int().min(1).max(12).optional(),
         linkedType: z.enum(["booking", "amendment", "refund", "cancellation", "none"]).optional(),
         linkedId: z.number().optional(),
+      }).superRefine((input, context) => {
+        if (input.recurrenceRule && input.recurrenceRule !== "none" && !input.dueDate) {
+          context.addIssue({ code: z.ZodIssueCode.custom, path: ["dueDate"], message: "Recurring tasks need a due date." });
+        }
       }))
       .mutation(async ({ input, ctx }) => {
-        const task = await createAdminTask({ ...input, createdById: ctx.user.id });
+        const assigneeId = input.assigneeId ?? ctx.user.id;
+        const task = await createAdminTask({ ...input, assigneeId, createdById: ctx.user.id });
         // Notify assignee if different from creator
-        if (input.assigneeId && input.assigneeId !== ctx.user.id) {
+        if (assigneeId !== ctx.user.id) {
           await createInAppNotification({
-            userId: input.assigneeId,
+            userId: assigneeId,
             message: `You have been assigned a new task: "${input.title}" by ${ctx.user.name ?? "Admin"}`,
             linkUrl: `/admin/tasks`,
           });
@@ -4129,6 +4156,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
         assigneeId: z.number().nullable().optional(),
         dueDate: z.date().nullable().optional(),
+        recurrenceRule: z.enum(TASK_RECURRENCE_RULES).optional(),
+        recurrenceInterval: z.number().int().min(1).max(12).optional(),
         linkedType: z.enum(["booking", "amendment", "refund", "cancellation", "none"]).optional(),
         linkedId: z.number().nullable().optional(),
       }))
@@ -4136,6 +4165,11 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         const { id, ...data } = input;
         const existing = await getAdminTaskById(id);
         if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Task not found" });
+        const effectiveRecurrenceRule = data.recurrenceRule ?? existing.recurrenceRule;
+        const effectiveDueDate = data.dueDate === undefined ? existing.dueDate : data.dueDate;
+        if (effectiveRecurrenceRule !== "none" && !effectiveDueDate) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Recurring tasks need a due date." });
+        }
         const now = new Date();
         const lifecycleData: Record<string, unknown> = {};
         if (data.status === "in_progress" && existing.status === "open" && !existing.acknowledgedAt) {
@@ -4148,6 +4182,26 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           if (!existing.acknowledgedAt) {
             lifecycleData.acknowledgedAt = now;
             lifecycleData.acknowledgedById = ctx.user.id;
+          }
+          if (existing.recurrenceRule !== "none" && existing.dueDate) {
+            const nextDueDate = nextRecurringTaskDate(
+              existing.dueDate,
+              existing.recurrenceRule as Exclude<typeof existing.recurrenceRule, "none">,
+              existing.recurrenceInterval ?? 1,
+            );
+            await createAdminTask({
+              title: existing.title,
+              description: existing.description ?? undefined,
+              priority: existing.priority,
+              assigneeId: existing.assigneeId ?? undefined,
+              createdById: existing.createdById,
+              dueDate: nextDueDate,
+              linkedType: existing.linkedType,
+              linkedId: existing.linkedId ?? undefined,
+              createdFrom: existing.createdFrom,
+              recurrenceRule: existing.recurrenceRule,
+              recurrenceInterval: existing.recurrenceInterval ?? 1,
+            });
           }
         }
         if (data.status === "open" && existing.status === "done") {
@@ -4217,7 +4271,13 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     // Count of open tasks assigned to the current user (for sidebar badge)
     myOpenCount: adminProcedure.query(async ({ ctx }) => {
       const tasks = await getAllAdminTasks();
-      return tasks.filter((t) => t.assigneeId === ctx.user.id && t.status !== "done").length;
+      const users = await getAllUsers();
+      const email = normaliseTaskIdentityEmail(ctx.user.email);
+      const equivalentIds = new Set(
+        email ? users.filter((user) => normaliseTaskIdentityEmail(user.email) === email).map((user) => user.id) : [ctx.user.id],
+      );
+      equivalentIds.add(ctx.user.id);
+      return tasks.filter((task) => equivalentIds.has(task.assigneeId ?? -1) && task.status !== "done").length;
     }),
   }),
   // ─── Calendar ──────────────────────────────────────────────────────────────

@@ -27,6 +27,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/_core/hooks/useAuth";
 import TaskFormDialog from "./TaskFormDialog";
 
 type TaskPriority = "low" | "medium" | "high" | "urgent";
@@ -219,6 +220,7 @@ function LoadingWorkboard() {
 }
 
 export default function AdminDashboard() {
+  const { user } = useAuth();
   const { data: workboard, isLoading, isError } = trpc.dashboard.workboard.useQuery(undefined, {
     staleTime: 60_000,
     refetchOnWindowFocus: true,
@@ -601,6 +603,7 @@ export default function AdminDashboard() {
         onClose={() => setNewTaskOpen(false)}
         onSaved={() => utils.dashboard.workboard.invalidate()}
         adminUsers={adminUsers}
+        defaultAssigneeId={user?.id}
       />
     </div>
   );

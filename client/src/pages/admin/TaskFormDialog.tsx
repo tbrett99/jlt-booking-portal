@@ -16,6 +16,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 
 type TaskPriority = "low" | "medium" | "high" | "urgent";
 type LinkedType = "booking" | "amendment" | "refund" | "cancellation" | "none";
+type TaskRecurrenceRule = "none" | "daily" | "weekly" | "fortnightly" | "monthly";
 
 const LINKED_TYPE_LABELS: Record<LinkedType, string> = {
   booking: "Booking",
@@ -142,6 +143,7 @@ export default function TaskFormDialog({
   onClose,
   onSaved,
   adminUsers,
+  defaultAssigneeId,
   initial,
   prefillBooking,
 }: {
@@ -149,6 +151,8 @@ export default function TaskFormDialog({
   onClose: () => void;
   onSaved: () => void;
   adminUsers: { id: number; name: string }[];
+  /** New manual tasks default to the signed-in administrator. */
+  defaultAssigneeId?: number;
   /** Pre-fill the booking link (e.g. when opened from a booking detail page) */
   prefillBooking?: { id: number; label: string };
   initial?: {
@@ -158,6 +162,8 @@ export default function TaskFormDialog({
     priority: TaskPriority;
     assigneeId: number | null;
     dueDate: Date | null;
+    recurrenceRule?: TaskRecurrenceRule;
+    recurrenceInterval?: number;
     linkedType: LinkedType;
     linkedId: number | null;
     linkedBookingLabel?: string;
@@ -168,7 +174,7 @@ export default function TaskFormDialog({
   const [description, setDescription] = useState(initial?.description ?? "");
   const [priority, setPriority] = useState<TaskPriority>(initial?.priority ?? "medium");
   const [assigneeId, setAssigneeId] = useState<string>(
-    initial?.assigneeId ? String(initial.assigneeId) : "unassigned"
+    initial?.assigneeId ? String(initial.assigneeId) : defaultAssigneeId ? String(defaultAssigneeId) : "unassigned"
   );
   const [dueDate, setDueDate] = useState(
     initial?.dueDate ? format(new Date(initial.dueDate), "yyyy-MM-dd") : ""
@@ -185,6 +191,8 @@ export default function TaskFormDialog({
   const [linkedId, setLinkedId] = useState(
     initial?.linkedType !== "booking" && initial?.linkedId ? String(initial.linkedId) : ""
   );
+  const [recurrenceRule, setRecurrenceRule] = useState<TaskRecurrenceRule>(initial?.recurrenceRule ?? "none");
+  const [recurrenceInterval, setRecurrenceInterval] = useState(String(initial?.recurrenceInterval ?? 1));
 
   const createTask = trpc.tasks.create.useMutation({
     onSuccess: () => { toast.success("Task created"); onSaved(); onClose(); },
@@ -197,6 +205,10 @@ export default function TaskFormDialog({
 
   function handleSubmit() {
     if (!title.trim()) { toast.error("Title is required"); return; }
+    if (recurrenceRule !== "none" && !dueDate) {
+      toast.error("Choose a due date for a recurring task");
+      return;
+    }
     const resolvedLinkedId =
       linkedType === "booking"
         ? (linkedBooking?.id ?? undefined)
@@ -209,6 +221,8 @@ export default function TaskFormDialog({
       priority,
       assigneeId: assigneeId !== "unassigned" ? Number(assigneeId) : undefined,
       dueDate: dueDate ? new Date(dueDate) : undefined,
+      recurrenceRule,
+      recurrenceInterval: Math.max(1, Number(recurrenceInterval) || 1),
       linkedType,
       linkedId: resolvedLinkedId,
     };
@@ -233,7 +247,7 @@ export default function TaskFormDialog({
               ? "Update the task details below."
               : prefillBooking
               ? `Creating a task linked to ${prefillBooking.label}.`
-              : "Create a new task and optionally assign it to an admin."}
+              : "New tasks are assigned to you by default; change the owner whenever someone else needs to take it on."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -293,6 +307,39 @@ export default function TaskFormDialog({
               onChange={(e) => setDueDate(e.target.value)}
               className="h-9"
             />
+          </div>
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <label className="text-sm font-medium block">Repeat this task</label>
+                <p className="text-xs text-muted-foreground">When completed, the next dated occurrence is created automatically.</p>
+              </div>
+              <Select value={recurrenceRule} onValueChange={(value) => setRecurrenceRule(value as TaskRecurrenceRule)}>
+                <SelectTrigger className="h-9 w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Does not repeat</SelectItem>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="fortnightly">Fortnightly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {recurrenceRule !== "none" && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Every</span>
+                <Input
+                  aria-label="Repeat interval"
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={recurrenceInterval}
+                  onChange={(event) => setRecurrenceInterval(event.target.value)}
+                  className="h-8 w-16 text-center"
+                />
+                <span>{recurrenceRule === "daily" ? "day(s)" : recurrenceRule === "weekly" ? "week(s)" : recurrenceRule === "fortnightly" ? "fortnight(s)" : "month(s)"}</span>
+              </div>
+            )}
           </div>
           {/* Link section */}
           <div className="space-y-3">

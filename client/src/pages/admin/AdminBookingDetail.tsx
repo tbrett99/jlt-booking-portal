@@ -2726,6 +2726,7 @@ export default function AdminBookingDetail() {
           onClose={() => setCreateTaskOpen(false)}
           onSaved={() => setCreateTaskOpen(false)}
           adminUsers={adminUsers as { id: number; name: string }[]}
+          defaultAssigneeId={user?.id}
           prefillBooking={{
             id: booking.id,
             label: `${booking.clientName} (#${booking.id})`,

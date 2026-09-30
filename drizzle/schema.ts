@@ -407,6 +407,10 @@ export const adminTasks = mysqlTable("admin_tasks", {
   acknowledgedById: int("acknowledgedById"),
   completedAt: timestamp("completedAt"),
   completedById: int("completedById"),
+  // Completing a recurring task creates its next dated occurrence. The
+  // completed row remains the audit trail; no background scheduler is needed.
+  recurrenceRule: mysqlEnum("recurrenceRule", ["none", "daily", "weekly", "fortnightly", "monthly"]).default("none").notNull(),
+  recurrenceInterval: int("recurrenceInterval").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => [

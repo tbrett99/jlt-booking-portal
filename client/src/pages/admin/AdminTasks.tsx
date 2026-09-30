@@ -20,6 +20,7 @@ import {
   Loader2,
   MessageSquare,
   Plus,
+  RefreshCw,
   Send,
   Square,
   Tag,
@@ -35,13 +36,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import TaskFormDialog from "./TaskFormDialog";
+import { resolveEquivalentTaskOwnerIds } from "@shared/task-identity";
 
 type TaskStatus = "open" | "in_progress" | "done";
 type TaskPriority = "low" | "medium" | "high" | "urgent";
 type LinkedType = "booking" | "amendment" | "refund" | "cancellation" | "none";
 type TaskView = "focus" | "team" | "done";
 type FocusFilter = "all" | "unacknowledged" | "due_today" | "overdue";
-type OwnerFilter = "all" | "mine" | "unassigned";
+type OwnerFilter = "all" | "mine" | "unassigned" | `user:${number}`;
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
   open: { label: "Unacknowledged", color: "border-amber-200 bg-amber-50 text-amber-800" },
@@ -143,7 +145,7 @@ function TaskSection({
   tasks,
   emptyMessage,
   adminUsers,
-  currentUserId,
+  currentUserIds,
   onRefresh,
 }: {
   title: string;
@@ -151,7 +153,7 @@ function TaskSection({
   tasks: any[];
   emptyMessage: string;
   adminUsers: { id: number; name: string }[];
-  currentUserId: number;
+  currentUserIds: number[];
   onRefresh: () => void;
 }) {
   return (
@@ -176,7 +178,7 @@ function TaskSection({
               key={task.id}
               task={task}
               adminUsers={adminUsers}
-              currentUserId={currentUserId}
+              currentUserIds={currentUserIds}
               onRefresh={onRefresh}
             />
           ))}
@@ -189,12 +191,12 @@ function TaskSection({
 function TaskCard({
   task,
   adminUsers,
-  currentUserId,
+  currentUserIds,
   onRefresh,
 }: {
   task: any;
   adminUsers: { id: number; name: string }[];
-  currentUserId: number;
+  currentUserIds: number[];
   onRefresh: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -229,7 +231,7 @@ function TaskCard({
   const due = dueDateLabel(task.dueDate);
   const status = task.status as TaskStatus;
   const priority = task.priority as TaskPriority;
-  const isMine = task.assigneeId === currentUserId;
+  const isMine = currentUserIds.includes(task.assigneeId);
   const isAtRisk = isOverdue(task) || priority === "urgent";
   const bookingLabel = task.linkedBookingClientName ?? (task.linkedId ? `Booking #${task.linkedId}` : null);
   const lastActivity = task.completedAt ?? task.acknowledgedAt ?? task.updatedAt ?? task.createdAt;
@@ -258,6 +260,11 @@ function TaskCard({
                   <Badge variant="outline" className={`text-[10px] ${STATUS_CONFIG[status].color}`}>
                     {STATUS_CONFIG[status].label}
                   </Badge>
+                  {task.recurrenceRule && task.recurrenceRule !== "none" && (
+                    <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">
+                      <RefreshCw size={10} className="mr-1" />Repeats {task.recurrenceRule}
+                    </Badge>
+                  )}
                   {task.createdFrom === "booking_mention" && (
                     <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">
                       <MessageSquare size={10} className="mr-1" />From booking note
@@ -367,6 +374,8 @@ function TaskCard({
             priority: task.priority,
             assigneeId: task.assigneeId,
             dueDate: task.dueDate,
+            recurrenceRule: task.recurrenceRule,
+            recurrenceInterval: task.recurrenceInterval,
             linkedType: task.linkedType,
             linkedId: task.linkedId,
             linkedBookingLabel: task.linkedBookingClientName ?? undefined,
@@ -389,11 +398,15 @@ export default function AdminTasks() {
   const { data: tasks = [], isLoading, refetch } = trpc.tasks.list.useQuery();
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const allTasks = tasks as any[];
+  const currentUserIds = useMemo(
+    () => resolveEquivalentTaskOwnerIds(user, adminUsers as { id: number; email?: string | null; identityUserIds?: number[] }[]),
+    [user, adminUsers],
+  );
   const currentUserId = user?.id ?? 0;
 
   const stats = useMemo(() => {
     const active = allTasks.filter((task) => task.status !== "done");
-    const mine = active.filter((task) => task.assigneeId === currentUserId);
+    const mine = active.filter((task) => currentUserIds.includes(task.assigneeId));
     return {
       active: active.length,
       mine: mine.length,
@@ -403,17 +416,18 @@ export default function AdminTasks() {
       overdue: active.filter(isOverdue).length,
       completed: allTasks.filter((task) => task.status === "done").length,
     };
-  }, [allTasks, currentUserId]);
+  }, [allTasks, currentUserIds]);
 
   const visibleTasks = useMemo(() => {
     let list = [...allTasks];
-    if (view === "focus") list = list.filter((task) => task.assigneeId === currentUserId && task.status !== "done");
+    if (view === "focus") list = list.filter((task) => currentUserIds.includes(task.assigneeId) && task.status !== "done");
     if (view === "team") list = list.filter((task) => task.status !== "done");
     if (view === "done") list = list.filter((task) => task.status === "done");
 
     if (view !== "focus") {
-      if (ownerFilter === "mine") list = list.filter((task) => task.assigneeId === currentUserId);
+      if (ownerFilter === "mine") list = list.filter((task) => currentUserIds.includes(task.assigneeId));
       if (ownerFilter === "unassigned") list = list.filter((task) => !task.assigneeId);
+      if (ownerFilter.startsWith("user:")) list = list.filter((task) => task.assigneeId === Number(ownerFilter.slice(5)));
     }
     if (priorityFilter !== "all") list = list.filter((task) => task.priority === priorityFilter);
     if (focusFilter === "unacknowledged") list = list.filter((task) => task.status === "open");
@@ -429,7 +443,7 @@ export default function AdminTasks() {
       );
     }
     return list.sort(taskSort);
-  }, [allTasks, currentUserId, focusFilter, ownerFilter, priorityFilter, search, view]);
+  }, [allTasks, currentUserIds, focusFilter, ownerFilter, priorityFilter, search, view]);
 
   const immediateTasks = visibleTasks.filter((task) => task.status === "open" || isOverdue(task) || isDueToday(task));
   const plannedTasks = visibleTasks.filter((task) => !immediateTasks.some((immediate) => immediate.id === task.id));
@@ -497,9 +511,12 @@ export default function AdminTasks() {
             <Select value={ownerFilter} onValueChange={(value) => setOwnerFilter(value as OwnerFilter)}>
               <SelectTrigger className="h-9 w-36"><User size={13} className="mr-1.5 text-muted-foreground" /><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Everyone</SelectItem>
+                <SelectItem value="all">All assignees</SelectItem>
                 <SelectItem value="mine">Assigned to me</SelectItem>
                 <SelectItem value="unassigned">Unassigned</SelectItem>
+                {(adminUsers as { id: number; name: string }[]).map((admin) => (
+                  <SelectItem key={admin.id} value={`user:${admin.id}`}>{admin.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           )}
@@ -520,17 +537,17 @@ export default function AdminTasks() {
       {isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="animate-spin text-[#168c7a]" size={28} /></div>
       ) : view === "done" ? (
-        <TaskSection title="Completed work" description="Completed tasks stay here as a useful record. Reopen only when work genuinely needs to resume." tasks={visibleTasks} emptyMessage="No completed tasks match this view." adminUsers={adminUsers as any[]} currentUserId={currentUserId} onRefresh={refetch} />
+        <TaskSection title="Completed work" description="Completed tasks stay here as a useful record. Reopen only when work genuinely needs to resume." tasks={visibleTasks} emptyMessage="No completed tasks match this view." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
       ) : isFiltered && focusFilter !== "all" ? (
-        <TaskSection title={focusFilter === "unacknowledged" ? "Tasks waiting for acknowledgement" : focusFilter === "due_today" ? "Tasks due today" : "Overdue tasks"} description="Filtered from the current work view." tasks={visibleTasks} emptyMessage="Nothing matches this focused view." adminUsers={adminUsers as any[]} currentUserId={currentUserId} onRefresh={refetch} />
+        <TaskSection title={focusFilter === "unacknowledged" ? "Tasks waiting for acknowledgement" : focusFilter === "due_today" ? "Tasks due today" : "Overdue tasks"} description="Filtered from the current work view." tasks={visibleTasks} emptyMessage="Nothing matches this focused view." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
       ) : (
         <div className="space-y-8">
-          <TaskSection title={view === "focus" ? "Act on these first" : "Needs attention"} description={view === "focus" ? "Acknowledge new requests, deal with overdue work, and protect today’s deadlines." : "Unacknowledged, overdue, or due today across the team."} tasks={immediateTasks} emptyMessage={view === "focus" ? "You are clear on urgent work. Check your planned work below or help the team queue." : "No team tasks need immediate attention."} adminUsers={adminUsers as any[]} currentUserId={currentUserId} onRefresh={refetch} />
-          <TaskSection title={view === "focus" ? "Your planned work" : "Everything else in the queue"} description={view === "focus" ? "Use these to plan the rest of your day and add an update whenever circumstances change." : "Active work that is currently on track."} tasks={plannedTasks} emptyMessage={view === "focus" ? "No further tasks are assigned to you." : "The active team queue is clear."} adminUsers={adminUsers as any[]} currentUserId={currentUserId} onRefresh={refetch} />
+          <TaskSection title={view === "focus" ? "Act on these first" : "Needs attention"} description={view === "focus" ? "Acknowledge new requests, deal with overdue work, and protect today’s deadlines." : "Unacknowledged, overdue, or due today across the team."} tasks={immediateTasks} emptyMessage={view === "focus" ? "You are clear on urgent work. Check your planned work below or help the team queue." : "No team tasks need immediate attention."} adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
+          <TaskSection title={view === "focus" ? "Your planned work" : "Everything else in the queue"} description={view === "focus" ? "Use these to plan the rest of your day and add an update whenever circumstances change." : "Active work that is currently on track."} tasks={plannedTasks} emptyMessage={view === "focus" ? "No further tasks are assigned to you." : "The active team queue is clear."} adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
         </div>
       )}
 
-      {createOpen && <TaskFormDialog open={createOpen} onClose={() => setCreateOpen(false)} onSaved={refetch} adminUsers={adminUsers as any[]} />}
+      {createOpen && <TaskFormDialog open={createOpen} onClose={() => setCreateOpen(false)} onSaved={refetch} adminUsers={adminUsers as any[]} defaultAssigneeId={currentUserId} />}
     </div>
   );
 }

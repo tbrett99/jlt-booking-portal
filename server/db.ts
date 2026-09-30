@@ -1546,6 +1546,8 @@ export async function createAdminTask(data: {
   linkedId?: number;
   sourceNoteId?: number;
   createdFrom?: "manual" | "booking_mention";
+  recurrenceRule?: "none" | "daily" | "weekly" | "fortnightly" | "monthly";
+  recurrenceInterval?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -1561,6 +1563,8 @@ export async function createAdminTask(data: {
     linkedId: data.linkedId ?? null,
     sourceNoteId: data.sourceNoteId ?? null,
     createdFrom: data.createdFrom ?? "manual",
+    recurrenceRule: data.recurrenceRule ?? "none",
+    recurrenceInterval: data.recurrenceInterval ?? 1,
   } as any);
   const id = (result as any)[0]?.insertId ?? (result as any).insertId;
   const { adminTasks: at } = await import("../drizzle/schema");
@@ -1619,6 +1623,8 @@ export async function updateAdminTask(id: number, data: {
   acknowledgedById?: number | null;
   completedAt?: Date | null;
   completedById?: number | null;
+  recurrenceRule?: "none" | "daily" | "weekly" | "fortnightly" | "monthly";
+  recurrenceInterval?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

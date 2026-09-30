@@ -1,6 +1,7 @@
 import { adminProcedure, router } from "./_core/trpc";
 import { sql } from "drizzle-orm";
 import { buildPipelineHealth } from "../shared/dashboard-workboard-utils";
+import { normaliseTaskIdentityEmail } from "../shared/task-identity";
 
 /**
  * Dashboard stats router — returns all counts needed by the Admin Dashboard
@@ -235,6 +236,7 @@ export const dashboardRouter = router({
     const unwrap = (result: any): any[] => Array.isArray(result[0]) ? result[0] : result;
     const unwrapOne = (result: any): any => unwrap(result)[0] ?? {};
     const now = new Date();
+    const taskOwnerEmail = normaliseTaskIdentityEmail(ctx.user.email);
 
     const [
       myTasksResult,
@@ -261,9 +263,15 @@ export const dashboardRouter = router({
                assignee.name AS assigneeName, b.clientName AS linkedBookingClientName
         FROM admin_tasks t
         LEFT JOIN users assignee ON assignee.id = t.assigneeId
+        LEFT JOIN users creator ON creator.id = t.createdById
         LEFT JOIN bookings b ON t.linkedType = 'booking' AND b.id = t.linkedId
         WHERE t.status != 'done'
-          AND (t.assigneeId = ${ctx.user.id} OR (t.assigneeId IS NULL AND t.createdById = ${ctx.user.id}))
+          AND (
+            t.assigneeId = ${ctx.user.id}
+            OR (t.assigneeId IS NULL AND t.createdById = ${ctx.user.id})
+            OR (${taskOwnerEmail} != '' AND LOWER(TRIM(assignee.email)) = ${taskOwnerEmail})
+            OR (${taskOwnerEmail} != '' AND t.assigneeId IS NULL AND LOWER(TRIM(creator.email)) = ${taskOwnerEmail})
+          )
         ORDER BY
           CASE WHEN t.dueDate IS NOT NULL AND t.dueDate < NOW() THEN 0
                WHEN t.acknowledgedAt IS NULL THEN 1
@@ -451,7 +459,7 @@ export const dashboardRouter = router({
         LIMIT 5
       `),
       db.execute(sql`
-        SELECT id, name
+        SELECT id, name, email
         FROM users
         WHERE role IN ('admin', 'super_admin')
         ORDER BY name ASC
@@ -466,6 +474,14 @@ export const dashboardRouter = router({
       ...row,
       endDate: row.noticeEndsAt ?? row.pauseEndsAt,
     }));
+    const adminUsersByEmail = new Map<string, { id: number; name: string }>();
+    unwrap(adminUsersResult).forEach((user) => {
+      const email = normaliseTaskIdentityEmail(user.email);
+      const key = email || `user:${user.id}`;
+      if (!adminUsersByEmail.has(key) || user.id === ctx.user.id) {
+        adminUsersByEmail.set(key, { id: user.id, name: user.name ?? "" });
+      }
+    });
 
     return {
       generatedAt: now,
@@ -502,7 +518,7 @@ export const dashboardRouter = router({
         records: unwrap(changeRequestsResult),
       },
       agentWins: unwrap(agentWinsResult),
-      adminUsers: unwrap(adminUsersResult),
+      adminUsers: Array.from(adminUsersByEmail.values()),
     };
   }),
 
