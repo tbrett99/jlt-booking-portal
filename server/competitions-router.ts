@@ -10,6 +10,7 @@ import { z } from "zod";
 import { getDb } from "./db";
 import { competitions, competitionEntries, users } from "../drizzle/schema";
 import { eq, and, desc, asc, sql, inArray } from "drizzle-orm";
+import { competitionCalendarEnd, competitionCalendarStart, competitionClosesAt, competitionStartsAt, isCompetitionOpen } from "@shared/competition-timing";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ export const competitionsRouter = router({
       .from(competitions)
       .where(eq(competitions.status, "active"))
       .orderBy(asc(competitions.endDate));
-    return rows;
+    return rows.filter((competition) => isCompetitionOpen(competition.endDate));
   }),
 
   // ── AGENT: get leaderboard for a competition ──────────────────────────────
@@ -105,6 +106,9 @@ export const competitionsRouter = router({
       if (comp.status !== "active") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "This competition is not currently active." });
       }
+      if (!isCompetitionOpen(comp.endDate)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This competition closed at midnight UK time." });
+      }
 
       const bookingDate = new Date(input.bookingDate);
       if (isNaN(bookingDate.getTime())) {
@@ -112,10 +116,8 @@ export const competitionsRouter = router({
       }
 
       // Validate booking date is within competition window
-      const startDate = new Date(comp.startDate);
-      const endDate = new Date(comp.endDate);
-      // Set end of day for endDate comparison
-      endDate.setHours(23, 59, 59, 999);
+      const startDate = competitionStartsAt(comp.startDate);
+      const endDate = competitionClosesAt(comp.endDate);
 
       if (bookingDate < startDate || bookingDate > endDate) {
         throw new TRPCError({
@@ -177,10 +179,11 @@ export const competitionsRouter = router({
   myTicketSummary: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
-    const activeComps = await db
+    const activeComps = (await db
       .select()
       .from(competitions)
-      .where(eq(competitions.status, "active"));
+      .where(eq(competitions.status, "active")))
+      .filter((competition) => isCompetitionOpen(competition.endDate));
 
     if (activeComps.length === 0) return [];
 
@@ -235,8 +238,8 @@ export const competitionsRouter = router({
       if (!isAdmin(ctx.user.role)) throw new TRPCError({ code: "FORBIDDEN" });
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const startDate = new Date(input.startDate);
-      const endDate = new Date(input.endDate);
+      const startDate = competitionStartsAt(input.startDate);
+      const endDate = competitionClosesAt(input.endDate);
       if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid dates." });
       }
@@ -247,8 +250,8 @@ export const competitionsRouter = router({
         title: input.title,
         description: input.description ?? null,
         prizeDescription: input.prizeDescription,
-        startDate,
-        endDate,
+        startDate: competitionCalendarStart(input.startDate),
+        endDate: competitionCalendarEnd(input.endDate),
         status: input.status,
         createdById: ctx.user.id,
         createdAt: new Date(),
@@ -279,8 +282,8 @@ export const competitionsRouter = router({
       if (input.title !== undefined) updates.title = input.title;
       if (input.description !== undefined) updates.description = input.description;
       if (input.prizeDescription !== undefined) updates.prizeDescription = input.prizeDescription;
-      if (input.startDate !== undefined) updates.startDate = new Date(input.startDate);
-      if (input.endDate !== undefined) updates.endDate = new Date(input.endDate);
+      if (input.startDate !== undefined) updates.startDate = competitionCalendarStart(input.startDate);
+      if (input.endDate !== undefined) updates.endDate = competitionCalendarEnd(input.endDate);
       if (input.status !== undefined) updates.status = input.status;
       await db.update(competitions).set(updates).where(eq(competitions.id, input.id));
       return { success: true };

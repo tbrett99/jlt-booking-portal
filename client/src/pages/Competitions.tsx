@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Trophy, Ticket, Plus, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { competitionClosingLabel, isCompetitionOpen } from "@shared/competition-timing";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,13 +41,7 @@ interface LeaderboardEntry {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(d: Date | string) {
-  return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function daysRemaining(endDate: Date | string) {
-  const diff = new Date(endDate).getTime() - Date.now();
-  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-  return days;
+  return new Date(d).toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
 }
 
 // ─── Entry status badge ───────────────────────────────────────────────────────
@@ -164,7 +159,8 @@ function CompetitionTab({ competition, currentUserId }: { competition: Competiti
     { competitionId: competition.id }
   );
 
-  const days = daysRemaining(competition.endDate);
+  const competitionIsOpen = isCompetitionOpen(competition.endDate);
+  const closingLabel = competitionClosingLabel(competition.endDate);
   const leaderboard: LeaderboardEntry[] = leaderboardData?.leaderboard ?? [];
   const myRank = leaderboard.find((e) => e.agentId === currentUserId);
   const myApproved = myEntries?.filter((e) => e.verifiedStatus === "approved").length ?? 0;
@@ -189,14 +185,14 @@ function CompetitionTab({ competition, currentUserId }: { competition: Competiti
           )}
           <p className="text-xs text-muted-foreground mt-1">
             {formatDate(competition.startDate)} – {formatDate(competition.endDate)}
-            {days > 0 ? (
-              <span className="ml-2 text-amber-600 font-medium">· {days} day{days !== 1 ? "s" : ""} remaining</span>
+            {competitionIsOpen ? (
+              <span className="ml-2 text-amber-600 font-medium">· {closingLabel}</span>
             ) : (
               <span className="ml-2 text-muted-foreground">· Competition closed</span>
             )}
           </p>
         </div>
-        {competition.status === "active" && days > 0 && (
+        {competition.status === "active" && competitionIsOpen && (
           <SubmitEntryDialog competition={competition} onSuccess={handleSuccess} />
         )}
       </div>

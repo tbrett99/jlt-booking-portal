@@ -66,7 +66,7 @@ interface Entry {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(d: Date | string) {
-  return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return new Date(d).toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
 }
 
 function formatDateTime(d: Date | string) {
@@ -133,8 +133,10 @@ function CompetitionFormDialog({
       title,
       description: description || undefined,
       prizeDescription: prize,
-      startDate: new Date(startDate).toISOString(),
-      endDate: new Date(endDate).toISOString(),
+      // Dates are calendar-day competition windows; the server applies the
+      // correct UK start/end-of-day instants before storing them.
+      startDate,
+      endDate,
       status,
     };
     if (existing) {
