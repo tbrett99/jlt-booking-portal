@@ -51,4 +51,10 @@ describe("admin task workflow safeguards", () => {
     expect(dbSource).toContain("FROM admin_tasks\n    WHERE id = ${id}");
     expect(dbSource).toContain("return getAdminTaskById(id);");
   });
+
+  it("uses the production-compatible insert path for manual and recurring tasks", () => {
+    expect(dbSource).toContain("INSERT INTO admin_tasks");
+    expect(dbSource).toContain("recurrenceRule, recurrenceInterval");
+    expect(dbSource).toContain("return getAdminTaskById(Number(id));");
+  });
 });

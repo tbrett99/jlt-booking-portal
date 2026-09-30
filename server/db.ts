@@ -1551,25 +1551,24 @@ export async function createAdminTask(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const { adminTasks } = await import("../drizzle/schema");
-  const result = await db.insert(adminTasks).values({
-    title: data.title,
-    description: data.description ?? null,
-    priority: data.priority ?? "medium",
-    assigneeId: data.assigneeId ?? null,
-    createdById: data.createdById,
-    dueDate: data.dueDate ?? null,
-    linkedType: data.linkedType ?? "none",
-    linkedId: data.linkedId ?? null,
-    sourceNoteId: data.sourceNoteId ?? null,
-    createdFrom: data.createdFrom ?? "manual",
-    recurrenceRule: data.recurrenceRule ?? "none",
-    recurrenceInterval: data.recurrenceInterval ?? 1,
-  } as any);
+  // A direct statement matches the live MySQL defaults exactly and avoids the
+  // ORM's full-column insert projection, which has caused otherwise valid task
+  // creation (including recurrence) to fail in production.
+  const [result] = await db.execute(sql`
+    INSERT INTO admin_tasks (
+      title, description, priority, assigneeId, createdById, dueDate,
+      linkedType, linkedId, sourceNoteId, createdFrom,
+      recurrenceRule, recurrenceInterval
+    ) VALUES (
+      ${data.title}, ${data.description ?? null}, ${data.priority ?? "medium"},
+      ${data.assigneeId ?? null}, ${data.createdById}, ${data.dueDate ?? null},
+      ${data.linkedType ?? "none"}, ${data.linkedId ?? null},
+      ${data.sourceNoteId ?? null}, ${data.createdFrom ?? "manual"},
+      ${data.recurrenceRule ?? "none"}, ${data.recurrenceInterval ?? 1}
+    )
+  `);
   const id = (result as any)[0]?.insertId ?? (result as any).insertId;
-  const { adminTasks: at } = await import("../drizzle/schema");
-  const rows = await db.select().from(at).where(eq(at.id, id)).limit(1);
-  return rows[0];
+  return getAdminTaskById(Number(id));
 }
 
 export async function getAllAdminTasks() {
