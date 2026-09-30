@@ -33,4 +33,12 @@ describe("Admin Tasks workbench", () => {
     expect(source).toContain("Add a useful progress update");
     expect(source).toContain("Updated {format(new Date(lastActivity)");
   });
+
+  it("does not misrepresent a task-query failure or an empty personal queue as zero work", () => {
+    expect(source).toContain("Tasks could not be loaded");
+    expect(source).toContain("The task list has not been treated as empty");
+    expect(source).toContain("No tasks are assigned to you yet.");
+    expect(source).toContain("Showing the active team queue instead");
+    expect(source).toContain("retry: 2");
+  });
 });

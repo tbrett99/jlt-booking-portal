@@ -395,7 +395,8 @@ export default function AdminTasks() {
   const [priorityFilter, setPriorityFilter] = useState<"all" | TaskPriority>("all");
   const [search, setSearch] = useState("");
 
-  const { data: tasks = [], isLoading, refetch } = trpc.tasks.list.useQuery();
+  const taskList = trpc.tasks.list.useQuery(undefined, { retry: 2 });
+  const { data: tasks = [], isLoading, isError: taskListError, error: taskListFailure, refetch } = taskList;
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const allTasks = tasks as any[];
   const currentUserIds = useMemo(
@@ -459,6 +460,9 @@ export default function AdminTasks() {
     setView(targetView);
     setFocusFilter(filter);
   }
+
+  const hasPersonalTasks = stats.mine > 0;
+  const shouldShowTeamFallback = view === "focus" && !isLoading && !taskListError && !hasPersonalTasks && stats.active > 0;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
@@ -536,10 +540,29 @@ export default function AdminTasks() {
 
       {isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="animate-spin text-[#168c7a]" size={28} /></div>
+      ) : taskListError ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center">
+          <AlertCircle className="mx-auto h-6 w-6 text-rose-600" />
+          <h2 className="mt-3 font-bold text-rose-950">Tasks could not be loaded</h2>
+          <p className="mx-auto mt-1 max-w-xl text-sm text-rose-800">The task list has not been treated as empty. Please retry; if this continues, tell Support the time it occurred so the exact request can be traced.</p>
+          <Button className="mt-4" variant="outline" onClick={() => refetch()}>
+            Try again
+          </Button>
+          {import.meta.env.DEV && taskListFailure?.message && <p className="mt-3 text-xs text-rose-700">{taskListFailure.message}</p>}
+        </div>
       ) : view === "done" ? (
         <TaskSection title="Completed work" description="Completed tasks stay here as a useful record. Reopen only when work genuinely needs to resume." tasks={visibleTasks} emptyMessage="No completed tasks match this view." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
       ) : isFiltered && focusFilter !== "all" ? (
         <TaskSection title={focusFilter === "unacknowledged" ? "Tasks waiting for acknowledgement" : focusFilter === "due_today" ? "Tasks due today" : "Overdue tasks"} description="Filtered from the current work view." tasks={visibleTasks} emptyMessage="Nothing matches this focused view." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
+      ) : shouldShowTeamFallback ? (
+        <div className="space-y-8">
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-950">
+            <p className="font-semibold">No tasks are assigned to you yet.</p>
+            <p className="mt-1 text-sky-800">Showing the active team queue instead, so work is still visible and nothing is missed. Use <strong>New task</strong> to add one for yourself.</p>
+          </div>
+          <TaskSection title="Team work needing attention" description="Unacknowledged, overdue, or due-today tasks across the team." tasks={allTasks.filter((task) => task.status !== "done" && (task.status === "open" || isOverdue(task) || isDueToday(task))).sort(taskSort)} emptyMessage="No team tasks need immediate attention." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
+          <TaskSection title="Everything else in the team queue" description="Active work that is currently on track." tasks={allTasks.filter((task) => task.status !== "done" && task.status !== "open" && !isOverdue(task) && !isDueToday(task)).sort(taskSort)} emptyMessage="The active team queue is clear." adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
+        </div>
       ) : (
         <div className="space-y-8">
           <TaskSection title={view === "focus" ? "Act on these first" : "Needs attention"} description={view === "focus" ? "Acknowledge new requests, deal with overdue work, and protect today’s deadlines." : "Unacknowledged, overdue, or due today across the team."} tasks={immediateTasks} emptyMessage={view === "focus" ? "You are clear on urgent work. Check your planned work below or help the team queue." : "No team tasks need immediate attention."} adminUsers={adminUsers as any[]} currentUserIds={currentUserIds} onRefresh={refetch} />
