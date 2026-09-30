@@ -2079,6 +2079,15 @@ async function startServer() {
     }
   });
 
+  // Historic prospect email footers used the public React route directly.
+  // Forward their token on the server before the SPA/static fallback can render
+  // the confirmation page, so email clients do not depend on JavaScript to opt out.
+  app.get("/unsubscribe", (req, res, next) => {
+    const token = typeof req.query.token === "string" ? req.query.token : null;
+    if (!token) return next();
+    return res.redirect(`/api/unsubscribe?token=${encodeURIComponent(token)}`);
+  });
+
   // ── Resend Webhook ──────────────────────────────────────────────────────
   // Resend POSTs delivery events here. We use it to update email_sends status.
   // Docs: https://resend.com/docs/dashboard/webhooks/event-types

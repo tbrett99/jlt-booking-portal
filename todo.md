@@ -6,7 +6,7 @@
 - [x] Review live prospect, mailing-contact, and unsubscribe totals; identify whether unsubscribed prospects remain in the marketing audience
 - [x] Urgently correct marketing unsubscribe confirmation and pre-send suppression, restore falsely suppressed prospects, and validate future campaign delivery
 - [x] Validate the repaired prospect campaign workflow through the approved resend; confirm confirmed opt-outs are excluded and no false unsubscribes are recorded
-- [x] Repair prospect unsubscribe links that opened the confirmation page without invoking the token handler: new emails now point directly to `/api/unsubscribe`, while historic `/unsubscribe?token=` links forward safely to the same server-side confirmation route
+- [x] Repair prospect unsubscribe links that opened the confirmation page without invoking the token handler: new emails now point directly to `/api/unsubscribe`, while historic `/unsubscribe?token=` links are forwarded server-side to the same handler before the React app can render
 - [ ] Validate a controlled confirmed-opt-out prospect after the Railway deployment; ensure it is excluded before queueing and is not reported as a campaign failure
 - [x] Resend Prospects Travel Updates only to the 174 recipients whose prior messages were not submitted (173 submitted; one example.com test record correctly rejected)
 - [x] Reconcile and correct inconsistent Super Admin weekly, monthly, and recruitment sign-up metrics against Railway records
