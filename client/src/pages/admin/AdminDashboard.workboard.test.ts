@@ -31,6 +31,17 @@ describe("Admin Dashboard operational workboard", () => {
     expect(source).toContain('title="Open task in the task workbench"');
   });
 
+  it("acknowledges tasks without removing them from dashboard focus and makes acknowledgement visible", () => {
+    expect(source).toContain('title="Acknowledge this task"');
+    expect(source).toContain("Acknowledge\n            </button>");
+    expect(source).toContain("Acknowledged tasks stay here until they are completed.");
+    expect(source).toContain("Acknowledged{task.acknowledgedByName");
+    expect(source).toContain("Recently acknowledged");
+    expect(dataSource).toContain("recentAcknowledgementsResult");
+    expect(dataSource).toContain("recentAcknowledgements: unwrap(recentAcknowledgementsResult)");
+    expect(dataSource).toContain("acknowledger.name AS acknowledgedByName");
+  });
+
   it("keeps only the requested controls and replaces the former generic urgent block", () => {
     expect(source).toContain("PTS files missing payment date");
     expect(source).toContain("Claimable files missing payment date");

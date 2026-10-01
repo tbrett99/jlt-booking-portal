@@ -243,6 +243,7 @@ export const dashboardRouter = router({
     const [
       myTasksResult,
       teamTasksResult,
+      recentAcknowledgementsResult,
       unreadMessagesResult,
       unreadMessageCountResult,
       controlCountsResult,
@@ -263,10 +264,13 @@ export const dashboardRouter = router({
       db.execute(sql`
         SELECT t.id, t.title, t.status, t.priority, t.dueDate, t.acknowledgedAt,
                t.createdFrom, t.linkedType, t.linkedId, t.createdAt,
-               assignee.name AS assigneeName, b.clientName AS linkedBookingClientName
+               assignee.name AS assigneeName,
+               acknowledger.name AS acknowledgedByName,
+               b.clientName AS linkedBookingClientName
         FROM admin_tasks t
         LEFT JOIN users assignee ON assignee.id = t.assigneeId
         LEFT JOIN users creator ON creator.id = t.createdById
+        LEFT JOIN users acknowledger ON acknowledger.id = t.acknowledgedById
         LEFT JOIN bookings b ON t.linkedType = 'booking' AND b.id = t.linkedId
         WHERE t.status != 'done'
           AND (
@@ -283,14 +287,17 @@ export const dashboardRouter = router({
           t.dueDate IS NULL,
           t.dueDate ASC,
           t.createdAt DESC
-        LIMIT 6
+        LIMIT 12
       `),
       db.execute(sql`
         SELECT t.id, t.title, t.status, t.priority, t.dueDate, t.acknowledgedAt,
                t.createdFrom, t.linkedType, t.linkedId, t.createdAt,
-               assignee.name AS assigneeName, b.clientName AS linkedBookingClientName
+               assignee.name AS assigneeName,
+               acknowledger.name AS acknowledgedByName,
+               b.clientName AS linkedBookingClientName
         FROM admin_tasks t
         LEFT JOIN users assignee ON assignee.id = t.assigneeId
+        LEFT JOIN users acknowledger ON acknowledger.id = t.acknowledgedById
         LEFT JOIN bookings b ON t.linkedType = 'booking' AND b.id = t.linkedId
         WHERE t.status != 'done'
           AND (t.assigneeId IS NULL OR t.dueDate < NOW())
@@ -301,6 +308,21 @@ export const dashboardRouter = router({
           t.dueDate ASC,
           t.createdAt ASC
         LIMIT 6
+      `),
+      db.execute(sql`
+        SELECT t.id, t.title, t.status, t.priority, t.dueDate, t.acknowledgedAt,
+               t.createdFrom, t.linkedType, t.linkedId, t.createdAt,
+               assignee.name AS assigneeName,
+               acknowledger.name AS acknowledgedByName,
+               b.clientName AS linkedBookingClientName
+        FROM admin_tasks t
+        LEFT JOIN users assignee ON assignee.id = t.assigneeId
+        LEFT JOIN users acknowledger ON acknowledger.id = t.acknowledgedById
+        LEFT JOIN bookings b ON t.linkedType = 'booking' AND b.id = t.linkedId
+        WHERE t.status != 'done'
+          AND t.acknowledgedAt IS NOT NULL
+        ORDER BY t.acknowledgedAt DESC
+        LIMIT 5
       `),
       db.execute(sql`
         SELECT n.bookingId, b.clientName, agent.name AS agentName, n.content AS latestMessage,
@@ -492,6 +514,7 @@ export const dashboardRouter = router({
       generatedAt: now,
       myTasks: unwrap(myTasksResult),
       teamTasks: unwrap(teamTasksResult),
+      recentAcknowledgements: unwrap(recentAcknowledgementsResult),
       unreadMessages: unwrap(unreadMessagesResult),
       unreadMessageCount: Number(unwrapOne(unreadMessageCountResult).count ?? 0),
       controls: {

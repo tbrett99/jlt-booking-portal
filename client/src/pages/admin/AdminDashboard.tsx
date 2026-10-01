@@ -165,11 +165,11 @@ function EmptyState({ icon: Icon, message }: { icon: React.ElementType; message:
 
 function TaskRow({
   task,
-  onStart,
+  onAcknowledge,
   onDone,
 }: {
   task: any;
-  onStart: (id: number) => void;
+  onAcknowledge: (id: number) => void;
   onDone: (id: number) => void;
 }) {
   const priority = PRIORITY_STYLES[(task.priority as TaskPriority) ?? "medium"] ?? PRIORITY_STYLES.medium;
@@ -195,6 +195,9 @@ function TaskRow({
             {task.createdFrom === "booking_mention" && (
               <Badge className="h-4 rounded-full px-1.5 text-[9px] bg-violet-100 text-violet-700 border-0">Booking mention</Badge>
             )}
+            {task.acknowledgedAt && (
+              <Badge className="h-4 rounded-full px-1.5 text-[9px] bg-emerald-100 text-emerald-700 border-0">Acknowledged</Badge>
+            )}
           </div>
           <div className="mt-1 flex items-center gap-x-2 gap-y-1 flex-wrap text-[10px] text-muted-foreground">
             <span className={dueIsOverdue ? "font-semibold text-red-700" : task.dueDate && isToday(new Date(task.dueDate)) ? "font-semibold text-amber-800" : ""}>
@@ -202,17 +205,20 @@ function TaskRow({
             </span>
             {task.assigneeName && <span>· {task.assigneeName}</span>}
             {task.linkedBookingClientName && <span className="text-[#0f766e]">· {task.linkedBookingClientName}</span>}
+            {task.acknowledgedAt && (
+              <span className="font-medium text-emerald-700">· Acknowledged{task.acknowledgedByName ? ` by ${task.acknowledgedByName}` : ""}</span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {!task.acknowledgedAt && task.status === "open" && (
             <button
               type="button"
-              onClick={() => onStart(task.id)}
+              onClick={() => onAcknowledge(task.id)}
               className="text-[10px] font-semibold px-1.5 py-1 rounded border border-amber-200 text-amber-800 hover:bg-amber-100"
-              title="Acknowledge and start this task"
+              title="Acknowledge this task"
             >
-              Start
+              Acknowledge
             </button>
           )}
           <Link href={taskHref} className="p-1 text-muted-foreground hover:text-foreground" title="Open task in the task workbench">
@@ -263,6 +269,7 @@ export default function AdminDashboard() {
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
   const myTasks = (workboard?.myTasks ?? []) as any[];
   const teamTasks = (workboard?.teamTasks ?? []) as any[];
+  const recentAcknowledgements = (workboard?.recentAcknowledgements ?? []) as any[];
   const unreadMessages = (workboard?.unreadMessages ?? []) as any[];
   const controls = workboard?.controls as any;
   const queues = (workboard?.queues ?? []) as any[];
@@ -345,7 +352,7 @@ export default function AdminDashboard() {
         <Card className="xl:col-span-2 border-t-4 border-t-[#02E6D2]">
           <CardHeader className="pb-3 pt-4 px-4">
             <SectionHeader icon={ListChecks} title="My task focus" count={myTasks.length} href="/admin/tasks" accent="#0f766e" />
-            <p className="text-[11px] text-muted-foreground mt-2">Overdue and unacknowledged tasks rise to the top. Start them to make ownership visible.</p>
+            <p className="text-[11px] text-muted-foreground mt-2">Overdue and unacknowledged tasks rise to the top. Acknowledged tasks stay here until they are completed.</p>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {myTasks.length === 0 ? <EmptyState icon={CheckCircle2} message="Your task list is clear — great work." /> : (
@@ -354,7 +361,7 @@ export default function AdminDashboard() {
                   <TaskRow
                     key={task.id}
                     task={task}
-                    onStart={(id) => updateTask.mutate({ id, status: "in_progress" })}
+                    onAcknowledge={(id) => updateTask.mutate({ id, status: "in_progress" })}
                     onDone={(id) => updateTask.mutate({ id, status: "done" })}
                   />
                 ))}
@@ -366,14 +373,27 @@ export default function AdminDashboard() {
         <Card className="border-t-4 border-t-[#a78bfa]">
           <CardHeader className="pb-3 pt-4 px-4">
             <SectionHeader icon={Users} title="Team task board" count={teamTasks.length} href="/admin/tasks" accent="#7c3aed" />
-            <p className="text-[11px] text-muted-foreground mt-2">Unassigned work and team tasks that are already overdue.</p>
+            <p className="text-[11px] text-muted-foreground mt-2">Unassigned work, overdue tasks, and the latest acknowledgements across the team.</p>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            {teamTasks.length === 0 ? <EmptyState icon={CheckSquare} message="No unclaimed or overdue team tasks." /> : (
+            {teamTasks.length === 0 && recentAcknowledgements.length === 0 ? <EmptyState icon={CheckSquare} message="No unclaimed or overdue team tasks." /> : (
               <div className="space-y-2">
-                {teamTasks.slice(0, 4).map((task) => (
-                  <TaskRow key={task.id} task={task} onStart={(id) => updateTask.mutate({ id, status: "in_progress" })} onDone={(id) => updateTask.mutate({ id, status: "done" })} />
+                {teamTasks.slice(0, 3).map((task) => (
+                  <TaskRow key={task.id} task={task} onAcknowledge={(id) => updateTask.mutate({ id, status: "in_progress" })} onDone={(id) => updateTask.mutate({ id, status: "done" })} />
                 ))}
+                {recentAcknowledgements.length > 0 && (
+                  <div className="pt-2 border-t border-border/70">
+                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Recently acknowledged</p>
+                    <div className="space-y-2">
+                      {recentAcknowledgements
+                        .filter((task) => !teamTasks.some((teamTask) => teamTask.id === task.id))
+                        .slice(0, 2)
+                        .map((task) => (
+                          <TaskRow key={task.id} task={task} onAcknowledge={(id) => updateTask.mutate({ id, status: "in_progress" })} onDone={(id) => updateTask.mutate({ id, status: "done" })} />
+                        ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
