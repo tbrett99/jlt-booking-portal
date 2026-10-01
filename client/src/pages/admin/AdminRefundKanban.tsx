@@ -9,9 +9,15 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { User, Calendar, ArrowRight, Clock, Search, MessageSquare, Trash2, Building2, PoundSterling } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { differenceInDays } from "date-fns";
 import { Input } from "@/components/ui/input";
+import {
+  expectedRefundDateFromInput,
+  expectedRefundDateInputValue,
+  formatExpectedRefundDate,
+  refundChaseTiming,
+} from "../../../../shared/refund-chase-utils";
 
 function AgeBadge({ createdAt }: { createdAt: string | Date }) {
   const days = differenceInDays(new Date(), new Date(createdAt));
@@ -111,7 +117,13 @@ export default function AdminRefundKanban() {
   });
 
   const byStage = (stage: Stage) =>
-    filtered.filter((r) => (r.pipelineStage ?? "New Refund Request") === stage);
+    filtered
+      .filter((r) => (r.pipelineStage ?? "New Refund Request") === stage)
+      .sort((a, b) => {
+        const aDate = a.expectedRefundDate ? new Date(a.expectedRefundDate).getTime() : Number.POSITIVE_INFINITY;
+        const bDate = b.expectedRefundDate ? new Date(b.expectedRefundDate).getTime() : Number.POSITIVE_INFINITY;
+        return aDate - bDate || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
   const byStagePagedCount = (stage: Stage) => byStage(stage).length;
   const byStagePagedItems = (stage: Stage) => {
     const all = byStage(stage);
@@ -120,6 +132,12 @@ export default function AdminRefundKanban() {
   };
 
   const pendingCount = filtered.filter((r) => r.pipelineStage !== "Refund Processed").length;
+  const activeRefunds = filtered.filter((r) => r.pipelineStage !== "Refund Processed");
+  const scheduledForChase = activeRefunds
+    .filter((r) => r.expectedRefundDate)
+    .sort((a, b) => new Date(a.expectedRefundDate!).getTime() - new Date(b.expectedRefundDate!).getTime());
+  const chaseDue = scheduledForChase.filter((r) => ["overdue", "today"].includes(refundChaseTiming(r.expectedRefundDate)));
+  const unscheduledActiveRefunds = activeRefunds.filter((r) => !r.expectedRefundDate);
 
   const moveStage = (refundId: number, stage: Stage) => {
     if (stage === "Query") {
@@ -223,6 +241,62 @@ export default function AdminRefundKanban() {
         </div>
       </div>
 
+      <Card className="border-amber-200 bg-amber-50/40">
+        <CardHeader className="px-4 pb-3 pt-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-base font-semibold text-amber-950">
+                <Calendar className="h-4 w-4 text-amber-700" />
+                Expected refund-date review
+              </h2>
+              <p className="mt-1 text-xs text-amber-900/75">
+                Active refunds are ordered by their expected date in each pipeline column. Chase the due items first.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-medium">
+              <Badge className="border border-rose-200 bg-rose-100 text-rose-800 hover:bg-rose-100">
+                {chaseDue.length} due to chase
+              </Badge>
+              <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">
+                {unscheduledActiveRefunds.length} need a date
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          {scheduledForChase.length === 0 ? (
+            <p className="rounded-md border border-dashed border-amber-200 bg-white/70 px-3 py-3 text-sm text-muted-foreground">
+              No active refunds have an expected date yet. Set one on a refund card once the supplier provides it.
+            </p>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {scheduledForChase.slice(0, 9).map((refund) => {
+                const timing = refundChaseTiming(refund.expectedRefundDate);
+                const isDue = timing === "overdue" || timing === "today";
+                return (
+                  <Link key={refund.id} href={`/bookings/${refund.bookingId}?from=refunds`}>
+                    <div className={`cursor-pointer rounded-md border bg-white px-3 py-2 transition-colors hover:border-amber-400 ${isDue ? "border-rose-200" : "border-amber-100"}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-medium">{refund.clientName ?? `Booking #${refund.bookingId}`}</span>
+                        <span className={`shrink-0 text-xs font-semibold ${isDue ? "text-rose-700" : "text-amber-800"}`}>
+                          {timing === "overdue" ? "Overdue" : timing === "today" ? "Due today" : formatExpectedRefundDate(refund.expectedRefundDate)}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {refund.pipelineStage} · expected {formatExpectedRefundDate(refund.expectedRefundDate)}
+                      </p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+          {scheduledForChase.length > 9 && (
+            <p className="mt-3 text-xs text-muted-foreground">Showing the next 9 dates; remaining active refunds stay ordered in their pipeline columns.</p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Horizontal scroll for 6 columns */}
       <div className="overflow-x-auto pb-4">
         <div className="flex gap-4 min-w-max">
@@ -245,6 +319,7 @@ export default function AdminRefundKanban() {
                   adminUsers={adminUsers}
                   onMoveStage={moveStage}
                   onAssign={assignTo}
+                  onExpectedRefundDateChange={(id, expectedRefundDate) => updatePipeline.mutate({ refundId: id, expectedRefundDate })}
                   onDelete={(id) => setDeleteDialog(id)}
                 />
               ))}
@@ -355,6 +430,7 @@ function RefundCard({
   adminUsers,
   onMoveStage,
   onAssign,
+  onExpectedRefundDateChange,
   onDelete,
 }: {
   refund: any;
@@ -363,8 +439,24 @@ function RefundCard({
   adminUsers: any[];
   onMoveStage: (id: number, stage: Stage) => void;
   onAssign: (id: number, userId: number | null) => void;
+  onExpectedRefundDateChange: (id: number, expectedRefundDate: Date | null) => void;
   onDelete: (id: number) => void;
 }) {
+  const [expectedDateInput, setExpectedDateInput] = useState(() => expectedRefundDateInputValue(refund.expectedRefundDate));
+  const expectedDateTiming = refundChaseTiming(refund.expectedRefundDate);
+
+  useEffect(() => {
+    setExpectedDateInput(expectedRefundDateInputValue(refund.expectedRefundDate));
+  }, [refund.id, refund.expectedRefundDate]);
+
+  const saveExpectedDate = () => {
+    try {
+      onExpectedRefundDateChange(refund.id, expectedRefundDateFromInput(expectedDateInput));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Enter a valid expected refund date");
+    }
+  };
+
   return (
     <Card className={`shadow-sm hover:shadow-md transition-shadow border-l-4 ${stage === "Query" ? "border-l-purple-400" : "border-l-[#FFC3BC]"}`}>
       <CardHeader className="pb-2 pt-3 px-4">
@@ -433,6 +525,45 @@ function RefundCard({
         <p className="text-xs text-muted-foreground line-clamp-2 bg-muted/50 rounded p-2">
           {refund.refundReason}
         </p>
+
+        <div className="space-y-1.5 rounded-md border border-amber-100 bg-amber-50/40 p-2">
+          <label className="flex items-center gap-1 text-xs font-medium text-amber-950">
+            <Calendar className="h-3 w-3 text-amber-700" />
+            Expected refund date
+          </label>
+          <div className="flex items-center gap-1.5">
+            <Input
+              type="date"
+              value={expectedDateInput}
+              onChange={(event) => setExpectedDateInput(event.target.value)}
+              className="h-7 min-w-0 flex-1 bg-white text-xs"
+              aria-label={`Expected refund date for ${refund.clientName ?? `booking ${refund.bookingId}`}`}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={saveExpectedDate}
+            >
+              Save
+            </Button>
+            {refund.expectedRefundDate && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-1.5 text-xs text-muted-foreground"
+                onClick={() => onExpectedRefundDateChange(refund.id, null)}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+          {refund.expectedRefundDate && (
+            <p className={`text-xs font-medium ${expectedDateTiming === "overdue" ? "text-rose-700" : expectedDateTiming === "today" ? "text-amber-800" : "text-muted-foreground"}`}>
+              {expectedDateTiming === "overdue" ? "Chase overdue" : expectedDateTiming === "today" ? "Chase today" : `Expected ${formatExpectedRefundDate(refund.expectedRefundDate)}`}
+            </p>
+          )}
+        </div>
 
         {/* Assignee */}
         <div className="space-y-1">

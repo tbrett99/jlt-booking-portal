@@ -2852,6 +2852,7 @@ export const appRouter = router({
           clientBankName: ctx.user.role !== "agent" ? decryptOptional(r.clientBankName) : undefined,
           clientSortCode: ctx.user.role !== "agent" ? decryptOptional(r.clientSortCode) : undefined,
           clientAccountNumber: ctx.user.role !== "agent" ? decryptOptional(r.clientAccountNumber) : undefined,
+          expectedRefundDate: ctx.user.role !== "agent" ? r.expectedRefundDate : undefined,
           assignedToName: r.assignedToId ? (userMap.get(r.assignedToId)?.name ?? null) : null,
         }));
       }),
@@ -2890,6 +2891,7 @@ export const appRouter = router({
         refundId: z.number(),
         pipelineStage: z.enum(["New Refund Request", "Query", "Acknowledged by Supplier", "Refund Sent to PTS", "Refund Received in JLT", "Refund Processed"]).optional(),
         assignedToId: z.number().nullable().optional(),
+        expectedRefundDate: z.date().nullable().optional(),
         queryMessage: z.string().optional(), // message to send to agent when moving to Query
       }))
       .mutation(async ({ input, ctx }) => {
@@ -2956,6 +2958,22 @@ export const appRouter = router({
               }
             }
           }
+        }
+        if (data.expectedRefundDate !== undefined && updated?.bookingId) {
+          const expectedDateLabel = data.expectedRefundDate
+            ? new Intl.DateTimeFormat("en-GB", {
+                timeZone: "Europe/London",
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              }).format(data.expectedRefundDate)
+            : "cleared";
+          await createNote({
+            bookingId: updated.bookingId,
+            authorId: ctx.user.id,
+            content: `[System] Expected refund date ${data.expectedRefundDate ? `set to ${expectedDateLabel}` : expectedDateLabel} by ${ctx.user.name ?? "Admin"}.`,
+            isInternal: true,
+          });
         }
         if (data.assignedToId && updated?.bookingId) {
           const booking = await getBookingById(updated.bookingId);

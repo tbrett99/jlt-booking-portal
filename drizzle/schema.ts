@@ -207,6 +207,9 @@ export const refunds = mysqlTable("refunds", {
   stepsTaken: text("stepsTaken").notNull(),
   pipelineStage: mysqlEnum("pipelineStage", ["New Refund Request", "Query", "Acknowledged by Supplier", "Refund Sent to PTS", "Refund Received in JLT", "Refund Processed"]).default("New Refund Request").notNull(),
   assignedToId: int("assignedToId"), // FK → users.id
+  // Admin-only target date supplied by the refunding supplier. It is used to
+  // order active refunds for chasing and is cleared once the refund is processed.
+  expectedRefundDate: timestamp("expectedRefundDate"),
   status: mysqlEnum("status", ["pending", "processing", "completed"]).default("pending").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

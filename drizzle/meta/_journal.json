@@ -1030,6 +1030,13 @@
       "when": 1790769272776,
       "tag": "0146_odd_thundra",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "5",
+      "when": 1790862421804,
+      "tag": "0147_heavy_tusk",
+      "breakpoints": true
     }
   ]
 }

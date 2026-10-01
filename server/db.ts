@@ -1019,12 +1019,15 @@ export async function getAllRefunds() {
 export async function updateRefundPipeline(refundId: number, data: {
   pipelineStage?: "New Refund Request" | "Query" | "Acknowledged by Supplier" | "Refund Sent to PTS" | "Refund Received in JLT" | "Refund Processed";
   assignedToId?: number | null;
+  expectedRefundDate?: Date | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const updateData: Record<string, unknown> = {};
   if (data.pipelineStage !== undefined) updateData.pipelineStage = data.pipelineStage;
   if (data.assignedToId !== undefined) updateData.assignedToId = data.assignedToId;
+  if (data.expectedRefundDate !== undefined) updateData.expectedRefundDate = data.expectedRefundDate;
+  if (data.pipelineStage === "Refund Processed") updateData.expectedRefundDate = null;
   await db.update(refunds).set(updateData as any).where(eq(refunds.id, refundId));
   const result = await db.select().from(refunds).where(eq(refunds.id, refundId)).limit(1);
   return result[0];
