@@ -599,7 +599,7 @@ export default function CommissionDue() {
               Request Top-Up from Agent
             </DialogTitle>
             <DialogDescription>
-              The agent will be notified by email and in-app notification. They will need to top up their account and confirm via the portal before the file returns to Commission Due.
+              The agent will be notified by email and in-app notification. The file moves straight to Top-Up Required in Commission Management — no future supplier payment date is needed — until the agent confirms their top-up via the portal.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

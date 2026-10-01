@@ -135,6 +135,7 @@ import {
 } from "./imap";
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
 import { isPreAuthorisedCommissionEligibleAfterDeparture } from "./commission-readiness-utils";
+import { sendOutstandingTopUpReminders } from "./commission-topup-reminders";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { ENV } from "./_core/env";
@@ -3104,15 +3105,17 @@ export const appRouter = router({
           claim = freshClaims.find((c) => c.bookingId === input.bookingId && c.status !== 'paid') ?? undefined;
         }
         if (!claim) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Could not create claim' });
-        // Update claim to top_up_required with amount
+        // Move directly to the distinct Top-Up Required queue. This deliberately
+        // does not change finalSupplierPaymentDate: a file in minus must not be
+        // artificially deferred in the normal payment-date workflow.
         const now = new Date();
         await db.update(claimsTable).set({
           status: 'top_up_required',
           topUpAmountPence: input.amountPence,
+          topUpNote: input.note?.trim() || null,
           topUpRequestedAt: now,
           topUpRequestedById: ctx.user.id,
-          topUpNotifiedAt: now,
-          ...(input.note ? { topUpNote: input.note } : {}),
+          topUpNotifiedAt: null,
         }).where(eq(claimsTable.id, (claim as any).id));
         // Add visible note on booking
         const noteContent = input.note
@@ -3124,20 +3127,25 @@ export const appRouter = router({
           userId: agent.id,
           bookingId: input.bookingId,
           message: `Action required: Your file for booking "${booking.clientName}" is in minus. Please top up your account by ${amountFormatted} and notify us when done.`,
-          linkUrl: `/commissions`,
+          linkUrl: `/my-files-in-minus`,
         });
         // Email to agent
         if (agent.email) {
-          await sendDirectEmail({
+          const emailResult = await sendDirectEmail({
             toEmail: agent.email,
             toName: agent.name ?? 'Agent',
             subject: `Action Required — File in Minus: ${booking.clientName} (#${booking.id})`,
             html: `<p>Hi ${agent.name ?? 'there'},</p>
 <p>Your commission file for booking <strong>${booking.clientName} (#${booking.id})</strong> is currently in minus.</p>
-<p>Please top up your account by <strong>${amountFormatted}</strong> and then notify us via your portal once done.</p>
+<p>Please top up your account by <strong>${amountFormatted}</strong> and then notify us via your portal dashboard once done.</p>
 ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '<br/>')}</p>` : ''}
-<p style="margin-top:20px;padding:14px 18px;background:#f0fffe;border-top:3px solid #02E6D2;border-radius:6px;"><a href="https://portal.thejltgroup.co.uk/commissions" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:700;">View My Commissions &rarr;</a></p>`,
+<p style="margin-top:20px;padding:14px 18px;background:#f0fffe;border-top:3px solid #02E6D2;border-radius:6px;"><a href="https://portal.thejltgroup.co.uk/my-files-in-minus" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:700;">View My Files in Minus &rarr;</a></p>`,
+            userId: agent.id,
+            triggerKey: "commission_top_up_initial",
           });
+          if (emailResult.success) {
+            await db.update(claimsTable).set({ topUpNotifiedAt: now }).where(eq(claimsTable.id, (claim as any).id));
+          }
         }
         return { success: true };
       }),
@@ -3750,13 +3758,16 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         if (!agent) throw new TRPCError({ code: 'NOT_FOUND' });
         const now = new Date();
         const amountFormatted = `£${(input.amountPence / 100).toFixed(2)}`;
-        // Update claim status to top_up_required
+        // Move directly to the distinct Top-Up Required queue. This deliberately
+        // does not change finalSupplierPaymentDate: a file in minus must not be
+        // artificially deferred in the normal payment-date workflow.
         await db.update(claimsTable).set({
           status: 'top_up_required',
           topUpAmountPence: input.amountPence,
+          topUpNote: input.note?.trim() || null,
           topUpRequestedAt: now,
           topUpRequestedById: ctx.user.id,
-          topUpNotifiedAt: now,
+          topUpNotifiedAt: null,
         }).where(eq(claimsTable.id, input.claimId));
         // Add note to booking
         const noteContent = input.note
@@ -3772,7 +3783,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         });
         // Email to agent
         if (agent.email) {
-          await sendDirectEmail({
+          const emailResult = await sendDirectEmail({
             toEmail: agent.email,
             toName: agent.name ?? 'Agent',
             subject: `Action Required — File in Minus: ${booking.clientName} (#${booking.id})`,
@@ -3781,10 +3792,22 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
 <p>Please top up your account by <strong>${amountFormatted}</strong> and then notify us via your portal dashboard once done.</p>
 ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '<br/>')}</p>` : ''}
 <p style="margin-top:20px;padding:14px 18px;background:#f0fffe;border-top:3px solid #02E6D2;border-radius:6px;"><a href="https://portal.thejltgroup.co.uk/my-files-in-minus" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:700;">View My Files in Minus &rarr;</a></p>`,
+            userId: agent.id,
+            triggerKey: "commission_top_up_initial",
           });
+          if (emailResult.success) {
+            await db.update(claimsTable).set({ topUpNotifiedAt: now }).where(eq(claimsTable.id, input.claimId));
+          }
         }
         return { success: true };
       }),
+
+    // Admin: send one consolidated reminder to each agent with outstanding files
+    // in minus. The delivery helper groups all their files into a single email.
+    sendTopUpReminders: adminProcedure.mutation(async () => {
+      const result = await sendOutstandingTopUpReminders("manual");
+      return result;
+    }),
 
     // Agent: notify JLT that they have topped up their file
     agentNotifyTopUpComplete: protectedProcedure

@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle, CheckCircle2, TrendingDown, AlertTriangle, Search, X } from "lucide-react";
+import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle, CheckCircle2, TrendingDown, AlertTriangle, Search, Send, X } from "lucide-react";
 import CopyableRef from "@/components/CopyableRef";
 import { useLocation } from "wouter";
 import { getPage, getSelectableCommissionRows, sortRowsByDate } from "@/lib/commission-list-utils";
@@ -54,6 +54,10 @@ type ClaimRow = {
   bankAccountNumber?: string | null;
   hasOutstandingRefund?: boolean;
   hasOutstandingAmendment?: boolean;
+  topUpAmountPence?: number | null;
+  topUpNote?: string | null;
+  topUpRequestedAt?: Date | string | null;
+  topUpNotifiedAt?: Date | string | null;
   booking: {
     clientName: string;
     departureDate: Date | string | null;
@@ -517,6 +521,25 @@ export default function AdminCommissions() {
       if (ctx?.prev) utils.commissionClaims.all.setData(undefined, ctx.prev);
       toast.error(err.message);
     },
+  });
+
+  const sendTopUpRemindersMutation = trpc.commissionClaims.sendTopUpReminders.useMutation({
+    onSuccess: (result) => {
+      if (result.emailsSent === 0) {
+        toast.message("No top-up reminder emails were sent.", {
+          description: result.agentsWithOutstandingClaims === 0
+            ? "There are no files currently awaiting a top-up."
+            : "Check the agent email addresses before trying again.",
+        });
+      } else {
+        toast.success(`Sent ${result.emailsSent} grouped reminder${result.emailsSent === 1 ? "" : "s"} covering ${result.claimsIncluded} file${result.claimsIncluded === 1 ? "" : "s"}.`);
+      }
+      if (result.failures.length > 0) {
+        toast.error(`Could not send to: ${result.failures.join(", ")}`);
+      }
+      utils.commissionClaims.all.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
   });
 
   const allClaims = (claims ?? []) as ClaimRow[];
@@ -994,8 +1017,20 @@ export default function AdminCommissions() {
         {/* TOP-UP REQUIRED TAB */}
         <TabsContent value="top_up">
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Top-Up Required — Awaiting agent action</CardTitle>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-3">
+              <div>
+                <CardTitle className="text-base">Top-Up Required — Awaiting agent action</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">Files move here immediately when marked in minus. No future supplier payment date is needed.</p>
+              </div>
+              <Button
+                size="sm"
+                className="gap-2 bg-red-600 text-white hover:bg-red-700"
+                onClick={() => sendTopUpRemindersMutation.mutate()}
+                disabled={topUpRequired.length === 0 || sendTopUpRemindersMutation.isPending}
+              >
+                {sendTopUpRemindersMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Send reminders to all agents
+              </Button>
             </CardHeader>
             <CardContent className="p-0">
               {topUpRequired.length === 0 ? (
@@ -1013,6 +1048,7 @@ export default function AdminCommissions() {
                         <th className="py-3 px-4 text-left">Top-Up Amount</th>
                         <th className="py-3 px-4 text-left">Note</th>
                         <th className="py-3 px-4 text-left">Requested</th>
+                        <th className="py-3 px-4 text-left">Last reminder</th>
                         <th className="py-3 px-4 text-left">Actions</th>
                       </tr>
                     </thead>
@@ -1032,12 +1068,13 @@ export default function AdminCommissions() {
                           </td>
                           <td className="py-3 px-4 align-top"><OrbitFinancialSummary snapshot={c.booking?.orbitFinancialSnapshot} /></td>
                           <td className="py-3 px-4 font-semibold text-red-500">
-                            {(c as any).topUpAmountPence != null ? `£${(Number((c as any).topUpAmountPence) / 100).toFixed(2)}` : "—"}
+                            {c.topUpAmountPence != null ? `£${(Number(c.topUpAmountPence) / 100).toFixed(2)}` : "—"}
                           </td>
                           <td className="py-3 px-4 text-muted-foreground text-xs max-w-[200px]">
-                            {(c as any).topUpNote ?? "—"}
+                            {c.topUpNote ?? "—"}
                           </td>
-                          <td className="py-3 px-4 text-muted-foreground text-xs">{format(new Date(c.claimedAt), "dd/MM/yyyy")}</td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs">{formatDate(c.topUpRequestedAt ?? c.claimedAt)}</td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs">{c.topUpNotifiedAt ? format(new Date(c.topUpNotifiedAt), "dd/MM/yyyy HH:mm") : "Not emailed"}</td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2">
                               <Button
