@@ -2876,7 +2876,7 @@ export const appRouter = router({
       // Bank details are unnecessary for the list and decrypting every stored
       // value adds several seconds to the request. They remain available to an
       // admin through byBookingAdmin when viewing an individual refund.
-      return refunds.map(({ clientBankName: _clientBankName, clientSortCode: _clientSortCode, clientAccountNumber: _clientAccountNumber, ...refund }) => refund);
+      return refunds;
     }),
     updatePipeline: adminProcedure
       .input(z.object({

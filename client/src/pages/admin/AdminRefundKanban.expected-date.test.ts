@@ -44,9 +44,12 @@ describe("refund expected-date chase workflow", () => {
       refundRouter.indexOf("updatePipeline: adminProcedure")
     );
 
-    expect(allRefundsProcedure).toContain("return refunds.map");
+    expect(allRefundsProcedure).toContain("return refunds;");
     expect(allRefundsProcedure).not.toContain("await Promise.all");
     expect(allRefundsProcedure).not.toContain("getBookingById(r.bookingId)");
     expect(allRefundsProcedure).not.toContain("decryptOptional");
+    expect(dbSource).toContain("operational list fields here");
+    expect(dbSource).toContain("expectedRefundDate: refunds.expectedRefundDate");
+    expect(dbSource).not.toContain("const rows = await db.select().from(refunds).orderBy(desc(refunds.createdAt));");
   });
 });
