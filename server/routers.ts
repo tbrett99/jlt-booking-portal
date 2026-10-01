@@ -2870,21 +2870,13 @@ export const appRouter = router({
       }),
     all: adminProcedure.query(async () => {
       const refunds = await getAllRefunds();
-      const enriched = await Promise.all(
-        refunds.map(async (r) => {
-          const booking = await getBookingById(r.bookingId);
-          return {
-            ...r,
-            clientBankName: decryptOptional(r.clientBankName),
-            clientSortCode: decryptOptional(r.clientSortCode),
-            clientAccountNumber: decryptOptional(r.clientAccountNumber),
-            clientName: booking?.clientName ?? null,
-            ptsRef: booking?.ptsRef ?? null,
-            topdogRef: booking?.topdogRef ?? null,
-          };
-        })
-      );
-      return enriched;
+      // getAllRefunds already retrieves booking information in a single batch.
+      // Re-reading every booking here makes the board slow enough to time out on
+      // a larger refund history, which then looks like an empty pipeline client-side.
+      // Bank details are unnecessary for the list and decrypting every stored
+      // value adds several seconds to the request. They remain available to an
+      // admin through byBookingAdmin when viewing an individual refund.
+      return refunds.map(({ clientBankName: _clientBankName, clientSortCode: _clientSortCode, clientAccountNumber: _clientAccountNumber, ...refund }) => refund);
     }),
     updatePipeline: adminProcedure
       .input(z.object({

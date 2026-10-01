@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { User, Calendar, ArrowRight, Clock, Search, MessageSquare, Trash2, Building2, PoundSterling } from "lucide-react";
+import { User, Calendar, ArrowRight, Clock, Search, MessageSquare, Trash2, Building2, PoundSterling, AlertCircle, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { differenceInDays } from "date-fns";
 import { Input } from "@/components/ui/input";
@@ -55,7 +55,7 @@ const REFUND_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function AdminRefundKanban() {
-  const { data: refunds, refetch } = trpc.refunds.all.useQuery(undefined, { staleTime: 60000 });
+  const { data: refunds, refetch, isError: isRefundsError, isLoading: isRefundsLoading } = trpc.refunds.all.useQuery(undefined, { staleTime: 60000 });
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const [search, setSearch] = useState("");
   const [supplierSearch, setSupplierSearch] = useState("");
@@ -166,6 +166,40 @@ export default function AdminRefundKanban() {
   const assignTo = (refundId: number, userId: number | null) => {
     updatePipeline.mutate({ refundId, assignedToId: userId });
   };
+
+  if (isRefundsLoading) {
+    return (
+      <div className="p-6">
+        <Card className="max-w-xl border-sky-200 bg-sky-50/60">
+          <CardContent className="flex items-center gap-3 p-5 text-sm text-sky-950">
+            <Loader2 className="h-5 w-5 animate-spin text-sky-700" />
+            <span>Loading Refund Pipeline…</span>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isRefundsError) {
+    return (
+      <div className="p-6">
+        <Card className="max-w-2xl border-rose-200 bg-rose-50/60" role="alert">
+          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-700" />
+              <div>
+                <h1 className="font-semibold text-rose-950">Refund Pipeline could not be loaded</h1>
+                <p className="mt-1 text-sm text-rose-900/80">No refund records have been removed. Please retry the data load.</p>
+              </div>
+            </div>
+            <Button variant="outline" className="shrink-0" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">

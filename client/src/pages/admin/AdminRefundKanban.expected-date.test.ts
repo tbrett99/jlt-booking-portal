@@ -25,4 +25,28 @@ describe("refund expected-date chase workflow", () => {
     expect(dbSource).toContain('data.pipelineStage === "Refund Processed"');
     expect(dbSource).toContain("updateData.expectedRefundDate = null");
   });
+
+  it("does not make a failed or pending refund request look like an empty pipeline", () => {
+    expect(source).toContain("isError: isRefundsError");
+    expect(source).toContain("isLoading: isRefundsLoading");
+    expect(source).toContain("Loading Refund Pipeline");
+    expect(source).toContain("Refund Pipeline could not be loaded");
+    expect(source).toContain("No refund records have been removed");
+  });
+
+  it("keeps the all-refunds endpoint batched instead of reloading every booking", () => {
+    const refundRouter = routerSource.slice(
+      routerSource.indexOf("refunds: router({"),
+      routerSource.indexOf("// ── Commission Claims")
+    );
+    const allRefundsProcedure = refundRouter.slice(
+      refundRouter.indexOf("all: adminProcedure.query"),
+      refundRouter.indexOf("updatePipeline: adminProcedure")
+    );
+
+    expect(allRefundsProcedure).toContain("return refunds.map");
+    expect(allRefundsProcedure).not.toContain("await Promise.all");
+    expect(allRefundsProcedure).not.toContain("getBookingById(r.bookingId)");
+    expect(allRefundsProcedure).not.toContain("decryptOptional");
+  });
 });

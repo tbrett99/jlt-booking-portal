@@ -20,6 +20,13 @@ const STAGE_COLOURS: Record<string, string> = {
 export default function AdminRefunds() {
   const [selectedRefund, setSelectedRefund] = useState<any | null>(null);
   const { data: refunds = [], isLoading } = trpc.refunds.all.useQuery(undefined, { staleTime: 60000 });
+  const { data: selectedBookingRefunds = [] } = trpc.refunds.byBookingAdmin.useQuery(
+    { bookingId: selectedRefund?.bookingId ?? 0 },
+    { enabled: !!selectedRefund }
+  );
+  const selectedRefundDetail = selectedRefund
+    ? { ...selectedRefund, ...(selectedBookingRefunds.find((refund) => refund.id === selectedRefund.id) ?? {}) }
+    : null;
 
   const pending = refunds.filter((r: any) => r.pipelineStage !== "Refund Processed");
   const processed = refunds.filter((r: any) => r.pipelineStage === "Refund Processed");
@@ -129,75 +136,75 @@ export default function AdminRefunds() {
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Refund Request — {selectedRefund?.clientName ?? `Booking #${selectedRefund?.bookingId}`}
+              Refund Request — {selectedRefundDetail?.clientName ?? `Booking #${selectedRefundDetail?.bookingId}`}
             </DialogTitle>
           </DialogHeader>
-          {selectedRefund && (
+          {selectedRefundDetail && (
             <div className="space-y-4 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-muted-foreground text-xs">Booking</p>
-                  <Link href={`/bookings/${selectedRefund.bookingId}?from=refunds`}>
+                  <Link href={`/bookings/${selectedRefundDetail.bookingId}?from=refunds`}>
                     <span className="font-medium hover:underline cursor-pointer" style={{ color: '#02E6D2' }}>
-                      #{selectedRefund.bookingId}
+                      #{selectedRefundDetail.bookingId}
                     </span>
                   </Link>
                 </div>
-                {selectedRefund.ptsRef && (
+                {selectedRefundDetail.ptsRef && (
                   <div>
                     <p className="text-muted-foreground text-xs">PTS Ref</p>
-                    <CopyableRef value={selectedRefund.ptsRef} label="PTS" />
+                    <CopyableRef value={selectedRefundDetail.ptsRef} label="PTS" />
                   </div>
                 )}
-                {selectedRefund.topdogRef && (
+                {selectedRefundDetail.topdogRef && (
                   <div>
                     <p className="text-muted-foreground text-xs">TD Ref</p>
-                    <CopyableRef value={selectedRefund.topdogRef} label="TD" />
+                    <CopyableRef value={selectedRefundDetail.topdogRef} label="TD" />
                   </div>
                 )}
                 <div>
                   <p className="text-muted-foreground text-xs">Type</p>
-                  <p className="font-medium capitalize">{selectedRefund.refundType}</p>
+                  <p className="font-medium capitalize">{selectedRefundDetail.refundType}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">Stage</p>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STAGE_COLOURS[selectedRefund.pipelineStage] ?? "bg-gray-100 text-gray-700"}`}>
-                    {selectedRefund.pipelineStage ?? "New"}
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STAGE_COLOURS[selectedRefundDetail.pipelineStage] ?? "bg-gray-100 text-gray-700"}`}>
+                    {selectedRefundDetail.pipelineStage ?? "New"}
                   </span>
                 </div>
-                {selectedRefund.assignedToName && (
+                {selectedRefundDetail.assignedToName && (
                   <div>
                     <p className="text-muted-foreground text-xs">Assigned To</p>
-                    <p className="font-medium">{selectedRefund.assignedToName}</p>
+                    <p className="font-medium">{selectedRefundDetail.assignedToName}</p>
                   </div>
                 )}
                 <div>
                   <p className="text-muted-foreground text-xs">Submitted</p>
-                  <p className="font-medium">{format(new Date(selectedRefund.createdAt), "dd MMM yyyy, HH:mm")}</p>
+                  <p className="font-medium">{format(new Date(selectedRefundDetail.createdAt), "dd MMM yyyy, HH:mm")}</p>
                 </div>
-                {selectedRefund.amountToClient && (
+                {selectedRefundDetail.amountToClient && (
                   <div>
                     <p className="text-muted-foreground text-xs">Amount to Client</p>
-                    <p className="font-medium">£{Number(selectedRefund.amountToClient).toFixed(2)}</p>
+                    <p className="font-medium">£{Number(selectedRefundDetail.amountToClient).toFixed(2)}</p>
                   </div>
                 )}
               </div>
 
               <div>
                 <p className="text-muted-foreground text-xs mb-1">Refund Reason</p>
-                <p className="p-3 rounded-lg bg-muted text-foreground">{selectedRefund.refundReason}</p>
+                <p className="p-3 rounded-lg bg-muted text-foreground">{selectedRefundDetail.refundReason}</p>
               </div>
 
               <div>
                 <p className="text-muted-foreground text-xs mb-1">Steps Taken</p>
-                <p className="p-3 rounded-lg bg-muted text-foreground">{selectedRefund.stepsTaken}</p>
+                <p className="p-3 rounded-lg bg-muted text-foreground">{selectedRefundDetail.stepsTaken}</p>
               </div>
 
-              {selectedRefund.suppliers?.length > 0 && (
+              {selectedRefundDetail.suppliers?.length > 0 && (
                 <div>
                   <p className="text-muted-foreground text-xs mb-2">Supplier Refunds</p>
                   <div className="space-y-2">
-                    {selectedRefund.suppliers.map((s: any, i: number) => (
+                    {selectedRefundDetail.suppliers.map((s: any, i: number) => (
                       <div key={i} className="flex justify-between p-2 rounded border">
                         <span>{s.supplierName}</span>
                         <span className="font-medium">£{Number(s.amountDue).toFixed(2)}</span>
@@ -207,7 +214,7 @@ export default function AdminRefunds() {
                 </div>
               )}
 
-              {selectedRefund.clientBankName && (
+              {selectedRefundDetail.clientBankName && (
                 <div className="p-3 rounded-lg border" style={{ background: '#f0fdf4', borderColor: '#bbf7d0' }}>
                   <div className="flex items-center gap-2 mb-2">
                     <Lock size={14} style={{ color: '#059669' }} />
@@ -216,22 +223,22 @@ export default function AdminRefunds() {
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <p className="text-muted-foreground">Account Name</p>
-                      <p className="font-medium">{selectedRefund.clientBankName}</p>
+                      <p className="font-medium">{selectedRefundDetail.clientBankName}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Sort Code</p>
-                      <p className="font-medium">{selectedRefund.clientSortCode}</p>
+                      <p className="font-medium">{selectedRefundDetail.clientSortCode}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Account Number</p>
-                      <p className="font-medium">{selectedRefund.clientAccountNumber}</p>
+                      <p className="font-medium">{selectedRefundDetail.clientAccountNumber}</p>
                     </div>
                   </div>
                 </div>
               )}
 
               <div className="flex gap-2 pt-2">
-                <Link href={`/bookings/${selectedRefund.bookingId}?from=refunds`} className="flex-1">
+                <Link href={`/bookings/${selectedRefundDetail.bookingId}?from=refunds`} className="flex-1">
                   <Button variant="outline" size="sm" className="w-full gap-1">
                     <ExternalLink size={12} />View Booking
                   </Button>
