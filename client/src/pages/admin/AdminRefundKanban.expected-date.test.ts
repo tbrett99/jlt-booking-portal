@@ -48,8 +48,10 @@ describe("refund expected-date chase workflow", () => {
     expect(allRefundsProcedure).not.toContain("await Promise.all");
     expect(allRefundsProcedure).not.toContain("getBookingById(r.bookingId)");
     expect(allRefundsProcedure).not.toContain("decryptOptional");
-    expect(dbSource).toContain("operational list fields here");
-    expect(dbSource).toContain("expectedRefundDate: refunds.expectedRefundDate");
-    expect(dbSource).not.toContain("const rows = await db.select().from(refunds).orderBy(desc(refunds.createdAt));");
+    expect(dbSource).toContain("one native, read-only MySQL query");
+    expect(dbSource).toContain("FROM refunds AS r");
+    expect(dbSource).toContain("LEFT JOIN refund_suppliers AS supplier");
+    expect(dbSource).toContain("r.expectedRefundDate");
+    expect(dbSource).not.toContain("decryptOptional(r.clientBankName)");
   });
 });

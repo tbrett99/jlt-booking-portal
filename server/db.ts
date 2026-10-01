@@ -982,54 +982,89 @@ export async function getRefundsByBooking(bookingId: number) {
   return result;
 }
 
+type RefundPipelineListItem = {
+  id: number;
+  bookingId: number;
+  refundType: "supplier" | "customer" | "both";
+  amountToClient: string | number | null;
+  refundReason: string;
+  pipelineStage: "New Refund Request" | "Query" | "Acknowledged by Supplier" | "Refund Sent to PTS" | "Refund Received in JLT" | "Refund Processed";
+  assignedToId: number | null;
+  expectedRefundDate: Date | null;
+  status: "pending" | "processing" | "completed";
+  createdAt: Date;
+  updatedAt: Date;
+  clientName: string | null;
+  ptsRef: string | null;
+  topdogRef: string | null;
+  assignedToName: string | null;
+  suppliers: { supplierName: string; amountDue: number }[];
+};
+
 export async function getAllRefunds() {
-  const db = await getDb();
-  if (!db) return [];
-  // The refund board must stay responsive as refund history grows. Select only
-  // operational list fields here: encrypted bank details and full request
-  // narrative are loaded only through the individual admin detail endpoint.
-  const rows = await db
-    .select({
-      id: refunds.id,
-      bookingId: refunds.bookingId,
-      refundType: refunds.refundType,
-      amountToClient: refunds.amountToClient,
-      refundReason: refunds.refundReason,
-      pipelineStage: refunds.pipelineStage,
-      assignedToId: refunds.assignedToId,
-      expectedRefundDate: refunds.expectedRefundDate,
-      status: refunds.status,
-      createdAt: refunds.createdAt,
-      updatedAt: refunds.updatedAt,
-      clientName: bookings.clientName,
-      ptsRef: bookings.ptsRef,
-      topdogRef: bookings.topdogRef,
-    })
-    .from(refunds)
-    .leftJoin(bookings, eq(refunds.bookingId, bookings.id))
-    .orderBy(desc(refunds.createdAt));
-  const assigneeIds = Array.from(new Set(rows.map((r) => r.assignedToId).filter(Boolean) as number[]));
-  const refundIds = rows.map((r) => r.id);
-  const assigneeRows = assigneeIds.length > 0
-    ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, assigneeIds))
-    : [];
-  const supplierRows = refundIds.length > 0
-    ? await db.select().from(refundSuppliers).where(inArray(refundSuppliers.refundId, refundIds))
-    : [];
-  const assigneeMap = new Map(assigneeRows.map((u) => [u.id, u.name]));
-  const suppliersByRefund = new Map<number, { supplierName: string; amountDue: number }[]>();
-  for (const s of supplierRows) {
-    if (!suppliersByRefund.has(s.refundId)) suppliersByRefund.set(s.refundId, []);
-    suppliersByRefund.get(s.refundId)!.push({ supplierName: s.supplierName, amountDue: Number(s.amountDue) });
+  // Run the board read as one native, read-only MySQL query. This bypasses the
+  // production ORM path that was hanging while resolving the complete refund
+  // history. It deliberately carries only operational board fields; encrypted
+  // bank details remain in the admin detail query for an individual booking.
+  await getDb();
+  if (!_pool) return [];
+
+  const [rows] = await _pool.query<mysql.RowDataPacket[]>(`
+    SELECT
+      r.id,
+      r.bookingId,
+      r.refundType,
+      r.amountToClient,
+      r.refundReason,
+      r.pipelineStage,
+      r.assignedToId,
+      r.expectedRefundDate,
+      r.status,
+      r.createdAt,
+      r.updatedAt,
+      b.clientName,
+      b.ptsRef,
+      b.topdogRef,
+      assignee.name AS assignedToName,
+      supplier.supplierName,
+      supplier.amountDue
+    FROM refunds AS r
+    LEFT JOIN bookings AS b ON b.id = r.bookingId
+    LEFT JOIN users AS assignee ON assignee.id = r.assignedToId
+    LEFT JOIN refund_suppliers AS supplier ON supplier.refundId = r.id
+    ORDER BY r.createdAt DESC, supplier.id ASC
+  `);
+
+  const refundsById = new Map<number, RefundPipelineListItem>();
+  for (const row of rows) {
+    const refundId = Number(row.id);
+    let refund = refundsById.get(refundId);
+    if (!refund) {
+      refund = {
+        id: refundId,
+        bookingId: Number(row.bookingId),
+        refundType: row.refundType as RefundPipelineListItem["refundType"],
+        amountToClient: row.amountToClient == null ? null : (row.amountToClient as string | number),
+        refundReason: String(row.refundReason),
+        pipelineStage: row.pipelineStage as RefundPipelineListItem["pipelineStage"],
+        assignedToId: row.assignedToId === null ? null : Number(row.assignedToId),
+        expectedRefundDate: row.expectedRefundDate == null ? null : new Date(row.expectedRefundDate as string | Date),
+        status: row.status as RefundPipelineListItem["status"],
+        createdAt: new Date(row.createdAt as string | Date),
+        updatedAt: new Date(row.updatedAt as string | Date),
+        clientName: row.clientName == null ? null : String(row.clientName),
+        ptsRef: row.ptsRef == null ? null : String(row.ptsRef),
+        topdogRef: row.topdogRef == null ? null : String(row.topdogRef),
+        assignedToName: row.assignedToName == null ? null : String(row.assignedToName),
+        suppliers: [],
+      };
+      refundsById.set(refundId, refund);
+    }
+    if (row.supplierName !== null && row.supplierName !== undefined) {
+      refund.suppliers.push({ supplierName: String(row.supplierName), amountDue: Number(row.amountDue) });
+    }
   }
-  return rows.map((r) => ({
-    ...r,
-    clientName: r.clientName ?? null,
-    ptsRef: r.ptsRef ?? null,
-    topdogRef: r.topdogRef ?? null,
-    assignedToName: r.assignedToId ? (assigneeMap.get(r.assignedToId) ?? null) : null,
-    suppliers: suppliersByRefund.get(r.id) ?? [],
-  }));
+  return Array.from(refundsById.values());
 }
 
 export async function updateRefundPipeline(refundId: number, data: {
