@@ -486,7 +486,10 @@ export const academyRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       if (input.id) {
+        const [module] = await db.select().from(academyModules).where(and(eq(academyModules.id, input.id), eq(academyModules.courseId, input.courseId))).limit(1);
+        if (!module) throw new TRPCError({ code: "NOT_FOUND", message: "Module not found" });
         await db.update(academyModules).set({ title: input.title, summary: normaliseOptionalText(input.summary) }).where(and(eq(academyModules.id, input.id), eq(academyModules.courseId, input.courseId)));
+        await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "module_updated", summary: `Updated module: ${input.title}` });
         return { id: input.id };
       }
       const existing = await db.select().from(academyModules).where(eq(academyModules.courseId, input.courseId)).orderBy(desc(academyModules.sortOrder)).limit(1);
@@ -520,7 +523,10 @@ export const academyRouter = router({
       const attachmentUrl = normaliseOptionalText(input.attachmentUrl);
       const payload = { title: input.title, summary: normaliseOptionalText(input.summary), contentHtml: sanitiseLessonHtml(input.contentHtml), videoUrl, attachmentUrl, attachmentKey: normaliseOptionalText(input.attachmentKey), attachmentName: normaliseOptionalText(input.attachmentName), estimatedMinutes: input.estimatedMinutes, isRequired: input.isRequired, requiresAcknowledgement: input.requiresAcknowledgement, requiresAssessment: input.requiresAssessment, assessmentPassMark: input.assessmentPassMark };
       if (input.id) {
+        const [lesson] = await db.select().from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);
+        if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
         await db.update(academyLessons).set(payload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
+        await addAudit({ courseId: module.courseId, actorId: ctx.user.id, action: "lesson_updated", summary: `Updated lesson: ${input.title}` });
         return { id: input.id };
       }
       const existing = await db.select().from(academyLessons).where(eq(academyLessons.moduleId, input.moduleId)).orderBy(desc(academyLessons.sortOrder)).limit(1);

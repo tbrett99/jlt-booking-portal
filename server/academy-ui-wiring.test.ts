@@ -5,7 +5,10 @@ import { describe, expect, it } from "vitest";
 const app = readFileSync(resolve(process.cwd(), "client/src/App.tsx"), "utf8");
 const navigation = readFileSync(resolve(process.cwd(), "client/src/components/PortalLayout.tsx"), "utf8");
 const agentHome = readFileSync(resolve(process.cwd(), "client/src/pages/academy/AcademyHome.tsx"), "utf8");
+const agentCourse = readFileSync(resolve(process.cwd(), "client/src/pages/academy/AcademyCourse.tsx"), "utf8");
 const manager = readFileSync(resolve(process.cwd(), "client/src/pages/admin/AdminAcademy.tsx"), "utf8");
+const academyRouter = readFileSync(resolve(process.cwd(), "server/academy-router.ts"), "utf8");
+const richEditor = readFileSync(resolve(process.cwd(), "client/src/components/RichEmailEditor.tsx"), "utf8");
 
 describe("JLT Academy interface wiring", () => {
   it("exposes Academy for agents and the manager for admins", () => {
@@ -26,5 +29,21 @@ describe("JLT Academy interface wiring", () => {
     expect(manager).toContain("Knowledge-check questions");
     expect(manager).toContain("Grant Academy");
     expect(manager).toContain("Accredit");
+  });
+
+  it("lets staff amend module and lesson names with an audit trail", () => {
+    expect(manager).toContain("Edit module name or summary");
+    expect(manager).toContain("Module updated");
+    expect(manager).toContain("Edit lesson name and content");
+    expect(academyRouter).toContain('action: "module_updated"');
+    expect(academyRouter).toContain('action: "lesson_updated"');
+  });
+
+  it("keeps useful Academy paste formatting while filtering unsafe clipboard markup", () => {
+    expect(manager).toContain("preserveClipboardFormatting");
+    expect(richEditor).toContain("TableKit.configure");
+    expect(richEditor).toContain("transformPastedHTML: normaliseClipboardHtml");
+    expect(richEditor).toContain("script, style, iframe, object, embed, form");
+    expect(agentCourse).toContain("prose-table:border-collapse");
   });
 });

@@ -15,6 +15,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
+import { TableKit } from "@tiptap/extension-table";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -180,9 +181,38 @@ interface RichEmailEditorProps {
   onChange: (html: string) => void;
   placeholder?: string;
   className?: string;
+  /** Keeps useful document formatting when staff paste into long-form Academy lessons. */
+  preserveClipboardFormatting?: boolean;
 }
 
-export function RichEmailEditor({ value, onChange, placeholder = "Compose your email…", className }: RichEmailEditorProps) {
+/**
+ * Clipboard HTML arrives from browsers, Google Docs and Word with extra editor
+ * wrappers. Keep semantic writing structure (headings, emphasis, lists, links
+ * and tables) but remove executable or document-shell elements before TipTap
+ * parses it. TipTap then converts it to the editor's own safe document model.
+ */
+function normaliseClipboardHtml(html: string) {
+  if (typeof document === "undefined") return html;
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  template.content.querySelectorAll("script, style, iframe, object, embed, form, input, button, svg, math, meta, link, base").forEach((element) => element.remove());
+  template.content.querySelectorAll<HTMLElement>("*").forEach((element) => {
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value.trim();
+      if (name.startsWith("on") || name === "id" || name === "class" || name.startsWith("data-")) {
+        element.removeAttribute(attribute.name);
+        continue;
+      }
+      if ((name === "href" || name === "src") && /^(?:javascript|data|vbscript):/i.test(value)) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  });
+  return template.innerHTML;
+}
+
+export function RichEmailEditor({ value, onChange, placeholder = "Compose your email…", className, preserveClipboardFormatting = false }: RichEmailEditorProps) {
   const [imageUploading, setImageUploading] = useState(false);
   const uploadImageMutation = trpc.crm.emailBranding.uploadImage.useMutation();
   const [linkDialog, setLinkDialog] = useState(false);
@@ -214,6 +244,7 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       Color,
       HorizontalRule,
       ButtonBlock,
+      ...(preserveClipboardFormatting ? [TableKit.configure({ table: { HTMLAttributes: { class: "academy-clipboard-table" } } })] : []),
       Link.configure({ openOnClick: false, HTMLAttributes: { class: "text-blue-600 underline" } }),
       // Images: responsive by default — max-width 100%, height auto
       Image.configure({
@@ -225,6 +256,9 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       Placeholder.configure({ placeholder }),
     ],
     content: value,
+    editorProps: preserveClipboardFormatting ? {
+      transformPastedHTML: normaliseClipboardHtml,
+    } : undefined,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
     },
@@ -581,7 +615,7 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       {/* Editor area */}
       <EditorContent
         editor={editor}
-        className="prose prose-sm max-w-none p-4 min-h-[300px] focus-within:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[280px] [&_hr]:border-t [&_hr]:border-border [&_hr]:my-4 [&_img]:max-w-full [&_img]:h-auto"
+        className="prose prose-sm max-w-none p-4 min-h-[300px] focus-within:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[280px] [&_hr]:border-t [&_hr]:border-border [&_hr]:my-4 [&_img]:max-w-full [&_img]:h-auto [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:p-2 [&_th]:text-left [&_td]:border [&_td]:border-border [&_td]:p-2"
       />
 
       {/* Link dialog */}
