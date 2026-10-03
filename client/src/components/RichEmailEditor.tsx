@@ -16,6 +16,7 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import { TableKit } from "@tiptap/extension-table";
+import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -297,6 +298,25 @@ export function plainTextToLessonHtml(text: string) {
   return blocks.join("") || `<p>${escapeLessonHtml(text.trim())}</p>`;
 }
 
+export function lessonHtmlToPlainText(html: string) {
+  if (typeof document === "undefined") return html.replace(/<[^>]+>/g, " ");
+  const container = document.createElement("div");
+  container.innerHTML = html;
+  container.querySelectorAll("br").forEach((element) => element.replaceWith("\n"));
+  container.querySelectorAll("p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, table, tr").forEach((element) => {
+    element.before("\n");
+    element.after("\n");
+  });
+  return (container.textContent ?? "").replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function insertLessonHtmlIntoView(view: any, html: string) {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+  const slice = ProseMirrorDOMParser.fromSchema(view.state.schema).parseSlice(container);
+  view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView());
+}
+
 export function RichEmailEditor({ value, onChange, placeholder = "Compose your email…", className, preserveClipboardFormatting = false }: RichEmailEditorProps) {
   const [imageUploading, setImageUploading] = useState(false);
   const uploadImageMutation = trpc.crm.emailBranding.uploadImage.useMutation();
@@ -343,6 +363,14 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
     content: value,
     editorProps: preserveClipboardFormatting ? {
       transformPastedHTML: normaliseClipboardHtml,
+      handlePaste: (view, event) => {
+        const html = event.clipboardData?.getData("text/html").trim() ?? "";
+        const text = event.clipboardData?.getData("text/plain").trim() ?? "";
+        if (!text || (html && hasMeaningfulClipboardFormatting(html))) return false;
+        event.preventDefault();
+        insertLessonHtmlIntoView(view, plainTextToLessonHtml(text));
+        return true;
+      },
     } : undefined,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
@@ -458,18 +486,6 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       `<span style="background:#e0fdf4;color:#0f766e;border-radius:3px;padding:1px 4px;font-family:monospace;font-size:0.9em;">${token}</span>`
     ).run();
     setMergeTagOpen(false);
-  }
-
-  function handleLessonPaste(event: React.ClipboardEvent<HTMLDivElement>) {
-    if (!preserveClipboardFormatting) return;
-    const html = event.clipboardData.getData("text/html").trim();
-    const text = event.clipboardData.getData("text/plain").trim();
-    // Rich sources retain their semantic markup through TipTap's normal paste
-    // flow. Smart-format text-only sources, which otherwise arrive as a long
-    // sequence of visually identical lines.
-    if (!text || (html && hasMeaningfulClipboardFormatting(html))) return;
-    event.preventDefault();
-    editor.chain().focus().insertContent(plainTextToLessonHtml(text)).run();
   }
 
   const ToolbarBtn = ({ active, onClick, title, children }: { active?: boolean; onClick: () => void; title: string; children: React.ReactNode }) => (
@@ -712,7 +728,6 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       {/* Editor area */}
       <EditorContent
         editor={editor}
-        onPaste={handleLessonPaste}
         className="prose prose-sm max-w-none p-4 min-h-[300px] focus-within:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[280px] [&_hr]:border-t [&_hr]:border-border [&_hr]:my-4 [&_img]:max-w-full [&_img]:h-auto [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:p-2 [&_th]:text-left [&_td]:border [&_td]:border-border [&_td]:p-2"
       />
 

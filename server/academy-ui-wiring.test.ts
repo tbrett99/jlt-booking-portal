@@ -45,6 +45,8 @@ describe("JLT Academy interface wiring", () => {
     expect(richEditor).toContain("TableKit.configure");
     expect(richEditor).toContain("transformPastedHTML: normaliseClipboardHtml");
     expect(richEditor).toContain("plainTextToLessonHtml");
+    expect(richEditor).toContain("handlePaste: (view, event)");
+    expect(richEditor).toContain("insertLessonHtmlIntoView");
     expect(richEditor).toContain("script, style, iframe, object, embed, form");
     expect(agentCourse).toContain("prose-table:border-collapse");
   });
