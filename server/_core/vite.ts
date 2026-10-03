@@ -31,7 +31,11 @@ const SITE_NAME = "The JLT Group";
 const DEFAULT_DESCRIPTION = "Meet independent JLT travel experts and discover a more personal way to arrange your next trip.";
 
 function isConsumerRequest(req: Request) {
-  return PUBLIC_HOSTS.has(req.hostname.toLowerCase()) || req.path === "/consumer" || req.path.startsWith("/consumer/");
+  // Express mounts the catch-all middleware under `*`, where req.path can be
+  // reduced to `/`. Use the original request URL so the Portal preview aliases
+  // always take the public SSR path as well as the live www host.
+  const requestPath = req.originalUrl.split("?")[0] || "/";
+  return PUBLIC_HOSTS.has(req.hostname.toLowerCase()) || requestPath === "/consumer" || requestPath.startsWith("/consumer/");
 }
 
 function escapeHtml(value: string) {
