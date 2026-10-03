@@ -116,6 +116,9 @@ const WeeklyDigestAdmin = lazy(() => import("./pages/community/WeeklyDigestAdmin
 const SuperAdminDashboard = lazy(() => import("./pages/admin/SuperAdminDashboard"));
 const Competitions = lazy(() => import("./pages/Competitions"));
 const AdminCompetitions = lazy(() => import("./pages/admin/AdminCompetitions"));
+const AcademyHome = lazy(() => import("./pages/academy/AcademyHome"));
+const AcademyCourse = lazy(() => import("./pages/academy/AcademyCourse"));
+const AdminAcademy = lazy(() => import("./pages/admin/AdminAcademy"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -323,6 +326,8 @@ function AuthRouter() {
           <Route path="/events" component={AgentCalendar} />
           <Route path="/roadmap" component={Roadmap} />
           <Route path="/competitions" component={Competitions} />
+          <Route path="/academy" component={AcademyHome} />
+          <Route path="/academy/course/:enrollmentId">{(params) => <AcademyCourse enrollmentId={params.enrollmentId} />}</Route>
           {/* Terms & Policies — accessible to logged-in agents */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}
@@ -378,6 +383,8 @@ function AuthRouter() {
           <Route path="/events" component={AgentCalendar} />
           <Route path="/roadmap" component={Roadmap} />
           <Route path="/competitions" component={Competitions} />
+          <Route path="/academy" component={AcademyHome} />
+          <Route path="/academy/course/:enrollmentId">{(params) => <AcademyCourse enrollmentId={params.enrollmentId} />}</Route>
           {/* Terms & Policies — accessible to admins in agent view */}
           <Route path="/terms" component={TermsAndPolicies} />
           {/* Public recruitment pages — accessible even when logged in */}
@@ -467,6 +474,7 @@ function AuthRouter() {
         <Route path="/roadmap" component={Roadmap} />
         <Route path="/competitions" component={Competitions} />
         <Route path="/admin/competitions" component={AdminCompetitions} />
+        <Route path="/admin/academy" component={AdminAcademy} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/my-profile" component={MyProfile} />
         <Route path="/my-public-profile" component={MyPublicProfile} />

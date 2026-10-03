@@ -82,6 +82,7 @@ import { storagePut } from "./storage";
 import { sendDirectEmail } from "./email";
 import { enqueueCampaignRecipients } from "./resend-email";
 import { createInAppNotification } from "./db";
+import { grantAcademyAccess } from "./academy-router";
 import {
   listAgentsWithCrm,
   getAgentCrmProfile,
@@ -2520,6 +2521,7 @@ export const crmRouter = router({
           .select({
             id: adminOnboardingChecklist.id,
             trainingHubLogin: adminOnboardingChecklist.trainingHubLogin,
+            academyAccessApproved: adminOnboardingChecklist.academyAccessApproved,
             jltEmailSetup: adminOnboardingChecklist.jltEmailSetup,
             idDocsReviewed: adminOnboardingChecklist.idDocsReviewed,
             contractReviewed: adminOnboardingChecklist.contractReviewed,
@@ -2542,6 +2544,7 @@ export const crmRouter = router({
       .input(z.object({
         userId: z.number().int(),
         trainingHubLogin: z.boolean().optional(),
+        academyAccessApproved: z.boolean().optional(),
         jltEmailSetup: z.boolean().optional(),
         idDocsReviewed: z.boolean().optional(),
         contractReviewed: z.boolean().optional(),
@@ -2570,6 +2573,7 @@ export const crmRouter = router({
           await db.insert(adminOnboardingChecklist).values({
             userId,
             trainingHubLogin: fields.trainingHubLogin ?? false,
+            academyAccessApproved: fields.academyAccessApproved ?? false,
             jltEmailSetup: fields.jltEmailSetup ?? false,
             idDocsReviewed: fields.idDocsReviewed ?? false,
             contractReviewed: fields.contractReviewed ?? false,
@@ -2578,6 +2582,12 @@ export const crmRouter = router({
             ddSubscriptionCreated: fields.ddSubscriptionCreated ?? false,
             updatedById: ctx.user.id,
           });
+        }
+        // An explicit staff Academy approval replaces the old external Training
+        // Hub login task. It grants the agent portal-native Academy access and
+        // assigns every published core Academy course.
+        if (fields.academyAccessApproved === true) {
+          await grantAcademyAccess({ agentId: userId, actorId: ctx.user.id });
         }
         return { success: true };
       }),

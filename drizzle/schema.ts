@@ -891,6 +891,9 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   suspensionReason: varchar("suspensionReason", { length: 255 }),             // e.g. 'non_payment', 'manual'
   cancelChecklist: json("cancelChecklist"),                                 // JSON array of ticked offboarding items
   trainingStage: varchar("trainingStage", { length: 50 }),                   // Training | Agent Accelerator | Accredited
+  // Academy progression dates make the 8-week Accredited approval gate auditable.
+  academyAcceleratorStartedAt: timestamp("academyAcceleratorStartedAt"),
+  academyAccreditedAt: timestamp("academyAccreditedAt"),
   // Emergency contact (collected during onboarding)
   emergencyContactName: varchar("emergencyContactName", { length: 255 }),
   emergencyContactPhone: varchar("emergencyContactPhone", { length: 30 }),
@@ -1473,6 +1476,8 @@ export const adminOnboardingChecklist = mysqlTable("admin_onboarding_checklist",
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),                                  // FK → users.id (the agent)
   trainingHubLogin: boolean("trainingHubLogin").default(false).notNull(),
+  // Replaces the former external Training Hub hand-off with a Portal Academy approval.
+  academyAccessApproved: boolean("academyAccessApproved").default(false).notNull(),
   jltEmailSetup: boolean("jltEmailSetup").default(false).notNull(),
   idDocsReviewed: boolean("idDocsReviewed").default(false).notNull(),
   contractReviewed: boolean("contractReviewed").default(false).notNull(),
@@ -1484,6 +1489,166 @@ export const adminOnboardingChecklist = mysqlTable("admin_onboarding_checklist",
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type AdminOnboardingChecklist = typeof adminOnboardingChecklist.$inferSelect;
+
+// ─── JLT Academy ────────────────────────────────────────────────────────────
+// Learning content, agent access and progress deliberately live independently
+// from Community posts and the legacy Training Hub. This keeps course history,
+// quiz answer keys and CRM progression private and auditable.
+
+export const academyCourses = mysqlTable("academy_courses", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  summary: text("summary"),
+  coverImageUrl: text("coverImageUrl"),
+  status: mysqlEnum("status", ["draft", "published", "archived"]).default("draft").notNull(),
+  // Exactly one course is normally marked as JLT Academy. Completing it moves
+  // the agent to Agent Accelerator; ordinary future courses do not change stage.
+  isCoreAcademy: boolean("isCoreAcademy").default(false).notNull(),
+  estimatedMinutes: int("estimatedMinutes").default(0).notNull(),
+  createdById: int("createdById").notNull(),
+  updatedById: int("updatedById").notNull(),
+  publishedAt: timestamp("publishedAt"),
+  archivedAt: timestamp("archivedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("academy_courses_status_core_idx").on(table.status, table.isCoreAcademy),
+]);
+export type AcademyCourse = typeof academyCourses.$inferSelect;
+
+export const academyModules = mysqlTable("academy_modules", {
+  id: int("id").autoincrement().primaryKey(),
+  courseId: int("courseId").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  summary: text("summary"),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("academy_modules_course_sort_idx").on(table.courseId, table.sortOrder),
+]);
+export type AcademyModule = typeof academyModules.$inferSelect;
+
+export const academyLessons = mysqlTable("academy_lessons", {
+  id: int("id").autoincrement().primaryKey(),
+  moduleId: int("moduleId").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  summary: text("summary"),
+  contentHtml: longtext("contentHtml"),
+  videoUrl: varchar("videoUrl", { length: 1200 }),
+  attachmentUrl: text("attachmentUrl"),
+  attachmentKey: varchar("attachmentKey", { length: 600 }),
+  attachmentName: varchar("attachmentName", { length: 255 }),
+  estimatedMinutes: int("estimatedMinutes").default(5).notNull(),
+  isRequired: boolean("isRequired").default(true).notNull(),
+  requiresAcknowledgement: boolean("requiresAcknowledgement").default(false).notNull(),
+  requiresAssessment: boolean("requiresAssessment").default(false).notNull(),
+  assessmentPassMark: int("assessmentPassMark").default(80).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("academy_lessons_module_sort_idx").on(table.moduleId, table.sortOrder),
+]);
+export type AcademyLesson = typeof academyLessons.$inferSelect;
+
+export const academyQuestions = mysqlTable("academy_questions", {
+  id: int("id").autoincrement().primaryKey(),
+  lessonId: int("lessonId").notNull(),
+  prompt: text("prompt").notNull(),
+  answerOptions: json("answerOptions").notNull(), // string[]; correct answer never leaves agent APIs
+  correctAnswerIndex: int("correctAnswerIndex").notNull(),
+  explanation: text("explanation"),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("academy_questions_lesson_sort_idx").on(table.lessonId, table.sortOrder),
+]);
+export type AcademyQuestion = typeof academyQuestions.$inferSelect;
+
+export const academyAccess = mysqlTable("academy_access", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: int("agentId").notNull(),
+  status: mysqlEnum("status", ["active", "revoked"]).default("active").notNull(),
+  grantedById: int("grantedById").notNull(),
+  grantedAt: timestamp("grantedAt").defaultNow().notNull(),
+  revokedById: int("revokedById"),
+  revokedAt: timestamp("revokedAt"),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("academy_access_agent_unique").on(table.agentId),
+  index("academy_access_status_idx").on(table.status),
+]);
+export type AcademyAccess = typeof academyAccess.$inferSelect;
+
+export const academyEnrollments = mysqlTable("academy_enrollments", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: int("agentId").notNull(),
+  courseId: int("courseId").notNull(),
+  status: mysqlEnum("status", ["assigned", "in_progress", "completed", "waived"]).default("assigned").notNull(),
+  enrolledById: int("enrolledById").notNull(),
+  enrolledAt: timestamp("enrolledAt").defaultNow().notNull(),
+  dueDate: timestamp("dueDate"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  lastReminderAt: timestamp("lastReminderAt"),
+  completionOutcomeAppliedAt: timestamp("completionOutcomeAppliedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("academy_enrollments_agent_course_unique").on(table.agentId, table.courseId),
+  index("academy_enrollments_agent_status_idx").on(table.agentId, table.status),
+  index("academy_enrollments_course_status_due_idx").on(table.courseId, table.status, table.dueDate),
+]);
+export type AcademyEnrollment = typeof academyEnrollments.$inferSelect;
+
+export const academyLessonProgress = mysqlTable("academy_lesson_progress", {
+  id: int("id").autoincrement().primaryKey(),
+  enrollmentId: int("enrollmentId").notNull(),
+  lessonId: int("lessonId").notNull(),
+  startedAt: timestamp("startedAt"),
+  lastViewedAt: timestamp("lastViewedAt"),
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("academy_progress_enrollment_lesson_unique").on(table.enrollmentId, table.lessonId),
+  index("academy_progress_lesson_idx").on(table.lessonId),
+]);
+export type AcademyLessonProgress = typeof academyLessonProgress.$inferSelect;
+
+export const academyAssessmentAttempts = mysqlTable("academy_assessment_attempts", {
+  id: int("id").autoincrement().primaryKey(),
+  enrollmentId: int("enrollmentId").notNull(),
+  lessonId: int("lessonId").notNull(),
+  score: int("score").notNull(),
+  passed: boolean("passed").notNull(),
+  answers: json("answers").notNull(), // { questionId, selectedIndex }[] for staff audit only
+  takenAt: timestamp("takenAt").defaultNow().notNull(),
+}, (table) => [
+  index("academy_attempts_enrollment_lesson_idx").on(table.enrollmentId, table.lessonId),
+]);
+export type AcademyAssessmentAttempt = typeof academyAssessmentAttempts.$inferSelect;
+
+export const academyAuditLog = mysqlTable("academy_audit_log", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: int("agentId"),
+  courseId: int("courseId"),
+  enrollmentId: int("enrollmentId"),
+  actorId: int("actorId"),
+  action: varchar("action", { length: 100 }).notNull(),
+  summary: text("summary").notNull(),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("academy_audit_agent_created_idx").on(table.agentId, table.createdAt),
+  index("academy_audit_course_created_idx").on(table.courseId, table.createdAt),
+]);
+export type AcademyAuditLog = typeof academyAuditLog.$inferSelect;
 
 // ─── Agent CRM Notes ──────────────────────────────────────────────────────────
 // Timestamped contact log / general notes on an agent's CRM profile

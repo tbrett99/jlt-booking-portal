@@ -2806,7 +2806,7 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
 // ─── Admin Onboarding Checklist Tab ──────────────────────────────────────────
 
 const ONBOARDING_STEPS = [
-  { key: "trainingHubLogin" as const, label: "Create Training Hub Login", description: "Set up the agent's account on the training platform and send them their login credentials." },
+  { key: "academyAccessApproved" as const, label: "Approve JLT Academy Access", description: "Confirm onboarding is complete, then give the agent access to JLT Academy and assign the core pathway." },
   { key: "jltEmailSetup" as const, label: "Set Up JLT Email", description: "Create the @thejltgroup.co.uk email address based on the agent's preference and configure forwarding." },
   { key: "idDocsReviewed" as const, label: "Review ID Documents", description: "Verify the agent's photo ID and proof of address uploaded during onboarding." },
   { key: "contractReviewed" as const, label: "Review Contract", description: "Confirm the signed membership contract is complete and all details are correct." },
@@ -2852,7 +2852,7 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, open, onRe
   });
 
   const [localState, setLocalState] = useState<Record<ChecklistKey, boolean>>({
-    trainingHubLogin: false,
+    academyAccessApproved: false,
     jltEmailSetup: false,
     idDocsReviewed: false,
     contractReviewed: false,
@@ -2868,7 +2868,7 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, open, onRe
       // Auto-tick ddSubscriptionCreated if a subscription already exists in GC
       const subExists = !!(ddStatus as any)?.subscription;
       setLocalState({
-        trainingHubLogin: checklist?.trainingHubLogin ?? false,
+        academyAccessApproved: checklist?.academyAccessApproved ?? false,
         jltEmailSetup: checklist?.jltEmailSetup ?? false,
         idDocsReviewed: checklist?.idDocsReviewed ?? false,
         contractReviewed: checklist?.contractReviewed ?? false,

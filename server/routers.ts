@@ -155,6 +155,7 @@ import { roadmapRouter } from "./roadmap-router";
 import { fnfRouter } from "./fnf-router";
 import { competitionsRouter } from "./competitions-router";
 import { consumerSiteRouter } from "./consumer-site-router";
+import { academyRouter } from "./academy-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -5077,6 +5078,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
   dashboard: dashboardRouter,
   suppliers: suppliersRouter,
   community: communityRouter,
+  academy: academyRouter,
   superAdmin: superAdminRouter,
   roadmap: roadmapRouter,
   fnf: fnfRouter,

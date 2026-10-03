@@ -1037,6 +1037,13 @@
       "when": 1790862421804,
       "tag": "0147_heavy_tusk",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "5",
+      "when": 1791026226514,
+      "tag": "0148_conscious_wasp",
+      "breakpoints": true
     }
   ]
 }
