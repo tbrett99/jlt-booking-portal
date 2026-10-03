@@ -361,17 +361,22 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       Placeholder.configure({ placeholder }),
     ],
     content: value,
-    editorProps: preserveClipboardFormatting ? {
-      transformPastedHTML: normaliseClipboardHtml,
-      handlePaste: (view, event) => {
-        const html = event.clipboardData?.getData("text/html").trim() ?? "";
-        const text = event.clipboardData?.getData("text/plain").trim() ?? "";
-        if (!text || (html && hasMeaningfulClipboardFormatting(html))) return false;
-        event.preventDefault();
-        insertLessonHtmlIntoView(view, plainTextToLessonHtml(text));
-        return true;
+    // Do not set editorProps to `undefined`: TipTap expects the default empty
+    // editorProps object for ordinary email editors. Only Academy lessons need
+    // the enhanced paste handlers.
+    ...(preserveClipboardFormatting ? {
+      editorProps: {
+        transformPastedHTML: normaliseClipboardHtml,
+        handlePaste: (view, event) => {
+          const html = event.clipboardData?.getData("text/html").trim() ?? "";
+          const text = event.clipboardData?.getData("text/plain").trim() ?? "";
+          if (!text || (html && hasMeaningfulClipboardFormatting(html))) return false;
+          event.preventDefault();
+          insertLessonHtmlIntoView(view, plainTextToLessonHtml(text));
+          return true;
+        },
       },
-    } : undefined,
+    } : {}),
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
     },
