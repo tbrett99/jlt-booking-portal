@@ -41,8 +41,10 @@ describe("JLT Academy interface wiring", () => {
 
   it("keeps useful Academy paste formatting while filtering unsafe clipboard markup", () => {
     expect(manager).toContain("preserveClipboardFormatting");
+    expect(manager).toContain("Smart format pasted text");
     expect(richEditor).toContain("TableKit.configure");
     expect(richEditor).toContain("transformPastedHTML: normaliseClipboardHtml");
+    expect(richEditor).toContain("plainTextToLessonHtml");
     expect(richEditor).toContain("script, style, iframe, object, embed, form");
     expect(agentCourse).toContain("prose-table:border-collapse");
   });

@@ -212,6 +212,91 @@ function normaliseClipboardHtml(html: string) {
   return template.innerHTML;
 }
 
+function escapeLessonHtml(text: string) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+function isLessonHeading(line: string) {
+  if (line.length > 70 || /[.!?:;]$/.test(line)) return false;
+  const words = line.replace(/[’']/g, "").split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.length <= 8 && words.filter((word) => /[A-Za-z]/.test(word)).every((word) => /^(?:[A-Z][a-z]+|[A-Z]{2,}|&|and|or|the|to|of|for|in|on|with|a|an|at|by|from)$/.test(word));
+}
+
+function listItemText(line: string) {
+  const match = line.match(/^\s*(?:[-*•‣▪]|\d+[.)])\s+(.+)$/);
+  return match?.[1]?.trim() ?? null;
+}
+
+function hasMeaningfulClipboardFormatting(html: string) {
+  return /<(?:h[1-6]|strong|b|em|i|u|s|del|ul|ol|li|table|thead|tbody|tr|td|th|a|img)\b/i.test(html);
+}
+
+/**
+ * Some sources deliberately expose only text/plain on the clipboard. Turn the
+ * predictable training-document pattern into readable lesson HTML: wrapped
+ * sentences become paragraphs, title-style lines become headings, and a label
+ * ending in a colon followed by several short lines becomes a bullet list.
+ */
+export function plainTextToLessonHtml(text: string) {
+  const lines = text.replace(/\r/g, "").split("\n").map((line) => line.trim());
+  const blocks: string[] = [];
+  let paragraph: string[] = [];
+  const flushParagraph = () => {
+    const value = paragraph.join(" ").replace(/\s+/g, " ").trim();
+    if (value) blocks.push(`<p>${escapeLessonHtml(value)}</p>`);
+    paragraph = [];
+  };
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    if (!line) {
+      flushParagraph();
+      continue;
+    }
+
+    const explicitItem = listItemText(line);
+    if (explicitItem) {
+      flushParagraph();
+      const items = [explicitItem];
+      while (index + 1 < lines.length) {
+        const next = listItemText(lines[index + 1]);
+        if (!next) break;
+        items.push(next);
+        index++;
+      }
+      blocks.push(`<ul>${items.map((item) => `<li>${escapeLessonHtml(item)}</li>`).join("")}</ul>`);
+      continue;
+    }
+
+    if (isLessonHeading(line)) {
+      flushParagraph();
+      blocks.push(`<h2>${escapeLessonHtml(line)}</h2>`);
+      continue;
+    }
+
+    if (line.endsWith(":")) {
+      flushParagraph();
+      const listLines: string[] = [];
+      let cursor = index + 1;
+      while (cursor < lines.length && lines[cursor] && !isLessonHeading(lines[cursor]) && !/[.!?]$/.test(lines[cursor])) {
+        listLines.push(lines[cursor]);
+        cursor++;
+      }
+      blocks.push(`<p><strong>${escapeLessonHtml(line)}</strong></p>`);
+      if (listLines.length >= 2) {
+        blocks.push(`<ul>${listLines.map((item) => `<li>${escapeLessonHtml(item)}</li>`).join("")}</ul>`);
+        index = cursor - 1;
+      }
+      continue;
+    }
+
+    paragraph.push(line);
+    if (/[.!?]$/.test(line)) flushParagraph();
+  }
+  flushParagraph();
+  return blocks.join("") || `<p>${escapeLessonHtml(text.trim())}</p>`;
+}
+
 export function RichEmailEditor({ value, onChange, placeholder = "Compose your email…", className, preserveClipboardFormatting = false }: RichEmailEditorProps) {
   const [imageUploading, setImageUploading] = useState(false);
   const uploadImageMutation = trpc.crm.emailBranding.uploadImage.useMutation();
@@ -373,6 +458,18 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       `<span style="background:#e0fdf4;color:#0f766e;border-radius:3px;padding:1px 4px;font-family:monospace;font-size:0.9em;">${token}</span>`
     ).run();
     setMergeTagOpen(false);
+  }
+
+  function handleLessonPaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    if (!preserveClipboardFormatting) return;
+    const html = event.clipboardData.getData("text/html").trim();
+    const text = event.clipboardData.getData("text/plain").trim();
+    // Rich sources retain their semantic markup through TipTap's normal paste
+    // flow. Smart-format text-only sources, which otherwise arrive as a long
+    // sequence of visually identical lines.
+    if (!text || (html && hasMeaningfulClipboardFormatting(html))) return;
+    event.preventDefault();
+    editor.chain().focus().insertContent(plainTextToLessonHtml(text)).run();
   }
 
   const ToolbarBtn = ({ active, onClick, title, children }: { active?: boolean; onClick: () => void; title: string; children: React.ReactNode }) => (
@@ -615,6 +712,7 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       {/* Editor area */}
       <EditorContent
         editor={editor}
+        onPaste={handleLessonPaste}
         className="prose prose-sm max-w-none p-4 min-h-[300px] focus-within:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[280px] [&_hr]:border-t [&_hr]:border-border [&_hr]:my-4 [&_img]:max-w-full [&_img]:h-auto [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:p-2 [&_th]:text-left [&_td]:border [&_td]:border-border [&_td]:p-2"
       />
 
