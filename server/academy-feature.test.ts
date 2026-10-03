@@ -24,4 +24,10 @@ describe("JLT Academy feature safeguards", () => {
     expect(source).toContain('eq(academyCourses.status, "published")');
     expect(source).toContain('eq(academyCourses.isCoreAcademy, true)');
   });
+
+  it("uses a native prepared insert for new Academy courses on production TiDB", () => {
+    expect(source).toContain("getRawDbPool");
+    expect(source).toContain("INSERT INTO academy_courses");
+    expect(source).toContain("VALUES (?, ?, ?, ?, ?, ?, ?)");
+  });
 });

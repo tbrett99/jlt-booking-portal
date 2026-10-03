@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, inArray, lte, ne } from "drizzle-orm";
 import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
-import { getDb, createInAppNotification, getUpcomingAgentEvents } from "./db";
+import { getDb, getRawDbPool, createInAppNotification, getUpcomingAgentEvents } from "./db";
 import { sendDirectEmail } from "./email";
 import { storagePut } from "./storage";
 import {
@@ -451,7 +451,16 @@ export const academyRouter = router({
         await addAudit({ courseId: input.id, actorId: ctx.user.id, action: "course_updated", summary: `Updated Academy course: ${input.title}` });
         return { id: input.id };
       }
-      const result = await db.insert(academyCourses).values({ ...payload, createdById: ctx.user.id } as any);
+      // TiDB accepts this exact prepared statement, while Drizzle's all-column
+      // DEFAULT projection has failed on production for newly-created records.
+      const pool = await getRawDbPool();
+      if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [result] = await pool.execute(
+        `INSERT INTO academy_courses
+          (title, summary, coverImageUrl, isCoreAcademy, estimatedMinutes, createdById, updatedById)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [payload.title, payload.summary, payload.coverImageUrl, payload.isCoreAcademy, payload.estimatedMinutes, ctx.user.id, ctx.user.id],
+      );
       const id = Number((result as any).insertId);
       await addAudit({ courseId: id, actorId: ctx.user.id, action: "course_created", summary: `Created Academy course: ${input.title}` });
       return { id };

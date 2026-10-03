@@ -54,6 +54,15 @@ export async function getDb() {
   return _db as ReturnType<typeof drizzle> | null;
 }
 
+/**
+ * Used only for parameterised compatibility writes where production TiDB rejects
+ * Drizzle's all-column DEFAULT projection.
+ */
+export async function getRawDbPool() {
+  await getDb();
+  return _pool;
+}
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 export async function upsertUser(user: InsertUser): Promise<void> {
