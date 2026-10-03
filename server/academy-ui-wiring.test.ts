@@ -47,7 +47,13 @@ describe("JLT Academy interface wiring", () => {
     expect(richEditor).toContain("plainTextToLessonHtml");
     expect(richEditor).toContain("handlePaste: (view, event)");
     expect(richEditor).toContain("insertLessonHtmlIntoView");
+    expect(richEditor).toContain("[&_.ProseMirror_ul]:list-disc");
+    expect(richEditor).toContain("[&_.ProseMirror_ol]:list-decimal");
     expect(richEditor).toContain("script, style, iframe, object, embed, form");
+    expect(manager).toContain("Formatted ${headings} heading");
+    expect(manager).toContain("preview below has been updated");
+    expect(agentCourse).toContain("prose-ul:list-disc");
+    expect(agentCourse).toContain("prose-ol:list-decimal");
     expect(agentCourse).toContain("prose-table:border-collapse");
   });
 });
