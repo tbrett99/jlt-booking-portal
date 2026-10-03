@@ -183,7 +183,7 @@ async function startServer() {
       return;
     }
     const base = "https://www.thejltgroup.co.uk";
-    const urls = ["/", "/find-an-agent", "/why-jlt", "/your-protection", "/partners", "/privacy", "/terms"];
+    const urls = ["/", "/find-an-agent", "/holiday-ideas", "/why-jlt", "/about", "/your-protection", "/atol-protection", "/how-your-money-is-protected", "/why-jlt-is-on-my-booking", "/contact", "/partners", "/privacy", "/terms"];
     const xml = (path: string, updatedAt?: Date | null) => `<url><loc>${base}${path}</loc>${updatedAt ? `<lastmod>${updatedAt.toISOString().slice(0, 10)}</lastmod>` : ""}</url>`;
     try {
       const db = await getDb();
@@ -205,7 +205,19 @@ async function startServer() {
         )) : [];
       const showcaseEntries = rows.filter((row) => row.agentSlug && row.showcaseSlug)
         .map((row) => xml(`/travel-agents/${row.agentSlug}/holiday-showcases/${row.showcaseSlug}`, row.updatedAt));
-      res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map((path) => xml(path)).join("")}${showcaseEntries.join("")}</urlset>`);
+      const agentRows = db ? await db.select({ slug: publicAgentProfiles.publicSlug, updatedAt: publicAgentProfiles.updatedAt })
+        .from(publicAgentProfiles)
+        .innerJoin(usersTable, eq(publicAgentProfiles.userId, usersTable.id))
+        .leftJoin(agentCrmProfiles, eq(publicAgentProfiles.userId, agentCrmProfiles.userId))
+        .where(and(
+          eq(publicAgentProfiles.isPublished, true),
+          or(
+            inArray(usersTable.role, ["admin", "super_admin"]),
+            and(eq(agentCrmProfiles.agentStatus, "active"), or(isNull(agentCrmProfiles.inContract), eq(agentCrmProfiles.inContract, false))),
+          ),
+        )) : [];
+      const agentEntries = agentRows.filter((row) => row.slug).map((row) => xml(`/travel-agents/${row.slug}`, row.updatedAt));
+      res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map((path) => xml(path)).join("")}${agentEntries.join("")}${showcaseEntries.join("")}</urlset>`);
     } catch (error) {
       console.error("[Sitemap] Unable to load live showcase URLs", error);
       res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map((path) => xml(path)).join("")}</urlset>`);

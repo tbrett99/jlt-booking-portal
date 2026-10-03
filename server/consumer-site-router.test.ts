@@ -23,12 +23,13 @@ const db = {
   delete: vi.fn(() => ({ where: vi.fn(async () => undefined) })),
 };
 
-vi.mock("./db", () => ({ getDb: vi.fn(async () => db) }));
+vi.mock("./db", () => ({ getDb: vi.fn(async () => db), createInAppNotification: vi.fn(async () => undefined) }));
 vi.mock("./email", () => ({ sendDirectEmail: vi.fn(async () => ({ success: true })) }));
 vi.mock("./storage", () => ({ storagePut: vi.fn() }));
 
 import { consumerSiteRouter } from "./consumer-site-router";
 import { sendDirectEmail } from "./email";
+import { createInAppNotification } from "./db";
 
 const visibleProfile = {
   id: 77,
@@ -246,6 +247,42 @@ describe("consumerSite public API", () => {
       consentConfirmed: true,
     })).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
     expect(sendDirectEmail).not.toHaveBeenCalled();
+  });
+
+  it("returns safe default trust content when staff have not yet saved public settings", async () => {
+    selectResults.push([]);
+    const response = await publicCaller().public.siteSettings();
+    expect(response.relationshipHeading).toContain("Your travel agent");
+    expect(response.metrics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "ATOL Protected", value: "12564" }),
+      expect.objectContaining({ label: "Protected Trust Services", value: "6090" }),
+    ]));
+  });
+
+  it("records a private customer-routing request and alerts staff without exposing an inbox", async () => {
+    selectResults.push([], [{ id: 1 }, { id: 2 }]);
+    await expect(publicCaller().public.submitSupportCase({
+      customerName: "Sam Customer",
+      customerEmail: "sam@example.com",
+      customerPhone: "07123456789",
+      bookingReference: "JLT-1234",
+      agentOrBusinessName: "Sam's Travel",
+      departureDate: new Date("2026-12-10T12:00:00.000Z"),
+      message: "I cannot identify my travel agent and need help finding the right booking contact.",
+      consentConfirmed: true,
+    })).resolves.toEqual({ success: true, caseId: 9001 });
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({
+      customerName: "Sam Customer",
+      customerEmail: "sam@example.com",
+      bookingReference: "JLT-1234",
+      consentConfirmedAt: expect.any(Date),
+      ipHash: expect.any(String),
+    }));
+    expect(createInAppNotification).toHaveBeenCalledTimes(2);
+    expect(createInAppNotification).toHaveBeenCalledWith(expect.objectContaining({
+      linkUrl: "/crm/public-profiles?tab=support",
+      isUrgent: true,
+    }));
   });
 });
 

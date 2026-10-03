@@ -1027,6 +1027,43 @@ export const publicEnquiries = mysqlTable("public_enquiries", {
   index("public_enquiries_rate_limit_idx").on(table.ipHash, table.createdAt),
 ]);
 
+// Site-wide public trust copy is deliberately controlled by staff instead of
+// being embedded only in frontend code. This keeps factual figures and wording
+// reviewable, auditable and editable without touching individual agent records.
+export const publicSiteSettings = mysqlTable("public_site_settings", {
+  key: varchar("key", { length: 100 }).primaryKey(),
+  value: json("value").notNull(),
+  updatedById: int("updatedById"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+// A customer who cannot identify or reach their agent can request help without
+// exposing a staff inbox on the public site. These cases stay separate from
+// bookings, agent enquiries and private CRM records, and carry their own
+// limited audit trail/status for staff routing.
+export const consumerSupportCases = mysqlTable("consumer_support_cases", {
+  id: int("id").autoincrement().primaryKey(),
+  customerName: varchar("customerName", { length: 255 }).notNull(),
+  customerEmail: varchar("customerEmail", { length: 320 }).notNull(),
+  customerPhone: varchar("customerPhone", { length: 40 }),
+  bookingReference: varchar("bookingReference", { length: 120 }),
+  agentOrBusinessName: varchar("agentOrBusinessName", { length: 255 }),
+  departureDate: timestamp("departureDate"),
+  message: text("message").notNull(),
+  consentConfirmedAt: timestamp("consentConfirmedAt").notNull(),
+  ipHash: varchar("ipHash", { length: 128 }).notNull(),
+  status: mysqlEnum("status", ["new", "in_progress", "resolved"]).default("new").notNull(),
+  assignedToId: int("assignedToId"),
+  resolvedAt: timestamp("resolvedAt"),
+  resolvedById: int("resolvedById"),
+  internalNote: text("internalNote"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("consumer_support_cases_status_idx").on(table.status, table.createdAt),
+  index("consumer_support_cases_ip_rate_limit_idx").on(table.ipHash, table.createdAt),
+]);
+
 // Reserved for the later curated public supplier / partner showcase. This remains
 // separate from the private supplier directory and contains no credentials or
 // internal commercial terms.

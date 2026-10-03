@@ -8,14 +8,16 @@ import {
   publicAgentProfileTags,
   publicAgentProfiles,
   publicEnquiries,
+  consumerSupportCases,
   publicHolidayShowcaseEditRequests,
   publicHolidayShowcaseEvents,
   publicHolidayShowcases,
   publicPartnerProfiles,
+  publicSiteSettings,
   publicSpecialityTags,
   users,
 } from "../drizzle/schema";
-import { getDb } from "./db";
+import { createInAppNotification, getDb } from "./db";
 import { sendDirectEmail } from "./email";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
@@ -89,6 +91,44 @@ const partnerDraftSchema = z.object({
 });
 
 const showcaseIdSchema = z.object({ id: z.number().int().positive() });
+
+const defaultPublicTrustSettings = {
+  metrics: [
+    { label: "ATOL Protected", value: "12564", description: "Where applicable" },
+    { label: "Protected Trust Services", value: "6090", description: "Consumer protection framework" },
+    { label: "IATA Accredited", value: "", description: "Recognised travel industry accreditation" },
+    { label: "Travel suppliers", value: "200+", description: "A considered global network" },
+    { label: "Independent agents", value: "450+", description: "Personal travel expertise" },
+  ],
+  relationshipHeading: "Your travel agent. Backed by The JLT Group.",
+  relationshipBody: "Your travel agent runs their own independent travel business as part of The JLT Group. They remain your personal point of contact, while The JLT Group provides the booking infrastructure, supplier relationships, financial protection and operational support behind your booking.",
+};
+
+const publicTrustSettingsSchema = z.object({
+  metrics: z.array(z.object({
+    label: z.string().trim().min(2).max(80),
+    value: z.string().trim().max(80),
+    description: z.string().trim().min(2).max(180),
+  })).min(3).max(8),
+  relationshipHeading: z.string().trim().min(10).max(180),
+  relationshipBody: z.string().trim().min(40).max(1_000),
+});
+
+const consumerSupportCaseSchema = z.object({
+  customerName: z.string().trim().min(2).max(255),
+  customerEmail: z.string().trim().email().max(320),
+  customerPhone: z.string().trim().max(40).optional().nullable(),
+  bookingReference: z.string().trim().max(120).optional().nullable(),
+  agentOrBusinessName: z.string().trim().max(255).optional().nullable(),
+  departureDate: z.coerce.date().optional().nullable(),
+  message: z.string().trim().min(20).max(4_000),
+  consentConfirmed: z.literal(true),
+});
+
+function readPublicTrustSettings(value: unknown) {
+  const parsed = publicTrustSettingsSchema.safeParse(jsonValue(value));
+  return parsed.success ? parsed.data : defaultPublicTrustSettings;
+}
 
 function jsonValue(value: unknown): unknown {
   if (typeof value !== "string") return value;
@@ -898,6 +938,64 @@ export const consumerSiteRouter = router({
       }).from(publicEnquiries).innerJoin(users, eq(publicEnquiries.agentId, users.id)).orderBy(desc(publicEnquiries.createdAt)).limit(input?.limit ?? 50);
     }),
 
+    getSiteSettings: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return defaultPublicTrustSettings;
+      const [setting] = await db.select({ value: publicSiteSettings.value })
+        .from(publicSiteSettings)
+        .where(eq(publicSiteSettings.key, "trust_and_relationship"))
+        .limit(1);
+      return readPublicTrustSettings(setting?.value);
+    }),
+
+    saveSiteSettings: adminProcedure.input(publicTrustSettingsSchema).mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      await db.insert(publicSiteSettings).values({
+        key: "trust_and_relationship",
+        value: input,
+        updatedById: ctx.user.id,
+      }).onDuplicateKeyUpdate({ set: { value: input, updatedById: ctx.user.id } });
+      return { success: true };
+    }),
+
+    listSupportCases: adminProcedure.input(z.object({
+      status: z.enum(["all", "new", "in_progress", "resolved"]).default("new"),
+      limit: z.number().int().min(1).max(100).default(50),
+    }).optional()).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const status = input?.status ?? "new";
+      return db.select({
+        case: consumerSupportCases,
+        assigneeName: users.name,
+      }).from(consumerSupportCases)
+        .leftJoin(users, eq(consumerSupportCases.assignedToId, users.id))
+        .where(status === "all" ? undefined : eq(consumerSupportCases.status, status))
+        .orderBy(asc(consumerSupportCases.status), desc(consumerSupportCases.createdAt))
+        .limit(input?.limit ?? 50);
+    }),
+
+    updateSupportCase: adminProcedure.input(z.object({
+      id: z.number().int().positive(),
+      status: z.enum(["new", "in_progress", "resolved"]),
+      internalNote: z.string().trim().max(4_000).optional().nullable(),
+      assignedToId: z.number().int().positive().optional().nullable(),
+    })).mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [existing] = await db.select({ id: consumerSupportCases.id }).from(consumerSupportCases).where(eq(consumerSupportCases.id, input.id)).limit(1);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Consumer support request not found." });
+      await db.update(consumerSupportCases).set({
+        status: input.status,
+        internalNote: normaliseOptional(input.internalNote),
+        assignedToId: input.assignedToId ?? null,
+        resolvedAt: input.status === "resolved" ? new Date() : null,
+        resolvedById: input.status === "resolved" ? ctx.user.id : null,
+      }).where(eq(consumerSupportCases.id, input.id));
+      return { success: true };
+    }),
+
     listPartners: adminProcedure.query(async () => {
       const db = await getDb();
       if (!db) return [];
@@ -941,6 +1039,16 @@ export const consumerSiteRouter = router({
   }),
 
   public: router({
+    siteSettings: publicProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return defaultPublicTrustSettings;
+      const [setting] = await db.select({ value: publicSiteSettings.value })
+        .from(publicSiteSettings)
+        .where(eq(publicSiteSettings.key, "trust_and_relationship"))
+        .limit(1);
+      return readPublicTrustSettings(setting?.value);
+    }),
+
     listPartners: publicProcedure.query(async () => {
       const db = await getDb();
       if (!db) return [];
@@ -1180,6 +1288,41 @@ export const consumerSiteRouter = router({
         console.error("[ConsumerEnquiry] Customer acknowledgement failed", error);
       }
       return { success: true };
+    }),
+
+    submitSupportCase: publicProcedure.input(consumerSupportCaseSchema).mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const ipSource = `${ctx.req.ip ?? "unknown"}:${process.env.JWT_SECRET ?? "consumer-site"}`;
+      const ipHash = createHash("sha256").update(ipSource).digest("hex");
+      const windowStart = new Date(Date.now() - 15 * 60 * 1000);
+      const recent = await db.select({ id: consumerSupportCases.id })
+        .from(consumerSupportCases)
+        .where(and(eq(consumerSupportCases.ipHash, ipHash), gte(consumerSupportCases.createdAt, windowStart)))
+        .limit(3);
+      if (recent.length >= 3) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Please wait a few minutes before sending another request." });
+      }
+      const [result] = await db.insert(consumerSupportCases).values({
+        customerName: input.customerName.trim(),
+        customerEmail: input.customerEmail.trim().toLowerCase(),
+        customerPhone: normaliseOptional(input.customerPhone),
+        bookingReference: normaliseOptional(input.bookingReference),
+        agentOrBusinessName: normaliseOptional(input.agentOrBusinessName),
+        departureDate: input.departureDate ?? null,
+        message: input.message.trim(),
+        consentConfirmedAt: new Date(),
+        ipHash,
+      });
+      const caseId = Number((result as any).insertId);
+      const admins = await db.select({ id: users.id }).from(users).where(inArray(users.role, ["admin", "super_admin"]));
+      await Promise.allSettled(admins.map((admin) => createInAppNotification({
+        userId: admin.id,
+        message: `New consumer support request from ${input.customerName.trim()}.`,
+        linkUrl: "/crm/public-profiles?tab=support",
+        isUrgent: true,
+      })));
+      return { success: true, caseId };
     }),
   }),
 });
