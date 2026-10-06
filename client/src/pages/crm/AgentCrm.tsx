@@ -588,6 +588,9 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             <TabsContent value="activity" className="mt-5 pb-8">
               <ActivityTab userId={agent.id} />
             </TabsContent>
+            <TabsContent value="emails" className="mt-5 pb-8">
+              <AgentEmailsTab userId={agent.id} />
+            </TabsContent>
             <TabsContent value="suppliers" className="mt-5 pb-8">
               <SupplierAccessTab userId={agent.id} supplierLogins={crmData?.supplierLogins ?? []} onRefresh={refresh} />
             </TabsContent>
@@ -699,6 +702,7 @@ function ScrollableTabs() {
         <TabsList className="inline-flex w-max h-auto gap-0 rounded-lg p-1">
           <TabsTrigger value="profile" className="text-xs px-3 py-1.5 whitespace-nowrap">Profile</TabsTrigger>
           <TabsTrigger value="activity" className="text-xs px-3 py-1.5 whitespace-nowrap">Activity</TabsTrigger>
+          <TabsTrigger value="emails" className="text-xs px-3 py-1.5 whitespace-nowrap">Emails</TabsTrigger>
           <TabsTrigger value="team" className="text-xs px-3 py-1.5 whitespace-nowrap">Team</TabsTrigger>
           <TabsTrigger value="suppliers" className="text-xs px-3 py-1.5 whitespace-nowrap">Suppliers</TabsTrigger>
           <TabsTrigger value="bank" className="text-xs px-3 py-1.5 whitespace-nowrap">Bank</TabsTrigger>
@@ -1312,6 +1316,136 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
       </div>
       {dialogs}
     </>
+  );
+}
+
+// ─── Recent Email Tab ─────────────────────────────────────────────────────────
+
+function formatAgentEmailTimestamp(value: Date | string) {
+  return new Date(value).toLocaleString("en-GB", {
+    timeZone: "Europe/London",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getAgentEmailType(triggerKey: string | null) {
+  if (!triggerKey) return "Portal email";
+  if (triggerKey.startsWith("campaign")) return "Campaign";
+  if (triggerKey.startsWith("gc_receipt")) return "Membership receipt";
+  if (triggerKey.startsWith("resend")) return "Resent email";
+
+  const labels: Record<string, string> = {
+    gc_payment_failed: "Payment failed",
+    payment_received: "Client payment",
+    direct: "Direct message",
+    credentials: "Login credentials",
+    password_reset: "Password reset",
+    nudge: "Sign-up nudge",
+    weekly_digest: "Weekly digest",
+    event_reminder: "Event reminder",
+    confirmation_reminder: "Confirmation reminder",
+  };
+  return labels[triggerKey] ?? triggerKey.replace(/[_-]+/g, " ");
+}
+
+function AgentEmailsTab({ userId }: { userId: number }) {
+  const [previewId, setPreviewId] = useState<number | null>(null);
+  const { data, isLoading, isError, isFetching, refetch } = trpc.crm.agentEmailLog.list.useQuery(
+    { userId, limit: 12, offset: 0 },
+    { staleTime: 30_000 },
+  );
+  const { data: previewData } = trpc.crm.agentEmailLog.getBody.useQuery(
+    { id: previewId! },
+    { enabled: previewId !== null },
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-4 rounded-xl border border-[#70FFE8]/40 bg-[#70FFE8]/10 px-4 py-3">
+        <div className="flex min-w-0 gap-3">
+          <div className="mt-0.5 rounded-lg bg-[#02E6D2]/15 p-2 text-[#078f85]">
+            <Mail className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold">Latest portal emails</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">The 12 most recent emails logged as sent to this agent, shown in UK time.</p>
+          </div>
+        </div>
+        <Button size="sm" variant="outline" className="shrink-0" onClick={() => void refetch()} disabled={isFetching}>
+          {isFetching ? "Refreshing..." : "Refresh"}
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {[1, 2, 3, 4].map((index) => <div key={index} className="h-20 animate-pulse rounded-xl bg-muted" />)}
+        </div>
+      ) : isError ? (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-8 text-center">
+          <p className="text-sm font-medium">Recent emails could not be loaded.</p>
+          <Button size="sm" variant="outline" className="mt-3" onClick={() => void refetch()}>Retry</Button>
+        </div>
+      ) : !data?.rows.length ? (
+        <div className="rounded-xl border-2 border-dashed py-10 text-center text-muted-foreground">
+          <Mail className="mx-auto mb-2 h-9 w-9 opacity-25" />
+          <p className="text-sm font-medium">No portal emails recorded for this agent yet</p>
+          <p className="mt-1 text-xs">Future Portal emails will appear here automatically.</p>
+        </div>
+      ) : (
+        <div className="divide-y overflow-hidden rounded-xl border bg-card">
+          {data.rows.map((email) => (
+            <div key={email.id} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/25">
+              <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${email.status === "sent" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                <Mail className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium" title={email.subject}>{email.subject}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  <span>{getAgentEmailType(email.triggerKey)}</span>
+                  <span aria-hidden="true">•</span>
+                  <span>{formatAgentEmailTimestamp(email.sentAt)}</span>
+                  <span className={email.status === "sent" ? "text-emerald-700" : "text-rose-700"}>{email.status === "sent" ? "Sent" : email.status ?? "Unknown"}</span>
+                </div>
+              </div>
+              <Button size="sm" variant="ghost" className="shrink-0" onClick={() => setPreviewId(email.id)}>
+                <Eye className="mr-1.5 h-3.5 w-3.5" />View
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={previewId !== null} onOpenChange={(open) => !open && setPreviewId(null)}>
+        <DialogContent className="max-h-[80vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base">{previewData?.subject ?? "Email preview"}</DialogTitle>
+            {previewData && (
+              <DialogDescription>
+                Sent to {previewData.toName ? `${previewData.toName} <${previewData.toEmail}>` : previewData.toEmail}
+                {" · "}{formatAgentEmailTimestamp(previewData.sentAt)}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          {previewData?.bodyHtml ? (
+            <div className="mt-2 overflow-hidden rounded-lg border" style={{ minHeight: 300 }}>
+              <iframe
+                srcDoc={previewData.bodyHtml}
+                title="Email preview"
+                className="w-full"
+                style={{ height: 500, border: "none" }}
+                sandbox="allow-same-origin"
+              />
+            </div>
+          ) : (
+            <div className="p-8 text-center text-sm text-muted-foreground">No preview is available for this email.</div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 

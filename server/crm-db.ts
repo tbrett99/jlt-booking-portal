@@ -827,6 +827,7 @@ export async function upsertEmailBrandingSettings(
 export async function getAgentEmailLog(params: {
   search?: string;
   triggerKey?: string;
+  userId?: number;
   limit?: number;
   offset?: number;
 }) {
@@ -850,6 +851,9 @@ export async function getAgentEmailLog(params: {
     } else {
       conditions.push(eq(agentEmails.triggerKey, params.triggerKey));
     }
+  }
+  if (params.userId !== undefined) {
+    conditions.push(eq(agentEmails.userId, params.userId));
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;

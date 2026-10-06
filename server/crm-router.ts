@@ -3410,6 +3410,7 @@ export const crmRouter = router({
         z.object({
           search: z.string().optional(),
           triggerKey: z.string().optional(),
+          userId: z.number().int().positive().optional(),
           limit: z.number().min(1).max(200).default(50),
           offset: z.number().min(0).default(0),
         })
