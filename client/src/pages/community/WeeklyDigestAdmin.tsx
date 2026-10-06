@@ -150,7 +150,12 @@ export default function WeeklyDigestAdmin() {
     if ((highlights.commissionClaimed?.agentNames?.length ?? 0) > 0) {
       const names = highlights.commissionClaimed.agentNames.join(', ');
       const total = Number(highlights.commissionClaimed.totalAmount ?? 0);
-      highlightItems.push({ emoji: '🏆', message: `Commission claimed by ${names} — total: £${total.toLocaleString('en-GB', { maximumFractionDigits: 0 })}` });
+      const agentCount = Number(highlights.commissionClaimed.agentCount ?? highlights.commissionClaimed.agentNames.length);
+      const claimCount = Number(highlights.commissionClaimed.claimCount ?? 0);
+      const message = agentCount > 3
+        ? `${claimCount.toLocaleString('en-GB')} commission claims from ${agentCount.toLocaleString('en-GB')} agents — total: £${total.toLocaleString('en-GB', { maximumFractionDigits: 0 })}`
+        : `Commission claimed by ${names} — total: £${total.toLocaleString('en-GB', { maximumFractionDigits: 0 })}`;
+      highlightItems.push({ emoji: '🏆', message });
     }
   }
   const includedPostIds: number[] = Array.isArray(draft?.includedPostIds)

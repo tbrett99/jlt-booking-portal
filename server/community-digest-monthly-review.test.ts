@@ -33,6 +33,14 @@ describe("monthly review reporting", () => {
     expect(digestPage).toContain("Edit figures");
     expect(digestPage).toContain("Save figures");
     expect(digestPage).toContain("statsSnapshot: { ...stats, ...currentFigures }");
+    expect(digestPage).toContain("commission claims from");
     expect(digestRouter).toContain("${digestPeriodLabel}'s Numbers");
+  });
+
+  it("keeps a monthly agent highlight readable while retaining complete totals", () => {
+    expect(digestDb).toContain("firstBookings: firstBookingHighlights.slice(0, 5)");
+    expect(digestDb).toContain("agentNames: agentNames.slice(0, 3)");
+    expect(digestDb).toContain("agentCount: agentNames.length");
+    expect(digestDb).toContain("claimCount: claimedThisWeek.length");
   });
 });

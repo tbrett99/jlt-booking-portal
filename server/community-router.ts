@@ -675,7 +675,12 @@ export const communityRouter = router({
           if ((highlights.commissionClaimed?.agentNames?.length ?? 0) > 0) {
             const names = highlights.commissionClaimed.agentNames.join(", ");
             const total = highlights.commissionClaimed.totalAmount ?? 0;
-            items.push(`<tr><td style="padding:10px 14px;font-size:13px;color:#414141;font-family:'Poppins',sans-serif;">🏆 Commission claimed by <strong>${names}</strong> — total: <strong>£${Number(total).toLocaleString("en-GB", { maximumFractionDigits: 0 })}</strong></td></tr>`);
+            const agentCount = Number(highlights.commissionClaimed.agentCount ?? highlights.commissionClaimed.agentNames.length);
+            const claimCount = Number(highlights.commissionClaimed.claimCount ?? 0);
+            const commissionMessage = agentCount > 3
+              ? `<strong>${claimCount.toLocaleString("en-GB")}</strong> commission claims from <strong>${agentCount.toLocaleString("en-GB")}</strong> agents — total: <strong>£${Number(total).toLocaleString("en-GB", { maximumFractionDigits: 0 })}</strong>`
+              : `Commission claimed by <strong>${names}</strong> — total: <strong>£${Number(total).toLocaleString("en-GB", { maximumFractionDigits: 0 })}</strong>`;
+            items.push(`<tr><td style="padding:10px 14px;font-size:13px;color:#414141;font-family:'Poppins',sans-serif;">🏆 ${commissionMessage}</td></tr>`);
           }
 
           if (items.length > 0) {

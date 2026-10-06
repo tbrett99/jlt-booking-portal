@@ -939,7 +939,7 @@ export async function getDigest(digestId: number) {
 
 export async function getBookingHighlights(weekStart: Date, weekEnd: Date) {
   const db = await getDb();
-  if (!db) return { firstBookings: [], highMargin: [], commissionClaimed: { agentNames: [], totalAmount: 0 } };
+  if (!db) return { firstBookings: [], highMargin: [], commissionClaimed: { agentNames: [], totalAmount: 0, agentCount: 0, claimCount: 0 } };
   const { bookings, users, commissionClaims } = await import("../drizzle/schema");
 
   // 1. "First real booking" this week — agents whose 2nd booking (skipping training holding account) falls this week
@@ -985,9 +985,11 @@ export async function getBookingHighlights(weekStart: Date, weekEnd: Date) {
     }
   }
 
-  // 2. Commission claimed this week
+  // 2. Commission claimed during the reporting period. Keep the highlight
+  // readable for a monthly review: the totals are complete, while names are
+  // only retained as a fallback for older single-claim snapshots.
   const db4 = await getDb();
-  if (!db4) return { firstBookings: firstBookingHighlights, commissionClaimed: { agentNames: [], totalAmount: 0 } };
+  if (!db4) return { firstBookings: firstBookingHighlights.slice(0, 5), commissionClaimed: { agentNames: [], totalAmount: 0, agentCount: 0, claimCount: 0 } };
   const claimedThisWeek = await db4
     .select({
       agentName: users.name,
@@ -1009,10 +1011,12 @@ export async function getBookingHighlights(weekStart: Date, weekEnd: Date) {
   const agentNames = Array.from(new Set(claimedThisWeek.map((c) => c.agentName ?? "An agent")));
 
   return {
-    firstBookings: firstBookingHighlights,
+    firstBookings: firstBookingHighlights.slice(0, 5),
     commissionClaimed: {
-      agentNames,
+      agentNames: agentNames.slice(0, 3),
       totalAmount: commissionTotal,
+      agentCount: agentNames.length,
+      claimCount: claimedThisWeek.length,
     },
   };
 }
