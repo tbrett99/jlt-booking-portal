@@ -1593,8 +1593,12 @@ export const academyQuestions = mysqlTable("academy_questions", {
   id: int("id").autoincrement().primaryKey(),
   lessonId: int("lessonId").notNull(),
   prompt: text("prompt").notNull(),
+  // Multiple-choice questions are marked immediately. Written responses are
+  // placed in the staff marking queue and deliberately have no stored answer key.
+  questionType: mysqlEnum("questionType", ["multiple_choice", "free_text"]).default("multiple_choice").notNull(),
   answerOptions: json("answerOptions").notNull(), // string[]; correct answer never leaves agent APIs
   correctAnswerIndex: int("correctAnswerIndex").notNull(),
+  maxWords: int("maxWords").default(250).notNull(),
   explanation: text("explanation"),
   sortOrder: int("sortOrder").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1662,14 +1666,42 @@ export const academyAssessmentAttempts = mysqlTable("academy_assessment_attempts
   id: int("id").autoincrement().primaryKey(),
   enrollmentId: int("enrollmentId").notNull(),
   lessonId: int("lessonId").notNull(),
-  score: int("score").notNull(),
-  passed: boolean("passed").notNull(),
-  answers: json("answers").notNull(), // { questionId, selectedIndex }[] for staff audit only
+  // Written assessments are not scored until staff review them. Existing
+  // multiple-choice attempts remain fully auto-graded.
+  status: mysqlEnum("status", ["auto_graded", "awaiting_marking", "feedback_pending", "feedback_acknowledged"]).default("auto_graded").notNull(),
+  score: int("score"),
+  passed: boolean("passed"),
+  answers: json("answers").notNull(), // submission snapshot for staff audit
+  graderFeedback: text("graderFeedback"),
+  gradedById: int("gradedById"),
+  gradedAt: timestamp("gradedAt"),
+  feedbackAcknowledgedAt: timestamp("feedbackAcknowledgedAt"),
   takenAt: timestamp("takenAt").defaultNow().notNull(),
 }, (table) => [
   index("academy_attempts_enrollment_lesson_idx").on(table.enrollmentId, table.lessonId),
+  index("academy_attempts_status_taken_idx").on(table.status, table.takenAt),
 ]);
 export type AcademyAssessmentAttempt = typeof academyAssessmentAttempts.$inferSelect;
+
+// One durable response record per question. This keeps submitted written work,
+// marking, and question-level feedback visible in the Academy audit trail.
+export const academyAssessmentResponses = mysqlTable("academy_assessment_responses", {
+  id: int("id").autoincrement().primaryKey(),
+  attemptId: int("attemptId").notNull(),
+  questionId: int("questionId").notNull(),
+  selectedIndex: int("selectedIndex"),
+  responseText: longtext("responseText"),
+  score: int("score"),
+  feedback: text("feedback"),
+  gradedById: int("gradedById"),
+  gradedAt: timestamp("gradedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("academy_attempt_response_question_unique").on(table.attemptId, table.questionId),
+  index("academy_attempt_responses_attempt_idx").on(table.attemptId),
+]);
+export type AcademyAssessmentResponse = typeof academyAssessmentResponses.$inferSelect;
 
 export const academyAuditLog = mysqlTable("academy_audit_log", {
   id: int("id").autoincrement().primaryKey(),

@@ -1051,6 +1051,13 @@
       "when": 1791035474661,
       "tag": "0149_careless_microbe",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "5",
+      "when": 1791305228493,
+      "tag": "0150_gigantic_shaman",
+      "breakpoints": true
     }
   ]
 }

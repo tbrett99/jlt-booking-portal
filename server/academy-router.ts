@@ -8,6 +8,7 @@ import { storagePut } from "./storage";
 import {
   academyAccess,
   academyAssessmentAttempts,
+  academyAssessmentResponses,
   academyAuditLog,
   academyCourses,
   academyEnrollments,
@@ -80,6 +81,26 @@ function asOptions(value: unknown): string[] {
     }
   }
   return [];
+}
+
+function wordCount(value: string) {
+  return value.trim() ? value.trim().split(/\s+/).length : 0;
+}
+
+function asResponses(value: unknown): Array<{ questionId: number; selectedIndex: number | null; responseText: string | null }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    const questionId = Number(record.questionId);
+    if (!Number.isSafeInteger(questionId) || questionId < 1) return [];
+    const selectedIndex = record.selectedIndex === undefined || record.selectedIndex === null ? null : Number(record.selectedIndex);
+    return [{
+      questionId,
+      selectedIndex: Number.isSafeInteger(selectedIndex) ? selectedIndex : null,
+      responseText: typeof record.responseText === "string" ? record.responseText : null,
+    }];
+  });
 }
 
 async function addAudit(input: {
@@ -241,6 +262,29 @@ async function resolveEnrollmentForAgent(enrollmentId: number, agentId: number) 
   return enrollment;
 }
 
+/** A reviewed written assessment must be read and acknowledged before later lessons can be completed. */
+async function ensureFeedbackAcknowledgedBeforeLesson(enrollment: { id: number; courseId: number }, lessonId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const { lessons } = await courseStructure(enrollment.courseId);
+  const targetIndex = lessons.findIndex((lesson) => lesson.id === lessonId);
+  if (targetIndex < 0) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+  const earlierLessonIds = lessons.slice(0, targetIndex).map((lesson) => lesson.id);
+  if (!earlierLessonIds.length) return;
+  const attempts = await db.select().from(academyAssessmentAttempts)
+    .where(and(
+      eq(academyAssessmentAttempts.enrollmentId, enrollment.id),
+      eq(academyAssessmentAttempts.status, "feedback_pending"),
+      inArray(academyAssessmentAttempts.lessonId, earlierLessonIds),
+    ));
+  if (attempts.length) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Read and acknowledge your assessment feedback before moving on to the next lesson",
+    });
+  }
+}
+
 async function recalculateCompletion(enrollmentId: number, actorId: number) {
   const db = await getDb();
   if (!db) return null;
@@ -331,6 +375,10 @@ export const academyRouter = router({
       const structure = await courseStructure(course.id);
       const progress = await db.select().from(academyLessonProgress).where(eq(academyLessonProgress.enrollmentId, enrollment.id));
       const attempts = await db.select().from(academyAssessmentAttempts).where(eq(academyAssessmentAttempts.enrollmentId, enrollment.id)).orderBy(desc(academyAssessmentAttempts.takenAt));
+      const attemptIds = attempts.map((attempt) => attempt.id);
+      const responses = attemptIds.length
+        ? await db.select().from(academyAssessmentResponses).where(inArray(academyAssessmentResponses.attemptId, attemptIds))
+        : [];
       const progressByLesson = new Map(progress.map((item) => [item.lessonId, item]));
       const attemptsByLesson = new Map<number, typeof attempts>();
       for (const attempt of attempts) attemptsByLesson.set(attempt.lessonId, [...(attemptsByLesson.get(attempt.lessonId) ?? []), attempt]);
@@ -345,9 +393,18 @@ export const academyRouter = router({
           lessons: module.lessons.map((lesson) => ({
             ...lesson,
             // Correct answer keys and staff-only question explanation stay server-side.
-            questions: lesson.questions.map((question) => ({ id: question.id, prompt: question.prompt, answerOptions: asOptions(question.answerOptions), sortOrder: question.sortOrder })),
+            questions: lesson.questions.map((question) => ({ id: question.id, prompt: question.prompt, questionType: question.questionType, answerOptions: asOptions(question.answerOptions), maxWords: question.maxWords, sortOrder: question.sortOrder })),
             progress: progressByLesson.get(lesson.id) ?? null,
-            attempts: (attemptsByLesson.get(lesson.id) ?? []).map((attempt) => ({ id: attempt.id, score: attempt.score, passed: attempt.passed, takenAt: attempt.takenAt })),
+            attempts: (attemptsByLesson.get(lesson.id) ?? []).map((attempt) => ({
+              id: attempt.id,
+              status: attempt.status,
+              score: attempt.score,
+              passed: attempt.passed,
+              graderFeedback: attempt.graderFeedback,
+              feedbackAcknowledgedAt: attempt.feedbackAcknowledgedAt,
+              takenAt: attempt.takenAt,
+              responses: responses.filter((response) => response.attemptId === attempt.id).map((response) => ({ questionId: response.questionId, responseText: response.responseText, score: response.score, feedback: response.feedback })),
+            })),
           })),
         })),
       };
@@ -360,6 +417,7 @@ export const academyRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
         const { lessons } = await courseStructure(enrollment.courseId);
         if (!lessons.some((lesson) => lesson.id === input.lessonId)) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+        await ensureFeedbackAcknowledgedBeforeLesson(enrollment, input.lessonId);
         const [existing] = await db.select().from(academyLessonProgress)
           .where(and(eq(academyLessonProgress.enrollmentId, enrollment.id), eq(academyLessonProgress.lessonId, input.lessonId))).limit(1);
         const now = new Date();
@@ -377,6 +435,7 @@ export const academyRouter = router({
         const { lessons } = await courseStructure(enrollment.courseId);
         const lesson = lessons.find((item) => item.id === input.lessonId);
         if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+        await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
         if (lesson.requiresAcknowledgement && !input.acknowledged) throw new TRPCError({ code: "BAD_REQUEST", message: "Please confirm the acknowledgement before continuing" });
         if (lesson.requiresAssessment) throw new TRPCError({ code: "BAD_REQUEST", message: "Pass the knowledge check before completing this lesson" });
         const [existing] = await db.select().from(academyLessonProgress)
@@ -389,7 +448,15 @@ export const academyRouter = router({
         return { success: true };
       }),
 
-    submitAssessment: protectedProcedure.input(z.object({ enrollmentId: z.number().int().positive(), lessonId: z.number().int().positive(), answers: z.array(z.object({ questionId: z.number().int().positive(), selectedIndex: z.number().int().min(0).max(20) })).min(1).max(50) }))
+    submitAssessment: protectedProcedure.input(z.object({
+      enrollmentId: z.number().int().positive(),
+      lessonId: z.number().int().positive(),
+      answers: z.array(z.object({
+        questionId: z.number().int().positive(),
+        selectedIndex: z.number().int().min(0).max(20).nullable().optional(),
+        responseText: z.string().trim().min(1).max(20_000).nullable().optional(),
+      })).min(1).max(50),
+    }))
       .mutation(async ({ ctx, input }) => {
         const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
         const db = await getDb();
@@ -397,15 +464,46 @@ export const academyRouter = router({
         const { lessons } = await courseStructure(enrollment.courseId);
         const lesson = lessons.find((item) => item.id === input.lessonId);
         if (!lesson?.requiresAssessment) throw new TRPCError({ code: "BAD_REQUEST", message: "This lesson does not have an assessment" });
+        await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
         const questions = await db.select().from(academyQuestions).where(eq(academyQuestions.lessonId, lesson.id)).orderBy(asc(academyQuestions.sortOrder));
         if (!questions.length) throw new TRPCError({ code: "BAD_REQUEST", message: "No knowledge-check questions have been added yet" });
-        const answers = new Map(input.answers.map((answer) => [answer.questionId, answer.selectedIndex]));
+        const answers = new Map(input.answers.map((answer) => [answer.questionId, answer]));
         if (answers.size !== questions.length || questions.some((question) => !answers.has(question.id))) throw new TRPCError({ code: "BAD_REQUEST", message: "Please answer every question before submitting" });
-        const correct = questions.filter((question) => answers.get(question.id) === question.correctAnswerIndex).length;
-        const score = Math.round((correct / questions.length) * 100);
-        const passed = score >= lesson.assessmentPassMark;
+        for (const question of questions) {
+          const answer = answers.get(question.id)!;
+          if (question.questionType === "free_text") {
+            if (!answer.responseText?.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "Please complete every written response before submitting" });
+            if (wordCount(answer.responseText) > question.maxWords) throw new TRPCError({ code: "BAD_REQUEST", message: `Written responses must be ${question.maxWords} words or fewer` });
+          } else if (answer.selectedIndex === null || answer.selectedIndex === undefined || answer.selectedIndex >= asOptions(question.answerOptions).length) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Please choose an answer for every multiple-choice question" });
+          }
+        }
+        const writtenQuestions = questions.filter((question) => question.questionType === "free_text");
+        const correct = questions.filter((question) => question.questionType === "multiple_choice" && answers.get(question.id)?.selectedIndex === question.correctAnswerIndex).length;
+        const score = writtenQuestions.length ? null : Math.round((correct / questions.length) * 100);
+        const passed = score === null ? null : score >= lesson.assessmentPassMark;
         const now = new Date();
-        await db.insert(academyAssessmentAttempts).values({ enrollmentId: enrollment.id, lessonId: lesson.id, score, passed, answers: input.answers, takenAt: now } as any);
+        const result = await db.insert(academyAssessmentAttempts).values({
+          enrollmentId: enrollment.id,
+          lessonId: lesson.id,
+          status: writtenQuestions.length ? "awaiting_marking" : "auto_graded",
+          score,
+          passed,
+          answers: input.answers,
+          takenAt: now,
+        } as any);
+        const attemptId = Number((result as any).insertId);
+        if (!Number.isSafeInteger(attemptId) || attemptId < 1) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Assessment submission was not assigned an ID" });
+        await db.insert(academyAssessmentResponses).values(questions.map((question) => {
+          const answer = answers.get(question.id)!;
+          return {
+            attemptId,
+            questionId: question.id,
+            selectedIndex: question.questionType === "multiple_choice" ? answer.selectedIndex ?? null : null,
+            responseText: question.questionType === "free_text" ? answer.responseText?.trim() ?? null : null,
+            score: question.questionType === "multiple_choice" ? (answer.selectedIndex === question.correctAnswerIndex ? 100 : 0) : null,
+          };
+        }) as any);
         if (passed) {
           const [existing] = await db.select().from(academyLessonProgress).where(and(eq(academyLessonProgress.enrollmentId, enrollment.id), eq(academyLessonProgress.lessonId, lesson.id))).limit(1);
           if (existing) await db.update(academyLessonProgress).set({ completedAt: now, lastViewedAt: now, startedAt: existing.startedAt ?? now }).where(eq(academyLessonProgress.id, existing.id));
@@ -413,9 +511,36 @@ export const academyRouter = router({
           if (enrollment.status === "assigned") await db.update(academyEnrollments).set({ status: "in_progress", startedAt: enrollment.startedAt ?? now }).where(eq(academyEnrollments.id, enrollment.id));
           await recalculateCompletion(enrollment.id, ctx.user.id);
         }
+        if (writtenQuestions.length) {
+          await addAudit({ agentId: ctx.user.id, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: "assessment_submitted_for_marking", summary: `Submitted ${lesson.title} written knowledge check for marking`, metadata: { lessonId: lesson.id, attemptId, writtenQuestions: writtenQuestions.length } });
+          return { attemptId, status: "awaiting_marking" as const, passMark: lesson.assessmentPassMark, correct, total: questions.length };
+        }
         await addAudit({ agentId: ctx.user.id, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: passed ? "assessment_passed" : "assessment_failed", summary: `${passed ? "Passed" : "Attempted"} ${lesson.title} knowledge check (${score}%)`, metadata: { lessonId: lesson.id, score, passed } });
-        return { score, passed, passMark: lesson.assessmentPassMark, correct, total: questions.length };
+        return { attemptId, status: "auto_graded" as const, score, passed, passMark: lesson.assessmentPassMark, correct, total: questions.length };
       }),
+
+    acknowledgeAssessmentFeedback: protectedProcedure.input(z.object({ attemptId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [row] = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons })
+        .from(academyAssessmentAttempts)
+        .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
+        .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
+        .where(and(eq(academyAssessmentAttempts.id, input.attemptId), eq(academyEnrollments.agentId, ctx.user.id))).limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment feedback not found" });
+      if (row.attempt.status !== "feedback_pending") throw new TRPCError({ code: "BAD_REQUEST", message: "This feedback has already been acknowledged or is not ready yet" });
+      const now = new Date();
+      await db.update(academyAssessmentAttempts).set({ status: "feedback_acknowledged", feedbackAcknowledgedAt: now }).where(eq(academyAssessmentAttempts.id, row.attempt.id));
+      if (row.attempt.passed) {
+        const [existing] = await db.select().from(academyLessonProgress).where(and(eq(academyLessonProgress.enrollmentId, row.enrollment.id), eq(academyLessonProgress.lessonId, row.lesson.id))).limit(1);
+        if (existing) await db.update(academyLessonProgress).set({ completedAt: now, lastViewedAt: now, startedAt: existing.startedAt ?? now }).where(eq(academyLessonProgress.id, existing.id));
+        else await db.insert(academyLessonProgress).values({ enrollmentId: row.enrollment.id, lessonId: row.lesson.id, startedAt: now, lastViewedAt: now, completedAt: now } as any);
+        if (row.enrollment.status === "assigned") await db.update(academyEnrollments).set({ status: "in_progress", startedAt: row.enrollment.startedAt ?? now }).where(eq(academyEnrollments.id, row.enrollment.id));
+        await recalculateCompletion(row.enrollment.id, ctx.user.id);
+      }
+      await addAudit({ agentId: ctx.user.id, courseId: row.enrollment.courseId, enrollmentId: row.enrollment.id, actorId: ctx.user.id, action: "assessment_feedback_acknowledged", summary: `Acknowledged feedback for ${row.lesson.title}`, metadata: { attemptId: row.attempt.id, passed: row.attempt.passed, score: row.attempt.score } });
+      return { success: true, passed: row.attempt.passed, score: row.attempt.score };
+    }),
   }),
 
   admin: router({
@@ -429,6 +554,75 @@ export const academyRouter = router({
         enrolmentCount: enrollments.filter((enrollment) => enrollment.courseId === course.id).length,
         completionCount: enrollments.filter((enrollment) => enrollment.courseId === course.id && enrollment.status === "completed").length,
       }));
+    }),
+
+    markingQueue: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const rows = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: users })
+        .from(academyAssessmentAttempts)
+        .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
+        .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
+        .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+        .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
+        .innerJoin(users, eq(users.id, academyEnrollments.agentId))
+        .where(eq(academyAssessmentAttempts.status, "awaiting_marking"))
+        .orderBy(asc(academyAssessmentAttempts.takenAt));
+      const attemptIds = rows.map((row) => row.attempt.id);
+      const lessonIds = Array.from(new Set(rows.map((row) => row.lesson.id)));
+      const responses = attemptIds.length ? await db.select().from(academyAssessmentResponses).where(inArray(academyAssessmentResponses.attemptId, attemptIds)) : [];
+      const questions = lessonIds.length ? await db.select().from(academyQuestions).where(inArray(academyQuestions.lessonId, lessonIds)).orderBy(asc(academyQuestions.sortOrder)) : [];
+      return rows.map((row) => ({
+        attempt: row.attempt,
+        enrollment: { id: row.enrollment.id, agentId: row.enrollment.agentId, courseId: row.enrollment.courseId },
+        course: { id: row.course.id, title: row.course.title },
+        lesson: { id: row.lesson.id, title: row.lesson.title, assessmentPassMark: row.lesson.assessmentPassMark },
+        agent: { id: row.agent.id, name: row.agent.name, email: row.agent.email },
+        responses: questions.filter((question) => question.lessonId === row.lesson.id && question.questionType === "free_text").map((question) => {
+          const response = responses.find((item) => item.attemptId === row.attempt.id && item.questionId === question.id);
+          return { questionId: question.id, prompt: question.prompt, responseText: response?.responseText ?? "", maxWords: question.maxWords };
+        }),
+      }));
+    }),
+
+    markWrittenAssessment: adminProcedure.input(z.object({
+      attemptId: z.number().int().positive(),
+      feedback: z.string().trim().min(3).max(10_000),
+      responses: z.array(z.object({ questionId: z.number().int().positive(), score: z.number().int().min(0).max(100), feedback: z.string().trim().min(3).max(10_000) })).min(1).max(50),
+    })).mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [row] = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: users })
+        .from(academyAssessmentAttempts)
+        .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
+        .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
+        .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+        .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
+        .innerJoin(users, eq(users.id, academyEnrollments.agentId))
+        .where(eq(academyAssessmentAttempts.id, input.attemptId)).limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment submission not found" });
+      if (row.attempt.status !== "awaiting_marking") throw new TRPCError({ code: "BAD_REQUEST", message: "This written assessment has already been marked" });
+      const questions = await db.select().from(academyQuestions).where(eq(academyQuestions.lessonId, row.lesson.id)).orderBy(asc(academyQuestions.sortOrder));
+      const writtenQuestions = questions.filter((question) => question.questionType === "free_text");
+      const grades = new Map(input.responses.map((response) => [response.questionId, response]));
+      if (grades.size !== writtenQuestions.length || writtenQuestions.some((question) => !grades.has(question.id))) throw new TRPCError({ code: "BAD_REQUEST", message: "Score and feedback are required for every written response" });
+      const savedResponses = await db.select().from(academyAssessmentResponses).where(eq(academyAssessmentResponses.attemptId, row.attempt.id));
+      if (writtenQuestions.some((question) => !savedResponses.some((response) => response.questionId === question.id))) throw new TRPCError({ code: "BAD_REQUEST", message: "One or more written responses could not be found" });
+      const questionScores = questions.map((question) => question.questionType === "multiple_choice"
+        ? (savedResponses.find((response) => response.questionId === question.id)?.score ?? 0)
+        : grades.get(question.id)!.score);
+      const score = Math.round(questionScores.reduce((total, item) => total + item, 0) / questionScores.length);
+      const passed = score >= row.lesson.assessmentPassMark;
+      const now = new Date();
+      for (const question of writtenQuestions) {
+        const grade = grades.get(question.id)!;
+        await db.update(academyAssessmentResponses).set({ score: grade.score, feedback: grade.feedback, gradedById: ctx.user.id, gradedAt: now })
+          .where(and(eq(academyAssessmentResponses.attemptId, row.attempt.id), eq(academyAssessmentResponses.questionId, question.id)));
+      }
+      await db.update(academyAssessmentAttempts).set({ status: "feedback_pending", score, passed, graderFeedback: input.feedback, gradedById: ctx.user.id, gradedAt: now }).where(eq(academyAssessmentAttempts.id, row.attempt.id));
+      await createInAppNotification({ userId: row.agent.id, message: `Your ${row.course.title} assessment feedback is ready. Please read and acknowledge it before continuing.`, linkUrl: `/academy/course/${row.enrollment.id}`, isUrgent: true });
+      await addAudit({ agentId: row.agent.id, courseId: row.course.id, enrollmentId: row.enrollment.id, actorId: ctx.user.id, action: "assessment_marked", summary: `Marked ${row.lesson.title} written assessment (${score}% — ${passed ? "passed" : "resubmission needed"})`, metadata: { attemptId: row.attempt.id, score, passed, passMark: row.lesson.assessmentPassMark } });
+      return { score, passed, passMark: row.lesson.assessmentPassMark };
     }),
 
     editor: adminProcedure.input(z.object({ courseId: z.number().int().positive() })).query(async ({ input }) => {
@@ -594,14 +788,34 @@ export const academyRouter = router({
       return { success: true };
     }),
 
-    replaceQuestions: adminProcedure.input(z.object({ lessonId: z.number().int().positive(), questions: z.array(z.object({ id: z.number().int().positive().optional(), prompt: z.string().trim().min(4).max(10_000), answerOptions: z.array(z.string().trim().min(1).max(500)).min(2).max(8), correctAnswerIndex: z.number().int().min(0).max(7), explanation: z.string().trim().max(10_000).nullable().optional() })).max(30) })).mutation(async ({ ctx, input }) => {
+    replaceQuestions: adminProcedure.input(z.object({
+      lessonId: z.number().int().positive(),
+      questions: z.array(z.object({
+        id: z.number().int().positive().optional(),
+        prompt: z.string().trim().min(4).max(10_000),
+        questionType: z.enum(["multiple_choice", "free_text"]).default("multiple_choice"),
+        answerOptions: z.array(z.string().trim().min(1).max(500)).max(8).default([]),
+        correctAnswerIndex: z.number().int().min(0).max(7).default(0),
+        maxWords: z.number().int().min(10).max(2_000).default(250),
+        explanation: z.string().trim().max(10_000).nullable().optional(),
+      })).max(30),
+    })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [lesson] = await db.select().from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
       if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
-      if (input.questions.some((question) => question.correctAnswerIndex >= question.answerOptions.length)) throw new TRPCError({ code: "BAD_REQUEST", message: "Each question needs a correct answer" });
+      if (input.questions.some((question) => question.questionType === "multiple_choice" && (question.answerOptions.length < 2 || question.correctAnswerIndex >= question.answerOptions.length))) throw new TRPCError({ code: "BAD_REQUEST", message: "Each multiple-choice question needs at least two answers and one correct answer" });
       await db.delete(academyQuestions).where(eq(academyQuestions.lessonId, input.lessonId));
-      if (input.questions.length) await db.insert(academyQuestions).values(input.questions.map((question, sortOrder) => ({ lessonId: input.lessonId, prompt: question.prompt, answerOptions: question.answerOptions, correctAnswerIndex: question.correctAnswerIndex, explanation: normaliseOptionalText(question.explanation), sortOrder })) as any);
+      if (input.questions.length) await db.insert(academyQuestions).values(input.questions.map((question, sortOrder) => ({
+        lessonId: input.lessonId,
+        prompt: question.prompt,
+        questionType: question.questionType,
+        answerOptions: question.questionType === "multiple_choice" ? question.answerOptions : [],
+        correctAnswerIndex: question.questionType === "multiple_choice" ? question.correctAnswerIndex : 0,
+        maxWords: question.maxWords,
+        explanation: normaliseOptionalText(question.explanation),
+        sortOrder,
+      })) as any);
       const [module] = await db.select().from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
       await addAudit({ courseId: module?.courseId ?? null, actorId: ctx.user.id, action: "assessment_updated", summary: `Updated knowledge check: ${lesson.title}`, metadata: { questionCount: input.questions.length } });
       return { success: true };
