@@ -23,24 +23,30 @@ export default function WeeklyDigestAdmin() {
   const [customSubject, setCustomSubject] = useState("");
   const [customIntro, setCustomIntro] = useState("");
   const [digestType, setDigestType] = useState<"weekly" | "monthly">("weekly");
+  const [editingFigures, setEditingFigures] = useState(false);
+  const [figureEdits, setFigureEdits] = useState<Record<number, {
+    bookingsThisWeek: number;
+    totalCommissionClaimed: number;
+    reimbursementsCount: number;
+  }>>({});
 
   // Weekly updates always cover the previous completed Mon–Sun period.
   // Monthly reviews always cover the previous completed calendar month.
   const periodStart = useMemo(() => {
     const d = new Date();
     if (digestType === "monthly") {
-      d.setMonth(d.getMonth() - 1, 1);
+      d.setUTCMonth(d.getUTCMonth() - 1, 1);
     } else {
       const daysSinceMonday = (d.getDay() + 6) % 7;
-      d.setDate(d.getDate() - daysSinceMonday - 7);
+      d.setUTCDate(d.getUTCDate() - daysSinceMonday - 7);
     }
-    d.setHours(0, 0, 0, 0);
+    d.setUTCHours(0, 0, 0, 0);
     return d;
   }, [digestType]);
   const periodEnd = useMemo(() => {
     const d = new Date(periodStart);
-    if (digestType === "monthly") d.setMonth(d.getMonth() + 1, 1);
-    else d.setDate(d.getDate() + 7);
+    if (digestType === "monthly") d.setUTCMonth(d.getUTCMonth() + 1, 1);
+    else d.setUTCDate(d.getUTCDate() + 7);
     return d;
   }, [digestType, periodStart]);
   const periodLabel = useMemo(() => {
@@ -53,6 +59,14 @@ export default function WeeklyDigestAdmin() {
 
   const createDraft = trpc.community.digest.getOrCreateDraft.useMutation();
   const { data: digests, isLoading: digestsLoading, refetch: refetchDigests } = trpc.community.digest.list.useQuery();
+  const updateDraft = trpc.community.digest.update.useMutation({
+    onSuccess: () => {
+      toast.success("Reporting figures saved");
+      setEditingFigures(false);
+      refetchDigests();
+    },
+    onError: (e: any) => toast.error(e.message ?? "Unable to save reporting figures"),
+  });
 
   // Match using the fixed start of the selected reporting period.
   const draft = digests?.find((d: any) => {
@@ -100,6 +114,26 @@ export default function WeeklyDigestAdmin() {
   };
 
   const stats = draft?.statsSnapshot as any;
+  const currentFigures = draft
+    ? figureEdits[draft.id] ?? {
+      bookingsThisWeek: Number(stats?.bookingsThisWeek ?? stats?.bookingsCount ?? 0),
+      totalCommissionClaimed: Number(stats?.totalCommissionClaimed ?? stats?.commissionTotal ?? 0),
+      reimbursementsCount: Number(stats?.reimbursementsCount ?? 0),
+    }
+    : null;
+  const beginFigureEditing = () => {
+    if (!draft || !currentFigures) return;
+    setFigureEdits((existing) => ({ ...existing, [draft.id]: currentFigures }));
+    setEditingFigures(true);
+  };
+  const saveFigures = async () => {
+    if (!draft || !currentFigures) return;
+    await updateDraft.mutateAsync({ digestId: draft.id, statsSnapshot: { ...stats, ...currentFigures } });
+    setFigureEdits((existing) => {
+      const { [draft.id]: _saved, ...remaining } = existing;
+      return remaining;
+    });
+  };
   const highlightsRaw = draft?.bookingHighlightsOverride as any;
   // Backend stores a structured object { firstBookings, highMargin, commissionClaimed }
   const highlights = highlightsRaw && typeof highlightsRaw === 'object' && !Array.isArray(highlightsRaw)
@@ -116,7 +150,7 @@ export default function WeeklyDigestAdmin() {
     if ((highlights.commissionClaimed?.agentNames?.length ?? 0) > 0) {
       const names = highlights.commissionClaimed.agentNames.join(', ');
       const total = Number(highlights.commissionClaimed.totalAmount ?? 0);
-      highlightItems.push({ emoji: '🏆', message: `Commission paid out to ${names} — total: £${total.toLocaleString('en-GB', { maximumFractionDigits: 0 })}` });
+      highlightItems.push({ emoji: '🏆', message: `Commission claimed by ${names} — total: £${total.toLocaleString('en-GB', { maximumFractionDigits: 0 })}` });
     }
   }
   const includedPostIds: number[] = Array.isArray(draft?.includedPostIds)
@@ -182,25 +216,36 @@ export default function WeeklyDigestAdmin() {
           )}
 
           {/* Stats block */}
-          {stats && (
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-card border border-border rounded-xl p-4 text-center">
-                <p className="text-2xl font-bold text-foreground">{stats.bookingsThisWeek ?? 0}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Bookings this {digestType === "monthly" ? "month" : "week"}</p>
+          {stats && currentFigures && (
+            <section className="rounded-xl border border-border bg-card p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Reporting figures</h3>
+                  <p className="text-xs text-muted-foreground">{editingFigures ? "Amend a figure when a manual adjustment is needed." : "Calculated from this completed reporting period."}</p>
+                </div>
+                {!editingFigures && <Button size="sm" variant="outline" disabled={draft.status === "sent"} onClick={beginFigureEditing}>Edit figures</Button>}
               </div>
-              <div className="bg-card border border-border rounded-xl p-4 text-center">
-                <p className="text-2xl font-bold text-foreground">
-                  {stats.totalCommissionClaimed
-                    ? `£${Number(stats.totalCommissionClaimed).toLocaleString("en-GB", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-                    : "£0"}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">Commission claimed</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border border-border p-3 text-center">
+                  {editingFigures ? <Input aria-label="Bookings figure" min="0" type="number" value={currentFigures.bookingsThisWeek} onChange={(event) => setFigureEdits((existing) => ({ ...existing, [draft.id]: { ...currentFigures, bookingsThisWeek: Math.max(0, Number(event.target.value) || 0) } }))} /> : <p className="text-2xl font-bold text-foreground">{currentFigures.bookingsThisWeek}</p>}
+                  <p className="mt-1 text-xs text-muted-foreground">Bookings this {digestType === "monthly" ? "month" : "week"}</p>
+                </div>
+                <div className="rounded-lg border border-border p-3 text-center">
+                  {editingFigures ? <Input aria-label="Commission figure" min="0" step="0.01" type="number" value={currentFigures.totalCommissionClaimed} onChange={(event) => setFigureEdits((existing) => ({ ...existing, [draft.id]: { ...currentFigures, totalCommissionClaimed: Math.max(0, Number(event.target.value) || 0) } }))} /> : <p className="text-2xl font-bold text-foreground">{currentFigures.totalCommissionClaimed ? `£${currentFigures.totalCommissionClaimed.toLocaleString("en-GB", { maximumFractionDigits: 0 })}` : "£0"}</p>}
+                  <p className="mt-1 text-xs text-muted-foreground">Commission claimed</p>
+                </div>
+                <div className="rounded-lg border border-border p-3 text-center">
+                  {editingFigures ? <Input aria-label="Reimbursements figure" min="0" type="number" value={currentFigures.reimbursementsCount} onChange={(event) => setFigureEdits((existing) => ({ ...existing, [draft.id]: { ...currentFigures, reimbursementsCount: Math.max(0, Number(event.target.value) || 0) } }))} /> : <p className="text-2xl font-bold text-foreground">{currentFigures.reimbursementsCount}</p>}
+                  <p className="mt-1 text-xs text-muted-foreground">Reimbursements</p>
+                </div>
               </div>
-              <div className="bg-card border border-border rounded-xl p-4 text-center">
-                <p className="text-2xl font-bold text-foreground">{stats.reimbursementsCount ?? 0}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Reimbursements</p>
-              </div>
-            </div>
+              {editingFigures && (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">Saved figures are used in previews and the final email. Regenerate replaces them with fresh live calculations.</p>
+                  <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setEditingFigures(false)}>Cancel</Button><Button size="sm" disabled={updateDraft.isPending} onClick={saveFigures}>{updateDraft.isPending ? "Saving…" : "Save figures"}</Button></div>
+                </div>
+              )}
+            </section>
           )}
 
           {/* Agent highlights */}

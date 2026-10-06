@@ -707,13 +707,16 @@ export type CommunityDigestType = "weekly" | "monthly";
 
 export function getDigestPeriod(digestType: CommunityDigestType, periodStart: Date) {
   const start = new Date(periodStart);
-  start.setHours(0, 0, 0, 0);
+  // Reporting windows are stored as UTC date-only boundaries. Local-time
+  // setters turn a UK BST date into the preceding UTC calendar date.
+  start.setUTCHours(0, 0, 0, 0);
 
   const periodEnd = new Date(start);
   if (digestType === "weekly") {
-    periodEnd.setDate(periodEnd.getDate() + 7);
+    periodEnd.setUTCDate(periodEnd.getUTCDate() + 7);
   } else {
-    periodEnd.setMonth(periodEnd.getMonth() + 1, 1);
+    periodEnd.setUTCMonth(periodEnd.getUTCMonth() + 1, 1);
+    periodEnd.setUTCHours(0, 0, 0, 0);
   }
 
   return { periodStart: start, periodEnd };
@@ -729,7 +732,7 @@ export async function getOrCreateCommunityDigestDraft({
   const db = await getDb();
   if (!db) return null;
   const { periodStart: normalisedPeriodStart, periodEnd } = getDigestPeriod(digestType, periodStart);
-  const [existing] = await db
+  let [existing] = await db
     .select()
     .from(communityDigests)
     .where(
@@ -738,6 +741,36 @@ export async function getOrCreateCommunityDigestDraft({
         eq(communityDigests.digestType, digestType)
       )
     );
+
+  // Repair the unsent monthly draft created by the former local-time bug. It
+  // began on the preceding day and ended on the intended first day, covering
+  // only one day rather than the whole reporting month.
+  if (!existing && digestType === "monthly") {
+    const legacyStart = new Date(normalisedPeriodStart);
+    legacyStart.setUTCDate(legacyStart.getUTCDate() - 1);
+    const [legacyDraft] = await db
+      .select()
+      .from(communityDigests)
+      .where(
+        and(
+          eq(communityDigests.digestType, "monthly"),
+          eq(communityDigests.status, "draft"),
+          gte(communityDigests.weekStarting, legacyStart),
+          lt(communityDigests.weekStarting, normalisedPeriodStart),
+          eq(communityDigests.periodEnd, normalisedPeriodStart)
+        )
+      );
+    if (legacyDraft) {
+      await db
+        .update(communityDigests)
+        .set({ weekStarting: normalisedPeriodStart, periodEnd } as any)
+        .where(eq(communityDigests.id, legacyDraft.id));
+      [existing] = await db
+        .select()
+        .from(communityDigests)
+        .where(eq(communityDigests.id, legacyDraft.id));
+    }
+  }
 
   // A sent period is immutable: do not create a second version that could be sent twice.
   if (existing?.status === "sent") return existing;
@@ -766,6 +799,8 @@ export async function getOrCreateCommunityDigestDraft({
     .select({ count: sql<number>`COUNT(*)` })
     .from(bookings)
     .where(and(
+      // This card is explicitly "Bookings Registered", so it follows the
+      // Portal registration timestamp rather than an agent-entered booking date.
       gte(bookings.createdAt, normalisedPeriodStart),
       lt(bookings.createdAt, periodEnd)
     ));
@@ -776,11 +811,7 @@ export async function getOrCreateCommunityDigestDraft({
     .where(
       and(
         gte(commissionClaims.claimedAt, normalisedPeriodStart),
-        lt(commissionClaims.claimedAt, periodEnd),
-        or(
-          eq(commissionClaims.status, "paid"),
-          eq(commissionClaims.status, "awaiting_payment")
-        )
+        lt(commissionClaims.claimedAt, periodEnd)
       )
     );
   const commissionTotal = claimedThisWeek.reduce(
@@ -794,7 +825,6 @@ export async function getOrCreateCommunityDigestDraft({
     .from(reimbursementItems)
     .where(
       and(
-        eq(reimbursementItems.status, "scheduled"),
         gte(reimbursementItems.scheduledAt, normalisedPeriodStart),
         lt(reimbursementItems.scheduledAt, periodEnd)
       )
@@ -968,11 +998,7 @@ export async function getBookingHighlights(weekStart: Date, weekEnd: Date) {
     .where(
       and(
         gte(commissionClaims.claimedAt, weekStart),
-        lt(commissionClaims.claimedAt, weekEnd),
-        or(
-          eq(commissionClaims.status, "paid"),
-          eq(commissionClaims.status, "awaiting_payment")
-        )
+        lt(commissionClaims.claimedAt, weekEnd)
       )
     );
 

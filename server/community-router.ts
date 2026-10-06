@@ -457,6 +457,7 @@ export const communityRouter = router({
         const highlights = digest.bookingHighlightsOverride
           ? (typeof digest.bookingHighlightsOverride === "string" ? JSON.parse(digest.bookingHighlightsOverride) : digest.bookingHighlightsOverride)
           : null;
+        const digestPeriodLabel = (digest as any).digestType === "monthly" ? "This Month" : "This Week";
 
         // ── Collect community posts grouped by category ──────────────────────────
         const categoryLabel: Record<string, string> = {
@@ -524,7 +525,7 @@ export const communityRouter = router({
           <div style="margin-bottom:28px;">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;border-bottom:2px solid #70FFE8;padding-bottom:6px;">
               <span style="font-size:18px;">📊</span>
-              <h3 style="margin:0;font-size:15px;font-weight:700;color:#414141;font-family:'Poppins',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">This Week in the Community</h3>
+              <h3 style="margin:0;font-size:15px;font-weight:700;color:#414141;font-family:'Poppins',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">${digestPeriodLabel} in the Community</h3>
             </div>
             <table style="width:100%;border-collapse:collapse;"><tr>${snapshotCells.join("")}</tr></table>
           </div>
@@ -567,7 +568,7 @@ export const communityRouter = router({
             </div>
           `;
         }
-        if (!postsHtml) postsHtml = `<p style="color:#888;font-family:'Poppins',sans-serif;">No community posts this week.</p>`;
+        if (!postsHtml) postsHtml = `<p style="color:#888;font-family:'Poppins',sans-serif;">No community posts for this reporting period.</p>`;
 
         // ── Upcoming events (next week only: Mon–Sun) ──────────────────────────
         // Compute start of next Monday and end of next Sunday
@@ -632,7 +633,7 @@ export const communityRouter = router({
             <div style="margin-bottom:28px;">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;border-bottom:2px solid #70FFE8;padding-bottom:6px;">
                 <span style="font-size:18px;">📈</span>
-                <h3 style="margin:0;font-size:15px;font-weight:700;color:#414141;font-family:'Poppins',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">This Week's Numbers</h3>
+                <h3 style="margin:0;font-size:15px;font-weight:700;color:#414141;font-family:'Poppins',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">${digestPeriodLabel}'s Numbers</h3>
               </div>
               <table style="width:100%;border-collapse:collapse;">
                 <tr>
@@ -670,11 +671,11 @@ export const communityRouter = router({
             items.push(`<tr style="background:#f0fff8;"><td style="padding:10px 14px;font-size:13px;color:#414141;font-family:'Poppins',sans-serif;border-bottom:1px solid #e8f8f0;">🎉 <strong>${h.agentName}</strong> registered their <strong>first ever booking</strong> — welcome to the JLT journey!</td></tr>`);
           }
 
-          // Commission paid out
+          // Commission activity in the reporting period
           if ((highlights.commissionClaimed?.agentNames?.length ?? 0) > 0) {
             const names = highlights.commissionClaimed.agentNames.join(", ");
             const total = highlights.commissionClaimed.totalAmount ?? 0;
-            items.push(`<tr><td style="padding:10px 14px;font-size:13px;color:#414141;font-family:'Poppins',sans-serif;">🏆 Commission paid out to <strong>${names}</strong> — total: <strong>£${Number(total).toLocaleString("en-GB", { maximumFractionDigits: 0 })}</strong></td></tr>`);
+            items.push(`<tr><td style="padding:10px 14px;font-size:13px;color:#414141;font-family:'Poppins',sans-serif;">🏆 Commission claimed by <strong>${names}</strong> — total: <strong>£${Number(total).toLocaleString("en-GB", { maximumFractionDigits: 0 })}</strong></td></tr>`);
           }
 
           if (items.length > 0) {
