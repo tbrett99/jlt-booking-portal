@@ -33,6 +33,7 @@ describe("monthly review reporting", () => {
     expect(digestPage).toContain("Edit figures");
     expect(digestPage).toContain("Save figures");
     expect(digestPage).toContain("statsSnapshot: { ...stats, ...currentFigures }");
+    expect(digestPage).toContain("Math.round(Number(stats?.totalCommissionClaimed");
     expect(digestPage).toContain("commission claims from");
     expect(digestRouter).toContain("${digestPeriodLabel}'s Numbers");
   });

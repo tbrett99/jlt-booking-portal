@@ -117,7 +117,7 @@ export default function WeeklyDigestAdmin() {
   const currentFigures = draft
     ? figureEdits[draft.id] ?? {
       bookingsThisWeek: Number(stats?.bookingsThisWeek ?? stats?.bookingsCount ?? 0),
-      totalCommissionClaimed: Number(stats?.totalCommissionClaimed ?? stats?.commissionTotal ?? 0),
+      totalCommissionClaimed: Math.round(Number(stats?.totalCommissionClaimed ?? stats?.commissionTotal ?? 0) * 100) / 100,
       reimbursementsCount: Number(stats?.reimbursementsCount ?? 0),
     }
     : null;
