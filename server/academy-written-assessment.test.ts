@@ -21,7 +21,7 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(router).toContain('status: writtenQuestions.length ? "awaiting_marking" : "auto_graded"');
     expect(router).toContain('markWrittenAssessment: adminProcedure');
     expect(router).toContain('Score and feedback are required for every written response');
-    expect(router).toContain('const score = Math.round(questionScores.reduce');
+    expect(router).toContain('const score = Math.round(states.reduce');
     expect(router).toContain('status: "feedback_pending"');
   });
 

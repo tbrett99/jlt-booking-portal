@@ -1703,6 +1703,22 @@ export const academyAssessmentResponses = mysqlTable("academy_assessment_respons
 ]);
 export type AcademyAssessmentResponse = typeof academyAssessmentResponses.$inferSelect;
 
+// An admin reset begins a fresh, three-attempt support cycle for one question.
+// Attempts before the reset remain in the immutable Academy audit history.
+export const academyAssessmentQuestionResets = mysqlTable("academy_assessment_question_resets", {
+  id: int("id").autoincrement().primaryKey(),
+  enrollmentId: int("enrollmentId").notNull(),
+  lessonId: int("lessonId").notNull(),
+  questionId: int("questionId").notNull(),
+  resetById: int("resetById").notNull(),
+  reason: text("reason").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("academy_question_resets_enrollment_question_idx").on(table.enrollmentId, table.questionId, table.createdAt),
+  index("academy_question_resets_lesson_created_idx").on(table.lessonId, table.createdAt),
+]);
+export type AcademyAssessmentQuestionReset = typeof academyAssessmentQuestionResets.$inferSelect;
+
 export const academyAuditLog = mysqlTable("academy_audit_log", {
   id: int("id").autoincrement().primaryKey(),
   agentId: int("agentId"),
