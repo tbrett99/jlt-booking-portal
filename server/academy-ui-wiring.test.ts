@@ -39,6 +39,12 @@ describe("JLT Academy interface wiring", () => {
     expect(academyRouter).toContain('action: "lesson_updated"');
   });
 
+  it("never submits quiz questions with an invalid lesson ID", () => {
+    expect(manager).toContain("const lessonId = Number(result.id)");
+    expect(manager).toContain("Number.isSafeInteger(lessonId)");
+    expect(manager).toContain("lessonId, questions: lessonDraft.questions");
+  });
+
   it("keeps useful Academy paste formatting while filtering unsafe clipboard markup", () => {
     expect(manager).toContain("preserveClipboardFormatting");
     expect(manager).toContain("Smart format pasted text");

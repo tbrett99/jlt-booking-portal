@@ -51,7 +51,19 @@ export default function AdminAcademy() {
   const setStatus = trpc.academy.admin.setCourseStatus.useMutation({ onSuccess: () => { toast.success("Course status updated"); invalidateAcademy(); }, onError: (e) => toast.error(e.message) });
   const saveModule = trpc.academy.admin.saveModule.useMutation({ onSuccess: (_result, variables) => { toast.success(variables.id ? "Module updated" : "Module added"); if (!variables.id) { setModuleTitle(""); setModuleSummary(""); } setEditingModuleId(null); invalidateAcademy(); }, onError: (e) => toast.error(e.message) });
   const deleteModule = trpc.academy.admin.deleteModule.useMutation({ onSuccess: () => { toast.success("Module removed"); invalidateAcademy(); }, onError: (e) => toast.error(e.message) });
-  const saveLesson = trpc.academy.admin.saveLesson.useMutation({ onSuccess: async (result) => { if (lessonDraft.requiresAssessment) await replaceQuestions.mutateAsync({ lessonId: result.id, questions: lessonDraft.questions }); toast.success("Lesson saved"); setEditingLessonId(null); setLessonModuleId(null); setLessonDraft(emptyLesson); invalidateAcademy(); }, onError: (e) => toast.error(e.message) });
+  const saveLesson = trpc.academy.admin.saveLesson.useMutation({ onSuccess: async (result) => {
+    const lessonId = Number(result.id);
+    if (!Number.isSafeInteger(lessonId) || lessonId < 1) {
+      toast.error("The lesson was not assigned a valid ID. Please refresh before trying again.");
+      return;
+    }
+    if (lessonDraft.requiresAssessment) await replaceQuestions.mutateAsync({ lessonId, questions: lessonDraft.questions });
+    toast.success("Lesson saved");
+    setEditingLessonId(null);
+    setLessonModuleId(null);
+    setLessonDraft(emptyLesson);
+    invalidateAcademy();
+  }, onError: (e) => toast.error(e.message) });
   const deleteLesson = trpc.academy.admin.deleteLesson.useMutation({ onSuccess: () => { toast.success("Lesson removed"); invalidateAcademy(); }, onError: (e) => toast.error(e.message) });
   const replaceQuestions = trpc.academy.admin.replaceQuestions.useMutation({ onError: (e) => toast.error(e.message) });
   const uploadAttachment = trpc.academy.admin.uploadAttachment.useMutation({ onError: (e) => toast.error(e.message) });

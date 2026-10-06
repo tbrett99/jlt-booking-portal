@@ -30,4 +30,10 @@ describe("JLT Academy feature safeguards", () => {
     expect(source).toContain("INSERT INTO academy_courses");
     expect(source).toContain("VALUES (?, ?, ?, ?, ?, ?, ?)");
   });
+
+  it("uses a native prepared insert and validates the returned ID for new lessons", () => {
+    expect(source).toContain("INSERT INTO academy_lessons");
+    expect(source).toContain("Academy lesson insert did not return an ID");
+    expect(source).toContain("Number.isSafeInteger(id)");
+  });
 });

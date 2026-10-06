@@ -530,8 +530,36 @@ export const academyRouter = router({
         return { id: input.id };
       }
       const existing = await db.select().from(academyLessons).where(eq(academyLessons.moduleId, input.moduleId)).orderBy(desc(academyLessons.sortOrder)).limit(1);
-      const result = await db.insert(academyLessons).values({ ...payload, moduleId: input.moduleId, sortOrder: (existing[0]?.sortOrder ?? -1) + 1 } as any);
+      // TiDB's Drizzle insert result does not reliably expose insertId. Use the
+      // native prepared statement so a new lesson can be immediately linked to
+      // its knowledge-check questions without sending a NaN lessonId to tRPC.
+      const pool = await getRawDbPool();
+      if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [result] = await pool.execute(
+        `INSERT INTO academy_lessons
+          (moduleId, title, summary, contentHtml, videoUrl, attachmentUrl, attachmentKey, attachmentName, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentPassMark, sortOrder)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          input.moduleId,
+          payload.title,
+          payload.summary,
+          payload.contentHtml,
+          payload.videoUrl,
+          payload.attachmentUrl,
+          payload.attachmentKey,
+          payload.attachmentName,
+          payload.estimatedMinutes,
+          payload.isRequired,
+          payload.requiresAcknowledgement,
+          payload.requiresAssessment,
+          payload.assessmentPassMark,
+          (existing[0]?.sortOrder ?? -1) + 1,
+        ],
+      );
       const id = Number((result as any).insertId);
+      if (!Number.isSafeInteger(id) || id < 1) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Academy lesson insert did not return an ID" });
+      }
       await addAudit({ courseId: module.courseId, actorId: ctx.user.id, action: "lesson_created", summary: `Added lesson: ${input.title}` });
       return { id };
     }),
