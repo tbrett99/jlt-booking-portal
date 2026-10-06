@@ -622,7 +622,18 @@ export const appRouter = router({
           role: z.enum(["super_admin", "admin", "agent"]),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const target = await getUserById(input.userId);
+        if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+        if (target.id === ctx.user.id) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "A Super Admin cannot change their own role" });
+        }
+        if (target.role === "super_admin" && input.role !== "super_admin") {
+          const superAdminCount = (await getAllUsers()).filter((user) => user.role === "super_admin").length;
+          if (superAdminCount <= 1) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "At least one Super Admin must remain" });
+          }
+        }
         await updateUserRole(input.userId, input.role);
         return { success: true };
       }),

@@ -228,6 +228,48 @@ describe("role guards", () => {
   });
 });
 
+describe("users.updateRole", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("allows a Super Admin to promote another staff account", async () => {
+    const { getUserById, updateUserRole } = await import("./db");
+    vi.mocked(getUserById).mockResolvedValueOnce({ id: 2, role: "admin", name: "Admin Alex" } as any);
+
+    const result = await appRouter.createCaller(makeCtx("super_admin")).users.updateRole({
+      userId: 2,
+      role: "super_admin",
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(updateUserRole).toHaveBeenCalledWith(2, "super_admin");
+  });
+
+  it("does not allow a Super Admin to alter their own role", async () => {
+    const { getUserById, updateUserRole } = await import("./db");
+    vi.mocked(getUserById).mockResolvedValueOnce({ id: 1, role: "super_admin", name: "Test super_admin" } as any);
+
+    await expect(appRouter.createCaller(makeCtx("super_admin")).users.updateRole({
+      userId: 1,
+      role: "admin",
+    })).rejects.toThrow(/cannot change their own role/i);
+    expect(updateUserRole).not.toHaveBeenCalled();
+  });
+
+  it("does not allow the final Super Admin to be demoted", async () => {
+    const { getAllUsers, getUserById, updateUserRole } = await import("./db");
+    vi.mocked(getUserById).mockResolvedValueOnce({ id: 2, role: "super_admin", name: "Only other Super Admin" } as any);
+    vi.mocked(getAllUsers).mockResolvedValueOnce([{ id: 2, role: "super_admin" }] as any);
+
+    await expect(appRouter.createCaller(makeCtx("super_admin")).users.updateRole({
+      userId: 2,
+      role: "admin",
+    })).rejects.toThrow(/at least one Super Admin must remain/i);
+    expect(updateUserRole).not.toHaveBeenCalled();
+  });
+});
+
 // ─── Notes tests ──────────────────────────────────────────────────────────────
 
 describe("notes", () => {

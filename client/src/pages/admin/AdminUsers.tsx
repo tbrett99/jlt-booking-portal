@@ -15,6 +15,8 @@ import { Plus, Search, ChevronLeft, ChevronRight, Loader2, Trash2, UserCheck, Lo
 import { format } from "date-fns";
 import { useLocation } from "wouter";
 
+type PortalRole = "agent" | "admin" | "super_admin";
+
 export default function AdminUsers() {
   const { user: me } = useAuth();
   const utils = trpc.useUtils();
@@ -33,6 +35,12 @@ export default function AdminUsers() {
 
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [roleChangeTarget, setRoleChangeTarget] = useState<{
+    id: number;
+    name: string;
+    currentRole: PortalRole;
+    nextRole: PortalRole;
+  } | null>(null);
 
   const { data, isLoading } = trpc.users.list.useQuery({
     search: search || undefined,
@@ -111,6 +119,22 @@ export default function AdminUsers() {
       toast.error(err.message || "Failed to delete user");
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleRoleChange = async () => {
+    if (!roleChangeTarget || roleChangeTarget.currentRole === roleChangeTarget.nextRole) {
+      setRoleChangeTarget(null);
+      return;
+    }
+
+    try {
+      await updateRole.mutateAsync({ userId: roleChangeTarget.id, role: roleChangeTarget.nextRole });
+      await utils.users.list.invalidate();
+      toast.success(`${roleChangeTarget.name} is now a ${roleLabel(roleChangeTarget.nextRole)}.`);
+      setRoleChangeTarget(null);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update access role");
     }
   };
 
@@ -228,6 +252,44 @@ export default function AdminUsers() {
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={isDeleting}>Cancel</Button>
             <Button onClick={handleDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700 text-white">
               {isDeleting ? <><Loader2 size={14} className="animate-spin mr-2" />Deleting...</> : "Delete Permanently"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!roleChangeTarget} onOpenChange={(open) => { if (!open) setRoleChangeTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change staff access role</DialogTitle>
+            <DialogDescription>
+              This changes what <strong>{roleChangeTarget?.name}</strong> can access across the Portal. They may need to refresh or sign in again before the new permissions appear.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="staff-role">New role</Label>
+            <Select
+              value={roleChangeTarget?.nextRole}
+              onValueChange={(nextRole) => setRoleChangeTarget((current) => current ? { ...current, nextRole: nextRole as PortalRole } : current)}
+            >
+              <SelectTrigger id="staff-role"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="agent">Agent</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="super_admin">Super Admin</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Current role: <strong>{roleChangeTarget ? roleLabel(roleChangeTarget.currentRole) : "—"}</strong>
+            </p>
+          </div>
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" onClick={() => setRoleChangeTarget(null)} disabled={updateRole.isPending}>Cancel</Button>
+            <Button
+              onClick={handleRoleChange}
+              disabled={updateRole.isPending || roleChangeTarget?.nextRole === roleChangeTarget?.currentRole}
+              style={{ background: "#70FFE8", color: "#414141" }}
+            >
+              {updateRole.isPending ? <><Loader2 size={14} className="animate-spin mr-2" />Saving…</> : "Confirm role change"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -371,6 +433,22 @@ export default function AdminUsers() {
                                 onClick={() => impersonate.mutate({ userId: u.id })}
                               >
                                 <UserCheck size={12} />
+                              </Button>
+                            )}
+                            {isSuperAdmin && u.id !== me?.id && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-7 text-violet-700 border-violet-200 hover:bg-violet-50"
+                                disabled={updateRole.isPending}
+                                onClick={() => setRoleChangeTarget({
+                                  id: u.id,
+                                  name: u.name ?? u.email ?? "this user",
+                                  currentRole: u.role as PortalRole,
+                                  nextRole: u.role as PortalRole,
+                                })}
+                              >
+                                Change role
                               </Button>
                             )}
                             {isAdmin && (
