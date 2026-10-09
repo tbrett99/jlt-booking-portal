@@ -39,6 +39,9 @@ type ClaimRow = {
   agentPortalStatus?: string | null;
   inContract?: boolean;
   inContractHold?: boolean;
+  membershipArrearsHold?: boolean;
+  membershipFailureCount?: number;
+  membershipLastFailedAt?: Date | string | null;
   status: string;
   claimedAt: Date | string;
   paidAt: Date | string | null;
@@ -236,8 +239,12 @@ function ClaimTable({
                     <Checkbox
                       checked={selectedIds.has(c.id)}
                       onCheckedChange={() => toggleSelect(c.id)}
-                      disabled={!!c.inContractHold}
-                      aria-label={c.inContractHold ? "Commission held until this booking's departure date has passed" : `Select commission claim for ${c.booking?.clientName ?? c.agentName}`}
+                      disabled={!!c.inContractHold || !!c.membershipArrearsHold}
+                      aria-label={c.inContractHold
+                        ? "Commission held until this booking's departure date has passed"
+                        : c.membershipArrearsHold
+                        ? "Commission held while the agent has outstanding monthly membership arrears"
+                        : `Select commission claim for ${c.booking?.clientName ?? c.agentName}`}
                     />
                   </td>
                 )}
@@ -258,6 +265,14 @@ function ClaimTable({
                       {c.inContract && (
                         <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium rounded px-1.5 py-0.5 ${c.inContractHold ? "bg-rose-100 text-rose-800 border border-rose-200" : "bg-emerald-100 text-emerald-800 border border-emerald-200"}`} title={c.inContractHold ? "Commission remains held until this booking's departure date has passed" : "Agent remains In Contract, but this client has travelled and commission may proceed"}>
                           <AlertTriangle className="h-2.5 w-2.5" /> {c.inContractHold ? "In Contract — Hold" : "In Contract — Travel Complete"}
+                        </span>
+                      )}
+                      {c.membershipArrearsHold && (
+                        <span
+                          className="inline-flex items-center gap-0.5 rounded border border-rose-200 bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-800"
+                          title={`Commission is held until the agent's monthly membership arrears are resolved${c.membershipLastFailedAt ? ` (latest failed collection: ${formatDate(c.membershipLastFailedAt)})` : ""}.`}
+                        >
+                          <AlertTriangle className="h-2.5 w-2.5" /> Membership arrears — Hold{c.membershipFailureCount ? ` (${c.membershipFailureCount})` : ""}
                         </span>
                       )}
                     </div>
@@ -338,7 +353,8 @@ function ClaimTable({
                         variant="ghost"
                         size="sm"
                         onClick={() => markPaidMutation.mutate({ claimIds: [c.id] })}
-                        disabled={markPaidMutation.isPending}
+                        disabled={markPaidMutation.isPending || !!c.membershipArrearsHold}
+                        title={c.membershipArrearsHold ? "Resolve the agent's monthly membership arrears in CRM before processing this commission." : undefined}
                         className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 text-xs"
                       >
                         Process in PTS
@@ -573,8 +589,13 @@ export default function AdminCommissions() {
   const { rows: pagedPaid, safePage: safePaidPage, totalPages: paidTotalPages } = getPage(paid, paidPage, PAID_CLAIMS_PER_PAGE);
 
   const toggleSelect = (id: number) => {
-    if (allClaims.find((claim) => claim.id === id)?.inContractHold) {
+    const claim = allClaims.find((item) => item.id === id);
+    if (claim?.inContractHold) {
       toast.error("This claim is held because the booking's departure date has not yet passed.");
+      return;
+    }
+    if (claim?.membershipArrearsHold) {
+      toast.error("This claim is held until the agent's outstanding monthly membership arrears are resolved.");
       return;
     }
     setSelectedIds((prev) => {
@@ -588,7 +609,7 @@ export default function AdminCommissions() {
   const toggleSelectAll = (rows: ClaimRow[]) => {
     const selectable = getSelectableCommissionRows(rows);
     if (selectable.length === 0) {
-      toast.error("All of these claims are held because their booking departure dates have not yet passed.");
+      toast.error("All of these claims are held due to an outstanding notice-period or monthly membership arrears check.");
       return;
     }
     const allSelected = selectable.every((r) => selectedIds.has(r.id));

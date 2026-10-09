@@ -55,4 +55,12 @@ describe("commission payment lifecycle", () => {
     expect(agentBookingSource).toContain("'Commission Due for Payment'");
     expect(agentBookingSource).toContain("'Commission Paid'");
   });
+
+  it("shows and enforces a membership-arrears hold before a commission can be processed", () => {
+    expect(routerSource).toContain("membershipArrearsHold");
+    expect(routerSource).toContain("gcPaymentFailures.consecutiveFailures");
+    expect(routerSource).toContain("outstanding monthly membership arrears");
+    expect(adminCommissionsSource).toContain("Membership arrears — Hold");
+    expect(adminCommissionsSource).toContain("Resolve the agent's monthly membership arrears");
+  });
 });

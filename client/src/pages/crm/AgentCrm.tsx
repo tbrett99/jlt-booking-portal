@@ -2516,6 +2516,13 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
   );
   const { data: ddStatus, refetch: refetchDdStatus } = trpc.gocardless.adminGetDdStatus.useQuery({ userId });
   const subscription = ddStatus?.subscription;
+  const {
+    data: paymentSchedule,
+    isLoading: isPaymentScheduleLoading,
+    isFetching: isPaymentScheduleFetching,
+    error: paymentScheduleError,
+    refetch: refetchPaymentSchedule,
+  } = trpc.gocardless.adminGetPaymentSchedule.useQuery({ userId });
 
   const [showCreateSub, setShowCreateSub] = useState(false);
   const [createSubDay, setCreateSubDay] = useState<number>(mandate?.preferredPaymentDay ?? 1);
@@ -2775,6 +2782,79 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
           </div>
         </div>
       )}
+
+      {/* Live GoCardless collection schedule */}
+      <div>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Calendar size={14} />
+            Payment schedule
+            <Badge variant="outline" className="text-[10px] font-normal">Live GoCardless</Badge>
+          </h3>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={() => refetchPaymentSchedule()}
+            disabled={isPaymentScheduleFetching}
+          >
+            {isPaymentScheduleFetching ? "Refreshing…" : "Refresh schedule"}
+          </Button>
+        </div>
+
+        {isPaymentScheduleLoading ? (
+          <div className="rounded-lg border p-4 text-sm text-muted-foreground">Loading GoCardless collection dates…</div>
+        ) : paymentScheduleError ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            {paymentScheduleError.message}
+          </div>
+        ) : paymentSchedule?.unavailableReason ? (
+          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            {paymentSchedule.unavailableReason}
+          </div>
+        ) : paymentSchedule?.items?.length ? (
+          <div className="space-y-2">
+            {paymentSchedule.items.slice(0, 6).map((item) => (
+              <div key={`${item.chargeDate}-${item.amount}-${item.paymentId ?? item.source}`} className="rounded-lg border p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">
+                      {new Intl.DateTimeFormat("en-GB", {
+                        timeZone: "Europe/London",
+                        weekday: "long",
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      }).format(new Date(`${item.chargeDate}T12:00:00Z`))}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {item.source === "payment_timeline" ? "Collection created in GoCardless" : "Next subscription collection"}
+                      {item.followsFailure ? " · scheduled after the latest recorded failed collection" : ""}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold">{new Intl.NumberFormat("en-GB", { style: "currency", currency: item.currency || "GBP" }).format(item.amount / 100)}</p>
+                    {item.followsFailure && (
+                      <Badge className="mt-1 bg-amber-100 text-[10px] text-amber-800 hover:bg-amber-100">Potential retry / recollection</Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {paymentSchedule.latestFailureAt && (
+              <p className="px-1 text-xs text-muted-foreground">
+                Latest recorded failed collection: {new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", year: "numeric" }).format(new Date(paymentSchedule.latestFailureAt))}.
+                A future date is shown only once GoCardless has scheduled it; the Portal does not estimate retry dates.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            No future collection date is currently scheduled in GoCardless.
+            {paymentSchedule?.latestFailureAt ? " The Portal will not guess a retry date; refresh once GoCardless has created the recollection." : ""}
+          </div>
+        )}
+      </div>
 
       {/* Send Backdated Receipt */}
       <div>

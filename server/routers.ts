@@ -7,6 +7,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+import { sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { sdk } from "./_core/sdk";
 import {
@@ -162,6 +163,8 @@ import {
   calcSubscriptionStartDate,
   createSubscription,
   getMandate as getGcMandate,
+  getSubscription as getGcSubscription,
+  listPaymentsForSubscription,
 } from "./gocardless";
 import {
   createGcMandate,
@@ -3416,17 +3419,32 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       const uniqueAgentIds = Array.from(new Set(claims.map((c) => c.agentId)));
       const bankDetailsMap = new Map<number, { bankAccountName: string | null; bankSortCode: string | null; bankAccountNumber: string | null }>();
       const inContractAgentIds = new Set<number>();
+      const membershipArrearsByAgentId = new Map<number, { consecutiveFailures: number; lastFailedAt: Date | null }>();
       if (uniqueAgentIds.length > 0) {
         const { getDb } = await import('./db');
         const db = await getDb();
         if (db) {
-          const { agentCrmProfiles } = await import('../drizzle/schema');
+          const { agentCrmProfiles, gcPaymentFailures } = await import('../drizzle/schema');
           const { and, eq, inArray } = await import('drizzle-orm');
-          const inContractProfiles = await db
-            .select({ userId: agentCrmProfiles.userId })
-            .from(agentCrmProfiles)
-            .where(and(inArray(agentCrmProfiles.userId, uniqueAgentIds), eq(agentCrmProfiles.inContract, true)));
+          const [inContractProfiles, membershipFailures] = await Promise.all([
+            db
+              .select({ userId: agentCrmProfiles.userId })
+              .from(agentCrmProfiles)
+              .where(and(inArray(agentCrmProfiles.userId, uniqueAgentIds), eq(agentCrmProfiles.inContract, true))),
+            db
+              .select({ userId: gcPaymentFailures.userId, consecutiveFailures: gcPaymentFailures.consecutiveFailures, lastFailedAt: gcPaymentFailures.lastFailedAt })
+              .from(gcPaymentFailures)
+              .where(inArray(gcPaymentFailures.userId, uniqueAgentIds)),
+          ]);
           for (const profile of inContractProfiles) inContractAgentIds.add(profile.userId);
+          for (const failure of membershipFailures) {
+            if (failure.consecutiveFailures > 0) {
+              membershipArrearsByAgentId.set(failure.userId, {
+                consecutiveFailures: failure.consecutiveFailures,
+                lastFailedAt: failure.lastFailedAt,
+              });
+            }
+          }
         }
       }
       if (uniqueAgentIds.length > 0) {
@@ -3511,6 +3529,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         agentPortalStatus: (userMap.get(c.agentId) as any)?.portalStatus ?? null,
         inContract: inContractAgentIds.has(c.agentId),
         inContractHold: inContractAgentIds.has(c.agentId) && !hasBookingDeparturePassed(booking?.departureDate),
+        membershipArrearsHold: membershipArrearsByAgentId.has(c.agentId),
+        membershipFailureCount: membershipArrearsByAgentId.get(c.agentId)?.consecutiveFailures ?? 0,
+        membershipLastFailedAt: membershipArrearsByAgentId.get(c.agentId)?.lastFailedAt ?? null,
         booking,
         paidByName: c.paidById ? (userMap.get(c.paidById)?.name ?? "Admin") : null,
         bankAccountName: bankDetailsMap.get(c.agentId)?.bankAccountName ?? null,
@@ -3588,9 +3609,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           const { getDb } = await import('./db');
           const dbInst = await getDb();
           if (!dbInst) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-          const { agentCrmProfiles, bookings: bookingsTable } = await import('../drizzle/schema');
+          const { agentCrmProfiles, bookings: bookingsTable, gcPaymentFailures } = await import('../drizzle/schema');
           const { and, eq, inArray } = await import('drizzle-orm');
-          const [inContractProfiles, selectedBookings] = await Promise.all([
+          const [inContractProfiles, selectedBookings, membershipFailures] = await Promise.all([
             dbInst
               .select({ userId: agentCrmProfiles.userId })
               .from(agentCrmProfiles)
@@ -3599,6 +3620,10 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
               .select({ id: bookingsTable.id, departureDate: bookingsTable.departureDate })
               .from(bookingsTable)
               .where(inArray(bookingsTable.id, selectedClaims.map((claim) => claim.bookingId))),
+            dbInst
+              .select({ userId: gcPaymentFailures.userId, consecutiveFailures: gcPaymentFailures.consecutiveFailures })
+              .from(gcPaymentFailures)
+              .where(and(inArray(gcPaymentFailures.userId, selectedAgentIds), sql`${gcPaymentFailures.consecutiveFailures} > 0`)),
           ]);
           const inContractAgentIds = new Set(inContractProfiles.map((profile) => profile.userId));
           const departureByBookingId = new Map(selectedBookings.map((booking) => [booking.id, booking.departureDate]));
@@ -3609,6 +3634,12 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             throw new TRPCError({
               code: 'BAD_REQUEST',
               message: "One or more selected claims belong to an In Contract agent whose booking has not yet departed. Only claims with a passed departure date can be processed.",
+            });
+          }
+          if (membershipFailures.length > 0) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: "Commission processing is on hold because one or more selected agents have outstanding monthly membership arrears. Resolve the Direct Debit failure in the agent CRM record before processing their commission.",
             });
           }
         }
@@ -5213,6 +5244,105 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           } catch (_) { /* non-fatal */ }
         }
         return { mandate: mandate ? { ...mandate, preferredPaymentDay, scheme: mandateScheme } : null, subscription };
+      }),
+
+    /**
+     * Admin: live GoCardless collection dates for the Direct Debit CRM tab.
+     * This intentionally does not predict retries: it only returns dates that
+     * GoCardless has actually scheduled in its subscription/payment timeline.
+     */
+    adminGetPaymentSchedule: adminProcedure
+      .input(z.object({ userId: z.number().int() }))
+      .query(async ({ input }) => {
+        const subscription = await getGcSubscriptionByUserId(input.userId);
+        if (!subscription?.subscriptionId) {
+          return {
+            subscriptionId: null,
+            items: [] as Array<{
+              chargeDate: string;
+              amount: number;
+              currency: string;
+              source: "payment_timeline" | "subscription_schedule";
+              paymentId: string | null;
+              followsFailure: boolean;
+            }>,
+            latestFailureAt: null as Date | null,
+            unavailableReason: "No active GoCardless subscription is linked to this agent.",
+          };
+        }
+
+        try {
+          const [liveSubscription, paymentTimeline, paymentEvents] = await Promise.all([
+            getGcSubscription(subscription.subscriptionId),
+            listPaymentsForSubscription(subscription.subscriptionId),
+            getPaymentEventsByUserId(input.userId),
+          ]);
+
+          const londonDate = (date: Date) => {
+            const parts = new Intl.DateTimeFormat("en-GB", {
+              timeZone: "Europe/London",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            }).formatToParts(date);
+            const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((entry) => entry.type === type)?.value ?? "";
+            return `${part("year")}-${part("month")}-${part("day")}`;
+          };
+          const today = londonDate(new Date());
+          const latestFailure = paymentEvents
+            .filter((event) => event.eventType.includes("failed") || event.eventType.includes("charged_back"))
+            .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())[0];
+          const latestFailureDate = latestFailure ? londonDate(latestFailure.occurredAt) : null;
+          const futureStatuses = new Set(["pending_submission", "submitted", "confirmed", "pending_customer_approval"]);
+          const itemsByDateAndAmount = new Map<string, {
+            chargeDate: string;
+            amount: number;
+            currency: string;
+            source: "payment_timeline" | "subscription_schedule";
+            paymentId: string | null;
+            followsFailure: boolean;
+          }>();
+
+          for (const payment of paymentTimeline) {
+            if (payment.charge_date < today || !futureStatuses.has(payment.status)) continue;
+            const key = `${payment.charge_date}:${payment.amount}:${payment.currency}`;
+            itemsByDateAndAmount.set(key, {
+              chargeDate: payment.charge_date,
+              amount: payment.amount,
+              currency: payment.currency || "GBP",
+              source: "payment_timeline",
+              paymentId: payment.id,
+              followsFailure: !!latestFailureDate && payment.charge_date >= latestFailureDate,
+            });
+          }
+          for (const upcoming of liveSubscription.upcoming_payments ?? []) {
+            if (upcoming.charge_date < today) continue;
+            const key = `${upcoming.charge_date}:${upcoming.amount}:${liveSubscription.currency || "GBP"}`;
+            if (!itemsByDateAndAmount.has(key)) {
+              itemsByDateAndAmount.set(key, {
+                chargeDate: upcoming.charge_date,
+                amount: upcoming.amount,
+                currency: liveSubscription.currency || "GBP",
+                source: "subscription_schedule",
+                paymentId: null,
+                followsFailure: !!latestFailureDate && upcoming.charge_date >= latestFailureDate,
+              });
+            }
+          }
+
+          return {
+            subscriptionId: subscription.subscriptionId,
+            items: Array.from(itemsByDateAndAmount.values()).sort((a, b) => a.chargeDate.localeCompare(b.chargeDate)),
+            latestFailureAt: latestFailure?.occurredAt ?? null,
+            unavailableReason: null as string | null,
+          };
+        } catch (error) {
+          console.warn(`[adminGetPaymentSchedule] Failed for user ${input.userId}:`, error instanceof Error ? error.message : error);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Could not read the live GoCardless payment schedule. Please retry or check GoCardless directly.",
+          });
+        }
       }),
 
     /**

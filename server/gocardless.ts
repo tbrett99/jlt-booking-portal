@@ -185,6 +185,15 @@ export interface GcSubscription {
   upcoming_payments: { charge_date: string; amount: number }[];
 }
 
+/** Reads the live recurring schedule rather than relying on the last Portal sync. */
+export async function getSubscription(subscriptionId: string): Promise<GcSubscription> {
+  const res = await gcRequest<{ subscriptions: GcSubscription }>(
+    "GET",
+    `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+  );
+  return res.subscriptions;
+}
+
 export async function createSubscription(opts: {
   mandateId: string;
   amountPence: number;
@@ -270,6 +279,20 @@ export interface GcPayment {
     mandate?: string;
     subscription?: string;
   };
+}
+
+/**
+ * Lists collection records against a subscription. A resubmitted failed
+ * payment is tracked in GoCardless's payment timeline, making this the source
+ * for an exact future retry or recollection date when GoCardless has created it.
+ */
+export async function listPaymentsForSubscription(subscriptionId: string): Promise<GcPayment[]> {
+  const params = new URLSearchParams({ subscription: subscriptionId, limit: "100" });
+  const res = await gcRequest<{ payments: GcPayment[] }>(
+    "GET",
+    `/payments?${params.toString()}`,
+  );
+  return res.payments ?? [];
 }
 
 export async function fetchPayment(paymentId: string): Promise<GcPayment | null> {
