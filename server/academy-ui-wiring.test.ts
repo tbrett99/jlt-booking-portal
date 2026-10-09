@@ -39,6 +39,14 @@ describe("JLT Academy interface wiring", () => {
     expect(academyRouter).toContain('action: "lesson_updated"');
   });
 
+  it("keeps Academy Manager focused on one expandable module at a time", () => {
+    expect(manager).toContain("const [openModuleId, setOpenModuleId]");
+    expect(manager).toContain("aria-expanded={isOpen}");
+    expect(manager).toContain("aria-controls={`academy-module-${module.id}`}");
+    expect(manager).toContain("current === module.id ? null : module.id");
+    expect(manager).toContain("setOpenModuleId(module.id)");
+  });
+
   it("never submits quiz questions with an invalid lesson ID", () => {
     expect(manager).toContain("const lessonId = Number(result.id)");
     expect(manager).toContain("Number.isSafeInteger(lessonId)");
