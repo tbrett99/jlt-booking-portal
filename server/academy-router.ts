@@ -22,6 +22,7 @@ import {
   users,
 } from "../drizzle/schema";
 import { getAccreditationEligibility, safeHttpsUrl, summariseAcademyProgress } from "../shared/academy-utils";
+import { parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
@@ -1004,6 +1005,46 @@ export const academyRouter = router({
       const [module] = await db.select().from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
       await addAudit({ courseId: module?.courseId ?? null, actorId: ctx.user.id, action: "assessment_updated", summary: `Updated knowledge check: ${lesson.title}`, metadata: { questionCount: input.questions.length } });
       return { success: true };
+    }),
+
+    importMultipleChoiceQuestions: adminProcedure.input(z.object({
+      lessonId: z.number().int().positive(),
+      csvText: z.string().min(1).max(500_000),
+    })).mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [lesson] = await db.select().from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
+      if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+      if (!lesson.requiresAssessment) throw new TRPCError({ code: "BAD_REQUEST", message: "Turn on the knowledge check for this lesson before importing questions" });
+
+      let questions;
+      try {
+        questions = parseMultipleChoiceQuizCsv(input.csvText);
+      } catch (error) {
+        if (error instanceof QuizCsvImportError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: { rowErrors: error.rowErrors } });
+        }
+        throw error;
+      }
+
+      const existing = await db.select({ id: academyQuestions.id, sortOrder: academyQuestions.sortOrder })
+        .from(academyQuestions).where(eq(academyQuestions.lessonId, lesson.id)).orderBy(desc(academyQuestions.sortOrder), desc(academyQuestions.id));
+      if (existing.length + questions.length > 30) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `This import would create ${existing.length + questions.length} questions. A knowledge check can contain up to 30 questions.` });
+      }
+      await db.insert(academyQuestions).values(questions.map((question, index) => ({
+        lessonId: lesson.id,
+        prompt: question.prompt,
+        questionType: question.questionType,
+        answerOptions: question.answerOptions,
+        correctAnswerIndex: question.correctAnswerIndex,
+        maxWords: question.maxWords,
+        explanation: question.explanation,
+        sortOrder: (existing[0]?.sortOrder ?? -1) + index + 1,
+      })) as any);
+      const [module] = await db.select().from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
+      await addAudit({ courseId: module?.courseId ?? null, actorId: ctx.user.id, action: "assessment_questions_imported", summary: `Imported ${questions.length} multiple-choice ${questions.length === 1 ? "question" : "questions"} into ${lesson.title}`, metadata: { lessonId: lesson.id, importedQuestionCount: questions.length } });
+      return { imported: questions.length, questionCount: existing.length + questions.length };
     }),
 
     uploadAttachment: adminProcedure.input(z.object({ fileName: z.string().trim().min(1).max(255), fileBase64: z.string().min(1).max(20_000_000), mimeType: z.enum(["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain", "text/csv"]) })).mutation(async ({ ctx, input }) => {

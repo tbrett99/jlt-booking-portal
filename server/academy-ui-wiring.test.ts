@@ -53,6 +53,16 @@ describe("JLT Academy interface wiring", () => {
     expect(manager).toContain("lessonId, questions: lessonDraft.questions");
   });
 
+  it("provides a template-led, additive CSV import for multiple-choice quizzes", () => {
+    expect(manager).toContain("Download CSV template");
+    expect(manager).toContain("Import CSV");
+    expect(manager).toContain("academyQuizCsvTemplate");
+    expect(manager).toContain("importMultipleChoiceQuestions");
+    expect(manager).toContain("it never overwrites questions already shown here");
+    expect(academyRouter).toContain("parseMultipleChoiceQuizCsv");
+    expect(academyRouter).toContain('action: "assessment_questions_imported"');
+  });
+
   it("keeps useful Academy paste formatting while filtering unsafe clipboard markup", () => {
     expect(manager).toContain("preserveClipboardFormatting");
     expect(manager).toContain("Smart format pasted text");
