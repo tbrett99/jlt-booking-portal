@@ -681,7 +681,8 @@ export const academyRouter = router({
         agent: { id: row.agent.id, name: row.agent.name, email: row.agent.email },
         responses: questions.filter((question) => question.lessonId === row.lesson.id && question.questionType === "free_text" && responses.some((item) => item.attemptId === row.attempt.id && item.questionId === question.id)).map((question) => {
           const response = responses.find((item) => item.attemptId === row.attempt.id && item.questionId === question.id);
-          return { questionId: question.id, prompt: question.prompt, responseText: response?.responseText ?? "", maxWords: question.maxWords };
+          // The marking guide is deliberately available only in this admin-only queue.
+          return { questionId: question.id, prompt: question.prompt, explanation: question.explanation, responseText: response?.responseText ?? "", maxWords: question.maxWords };
         }),
       }));
     }),
@@ -770,7 +771,8 @@ export const academyRouter = router({
             agent: { id: first.agent.id, name: first.agent.name, email: first.agent.email },
             course: { id: first.course.id, title: first.course.title },
             lesson: { id: first.lesson.id, title: first.lesson.title, assessmentPassMark: first.lesson.assessmentPassMark },
-            question: { id: question.id, prompt: question.prompt, questionType: question.questionType },
+            // Include the private guide so staff can give focused coaching before reopening.
+            question: { id: question.id, prompt: question.prompt, explanation: question.explanation, questionType: question.questionType },
             attemptCount: state.attemptCount,
             lastScore: state.lastScore,
           };

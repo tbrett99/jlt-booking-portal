@@ -42,4 +42,14 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(learner).toContain('onDrop={(event) => { event.preventDefault();');
     expect(learner).toContain('I have read and acknowledge this feedback');
   });
+
+  it("formats long written prompts and private marking guides for their intended readers", () => {
+    expect(manager).toContain('Agent preview');
+    expect(manager).toContain('Staff marking-guide preview');
+    expect(manager).toContain('Private marking guide');
+    expect(manager).toContain('AcademyStructuredText text={response.prompt}');
+    expect(learner).toContain('AcademyStructuredQuestion text={question.prompt}');
+    expect(router).toContain('explanation: question.explanation');
+    expect(router).toContain('admin-only queue');
+  });
 });
