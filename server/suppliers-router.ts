@@ -941,15 +941,42 @@ Return at most ${input.limit} matches. Only include suppliers that are genuinely
   // ── List attachments for a supplier ──────────────────────────────────────────────────────
   listAttachments: protectedProcedure
     .input(z.object({ supplierId: z.number().int() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const { getDb } = await import("./db");
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-      return db
-        .select()
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
+      const [supplier] = await db
+        .select({ id: suppliers.id, isActive: suppliers.isActive })
+        .from(suppliers)
+        .where(eq(suppliers.id, input.supplierId))
+        .limit(1);
+
+      if (!supplier || (!isAdmin && supplier.isActive !== 1)) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Supplier not found" });
+      }
+
+      const attachments = await db
+        .select({
+          id: supplierAttachments.id,
+          fileName: supplierAttachments.fileName,
+          fileUrl: supplierAttachments.fileUrl,
+          fileKey: supplierAttachments.fileKey,
+          fileSize: supplierAttachments.fileSize,
+          uploadedAt: supplierAttachments.uploadedAt,
+          uploadedById: supplierAttachments.uploadedById,
+        })
         .from(supplierAttachments)
         .where(eq(supplierAttachments.supplierId, input.supplierId))
         .orderBy(desc(supplierAttachments.uploadedAt));
+
+      // The document link and user-friendly metadata are deliberately shared with
+      // agents. Storage keys and uploader identities remain staff-only.
+      return attachments.map((attachment) => ({
+        ...attachment,
+        fileKey: isAdmin ? attachment.fileKey : null,
+        uploadedById: isAdmin ? attachment.uploadedById : null,
+      }));
     }),
 
   // ── Admin: Delete attachment ──────────────────────────────────────────────────────────────

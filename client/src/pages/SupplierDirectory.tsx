@@ -53,6 +53,9 @@ import {
   Lightbulb,
   KeyRound,
   Clock,
+  Paperclip,
+  FileText,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -109,6 +112,13 @@ type AiSearchResult = {
   relevanceNote: string;
   score: number;
 };
+
+function formatAttachmentSize(fileSize: number | null | undefined) {
+  if (!fileSize || fileSize < 1) return null;
+  if (fileSize < 1024) return `${fileSize} B`;
+  if (fileSize < 1024 * 1024) return `${(fileSize / 1024).toFixed(1)} KB`;
+  return `${(fileSize / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -323,6 +333,10 @@ function SupplierModal({
   const { data: supplier, isLoading } = trpc.suppliers.get.useQuery(
     { id: supplierId },
     { staleTime: 60000 }
+  );
+  const { data: attachments, isLoading: attachmentsLoading } = trpc.suppliers.listAttachments.useQuery(
+    { supplierId },
+    { enabled: !isLoading && !!supplier, staleTime: 60000 }
   );
   const { data: myLoginRequests, refetch: refetchRequests } = trpc.suppliers.getMyLoginRequests.useQuery(undefined, { staleTime: 30000 });
   const requestLoginMutation = trpc.suppliers.requestLogin.useMutation({
@@ -554,6 +568,42 @@ function SupplierModal({
                   </a>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Supplier documents */}
+          {(attachmentsLoading || (attachments?.length ?? 0) > 0) && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Paperclip className="h-4 w-4" /> Documents & Resources
+              </h4>
+              {attachmentsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading documents…
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {attachments?.map((attachment) => {
+                    const fileSize = formatAttachmentSize(attachment.fileSize);
+                    return (
+                      <a
+                        key={attachment.id}
+                        href={attachment.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2.5 text-sm transition-colors hover:bg-muted/50"
+                      >
+                        <FileText className="h-4 w-4 shrink-0 text-primary" />
+                        <span className="min-w-0 flex-1 truncate font-medium">{attachment.fileName}</span>
+                        {fileSize && <span className="shrink-0 text-xs text-muted-foreground">{fileSize}</span>}
+                        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-primary">
+                          <Download className="h-3.5 w-3.5" /> Open
+                        </span>
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
