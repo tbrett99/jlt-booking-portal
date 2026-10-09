@@ -1065,6 +1065,13 @@
       "when": 1791309982029,
       "tag": "0151_young_liz_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "5",
+      "when": 1791576358728,
+      "tag": "0152_rapid_karma",
+      "breakpoints": true
     }
   ]
 }

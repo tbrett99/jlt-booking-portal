@@ -1409,6 +1409,10 @@ export type GcSubscription = typeof gcSubscriptions.$inferSelect;
 // ─── GoCardless Payment Events ────────────────────────────────────────────────
 export const gcPaymentEvents = mysqlTable("gc_payment_events", {
   id: int("id").autoincrement().primaryKey(),
+  // GoCardless event IDs are immutable.  Persisting them makes webhook replay
+  // idempotent without collapsing distinct collection attempts that happen to
+  // refer to the same payment resource.
+  gocardlessEventId: varchar("gocardlessEventId", { length: 100 }).unique(),
   userId: int("userId"), // FK → users.id (resolved from mandate lookup)
   mandateId: varchar("mandateId", { length: 100 }), // GoCardless mandate ID
   paymentId: varchar("paymentId", { length: 100 }), // GoCardless payment ID (PM...)
@@ -1900,6 +1904,14 @@ export const gcPaymentFailures = mysqlTable("gc_payment_failures", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   consecutiveFailures: int("consecutiveFailures").default(0).notNull(),
+  // The highest strike notice actually delivered for the current failure run.
+  // This lets the hourly reconciliation repair a missed webhook email without
+  // resending notices that have already reached the agent.
+  notifiedFailureCount: int("notifiedFailureCount").default(0).notNull(),
+  lastFailureNoticeAt: timestamp("lastFailureNoticeAt"),
+  // Set whenever staff clear a suspension after taking manual payment, or a
+  // collection succeeds. The reconciliation job ignores prior payment history.
+  failureRunResetAt: timestamp("failureRunResetAt"),
   lastFailedAt: timestamp("lastFailedAt"),
   lastFailedPaymentId: varchar("lastFailedPaymentId", { length: 64 }),
   autoSuspendedAt: timestamp("autoSuspendedAt"),

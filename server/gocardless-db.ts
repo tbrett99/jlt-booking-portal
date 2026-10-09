@@ -121,6 +121,7 @@ export async function getGcSubscriptionByUserId(userId: number) {
 // ─── Payment event helpers ───────────────────────────────────────────────────
 
 export async function createPaymentEvent(data: {
+  gocardlessEventId?: string;
   userId?: number;
   mandateId?: string;
   paymentId?: string;
@@ -135,19 +136,39 @@ export async function createPaymentEvent(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.insert(gcPaymentEvents).values({
-    userId: data.userId ?? null,
-    mandateId: data.mandateId ?? null,
-    paymentId: data.paymentId ?? null,
-    eventType: data.eventType,
-    status: data.status ?? null,
-    amount: data.amount ?? null,
-    currency: data.currency ?? "GBP",
-    failureReason: data.failureReason ?? null,
-    failureDescription: data.failureDescription ?? null,
-    occurredAt: data.occurredAt,
-    rawPayload: data.rawPayload ?? null,
-  });
+  if (data.gocardlessEventId) {
+    const existing = await db
+      .select({ id: gcPaymentEvents.id })
+      .from(gcPaymentEvents)
+      .where(eq(gcPaymentEvents.gocardlessEventId, data.gocardlessEventId))
+      .limit(1);
+    if (existing.length) return { created: false };
+  }
+
+  try {
+    await db.insert(gcPaymentEvents).values({
+      gocardlessEventId: data.gocardlessEventId ?? null,
+      userId: data.userId ?? null,
+      mandateId: data.mandateId ?? null,
+      paymentId: data.paymentId ?? null,
+      eventType: data.eventType,
+      status: data.status ?? null,
+      amount: data.amount ?? null,
+      currency: data.currency ?? "GBP",
+      failureReason: data.failureReason ?? null,
+      failureDescription: data.failureDescription ?? null,
+      occurredAt: data.occurredAt,
+      rawPayload: data.rawPayload ?? null,
+    });
+    return { created: true };
+  } catch (error: any) {
+    // The unique event ID is the authoritative replay guard. A concurrent
+    // webhook retry can win the race between the lookup above and the insert.
+    if (data.gocardlessEventId && error?.code === "ER_DUP_ENTRY") {
+      return { created: false };
+    }
+    throw error;
+  }
 }
 
 export async function getPaymentEventsByUserId(userId: number) {

@@ -1944,6 +1944,22 @@ export const crmRouter = router({
         const newIsActive = (input.newStatus === 'cancelled' || input.newStatus === 'suspended' || input.newStatus === 'paused') ? false : true;
         await db.update(users).set({ portalStatus: newPortalStatus as any, isActive: newIsActive }).where(eq(users.id, input.userId));
 
+        // A staff reinstatement after a manually resolved payment starts a new
+        // failure run. Without this reset, an old strike could cause the next
+        // unrelated failed collection to immediately suspend the agent again.
+        if (input.newStatus === "active" && fromStatus === "suspended") {
+          const { gcPaymentFailures } = await import("../drizzle/schema");
+          await db.update(gcPaymentFailures).set({
+            consecutiveFailures: 0,
+            notifiedFailureCount: 0,
+            lastFailureNoticeAt: null,
+            failureRunResetAt: new Date(),
+            lastFailedAt: null,
+            lastFailedPaymentId: null,
+            autoSuspendedAt: null,
+          }).where(eq(gcPaymentFailures.userId, input.userId));
+        }
+
         // Consumer profiles must be removed immediately whenever the agent is no
         // longer Active. Reactivation deliberately returns the profile to staff
         // review rather than publishing it automatically.

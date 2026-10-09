@@ -7,6 +7,7 @@ import {
 } from "../drizzle/schema";
 import { getDb } from "./db";
 import { sendDirectEmail, sendSupportEmail } from "./email";
+import { buildPaymentFailureNotice } from "./payment-failure-notices";
 
 const GC_VERSION = "2015-07-06";
 const TERMINAL_SUCCESS_STATUSES = new Set(["confirmed", "paid_out"]);
@@ -140,6 +141,7 @@ function supportSuspensionEmailHtml(input: {
 export type PaymentFailureReconciliationResult = {
   scannedSubscriptions: number;
   updatedFailureCounters: number;
+  failureNoticesSent: number;
   suspendedAgentCodes: string[];
 };
 
@@ -206,6 +208,7 @@ export async function reconcilePaymentFailureSuspensions(): Promise<PaymentFailu
   const existingFailureRows = await db.select().from(gcPaymentFailures);
   const failureByUserId = new Map(existingFailureRows.map((row) => [row.userId, row]));
   let updatedFailureCounters = 0;
+  let failureNoticesSent = 0;
   const suspendedAgentCodes: string[] = [];
 
   for (const userId of Array.from(subscriptionsByUserId.keys())) {
@@ -216,16 +219,25 @@ export async function reconcilePaymentFailureSuspensions(): Promise<PaymentFailu
       (subscriptionId) => paymentsBySubscription.get(subscriptionId) ?? [],
     );
 
-    const streak = calculatePaymentFailureStreak(paymentHistory);
     const existing = failureByUserId.get(subscription.userId);
+    const paymentHistorySinceReset = existing?.failureRunResetAt
+      ? paymentHistory.filter((payment) => {
+        const eventDate = payment.charge_date ?? payment.created_at ?? null;
+        return !eventDate || new Date(eventDate) > existing.failureRunResetAt!;
+      })
+      : paymentHistory;
+    const streak = calculatePaymentFailureStreak(paymentHistorySinceReset);
     const countChanged = existing?.consecutiveFailures !== streak.consecutiveFailures;
     const paymentChanged = existing?.lastFailedPaymentId !== streak.lastFailedPaymentId;
+    const needsNoticeReset = streak.consecutiveFailures === 0 && (existing?.notifiedFailureCount ?? 0) !== 0;
 
     if (existing) {
-      if (countChanged || paymentChanged) {
+      if (countChanged || paymentChanged || needsNoticeReset) {
         await db.update(gcPaymentFailures)
           .set({
             consecutiveFailures: streak.consecutiveFailures,
+            notifiedFailureCount: streak.consecutiveFailures === 0 ? 0 : existing.notifiedFailureCount,
+            lastFailureNoticeAt: streak.consecutiveFailures === 0 ? null : existing.lastFailureNoticeAt,
             lastFailedAt: streak.lastFailedAt,
             lastFailedPaymentId: streak.lastFailedPaymentId,
           })
@@ -245,6 +257,32 @@ export async function reconcilePaymentFailureSuspensions(): Promise<PaymentFailu
     const activelyTrading = subscription.isActive
       && subscription.portalStatus === "active"
       && subscription.agentStatus === "active";
+
+    // A deployment or temporary provider delay can leave the counter correct
+    // but the agent without its warning. Send only the current, most urgent
+    // stage so the repair is useful rather than a burst of old emails.
+    const currentNoticeCount = Math.min(streak.consecutiveFailures, 3);
+    const lastNoticeCount = existing?.notifiedFailureCount ?? 0;
+    if (activelyTrading && subscription.agentEmail && currentNoticeCount > lastNoticeCount) {
+      const notice = buildPaymentFailureNotice({
+        failureCount: currentNoticeCount,
+        agentName: subscription.agentName ?? "there",
+      });
+      const sent = await sendDirectEmail({
+        toEmail: subscription.agentEmail,
+        toName: subscription.agentName ?? "Agent",
+        subject: notice.subject,
+        html: notice.html,
+        ...({ triggerKey: `gc_payment_failed_strike_${notice.failureCount}`, userId: subscription.userId } as any),
+      });
+      if (sent.success) {
+        await db.update(gcPaymentFailures)
+          .set({ notifiedFailureCount: notice.failureCount, lastFailureNoticeAt: new Date() })
+          .where(eq(gcPaymentFailures.userId, subscription.userId));
+        failureNoticesSent += 1;
+      }
+    }
+
     if (!activelyTrading || streak.consecutiveFailures < 3) continue;
 
     const suspendedAt = new Date();
@@ -300,6 +338,7 @@ export async function reconcilePaymentFailureSuspensions(): Promise<PaymentFailu
   return {
     scannedSubscriptions: subscriptionsById.size,
     updatedFailureCounters,
+    failureNoticesSent,
     suspendedAgentCodes,
   };
 }
