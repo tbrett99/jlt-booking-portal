@@ -28,6 +28,8 @@ const STAGE_BADGE: Record<string, { label: string; color: string; bg: string }> 
   "Added to PTS":         { label: "Added to PTS",     color: "#065f46", bg: "#d1fae5" },
   "Commission Claimable": { label: "Commission Ready", color: "#065f46", bg: "#70FFE8" },
   "Commission Claimed":   { label: "Commission Claimed", color: "#064e3b", bg: "#a7f3d0" },
+  "Commission Due for Payment": { label: "Due for Payment", color: "#1d4ed8", bg: "#dbeafe" },
+  "Commission Paid":      { label: "Commission Paid", color: "#166534", bg: "#dcfce7" },
   "Cancelled":            { label: "Cancelled",        color: "#6b7280", bg: "#f3f4f6" },
   "Holding Accounts":     { label: "Holding",          color: "#92400e", bg: "#fef3c7" },
 };
@@ -155,9 +157,9 @@ export default function AgentDashboard() {
   const now = new Date();
   const next30Days = addDays(now, 30);
 
-  // A booking is "completed" when commission has been claimed AND departure is in the past
+  // A booking is completed only once the commission payment has been confirmed.
   const isCompleted = (b: typeof bookings[0]) =>
-    b.currentStage === "Commission Claimed" && isPast(new Date(b.departureDate));
+    b.currentStage === "Commission Paid";
 
   const activeBookings = bookings.filter((b) => b.currentStage !== "Cancelled" && !isCompleted(b));
   const completedBookings = bookings.filter(isCompleted);
@@ -179,8 +181,7 @@ export default function AgentDashboard() {
     (b) =>
       b.expectedCommission &&
       !(b as any).commissionPreAuthorised &&
-      b.currentStage !== "Commission Claimed" &&
-      b.currentStage !== "Cancelled"
+      !["Commission Paid", "Cancelled"].includes(b.currentStage)
   );
 
   // Upcoming departures in next 30 days

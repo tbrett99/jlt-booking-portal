@@ -341,7 +341,7 @@ function ClaimTable({
                         disabled={markPaidMutation.isPending}
                         className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 text-xs"
                       >
-                        Claimed in PTS
+                        Process in PTS
                       </Button>
                     )}
                     <Button
@@ -461,7 +461,7 @@ export default function AdminCommissions() {
       return { prev };
     },
     onSuccess: (_data, vars) => {
-      toast.success(`${vars.claimIds.length} commission(s) claimed in PTS.`);
+      toast.success(`${vars.claimIds.length} commission(s) processed and moved to Due for Payment.`);
       setSelectedIds(new Set());
       utils.commissionClaims.all.invalidate();
     },
@@ -757,7 +757,7 @@ export default function AdminCommissions() {
               ) : (
                 <Banknote className="h-4 w-4 mr-2" />
               )}
-              Claimed in PTS ({selectedIds.size})
+              Process in PTS ({selectedIds.size})
             </Button>
           )}
         </div>
@@ -849,7 +849,7 @@ export default function AdminCommissions() {
               <CheckCircle className="h-4 w-4 text-blue-500" />
               <div>
                 <p className="text-2xl font-bold text-blue-500">{claimed.length}</p>
-                <p className="text-xs text-muted-foreground">Claimed in PTS</p>
+                <p className="text-xs text-muted-foreground">Due for Payment</p>
               </div>
             </div>
           </CardContent>
@@ -905,7 +905,7 @@ export default function AdminCommissions() {
             )}
           </TabsTrigger>
           <TabsTrigger value="claimed">
-            Claimed
+            Due for Payment
             {claimed.length > 0 && (
               <span className="ml-2 bg-blue-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
                 {claimed.length}
@@ -1127,7 +1127,7 @@ export default function AdminCommissions() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center justify-between">
-                <span>Claimed in PTS — Awaiting Payment Run</span>
+                <span>Commission Due for Payment</span>
                 {claimed.length > 0 && (
                   <Button variant="outline" size="sm" onClick={() => exportCSV(claimed, `commissions-claimed-${format(new Date(), "yyyy-MM-dd")}.csv`)} className="text-xs gap-1">
                     <Download size={13} /> Export CSV

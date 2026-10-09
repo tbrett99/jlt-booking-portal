@@ -26,6 +26,8 @@ const ALL_STAGES = [
   "Added to PTS",
   "Commission Claimable",
   "Commission Claimed",
+  "Commission Due for Payment",
+  "Commission Paid",
   "Cancelled",
   "Holding Accounts",
 ];
@@ -48,6 +50,8 @@ const ARCHIVED_STAGES = [
   "Added to PTS",
   "Commission Claimable",
   "Commission Claimed",
+  "Commission Due for Payment",
+  "Commission Paid",
   "Cancelled",
 ];
 
@@ -55,6 +59,8 @@ const STAGES_REQUIRING_PAYMENT_DATE = [
   "Added to PTS",
   "Commission Claimable",
   "Commission Claimed",
+  "Commission Due for Payment",
+  "Commission Paid",
   "Holding Accounts",
 ];
 
@@ -95,6 +101,8 @@ const STAGE_COLORS: Record<string, { bg: string; border: string; dot: string }> 
   "Added to PTS": { bg: "#f0fdf4", border: "#bbf7d0", dot: "#22c55e" },
   "Commission Claimable": { bg: "#ecfdf5", border: "#70FFE8", dot: "#02E6D2" },
   "Commission Claimed": { bg: "#d1fae5", border: "#6ee7b7", dot: "#059669" },
+  "Commission Due for Payment": { bg: "#eff6ff", border: "#bfdbfe", dot: "#2563eb" },
+  "Commission Paid": { bg: "#ecfdf5", border: "#86efac", dot: "#16a34a" },
   "Cancelled": { bg: "#f9fafb", border: "#e5e7eb", dot: "#9ca3af" },
   "Holding Accounts": { bg: "#fffbeb", border: "#fde68a", dot: "#d97706" },
 };

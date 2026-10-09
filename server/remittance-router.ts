@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
-import { getDb } from "./db";
+import { getDb, updateBookingStage } from "./db";
 import {
   remittanceBatches,
   remittanceLines,
@@ -267,6 +267,7 @@ export const remittanceRouter = router({
                 eq(commissionClaims.status, "awaiting_payment")
               )
             );
+          await updateBookingStage(lineVal.bookingId, "Commission Paid", ctx.user.id);
           // Notify Orbit (fire-and-forget)
           pushClaimStatusToOrbit(lineVal.bookingId).catch(() => {});
         }
@@ -587,6 +588,9 @@ export const remittanceRouter = router({
           paidAt: new Date(),
         })
         .where(eq(commissionClaims.id, line.processingClaimId));
+      if (line.bookingId) {
+        await updateBookingStage(line.bookingId, "Commission Paid", ctx.user.id);
+      }
       // Notify Orbit (fire-and-forget)
       if (line.bookingId) pushClaimStatusToOrbit(line.bookingId).catch(() => {});
 
@@ -776,6 +780,7 @@ export const remittanceRouter = router({
               eq(commissionClaims.status, "awaiting_payment")
             )
           );
+        await updateBookingStage(booking.id, "Commission Paid", ctx.user.id);
         // Notify Orbit (fire-and-forget)
         pushClaimStatusToOrbit(booking.id).catch(() => {});
       }
@@ -985,6 +990,7 @@ export const remittanceRouter = router({
               inArray(commissionClaims.status, ['processing', 'awaiting_payment'])
             )
           );
+        await updateBookingStage(line.bookingId, "Commission Paid", ctx.user.id);
         // Notify Orbit (fire-and-forget)
         pushClaimStatusToOrbit(line.bookingId).catch(() => {});
         paidCount++;

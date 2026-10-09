@@ -203,7 +203,12 @@ function buildMentionTaskTitle(content: string, mentionedNames: string[]) {
   return title.length > 180 ? `${title.slice(0, 177)}...` : title;
 }
 
-const COMMISSION_PROCESSING_STAGES = new Set(["Commission Claimable", "Commission Claimed"]);
+const COMMISSION_PROCESSING_STAGES = new Set([
+  "Commission Claimable",
+  "Commission Claimed",
+  "Commission Due for Payment",
+  "Commission Paid",
+]);
 
 /** A departure is complete only after its recorded calendar date has passed. */
 function hasBookingDeparturePassed(departureDate: Date | string | null | undefined): boolean {
@@ -283,6 +288,13 @@ const DEFAULT_TEMPLATES = [
     label: "Commission Claimed",
     subject: "Commission Marked as Claimed",
     bodyHtml: `<p>Hi {{agentName}},</p><p>Your commission for booking <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has been marked as claimed.</p><p>The JLT Group Team</p>`,
+    recipientType: "agent" as const,
+  },
+  {
+    triggerKey: "commission_due_for_payment",
+    label: "Commission Due for Payment",
+    subject: "Your Commission Is Due for Payment",
+    bodyHtml: `<p>Hi {{agentName}},</p><p>Your commission for booking <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has been processed and is due in the next payment run.</p><p>Please note, claims processed after Wednesday may fall into the following week's payment run.</p><p>The JLT Group Team</p>`,
     recipientType: "agent" as const,
   },
   {
@@ -1118,6 +1130,8 @@ export const appRouter = router({
           "Added to PTS",
           "Commission Claimable",
           "Commission Claimed",
+          "Commission Due for Payment",
+          "Commission Paid",
           "Holding Accounts",
         ];
         if (STAGES_REQUIRING_PAYMENT_DATE.includes(input.toStage) && !booking.finalSupplierPaymentDate) {
@@ -1169,8 +1183,8 @@ export const appRouter = router({
           });
         }
 
-        // Pre-auth auto-claim: if moving to Commission Claimable and agent has pre-authorised,
-        // skip the claimable stage and auto-create the commission claim, then move straight to Commission Claimed.
+        // Pre-auth auto-claim: if moving to Commission Claimable and the agent has pre-authorised,
+        // skip agent action, create the processed claim, then move it into the payment-run queue.
         // Guards:
         //  1. finalSupplierPaymentDate must be set AND on/before today
         //  2. Departure must be at least seven complete days ago
@@ -1208,21 +1222,20 @@ export const appRouter = router({
           !existingClaim &&
           !alreadyClaimed
         ) {
-          // Auto-create the commission claim — set directly to awaiting_payment (skipping processing)
-          // so it appears in the "Claimed in PTS" tab immediately, without the admin needing a second click.
+          // Auto-create the commission claim as processed and due for the next payment run.
           const grossAmount = (booking as any).expectedCommission ? parseFloat((booking as any).expectedCommission) : undefined;
           const claimNow = new Date();
           const claim = await createCommissionClaim(booking.id, booking.agentId, "other", grossAmount, "awaiting_payment", { paidAt: claimNow, paidById: ctx.user.id });
           if (claim && input.vatAmount !== undefined && input.vatAmount !== null) {
             await updateCommissionVat(claim.id, input.vatAmount);
           }
-          // Move directly to Commission Claimed
-          const updated = await updateBookingStage(input.bookingId, "Commission Claimed", ctx.user.id);
-          // Notify agent that commission was auto-processed
+          // The internal claim is processed, but the booking remains visible until payment is confirmed.
+          const updated = await updateBookingStage(input.bookingId, "Commission Due for Payment", ctx.user.id);
+          // Notify agent that commission has entered the payment run.
           const agent = await getUserById(booking.agentId);
           if (agent?.email) {
             await sendNotificationEmail({
-              triggerKey: "commission_claimed",
+              triggerKey: "commission_due_for_payment",
               toEmail: agent.email,
               toName: agent.name ?? "Agent",
               variables: { clientName: booking.clientName, ptsRef: (booking as any).ptsRef ?? "", bookingId: String(booking.id) },
@@ -1231,14 +1244,14 @@ export const appRouter = router({
             await createInAppNotification({
               userId: booking.agentId,
               bookingId: booking.id,
-              message: `Your commission for "${booking.clientName}" has been automatically processed via pre-authorisation.`,
+              message: `Your commission for "${booking.clientName}" has been automatically processed via pre-authorisation and is due for payment in the next payment run.`,
               linkUrl: `/bookings/${booking.id}`,
             });
           }
           await createNote({
             bookingId: booking.id,
             authorId: ctx.user.id,
-            content: `[System] Commission auto-processed via pre-authorisation by ${ctx.user.name ?? "Admin"}. Booking moved directly to Commission Claimed.`,
+            content: `[System] Commission auto-processed via pre-authorisation by ${ctx.user.name ?? "Admin"}; booking moved to Commission Due for Payment.`,
             isInternal: true,
           });
           return updated;
@@ -1256,6 +1269,7 @@ export const appRouter = router({
           "Added to PTS": "added_to_pts",
           "Commission Claimable": "commission_claimable",
           "Commission Claimed": "commission_claimed",
+          "Commission Due for Payment": "commission_due_for_payment",
           Cancelled: "cancelled",
         };
         const triggerKey = stageToTrigger[input.toStage];
@@ -1294,10 +1308,10 @@ export const appRouter = router({
           content: `[System] Booking stage moved from "${booking.currentStage}" to "${input.toStage}" by ${ctx.user.name ?? "Admin"}.`,
           isInternal: true,
         });
-        // Push updated commission status to Orbit whenever stage changes to/from Commission Claimable
+        // Push updated commission status to Orbit whenever a booking enters or leaves the commission lifecycle.
         if (
-          input.toStage === "Commission Claimable" ||
-          booking.currentStage === "Commission Claimable"
+          COMMISSION_PROCESSING_STAGES.has(input.toStage) ||
+          COMMISSION_PROCESSING_STAGES.has(booking.currentStage)
         ) {
           void pushClaimStatusToOrbit(booking.id);
         }
@@ -3610,13 +3624,13 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           await createInAppNotification({
             userId: claim.agentId,
             bookingId: claim.bookingId,
-            message: `Your commission for booking "${booking.clientName}" has been claimed and will be paid to you in the next payment run. Please note, claims processed after Wednesday may fall into next week's payment run.`,
+            message: `Your commission for booking "${booking.clientName}" has been processed and is due for payment in the next payment run. Please note, claims processed after Wednesday may fall into next week's payment run.`,
             linkUrl: `/commissions`,
           });
           // Email notification
           if (agent?.email) {
             await sendNotificationEmail({
-              triggerKey: "commission_paid",
+              triggerKey: "commission_due_for_payment",
               toEmail: agent.email,
               toName: agent.name ?? "Agent",
               variables: { clientName: booking.clientName },
@@ -3627,7 +3641,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           await createNote({
             bookingId: claim.bookingId,
             authorId: ctx.user.id,
-            content: `[System] Commission claimed in PTS by ${ctx.user.name ?? "Admin"}.`,
+            content: `[System] Commission processed in PTS by ${ctx.user.name ?? "Admin"}; booking moved to Commission Due for Payment.`,
             isInternal: false,
           });
         }
@@ -3899,7 +3913,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       const allUsers = await getAllUsers();
       const allClaims = await getAllCommissionClaims();
       // Filter to this agent's bookings that have a finalSupplierPaymentDate and are not terminal
-      const terminalStages = ['Commission Claimed', 'Cancelled', 'Paid'];
+      const terminalStages = ['Commission Claimed', 'Commission Due for Payment', 'Commission Paid', 'Cancelled', 'Paid'];
       const agentBookings = allBookings.filter((b) =>
         b.agentId === ctx.user.id &&
         (b as any).finalSupplierPaymentDate &&
@@ -3939,7 +3953,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             throw new TRPCError({ code: "BAD_REQUEST", message: "Claim is not in awaiting payment status" });
           }
         }
-        await markCommissionAgentPaid(input.claimIds);
+        await markCommissionAgentPaid(input.claimIds, ctx.user.id);
         return { success: true };
       }),
   }),
@@ -4781,7 +4795,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           throw new TRPCError({ code: "FORBIDDEN" });
         }
         // Determine if this is late (booking already at Added to PTS or later)
-        const lateStages = ["Added to PTS", "Commission Claimable", "Commission Claimed", "Cancelled", "Holding Accounts"];
+        const lateStages = ["Added to PTS", "Commission Claimable", "Commission Claimed", "Commission Due for Payment", "Commission Paid", "Cancelled", "Holding Accounts"];
         const isLate = lateStages.includes(booking.currentStage);
         const created = await createReimbursementItems(
           input.items.map((item) => ({

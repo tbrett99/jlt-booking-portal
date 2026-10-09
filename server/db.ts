@@ -1106,7 +1106,7 @@ export async function getCommissionDueBookings() {
   if (!db) return [];
   const now = new Date();
   // Bookings where finalSupplierPaymentDate has passed and stage is not terminal, and not personal
-  const terminalStages = ["Commission Claimable", "Commission Claimed", "Cancelled"];
+  const terminalStages = ["Commission Claimable", "Commission Claimed", "Commission Due for Payment", "Commission Paid", "Cancelled"];
   const rows = await db.select().from(bookings).orderBy(desc(bookings.finalSupplierPaymentDate));
   return rows.filter(
     (b) =>
@@ -1304,35 +1304,49 @@ export async function markCommissionPaid(claimIds: number[], paidById: number) {
   if (!db) throw new Error("DB unavailable");
   const now = new Date();
   for (const id of claimIds) {
+    const claimRows = await db
+      .select({ bookingId: commissionClaims.bookingId })
+      .from(commissionClaims)
+      .where(eq(commissionClaims.id, id))
+      .limit(1);
+    const bookingId = claimRows[0]?.bookingId;
     await db
       .update(commissionClaims)
       .set({ status: "awaiting_payment", paidAt: now, paidById })
       .where(eq(commissionClaims.id, id));
+    // Processing in PTS is not the same as paying the agent. Keep the booking
+    // in the dedicated payment-run stage until its remittance confirms payment.
+    if (bookingId) {
+      await updateBookingStage(bookingId, "Commission Due for Payment", paidById);
+    }
     // Notify Orbit (fire-and-forget) — fetch bookingId for this claim
-    db.select({ bookingId: commissionClaims.bookingId }).from(commissionClaims).where(eq(commissionClaims.id, id)).limit(1)
-      .then((rows) => {
-        if (rows[0]?.bookingId) {
-          import("./orbit-sync").then(({ pushClaimStatusToOrbit }) => pushClaimStatusToOrbit(rows[0].bookingId)).catch(() => {});
-        }
-      }).catch(() => {});
+    if (bookingId) {
+      import("./orbit-sync").then(({ pushClaimStatusToOrbit }) => pushClaimStatusToOrbit(bookingId)).catch(() => {});
+    }
   }
 }
 
-export async function markCommissionAgentPaid(claimIds: number[]) {
+export async function markCommissionAgentPaid(claimIds: number[], movedById: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   for (const id of claimIds) {
+    const claimRows = await db
+      .select({ bookingId: commissionClaims.bookingId })
+      .from(commissionClaims)
+      .where(eq(commissionClaims.id, id))
+      .limit(1);
+    const bookingId = claimRows[0]?.bookingId;
     await db
       .update(commissionClaims)
       .set({ status: "paid" })
       .where(eq(commissionClaims.id, id));
+    if (bookingId) {
+      await updateBookingStage(bookingId, "Commission Paid", movedById);
+    }
     // Notify Orbit (fire-and-forget)
-    db.select({ bookingId: commissionClaims.bookingId }).from(commissionClaims).where(eq(commissionClaims.id, id)).limit(1)
-      .then((rows) => {
-        if (rows[0]?.bookingId) {
-          import("./orbit-sync").then(({ pushClaimStatusToOrbit }) => pushClaimStatusToOrbit(rows[0].bookingId)).catch(() => {});
-        }
-      }).catch(() => {});
+    if (bookingId) {
+      import("./orbit-sync").then(({ pushClaimStatusToOrbit }) => pushClaimStatusToOrbit(bookingId)).catch(() => {});
+    }
   }
 }
 

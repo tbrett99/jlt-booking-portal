@@ -246,6 +246,8 @@ const PIPELINE_STEPS = [
   { stage: "Added to PTS",           label: "Added to PTS" },
   { stage: "Commission Claimable",   label: "Commission Ready" },
   { stage: "Commission Claimed",     label: "Claimed" },
+  { stage: "Commission Due for Payment", label: "Due for Payment" },
+  { stage: "Commission Paid",        label: "Paid" },
 ];
 
 const STAGE_BADGE: Record<string, { label: string; color: string; bg: string }> = {
@@ -260,6 +262,8 @@ const STAGE_BADGE: Record<string, { label: string; color: string; bg: string }> 
   "Added to PTS":          { label: "Added to PTS",         color: "#065f46", bg: "#d1fae5" },
   "Commission Claimable":  { label: "Commission Ready",     color: "#065f46", bg: "#70FFE8" },
   "Commission Claimed":    { label: "Commission Claimed",   color: "#064e3b", bg: "#a7f3d0" },
+  "Commission Due for Payment": { label: "Due for Payment", color: "#1d4ed8", bg: "#dbeafe" },
+  "Commission Paid":       { label: "Commission Paid",      color: "#166534", bg: "#dcfce7" },
   "Cancelled":             { label: "Cancelled",            color: "#6b7280", bg: "#f3f4f6" },
   "Holding Accounts":      { label: "Holding",              color: "#92400e", bg: "#fef3c7" },
 };
@@ -1014,7 +1018,7 @@ export default function AgentBookingDetail() {
       </div>
 
       {/* Commission Pre-Authorisation Toggle */}
-      {booking.expectedCommission && !['Commission Claimed', 'Cancelled'].includes(booking.currentStage) && (
+      {booking.expectedCommission && !['Commission Claimed', 'Commission Due for Payment', 'Commission Paid', 'Cancelled'].includes(booking.currentStage) && (
         <div
           className="rounded-xl border p-4 flex items-start gap-3"
           style={{

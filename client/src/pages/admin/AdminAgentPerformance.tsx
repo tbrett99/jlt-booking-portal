@@ -65,7 +65,7 @@ export default function AdminAgentPerformance() {
       }
       const commission = Number(b.expectedCommission ?? 0);
       stat.totalCommission += commission;
-      if (b.currentStage === "Commission Claimed") {
+      if (b.currentStage === "Commission Paid") {
         stat.paidCommission += commission;
       } else if (b.currentStage !== "Cancelled") {
         // Count all non-cancelled, non-paid bookings as pending commission

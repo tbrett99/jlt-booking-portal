@@ -600,7 +600,7 @@ function toOrbitStatus(
     bookingStage === "Commission Paid"
   ) return "paid";
   // Awaiting payment but no claim record — treat as pending
-  if (bookingStage === "Awaiting Commission Payment") return "awaiting_payment";
+  if (bookingStage === "Commission Due for Payment" || bookingStage === "Awaiting Commission Payment") return "awaiting_payment";
   return "unclaimed";
 }
 

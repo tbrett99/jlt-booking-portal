@@ -127,6 +127,8 @@ export default function AgentCommissions() {
       !b.claim &&
       b.currentStage !== "Commission Claimable" &&
       b.currentStage !== "Commission Claimed" &&
+      b.currentStage !== "Commission Due for Payment" &&
+      b.currentStage !== "Commission Paid" &&
       b.currentStage !== "Cancelled"
   );
   const claimable = all.filter((b) => !b.claim && b.currentStage === "Commission Claimable");

@@ -6,12 +6,9 @@
  * Auth: X-API-Key header matching ORBIT_WEBHOOK_SECRET env var.
  *
  * Status mapping (portal → Orbit portalClaimStatus):
- *   no claim yet          → "unclaimed"
- *   pending / processing  → "pending"
- *   awaiting_payment      → "partial"
- *   paid                  → "claimed"
- *   notice_hold           → "pending"
- *   top_up_required       → "pending"
+ *   The current Orbit contract accepts the Portal's exact lifecycle values.
+ *   A booking without a claim is "unclaimed" or "claimable"; otherwise its
+ *   portal commission status is forwarded unchanged.
  */
 
 const ORBIT_WEBHOOK_URL =
@@ -46,7 +43,7 @@ export function mapClaimStatus(
       bookingStage === "Commission Claimed" ||
       bookingStage === "Commission Paid"
     ) return "paid";
-    if (bookingStage === "Awaiting Commission Payment") return "awaiting_payment";
+    if (bookingStage === "Commission Due for Payment" || bookingStage === "Awaiting Commission Payment") return "awaiting_payment";
     return "unclaimed";
   }
   switch (status) {

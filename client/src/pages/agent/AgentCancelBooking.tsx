@@ -29,7 +29,7 @@ export default function AgentCancelBooking() {
   });
 
   const activeBookings = (bookings ?? []).filter(
-    (b) => b.currentStage !== "Cancelled" && b.currentStage !== "Commission Claimed"
+    (b) => !["Cancelled", "Commission Claimed", "Commission Due for Payment", "Commission Paid"].includes(b.currentStage)
   );
 
   const filtered = activeBookings.filter(

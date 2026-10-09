@@ -30,7 +30,7 @@ import {
 const STAGES = [
   "New Booking", "Creating own PTS file", "Incomplete Booking", "Query",
   "Reimb Docs Missing", "Urgent/Reimb", "T/O Package", "DP",
-  "Added to PTS", "Commission Claimable", "Commission Claimed",
+  "Added to PTS", "Commission Claimable", "Commission Claimed", "Commission Due for Payment", "Commission Paid",
   "Cancelled", "Holding Accounts",
 ];
 
@@ -38,6 +38,8 @@ const STAGES_REQUIRING_PAYMENT_DATE = [
   "Added to PTS",
   "Commission Claimable",
   "Commission Claimed",
+  "Commission Due for Payment",
+  "Commission Paid",
   "Holding Accounts",
 ];
 

@@ -350,7 +350,7 @@ export const dashboardRouter = router({
       `),
       db.execute(sql`
         SELECT
-          SUM(CASE WHEN b.currentStage NOT IN ('Cancelled', 'Commission Claimable')
+          SUM(CASE WHEN b.currentStage NOT IN ('Cancelled', 'Commission Claimable', 'Commission Due for Payment', 'Commission Paid')
                         AND b.finalSupplierPaymentDate IS NULL
                         AND b.paymentDateDismissed = 0 THEN 1 ELSE 0 END) AS ptsMissingCount,
           SUM(CASE WHEN b.currentStage = 'Commission Claimable'
@@ -361,7 +361,7 @@ export const dashboardRouter = router({
       db.execute(sql`
         SELECT id, clientName, currentStage
         FROM bookings
-        WHERE currentStage NOT IN ('Cancelled', 'Commission Claimable')
+        WHERE currentStage NOT IN ('Cancelled', 'Commission Claimable', 'Commission Due for Payment', 'Commission Paid')
           AND finalSupplierPaymentDate IS NULL
           AND paymentDateDismissed = 0
         ORDER BY createdAt ASC
@@ -588,7 +588,7 @@ export const dashboardRouter = router({
           FROM bookings
           WHERE finalSupplierPaymentDate IS NOT NULL
             AND finalSupplierPaymentDate <= CURDATE()
-            AND currentStage NOT IN ('Commission Claimable','Commission Claimed','Cancelled')
+            AND currentStage NOT IN ('Commission Claimable','Commission Claimed','Commission Due for Payment','Commission Paid','Cancelled')
             AND (isPersonalBooking IS NULL OR isPersonalBooking = 0)
         `),
         db.execute(sql`
