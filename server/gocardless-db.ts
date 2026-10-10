@@ -1,6 +1,38 @@
 import { getDb } from "./db";
 import { gcMandates, gcSubscriptions, gcPaymentEvents } from "../drizzle/schema";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
+
+/**
+ * Migration 0152 adds GoCardless' immutable event ID. Older production
+ * databases can still receive webhooks and serve CRM history while that
+ * additive column is awaiting rollout.
+ */
+export function isMissingGoCardlessEventIdColumn(error: unknown) {
+  const candidate = error as { code?: string; message?: string; cause?: { code?: string; message?: string } } | undefined;
+  const cause = candidate?.cause;
+  const code = candidate?.code ?? cause?.code;
+  const message = `${candidate?.message ?? ""}\n${cause?.message ?? ""}`;
+  return (
+    (code === "ER_BAD_FIELD_ERROR" || code === "ER_NO_SUCH_COLUMN" || /unknown column/i.test(message)) &&
+    /gocardlessEventId/i.test(message)
+  );
+}
+
+const legacyPaymentEventColumns = {
+  id: gcPaymentEvents.id,
+  userId: gcPaymentEvents.userId,
+  mandateId: gcPaymentEvents.mandateId,
+  paymentId: gcPaymentEvents.paymentId,
+  eventType: gcPaymentEvents.eventType,
+  status: gcPaymentEvents.status,
+  amount: gcPaymentEvents.amount,
+  currency: gcPaymentEvents.currency,
+  failureReason: gcPaymentEvents.failureReason,
+  failureDescription: gcPaymentEvents.failureDescription,
+  occurredAt: gcPaymentEvents.occurredAt,
+  rawPayload: gcPaymentEvents.rawPayload,
+  createdAt: gcPaymentEvents.createdAt,
+};
 
 // ─── Mandate helpers ──────────────────────────────────────────────────────────
 
@@ -136,16 +168,16 @@ export async function createPaymentEvent(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  if (data.gocardlessEventId) {
-    const existing = await db
-      .select({ id: gcPaymentEvents.id })
-      .from(gcPaymentEvents)
-      .where(eq(gcPaymentEvents.gocardlessEventId, data.gocardlessEventId))
-      .limit(1);
-    if (existing.length) return { created: false };
-  }
 
   try {
+    if (data.gocardlessEventId) {
+      const existing = await db
+        .select({ id: gcPaymentEvents.id })
+        .from(gcPaymentEvents)
+        .where(eq(gcPaymentEvents.gocardlessEventId, data.gocardlessEventId))
+        .limit(1);
+      if (existing.length) return { created: false };
+    }
     await db.insert(gcPaymentEvents).values({
       gocardlessEventId: data.gocardlessEventId ?? null,
       userId: data.userId ?? null,
@@ -167,6 +199,35 @@ export async function createPaymentEvent(data: {
     if (data.gocardlessEventId && error?.code === "ER_DUP_ENTRY") {
       return { created: false };
     }
+    if (isMissingGoCardlessEventIdColumn(error)) {
+      // Keep payment auditing and strike notices operating while a live
+      // deployment is waiting for additive migration 0152. paymentId and
+      // eventType are the best legacy replay guard available before the
+      // provider event ID column exists.
+      if (data.paymentId) {
+        const existing = await db
+          .select({ id: gcPaymentEvents.id })
+          .from(gcPaymentEvents)
+          .where(and(eq(gcPaymentEvents.paymentId, data.paymentId), eq(gcPaymentEvents.eventType, data.eventType)))
+          .limit(1);
+        if (existing.length) return { created: false };
+      }
+      await db.insert(gcPaymentEvents).values({
+        userId: data.userId ?? null,
+        mandateId: data.mandateId ?? null,
+        paymentId: data.paymentId ?? null,
+        eventType: data.eventType,
+        status: data.status ?? null,
+        amount: data.amount ?? null,
+        currency: data.currency ?? "GBP",
+        failureReason: data.failureReason ?? null,
+        failureDescription: data.failureDescription ?? null,
+        occurredAt: data.occurredAt,
+        rawPayload: data.rawPayload ?? null,
+      } as any);
+      console.warn("[GoCardless] Using legacy payment-event storage until migration 0152 is available.");
+      return { created: true };
+    }
     throw error;
   }
 }
@@ -174,22 +235,42 @@ export async function createPaymentEvent(data: {
 export async function getPaymentEventsByUserId(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db
-    .select()
-    .from(gcPaymentEvents)
-    .where(eq(gcPaymentEvents.userId, userId))
-    .orderBy(desc(gcPaymentEvents.occurredAt));
+  try {
+    return await db
+      .select()
+      .from(gcPaymentEvents)
+      .where(eq(gcPaymentEvents.userId, userId))
+      .orderBy(desc(gcPaymentEvents.occurredAt));
+  } catch (error) {
+    if (!isMissingGoCardlessEventIdColumn(error)) throw error;
+    console.warn("[GoCardless] Falling back to legacy payment-event history until migration 0152 is available.");
+    return db
+      .select(legacyPaymentEventColumns)
+      .from(gcPaymentEvents)
+      .where(eq(gcPaymentEvents.userId, userId))
+      .orderBy(desc(gcPaymentEvents.occurredAt));
+  }
 }
 
 export async function getRecentFailedPayments(limit = 50) {
   const db = await getDb();
   if (!db) return [];
-  return db
-    .select()
-    .from(gcPaymentEvents)
-    .where(eq(gcPaymentEvents.eventType, "payments_failed"))
-    .orderBy(desc(gcPaymentEvents.occurredAt))
-    .limit(limit);
+  try {
+    return await db
+      .select()
+      .from(gcPaymentEvents)
+      .where(eq(gcPaymentEvents.eventType, "payments_failed"))
+      .orderBy(desc(gcPaymentEvents.occurredAt))
+      .limit(limit);
+  } catch (error) {
+    if (!isMissingGoCardlessEventIdColumn(error)) throw error;
+    return db
+      .select(legacyPaymentEventColumns)
+      .from(gcPaymentEvents)
+      .where(eq(gcPaymentEvents.eventType, "payments_failed"))
+      .orderBy(desc(gcPaymentEvents.occurredAt))
+      .limit(limit);
+  }
 }
 
 export async function updateGcSubscription(
