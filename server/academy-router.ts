@@ -421,6 +421,54 @@ export const academyRouter = router({
       };
     }),
 
+    /**
+     * Lets a staff member inspect the Academy exactly as it is presented to an
+     * agent, without creating Academy access, enrolments, progress, attempts,
+     * notices or CRM-stage changes for the staff account.
+     */
+    previewHome: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const courses = await db.select().from(academyCourses)
+        .where(eq(academyCourses.status, "published"))
+        .orderBy(asc(academyCourses.title));
+      const courseIds = courses.map((course) => course.id);
+      const modules = courseIds.length
+        ? await db.select().from(academyModules).where(inArray(academyModules.courseId, courseIds)).orderBy(asc(academyModules.sortOrder))
+        : [];
+      const moduleIds = modules.map((module) => module.id);
+      const lessons = moduleIds.length
+        ? await db.select().from(academyLessons).where(inArray(academyLessons.moduleId, moduleIds)).orderBy(asc(academyLessons.sortOrder))
+        : [];
+      const upcomingSessions = (await getUpcomingAgentEvents(30)).filter((event) => event.eventCategory === "training" || event.eventCategory === "webinar" || event.eventCategory === "supplier_event");
+
+      return {
+        hasAccess: true,
+        isPreview: true,
+        access: null,
+        upcomingSessions,
+        enrolments: courses.map((course) => {
+          const courseModules = modules.filter((module) => module.courseId === course.id);
+          const courseLessons = lessons.filter((lesson) => courseModules.some((module) => module.id === lesson.moduleId));
+          const requiredLessonIds = courseLessons.filter((lesson) => lesson.isRequired).map((lesson) => lesson.id);
+          const nextLesson = courseLessons.find((lesson) => lesson.isRequired) ?? courseLessons[0] ?? null;
+          return {
+            id: course.id,
+            agentId: null,
+            courseId: course.id,
+            status: "assigned" as const,
+            dueDate: null,
+            completedAt: null,
+            course,
+            progress: summariseAcademyProgress(requiredLessonIds, []),
+            nextLesson: nextLesson ? { id: nextLesson.id, title: nextLesson.title } : null,
+            isOverdue: false,
+          };
+        }),
+      };
+    }),
+
     course: protectedProcedure.input(z.object({ enrollmentId: z.number().int().positive() })).query(async ({ ctx, input }) => {
       const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
       const db = await getDb();
@@ -472,6 +520,41 @@ export const academyRouter = router({
               takenAt: attempt.takenAt,
               responses: responses.filter((response) => response.attemptId === attempt.id).map((response) => ({ questionId: response.questionId, responseText: response.responseText, score: response.score, feedback: response.feedback })),
             })),
+          })),
+        })),
+      };
+    }),
+
+    /** Read-only published-course preview for My Agent View. Correct answers and staff-only notes remain private. */
+    previewCourse: adminProcedure.input(z.object({ courseId: z.number().int().positive() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, input.courseId)).limit(1);
+      if (!course || course.status !== "published") throw new TRPCError({ code: "NOT_FOUND", message: "Course not available" });
+
+      const structure = await courseStructure(course.id);
+      const requiredLessonIds = structure.lessons.filter((lesson) => lesson.isRequired).map((lesson) => lesson.id);
+      return {
+        isPreview: true,
+        enrollment: { id: 0, agentId: null, courseId: course.id, status: "assigned" as const, dueDate: null, completedAt: null },
+        course,
+        progress: summariseAcademyProgress(requiredLessonIds, []),
+        modules: structure.modules.map((module) => ({
+          ...module,
+          lessons: module.lessons.map((lesson) => ({
+            ...lesson,
+            // Keep the preview safe: answer keys and private marking guides are never sent to the browser.
+            questions: lesson.questions.map((question) => ({
+              id: question.id,
+              prompt: question.prompt,
+              questionType: question.questionType,
+              answerOptions: asOptions(question.answerOptions),
+              maxWords: question.maxWords,
+              sortOrder: question.sortOrder,
+              resit: { questionId: question.id, attemptCount: 0, passed: false, awaitingMarking: false, feedbackPending: false, supportRequired: false, lastScore: null },
+            })),
+            progress: null,
+            attempts: [],
           })),
         })),
       };

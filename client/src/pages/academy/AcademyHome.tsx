@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { BookOpenCheck, CalendarDays, CheckCircle2, Clock3, GraduationCap, LockKeyhole, PlayCircle, Sparkles, ArrowRight, AlertTriangle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { useViewMode } from "@/contexts/ViewModeContext";
 
 function formatDate(value: Date | string | null | undefined) {
   if (!value) return null;
@@ -8,7 +9,13 @@ function formatDate(value: Date | string | null | undefined) {
 }
 
 export default function AcademyHome() {
-  const { data, isLoading, error } = trpc.academy.agent.home.useQuery();
+  const { isAgentView } = useViewMode();
+  const agentHome = trpc.academy.agent.home.useQuery(undefined, { enabled: !isAgentView });
+  const previewHome = trpc.academy.agent.previewHome.useQuery(undefined, { enabled: isAgentView });
+  const data = isAgentView ? previewHome.data : agentHome.data;
+  const isLoading = isAgentView ? previewHome.isLoading : agentHome.isLoading;
+  const error = isAgentView ? previewHome.error : agentHome.error;
+  const courseHref = (courseId: number, enrollmentId: number) => isAgentView ? `/academy/preview/course/${courseId}` : `/academy/course/${enrollmentId}`;
 
   if (isLoading) {
     return <div className="space-y-5 animate-pulse"><div className="h-32 rounded-2xl bg-muted" /><div className="h-48 rounded-2xl bg-muted" /></div>;
@@ -43,7 +50,7 @@ export default function AcademyHome() {
           <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Practical learning for confident travel experts.</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-white/75 md:text-base">Follow your pathway, keep essential knowledge close to hand, and build the confidence to look after your clients brilliantly.</p>
           {continueItem ? (
-            <Link href={`/academy/course/${continueItem.id}`} className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[#70FFE8] px-4 py-2.5 text-sm font-bold text-[#27302e] transition hover:bg-[#8cffef]">
+            <Link href={courseHref(continueItem.course.id, continueItem.id)} className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[#70FFE8] px-4 py-2.5 text-sm font-bold text-[#27302e] transition hover:bg-[#8cffef]">
               <PlayCircle size={17} /> {continueItem.nextLesson ? `Continue: ${continueItem.nextLesson.title}` : `Open ${continueItem.course.title}`} <ArrowRight size={16} />
             </Link>
           ) : (
@@ -51,6 +58,8 @@ export default function AcademyHome() {
           )}
         </div>
       </section>
+
+      {isAgentView && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"><span className="font-semibold">Academy preview:</span> this is the agent-facing view of every published course. Nothing viewed, acknowledged or submitted here is recorded against Max Kelly or any agent.</div>}
 
       {active.length > 0 && (
         <section>
@@ -63,7 +72,7 @@ export default function AcademyHome() {
                   <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold leading-5">{item.course.title}</h3>{item.isOverdue && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700"><AlertTriangle size={12} /> Due</span>}</div><p className="mt-1 text-sm text-muted-foreground line-clamp-2">{item.course.summary || "Your JLT learning pathway."}</p></div>
                 </div>
                 <div className="mt-5"><div className="mb-1.5 flex items-center justify-between text-xs"><span className="font-medium">{item.progress.completedRequiredLessons} of {item.progress.requiredLessons} required lessons</span><span className="font-bold">{item.progress.percentage}%</span></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-[#00c9b4] transition-all" style={{ width: `${item.progress.percentage}%` }} /></div></div>
-                <div className="mt-4 flex items-center justify-between gap-3"><span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 size={13} /> {item.dueDate ? `Due ${formatDate(item.dueDate)}` : "No set deadline"}</span><Link href={`/academy/course/${item.id}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">Open course <ArrowRight size={15} /></Link></div>
+                <div className="mt-4 flex items-center justify-between gap-3"><span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 size={13} /> {item.dueDate ? `Due ${formatDate(item.dueDate)}` : "No set deadline"}</span><Link href={courseHref(item.course.id, item.id)} className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">Open course <ArrowRight size={15} /></Link></div>
               </article>
             ))}
           </div>

@@ -327,6 +327,7 @@ function AuthRouter() {
           <Route path="/roadmap" component={Roadmap} />
           <Route path="/competitions" component={Competitions} />
           <Route path="/academy" component={AcademyHome} />
+          <Route path="/academy/preview/course/:courseId">{(params) => <AcademyCourse previewCourseId={params.courseId} />}</Route>
           <Route path="/academy/course/:enrollmentId">{(params) => <AcademyCourse enrollmentId={params.enrollmentId} />}</Route>
           {/* Terms & Policies — accessible to logged-in agents */}
           <Route path="/terms" component={TermsAndPolicies} />
@@ -384,6 +385,7 @@ function AuthRouter() {
           <Route path="/roadmap" component={Roadmap} />
           <Route path="/competitions" component={Competitions} />
           <Route path="/academy" component={AcademyHome} />
+          <Route path="/academy/preview/course/:courseId">{(params) => <AcademyCourse previewCourseId={params.courseId} />}</Route>
           <Route path="/academy/course/:enrollmentId">{(params) => <AcademyCourse enrollmentId={params.enrollmentId} />}</Route>
           {/* Terms & Policies — accessible to admins in agent view */}
           <Route path="/terms" component={TermsAndPolicies} />
