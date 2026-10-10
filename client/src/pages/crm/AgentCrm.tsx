@@ -2929,10 +2929,15 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
 
       {/* Payment Event History */}
       <div>
-        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-          <Clock size={14} />
-          Payment Event History
-        </h3>
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Clock size={14} />
+            Payment Event History
+          </h3>
+          <p className="max-w-sm text-right text-[11px] leading-snug text-muted-foreground">
+            One lifecycle update is shown for each GoCardless payment status. Separate retry payments remain listed individually.
+          </p>
+        </div>
         {isLoading ? (
           <div className="text-sm text-muted-foreground">Loading...</div>
         ) : !paymentEvents || paymentEvents.length === 0 ? (

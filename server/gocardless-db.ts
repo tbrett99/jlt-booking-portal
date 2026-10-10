@@ -34,6 +34,32 @@ const legacyPaymentEventColumns = {
   createdAt: gcPaymentEvents.createdAt,
 };
 
+/**
+ * The CRM is a lifecycle log, not a payment ledger. Historic webhook retries
+ * can leave more than one row for the same payment reaching the same state.
+ * Callers order newest-first, so keep that first record while retaining
+ * genuinely separate payments and state changes.
+ */
+export function dedupePaymentEventHistory<T extends {
+  id: number;
+  paymentId?: string | null;
+  eventType: string;
+  gocardlessEventId?: string | null;
+}>(events: T[]): T[] {
+  const seen = new Set<string>();
+
+  return events.filter((event) => {
+    const key = event.paymentId
+      ? `payment:${event.paymentId}:${event.eventType}`
+      : event.gocardlessEventId
+        ? `event:${event.gocardlessEventId}`
+        : `row:${event.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // ─── Mandate helpers ──────────────────────────────────────────────────────────
 
 export async function createGcMandate(data: {
@@ -236,19 +262,21 @@ export async function getPaymentEventsByUserId(userId: number) {
   const db = await getDb();
   if (!db) return [];
   try {
-    return await db
+    const events = await db
       .select()
       .from(gcPaymentEvents)
       .where(eq(gcPaymentEvents.userId, userId))
-      .orderBy(desc(gcPaymentEvents.occurredAt));
+      .orderBy(desc(gcPaymentEvents.occurredAt), desc(gcPaymentEvents.id));
+    return dedupePaymentEventHistory(events);
   } catch (error) {
     if (!isMissingGoCardlessEventIdColumn(error)) throw error;
     console.warn("[GoCardless] Falling back to legacy payment-event history until migration 0152 is available.");
-    return db
+    const events = await db
       .select(legacyPaymentEventColumns)
       .from(gcPaymentEvents)
       .where(eq(gcPaymentEvents.userId, userId))
-      .orderBy(desc(gcPaymentEvents.occurredAt));
+      .orderBy(desc(gcPaymentEvents.occurredAt), desc(gcPaymentEvents.id));
+    return dedupePaymentEventHistory(events);
   }
 }
 
@@ -256,20 +284,22 @@ export async function getRecentFailedPayments(limit = 50) {
   const db = await getDb();
   if (!db) return [];
   try {
-    return await db
+    const events = await db
       .select()
       .from(gcPaymentEvents)
       .where(eq(gcPaymentEvents.eventType, "payments_failed"))
       .orderBy(desc(gcPaymentEvents.occurredAt))
       .limit(limit);
+    return dedupePaymentEventHistory(events);
   } catch (error) {
     if (!isMissingGoCardlessEventIdColumn(error)) throw error;
-    return db
+    const events = await db
       .select(legacyPaymentEventColumns)
       .from(gcPaymentEvents)
       .where(eq(gcPaymentEvents.eventType, "payments_failed"))
       .orderBy(desc(gcPaymentEvents.occurredAt))
       .limit(limit);
+    return dedupePaymentEventHistory(events);
   }
 }
 
