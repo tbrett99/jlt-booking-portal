@@ -117,23 +117,6 @@ export const suppliersRouter = router({
       };
     }),
 
-  // ── Admin: Export the active supplier directory without credentials or internal notes ──
-  exportDirectory: adminProcedure.query(async () => {
-    const { getDb } = await import("./db");
-    const db = await getDb();
-    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-    return db
-      .select({
-        name: suppliers.name,
-        categories: suppliers.categories,
-        locations: suppliers.locations,
-        isPreferredPartner: suppliers.isPreferredPartner,
-      })
-      .from(suppliers)
-      .where(eq(suppliers.isActive, 1))
-      .orderBy(asc(suppliers.sortOrder), asc(suppliers.name));
-  }),
-
   // ── List preferred partners (for dashboard widget + directory section) ────────
   preferredPartners: protectedProcedure
     .query(async ({ ctx }) => {
