@@ -15,7 +15,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn } from "@/lib/utils";
 import { ReimbursementAwaitingAgentDialog } from "@/components/ReimbursementAwaitingAgentDialog";
 
-type StatusFilter = "all" | "pending" | "awaiting_agent" | "scheduled" | "paid" | "late" | "overdue_scheduled" | "follow_up_overdue";
+type StatusFilter = "all" | "pending" | "awaiting_agent" | "scheduled" | "paid" | "overdue_scheduled" | "follow_up_overdue";
 type ReimbursementSort = "oldest" | "newest";
 const REIMBURSEMENTS_PER_PAGE = 25;
 
@@ -28,6 +28,7 @@ const STATUS_BADGE: Record<string, { label: string; color: string; bg: string }>
 
 export default function AdminReimbursements() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [lateOnly, setLateOnly] = useState(false);
   const [cardFilter, setCardFilter] = useState<CardFilter>("all");
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [clientSearch, setClientSearch] = useState("");
@@ -76,11 +77,11 @@ export default function AdminReimbursements() {
   };
   const isOverdueScheduled = (item: any) => item.status === "scheduled" && daysSinceScheduled(item) >= 5;
   const isFollowUpOverdue = (item: any) => item.status === "awaiting_agent" && item.nextFollowUpAt && new Date(item.nextFollowUpAt).getTime() < new Date().setHours(0, 0, 0, 0);
-  const items = statusFilter === "all" ? allItems
-    : statusFilter === "late" ? allItems.filter((r) => r.isLate)
+  const statusItems = statusFilter === "all" ? allItems
     : statusFilter === "overdue_scheduled" ? allItems.filter(isOverdueScheduled)
     : statusFilter === "follow_up_overdue" ? allItems.filter(isFollowUpOverdue)
     : allItems.filter((r) => r.status === statusFilter);
+  const items = lateOnly ? statusItems.filter((item) => item.isLate) : statusItems;
 
   const agentNames = Array.from(new Set(allItems.map((r: any) => r.agentName).filter(Boolean))).sort() as string[];
 
@@ -116,11 +117,11 @@ export default function AdminReimbursements() {
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const pageStart = (safeCurrentPage - 1) * REIMBURSEMENTS_PER_PAGE;
   const paginatedItems = filteredItems.slice(pageStart, pageStart + REIMBURSEMENTS_PER_PAGE);
-  const hasExtraFilters = !!clientSearch.trim() || cardFilter !== "all" || agentFilter !== "all" || !!minAmount || !!maxAmount;
+  const hasActiveFilters = statusFilter !== "all" || lateOnly || !!clientSearch.trim() || cardFilter !== "all" || agentFilter !== "all" || !!minAmount || !!maxAmount;
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, clientSearch, cardFilter, agentFilter, minAmount, maxAmount, sortOrder]);
+  }, [statusFilter, lateOnly, clientSearch, cardFilter, agentFilter, minAmount, maxAmount, sortOrder]);
 
   const handleSchedule = (id: number) => {
     updateStatus.mutate({ id, status: "scheduled" });
@@ -161,10 +162,9 @@ export default function AdminReimbursements() {
     URL.revokeObjectURL(url);
   };
 
-  const pending = items.filter((r) => r.status === "pending");
+  const pending = allItems.filter((r) => r.status === "pending");
   const scheduled = allItems.filter((r) => r.status === "scheduled");
   const paid = allItems.filter((r) => r.status === "paid");
-  const late = allItems.filter((r) => r.isLate ?? false);
   const overdueScheduled = allItems.filter(isOverdueScheduled);
   const overdueScheduledTotal = overdueScheduled.reduce((sum, item) => sum + Number(item.amount), 0);
   const awaitingAgentItems = allItems.filter((item) => item.status === "awaiting_agent");
@@ -273,7 +273,7 @@ export default function AdminReimbursements() {
 
       {/* Filter tabs */}
       <div className="flex gap-2 flex-wrap">
-        {(["all", "pending", "awaiting_agent", "follow_up_overdue", "scheduled", "overdue_scheduled", "paid", "late"] as StatusFilter[]).map((f) => (
+        {(["all", "pending", "awaiting_agent", "follow_up_overdue", "scheduled", "overdue_scheduled", "paid"] as StatusFilter[]).map((f) => (
           <button
             key={f}
             onClick={() => setStatusFilter(f)}
@@ -282,6 +282,14 @@ export default function AdminReimbursements() {
             {f === "all" ? "All" : f === "awaiting_agent" ? "Awaiting agent" : f === "follow_up_overdue" ? "Follow-up overdue" : f === "overdue_scheduled" ? "Scheduled 5+ days" : f.charAt(0).toUpperCase() + f.slice(1)}
           </button>
         ))}
+        <button
+          type="button"
+          aria-pressed={lateOnly}
+          onClick={() => setLateOnly((selected) => !selected)}
+          className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${lateOnly ? "border-red-300 bg-red-50 text-red-800" : "border-border text-muted-foreground hover:bg-muted"}`}
+        >
+          Late only
+        </button>
       </div>
 
       {/* Extra filters */}
@@ -340,9 +348,9 @@ export default function AdminReimbursements() {
         <Input type="number" placeholder="Min £" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="h-7 text-xs w-20" />
         <span className="text-xs text-muted-foreground">–</span>
         <Input type="number" placeholder="Max £" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="h-7 text-xs w-20" />
-        {hasExtraFilters && (
+        {hasActiveFilters && (
           <>
-            <button onClick={() => { setClientSearch(""); setCardFilter("all"); setAgentFilter("all"); setMinAmount(""); setMaxAmount(""); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground underline ml-1"><X size={11} /> Clear</button>
+            <button onClick={() => { setStatusFilter("all"); setLateOnly(false); setClientSearch(""); setCardFilter("all"); setAgentFilter("all"); setMinAmount(""); setMaxAmount(""); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground underline ml-1"><X size={11} /> Clear filters</button>
             <span className="text-xs text-muted-foreground">({filteredItems.length} of {items.length})</span>
           </>
         )}

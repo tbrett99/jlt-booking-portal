@@ -2652,7 +2652,7 @@ export async function getReimbItemsWithMissingDocsByAgent(agentId: number) {
   }));
 }
 
-// Count reimbursement items that still need action before PTS scheduling, including agent chases.
+// Count reimbursement items that have not yet received any staff action.
 export async function getOutstandingReimbursementsCount() {
   const db = await getDb();
   if (!db) return 0;
@@ -2660,7 +2660,7 @@ export async function getOutstandingReimbursementsCount() {
   const rows = await db
     .select({ id: reimbursementItems.id })
     .from(reimbursementItems)
-    .where(and(inArray(reimbursementItems.status, ["pending", "awaiting_agent"]), eq(reimbursementItems.isLate, false)));
+    .where(eq(reimbursementItems.status, "pending"));
   return rows.length;
 }
 
