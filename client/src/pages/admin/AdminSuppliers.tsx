@@ -29,9 +29,11 @@ import {
   Unlock,
   Sparkles,
   Loader2,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SupplierFormDialog } from "./SupplierFormDialog";
+import { buildSupplierDirectoryCsv } from "@shared/supplier-directory-csv";
 
 type Supplier = {
   id: number;
@@ -85,6 +87,7 @@ export default function AdminSuppliers() {
     { search: search || undefined, page, pageSize: 50 },
     { staleTime: 30000 }
   );
+  const supplierExport = trpc.suppliers.exportDirectory.useQuery(undefined, { enabled: false });
 
   const deleteMutation = trpc.suppliers.delete.useMutation({
     onSuccess: () => {
@@ -115,6 +118,31 @@ export default function AdminSuppliers() {
     utils.suppliers.get.invalidate();
   };
 
+  const downloadDirectoryCsv = async () => {
+    try {
+      const result = await supplierExport.refetch();
+      if (result.error) throw result.error;
+      const rows = result.data ?? [];
+      if (!rows.length) {
+        toast.error("There are no active suppliers to export.");
+        return;
+      }
+      const csv = buildSupplierDirectoryCsv(rows);
+      const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `jlt-supplier-directory-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+      toast.success(`Downloaded ${rows.length} active suppliers.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Supplier CSV export failed.");
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -125,6 +153,10 @@ export default function AdminSuppliers() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={downloadDirectoryCsv} disabled={supplierExport.isFetching}>
+            {supplierExport.isFetching ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            Export CSV
+          </Button>
           <Button
             variant="outline"
             onClick={() => enrichAllMutation.mutate({ onlyUnenriched: false })}
