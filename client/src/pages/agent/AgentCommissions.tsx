@@ -96,7 +96,7 @@ export default function AgentCommissions() {
 
   const markAgentPaidMutation = trpc.commissionClaims.markAgentPaid.useMutation({
     onSuccess: () => {
-      toast.success("Marked as paid!");
+      toast.success("Payment receipt confirmed.");
       setMarkPaidIds([]);
       utils.commissionClaims.myCommissions.invalidate();
     },
@@ -617,7 +617,7 @@ export default function AgentCommissions() {
         </TabsContent>
 
         <TabsContent value="awaiting">
-          <p className="text-sm text-muted-foreground mb-4">Your commission has been claimed and will be paid to you in the next payment run. Please note, claims processed after Wednesday may fall into next week's payment run.</p>
+          <p className="text-sm text-muted-foreground mb-4">Your commission has been claimed and will be paid to you in the next payment run. Once the money reaches your account, use <strong>Confirm payment received</strong> below. Please note, claims processed after Wednesday may fall into next week's payment run.</p>
           {awaitingPayment.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
@@ -648,7 +648,7 @@ export default function AgentCommissions() {
                       if (b.claim) markAgentPaidMutation.mutate({ claimIds: [b.claim.id] });
                     }}
                   >
-                    Mark as Paid
+                    Confirm payment received
                   </Button>
                 </div>
               ))}

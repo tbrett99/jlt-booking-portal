@@ -137,6 +137,11 @@ import {
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
 import { isPreAuthorisedCommissionEligibleAfterDeparture } from "./commission-readiness-utils";
 import { sendOutstandingTopUpReminders } from "./commission-topup-reminders";
+import { queueBookingForCommissionReview } from "./commission-review-queue";
+import {
+  COMMISSION_REVIEW_STAGE,
+  outstandingCommissionReviewLabels,
+} from "./commission-workflow-utils";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { ENV } from "./_core/env";
@@ -246,6 +251,47 @@ async function assertAgentCanProgressCommission(agentId: number, departureDate: 
       message: "This agent is marked In Contract and this booking has not yet departed. Commission cannot be progressed until the booking's departure date has passed.",
     });
   }
+}
+
+async function getOutstandingCommissionReviewActions(bookingId: number) {
+  const { getDb } = await import("./db");
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Unable to check outstanding booking actions." });
+  const { amendments, refunds, reimbursementItems } = await import("../drizzle/schema");
+  const { and, eq, inArray, ne } = await import("drizzle-orm");
+
+  const [refund, amendment, reimbursement] = await Promise.all([
+    db.select({ id: refunds.id }).from(refunds)
+      .where(and(eq(refunds.bookingId, bookingId), ne(refunds.status, "completed"))).limit(1),
+    db.select({ id: amendments.id }).from(amendments)
+      .where(and(
+        eq(amendments.bookingId, bookingId),
+        ne(amendments.status, "actioned"),
+        ne(amendments.status, "rejected"),
+      )).limit(1),
+    db.select({ id: reimbursementItems.id }).from(reimbursementItems)
+      .where(and(
+        eq(reimbursementItems.bookingId, bookingId),
+        inArray(reimbursementItems.status, ["pending", "awaiting_agent"]),
+      )).limit(1),
+  ]);
+
+  return outstandingCommissionReviewLabels({
+    hasOutstandingRefund: refund.length > 0,
+    hasOutstandingAmendment: amendment.length > 0,
+    hasOutstandingReimbursement: reimbursement.length > 0,
+  });
+}
+
+async function requireOutstandingActionsConfirmation(bookingId: number, confirmed: boolean | undefined) {
+  const outstandingActions = await getOutstandingCommissionReviewActions(bookingId);
+  if (outstandingActions.length > 0 && !confirmed) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `This booking has outstanding ${outstandingActions.join(", ")} action${outstandingActions.length === 1 ? "" : "s"}. Review the file and confirm that you wish to proceed before making commission claimable.`,
+    });
+  }
+  return outstandingActions;
 }
 
 // ─── Default notification templates seed ─────────────────────────────────────
@@ -1123,10 +1169,29 @@ export const appRouter = router({
         return getReimbursementDocs(input.bookingId);
       }),
     moveStage: adminProcedure
-      .input(z.object({ bookingId: z.number(), toStage: z.string(), queryMessage: z.string().optional(), vatAmount: z.number().nullable().optional() }))
+      .input(z.object({
+        bookingId: z.number(),
+        toStage: z.string(),
+        queryMessage: z.string().optional(),
+        vatAmount: z.number().nullable().optional(),
+        confirmOutstandingActions: z.boolean().optional(),
+      }))
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+
+        if (input.toStage === COMMISSION_REVIEW_STAGE) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Commission Ready for Review is set automatically when the final supplier payment date is due.",
+          });
+        }
+        if (["Commission Claimed", "Commission Due for Payment", "Commission Paid"].includes(input.toStage)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Use the dedicated Commission Management payment actions for this financial stage so the booking and commission claim stay aligned.",
+          });
+        }
 
         // Guardrail: final supplier payment date required for "Added to PTS" and all later stages
         const STAGES_REQUIRING_PAYMENT_DATE = [
@@ -1146,6 +1211,10 @@ export const appRouter = router({
 
         if (COMMISSION_PROCESSING_STAGES.has(input.toStage)) {
           await assertAgentCanProgressCommission(booking.agentId, booking.departureDate);
+        }
+
+        if (input.toStage === "Commission Claimable") {
+          await requireOutstandingActionsConfirmation(input.bookingId, input.confirmOutstandingActions);
         }
 
         if (
@@ -1409,7 +1478,7 @@ export const appRouter = router({
             if (db) await db.update(bookingsTable).set({ grossCostLockedAt: new Date() }).where(eq(bookingsTable.id, bookingId));
           }
         }
-        const result = await updateBookingAdminFields(bookingId, data as any);
+        let result = await updateBookingAdminFields(bookingId, data as any);
         const booking = await getBookingById(bookingId);
         if (booking) {
           // Auto-move from "Creating own PTS file" to "Added to PTS" when ptsRef is set
@@ -1447,6 +1516,11 @@ export const appRouter = router({
             });
           }
         }
+        if (input.finalSupplierPaymentDate) {
+          // A past or current payment date creates a staff review task only;
+          // it never makes the booking claimable without a human review.
+          result = (await queueBookingForCommissionReview(bookingId, ctx.user.id)) ?? result;
+        }
         return result;
       }),
     pipelineHistory: adminProcedure
@@ -1482,6 +1556,9 @@ export const appRouter = router({
         // Auto-move from "Creating own PTS file" to "Added to PTS" when ptsRef is provided
         if (input.ptsRef && booking.currentStage === 'Creating own PTS file') {
           await updateBookingStage(input.bookingId, 'Added to PTS', ctx.user.id);
+        }
+        if (input.finalSupplierPaymentDate) {
+          await queueBookingForCommissionReview(input.bookingId, ctx.user.id);
         }
         const changes: string[] = [];
         if (input.ptsRef) changes.push(`PTS Ref set to "${input.ptsRef}"`);
@@ -1634,6 +1711,18 @@ export const appRouter = router({
         toStage: z.string(),
       }))
       .mutation(async ({ input, ctx }) => {
+        if ([
+          COMMISSION_REVIEW_STAGE,
+          "Commission Claimable",
+          "Commission Claimed",
+          "Commission Due for Payment",
+          "Commission Paid",
+        ].includes(input.toStage)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Commission stages must be progressed through the individual Commission Due and Commission Management actions so each file is reviewed and audited.",
+          });
+        }
         const STAGES_REQUIRING_PAYMENT_DATE = [
           "Added to PTS",
           "Commission Claimable",
@@ -3042,6 +3131,7 @@ export const appRouter = router({
       const dueAgentIds = Array.from(new Set(dueBookings.map((b) => b.agentId)));
       const outstandingRefundBookingIds = new Set<number>();
       const outstandingAmendmentBookingIds = new Set<number>();
+      const outstandingReimbursementBookingIds = new Set<number>();
       const inContractAgentIds = new Set<number>();
       const commissionClaimByBookingId = new Map<number, any>();
       const orbitFinancialSnapshotByBookingId = new Map<number, any>();
@@ -3065,6 +3155,7 @@ export const appRouter = router({
           const {
             refunds: refundsTable,
             amendments: amendmentsTable,
+            reimbursementItems,
             commissionClaims,
             orbitFinancialSnapshots,
           } = await import('../drizzle/schema');
@@ -3086,6 +3177,14 @@ export const appRouter = router({
               ne(amendmentsTable.status, 'rejected'),
             ));
           for (const a of outstandingAmendments) outstandingAmendmentBookingIds.add(a.bookingId);
+          const outstandingReimbursements = await db
+            .select({ bookingId: reimbursementItems.bookingId })
+            .from(reimbursementItems)
+            .where(and(
+              inArray(reimbursementItems.bookingId, bookingIds),
+              inArray(reimbursementItems.status, ['pending', 'awaiting_agent']),
+            ));
+          for (const reimbursement of outstandingReimbursements) outstandingReimbursementBookingIds.add(reimbursement.bookingId);
           const commissionClaimsForDueBookings = await db
             .select()
             .from(commissionClaims)
@@ -3111,6 +3210,7 @@ export const appRouter = router({
         inContractHold: inContractAgentIds.has(b.agentId) && !hasBookingDeparturePassed(b.departureDate),
         hasOutstandingRefund: outstandingRefundBookingIds.has(b.id),
         hasOutstandingAmendment: outstandingAmendmentBookingIds.has(b.id),
+        hasOutstandingReimbursement: outstandingReimbursementBookingIds.has(b.id),
         commissionClaim: commissionClaimByBookingId.get(b.id) ?? null,
         orbitFinancialSnapshot: orbitFinancialSnapshotByBookingId.get(b.id) ?? null,
       }));
@@ -3473,6 +3573,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       const bookingIds = Array.from(new Set(claims.map((c) => c.bookingId)));
       const outstandingRefundBookingIds = new Set<number>();
       const outstandingAmendmentBookingIds = new Set<number>();
+      const outstandingReimbursementBookingIds = new Set<number>();
       const orbitFinancialSnapshotByBookingId = new Map<number, any>();
       if (bookingIds.length > 0) {
         const { getDb } = await import('./db');
@@ -3481,6 +3582,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           const {
             refunds: refundsTable,
             amendments: amendmentsTable,
+            reimbursementItems,
             orbitFinancialSnapshots,
           } = await import('../drizzle/schema');
           const { inArray, and, ne } = await import('drizzle-orm');
@@ -3503,6 +3605,14 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
               ne(amendmentsTable.status, 'rejected'),
             ));
           for (const a of outstandingAmendments) outstandingAmendmentBookingIds.add(a.bookingId);
+          const outstandingReimbursements = await db
+            .select({ bookingId: reimbursementItems.bookingId })
+            .from(reimbursementItems)
+            .where(and(
+              inArray(reimbursementItems.bookingId, bookingIds),
+              inArray(reimbursementItems.status, ['pending', 'awaiting_agent']),
+            ));
+          for (const reimbursement of outstandingReimbursements) outstandingReimbursementBookingIds.add(reimbursement.bookingId);
           const orbitFinancialSnapshotsForClaims = await db
             .select()
             .from(orbitFinancialSnapshots)
@@ -3534,11 +3644,15 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         membershipLastFailedAt: membershipArrearsByAgentId.get(c.agentId)?.lastFailedAt ?? null,
         booking,
         paidByName: c.paidById ? (userMap.get(c.paidById)?.name ?? "Admin") : null,
+        agentPaymentReceivedByName: (c as any).agentPaymentReceivedById
+          ? (userMap.get((c as any).agentPaymentReceivedById)?.name ?? "Agent")
+          : null,
         bankAccountName: bankDetailsMap.get(c.agentId)?.bankAccountName ?? null,
         bankSortCode: bankDetailsMap.get(c.agentId)?.bankSortCode ?? null,
         bankAccountNumber: bankDetailsMap.get(c.agentId)?.bankAccountNumber ?? null,
         hasOutstandingRefund: outstandingRefundBookingIds.has(c.bookingId),
         hasOutstandingAmendment: outstandingAmendmentBookingIds.has(c.bookingId),
+        hasOutstandingReimbursement: outstandingReimbursementBookingIds.has(c.bookingId),
         };
       });
     }),
@@ -3604,6 +3718,12 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       .mutation(async ({ input, ctx }) => {
         const allClaims = await getAllCommissionClaims();
         const selectedClaims = allClaims.filter((claim) => input.claimIds.includes(claim.id));
+        if (selectedClaims.length !== input.claimIds.length) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'One or more commission claims could not be found.' });
+        }
+        if (selectedClaims.some((claim) => claim.status !== 'processing')) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only claims in Processing can be marked as processed in PTS and moved to the payment run.' });
+        }
         const selectedAgentIds = Array.from(new Set(selectedClaims.map((claim) => claim.agentId)));
         if (selectedAgentIds.length > 0) {
           const { getDb } = await import('./db');
@@ -3769,7 +3889,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
 
     // Admin: mark a pending claim as claimable (moves it to processing)
     markClaimable: adminProcedure
-      .input(z.object({ claimId: z.number() }))
+      .input(z.object({ claimId: z.number(), confirmOutstandingActions: z.boolean().optional() }))
       .mutation(async ({ input, ctx }) => {
         const { getDb } = await import('./db');
         const db = await getDb();
@@ -3781,6 +3901,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         if (!claim) throw new TRPCError({ code: 'NOT_FOUND' });
         if (claim.status !== 'pending') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Claim is not in pending status' });
         const booking = await getBookingById(claim.bookingId);
+        await requireOutstandingActionsConfirmation(claim.bookingId, input.confirmOutstandingActions);
         const inContractProfile = await db
           .select({ userId: agentCrmProfiles.userId, inContract: agentCrmProfiles.inContract })
           .from(agentCrmProfiles)
@@ -3971,13 +4092,16 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     markAgentPaid: protectedProcedure
       .input(z.object({ claimIds: z.array(z.number()).min(1) }))
       .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== "agent") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Only the receiving agent can confirm commission payment receipt." });
+        }
         const { markCommissionAgentPaid } = await import("./db");
         const allClaims = await getAllCommissionClaims();
         for (const claimId of input.claimIds) {
           const claim = allClaims.find((c) => c.id === claimId);
           if (!claim) continue;
           // Agents can only mark their own claims
-          if (ctx.user.role === "agent" && claim.agentId !== ctx.user.id) {
+          if (claim.agentId !== ctx.user.id) {
             throw new TRPCError({ code: "FORBIDDEN" });
           }
           if (claim.status !== "awaiting_payment") {

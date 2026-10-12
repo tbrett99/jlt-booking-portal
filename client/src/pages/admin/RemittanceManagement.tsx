@@ -986,7 +986,7 @@ export default function RemittanceManagement() {
   const [markPaidConfirmOpen, setMarkPaidConfirmOpen] = useState(false);
   const markBatchPaidMutation = trpc.remittance.markBatchPaid.useMutation({
     onSuccess: (data) => {
-      toast.success(`Marked ${data.paidCount} claims as paid and notified ${data.pushedCount} agents`);
+      toast.success(`Processed ${data.processedCount} payment-run claim(s) and notified ${data.pushedCount} agent(s)`);
       setMarkPaidConfirmOpen(false);
       utils.remittance.getBatches.invalidate();
       utils.remittance.getJaninesView.invalidate();
@@ -1067,7 +1067,7 @@ export default function RemittanceManagement() {
                       disabled={markBatchPaidMutation.isPending}
                     >
                       <BadgeCheck className="h-4 w-4 mr-1.5" />
-                      Mark All Paid
+                      Process payment run
                     </Button>
                     <Button
                       size="sm"
@@ -1168,13 +1168,13 @@ export default function RemittanceManagement() {
         }}
       />
 
-      {/* Mark All Paid confirm dialog */}
+      {/* Process payment run confirmation */}
       <Dialog open={markPaidConfirmOpen} onOpenChange={setMarkPaidConfirmOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BadgeCheck className="h-5 w-5 text-emerald-600" />
-              Mark All Paid — {selectedBatch?.name}
+              Process payment run — {selectedBatch?.name}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm">
@@ -1182,9 +1182,9 @@ export default function RemittanceManagement() {
               This will:
             </p>
             <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
-              <li>Mark all matched commission claims in this batch as <strong className="text-foreground">Paid</strong></li>
+              <li>Move all matched commission claims to <strong className="text-foreground">Awaiting Payment</strong></li>
               <li>Set the VAT amount on each claim from the CSV data</li>
-              <li>Send a payment notification to each agent via email and in-app message</li>
+              <li>Notify each agent to confirm receipt once the money arrives in their account</li>
             </ul>
             <div className="rounded-lg p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
               <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
@@ -1192,7 +1192,7 @@ export default function RemittanceManagement() {
               </p>
             </div>
             <p className="text-xs text-amber-600 font-medium">
-              ⚠ This action cannot be undone. Only proceed once you have confirmed payment has been made.
+              ⚠ Only proceed once this payment run has been processed. Claims remain Awaiting Payment until the agent confirms receipt.
             </p>
           </div>
           <DialogFooter>
@@ -1202,7 +1202,7 @@ export default function RemittanceManagement() {
               disabled={markBatchPaidMutation.isPending || !selectedBatchId}
               onClick={() => selectedBatchId && markBatchPaidMutation.mutate({ batchId: selectedBatchId })}
             >
-              {markBatchPaidMutation.isPending ? "Processing…" : "Confirm — Mark All Paid"}
+              {markBatchPaidMutation.isPending ? "Processing…" : "Confirm — Process payment run"}
             </Button>
           </DialogFooter>
         </DialogContent>

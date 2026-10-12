@@ -1072,6 +1072,13 @@
       "when": 1791576358728,
       "tag": "0152_rapid_karma",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "5",
+      "when": 1791824248031,
+      "tag": "0153_crazy_ultimatum",
+      "breakpoints": true
     }
   ]
 }

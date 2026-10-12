@@ -164,6 +164,7 @@ export default function CommissionDue() {
   // VAT dialog state — used for both pre-auth (auto-claim) and standard (mark claimable) flows
   const [preAuthBooking, setPreAuthBooking] = useState<{ id: number; clientName: string; isPreAuth: boolean } | null>(null);
   const [vatInput, setVatInput] = useState("");
+  const [confirmOutstandingActions, setConfirmOutstandingActions] = useState(false);
 
   const moveStage = trpc.bookings.moveStage.useMutation({
     onMutate: async ({ bookingId }) => {
@@ -362,24 +363,9 @@ export default function CommissionDue() {
             {selectedIds.size} booking{selectedIds.size !== 1 ? "s" : ""} selected
           </span>
           <div className="flex items-center gap-2 ml-auto flex-wrap">
-            <Button
-              size="sm"
-              className="h-8 bg-[#70FFE8] text-[#414141] hover:bg-[#02E6D2]"
-              disabled={bulkMoveStage.isPending}
-              onClick={() => handleBulkMove("Commission Claimable")}
-            >
-              <CheckCircle2 size={14} className="mr-1.5" />
-              Move to Commission Claimable
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 bg-[#414141] text-white hover:bg-[#2a2a2a]"
-              disabled={bulkMoveStage.isPending}
-              onClick={() => handleBulkMove("Commission Claimed")}
-            >
-              <CheckCircle2 size={14} className="mr-1.5" />
-              Move to Commission Claimed
-            </Button>
+            <span className="max-w-md text-xs leading-relaxed text-amber-800">
+              Commission progression is reviewed one file at a time so outstanding refunds, amendments and reimbursements cannot be skipped.
+            </span>
             <Button
               size="sm"
               variant="ghost"
@@ -462,9 +448,15 @@ export default function CommissionDue() {
                         {(booking as any).hasOutstandingAmendment && (
                           <Badge className="text-xs bg-orange-100 text-orange-800 border border-orange-300 gap-1 flex items-center">
                             <AlertTriangle size={10} />
-                            Outstanding Amendment
-                          </Badge>
-                        )}
+                          Outstanding Amendment
+                        </Badge>
+                      )}
+                      {(booking as any).hasOutstandingReimbursement && (
+                        <Badge className="text-xs bg-violet-100 text-violet-800 border border-violet-300 gap-1 flex items-center">
+                          <AlertTriangle size={10} />
+                          Outstanding Reimbursement
+                        </Badge>
+                      )}
                         {isInContract && (
                           <Badge className={`text-xs gap-1 flex items-center ${isInContractHold ? "bg-rose-100 text-rose-800 border border-rose-300" : "bg-emerald-100 text-emerald-800 border border-emerald-300"}`} title={isInContractHold ? "Commission is held until this booking's departure date has passed" : "Agent remains In Contract, but this client has travelled and the commission may proceed"}>
                             <AlertTriangle size={10} />
@@ -567,6 +559,7 @@ export default function CommissionDue() {
                         onClick={() => {
                           setPreAuthBooking({ id: booking.id, clientName: booking.clientName, isPreAuth: !!(booking as any).commissionPreAuthorised });
                           setVatInput("");
+                          setConfirmOutstandingActions(false);
                         }}
                         disabled={moveStage.isPending || bulkMoveStage.isPending || isInContractHold}
                         title={isInContractHold ? "Commission is blocked until this booking's departure date has passed" : undefined}
@@ -644,7 +637,7 @@ export default function CommissionDue() {
       </Dialog>
 
       {/* VAT Dialog — shown for both pre-auth (auto-claim) and standard (mark claimable) flows */}
-      <Dialog open={!!preAuthBooking} onOpenChange={(v) => !v && setPreAuthBooking(null)}>
+      <Dialog open={!!preAuthBooking} onOpenChange={(v) => { if (!v) { setPreAuthBooking(null); setConfirmOutstandingActions(false); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -665,7 +658,8 @@ export default function CommissionDue() {
             const bk = filtered.find((b) => b.id === preAuthBooking.id);
             const hasRefund = (bk as any)?.hasOutstandingRefund;
             const hasAmendment = (bk as any)?.hasOutstandingAmendment;
-            if (!hasRefund && !hasAmendment) return null;
+            const hasReimbursement = (bk as any)?.hasOutstandingReimbursement;
+            if (!hasRefund && !hasAmendment && !hasReimbursement) return null;
             return (
               <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 space-y-1.5">
                 <div className="flex items-center gap-2 text-amber-800 font-semibold text-sm">
@@ -678,6 +672,18 @@ export default function CommissionDue() {
                 {hasAmendment && (
                   <p className="text-xs text-amber-700">⚠ There is an <strong>outstanding amendment</strong> on this booking that has not been actioned. Ensure the amendment is resolved before marking commission claimable.</p>
                 )}
+                {hasReimbursement && (
+                  <p className="text-xs text-amber-700">⚠ There is an <strong>outstanding reimbursement</strong> on this booking that has not been scheduled or paid. Ensure it is resolved before proceeding.</p>
+                )}
+                <label className="mt-2 flex cursor-pointer items-start gap-2 rounded border border-amber-200 bg-white/70 p-2.5 text-xs text-amber-900">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-3.5 w-3.5"
+                    checked={confirmOutstandingActions}
+                    onChange={(event) => setConfirmOutstandingActions(event.target.checked)}
+                  />
+                  <span>I have reviewed the outstanding items and confirm that commission should still proceed.</span>
+                </label>
               </div>
             );
           })()}
@@ -707,9 +713,20 @@ export default function CommissionDue() {
               disabled={moveStage.isPending}
               onClick={() => {
                 if (!preAuthBooking) return;
+                const bk = filtered.find((b) => b.id === preAuthBooking.id) as any;
+                const hasOutstanding = Boolean(bk?.hasOutstandingRefund || bk?.hasOutstandingAmendment || bk?.hasOutstandingReimbursement);
+                if (hasOutstanding && !confirmOutstandingActions) {
+                  toast.error("Please confirm that you have reviewed the outstanding booking items before proceeding.");
+                  return;
+                }
                 const vat = vatInput.trim() !== "" ? parseFloat(vatInput) : null;
                 moveStage.mutate(
-                  { bookingId: preAuthBooking.id, toStage: "Commission Claimable", vatAmount: vat },
+                  {
+                    bookingId: preAuthBooking.id,
+                    toStage: "Commission Claimable",
+                    vatAmount: vat,
+                    confirmOutstandingActions: hasOutstanding || undefined,
+                  },
                   { onSuccess: () => setPreAuthBooking(null) }
                 );
               }}

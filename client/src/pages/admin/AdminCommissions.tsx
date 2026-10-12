@@ -46,6 +46,8 @@ type ClaimRow = {
   claimedAt: Date | string;
   paidAt: Date | string | null;
   paidByName: string | null;
+  agentPaymentReceivedAt?: Date | string | null;
+  agentPaymentReceivedByName?: string | null;
   bookingType?: string | null;
   vatAmount?: string | number | null;
   bookingCompleteConfirmed?: boolean;
@@ -57,6 +59,7 @@ type ClaimRow = {
   bankAccountNumber?: string | null;
   hasOutstandingRefund?: boolean;
   hasOutstandingAmendment?: boolean;
+  hasOutstandingReimbursement?: boolean;
   topUpAmountPence?: number | null;
   topUpNote?: string | null;
   topUpRequestedAt?: Date | string | null;
@@ -262,6 +265,11 @@ function ClaimTable({
                           <AlertTriangle className="h-2.5 w-2.5" /> Amendment Pending
                         </span>
                       )}
+                      {c.hasOutstandingReimbursement && (
+                        <span className="inline-flex items-center gap-0.5 rounded border border-violet-200 bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800">
+                          <AlertTriangle className="h-2.5 w-2.5" /> Reimbursement Pending
+                        </span>
+                      )}
                       {c.inContract && (
                         <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium rounded px-1.5 py-0.5 ${c.inContractHold ? "bg-rose-100 text-rose-800 border border-rose-200" : "bg-emerald-100 text-emerald-800 border border-emerald-200"}`} title={c.inContractHold ? "Commission remains held until this booking's departure date has passed" : "Agent remains In Contract, but this client has travelled and commission may proceed"}>
                           <AlertTriangle className="h-2.5 w-2.5" /> {c.inContractHold ? "In Contract — Hold" : "In Contract — Travel Complete"}
@@ -335,8 +343,13 @@ function ClaimTable({
                         : "border-orange-500 text-orange-600"
                     }
                   >
-                    {c.status === "paid" ? "Paid" : c.status === "awaiting_payment" ? "Awaiting Payment" : "Processing"}
+                    {c.status === "paid" ? "Payment received" : c.status === "awaiting_payment" ? "Awaiting Payment" : "Processing"}
                   </Badge>
+                  {c.status === "paid" && c.agentPaymentReceivedAt && (
+                    <p className="mt-1 text-[10px] text-emerald-700">
+                      Agent confirmed {formatDate(c.agentPaymentReceivedAt)}
+                    </p>
+                  )}
                 </td>
                 <td className="py-3 px-4">
                   <div className="flex items-center gap-1">
@@ -489,6 +502,7 @@ export default function AdminCommissions() {
 
   // Pending review state
   const [markClaimableTarget, setMarkClaimableTarget] = useState<ClaimRow | null>(null);
+  const [confirmClaimOutstandingActions, setConfirmClaimOutstandingActions] = useState(false);
   const [topUpTarget, setTopUpTarget] = useState<ClaimRow | null>(null);
   const [topUpAmount, setTopUpAmount] = useState("");
   const [topUpNote, setTopUpNote] = useState("");
@@ -507,6 +521,7 @@ export default function AdminCommissions() {
     onSuccess: () => {
       toast.success("Claim marked as claimable — moved to Processing.");
       setMarkClaimableTarget(null);
+      setConfirmClaimOutstandingActions(false);
       utils.commissionClaims.all.invalidate();
     },
     onError: (err, _vars, ctx) => {
@@ -1198,7 +1213,7 @@ export default function AdminCommissions() {
       </Tabs>
 
       {/* Mark Claimable confirmation dialog */}
-      <AlertDialog open={!!markClaimableTarget} onOpenChange={(open) => { if (!open) setMarkClaimableTarget(null); }}>
+      <AlertDialog open={!!markClaimableTarget} onOpenChange={(open) => { if (!open) { setMarkClaimableTarget(null); setConfirmClaimOutstandingActions(false); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Mark as Claimable</AlertDialogTitle>
@@ -1209,11 +1224,43 @@ export default function AdminCommissions() {
               <em>Processing</em> so it can be claimed in PTS.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {markClaimableTarget && (markClaimableTarget.hasOutstandingRefund || markClaimableTarget.hasOutstandingAmendment || markClaimableTarget.hasOutstandingReimbursement) && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4"
+                checked={confirmClaimOutstandingActions}
+                onChange={(event) => setConfirmClaimOutstandingActions(event.target.checked)}
+              />
+              <span>
+                This booking still has outstanding {[
+                  markClaimableTarget.hasOutstandingRefund ? "refunds" : null,
+                  markClaimableTarget.hasOutstandingAmendment ? "amendments" : null,
+                  markClaimableTarget.hasOutstandingReimbursement ? "reimbursements" : null,
+                ].filter(Boolean).join(", ")}. I have reviewed the file and confirm commission should proceed.
+              </span>
+            </label>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-emerald-500 hover:bg-emerald-600 text-white"
-              onClick={() => markClaimableTarget && markClaimableMutation.mutate({ claimId: markClaimableTarget.id })}
+              onClick={() => {
+                if (!markClaimableTarget) return;
+                const hasOutstanding = Boolean(
+                  markClaimableTarget.hasOutstandingRefund
+                  || markClaimableTarget.hasOutstandingAmendment
+                  || markClaimableTarget.hasOutstandingReimbursement,
+                );
+                if (hasOutstanding && !confirmClaimOutstandingActions) {
+                  toast.error("Please confirm that you have reviewed the outstanding booking items.");
+                  return;
+                }
+                markClaimableMutation.mutate({
+                  claimId: markClaimableTarget.id,
+                  confirmOutstandingActions: hasOutstanding || undefined,
+                });
+              }}
               disabled={markClaimableMutation.isPending}
             >
               {markClaimableMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Claimable"}

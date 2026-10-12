@@ -27,7 +27,7 @@ import {
   communityConfirmations,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
-import { isPreAuthorisedCommissionEligibleAfterDeparture } from "./commission-readiness-utils";
+import { isBookingReadyForCommissionReview } from "./commission-workflow-utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _db: any | null = null;
@@ -1105,17 +1105,23 @@ export async function getCommissionDueBookings() {
   const db = await getDb();
   if (!db) return [];
   const now = new Date();
-  // Bookings where finalSupplierPaymentDate has passed and stage is not terminal, and not personal
-  const terminalStages = ["Commission Claimable", "Commission Claimed", "Commission Due for Payment", "Commission Paid", "Cancelled"];
+  // The list remains tolerant of older records that have not yet been picked
+  // up by the queue worker, but it never shows a booking that already has a
+  // commission claim. The review state is therefore separate from the agent
+  // claiming and payment lifecycle.
   const rows = await db.select().from(bookings).orderBy(desc(bookings.finalSupplierPaymentDate));
-  return rows.filter(
-    (b) =>
-      b.finalSupplierPaymentDate &&
-      b.finalSupplierPaymentDate <= now &&
-      !terminalStages.includes(b.currentStage) &&
-      !(b as any).isPersonalBooking &&
-      (!(b as any).commissionPreAuthorised ||
-        isPreAuthorisedCommissionEligibleAfterDeparture((b as any).departureDate, now))
+  const bookingIds = rows.map((booking) => booking.id);
+  const claimedBookingIds = bookingIds.length > 0
+    ? new Set((await db
+      .select({ bookingId: commissionClaims.bookingId })
+      .from(commissionClaims)
+      .where(inArray(commissionClaims.bookingId, bookingIds)))
+      .map((claim) => claim.bookingId))
+    : new Set<number>();
+
+  return rows.filter((booking) =>
+    !claimedBookingIds.has(booking.id)
+    && isBookingReadyForCommissionReview(booking, now)
   );
 }
 
@@ -1261,15 +1267,22 @@ export async function createCommissionClaim(bookingId: number, agentId: number, 
     .from(bookings)
     .where(eq(bookings.id, bookingId))
     .limit(1);
-  await db.insert(commissionClaims).values({
-    bookingId,
-    agentId,
-    bookingType,
-    grossAmount: grossAmount?.toString() ?? null,
-    vatAmount: booking?.commissionVat ?? null,
-    ...(initialStatus ? { status: initialStatus } : {}),
-    ...(extraFields ?? {}),
-  });
+  try {
+    await db.insert(commissionClaims).values({
+      bookingId,
+      agentId,
+      bookingType,
+      grossAmount: grossAmount?.toString() ?? null,
+      vatAmount: booking?.commissionVat ?? null,
+      ...(initialStatus ? { status: initialStatus } : {}),
+      ...(extraFields ?? {}),
+    });
+  } catch (error: any) {
+    // The database unique constraint is the final safeguard if two requests
+    // arrive at the same time. Return the original claim rather than creating
+    // a second financial lifecycle for one booking.
+    if (error?.code !== "ER_DUP_ENTRY" && error?.cause?.code !== "ER_DUP_ENTRY") throw error;
+  }
   const result = await db
     .select()
     .from(commissionClaims)
@@ -1329,6 +1342,7 @@ export async function markCommissionPaid(claimIds: number[], paidById: number) {
 export async function markCommissionAgentPaid(claimIds: number[], movedById: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+  const receivedAt = new Date();
   for (const id of claimIds) {
     const claimRows = await db
       .select({ bookingId: commissionClaims.bookingId })
@@ -1338,10 +1352,20 @@ export async function markCommissionAgentPaid(claimIds: number[], movedById: num
     const bookingId = claimRows[0]?.bookingId;
     await db
       .update(commissionClaims)
-      .set({ status: "paid" })
+      .set({
+        status: "paid",
+        agentPaymentReceivedAt: receivedAt,
+        agentPaymentReceivedById: movedById,
+      })
       .where(eq(commissionClaims.id, id));
     if (bookingId) {
       await updateBookingStage(bookingId, "Commission Paid", movedById);
+      await createNote({
+        bookingId,
+        authorId: movedById,
+        content: "[System] Agent confirmed that their commission payment has been received.",
+        isInternal: true,
+      });
     }
     // Notify Orbit (fire-and-forget)
     if (bookingId) {

@@ -250,13 +250,14 @@ export const remittanceRouter = router({
         const [lineResult] = await db.insert(remittanceLines).values(lineVal);
         const lineId = (lineResult as any).insertId as number;
 
-        // If matched and has awaiting_payment claim → advance to "paid" and write VAT from CSV
+        // A remittance line confirms the payment run, not that the agent has
+        // received the funds. Keep the claim awaiting receipt confirmation.
         if (lineVal.bookingId && lineVal.isMatched && !lineVal.processingClaimId) {
           const vatFromCsvStr = lineVal.vatFromPts ?? null;
           await db
             .update(commissionClaims)
             .set({
-              status: "paid",
+              status: "awaiting_payment",
               remittanceLineId: lineId,
               paidAt: new Date(),
               ...(vatFromCsvStr !== null ? { vatAmount: vatFromCsvStr } : {}),
@@ -267,7 +268,7 @@ export const remittanceRouter = router({
                 eq(commissionClaims.status, "awaiting_payment")
               )
             );
-          await updateBookingStage(lineVal.bookingId, "Commission Paid", ctx.user.id);
+          await updateBookingStage(lineVal.bookingId, "Commission Due for Payment", ctx.user.id);
           // Notify Orbit (fire-and-forget)
           pushClaimStatusToOrbit(lineVal.bookingId).catch(() => {});
         }
@@ -556,7 +557,7 @@ export const remittanceRouter = router({
       }));
     }),
 
-  // ── Approve a processing-flagged line: advance claim processing → paid ──────
+  // ── Approve a processing-flagged line: advance claim into the payment run ──
   approveProcessingClaim: protectedProcedure
     .input(z.object({ lineId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -579,17 +580,18 @@ export const remittanceRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "This line has no processing claim to approve" });
       }
 
-      // Advance claim: processing → awaiting_payment → paid (in one step, since admin is approving)
+      // The admin has approved the payment run. The agent still confirms actual
+      // receipt through the Portal before this becomes Paid.
       await db
         .update(commissionClaims)
         .set({
-          status: "paid",
+          status: "awaiting_payment",
           remittanceLineId: input.lineId,
           paidAt: new Date(),
         })
         .where(eq(commissionClaims.id, line.processingClaimId));
       if (line.bookingId) {
-        await updateBookingStage(line.bookingId, "Commission Paid", ctx.user.id);
+        await updateBookingStage(line.bookingId, "Commission Due for Payment", ctx.user.id);
       }
       // Notify Orbit (fire-and-forget)
       if (line.bookingId) pushClaimStatusToOrbit(line.bookingId).catch(() => {});
@@ -769,18 +771,18 @@ export const remittanceRouter = router({
         })
         .where(eq(remittanceLines.id, input.lineId));
 
-      // Advance awaiting_payment claim to "paid" (only if no processing flag)
+      // Link the remittance without treating it as agent payment receipt.
       if (!processingClaimId) {
         await db
           .update(commissionClaims)
-          .set({ status: "paid", remittanceLineId: input.lineId, paidAt: new Date() })
+          .set({ status: "awaiting_payment", remittanceLineId: input.lineId, paidAt: new Date() })
           .where(
             and(
               eq(commissionClaims.bookingId, booking.id),
               eq(commissionClaims.status, "awaiting_payment")
             )
           );
-        await updateBookingStage(booking.id, "Commission Paid", ctx.user.id);
+        await updateBookingStage(booking.id, "Commission Due for Payment", ctx.user.id);
         // Notify Orbit (fire-and-forget)
         pushClaimStatusToOrbit(booking.id).catch(() => {});
       }
@@ -936,7 +938,7 @@ export const remittanceRouter = router({
     }));
   }),
 
-  // ── Mark all claims in a batch as paid + push remittances to agents ──────────
+  // ── Process a payment run and request agent receipt confirmation ────────────
   markBatchPaid: protectedProcedure
     .input(z.object({ batchId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -964,22 +966,24 @@ export const remittanceRouter = router({
         .limit(1);
       const batch = batchRows[0];
 
-      let paidCount = 0;
+      let processedCount = 0;
       let pushedCount = 0;
       const now = new Date();
 
-      // For each matched line: advance commission claim to paid, set VAT from CSV
+      // For each matched line: record payment-run preparation and VAT. A claim
+      // becomes Paid only once the receiving agent confirms receipt.
       for (const line of lines) {
         if (!line.bookingId) continue;
 
         // Update VAT on commission claim from CSV value if present
         const vatFromCsv = line.vatFromPts ? parseFloat(String(line.vatFromPts)) : null;
 
-        // Advance processing or awaiting_payment claim to paid, and set VAT from CSV
+        // Advance processing claims into the payment run and keep awaiting
+        // payment claims there while preserving any VAT from the remittance.
         await db
           .update(commissionClaims)
           .set({
-            status: 'paid',
+            status: 'awaiting_payment',
             paidAt: now,
             remittanceLineId: line.id,
             ...(vatFromCsv !== null ? { vatAmount: toDecimalStr(vatFromCsv) } : {}),
@@ -990,10 +994,10 @@ export const remittanceRouter = router({
               inArray(commissionClaims.status, ['processing', 'awaiting_payment'])
             )
           );
-        await updateBookingStage(line.bookingId, "Commission Paid", ctx.user.id);
+        await updateBookingStage(line.bookingId, "Commission Due for Payment", ctx.user.id);
         // Notify Orbit (fire-and-forget)
         pushClaimStatusToOrbit(line.bookingId).catch(() => {});
-        paidCount++;
+        processedCount++;
       }
 
       // Push remittances to agents (send notifications + emails)
@@ -1013,7 +1017,7 @@ export const remittanceRouter = router({
         const bookingList = agentLines
           .map((l) => `• ${l.clientName} (${l.ptsRef}) — £${parseFloat(l.remit80 ?? '0').toFixed(2)}`)
           .join('\n');
-        const notifContent = `Your commission payment for ${batch?.name ?? 'this week'} has been processed and marked as paid.\n\nTotal: £${totalRemit80.toFixed(2)}\n\n${bookingList}\n\nPlease contact memberships@thejltgroup.co.uk if you have any questions.`;
+        const notifContent = `Your commission payment for ${batch?.name ?? 'this week'} has been processed and is on its way to your account.\n\nTotal: £${totalRemit80.toFixed(2)}\n\n${bookingList}\n\nOnce the money has arrived, please open My Commissions in the Portal and select “Confirm payment received” for each booking. Please contact memberships@thejltgroup.co.uk if you have any questions.`;
         try {
           await createInAppNotification({ userId: agentId, message: notifContent });
         } catch (_) {}
@@ -1043,7 +1047,7 @@ export const remittanceRouter = router({
         .set({ pushedToAgentsAt: now })
         .where(eq(remittanceBatches.id, input.batchId));
 
-      return { paidCount, pushedCount };
+      return { processedCount, pushedCount };
     }),
 
   // ── Delete a batch (super_admin only) ───────────────────────────────────────

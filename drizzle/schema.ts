@@ -294,7 +294,7 @@ export type InAppNotification = typeof inAppNotifications.$inferSelect;
 
 export const commissionClaims = mysqlTable("commission_claims", {
   id: int("id").autoincrement().primaryKey(),
-  bookingId: int("bookingId").notNull(), // FK → bookings.id
+  bookingId: int("bookingId").notNull().unique(), // Exactly one claim per booking
   agentId: int("agentId").notNull(), // FK → users.id
   bookingType: mysqlEnum("bookingType", ["lapland", "cruise", "disney", "other"]).notNull().default("other"),
   claimedAt: timestamp("claimedAt").defaultNow().notNull(),
@@ -311,8 +311,10 @@ export const commissionClaims = mysqlTable("commission_claims", {
   topUpResolvedAt: timestamp("topUpResolvedAt"), // when the agent confirmed top-up done
   grossAmount: decimal("grossAmount", { precision: 10, scale: 2 }), // Agent's declared gross commission before fees
   vatAmount: decimal("vatAmount", { precision: 10, scale: 2 }), // VAT on the commission
-  paidAt: timestamp("paidAt"),
-  paidById: int("paidById"), // FK → users.id (admin who marked as paid)
+  paidAt: timestamp("paidAt"), // PTS processing / payment-run preparation time
+  paidById: int("paidById"), // FK → users.id (admin who processed the PTS claim)
+  agentPaymentReceivedAt: timestamp("agentPaymentReceivedAt"), // Agent confirmed receipt of payment
+  agentPaymentReceivedById: int("agentPaymentReceivedById"), // FK → users.id (the receiving agent)
   remittanceLineId: int("remittanceLineId"), // FK → remittance_lines.id (set when matched to a PTS remittance)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

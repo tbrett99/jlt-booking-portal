@@ -30,12 +30,13 @@ import {
 const STAGES = [
   "New Booking", "Creating own PTS file", "Incomplete Booking", "Query",
   "Reimb Docs Missing", "Urgent/Reimb", "T/O Package", "DP",
-  "Added to PTS", "Commission Claimable", "Commission Claimed", "Commission Due for Payment", "Commission Paid",
+  "Added to PTS", "Commission Ready for Review", "Commission Claimable", "Commission Claimed", "Commission Due for Payment", "Commission Paid",
   "Cancelled", "Holding Accounts",
 ];
 
 const STAGES_REQUIRING_PAYMENT_DATE = [
   "Added to PTS",
+  "Commission Ready for Review",
   "Commission Claimable",
   "Commission Claimed",
   "Commission Due for Payment",
@@ -1586,7 +1587,20 @@ export default function AdminBookingDetail() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {STAGES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              {STAGES.map((s) => {
+                const isSystemManagedCommissionStage = [
+                  "Commission Ready for Review",
+                  "Commission Claimable",
+                  "Commission Claimed",
+                  "Commission Due for Payment",
+                  "Commission Paid",
+                ].includes(s);
+                return (
+                  <SelectItem key={s} value={s} disabled={isSystemManagedCommissionStage}>
+                    {s}{isSystemManagedCommissionStage ? " — managed in Commission Due" : ""}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
