@@ -94,6 +94,18 @@ describe("commission payment lifecycle", () => {
     expect(dbSource).toContain("vatAmount: booking?.commissionVat ?? null");
   });
 
+  it("loads Commission Management supporting data only for the displayed claims", () => {
+    const managementQuery = routerSource.slice(
+      routerSource.indexOf("// Admin: get all commission claims with booking and agent info"),
+      routerSource.indexOf("// Admin: release a notice-period hold claim to processing"),
+    );
+
+    expect(managementQuery).not.toContain("const allBookingsRaw = await");
+    expect(managementQuery).toContain("inArray(bookingsTable.id, bookingIds)");
+    expect(managementQuery).toContain("inArray(usersTable.id, referencedUserIds)");
+    expect(managementQuery).toContain("const decryptedProfiles = await Promise.all");
+  });
+
   it("requires an explicit review confirmation when there are open booking actions", () => {
     expect(routerSource).toContain("requireOutstandingActionsConfirmation");
     expect(routerSource).toContain("confirmOutstandingActions");

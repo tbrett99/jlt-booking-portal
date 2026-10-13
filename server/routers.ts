@@ -3523,117 +3523,101 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     // Admin: get all commission claims with booking and agent info
     all: adminProcedure.query(async () => {
       const claims = await getAllCommissionClaims();
-      const allUsers = await getAllUsers();
-      const allBookingsRaw = await getAllBookings();
-      const userMap = new Map(allUsers.map((u) => [u.id, u]));
-      const bookingMap = new Map(allBookingsRaw.map((b) => [b.id, b]));
+      if (claims.length === 0) return [];
 
-      // Fetch and decrypt bank details for all unique agents in this claim set
+      // Scope all supporting reads to the displayed claims. The former use of
+      // getAllBookings() also loaded pipeline history for every booking in the
+      // portal, which could leave Commission Management loading indefinitely.
+      const bookingIds = Array.from(new Set(claims.map((claim) => claim.bookingId)));
       const uniqueAgentIds = Array.from(new Set(claims.map((c) => c.agentId)));
+      const referencedUserIds = Array.from(new Set([
+        ...uniqueAgentIds,
+        ...claims.flatMap((claim) => [claim.paidById, (claim as any).agentPaymentReceivedById])
+          .filter((id): id is number => typeof id === "number"),
+      ]));
       const bankDetailsMap = new Map<number, { bankAccountName: string | null; bankSortCode: string | null; bankAccountNumber: string | null }>();
       const inContractAgentIds = new Set<number>();
       const membershipArrearsByAgentId = new Map<number, { consecutiveFailures: number; lastFailedAt: Date | null }>();
-      if (uniqueAgentIds.length > 0) {
-        const { getDb } = await import('./db');
-        const db = await getDb();
-        if (db) {
-          const { agentCrmProfiles, gcPaymentFailures } = await import('../drizzle/schema');
-          const { and, eq, inArray } = await import('drizzle-orm');
-          const [inContractProfiles, membershipFailures] = await Promise.all([
-            db
-              .select({ userId: agentCrmProfiles.userId })
-              .from(agentCrmProfiles)
-              .where(and(inArray(agentCrmProfiles.userId, uniqueAgentIds), eq(agentCrmProfiles.inContract, true))),
-            db
-              .select({ userId: gcPaymentFailures.userId, consecutiveFailures: gcPaymentFailures.consecutiveFailures, lastFailedAt: gcPaymentFailures.lastFailedAt })
-              .from(gcPaymentFailures)
-              .where(inArray(gcPaymentFailures.userId, uniqueAgentIds)),
-          ]);
-          for (const profile of inContractProfiles) inContractAgentIds.add(profile.userId);
-          for (const failure of membershipFailures) {
-            if (failure.consecutiveFailures > 0) {
-              membershipArrearsByAgentId.set(failure.userId, {
-                consecutiveFailures: failure.consecutiveFailures,
-                lastFailedAt: failure.lastFailedAt,
-              });
-            }
-          }
-        }
-      }
-      if (uniqueAgentIds.length > 0) {
-        const { getDb } = await import('./db');
-        const db = await getDb();
-        if (db) {
-          const { agentCrmProfiles } = await import('../drizzle/schema');
-          const { inArray } = await import('drizzle-orm');
-          const { decryptAgentBankDetails } = await import('./agent-crm-db');
-          const profiles = await db
-            .select({ userId: agentCrmProfiles.userId, bankAccountName: agentCrmProfiles.bankAccountName, bankSortCode: agentCrmProfiles.bankSortCode, bankAccountNumber: agentCrmProfiles.bankAccountNumber })
-            .from(agentCrmProfiles)
-            .where(inArray(agentCrmProfiles.userId, uniqueAgentIds));
-          for (const p of profiles) {
-            const decrypted = await decryptAgentBankDetails(p as any);
-            bankDetailsMap.set(p.userId, {
-              bankAccountName: decrypted.bankAccountName ?? null,
-              bankSortCode: decrypted.bankSortCode ?? null,
-              bankAccountNumber: decrypted.bankAccountNumber ?? null,
-            });
-          }
-        }
-      }
-
-      // Fetch outstanding refunds and amendments for all booking IDs in these claims
-      const bookingIds = Array.from(new Set(claims.map((c) => c.bookingId)));
       const outstandingRefundBookingIds = new Set<number>();
       const outstandingAmendmentBookingIds = new Set<number>();
       const outstandingReimbursementBookingIds = new Set<number>();
       const orbitFinancialSnapshotByBookingId = new Map<number, any>();
-      if (bookingIds.length > 0) {
-        const { getDb } = await import('./db');
-        const db = await getDb();
-        if (db) {
-          const {
-            refunds: refundsTable,
-            amendments: amendmentsTable,
-            reimbursementItems,
-            orbitFinancialSnapshots,
-          } = await import('../drizzle/schema');
-          const { inArray, and, ne } = await import('drizzle-orm');
-          // Outstanding refunds: status is pending or processing (not completed)
-          const outstandingRefunds = await db
-            .select({ bookingId: refundsTable.bookingId })
-            .from(refundsTable)
-            .where(and(
-              inArray(refundsTable.bookingId, bookingIds),
-              ne(refundsTable.status, 'completed'),
-            ));
-          for (const r of outstandingRefunds) outstandingRefundBookingIds.add(r.bookingId);
-          // Outstanding amendments: status is pending (not actioned or rejected)
-          const outstandingAmendments = await db
-            .select({ bookingId: amendmentsTable.bookingId })
-            .from(amendmentsTable)
-            .where(and(
-              inArray(amendmentsTable.bookingId, bookingIds),
-              ne(amendmentsTable.status, 'actioned'),
-              ne(amendmentsTable.status, 'rejected'),
-            ));
-          for (const a of outstandingAmendments) outstandingAmendmentBookingIds.add(a.bookingId);
-          const outstandingReimbursements = await db
-            .select({ bookingId: reimbursementItems.bookingId })
-            .from(reimbursementItems)
-            .where(and(
-              inArray(reimbursementItems.bookingId, bookingIds),
-              inArray(reimbursementItems.status, ['pending', 'awaiting_agent']),
-            ));
-          for (const reimbursement of outstandingReimbursements) outstandingReimbursementBookingIds.add(reimbursement.bookingId);
-          const orbitFinancialSnapshotsForClaims = await db
-            .select()
-            .from(orbitFinancialSnapshots)
-            .where(inArray(orbitFinancialSnapshots.bookingId, bookingIds));
-          for (const snapshot of orbitFinancialSnapshotsForClaims) {
-            orbitFinancialSnapshotByBookingId.set(snapshot.bookingId, snapshot);
-          }
+      const { getDb } = await import('./db');
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const {
+        agentCrmProfiles,
+        amendments: amendmentsTable,
+        bookings: bookingsTable,
+        gcPaymentFailures,
+        orbitFinancialSnapshots,
+        reimbursementItems,
+        refunds: refundsTable,
+        users: usersTable,
+      } = await import('../drizzle/schema');
+      const { and, eq, inArray, ne } = await import('drizzle-orm');
+
+      const [claimBookings, claimUsers, profiles, membershipFailures, outstandingRefunds, outstandingAmendments, outstandingReimbursements, orbitFinancialSnapshotsForClaims] = await Promise.all([
+        db.select().from(bookingsTable).where(inArray(bookingsTable.id, bookingIds)),
+        referencedUserIds.length > 0
+          ? db.select().from(usersTable).where(inArray(usersTable.id, referencedUserIds))
+          : Promise.resolve([]),
+        uniqueAgentIds.length > 0
+          ? db.select({
+              userId: agentCrmProfiles.userId,
+              inContract: agentCrmProfiles.inContract,
+              bankAccountName: agentCrmProfiles.bankAccountName,
+              bankSortCode: agentCrmProfiles.bankSortCode,
+              bankAccountNumber: agentCrmProfiles.bankAccountNumber,
+            }).from(agentCrmProfiles).where(inArray(agentCrmProfiles.userId, uniqueAgentIds))
+          : Promise.resolve([]),
+        uniqueAgentIds.length > 0
+          ? db.select({ userId: gcPaymentFailures.userId, consecutiveFailures: gcPaymentFailures.consecutiveFailures, lastFailedAt: gcPaymentFailures.lastFailedAt })
+              .from(gcPaymentFailures).where(inArray(gcPaymentFailures.userId, uniqueAgentIds))
+          : Promise.resolve([]),
+        db.select({ bookingId: refundsTable.bookingId }).from(refundsTable).where(and(
+          inArray(refundsTable.bookingId, bookingIds), ne(refundsTable.status, 'completed'),
+        )),
+        db.select({ bookingId: amendmentsTable.bookingId }).from(amendmentsTable).where(and(
+          inArray(amendmentsTable.bookingId, bookingIds),
+          ne(amendmentsTable.status, 'actioned'),
+          ne(amendmentsTable.status, 'rejected'),
+        )),
+        db.select({ bookingId: reimbursementItems.bookingId }).from(reimbursementItems).where(and(
+          inArray(reimbursementItems.bookingId, bookingIds),
+          inArray(reimbursementItems.status, ['pending', 'awaiting_agent']),
+        )),
+        db.select().from(orbitFinancialSnapshots).where(inArray(orbitFinancialSnapshots.bookingId, bookingIds)),
+      ]);
+
+      const bookingMap = new Map(claimBookings.map((booking) => [booking.id, booking]));
+      const userMap = new Map(claimUsers.map((user) => [user.id, user]));
+      const { decryptAgentBankDetails } = await import('./agent-crm-db');
+      const decryptedProfiles = await Promise.all(profiles.map(async (profile) => ({
+        profile,
+        decrypted: await decryptAgentBankDetails(profile as any),
+      })));
+      for (const { profile, decrypted } of decryptedProfiles) {
+        if (profile.inContract) inContractAgentIds.add(profile.userId);
+        bankDetailsMap.set(profile.userId, {
+          bankAccountName: decrypted.bankAccountName ?? null,
+          bankSortCode: decrypted.bankSortCode ?? null,
+          bankAccountNumber: decrypted.bankAccountNumber ?? null,
+        });
+      }
+      for (const failure of membershipFailures) {
+        if (failure.consecutiveFailures > 0) {
+          membershipArrearsByAgentId.set(failure.userId, {
+            consecutiveFailures: failure.consecutiveFailures,
+            lastFailedAt: failure.lastFailedAt,
+          });
         }
+      }
+      for (const refund of outstandingRefunds) outstandingRefundBookingIds.add(refund.bookingId);
+      for (const amendment of outstandingAmendments) outstandingAmendmentBookingIds.add(amendment.bookingId);
+      for (const reimbursement of outstandingReimbursements) outstandingReimbursementBookingIds.add(reimbursement.bookingId);
+      for (const snapshot of orbitFinancialSnapshotsForClaims) {
+        orbitFinancialSnapshotByBookingId.set(snapshot.bookingId, snapshot);
       }
 
       return claims.map((c) => {
