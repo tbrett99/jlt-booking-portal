@@ -6,6 +6,7 @@ const joinRouter = readFileSync(resolve(process.cwd(), "server/join-router.ts"),
 const crmRouter = readFileSync(resolve(process.cwd(), "server/crm-router.ts"), "utf8");
 const agentCrm = readFileSync(resolve(process.cwd(), "client/src/pages/crm/AgentCrm.tsx"), "utf8");
 const joinAccept = readFileSync(resolve(process.cwd(), "client/src/pages/JoinAccept.tsx"), "utf8");
+const app = readFileSync(resolve(process.cwd(), "client/src/App.tsx"), "utf8");
 
 describe("team membership contract signing", () => {
   it("binds invite acceptance to the authenticated invitee rather than caller-supplied IDs", () => {
@@ -34,6 +35,16 @@ describe("team membership contract signing", () => {
     expect(agentCrm).toContain("Send contract for signing");
     expect(agentCrm).toContain("Secure contract-signing link sent to");
     expect(agentCrm).toContain('step.key !== "ddSubscriptionCreated"');
+  });
+
+  it("keeps a secure contract invitation reachable for an authenticated onboarding agent", () => {
+    const authRouter = app.slice(app.indexOf("function AuthRouter"), app.indexOf("function App()"));
+    const onboardingGate = app.slice(app.indexOf("function OnboardingGate"), app.indexOf("// ── Suspended portal guard"));
+
+    expect(authRouter).toContain('if (location === "/join/accept")');
+    expect(authRouter).toContain("return <JoinAccept />");
+    expect(authRouter.indexOf('if (location === "/join/accept")')).toBeLessThan(authRouter.indexOf("const isAdminUser"));
+    expect(onboardingGate).toContain('const allowedOnboardingPaths = ["/onboarding", "/dd-setup", "/dd-complete"]');
   });
 
   it("normalises invitation emails so casing cannot leave duplicate active signing links", () => {

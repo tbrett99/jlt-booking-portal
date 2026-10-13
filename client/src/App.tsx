@@ -282,6 +282,13 @@ function AuthRouter() {
     return <ChangePasswordPage />;
   }
 
+  // Team members exist as onboarding agents before their contract is signed.
+  // Their invite must remain outside the onboarding gate and PortalLayout so a
+  // secure /join/accept link can always open the contract after sign-in.
+  if (location === "/join/accept") {
+    return <JoinAccept />;
+  }
+
   const isAdminUser = user.role === "admin" || user.role === "super_admin";
 
   if (location === "/my-holiday-showcases") {
