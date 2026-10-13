@@ -613,7 +613,7 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               <DirectDebitTab userId={agent.id} mandate={agentMandate} paymentExempt={crmData?.paymentExempt ?? false} paymentExemptReason={crmData?.paymentExemptReason ?? null} />
             </TabsContent>
             <TabsContent value="onboarding" className="mt-5 pb-8">
-              <AdminOnboardingChecklistTab userId={agent.id} agentName={agent.name ?? ""} agentEmail={agent.email ?? ""} open={open} onRefresh={refresh} />
+              <AdminOnboardingChecklistTab userId={agent.id} agentName={agent.name ?? ""} agentEmail={agent.email ?? ""} paymentExempt={crmData?.paymentExempt ?? false} open={open} onRefresh={refresh} />
             </TabsContent>
             <TabsContent value="notes" className="mt-5 pb-8">
               <AgentNotesTab userId={agent.id} />
@@ -3036,8 +3036,8 @@ const ONBOARDING_STEPS = [
 
 type ChecklistKey = typeof ONBOARDING_STEPS[number]["key"];
 
-function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, open, onRefresh }: {
-  userId: number; agentName: string; agentEmail: string; open: boolean; onRefresh: () => void;
+function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, paymentExempt, open, onRefresh }: {
+  userId: number; agentName: string; agentEmail: string; paymentExempt: boolean; open: boolean; onRefresh: () => void;
 }) {
   const utils = trpc.useUtils();
   const { data: checklist, isLoading } = trpc.crm.agentCrm.getOnboardingChecklist.useQuery(
@@ -3054,7 +3054,10 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, open, onRe
     { enabled: open }
   );
   const resendInvite = trpc.join.adminResendTeamInvite.useMutation({
-    onSuccess: () => toast.success(`Invite resent to ${agentEmail}`),
+    onSuccess: () => {
+      toast.success(`Secure contract-signing link sent to ${agentEmail}`);
+      utils.join.adminGetPendingInviteForAgent.invalidate({ userId });
+    },
     onError: (e) => toast.error(e.message),
   });
   const [subPaymentDay, setSubPaymentDay] = useState<string>("1");
@@ -3145,8 +3148,11 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, open, onRe
     }
   }
 
-  const completedCount = Object.values(localState).filter(Boolean).length;
-  const totalCount = ONBOARDING_STEPS.length;
+  const onboardingSteps = paymentExempt
+    ? ONBOARDING_STEPS.filter((step) => step.key !== "ddSubscriptionCreated")
+    : ONBOARDING_STEPS;
+  const completedCount = onboardingSteps.filter((step) => localState[step.key]).length;
+  const totalCount = onboardingSteps.length;
   const allComplete = completedCount === totalCount;
 
   if (isLoading) {
@@ -3166,11 +3172,11 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, open, onRe
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-amber-800 dark:text-amber-400 flex items-center gap-2">
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                Team invite not yet signed
+                Contract signature required
               </p>
               <p className="text-xs text-amber-700 dark:text-amber-500 mt-1">
-                {agentName} was invited as a team member but has not yet signed their contract.
-                Expires {new Date(pendingInvite.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}.
+                {agentName} is covered by a team membership but has not yet signed their own agreement.
+                Send a fresh secure signing link, then review the completed contract before approving portal access.
               </p>
             </div>
             <Button
@@ -3184,7 +3190,7 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, open, onRe
                 origin: window.location.origin,
               })}
             >
-              {resendInvite.isPending ? "Sending..." : "Resend Invite"}
+              {resendInvite.isPending ? "Sending link..." : "Send contract for signing"}
             </Button>
           </div>
         </div>
@@ -3226,7 +3232,7 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, open, onRe
 
       {/* Checklist items */}
       <div className="space-y-2">
-        {ONBOARDING_STEPS.map((step, idx) => {
+        {onboardingSteps.map((step, idx) => {
           const done = localState[step.key];
           const isPortalStep = step.key === "portalAccessApproved";
           const isDdStep = step.key === "ddSubscriptionCreated";

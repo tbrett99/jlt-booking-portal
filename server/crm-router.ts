@@ -1138,7 +1138,7 @@ export const crmRouter = router({
           const db = await getDb();
           if (db) {
             const { joinSessions } = await import("../drizzle/schema");
-            const { eq } = await import("drizzle-orm");
+            const { eq, and, desc, isNotNull } = await import("drizzle-orm");
             const sessions = await db
               .select({
                 signerName: joinSessions.signerName,
@@ -1152,7 +1152,11 @@ export const crmRouter = router({
                 contractHash: joinSessions.contractHash,
               })
               .from(joinSessions)
-              .where(eq(joinSessions.userId, input.userId))
+              .where(and(
+                eq(joinSessions.userId, input.userId),
+                isNotNull(joinSessions.contractSignedAt),
+              ))
+              .orderBy(desc(joinSessions.contractSignedAt))
               .limit(1);
             if (sessions[0]) contractData = sessions[0];
           }
@@ -2488,7 +2492,7 @@ export const crmRouter = router({
         const db = await getDb();
         if (!db) return null;
         const { joinSessions, users } = await import("../drizzle/schema");
-        const { eq } = await import("drizzle-orm");
+        const { eq, and, desc, isNotNull } = await import("drizzle-orm");
 
         // Get the agent's user record
         const agentRows = await db
@@ -2502,7 +2506,11 @@ export const crmRouter = router({
         const sessions = await db
           .select()
           .from(joinSessions)
-          .where(eq(joinSessions.userId, input.userId))
+          .where(and(
+            eq(joinSessions.userId, input.userId),
+            isNotNull(joinSessions.contractSignedAt),
+          ))
+          .orderBy(desc(joinSessions.contractSignedAt))
           .limit(1);
         const session = sessions[0] ?? null;
 

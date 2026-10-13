@@ -12,7 +12,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, desc } from "drizzle-orm";
+import { eq, and, isNull, desc, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
@@ -527,7 +527,7 @@ export const joinRouter = router({
         .where(
           and(
             eq(teamInvites.teamId, teamId),
-            eq(teamInvites.invitedEmail, input.invitedEmail)
+            sql`LOWER(${teamInvites.invitedEmail}) = LOWER(${input.invitedEmail})`
           )
         )
         .limit(1);
@@ -636,15 +636,13 @@ export const joinRouter = router({
    * Accept a team invite: sign contract and complete onboarding (no payment).
    * The invited person must already have an account (via /register or OAuth).
    */
-  acceptInvite: publicProcedure
+  acceptInvite: protectedProcedure
     .input(
       z.object({
         token: z.string(),
-        sessionToken: z.string(), // join session for contract signing
         signatureDataUrl: z.string().min(1),
         signerName: z.string().min(2),
         signerAddress: z.string().min(5),
-        userId: z.number().int(), // the team member's user ID
         signingUserAgent: z.string().optional(),
         consentConfirmed: z.boolean().optional(),
         contractTextSnapshot: z.string().optional(),
@@ -663,66 +661,110 @@ export const joinRouter = router({
       if (!invite) throw new TRPCError({ code: "NOT_FOUND", message: "Invite not found" });
       if (invite.status === "accepted") throw new TRPCError({ code: "BAD_REQUEST", message: "Already accepted" });
       if (invite.expiresAt < new Date()) throw new TRPCError({ code: "FORBIDDEN", message: "Invite expired" });
-      // Mark invite as accepted
+      const signedInEmail = ctx.user.email?.trim().toLowerCase();
+      if (!signedInEmail || signedInEmail !== invite.invitedEmail.trim().toLowerCase()) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Please sign in with the email address that received this team invitation.",
+        });
+      }
+
+      const [teamRows, leaderRows] = await Promise.all([
+        db.select({ membershipTier: agentTeams.membershipTier, monthlySub: agentTeams.monthlySub })
+          .from(agentTeams)
+          .where(eq(agentTeams.id, invite.teamId))
+          .limit(1),
+        db.select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, invite.leaderId))
+          .limit(1),
+      ]);
+      const team = teamRows[0];
+      const signingIp = (ctx.req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
+        ?? ctx.req.socket?.remoteAddress
+        ?? null;
+      const signedAt = new Date();
+      const { createHash } = await import("crypto");
+      const hashInput = [
+        input.contractTextSnapshot ?? "",
+        input.signatureDataUrl,
+        signedAt.toISOString(),
+        input.signerName,
+        signingIp ?? "",
+      ].join("|");
+      const contractHash = createHash("sha256").update(hashInput).digest("hex");
+
+      // Retire every outstanding link for this email and team before accepting
+      // the one that was actually signed. This preserves the invite audit trail.
+      await db
+        .update(teamInvites)
+        .set({ status: "expired" })
+        .where(and(
+          eq(teamInvites.teamId, invite.teamId),
+          eq(teamInvites.status, "pending"),
+          sql`LOWER(${teamInvites.invitedEmail}) = LOWER(${invite.invitedEmail})`,
+        ));
       await db
         .update(teamInvites)
         .set({
           status: "accepted",
-          acceptedAt: new Date(),
-          acceptedByUserId: input.userId,
+          acceptedAt: signedAt,
+          acceptedByUserId: ctx.user.id,
         })
         .where(eq(teamInvites.id, invite.id));
-      // Store signing evidence in joinSessions if a session token was provided
-      const signingIp = (ctx.req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
-        ?? ctx.req.socket?.remoteAddress
-        ?? null;
-      const session = await getSessionByToken(input.sessionToken).catch(() => null);
-      if (session) {
-        const { createHash } = await import("crypto");
-        const signedAtIso = new Date().toISOString();
-        const hashInput = [
-          input.contractTextSnapshot ?? "",
-          input.signatureDataUrl,
-          signedAtIso,
-          input.signerName,
-          signingIp ?? "",
-        ].join("|");
-        const contractHash = createHash("sha256").update(hashInput).digest("hex");
-        await db
-          .update(joinSessions)
-          .set({
-            signatureDataUrl: input.signatureDataUrl,
-            signerName: input.signerName,
-            signerAddress: input.signerAddress,
-            contractSignedAt: new Date(),
-            step: "complete",
-            ipAddress: signingIp,
-            signingUserAgent: input.signingUserAgent ?? null,
-            consentConfirmed: input.consentConfirmed ?? false,
-            contractTextSnapshot: input.contractTextSnapshot ?? null,
-            contractHash,
-          })
-          .where(eq(joinSessions.id, session.id));
-      }
-      // Link team member to the team
+
+      // Store a dedicated record for the contract actually signed for this team.
+      // An abandoned personal application must not become the CRM's legal evidence.
+      await db.insert(joinSessions).values({
+        sessionToken: generateSessionToken(),
+        email: ctx.user.email ?? invite.invitedEmail,
+        expiresAt: sessionExpiresAt(),
+        membershipTier: team?.membershipTier ?? null,
+        membershipType: "team_member",
+        step: "complete",
+        contractSignedAt: signedAt,
+        signatureDataUrl: input.signatureDataUrl,
+        signerName: input.signerName,
+        signerAddress: input.signerAddress,
+        userId: ctx.user.id,
+        ipAddress: signingIp,
+        signingUserAgent: input.signingUserAgent ?? null,
+        consentConfirmed: input.consentConfirmed ?? false,
+        contractTextSnapshot: input.contractTextSnapshot ?? null,
+        contractHash,
+      });
+
+      // Link the signed team member and document their payment exemption. Portal
+      // access remains under staff control in the onboarding checklist.
+      const paymentExemptReason = `Team member — covered by ${leaderRows[0]?.name ?? "team leader"}`;
       const existingProfile = await db
         .select()
         .from(agentCrmProfiles)
-        .where(eq(agentCrmProfiles.userId, input.userId))
+        .where(eq(agentCrmProfiles.userId, ctx.user.id))
         .limit(1);
 
       if (existingProfile[0]) {
         await db
           .update(agentCrmProfiles)
-          .set({ teamId: invite.teamId })
-          .where(eq(agentCrmProfiles.userId, input.userId));
+          .set({
+            teamId: invite.teamId,
+            membershipTier: team?.membershipTier ?? existingProfile[0].membershipTier,
+            monthlySub: team?.monthlySub ?? existingProfile[0].monthlySub,
+            paymentExempt: true,
+            paymentExemptReason,
+          })
+          .where(eq(agentCrmProfiles.userId, ctx.user.id));
       } else {
         // Auto-assign a unique Agent ID (JLT-XXXX) for team members who join via invite (no payment path)
         const uniqueAgentId = await generateUniqueAgentIdForUser();
         await db.insert(agentCrmProfiles).values({
-          userId: input.userId,
+          userId: ctx.user.id,
           teamId: invite.teamId,
           uniqueAgentId,
+          membershipTier: team?.membershipTier ?? null,
+          monthlySub: team?.monthlySub ?? null,
+          paymentExempt: true,
+          paymentExemptReason,
         } as any);
       }
 
@@ -1011,13 +1053,14 @@ export const joinRouter = router({
         await db.update(agentCrmProfiles).set({ teamId }).where(eqOp(agentCrmProfiles.userId, input.userId));
       }
 
-      // Expire any existing pending invite for this email
+      // Expire any existing pending invite for this email, ignoring casing.
       await db
         .update(teamInvites)
         .set({ status: 'expired' })
         .where(andOp(
           eqOp(teamInvites.teamId, teamId),
-          eqOp(teamInvites.invitedEmail, input.invitedEmail),
+          eqOp(teamInvites.status, 'pending'),
+          sql`LOWER(${teamInvites.invitedEmail}) = LOWER(${input.invitedEmail})`,
         ));
 
       // Create new invite
@@ -1085,10 +1128,11 @@ export const joinRouter = router({
       .where(eqOp(joinSessions.userId, ctx.user.id))
       .limit(1);
 
-    const membershipType = sessionRows[0]?.membershipType as 'solo' | 'duo' | 'trio' | null | undefined;
+    const membershipType = sessionRows[0]?.membershipType as 'solo' | 'duo' | 'trio' | 'team_member' | null | undefined;
 
-    // Solo agents or agents with no session don't get the invite feature
-    if (!membershipType || membershipType === 'solo') {
+    // Solo agents, secondary team members, or agents with no session don't get
+    // team-leader invitation controls.
+    if (!membershipType || membershipType === 'solo' || membershipType === 'team_member') {
       return { isTeam: false, maxMembers: 0, invitesSent: [], remainingSlots: 0 };
     }
 
@@ -1156,8 +1200,8 @@ export const joinRouter = router({
         .where(eqOp(joinSessions.userId, ctx.user.id))
         .limit(1);
 
-      const membershipType = sessionRows[0]?.membershipType as 'solo' | 'duo' | 'trio' | null | undefined;
-      if (!membershipType || membershipType === 'solo') {
+      const membershipType = sessionRows[0]?.membershipType as 'solo' | 'duo' | 'trio' | 'team_member' | null | undefined;
+      if (!membershipType || membershipType === 'solo' || membershipType === 'team_member') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo membership does not support team members' });
       }
 
@@ -1206,7 +1250,10 @@ export const joinRouter = router({
       const alreadyInvited = await db
         .select({ id: teamInvites.id, status: teamInvites.status, expiresAt: teamInvites.expiresAt })
         .from(teamInvites)
-        .where(andOp(eqOp(teamInvites.teamId, teamId), eqOp(teamInvites.invitedEmail, input.invitedEmail)))
+        .where(andOp(
+          eqOp(teamInvites.teamId, teamId),
+          sql`LOWER(${teamInvites.invitedEmail}) = LOWER(${input.invitedEmail})`,
+        ))
         .limit(1);
 
       if (alreadyInvited[0] && alreadyInvited[0].status === 'pending' && alreadyInvited[0].expiresAt > new Date()) {
@@ -1313,7 +1360,7 @@ export const joinRouter = router({
         .limit(1);
       const email = userRows[0]?.email;
       if (!email) return null;
-      // Find a pending invite for this email
+      // Find a pending invite for this email, ignoring address casing.
       const inviteRows = await db
         .select({
           id: teamInvites.id,
@@ -1324,7 +1371,7 @@ export const joinRouter = router({
           status: teamInvites.status,
         })
         .from(teamInvites)
-        .where(and(eq(teamInvites.invitedEmail, email), eq(teamInvites.status, 'pending')))
+        .where(and(sql`LOWER(${teamInvites.invitedEmail}) = LOWER(${email})`, eq(teamInvites.status, 'pending')))
         .orderBy(desc(teamInvites.expiresAt))
         .limit(1);
       return inviteRows[0] ?? null;

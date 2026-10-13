@@ -75,11 +75,9 @@ export default function JoinAccept() {
     try {
       await acceptMutation.mutateAsync({
         token,
-        sessionToken: token, // reuse token as session identifier for team member
         signatureDataUrl,
         signerName: signerName.trim(),
         signerAddress: signerAddress.trim(),
-        userId: user.id,
         signingUserAgent: navigator.userAgent,
         consentConfirmed: true,
         contractTextSnapshot: template?.pdfUrl
