@@ -27,4 +27,11 @@ describe("Commission Management search and agent filtering", () => {
     expect(source).toContain('className="w-36 max-w-[9rem] sm:w-40 sm:max-w-[10rem]"');
     expect(source).toContain('className="truncate text-xs text-muted-foreground"');
   });
+
+  it("keeps approved but unclaimed bookings in a dedicated follow-up tab", () => {
+    expect(source).toContain("trpc.commissionDue.agentReadyUnclaimed.useQuery()");
+    expect(source).toContain("agentReadyMatchesCommissionSearch");
+    expect(source).toContain("Agent-ready, not yet claimed");
+    expect(source).toContain("shown for follow-up only");
+  });
 });

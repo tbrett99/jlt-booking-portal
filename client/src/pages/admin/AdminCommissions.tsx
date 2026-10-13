@@ -85,6 +85,19 @@ type VatPreviewRow = {
   bookingClient: string | null;
 };
 
+type AgentReadyUnclaimedRow = {
+  id: number;
+  agentId: number;
+  agentName: string;
+  agentEmail: string;
+  clientName: string;
+  ptsRef?: string | null;
+  topdogRef?: string | null;
+  departureDate: Date | string | null;
+  finalSupplierPaymentDate: Date | string | null;
+  expectedCommission: number | string | null;
+};
+
 // Parse CSV text into array of objects keyed by header
 function parseCsvToObjects(text: string): Record<string, string>[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
@@ -129,6 +142,19 @@ function claimMatchesCommissionSearch(claim: ClaimRow, query: string) {
     claim.booking?.ptsRef,
     claim.booking?.topdogRef,
     claim.bookingId,
+  ].some((value) => normaliseCommissionSearch(value).includes(normalisedQuery));
+}
+
+function agentReadyMatchesCommissionSearch(booking: AgentReadyUnclaimedRow, query: string) {
+  const normalisedQuery = normaliseCommissionSearch(query);
+  if (!normalisedQuery) return true;
+  return [
+    booking.clientName,
+    booking.agentName,
+    booking.agentEmail,
+    booking.ptsRef,
+    booking.topdogRef,
+    booking.id,
   ].some((value) => normaliseCommissionSearch(value).includes(normalisedQuery));
 }
 
@@ -455,6 +481,7 @@ export default function AdminCommissions() {
   }, [previewVatQuery.error]);
 
   const { data: claims, isLoading } = trpc.commissionClaims.all.useQuery();
+  const { data: agentReadyUnclaimed } = trpc.commissionDue.agentReadyUnclaimed.useQuery();
   const deleteClaimMutation = trpc.commissionClaims.deleteClaim.useMutation({
     onMutate: async (vars) => {
       await utils.commissionClaims.all.cancel();
@@ -574,11 +601,15 @@ export default function AdminCommissions() {
   });
 
   const allClaims = (claims ?? []) as ClaimRow[];
+  const allAgentReadyUnclaimed = (agentReadyUnclaimed ?? []) as AgentReadyUnclaimedRow[];
   const commissionAgents = useMemo(
     () => Array.from(new Map(
-      allClaims.map((claim) => [claim.agentId, { id: claim.agentId, name: claim.agentName }]),
+      [
+        ...allClaims.map((claim) => [claim.agentId, { id: claim.agentId, name: claim.agentName }] as const),
+        ...allAgentReadyUnclaimed.map((booking) => [booking.agentId, { id: booking.agentId, name: booking.agentName }] as const),
+      ],
     ).values()).sort((a, b) => a.name.localeCompare(b.name, "en-GB")),
-    [allClaims],
+    [allClaims, allAgentReadyUnclaimed],
   );
   const filteredClaims = useMemo(
     () => allClaims.filter((claim) => {
@@ -588,6 +619,13 @@ export default function AdminCommissions() {
     [allClaims, agentFilter, commissionSearch],
   );
   const hasCommissionFilters = agentFilter !== "all" || commissionSearch.trim().length > 0;
+  const filteredAgentReadyUnclaimed = useMemo(
+    () => allAgentReadyUnclaimed.filter((booking) => {
+      const matchesAgent = agentFilter === "all" || booking.agentId === Number(agentFilter);
+      return matchesAgent && agentReadyMatchesCommissionSearch(booking, commissionSearch);
+    }),
+    [allAgentReadyUnclaimed, agentFilter, commissionSearch],
+  );
 
   useEffect(() => {
     setPaidPage(1);
@@ -802,7 +840,7 @@ export default function AdminCommissions() {
       <div className="mb-6 rounded-xl border border-border bg-card p-4 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <label className="block flex-1">
-            <span className="mb-1.5 block text-sm font-medium text-foreground">Search claims</span>
+            <span className="mb-1.5 block text-sm font-medium text-foreground">Search commission work</span>
             <span className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -810,7 +848,7 @@ export default function AdminCommissions() {
                 onChange={(event) => setCommissionSearch(event.target.value)}
                 placeholder="Client, agent, PTS ref, Topdog ref or booking ID…"
                 className="pl-9"
-                aria-label="Search commission claims by client, agent or reference"
+                aria-label="Search commission work by client, agent or reference"
               />
             </span>
           </label>
@@ -840,7 +878,7 @@ export default function AdminCommissions() {
           )}
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          Showing <strong className="text-foreground">{filteredClaims.length}</strong> of {allClaims.length} commission claim{allClaims.length === 1 ? "" : "s"} across every status.
+          Showing <strong className="text-foreground">{filteredClaims.length}</strong> of {allClaims.length} commission claim{allClaims.length === 1 ? "" : "s"} and <strong className="text-foreground">{filteredAgentReadyUnclaimed.length}</strong> agent-ready unclaimed file{filteredAgentReadyUnclaimed.length === 1 ? "" : "s"}.
         </p>
       </div>
 
@@ -916,6 +954,14 @@ export default function AdminCommissions() {
 
       <Tabs defaultValue="processing">
         <TabsList className="mb-4 flex-wrap h-auto gap-1">
+          <TabsTrigger value="agent_ready">
+            Agent-ready, unclaimed
+            {filteredAgentReadyUnclaimed.length > 0 && (
+              <span className="ml-2 bg-teal-600 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                {filteredAgentReadyUnclaimed.length}
+              </span>
+            )}
+          </TabsTrigger>
           {noticeHold.length > 0 && (
             <TabsTrigger value="notice_hold">
               Notice Period
@@ -950,6 +996,62 @@ export default function AdminCommissions() {
           </TabsTrigger>
             <TabsTrigger value="paid">Paid</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="agent_ready">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Agent-ready, not yet claimed</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                These bookings have already been marked Commission Claimable. They are shown for follow-up only, not as new Commission Due reviews; this list does not contact an agent or change a booking.
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              {filteredAgentReadyUnclaimed.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground text-sm">No agent-ready unclaimed files match the current filters.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        <th className="py-3 px-4 text-left font-medium">Client</th>
+                        <th className="py-3 px-4 text-left font-medium">PTS Ref</th>
+                        <th className="py-3 px-4 text-left font-medium">Agent</th>
+                        <th className="py-3 px-4 text-left font-medium">Final supplier payment</th>
+                        <th className="py-3 px-4 text-left font-medium">Departure</th>
+                        <th className="py-3 px-4 text-left font-medium">Expected commission</th>
+                        <th className="py-3 px-4 text-left font-medium">Booking</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAgentReadyUnclaimed.map((booking) => (
+                        <tr key={booking.id} className="border-b border-border hover:bg-accent/20 transition-colors">
+                          <td className="py-3 px-4 font-medium">{booking.clientName}</td>
+                          <td className="py-3 px-4">
+                            {booking.ptsRef ? <CopyableRef value={booking.ptsRef} /> : <span className="text-xs text-muted-foreground">—</span>}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="w-36 max-w-[9rem] sm:w-40 sm:max-w-[10rem]">
+                              <p className="truncate font-medium" title={booking.agentName}>{booking.agentName}</p>
+                              <p className="truncate text-xs text-muted-foreground" title={booking.agentEmail}>{booking.agentEmail}</p>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">{formatDate(booking.finalSupplierPaymentDate)}</td>
+                          <td className="py-3 px-4">{formatDate(booking.departureDate)}</td>
+                          <td className="py-3 px-4 font-medium">{formatGbp(booking.expectedCommission)}</td>
+                          <td className="py-3 px-4">
+                            <Button variant="ghost" size="sm" onClick={() => navigate(`/bookings/${booking.id}`)} className="text-xs">
+                              View
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* NOTICE PERIOD TAB */}
         <TabsContent value="notice_hold">

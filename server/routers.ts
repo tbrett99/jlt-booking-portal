@@ -46,6 +46,7 @@ import {
   getAllRefunds,
   updateRefundPipeline,
   getCommissionDueBookings,
+  getAgentReadyUnclaimedBookings,
   createCommissionClaim,
   getCommissionClaimsByAgent,
   getAllCommissionClaims,
@@ -3215,6 +3216,18 @@ export const appRouter = router({
         orbitFinancialSnapshot: orbitFinancialSnapshotByBookingId.get(b.id) ?? null,
       }));
     }),
+    // Previously approved files are monitored separately from action-required
+    // Commission Due review work. This endpoint is strictly read-only.
+    agentReadyUnclaimed: adminProcedure.query(async () => {
+      const bookings = await getAgentReadyUnclaimedBookings();
+      const allUsers = await getAllUsers();
+      const userMap = new Map(allUsers.map((user) => [user.id, user]));
+      return bookings.map((booking) => ({
+        ...booking,
+        agentName: userMap.get(booking.agentId)?.name ?? "Unknown",
+        agentEmail: userMap.get(booking.agentId)?.email ?? "",
+      }));
+    }),
     requestTopUp: adminProcedure
       .input(z.object({
         bookingId: z.number(),
@@ -3630,10 +3643,10 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           : null;
         return {
         ...c,
-        // A historical claim may have been created before VAT was copied from the
-        // booking. Prefer the claim value, but fall back to the verified booking VAT
-        // so Commission Management remains accurate during that transition.
-        vatAmount: (c as any).vatAmount ?? (booking as any)?.commissionVat ?? null,
+        // A claim must display only its own recorded VAT. Booking-level VAT is
+        // a pre-claim review value and can be edited later, so using it as a
+        // fallback made historical claim figures appear incorrectly changed.
+        vatAmount: (c as any).vatAmount ?? null,
         agentName: userMap.get(c.agentId)?.name ?? "Unknown",
         agentEmail: userMap.get(c.agentId)?.email ?? "",
         agentPortalStatus: (userMap.get(c.agentId) as any)?.portalStatus ?? null,

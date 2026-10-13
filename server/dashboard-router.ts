@@ -588,8 +588,13 @@ export const dashboardRouter = router({
           FROM bookings
           WHERE finalSupplierPaymentDate IS NOT NULL
             AND finalSupplierPaymentDate <= CURDATE()
-            AND currentStage NOT IN ('Commission Claimable','Commission Claimed','Commission Due for Payment','Commission Paid','Cancelled')
+            AND currentStage IN ('Added to PTS','Commission Ready for Review')
             AND (isPersonalBooking IS NULL OR isPersonalBooking = 0)
+            AND NOT EXISTS (
+              SELECT 1
+              FROM commission_claims
+              WHERE commission_claims.bookingId = bookings.id
+            )
         `),
         db.execute(sql`
           SELECT

@@ -3,6 +3,16 @@ import { isPreAuthorisedCommissionEligibleAfterDeparture } from "./commission-re
 export const COMMISSION_REVIEW_STAGE = "Commission Ready for Review";
 
 /**
+ * Only final-supplier-payment hand-off files belong in the staff review queue.
+ * Historical Commission Claimable records are already agent-ready and are
+ * reported separately for follow-up.
+ */
+export const COMMISSION_REVIEW_ELIGIBLE_STAGES = new Set([
+  "Added to PTS",
+  COMMISSION_REVIEW_STAGE,
+]);
+
+/**
  * These stages represent financial workflow events, not free-form booking
  * pipeline choices. They can only be reached through their dedicated server
  * actions so that the claim, remittance and booking state remain aligned.
@@ -48,11 +58,10 @@ export function isBookingReadyForCommissionReview(
   now: Date,
 ) {
   if (booking.isPersonalBooking || booking.currentStage === "Cancelled") return false;
-  // A record with one of the final payment lifecycle stages must never be
-  // re-opened merely because a date is amended. "Ready for Review" and
-  // "Commission Claimable" intentionally remain reviewable: they can exist
-  // without a claim after historic imports or an incomplete prior review.
-  if (["Commission Claimed", "Commission Due for Payment", "Commission Paid"].includes(booking.currentStage)) return false;
+  // Commission Claimable is a completed staff decision, not a queue state.
+  // Treating historic claimable files as newly due review work inflated the
+  // Commission Due queue after the workflow repair.
+  if (!COMMISSION_REVIEW_ELIGIBLE_STAGES.has(booking.currentStage)) return false;
   if (!isFinalSupplierPaymentDateDue(booking.finalSupplierPaymentDate, now)) return false;
 
   return !booking.commissionPreAuthorised

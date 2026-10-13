@@ -48,6 +48,7 @@ vi.mock("./db", () => ({
   updateAmendmentPipeline: vi.fn().mockResolvedValue(undefined),
   updateRefundPipeline: vi.fn().mockResolvedValue(undefined),
   getCommissionDueBookings: vi.fn().mockResolvedValue([]),
+  getAgentReadyUnclaimedBookings: vi.fn().mockResolvedValue([]),
   createCommissionClaim: vi.fn().mockResolvedValue({ id: 1 }),
   getCommissionClaimsByAgent: vi.fn().mockResolvedValue([]),
   getAllCommissionClaims: vi.fn().mockResolvedValue([]),

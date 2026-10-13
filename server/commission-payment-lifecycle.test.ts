@@ -12,6 +12,8 @@ const readProjectFile = (relativePath: string) =>
 
 const dbSource = readProjectFile("server/db.ts");
 const routerSource = readProjectFile("server/routers.ts");
+const workflowSource = readProjectFile("server/commission-workflow-utils.ts");
+const dashboardSource = readProjectFile("server/dashboard-router.ts");
 const adminCommissionsSource = readProjectFile("client/src/pages/admin/AdminCommissions.tsx");
 const agentBookingSource = readProjectFile("client/src/pages/agent/AgentBookingDetail.tsx");
 const remittanceRouterSource = readProjectFile("server/remittance-router.ts");
@@ -58,8 +60,38 @@ describe("commission payment lifecycle", () => {
       ...baseBooking,
       commissionPreAuthorised: true,
     }, now)).toBe(false);
+    expect(isBookingReadyForCommissionReview({
+      ...baseBooking,
+      currentStage: "Commission Claimable",
+    }, now)).toBe(false);
+    expect(isBookingReadyForCommissionReview({
+      ...baseBooking,
+      currentStage: "Commission Ready for Review",
+    }, now)).toBe(true);
     expect(routerSource).toContain("queueBookingForCommissionReview(bookingId, ctx.user.id)");
     expect(routerSource).toContain("it never makes the booking claimable without a human review");
+  });
+
+  it("keeps historic agent-ready files separate from new staff review work", () => {
+    expect(dbSource).toContain("export async function getAgentReadyUnclaimedBookings()");
+    expect(dbSource).toContain('eq(bookings.currentStage, "Commission Claimable")');
+    expect(workflowSource).toContain("COMMISSION_REVIEW_ELIGIBLE_STAGES");
+    expect(routerSource).toContain("agentReadyUnclaimed: adminProcedure.query");
+    expect(adminCommissionsSource).toContain("Agent-ready, not yet claimed");
+    expect(adminCommissionsSource).toContain("not as new Commission Due reviews");
+  });
+
+  it("counts only unclaimed review-stage files in the dashboard Commission Due figure", () => {
+    expect(dashboardSource).toContain("currentStage IN ('Added to PTS','Commission Ready for Review')");
+    expect(dashboardSource).toContain("FROM commission_claims");
+    expect(dashboardSource).toContain("WHERE commission_claims.bookingId = bookings.id");
+    expect(dashboardSource).not.toContain("currentStage NOT IN ('Commission Claimable','Commission Claimed','Commission Due for Payment','Commission Paid','Cancelled')");
+  });
+
+  it("uses the claim’s recorded VAT rather than a later booking-level value", () => {
+    expect(routerSource).toContain("vatAmount: (c as any).vatAmount ?? null");
+    expect(routerSource).not.toContain("vatAmount: (c as any).vatAmount ?? (booking as any)?.commissionVat ?? null");
+    expect(dbSource).toContain("vatAmount: booking?.commissionVat ?? null");
   });
 
   it("requires an explicit review confirmation when there are open booking actions", () => {

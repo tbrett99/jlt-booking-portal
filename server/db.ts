@@ -1105,10 +1105,8 @@ export async function getCommissionDueBookings() {
   const db = await getDb();
   if (!db) return [];
   const now = new Date();
-  // The list remains tolerant of older records that have not yet been picked
-  // up by the queue worker, but it never shows a booking that already has a
-  // commission claim. The review state is therefore separate from the agent
-  // claiming and payment lifecycle.
+  // The review queue contains only final-supplier-payment hand-off files. It
+  // never reopens an already agent-ready booking or one with a claim record.
   const rows = await db.select().from(bookings).orderBy(desc(bookings.finalSupplierPaymentDate));
   const bookingIds = rows.map((booking) => booking.id);
   const claimedBookingIds = bookingIds.length > 0
@@ -1123,6 +1121,33 @@ export async function getCommissionDueBookings() {
     !claimedBookingIds.has(booking.id)
     && isBookingReadyForCommissionReview(booking, now)
   );
+}
+
+/**
+ * Staff-approved bookings for which the agent has not yet submitted a claim.
+ * This is deliberately separate from Commission Due: these records have
+ * already passed review and must never be presented as new review work.
+ */
+export async function getAgentReadyUnclaimedBookings() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db
+    .select()
+    .from(bookings)
+    .where(eq(bookings.currentStage, "Commission Claimable"))
+    .orderBy(desc(bookings.finalSupplierPaymentDate));
+  const eligibleRows = rows.filter((booking) => !booking.isPersonalBooking);
+  const bookingIds = eligibleRows.map((booking) => booking.id);
+  if (bookingIds.length === 0) return [];
+
+  const claimedBookingIds = new Set((await db
+    .select({ bookingId: commissionClaims.bookingId })
+    .from(commissionClaims)
+    .where(inArray(commissionClaims.bookingId, bookingIds)))
+    .map((claim) => claim.bookingId));
+
+  return eligibleRows.filter((booking) => !claimedBookingIds.has(booking.id));
 }
 
 // ─── Notification Templates ───────────────────────────────────────────────────
