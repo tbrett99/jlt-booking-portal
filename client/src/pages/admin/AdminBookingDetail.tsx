@@ -1117,6 +1117,7 @@ export default function AdminBookingDetail() {
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [showCommissionRecoveryConfirm, setShowCommissionRecoveryConfirm] = useState(false);
   const [cancellationActionTarget, setCancellationActionTarget] = useState<any | null>(null);
   const [moveCancellationToCancelled, setMoveCancellationToCancelled] = useState(true);
   const [mergeTarget, setMergeTarget] = useState<{ id: number; clientName: string } | null>(null);
@@ -1294,6 +1295,16 @@ export default function AdminBookingDetail() {
   const moveStage = trpc.bookings.moveStage.useMutation({
     onSuccess: () => utils.bookings.byId.invalidate({ id: bookingId }),
     onError: (err) => toast.error(err.message || "Failed to move booking"),
+  });
+  const restoreCommissionReview = trpc.bookings.restoreCommissionReview.useMutation({
+    onSuccess: () => {
+      setShowCommissionRecoveryConfirm(false);
+      utils.bookings.byId.invalidate({ id: bookingId });
+      utils.bookings.pipelineHistory.invalidate({ bookingId });
+      utils.notes.list.invalidate({ bookingId });
+      toast.success("Booking returned to Commission Ready for Review");
+    },
+    onError: (err) => toast.error(err.message || "Could not restore the commission review"),
   });
 
   // @mention: detect when user types @ in internal note
@@ -1582,6 +1593,16 @@ export default function AdminBookingDetail() {
           >
             <CheckSquare size={13} /> Create Task
           </Button>
+          {isAdmin && booking.currentStage === "Commission Due for Payment" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
+              onClick={() => setShowCommissionRecoveryConfirm(true)}
+            >
+              <RefreshCw size={13} /> Restore Commission Review
+            </Button>
+          )}
           <Select value={booking.currentStage} onValueChange={handleStageChange}>
             <SelectTrigger className="w-52">
               <SelectValue />
@@ -2619,6 +2640,31 @@ export default function AdminBookingDetail() {
             >
               {isSavingDetails ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
               Save &amp; Move
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCommissionRecoveryConfirm} onOpenChange={setShowCommissionRecoveryConfirm}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-800">
+              <RefreshCw size={18} /> Restore Commission Review
+            </DialogTitle>
+            <DialogDescription className="space-y-3 pt-2 text-sm leading-relaxed">
+              <span className="block">Use this only when a booking was previously moved to <strong>Commission Due for Payment</strong> without a commission claim being created.</span>
+              <span className="block">The booking will return to <strong>Commission Ready for Review</strong>. No commission claim will be created, no payment will be recorded, and the agent will not be notified.</span>
+              <span className="block">From Commission Due, complete the normal review and select <strong>Confirm & Auto-Claim</strong> for a pre-authorised booking, or <strong>Confirm & Mark Claimable</strong> for a standard booking.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" onClick={() => setShowCommissionRecoveryConfirm(false)}>Cancel</Button>
+            <Button
+              className="bg-amber-600 text-white hover:bg-amber-700"
+              disabled={restoreCommissionReview.isPending}
+              onClick={() => restoreCommissionReview.mutate({ bookingId })}
+            >
+              {restoreCommissionReview.isPending ? "Restoring…" : "Restore to Review"}
             </Button>
           </DialogFooter>
         </DialogContent>

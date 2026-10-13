@@ -16,6 +16,7 @@ const workflowSource = readProjectFile("server/commission-workflow-utils.ts");
 const dashboardSource = readProjectFile("server/dashboard-router.ts");
 const adminCommissionsSource = readProjectFile("client/src/pages/admin/AdminCommissions.tsx");
 const agentBookingSource = readProjectFile("client/src/pages/agent/AgentBookingDetail.tsx");
+const adminBookingSource = readProjectFile("client/src/pages/admin/AdminBookingDetail.tsx");
 const remittanceRouterSource = readProjectFile("server/remittance-router.ts");
 const schemaSource = readProjectFile("drizzle/schema.ts");
 
@@ -79,6 +80,20 @@ describe("commission payment lifecycle", () => {
     expect(routerSource).toContain("agentReadyUnclaimed: adminProcedure.query");
     expect(adminCommissionsSource).toContain("Agent-ready, not yet claimed");
     expect(adminCommissionsSource).toContain("not as new Commission Due reviews");
+  });
+
+  it("gives staff a controlled recovery path for a legacy financial stage without a claim", () => {
+    const recoveryRoute = routerSource.slice(
+      routerSource.indexOf("restoreCommissionReview: adminProcedure"),
+      routerSource.indexOf("togglePreAuth: protectedProcedure"),
+    );
+
+    expect(recoveryRoute).toContain('booking.currentStage !== "Commission Due for Payment"');
+    expect(recoveryRoute).toContain("getCommissionClaimByBooking(input.bookingId)");
+    expect(recoveryRoute).toContain("COMMISSION_REVIEW_STAGE");
+    expect(recoveryRoute).toContain("No commission claim, payment or agent notification was created");
+    expect(adminBookingSource).toContain("Restore Commission Review");
+    expect(adminBookingSource).toContain("Confirm & Auto-Claim");
   });
 
   it("counts only unclaimed review-stage files in the dashboard Commission Due figure", () => {

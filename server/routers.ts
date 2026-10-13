@@ -1390,6 +1390,36 @@ export const appRouter = router({
         }
         return updated;
       }),
+    restoreCommissionReview: adminProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        if (booking.currentStage !== "Commission Due for Payment") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Only a booking currently marked Commission Due for Payment can be returned to review.",
+          });
+        }
+
+        const claim = await getCommissionClaimByBooking(input.bookingId);
+        if (claim) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This booking already has a commission claim. Use Commission Management to continue the existing financial workflow.",
+          });
+        }
+
+        const updated = await updateBookingStage(input.bookingId, COMMISSION_REVIEW_STAGE, ctx.user.id);
+        await createNote({
+          bookingId: input.bookingId,
+          authorId: ctx.user.id,
+          content: `[System] Restored to Commission Ready for Review by ${ctx.user.name ?? "Admin"} because the booking was marked Commission Due for Payment without a commission claim record. No commission claim, payment or agent notification was created.`,
+          isInternal: true,
+        });
+        void pushClaimStatusToOrbit(booking.id);
+        return updated;
+      }),
     togglePreAuth: protectedProcedure
       .input(z.object({ bookingId: z.number(), preAuthorised: z.boolean() }))
       .mutation(async ({ input, ctx }) => {
