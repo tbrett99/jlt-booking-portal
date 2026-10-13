@@ -1741,6 +1741,114 @@ export const academyAuditLog = mysqlTable("academy_audit_log", {
 ]);
 export type AcademyAuditLog = typeof academyAuditLog.$inferSelect;
 
+// ─── Academy Actions ─────────────────────────────────────────────────────────
+// Practical actions are deliberately separate from course progress. They support
+// scheduled Accelerator work, one-off coaching tasks and evidence without making
+// an agent's lesson-completion record ambiguous.
+export const academyActionPlans = mysqlTable("academy_action_plans", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  instructions: text("instructions").notNull(),
+  actionType: mysqlEnum("actionType", ["onboarding", "weekly", "ad_hoc"]).notNull(),
+  audience: mysqlEnum("audience", ["agent_accelerator", "selected_agents", "all_agents"]).notNull(),
+  // Entry actions are assigned once at the point the agent moves into Accelerator;
+  // weekly plans are never backfilled to a new Accelerator agent.
+  assignmentTrigger: mysqlEnum("assignmentTrigger", ["immediate", "on_accelerator_entry"]).default("immediate").notNull(),
+  status: mysqlEnum("status", ["draft", "scheduled", "published", "archived"]).default("draft").notNull(),
+  publishAt: timestamp("publishAt"),
+  dueAt: timestamp("dueAt"),
+  requiresNote: boolean("requiresNote").default(true).notNull(),
+  requiresUrl: boolean("requiresUrl").default(false).notNull(),
+  requiresUpload: boolean("requiresUpload").default(false).notNull(),
+  staffReviewRequired: boolean("staffReviewRequired").default(false).notNull(),
+  createdById: int("createdById").notNull(),
+  updatedById: int("updatedById").notNull(),
+  publishedById: int("publishedById"),
+  publishedAt: timestamp("publishedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("academy_action_plans_status_publish_idx").on(table.status, table.publishAt),
+  index("academy_action_plans_audience_trigger_idx").on(table.audience, table.assignmentTrigger),
+]);
+export type AcademyActionPlan = typeof academyActionPlans.$inferSelect;
+
+export const academyActionPlanTargets = mysqlTable("academy_action_plan_targets", {
+  id: int("id").autoincrement().primaryKey(),
+  planId: int("planId").notNull(),
+  agentId: int("agentId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("academy_action_target_plan_agent_unique").on(table.planId, table.agentId),
+  index("academy_action_target_agent_idx").on(table.agentId),
+]);
+export type AcademyActionPlanTarget = typeof academyActionPlanTargets.$inferSelect;
+
+export const academyActionAssignments = mysqlTable("academy_action_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  planId: int("planId").notNull(),
+  agentId: int("agentId").notNull(),
+  status: mysqlEnum("status", ["assigned", "submitted", "review", "completed", "needs_revision"]).default("assigned").notNull(),
+  completionNote: text("completionNote"),
+  evidenceUrl: text("evidenceUrl"),
+  evidenceFileUrl: text("evidenceFileUrl"),
+  evidenceFileKey: varchar("evidenceFileKey", { length: 600 }),
+  evidenceFileName: varchar("evidenceFileName", { length: 255 }),
+  submittedAt: timestamp("submittedAt"),
+  reviewedAt: timestamp("reviewedAt"),
+  reviewedById: int("reviewedById"),
+  reviewerFeedback: text("reviewerFeedback"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("academy_action_assignment_plan_agent_unique").on(table.planId, table.agentId),
+  index("academy_action_assignments_agent_status_idx").on(table.agentId, table.status),
+  index("academy_action_assignments_plan_status_idx").on(table.planId, table.status),
+]);
+export type AcademyActionAssignment = typeof academyActionAssignments.$inferSelect;
+
+// ─── Agent Engagement Hub ────────────────────────────────────────────────────
+// The engagement case is the operational workboard. Every logged interaction is
+// also mirrored to CRM notes, giving staff a complete profile-level history.
+export const agentEngagementCases = mysqlTable("agent_engagement_cases", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: int("agentId").notNull(),
+  status: mysqlEnum("status", ["active", "waiting", "monitoring", "closed"]).default("active").notNull(),
+  riskReason: text("riskReason").notNull(),
+  ownerId: int("ownerId"),
+  openedById: int("openedById").notNull(),
+  openedAt: timestamp("openedAt").defaultNow().notNull(),
+  lastContactAt: timestamp("lastContactAt"),
+  nextFollowUpAt: timestamp("nextFollowUpAt"),
+  outcome: text("outcome"),
+  closedAt: timestamp("closedAt"),
+  closedById: int("closedById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("agent_engagement_cases_status_followup_idx").on(table.status, table.nextFollowUpAt),
+  index("agent_engagement_cases_agent_opened_idx").on(table.agentId, table.openedAt),
+]);
+export type AgentEngagementCase = typeof agentEngagementCases.$inferSelect;
+
+export const agentEngagementInteractions = mysqlTable("agent_engagement_interactions", {
+  id: int("id").autoincrement().primaryKey(),
+  caseId: int("caseId").notNull(),
+  agentId: int("agentId").notNull(),
+  createdById: int("createdById").notNull(),
+  channel: mysqlEnum("channel", ["call", "email", "whatsapp", "meeting", "other"]).notNull(),
+  summary: text("summary").notNull(),
+  outcome: text("outcome"),
+  occurredAt: timestamp("occurredAt").defaultNow().notNull(),
+  nextFollowUpAt: timestamp("nextFollowUpAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("agent_engagement_interactions_case_occurred_idx").on(table.caseId, table.occurredAt),
+  index("agent_engagement_interactions_agent_occurred_idx").on(table.agentId, table.occurredAt),
+]);
+export type AgentEngagementInteraction = typeof agentEngagementInteractions.$inferSelect;
+
 // ─── Agent CRM Notes ──────────────────────────────────────────────────────────
 // Timestamped contact log / general notes on an agent's CRM profile
 export const agentCrmNotes = mysqlTable("agent_crm_notes", {

@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { BookOpenCheck, CalendarDays, CheckCircle2, Clock3, GraduationCap, LockKeyhole, PlayCircle, Sparkles, ArrowRight, AlertTriangle } from "lucide-react";
+import { BookOpenCheck, CalendarDays, CheckCircle2, Clock3, GraduationCap, LockKeyhole, PlayCircle, Sparkles, ArrowRight, AlertTriangle, ClipboardCheck } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useViewMode } from "@/contexts/ViewModeContext";
 
@@ -15,6 +15,7 @@ export default function AcademyHome() {
   const data = isAgentView ? previewHome.data : agentHome.data;
   const isLoading = isAgentView ? previewHome.isLoading : agentHome.isLoading;
   const error = isAgentView ? previewHome.error : agentHome.error;
+  const myActions = trpc.agentDevelopment.actions.mine.useQuery(undefined, { enabled: !isAgentView && !!data?.hasAccess });
   const courseHref = (courseId: number, enrollmentId: number) => isAgentView ? `/academy/preview/course/${courseId}` : `/academy/course/${enrollmentId}`;
 
   if (isLoading) {
@@ -60,6 +61,8 @@ export default function AcademyHome() {
       </section>
 
       {isAgentView && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"><span className="font-semibold">Academy preview:</span> this is the agent-facing view of every published course. Nothing viewed, acknowledged or submitted here is recorded against Max Kelly or any agent.</div>}
+
+      {!isAgentView && data?.hasAccess && <section className="rounded-2xl border bg-card p-5 shadow-sm"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 gap-3"><div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#70FFE8]/25 text-[#414141]"><ClipboardCheck size={21} /></div><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Put learning into practice</p><h2 className="mt-1 text-xl font-bold">Academy Actions</h2><p className="mt-1 text-sm text-muted-foreground">{myActions.isLoading ? "Loading your actions…" : `${myActions.data?.filter((item: any) => item.assignment.status !== "completed").length ?? 0} current action${(myActions.data?.filter((item: any) => item.assignment.status !== "completed").length ?? 0) === 1 ? "" : "s"} to complete.`}</p></div></div><Link href="/academy/actions" className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary hover:underline">Open actions <ArrowRight size={15} /></Link></div></section>}
 
       {active.length > 0 && (
         <section>

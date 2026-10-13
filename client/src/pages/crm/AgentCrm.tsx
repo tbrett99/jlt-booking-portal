@@ -618,6 +618,9 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             <TabsContent value="notes" className="mt-5 pb-8">
               <AgentNotesTab userId={agent.id} />
             </TabsContent>
+            <TabsContent value="engagement" className="mt-5 pb-8">
+              <AgentEngagementTab userId={agent.id} />
+            </TabsContent>
             <TabsContent value="fnf" className="mt-5 pb-8">
               <FnfVoucherAdminTab userId={agent.id} agentName={agent.name ?? ""} />
             </TabsContent>
@@ -712,6 +715,7 @@ function ScrollableTabs() {
           <TabsTrigger value="dd" className="text-xs px-3 py-1.5 whitespace-nowrap">Direct Debit</TabsTrigger>
           <TabsTrigger value="onboarding" className="text-xs px-3 py-1.5 whitespace-nowrap">Onboarding</TabsTrigger>
           <TabsTrigger value="notes" className="text-xs px-3 py-1.5 whitespace-nowrap">Notes</TabsTrigger>
+          <TabsTrigger value="engagement" className="text-xs px-3 py-1.5 whitespace-nowrap">Engagement</TabsTrigger>
           <TabsTrigger value="fnf" className="text-xs px-3 py-1.5 whitespace-nowrap">F&amp;F Vouchers</TabsTrigger>
         </TabsList>
       </div>
@@ -3447,6 +3451,18 @@ function AgentNotesTab({ userId }: { userId: number }) {
       )}
     </div>
   );
+}
+
+// ─── Agent Engagement Tab ─────────────────────────────────────────────────────
+// Engagement interactions are mirrored to CRM Notes when logged from the Hub;
+// this focused view preserves the operational status and next follow-up date.
+function AgentEngagementTab({ userId }: { userId: number }) {
+  const { data: cases = [], isLoading } = trpc.agentDevelopment.admin.engagementForAgent.useQuery({ agentId: userId });
+
+  if (isLoading) return <p className="py-6 text-center text-sm text-muted-foreground">Loading engagement history…</p>;
+  if (!cases.length) return <div className="rounded-xl border border-dashed p-8 text-center"><p className="font-medium">No engagement case is open for this agent.</p><p className="mt-1 text-sm text-muted-foreground">Open and manage proactive check-ins from the Agent Engagement Hub.</p><Link href="/admin/agent-engagement" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">Open Agent Engagement <ArrowRight size={14} /></Link></div>;
+
+  return <div className="space-y-4">{cases.map((caseRecord: any) => <div key={caseRecord.id} className="rounded-xl border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${caseRecord.status === "active" ? "bg-rose-100 text-rose-800" : caseRecord.status === "waiting" ? "bg-amber-100 text-amber-800" : caseRecord.status === "monitoring" ? "bg-blue-100 text-blue-800" : "bg-muted text-muted-foreground"}`}>{caseRecord.status}</span><span className="text-xs text-muted-foreground">Opened {new Date(caseRecord.openedAt).toLocaleDateString("en-GB")}</span></div><p className="mt-3 text-sm font-semibold">Engagement reason</p><p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">{caseRecord.riskReason}</p></div>{caseRecord.nextFollowUpAt && <div className="rounded-lg bg-muted px-3 py-2 text-xs"><span className="block text-muted-foreground">Next follow-up</span><strong>{new Date(caseRecord.nextFollowUpAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</strong></div>}</div><div className="mt-4 border-t pt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contact history</p>{caseRecord.interactions.length ? <div className="mt-3 space-y-3">{caseRecord.interactions.map((interaction: any) => <div key={interaction.id} className="rounded-lg bg-muted/35 p-3"><p className="text-xs font-semibold capitalize">{interaction.channel} <span className="font-normal text-muted-foreground">· {new Date(interaction.occurredAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span></p><p className="mt-1 whitespace-pre-line text-sm">{interaction.summary}</p>{interaction.outcome && <p className="mt-2 text-xs text-muted-foreground"><strong>Outcome:</strong> {interaction.outcome}</p>}</div>)}</div> : <p className="mt-2 text-sm text-muted-foreground">No check-ins have been logged yet.</p>}</div><Link href="/admin/agent-engagement" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">Manage in Engagement Hub <ArrowRight size={14} /></Link></div>)}</div>;
 }
 
 

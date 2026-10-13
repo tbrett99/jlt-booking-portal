@@ -119,6 +119,9 @@ const AdminCompetitions = lazy(() => import("./pages/admin/AdminCompetitions"));
 const AcademyHome = lazy(() => import("./pages/academy/AcademyHome"));
 const AcademyCourse = lazy(() => import("./pages/academy/AcademyCourse"));
 const AdminAcademy = lazy(() => import("./pages/admin/AdminAcademy"));
+const AcademyActions = lazy(() => import("./pages/academy/AcademyActions"));
+const AdminAcademyActions = lazy(() => import("./pages/admin/AdminAcademyActions"));
+const AdminAgentEngagement = lazy(() => import("./pages/admin/AdminAgentEngagement"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -327,6 +330,7 @@ function AuthRouter() {
           <Route path="/roadmap" component={Roadmap} />
           <Route path="/competitions" component={Competitions} />
           <Route path="/academy" component={AcademyHome} />
+          <Route path="/academy/actions" component={AcademyActions} />
           <Route path="/academy/preview/course/:courseId">{(params) => <AcademyCourse previewCourseId={params.courseId} />}</Route>
           <Route path="/academy/course/:enrollmentId">{(params) => <AcademyCourse enrollmentId={params.enrollmentId} />}</Route>
           {/* Terms & Policies — accessible to logged-in agents */}
@@ -385,6 +389,7 @@ function AuthRouter() {
           <Route path="/roadmap" component={Roadmap} />
           <Route path="/competitions" component={Competitions} />
           <Route path="/academy" component={AcademyHome} />
+          <Route path="/academy/actions" component={AcademyActions} />
           <Route path="/academy/preview/course/:courseId">{(params) => <AcademyCourse previewCourseId={params.courseId} />}</Route>
           <Route path="/academy/course/:enrollmentId">{(params) => <AcademyCourse enrollmentId={params.enrollmentId} />}</Route>
           {/* Terms & Policies — accessible to admins in agent view */}
@@ -477,6 +482,8 @@ function AuthRouter() {
         <Route path="/competitions" component={Competitions} />
         <Route path="/admin/competitions" component={AdminCompetitions} />
         <Route path="/admin/academy" component={AdminAcademy} />
+        <Route path="/admin/academy/actions" component={AdminAcademyActions} />
+        <Route path="/admin/agent-engagement" component={AdminAgentEngagement} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/my-profile" component={MyProfile} />
         <Route path="/my-public-profile" component={MyPublicProfile} />

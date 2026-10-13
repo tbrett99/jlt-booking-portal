@@ -23,6 +23,7 @@ import {
 } from "../drizzle/schema";
 import { getAccreditationEligibility, safeHttpsUrl, summariseAcademyProgress } from "../shared/academy-utils";
 import { parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
+import { assignAcceleratorEntryActions } from "./agent-development-router";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
@@ -359,6 +360,9 @@ async function recalculateCompletion(enrollmentId: number, actorId: number) {
   if (course?.isCoreAcademy) {
     await db.update(agentCrmProfiles).set({ trainingStage: "Agent Accelerator", academyAcceleratorStartedAt: now })
       .where(eq(agentCrmProfiles.userId, enrollment.agentId));
+    // A new Accelerator agent receives only the designated entry action. Weekly
+    // plans are intentionally not backfilled, so the first week is manageable.
+    await assignAcceleratorEntryActions(enrollment.agentId, actorId);
   }
   await createInAppNotification({
     userId: enrollment.agentId,

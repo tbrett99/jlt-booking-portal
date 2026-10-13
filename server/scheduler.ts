@@ -548,6 +548,20 @@ export function startScheduler() {
     }
   }, { timezone: "Europe/London" });
 
+  // Academy action plans publish from their durable schedule. The processor is
+  // idempotent: a plan receives its assignments once, even if a deploy retries.
+  cron.schedule("5 8 * * 1", async () => {
+    try {
+      const { publishScheduledAcademyActionPlans } = await import("./agent-development-router");
+      const result = await publishScheduledAcademyActionPlans();
+      if (result.published || result.assignments) {
+        console.log(`[AcademyActions] Published ${result.published} plan(s), assigned ${result.assignments} action(s)`);
+      }
+    } catch (err: any) {
+      console.error("[AcademyActions] Scheduled publishing error:", err?.message);
+    }
+  }, { timezone: "Europe/London" });
+
   // Database backup to S3: DISABLED — Railway native backups are used instead.
   // cron.schedule("0 */4 * * *", async () => { ... }, { timezone: "UTC" });
 
@@ -643,7 +657,7 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: task reminders (hourly), payment failure reconciliation (hourly), Top-Up Required reminders (Monday 09:00 Europe/London), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — nightly export DISABLED, inbox auto-import DISABLED");
+  console.log("[Scheduler] Cron jobs registered: task reminders (hourly), payment failure reconciliation (hourly), Academy action publishing (Monday 08:05 Europe/London), Top-Up Required reminders (Monday 09:00 Europe/London), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — nightly export DISABLED, inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────

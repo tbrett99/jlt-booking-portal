@@ -8,7 +8,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper, Activity, Rocket, Trophy, Globe2, GraduationCap
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper, Activity, Rocket, Trophy, Globe2, GraduationCap, ClipboardCheck
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { Link, useLocation } from "wouter";
@@ -377,6 +377,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: true,
       items: [
         { label: "JLT Academy", href: "/academy", icon: <GraduationCap size={16} /> },
+        { label: "Academy Actions", href: "/academy/actions", icon: <ClipboardCheck size={16} /> },
       ],
     },
     {
@@ -529,6 +530,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: false,
       items: [
         { label: "Academy Manager", href: "/admin/academy", icon: <GraduationCap size={16} /> },
+        { label: "Academy Actions", href: "/admin/academy/actions", icon: <ClipboardCheck size={16} /> },
+        { label: "Agent Engagement", href: "/admin/agent-engagement", icon: <Activity size={16} /> },
       ],
     },
     {
