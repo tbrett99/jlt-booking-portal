@@ -427,6 +427,7 @@ export default function AdminCommissions() {
   const [paidPage, setPaidPage] = useState(1);
   const [commissionSearch, setCommissionSearch] = useState("");
   const [agentFilter, setAgentFilter] = useState("all");
+  const [agentReadyReminderConfirmOpen, setAgentReadyReminderConfirmOpen] = useState(false);
   const PAID_CLAIMS_PER_PAGE = 20;
 
   // VAT import state
@@ -482,6 +483,28 @@ export default function AdminCommissions() {
 
   const { data: claims, isLoading } = trpc.commissionClaims.all.useQuery();
   const { data: agentReadyUnclaimed } = trpc.commissionDue.agentReadyUnclaimed.useQuery();
+  const sendAgentReadyRemindersMutation = trpc.commissionDue.sendAgentReadyUnclaimedReminders.useMutation({
+    onSuccess: (result) => {
+      setAgentReadyReminderConfirmOpen(false);
+      if (result.emailsSent === 0) {
+        toast.message("No commission reminder emails were sent.", {
+          description: result.agentsWithUnclaimedBookings === 0
+            ? "There are no agent-ready, unclaimed bookings at present."
+            : "Check the agent email addresses before trying again.",
+        });
+      } else {
+        toast.success(`Sent ${result.emailsSent} commission reminder${result.emailsSent === 1 ? "" : "s"} covering ${result.bookingsIncluded} booking${result.bookingsIncluded === 1 ? "" : "s"}.`);
+      }
+      if (result.agentsWithoutEmail > 0) {
+        toast.message(`${result.agentsWithoutEmail} agent${result.agentsWithoutEmail === 1 ? " has" : "s have"} no email address and could not be included.`);
+      }
+      if (result.failures.length > 0) {
+        toast.error(`Could not send to: ${result.failures.join(", ")}`);
+      }
+      utils.commissionDue.agentReadyUnclaimed.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const deleteClaimMutation = trpc.commissionClaims.deleteClaim.useMutation({
     onMutate: async (vars) => {
       await utils.commissionClaims.all.cancel();
@@ -602,6 +625,10 @@ export default function AdminCommissions() {
 
   const allClaims = (claims ?? []) as ClaimRow[];
   const allAgentReadyUnclaimed = (agentReadyUnclaimed ?? []) as AgentReadyUnclaimedRow[];
+  const agentReadyRecipientCount = useMemo(
+    () => new Set(allAgentReadyUnclaimed.map((booking) => booking.agentId)).size,
+    [allAgentReadyUnclaimed],
+  );
   const commissionAgents = useMemo(
     () => Array.from(new Map(
       [
@@ -999,11 +1026,25 @@ export default function AdminCommissions() {
 
         <TabsContent value="agent_ready">
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Agent-ready, not yet claimed</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">
-                These bookings have already been marked Commission Claimable. They are shown for follow-up only, not as new Commission Due reviews; this list does not contact an agent or change a booking.
-              </p>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-3">
+              <div>
+                <CardTitle className="text-base">Agent-ready, not yet claimed</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  These bookings have already been marked Commission Claimable. They are shown for follow-up only, not as new Commission Due reviews.
+                </p>
+                <p className="mt-3 max-w-3xl rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+                  <strong>Historic imports:</strong> some files may show as ready to claim even though commission was paid before they were imported. If an agent confirms this, ask them to add a message to the relevant booking so the JLT team can review and update it.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                className="gap-2"
+                onClick={() => setAgentReadyReminderConfirmOpen(true)}
+                disabled={allAgentReadyUnclaimed.length === 0 || sendAgentReadyRemindersMutation.isPending}
+              >
+                {sendAgentReadyRemindersMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Send reminders to all agents
+              </Button>
             </CardHeader>
             <CardContent className="p-0">
               {filteredAgentReadyUnclaimed.length === 0 ? (
@@ -1368,6 +1409,36 @@ export default function AdminCommissions() {
               disabled={markClaimableMutation.isPending}
             >
               {markClaimableMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Claimable"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={agentReadyReminderConfirmOpen} onOpenChange={setAgentReadyReminderConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send commission claim reminders?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <span className="block">
+                This will send <strong>one consolidated email to each of {agentReadyRecipientCount} agent{agentReadyRecipientCount === 1 ? "" : "s"}</strong>, covering their currently agent-ready, unclaimed bookings.
+              </span>
+              <span className="block">
+                The list is checked again at send time, so bookings already claimed will not be included. Each email explains that historic imports can be incorrect and asks the agent to message on the booking if commission has already been paid.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sendAgentReadyRemindersMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                sendAgentReadyRemindersMutation.mutate();
+              }}
+              disabled={sendAgentReadyRemindersMutation.isPending || agentReadyRecipientCount === 0}
+              className="gap-2"
+            >
+              {sendAgentReadyRemindersMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Send {agentReadyRecipientCount} reminder{agentReadyRecipientCount === 1 ? "" : "s"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

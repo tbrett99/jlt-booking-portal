@@ -139,6 +139,7 @@ import {
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
 import { isPreAuthorisedCommissionEligibleAfterDeparture } from "./commission-readiness-utils";
 import { sendOutstandingTopUpReminders } from "./commission-topup-reminders";
+import { sendAgentReadyCommissionReminders } from "./commission-agent-ready-reminders";
 import { queueBookingForCommissionReview } from "./commission-review-queue";
 import {
   COMMISSION_REVIEW_STAGE,
@@ -3260,6 +3261,12 @@ export const appRouter = router({
         agentName: userMap.get(booking.agentId)?.name ?? "Unknown",
         agentEmail: userMap.get(booking.agentId)?.email ?? "",
       }));
+    }),
+    // Each agent receives one consolidated email for every currently unclaimed
+    // booking. The helper re-reads the live list rather than accepting booking
+    // IDs from the browser, so claims submitted in the meantime are never chased.
+    sendAgentReadyUnclaimedReminders: adminProcedure.mutation(async () => {
+      return sendAgentReadyCommissionReminders();
     }),
     requestTopUp: adminProcedure
       .input(z.object({
