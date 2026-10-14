@@ -8,7 +8,7 @@ import {
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
-  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, Receipt, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper, Activity, Rocket, Trophy, Globe2, GraduationCap, ClipboardCheck
+  RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper, Activity, Rocket, Trophy, Globe2, GraduationCap, ClipboardCheck
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { Link, useLocation } from "wouter";
@@ -81,6 +81,8 @@ interface NavGroup {
   icon: React.ReactNode;
   items: NavItem[];
   defaultOpen?: boolean;
+  // Daily-use links are intentionally always visible without adding another heading.
+  pinned?: boolean;
   // If set, the group header itself is a link
   href?: string;
 }
@@ -127,6 +129,7 @@ function SidebarGroup({
   onNavigate,
   unreadMessageCount,
   overdueCount,
+  preferenceScope,
 }: {
   group: NavGroup;
   location: string;
@@ -134,11 +137,49 @@ function SidebarGroup({
   onNavigate: () => void;
   unreadMessageCount?: number;
   overdueCount?: number;
+  preferenceScope: string;
 }) {
   const isAnyActive = group.items.some(
     (i) => location === i.href || (i.href !== "/" && location.startsWith(i.href))
   );
-  const [open, setOpen] = useState(group.defaultOpen ?? isAnyActive);
+  const groupPreferenceKey = `${preferenceScope}:${group.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const [open, setOpen] = useState(() => {
+    if (group.pinned || isAnyActive) return true;
+    try {
+      const saved = window.localStorage.getItem(groupPreferenceKey);
+      if (saved === "open") return true;
+      if (saved === "closed") return false;
+    } catch {
+      // Navigation remains fully usable when browser storage is unavailable.
+    }
+    return group.defaultOpen ?? false;
+  });
+
+  // A page reached through search, a notification, or a direct link should never
+  // appear hidden inside a collapsed section.
+  useEffect(() => {
+    if (!group.pinned && isAnyActive) {
+      setOpen(true);
+    }
+  }, [group.pinned, isAnyActive]);
+
+  const toggleGroup = () => {
+    setOpen((wasOpen) => {
+      const nextOpen = !wasOpen;
+      try {
+        window.localStorage.setItem(groupPreferenceKey, nextOpen ? "open" : "closed");
+      } catch {
+        // The in-memory state still provides the expected behaviour.
+      }
+      return nextOpen;
+    });
+  };
+
+  const getItemBadge = (item: NavItem) => {
+    if (item.href === "/messages" && (unreadMessageCount ?? 0) > 0) return unreadMessageCount ?? 0;
+    if (item.href === "/admin/tasks" && (overdueCount ?? 0) > 0) return overdueCount ?? 0;
+    return item.badge ?? 0;
+  };
 
   if (collapsed) {
     // In collapsed mode show only icons for active items
@@ -146,7 +187,7 @@ function SidebarGroup({
       <>
         {group.items.map((item) => {
           const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
-          const badge = item.href === "/messages" && (unreadMessageCount ?? 0) > 0 ? unreadMessageCount : (item.badge ?? 0);
+          const badge = getItemBadge(item);
           return (
             <Link
               key={item.href}
@@ -173,30 +214,27 @@ function SidebarGroup({
   }
 
   return (
-    <div className="space-y-0.5">
+    <div className={`space-y-0.5 ${group.pinned ? "pb-2 border-b border-sidebar-border/70" : ""}`}>
       {/* Group header */}
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors text-sidebar-foreground opacity-50 hover:opacity-80"
-      >
-        <span className="flex-1 text-left">{group.label}</span>
-        {group.label === "Communication" && (unreadMessageCount ?? 0) > 0 && (
-          <span className="min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center" style={{ background: '#ef4444', color: 'white' }}>
-            {(unreadMessageCount ?? 0) > 99 ? '99+' : unreadMessageCount}
-          </span>
-        )}
-        {group.label === "CRM" && (overdueCount ?? 0) > 0 && (
-          <span className="min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center" style={{ background: '#f59e0b', color: 'white' }}>
-            {(overdueCount ?? 0) > 99 ? '99+' : (overdueCount ?? 0)}
-          </span>
-        )}
-        <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
+      {!group.pinned && (
+        <button
+          onClick={toggleGroup}
+          className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors text-sidebar-foreground opacity-50 hover:opacity-80"
+        >
+          <span className="flex-1 text-left">{group.label}</span>
+          {group.label === "Communication" && (unreadMessageCount ?? 0) > 0 && (
+            <span className="min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center" style={{ background: '#ef4444', color: 'white' }}>
+              {(unreadMessageCount ?? 0) > 99 ? '99+' : unreadMessageCount}
+            </span>
+          )}
+          <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+      )}
+      {(group.pinned || open) && (
         <div className="space-y-0.5 pl-1">
           {group.items.map((item) => {
             const isActive = !item.external && (location === item.href || (item.href !== "/" && location.startsWith(item.href)));
-            const badge = item.href === "/messages" && (unreadMessageCount ?? 0) > 0 ? unreadMessageCount : (item.badge ?? 0);
+            const badge = getItemBadge(item);
             const itemClass = `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${
               isActive ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground opacity-80 hover:opacity-100"
             }`;
@@ -389,14 +427,6 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
-      label: "Documents",
-      icon: <Mail size={16} />,
-      defaultOpen: false,
-      items: [
-        { label: "Booking Documents", href: "/booking-documents", icon: <Mail size={16} /> },
-      ],
-    },
-    {
       label: "My Account",
       icon: <UserCheck size={16} />,
       defaultOpen: false,
@@ -419,56 +449,78 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   // ── Admin nav groups ──────────────────────────────────────────────────────
   const adminNavGroups: NavGroup[] = [
     {
-      label: "Overview",
+      label: "Daily Work",
       icon: <LayoutDashboard size={16} />,
       defaultOpen: true,
+      pinned: true,
       items: [
         { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard size={16} /> },
+        { label: "Messages", href: "/messages", icon: <MessageSquare size={16} /> },
+        { label: "Tasks", href: "/admin/tasks", icon: <CheckSquare size={16} /> },
+        { label: "Calendar", href: "/admin/calendar", icon: <CalendarDays size={16} /> },
       ],
     },
     {
-      label: "Pipelines",
+      label: "Operations",
       icon: <ClipboardList size={16} />,
       defaultOpen: true,
       items: [
         { label: "Bookings Pipeline", href: "/pipeline", icon: <ClipboardList size={16} /> },
         { label: "Amendments Pipeline", href: "/amendments/pipeline", icon: <FileText size={16} /> },
         { label: "Refund Pipeline", href: "/refunds/pipeline", icon: <RefreshCw size={16} /> },
+        { label: "Reimbursements", href: "/admin/reimbursements", icon: <PoundSterling size={16} /> },
         { label: "Flight Requests", href: "/flights", icon: <Plane size={16} /> },
         { label: "Cancellations", href: "/cancellations", icon: <XCircle size={16} /> },
       ],
     },
     {
-      label: "Commissions",
+      label: "Commissions & Payments",
       icon: <Banknote size={16} />,
       defaultOpen: false,
       items: [
         { label: "Commission Due", href: "/commission-due", icon: <AlertCircle size={16} /> },
         { label: "Commission Management", href: "/commissions-admin", icon: <Sparkles size={16} /> },
         { label: "PTS Remittance", href: "/remittance", icon: <FileSpreadsheet size={16} /> },
-        { label: "Reimbursements", href: "/admin/reimbursements", icon: <PoundSterling size={16} /> },
-        { label: "Remittances", href: "/crm/remittances", icon: <Receipt size={16} /> },
       ],
     },
     {
-      label: "Communication",
-      icon: <MessageSquare size={16} />,
+      label: "Agents & Membership",
+      icon: <UserSearch size={16} />,
       defaultOpen: false,
       items: [
-        { label: "Messages", href: "/messages", icon: <MessageSquare size={16} /> },
+        { label: "Agent CRM", href: "/crm/agents", icon: <UserCheck size={16} /> },
+        { label: "Memberships", href: "/crm/memberships", icon: <CreditCard size={16} /> },
+        { label: "Orbit Access", href: "/crm/orbit-access", icon: <Zap size={16} /> },
+        { label: "Change Requests", href: "/crm/change-requests", icon: <ClipboardList size={16} /> },
+        { label: "Public Profiles", href: "/crm/public-profiles", icon: <Globe2 size={16} /> },
+        { label: "Agent Engagement", href: "/admin/agent-engagement", icon: <Activity size={16} /> },
       ],
     },
     {
-      label: "Calendar & Tasks",
-      icon: <CalendarDays size={16} />,
+      label: "Marketing & Recruitment",
+      icon: <Megaphone size={16} />,
       defaultOpen: false,
       items: [
-        { label: "Calendar", href: "/admin/calendar", icon: <CalendarDays size={16} /> },
-        { label: "Tasks", href: "/admin/tasks", icon: <CheckSquare size={16} /> },
+        { label: "Recruitment Dashboard", href: "/crm/recruitment/dashboard", icon: <Activity size={16} /> },
+        { label: "Agent Recruitment", href: "/crm/recruitment", icon: <UserPlus size={16} /> },
+        { label: "Sign-Up Applications", href: "/crm/join-sessions", icon: <UserSearch size={16} /> },
+        { label: "Abandoned Sign-Ups", href: "/crm/abandoned-signups", icon: <UserX size={16} /> },
+        { label: "Prospects", href: "/crm/prospects", icon: <Users size={16} /> },
+        { label: "Email Marketing", href: "/crm/email-marketing", icon: <Megaphone size={16} /> },
+        { label: "Email Workflows", href: "/crm/workflows", icon: <Mail size={16} /> },
       ],
     },
     {
-      label: "Reports",
+      label: "Academy",
+      icon: <GraduationCap size={16} />,
+      defaultOpen: false,
+      items: [
+        { label: "Academy Manager", href: "/admin/academy", icon: <GraduationCap size={16} /> },
+        { label: "Academy Actions", href: "/admin/academy/actions", icon: <ClipboardCheck size={16} /> },
+      ],
+    },
+    {
+      label: "Insights",
       icon: <BarChart2 size={16} />,
       defaultOpen: false,
       items: [
@@ -478,39 +530,6 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Admin Reports", href: "/reports", icon: <FileText size={16} /> },
         { label: "Commission Margin", href: "/commission-margin", icon: <TrendingUp size={16} /> },
         { label: "Agent Performance", href: "/agent-performance", icon: <BarChart2 size={16} /> },
-      ],
-    },
-    {
-      label: "Documents",
-      icon: <Mail size={16} />,
-      defaultOpen: false,
-      items: [
-        { label: "Booking Documents", href: "/booking-documents", icon: <Mail size={16} /> },
-      ],
-    },
-    {
-      label: "CRM",
-      icon: <UserSearch size={16} />,
-      defaultOpen: false,
-      items: [
-        { label: "Agent CRM", href: "/crm/agents", icon: <UserCheck size={16} /> },
-        { label: "Orbit Access", href: "/crm/orbit-access", icon: <Zap size={16} /> },
-        { label: "Sign-Up Applications", href: "/crm/join-sessions", icon: <UserSearch size={16} /> },
-        { label: "Abandoned Sign-Ups", href: "/crm/abandoned-signups", icon: <UserX size={16} /> },
-        { label: "Change Requests", href: "/crm/change-requests", icon: <ClipboardList size={16} /> },
-        { label: "Public Profiles", href: "/crm/public-profiles", icon: <Globe2 size={16} /> },
-        { label: "Memberships", href: "/crm/memberships", icon: <CreditCard size={16} /> },
-      ],
-    },
-    {
-      label: "Marketing",
-      icon: <Megaphone size={16} />,
-      defaultOpen: false,
-      items: [
-        { label: "Agent Recruitment", href: "/crm/recruitment", icon: <UserPlus size={16} /> },
-        { label: "Email Workflows", href: "/crm/workflows", icon: <Mail size={16} /> },
-        { label: "Prospects", href: "/crm/prospects", icon: <Users size={16} /> },
-        { label: "Email Marketing", href: "/crm/email-marketing", icon: <Megaphone size={16} /> },
       ],
     },
     {
@@ -525,16 +544,6 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
-      label: "Academy",
-      icon: <GraduationCap size={16} />,
-      defaultOpen: false,
-      items: [
-        { label: "Academy Manager", href: "/admin/academy", icon: <GraduationCap size={16} /> },
-        { label: "Academy Actions", href: "/admin/academy/actions", icon: <ClipboardCheck size={16} /> },
-        { label: "Agent Engagement", href: "/admin/agent-engagement", icon: <Activity size={16} /> },
-      ],
-    },
-    {
       label: "Supplier Directory",
       icon: <Building2 size={16} />,
       defaultOpen: false,
@@ -544,8 +553,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
-      label: "Admin",
-      icon: <Users size={16} />,
+      label: "System Settings",
+      icon: <Settings size={16} />,
       defaultOpen: false,
       items: [
         { label: "Users", href: "/users", icon: <Users size={16} /> },
@@ -572,6 +581,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
   // When an agent is in onboarding state, show only a minimal nav
   const isOnboardingAgent = user?.role === "agent" && (user as any).portalStatus === "onboarding";
+  const sidebarPreferenceScope = `jlt-sidebar:${user?.id ?? "anonymous"}:${isAgentView ? "agent-view" : user?.role ?? "unknown"}`;
 
   const onboardingNavGroups: NavGroup[] = [
     {
@@ -689,6 +699,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               onNavigate={() => setSidebarOpen(false)}
               unreadMessageCount={isAdminUser && !isAgentView ? unreadMessageCount : agentUnansweredCount}
               overdueCount={overdueCount}
+              preferenceScope={sidebarPreferenceScope}
             />
           ))}
         </nav>

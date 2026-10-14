@@ -79,7 +79,6 @@ const CrmProspects = lazy(() => import("./pages/crm/CrmProspects"));
 const ProspectDetail = lazy(() => import("./pages/crm/ProspectDetail"));
 const CrmCampaigns = lazy(() => import("./pages/crm/CrmCampaigns"));
 const EmailMarketing = lazy(() => import("./pages/crm/EmailMarketing"));
-const CrmRemittances = lazy(() => import("./pages/crm/CrmRemittances"));
 const CrmPaymentConfig = lazy(() => import("./pages/crm/CrmPaymentConfig"));
 const EnquiryForm = lazy(() => import("./pages/crm/EnquiryForm"));
 const AgentApplicationForm = lazy(() => import("./pages/crm/AgentApplicationForm"));
@@ -98,7 +97,6 @@ const WorkflowBuilder = lazy(() => import("./pages/crm/WorkflowBuilder"));
 const RecruitmentProspectDetail = lazy(() => import("./pages/crm/RecruitmentProspectDetail"));
 const RecruitmentDashboard = lazy(() => import("./pages/crm/RecruitmentDashboard"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
-const BookingDocuments = lazy(() => import("./pages/BookingDocuments"));
 const MyProfile = lazy(() => import("./pages/MyProfile"));
 const MyPublicProfile = lazy(() => import("./pages/agent/MyPublicProfile"));
 const MyHolidayShowcases = lazy(() => import("./pages/agent/MyHolidayShowcases"));
@@ -322,7 +320,6 @@ function AuthRouter() {
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
           <Route path="/flight-requests" component={AgentFlightRequests} />
-          <Route path="/booking-documents" component={BookingDocuments} />
           <Route path="/notifications" component={AgentNotifications} />
           <Route path="/messages" component={AgentMessages} />
           <Route path="/my-profile" component={MyProfile} />
@@ -381,7 +378,6 @@ function AuthRouter() {
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
            <Route path="/flight-requests" component={AgentFlightRequests} />
-          <Route path="/booking-documents" component={BookingDocuments} />
           <Route path="/notifications" component={AgentNotifications} />
           <Route path="/messages" component={AgentMessages} />
           <Route path="/my-profile" component={MyProfile} />
@@ -450,7 +446,6 @@ function AuthRouter() {
         <Route path="/admin/tasks" component={AdminTasks} />
         <Route path="/admin/calendar" component={AdminCalendar} />
         <Route path="/admin/reimbursements" component={AdminReimbursements} />
-        <Route path="/booking-documents" component={BookingDocuments} />
         <Route path="/admin/inbox-config" component={AdminInboxConfig} />
         <Route path="/admin/inbox-audit" component={AdminInboxAudit} />
         <Route path="/admin/agent-email-log" component={AgentEmailLog} />
@@ -463,7 +458,6 @@ function AuthRouter() {
         <Route path="/crm/prospects/:id" component={ProspectDetail} />
         <Route path="/crm/campaigns" component={CrmCampaigns} />
         <Route path="/crm/email-marketing" component={EmailMarketing} />
-        <Route path="/crm/remittances" component={CrmRemittances} />
         <Route path="/crm/payment-config" component={CrmPaymentConfig} />
         <Route path="/crm/agents" component={AgentCrm} />
         <Route path="/crm/agents/:userId/contract-evidence" component={ContractEvidenceViewer} />

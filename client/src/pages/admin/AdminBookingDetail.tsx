@@ -840,7 +840,7 @@ function LinkedEmailsCard({ bookingId }: { bookingId: number }) {
         {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {!isLoading && (!linkedEmails || linkedEmails.length === 0) && (
           <p className="text-sm text-muted-foreground">
-            No emails linked yet. Use the <a href="/booking-documents" className="underline text-primary">Booking Documents</a> search to find and link emails.
+            No emails are linked to this booking yet.
           </p>
         )}
         {linkedEmails && linkedEmails.length > 0 && (
