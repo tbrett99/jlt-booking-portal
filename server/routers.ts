@@ -139,7 +139,7 @@ import {
 import { sendNotificationEmail, sendCredentialsEmail, sendPasswordResetEmail, sendDirectEmail } from "./email";
 import { isPreAuthorisedCommissionEligibleAfterDeparture } from "./commission-readiness-utils";
 import { sendOutstandingTopUpReminders } from "./commission-topup-reminders";
-import { sendAgentReadyCommissionReminders } from "./commission-agent-ready-reminders";
+import { isEligibleCommissionReminderAgent, sendAgentReadyCommissionReminders } from "./commission-agent-ready-reminders";
 import { queueBookingForCommissionReview } from "./commission-review-queue";
 import {
   COMMISSION_REVIEW_STAGE,
@@ -3256,11 +3256,15 @@ export const appRouter = router({
       const bookings = await getAgentReadyUnclaimedBookings();
       const allUsers = await getAllUsers();
       const userMap = new Map(allUsers.map((user) => [user.id, user]));
-      return bookings.map((booking) => ({
-        ...booking,
-        agentName: userMap.get(booking.agentId)?.name ?? "Unknown",
-        agentEmail: userMap.get(booking.agentId)?.email ?? "",
-      }));
+      return bookings.map((booking) => {
+        const agent = userMap.get(booking.agentId);
+        return {
+          ...booking,
+          agentName: agent?.name ?? "Unknown",
+          agentEmail: agent?.email ?? "",
+          agentCanReceiveReminder: isEligibleCommissionReminderAgent(agent),
+        };
+      });
     }),
     // Each agent receives one consolidated email for every currently unclaimed
     // booking. The helper re-reads the live list rather than accepting booking

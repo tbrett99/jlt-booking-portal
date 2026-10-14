@@ -96,6 +96,7 @@ type AgentReadyUnclaimedRow = {
   departureDate: Date | string | null;
   finalSupplierPaymentDate: Date | string | null;
   expectedCommission: number | string | null;
+  agentCanReceiveReminder: boolean;
 };
 
 // Parse CSV text into array of objects keyed by header
@@ -490,7 +491,9 @@ export default function AdminCommissions() {
         toast.message("No commission reminder emails were sent.", {
           description: result.agentsWithUnclaimedBookings === 0
             ? "There are no agent-ready, unclaimed bookings at present."
-            : "Check the agent email addresses before trying again.",
+            : result.agentsEligible === 0
+              ? "All listed agents are no longer eligible for commission reminder emails."
+              : "Check the agent email addresses before trying again.",
         });
       } else {
         toast.success(`Sent ${result.emailsSent} commission reminder${result.emailsSent === 1 ? "" : "s"} covering ${result.bookingsIncluded} booking${result.bookingsIncluded === 1 ? "" : "s"}.`);
@@ -626,7 +629,9 @@ export default function AdminCommissions() {
   const allClaims = (claims ?? []) as ClaimRow[];
   const allAgentReadyUnclaimed = (agentReadyUnclaimed ?? []) as AgentReadyUnclaimedRow[];
   const agentReadyRecipientCount = useMemo(
-    () => new Set(allAgentReadyUnclaimed.map((booking) => booking.agentId)).size,
+    () => new Set(allAgentReadyUnclaimed
+      .filter((booking) => booking.agentCanReceiveReminder)
+      .map((booking) => booking.agentId)).size,
     [allAgentReadyUnclaimed],
   );
   const commissionAgents = useMemo(
@@ -1035,12 +1040,15 @@ export default function AdminCommissions() {
                 <p className="mt-3 max-w-3xl rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
                   <strong>Historic imports:</strong> some files may show as ready to claim even though commission was paid before they were imported. If an agent confirms this, ask them to add a message to the relevant booking so the JLT team can review and update it.
                 </p>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  Reminder emails are sent only to active agents and agents in notice. Departed, inactive, paused, suspended and onboarding accounts remain visible for audit purposes but are skipped.
+                </p>
               </div>
               <Button
                 size="sm"
                 className="gap-2"
                 onClick={() => setAgentReadyReminderConfirmOpen(true)}
-                disabled={allAgentReadyUnclaimed.length === 0 || sendAgentReadyRemindersMutation.isPending}
+                disabled={agentReadyRecipientCount === 0 || sendAgentReadyRemindersMutation.isPending}
               >
                 {sendAgentReadyRemindersMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 Send reminders to all agents

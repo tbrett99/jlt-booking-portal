@@ -16,6 +16,36 @@ export type AgentReadyCommissionReminderRecipient = {
   bookings: AgentReadyCommissionBooking[];
 };
 
+type AgentReadyBookingSource = {
+  id: number;
+  agentId: number;
+  clientName: string;
+  ptsRef?: string | null;
+  topdogRef?: string | null;
+  expectedCommission?: number | string | null;
+};
+
+export type CommissionReminderAgent = {
+  id: number;
+  name: string | null;
+  email: string | null;
+  role: string | null;
+  isActive: boolean | null;
+  portalStatus: string | null;
+};
+
+/**
+ * Reminder emails are operational communications for agents who can still use
+ * the Portal. Cancelled, paused, suspended, inactive and onboarding accounts
+ * are deliberately excluded; an agent in notice remains eligible because they
+ * can still have genuine commission to claim before their notice completes.
+ */
+export function isEligibleCommissionReminderAgent(agent: CommissionReminderAgent | null | undefined): boolean {
+  return agent?.role === "agent"
+    && agent.isActive === true
+    && (agent.portalStatus === "active" || agent.portalStatus === "in_notice");
+}
+
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -53,21 +83,23 @@ export function buildAgentReadyCommissionReminderRecipients(input: {
     topdogRef?: string | null;
     expectedCommission?: number | string | null;
   }>;
-  users: Array<{ id: number; name: string | null; email: string | null }>;
+  users: CommissionReminderAgent[];
 }): AgentReadyCommissionReminderRecipient[] {
   const userById = new Map(input.users.map((user) => [user.id, user]));
   const grouped = new Map<number, AgentReadyCommissionReminderRecipient>();
 
   for (const booking of input.bookings) {
     const agent = userById.get(booking.agentId);
-    if (!agent?.email?.trim()) continue;
+    if (!agent || !isEligibleCommissionReminderAgent(agent)) continue;
+    const email = agent.email?.trim();
+    if (!email) continue;
 
     const name = agent.name?.trim() || "Agent";
     const recipient = grouped.get(booking.agentId) ?? {
       agentId: booking.agentId,
       name,
       firstName: firstName(name),
-      email: agent.email.trim(),
+      email,
       bookings: [],
     };
 
@@ -124,15 +156,20 @@ export function buildAgentReadyCommissionReminderEmail(recipient: AgentReadyComm
  * included in a reminder email.
  */
 export async function sendAgentReadyCommissionReminders() {
-  const [bookings, users] = await Promise.all([
+  const [bookingsRaw, usersRaw] = await Promise.all([
     getAgentReadyUnclaimedBookings(),
     getAllUsers(),
   ]);
+  const bookings = bookingsRaw as AgentReadyBookingSource[];
+  const users = usersRaw as CommissionReminderAgent[];
   const recipients = buildAgentReadyCommissionReminderRecipients({ bookings, users });
   const agentIdsWithBookings = new Set(bookings.map((booking) => booking.agentId));
-  const agentsWithoutEmail = Array.from(agentIdsWithBookings).filter(
-    (agentId) => !recipients.some((recipient) => recipient.agentId === agentId),
-  ).length;
+  const userById = new Map(users.map((user) => [user.id, user]));
+  const agentsEligible = Array.from(agentIdsWithBookings).filter((agentId) =>
+    isEligibleCommissionReminderAgent(userById.get(agentId)),
+  );
+  const agentsWithoutEmail = agentsEligible.filter((agentId) => !userById.get(agentId)?.email?.trim()).length;
+  const agentsExcluded = agentIdsWithBookings.size - agentsEligible.length;
 
   let emailsSent = 0;
   let bookingsIncluded = 0;
@@ -162,7 +199,9 @@ export async function sendAgentReadyCommissionReminders() {
     emailsSent,
     bookingsIncluded,
     agentsWithUnclaimedBookings: agentIdsWithBookings.size,
+    agentsEligible: agentsEligible.length,
     agentsWithoutEmail,
+    agentsExcluded,
     failures,
   };
 }
