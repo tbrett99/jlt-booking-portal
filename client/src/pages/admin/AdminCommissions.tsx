@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle, CheckCircle2, TrendingDown, AlertTriangle, Search, Send, X } from "lucide-react";
+import { Loader2, Banknote, CheckCircle, Clock, Trash2, Download, FileSpreadsheet, CheckCheck, AlertCircle, XCircle, CheckCircle2, TrendingDown, AlertTriangle, Search, Send, X, ExternalLink } from "lucide-react";
 import CopyableRef from "@/components/CopyableRef";
 import { useLocation } from "wouter";
 import { getPage, getSelectableCommissionRows, sortRowsByDate } from "@/lib/commission-list-utils";
@@ -1039,8 +1039,10 @@ export default function AdminCommissions() {
                           <td className="py-3 px-4">{formatDate(booking.departureDate)}</td>
                           <td className="py-3 px-4 font-medium">{formatGbp(booking.expectedCommission)}</td>
                           <td className="py-3 px-4">
-                            <Button variant="ghost" size="sm" onClick={() => navigate(`/bookings/${booking.id}`)} className="text-xs">
-                              View
+                            <Button variant="ghost" size="sm" asChild className="text-xs">
+                              <a href={`/bookings/${booking.id}`} target="_blank" rel="noopener noreferrer">
+                                Open <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
                             </Button>
                           </td>
                         </tr>

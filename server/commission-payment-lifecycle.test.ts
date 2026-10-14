@@ -96,6 +96,39 @@ describe("commission payment lifecycle", () => {
     expect(adminBookingSource).toContain("Confirm & Auto-Claim");
   });
 
+  it("lets staff record an already-paid historical commission only through an auditable backfill path", () => {
+    const historicalRoute = routerSource.slice(
+      routerSource.indexOf("recordHistoricalPaid: adminProcedure"),
+      routerSource.indexOf("// Agent: get own commission claims with booking info"),
+    );
+    const historicalPersistence = dbSource.slice(
+      dbSource.indexOf("export async function recordHistoricalCommissionPaid"),
+      dbSource.indexOf("export async function getCommissionClaimByBooking"),
+    );
+
+    expect(historicalRoute).toContain("getCommissionClaimByBooking(input.bookingId)");
+    expect(historicalRoute).toContain("recordHistoricalCommissionPaid");
+    expect(historicalRoute).toContain("pushClaimStatusToOrbit(booking.id)");
+    expect(historicalRoute).not.toContain("sendNotificationEmail");
+    expect(historicalPersistence).toContain('status: "paid"');
+    expect(historicalPersistence).toContain('currentStage: "Commission Paid"');
+    expect(historicalPersistence).toContain("pipelineHistory");
+    expect(historicalPersistence).toContain("auditNote");
+    expect(adminBookingSource).toContain("Record Historic Commission Paid");
+    expect(adminBookingSource).toContain("already paid outside the Portal");
+  });
+
+  it("opens agent-ready unclaimed bookings in a separate browser tab", () => {
+    const agentReadySection = adminCommissionsSource.slice(
+      adminCommissionsSource.indexOf('<TabsContent value="agent_ready">'),
+      adminCommissionsSource.indexOf("{/* NOTICE PERIOD TAB */}"),
+    );
+
+    expect(agentReadySection).toContain('href={`/bookings/${booking.id}`}');
+    expect(agentReadySection).toContain('target="_blank"');
+    expect(agentReadySection).toContain('rel="noopener noreferrer"');
+  });
+
   it("counts only unclaimed review-stage files in the dashboard Commission Due figure", () => {
     expect(dashboardSource).toContain("currentStage IN ('Added to PTS','Commission Ready for Review')");
     expect(dashboardSource).toContain("FROM commission_claims");

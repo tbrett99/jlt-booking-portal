@@ -51,6 +51,7 @@ import {
   getCommissionClaimsByAgent,
   getAllCommissionClaims,
   markCommissionPaid,
+  recordHistoricalCommissionPaid,
   getCommissionClaimByBooking,
   deleteCommissionClaim,
   updateCommissionVat,
@@ -3501,6 +3502,56 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     byBooking: adminProcedure
       .input(z.object({ bookingId: z.number() }))
       .query(async ({ input }) => getCommissionClaimByBooking(input.bookingId) ?? null),
+
+    // Admin: backfill a legacy commission which was paid before the Portal had
+    // a commission claim record. This is separate from the normal payment-run
+    // flow and deliberately does not contact the agent.
+    recordHistoricalPaid: adminProcedure
+      .input(z.object({
+        bookingId: z.number(),
+        grossAmount: z.number().finite().min(0).max(1_000_000),
+        vatAmount: z.number().finite().min(0).max(1_000_000).nullable(),
+        paidAt: z.coerce.date(),
+        sourceNote: z.string().trim().min(3).max(1_000),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.paidAt.getTime() > Date.now()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "The historical payment date cannot be in the future." });
+        }
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND", message: "Booking not found" });
+        const existingClaim = await getCommissionClaimByBooking(input.bookingId);
+        if (existingClaim) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This booking already has a commission claim. Use Commission Management for its existing financial history." });
+        }
+
+        const paymentDateLabel = input.paidAt.toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          timeZone: "UTC",
+        });
+        const auditNote = `[Historical commission payment] ${ctx.user.name ?? "Admin"} recorded £${input.grossAmount.toFixed(2)} as paid outside the Portal on ${paymentDateLabel}.${input.vatAmount === null ? " No VAT amount recorded." : ` VAT recorded: £${input.vatAmount.toFixed(2)}.`} Source / note: ${input.sourceNote}`;
+        let claim;
+        try {
+          claim = await recordHistoricalCommissionPaid({
+            bookingId: booking.id,
+            agentId: booking.agentId,
+            grossAmount: input.grossAmount,
+            vatAmount: input.vatAmount,
+            paidAt: input.paidAt,
+            recordedById: ctx.user.id,
+            auditNote,
+          });
+        } catch (error: any) {
+          if (error?.code === "ER_DUP_ENTRY" || /commission claim already exists/i.test(error?.message ?? "")) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "This booking already has a commission claim. Refresh the booking before making another change." });
+          }
+          throw error;
+        }
+        void pushClaimStatusToOrbit(booking.id);
+        return claim;
+      }),
 
     // Agent: get own commission claims with booking info
     myCommissions: protectedProcedure.query(async ({ ctx }) => {

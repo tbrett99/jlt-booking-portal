@@ -1118,6 +1118,12 @@ export default function AdminBookingDetail() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [showCommissionRecoveryConfirm, setShowCommissionRecoveryConfirm] = useState(false);
+  const [showHistoricalCommissionPaid, setShowHistoricalCommissionPaid] = useState(false);
+  const [historicalCommissionAmount, setHistoricalCommissionAmount] = useState("");
+  const [historicalCommissionVat, setHistoricalCommissionVat] = useState("");
+  const [historicalCommissionPaidDate, setHistoricalCommissionPaidDate] = useState("");
+  const [historicalCommissionSourceNote, setHistoricalCommissionSourceNote] = useState("");
+  const [historicalCommissionConfirmed, setHistoricalCommissionConfirmed] = useState(false);
   const [cancellationActionTarget, setCancellationActionTarget] = useState<any | null>(null);
   const [moveCancellationToCancelled, setMoveCancellationToCancelled] = useState(true);
   const [mergeTarget, setMergeTarget] = useState<{ id: number; clientName: string } | null>(null);
@@ -1306,6 +1312,19 @@ export default function AdminBookingDetail() {
     },
     onError: (err) => toast.error(err.message || "Could not restore the commission review"),
   });
+  const recordHistoricalCommissionPaid = trpc.commissionClaims.recordHistoricalPaid.useMutation({
+    onSuccess: () => {
+      setShowHistoricalCommissionPaid(false);
+      setHistoricalCommissionSourceNote("");
+      setHistoricalCommissionConfirmed(false);
+      utils.bookings.byId.invalidate({ id: bookingId });
+      utils.bookings.pipelineHistory.invalidate({ bookingId });
+      utils.notes.list.invalidate({ bookingId });
+      utils.commissionClaims.all.invalidate();
+      toast.success("Historical commission payment recorded");
+    },
+    onError: (err) => toast.error(err.message || "Could not record the historical commission payment"),
+  });
 
   // @mention: detect when user types @ in internal note
   const handleInternalNoteChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -1373,6 +1392,52 @@ export default function AdminBookingDetail() {
     setShowQueryDialog(false);
     setPendingStage(null);
     setQueryMessage("");
+  };
+
+  const openHistoricalCommissionPaid = () => {
+    const expectedCommission = booking?.expectedCommission;
+    setHistoricalCommissionAmount(
+      expectedCommission === null || expectedCommission === undefined || expectedCommission === ""
+        ? ""
+        : Number(expectedCommission).toFixed(2),
+    );
+    setHistoricalCommissionVat("");
+    setHistoricalCommissionPaidDate(format(new Date(), "yyyy-MM-dd"));
+    setHistoricalCommissionSourceNote("");
+    setHistoricalCommissionConfirmed(false);
+    setShowHistoricalCommissionPaid(true);
+  };
+
+  const submitHistoricalCommissionPaid = () => {
+    const grossAmount = Number(historicalCommissionAmount);
+    const vatAmount = historicalCommissionVat.trim() === "" ? null : Number(historicalCommissionVat);
+    if (!Number.isFinite(grossAmount) || grossAmount < 0) {
+      toast.error("Enter a valid commission amount.");
+      return;
+    }
+    if (vatAmount !== null && (!Number.isFinite(vatAmount) || vatAmount < 0)) {
+      toast.error("Enter a valid VAT amount or leave it blank.");
+      return;
+    }
+    if (!historicalCommissionPaidDate) {
+      toast.error("Select the date the commission was paid.");
+      return;
+    }
+    if (historicalCommissionSourceNote.trim().length < 3) {
+      toast.error("Add a source or note for this historical payment.");
+      return;
+    }
+    if (!historicalCommissionConfirmed) {
+      toast.error("Confirm that the historical commission payment is accurate.");
+      return;
+    }
+    recordHistoricalCommissionPaid.mutate({
+      bookingId,
+      grossAmount,
+      vatAmount,
+      paidAt: new Date(historicalCommissionPaidDate),
+      sourceNote: historicalCommissionSourceNote.trim(),
+    });
   };
 
   const handleGuardSaveAndMove = async () => {
@@ -1601,6 +1666,16 @@ export default function AdminBookingDetail() {
               onClick={() => setShowCommissionRecoveryConfirm(true)}
             >
               <RefreshCw size={13} /> Restore Commission Review
+            </Button>
+          )}
+          {isAdmin && booking.currentStage !== "Commission Paid" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+              onClick={openHistoricalCommissionPaid}
+            >
+              <CheckCircle2 size={13} /> Record Historic Commission Paid
             </Button>
           )}
           <Select value={booking.currentStage} onValueChange={handleStageChange}>
@@ -2665,6 +2740,88 @@ export default function AdminBookingDetail() {
               onClick={() => restoreCommissionReview.mutate({ bookingId })}
             >
               {restoreCommissionReview.isPending ? "Restoring…" : "Restore to Review"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showHistoricalCommissionPaid} onOpenChange={setShowHistoricalCommissionPaid}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-800">
+              <CheckCircle2 size={18} /> Record Historic Commission Paid
+            </DialogTitle>
+            <DialogDescription className="space-y-2 pt-2 text-sm leading-relaxed">
+              <span className="block">Use this only for a commission already paid outside the Portal where this booking has no commission claim record.</span>
+              <span className="block">It creates one paid commission record, moves the booking to <strong>Commission Paid</strong>, and leaves a private audit note. It does not email the agent or create a payment run.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="historic-commission-amount">Commission paid (£)</Label>
+                <Input
+                  id="historic-commission-amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={historicalCommissionAmount}
+                  onChange={(event) => setHistoricalCommissionAmount(event.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="historic-commission-vat">VAT (£, optional)</Label>
+                <Input
+                  id="historic-commission-vat"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={historicalCommissionVat}
+                  onChange={(event) => setHistoricalCommissionVat(event.target.value)}
+                  placeholder="Leave blank if unknown"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="historic-commission-date">Date paid</Label>
+              <Input
+                id="historic-commission-date"
+                type="date"
+                max={format(new Date(), "yyyy-MM-dd")}
+                value={historicalCommissionPaidDate}
+                onChange={(event) => setHistoricalCommissionPaidDate(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="historic-commission-source">Source / note</Label>
+              <Textarea
+                id="historic-commission-source"
+                value={historicalCommissionSourceNote}
+                onChange={(event) => setHistoricalCommissionSourceNote(event.target.value)}
+                placeholder="For example: Paid in a pre-Portal PTS remittance on 14 September 2025."
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">This private note is retained on the booking as the audit trail.</p>
+            </div>
+            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+              <input
+                type="checkbox"
+                checked={historicalCommissionConfirmed}
+                onChange={(event) => setHistoricalCommissionConfirmed(event.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-emerald-600"
+              />
+              <span>I confirm this commission was already paid outside the Portal and the date and amount above are accurate.</span>
+            </label>
+          </div>
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" onClick={() => setShowHistoricalCommissionPaid(false)}>Cancel</Button>
+            <Button
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              disabled={recordHistoricalCommissionPaid.isPending || !historicalCommissionConfirmed}
+              onClick={submitHistoricalCommissionPaid}
+            >
+              {recordHistoricalCommissionPaid.isPending ? "Recording…" : "Record as Paid"}
             </Button>
           </DialogFooter>
         </DialogContent>

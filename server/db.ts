@@ -1399,6 +1399,86 @@ export async function markCommissionAgentPaid(claimIds: number[], movedById: num
   }
 }
 
+/**
+ * Record a commission that was already paid outside the Portal's normal claim
+ * workflow. This is deliberately a single transaction so the claim ledger,
+ * booking stage, stage history and internal audit note can never drift apart.
+ * It must only be used for legacy/historical records where no Portal claim
+ * exists; it does not send an agent notification or create a payment run.
+ */
+export async function recordHistoricalCommissionPaid(data: {
+  bookingId: number;
+  agentId: number;
+  grossAmount: number;
+  vatAmount: number | null;
+  paidAt: Date;
+  recordedById: number;
+  auditNote: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+
+  return db.transaction(async (tx) => {
+    const existingClaims = await tx
+      .select({ id: commissionClaims.id })
+      .from(commissionClaims)
+      .where(eq(commissionClaims.bookingId, data.bookingId))
+      .limit(1);
+    if (existingClaims.length > 0) {
+      throw new Error("A commission claim already exists for this booking.");
+    }
+
+    const bookingRows = await tx
+      .select({ id: bookings.id, agentId: bookings.agentId, currentStage: bookings.currentStage })
+      .from(bookings)
+      .where(eq(bookings.id, data.bookingId))
+      .limit(1);
+    const booking = bookingRows[0];
+    if (!booking) throw new Error("Booking not found");
+    if (booking.agentId !== data.agentId) throw new Error("Booking agent does not match the historical commission record.");
+
+    const grossAmount = data.grossAmount.toFixed(2);
+    const vatAmount = data.vatAmount === null ? null : data.vatAmount.toFixed(2);
+    await tx.insert(commissionClaims).values({
+      bookingId: data.bookingId,
+      agentId: data.agentId,
+      bookingType: "other",
+      claimedAt: data.paidAt,
+      status: "paid",
+      grossAmount,
+      vatAmount,
+      paidAt: data.paidAt,
+      paidById: data.recordedById,
+    });
+    await tx.update(bookings).set({
+      expectedCommission: grossAmount,
+      commissionVat: vatAmount,
+      currentStage: "Commission Paid",
+    }).where(eq(bookings.id, data.bookingId));
+    await tx.insert(pipelineHistory).values({
+      bookingId: data.bookingId,
+      fromStage: booking.currentStage,
+      toStage: "Commission Paid",
+      movedById: data.recordedById,
+      movedAt: new Date(),
+    });
+    await tx.insert(notes).values({
+      bookingId: data.bookingId,
+      authorId: data.recordedById,
+      content: data.auditNote,
+      isInternal: true,
+      isReadByAdmin: true,
+    });
+
+    const claims = await tx
+      .select()
+      .from(commissionClaims)
+      .where(eq(commissionClaims.bookingId, data.bookingId))
+      .limit(1);
+    return claims[0];
+  });
+}
+
 export async function getCommissionClaimByBooking(bookingId: number) {
   const db = await getDb();
   if (!db) return undefined;
