@@ -50,8 +50,6 @@ async function logCampaignEmailToAudit(params: {
   }
 }
 
-export const DISCOVERY_CALL_BOOKING_URL = "https://cal.com/jlt-group/jlt-discovery";
-
 export type MarketingMergeValues = {
   applicationLink?: string;
   discoveryCallLink?: string;
@@ -64,6 +62,22 @@ export type MarketingMergeValues = {
  */
 export function hasApplicationLinkMergeTag(content: string): boolean {
   return /\{\{application(?:_|)link\}\}/i.test(content);
+}
+
+export function hasDiscoveryCallLinkMergeTag(content: string): boolean {
+  return /\{\{discovery(?:_|)call(?:_|)link\}\}/i.test(content);
+}
+
+export function getCampaignDiscoveryCallLink(segmentFilters?: string | null): string | undefined {
+  if (!segmentFilters) return undefined;
+  try {
+    const value = JSON.parse(segmentFilters).discoveryCallUrl;
+    if (typeof value !== "string" || !value.trim()) return undefined;
+    const url = new URL(value.trim());
+    return url.protocol === "https:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -80,7 +94,7 @@ export function applyMarketingMergeTags(
   const firstName = fullName.split(" ")[0] ?? fullName;
   const email = recipient.email ?? "";
   const applicationLink = values.applicationLink ?? "";
-  const discoveryCallLink = values.discoveryCallLink ?? DISCOVERY_CALL_BOOKING_URL;
+  const discoveryCallLink = values.discoveryCallLink ?? "";
   return html
     .replace(/\{\{first_name\}\}/gi, firstName || fullName || "there")
     .replace(/\{\{full_name\}\}/gi, fullName || firstName || "there")
@@ -122,7 +136,6 @@ export async function getCampaignProspectMergeValues(opts: {
   const baseUrl = opts.baseUrl.replace(/\/+$/, "");
   return {
     applicationLink: `${baseUrl}/apply/form?token=${encodeURIComponent(token)}`,
-    discoveryCallLink: DISCOVERY_CALL_BOOKING_URL,
   };
 }
 
@@ -133,19 +146,24 @@ export async function getCampaignRecipientMergeValues(opts: {
   recipientId?: number | null;
   recipientEmail: string;
   baseUrl: string;
+  discoveryCallLink?: string;
 }): Promise<MarketingMergeValues> {
   const needsApplicationLink = hasApplicationLinkMergeTag(opts.subject) || hasApplicationLinkMergeTag(opts.bodyHtml);
-  if (!needsApplicationLink) {
-    return { discoveryCallLink: DISCOVERY_CALL_BOOKING_URL };
+  const needsDiscoveryCallLink = hasDiscoveryCallLinkMergeTag(opts.subject) || hasDiscoveryCallLinkMergeTag(opts.bodyHtml);
+  if (needsDiscoveryCallLink && !opts.discoveryCallLink) {
+    throw new Error("Add a valid HTTPS discovery-call booking URL before sending this campaign");
   }
-  if (opts.audienceType !== "prospect") {
+  if (needsApplicationLink && opts.audienceType !== "prospect") {
     throw new Error("Secure application links can only be sent in prospect campaigns");
   }
-  return getCampaignProspectMergeValues({
-    recipientId: opts.recipientId,
-    recipientEmail: opts.recipientEmail,
-    baseUrl: opts.baseUrl,
-  });
+  const values = needsApplicationLink
+    ? await getCampaignProspectMergeValues({
+      recipientId: opts.recipientId,
+      recipientEmail: opts.recipientEmail,
+      baseUrl: opts.baseUrl,
+    })
+    : {};
+  return { ...values, discoveryCallLink: opts.discoveryCallLink };
 }
 
 // Lazy-init Resend client
@@ -686,6 +704,7 @@ export async function processCampaignQueue(
         recipientId: row.recipientId,
         recipientEmail: row.recipientEmail,
         baseUrl,
+        discoveryCallLink: getCampaignDiscoveryCallLink(campaign.segmentFilters),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not personalise campaign links";

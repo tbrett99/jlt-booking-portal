@@ -82,7 +82,9 @@ import { storagePut } from "./storage";
 import { sendDirectEmail } from "./email";
 import {
   enqueueCampaignRecipients,
+  getCampaignDiscoveryCallLink,
   getCampaignRecipientMergeValues,
+  hasDiscoveryCallLinkMergeTag,
   hasApplicationLinkMergeTag,
 } from "./resend-email";
 import { createInAppNotification } from "./db";
@@ -3048,10 +3050,17 @@ export const crmRouter = router({
         if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
         if (campaign.status === "sent") throw new TRPCError({ code: "BAD_REQUEST", message: "Campaign already sent" });
         const usesSecureApplicationLink = hasApplicationLinkMergeTag(campaign.subject) || hasApplicationLinkMergeTag(campaign.bodyHtml);
+        const usesDiscoveryCallLink = hasDiscoveryCallLinkMergeTag(campaign.subject) || hasDiscoveryCallLinkMergeTag(campaign.bodyHtml);
         if (usesSecureApplicationLink && campaign.audienceType !== "prospect") {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Secure application links can only be used in prospect campaigns",
+          });
+        }
+        if (usesDiscoveryCallLink && !getCampaignDiscoveryCallLink(campaign.segmentFilters)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Add a valid HTTPS discovery-call booking URL before sending this campaign",
           });
         }
 
@@ -3297,6 +3306,7 @@ export const crmRouter = router({
           recipientId: send.recipientId,
           recipientEmail: send.recipientEmail,
           baseUrl,
+          discoveryCallLink: getCampaignDiscoveryCallLink(campaign.segmentFilters),
         });
         await sendMarketingEmail({
           to: send.recipientEmail,
@@ -3338,6 +3348,7 @@ export const crmRouter = router({
               recipientId: s.recipientId,
               recipientEmail: s.recipientEmail,
               baseUrl,
+              discoveryCallLink: getCampaignDiscoveryCallLink(campaign.segmentFilters),
             });
             await sendMarketingEmail({
               to: s.recipientEmail,

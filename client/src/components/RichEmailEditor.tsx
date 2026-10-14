@@ -137,7 +137,7 @@ export const MERGE_TAGS = [
 
 const PROSPECT_LINK_MERGE_TAGS = [
   { label: "Secure application link", token: "{{application_link}}", example: "A personal application form" },
-  { label: "Discovery-call booking link", token: "{{discovery_call_link}}", example: "The JLT booking page" },
+  { label: "Discovery-call booking link", token: "{{discovery_call_link}}", example: "This campaign’s booking page" },
 ];
 
 /**
@@ -821,9 +821,9 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
                   <p className="text-xs font-medium">Prospect campaign links</p>
                   <div className="flex flex-wrap gap-1.5">
                     <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setButtonUrl("{{application_link}}")}>Use secure application link</Button>
-                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setButtonUrl("{{discovery_call_link}}")}>Use discovery-call link</Button>
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setButtonUrl("{{discovery_call_link}}")}>Use campaign call link</Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">The application link is unique to each prospect; both links are tracked in campaign reporting.</p>
+                  <p className="text-xs text-muted-foreground">The application link is unique to each prospect. Set the campaign’s discovery-call URL before using its call link.</p>
                 </div>
               )}
               <div className="flex gap-3">

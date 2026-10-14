@@ -96,12 +96,13 @@ interface CampaignFormData {
   agentTags: string[];
   agentStatus: string[];
   hasActiveMandate?: boolean | null; // null = no filter, true = has mandate, false = no mandate
+  discoveryCallUrl: string;
   templateId?: number;
 }
 
 const defaultCampaignForm: CampaignFormData = {
   name: "", subject: "", bodyHtml: "", audienceType: "prospect",
-  stages: [], stageLogic: "any", membershipTiers: [], trainingStages: [], agentTags: [], agentStatus: [], hasActiveMandate: null,
+  stages: [], stageLogic: "any", membershipTiers: [], trainingStages: [], agentTags: [], agentStatus: [], hasActiveMandate: null, discoveryCallUrl: "",
 };
 
 function EmailPreviewPanel({ bodyHtml }: { bodyHtml: string }) {
@@ -245,6 +246,16 @@ function CampaignFormDialog({
                   }
                 </p>
               )}
+              <div className="mt-4">
+                <Label>Discovery-call booking URL <span className="text-muted-foreground font-normal">(only needed when using the discovery-call link)</span></Label>
+                <Input
+                  type="url"
+                  value={form.discoveryCallUrl}
+                  onChange={(e) => setForm((f) => ({ ...f, discoveryCallUrl: e.target.value }))}
+                  placeholder="https://…"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">Use this campaign’s own booking page. It replaces the discovery-call merge tag or CTA shortcut when the email is sent.</p>
+              </div>
             </div>
           )}
 
@@ -389,7 +400,7 @@ function CampaignFormDialog({
             )}
             {form.audienceType === "prospect" && (
               <p className="mt-2 text-xs text-muted-foreground">
-                Use the person icon or the CTA button tool to add a <strong>secure application link</strong> or the standard <strong>discovery-call booking link</strong>. Application links are personalised for each prospect only when the campaign is sent.
+                Use the person icon or the CTA button tool to add a <strong>secure application link</strong> or a <strong>discovery-call booking link</strong>. Application links are personalised for each prospect only when the campaign is sent; add the campaign’s booking URL above before using the discovery-call link.
               </p>
             )}
           </div>
@@ -834,6 +845,16 @@ export default function EmailMarketing() {
     if (form.agentTags.length > 0) filters.tags = form.agentTags;
     if (form.agentStatus.length > 0) filters.agentStatus = form.agentStatus;
     if (form.hasActiveMandate != null) filters.hasActiveMandate = form.hasActiveMandate;
+    if (form.audienceType === "prospect" && form.discoveryCallUrl.trim()) {
+      try {
+        const url = new URL(form.discoveryCallUrl.trim());
+        if (url.protocol !== "https:") throw new Error("not https");
+        filters.discoveryCallUrl = url.toString();
+      } catch {
+        toast.error("The discovery-call booking URL must use HTTPS");
+        return;
+      }
+    }
     const segmentFilters = Object.keys(filters).length > 0 ? JSON.stringify(filters) : undefined;
     if (campaignDialog === "create") {
       createCampaign.mutate({ ...form, segmentFilters });
@@ -1140,11 +1161,13 @@ export default function EmailMarketing() {
               bodyHtml: editCampaign.bodyHtml,
               audienceType: editCampaign.audienceType,
               stages: f.stages ?? [],
+              stageLogic: f.stageLogic ?? "any",
               membershipTiers: f.membershipTiers ?? [],
               trainingStages: f.trainingStages ?? [],
               agentTags: f.tags ?? [],
               agentStatus: f.agentStatus ?? [],
               hasActiveMandate: f.hasActiveMandate != null ? f.hasActiveMandate : null,
+              discoveryCallUrl: f.discoveryCallUrl ?? "",
             } as CampaignFormData;
           })() : undefined}
           templates={templates}

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  DISCOVERY_CALL_BOOKING_URL,
   applyMarketingMergeTags,
+  getCampaignDiscoveryCallLink,
   hasApplicationLinkMergeTag,
 } from "./resend-email";
+
+const discoveryCallLink = "https://booking.example.com/jlt-discovery";
 
 describe("email campaign secure-link merge tags", () => {
   it("renders a prospect's application and discovery links inside campaign HTML", () => {
@@ -12,13 +14,13 @@ describe("email campaign secure-link merge tags", () => {
       { name: "Jamie Smith", email: "jamie@example.com" },
       {
         applicationLink: "https://portal.thejltgroup.co.uk/apply/form?token=secure-token",
-        discoveryCallLink: DISCOVERY_CALL_BOOKING_URL,
+        discoveryCallLink,
       },
     );
 
     expect(html).toContain("Hi Jamie");
     expect(html).toContain('href="https://portal.thejltgroup.co.uk/apply/form?token=secure-token"');
-    expect(html).toContain(`href="${DISCOVERY_CALL_BOOKING_URL}"`);
+    expect(html).toContain(`href="${discoveryCallLink}"`);
     expect(html).not.toContain("{{application_link}}");
     expect(html).not.toContain("{{discovery_call_link}}");
   });
@@ -29,12 +31,12 @@ describe("email campaign secure-link merge tags", () => {
       {},
       {
         applicationLink: "https://portal.thejltgroup.co.uk/apply/form?token=existing",
-        discoveryCallLink: DISCOVERY_CALL_BOOKING_URL,
+        discoveryCallLink,
       },
     );
 
     expect(rendered).toBe(
-      `https://portal.thejltgroup.co.uk/apply/form?token=existing — ${DISCOVERY_CALL_BOOKING_URL}`,
+      `https://portal.thejltgroup.co.uk/apply/form?token=existing — ${discoveryCallLink}`,
     );
   });
 
@@ -42,5 +44,11 @@ describe("email campaign secure-link merge tags", () => {
     expect(hasApplicationLinkMergeTag('<a href="{{application_link}}">Apply</a>')).toBe(true);
     expect(hasApplicationLinkMergeTag('<a href="{{applicationLink}}">Apply</a>')).toBe(true);
     expect(hasApplicationLinkMergeTag("Book at {{discovery_call_link}}")).toBe(false);
+  });
+
+  it("uses only an HTTPS booking page explicitly saved on the campaign", () => {
+    expect(getCampaignDiscoveryCallLink(JSON.stringify({ discoveryCallUrl: discoveryCallLink }))).toBe(discoveryCallLink);
+    expect(getCampaignDiscoveryCallLink(JSON.stringify({ discoveryCallUrl: "http://booking.example.com" }))).toBeUndefined();
+    expect(getCampaignDiscoveryCallLink(undefined)).toBeUndefined();
   });
 });
