@@ -28,6 +28,7 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { isBookingReadyForCommissionReview } from "./commission-workflow-utils";
+import { canReconcileHistoricalCommissionClaim } from "./historical-commission-utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _db: any | null = null;
@@ -1420,11 +1421,13 @@ export async function recordHistoricalCommissionPaid(data: {
 
   return db.transaction(async (tx) => {
     const existingClaims = await tx
-      .select({ id: commissionClaims.id })
+      .select()
       .from(commissionClaims)
       .where(eq(commissionClaims.bookingId, data.bookingId))
       .limit(1);
-    if (existingClaims.length > 0) {
+
+    const existingClaim = existingClaims[0];
+    if (existingClaim && !canReconcileHistoricalCommissionClaim(existingClaim)) {
       throw new Error("A commission claim already exists for this booking.");
     }
 
@@ -1439,17 +1442,36 @@ export async function recordHistoricalCommissionPaid(data: {
 
     const grossAmount = data.grossAmount.toFixed(2);
     const vatAmount = data.vatAmount === null ? null : data.vatAmount.toFixed(2);
-    await tx.insert(commissionClaims).values({
-      bookingId: data.bookingId,
-      agentId: data.agentId,
-      bookingType: "other",
-      claimedAt: data.paidAt,
-      status: "paid",
-      grossAmount,
-      vatAmount,
-      paidAt: data.paidAt,
-      paidById: data.recordedById,
-    });
+    if (existingClaim) {
+      // Some imported files have an old top-up marker but never entered the
+      // financial claim workflow. Reconcile that non-financial marker rather
+      // than creating a second claim for the same booking.
+      await tx.update(commissionClaims).set({
+        status: "paid",
+        grossAmount,
+        vatAmount,
+        paidAt: data.paidAt,
+        paidById: data.recordedById,
+        topUpAmountPence: null,
+        topUpNote: null,
+        topUpRequestedAt: null,
+        topUpRequestedById: null,
+        topUpNotifiedAt: null,
+        topUpResolvedAt: null,
+      }).where(eq(commissionClaims.id, existingClaim.id));
+    } else {
+      await tx.insert(commissionClaims).values({
+        bookingId: data.bookingId,
+        agentId: data.agentId,
+        bookingType: "other",
+        claimedAt: data.paidAt,
+        status: "paid",
+        grossAmount,
+        vatAmount,
+        paidAt: data.paidAt,
+        paidById: data.recordedById,
+      });
+    }
     await tx.update(bookings).set({
       expectedCommission: grossAmount,
       commissionVat: vatAmount,

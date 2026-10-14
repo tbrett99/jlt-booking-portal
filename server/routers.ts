@@ -3,6 +3,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { normaliseTaskIdentityEmail } from "@shared/task-identity";
 import { nextRecurringTaskDate, TASK_RECURRENCE_RULES } from "@shared/task-recurrence";
 import { pushClaimStatusToOrbit } from "./orbit-sync";
+import { canReconcileHistoricalCommissionClaim } from "./historical-commission-utils";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -3532,7 +3533,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND", message: "Booking not found" });
         const existingClaim = await getCommissionClaimByBooking(input.bookingId);
-        if (existingClaim) {
+        if (existingClaim && !canReconcileHistoricalCommissionClaim(existingClaim)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "This booking already has a commission claim. Use Commission Management for its existing financial history." });
         }
 
@@ -3556,7 +3557,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           });
         } catch (error: any) {
           if (error?.code === "ER_DUP_ENTRY" || /commission claim already exists/i.test(error?.message ?? "")) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: "This booking already has a commission claim. Refresh the booking before making another change." });
+            throw new TRPCError({ code: "BAD_REQUEST", message: "This booking already has a financial commission claim. Refresh the booking before making another change." });
           }
           throw error;
         }

@@ -107,15 +107,19 @@ describe("commission payment lifecycle", () => {
     );
 
     expect(historicalRoute).toContain("getCommissionClaimByBooking(input.bookingId)");
+    expect(historicalRoute).toContain("canReconcileHistoricalCommissionClaim(existingClaim)");
     expect(historicalRoute).toContain("recordHistoricalCommissionPaid");
     expect(historicalRoute).toContain("pushClaimStatusToOrbit(booking.id)");
     expect(historicalRoute).not.toContain("sendNotificationEmail");
     expect(historicalPersistence).toContain('status: "paid"');
+    expect(historicalPersistence).toContain("canReconcileHistoricalCommissionClaim(existingClaim)");
+    expect(historicalPersistence).toContain("topUpAmountPence: null");
     expect(historicalPersistence).toContain('currentStage: "Commission Paid"');
     expect(historicalPersistence).toContain("pipelineHistory");
     expect(historicalPersistence).toContain("auditNote");
     expect(adminBookingSource).toContain("Record Historic Commission Paid");
     expect(adminBookingSource).toContain("already paid outside the Portal");
+    expect(adminBookingSource).toContain("old pending or top-up marker");
   });
 
   it("opens agent-ready unclaimed bookings in a separate browser tab", () => {

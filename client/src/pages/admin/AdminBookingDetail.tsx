@@ -2752,8 +2752,8 @@ export default function AdminBookingDetail() {
               <CheckCircle2 size={18} /> Record Historic Commission Paid
             </DialogTitle>
             <DialogDescription className="space-y-2 pt-2 text-sm leading-relaxed">
-              <span className="block">Use this only for a commission already paid outside the Portal where this booking has no commission claim record.</span>
-              <span className="block">It creates one paid commission record, moves the booking to <strong>Commission Paid</strong>, and leaves a private audit note. It does not email the agent or create a payment run.</span>
+              <span className="block">Use this only for a commission already paid outside the Portal. If the file only has an old pending or top-up marker with no payment history, it will be safely reconciled into this historic paid record.</span>
+              <span className="block">It creates or reconciles one paid commission record, moves the booking to <strong>Commission Paid</strong>, and leaves a private audit note. It does not email the agent or create a payment run.</span>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
