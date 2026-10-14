@@ -135,6 +135,11 @@ export const MERGE_TAGS = [
   { label: "Email", token: "{{email}}", example: "max@example.com" },
 ];
 
+const PROSPECT_LINK_MERGE_TAGS = [
+  { label: "Secure application link", token: "{{application_link}}", example: "A personal application form" },
+  { label: "Discovery-call booking link", token: "{{discovery_call_link}}", example: "The JLT booking page" },
+];
+
 /**
  * Replace merge tags in HTML with real recipient values.
  * Called by the send engine before wrapping in the branded template.
@@ -182,6 +187,8 @@ interface RichEmailEditorProps {
   onChange: (html: string) => void;
   placeholder?: string;
   className?: string;
+  /** Adds secure, prospect-only links to the personalisation and CTA controls. */
+  showProspectLinks?: boolean;
   /** Keeps useful document formatting when staff paste into long-form Academy lessons. */
   preserveClipboardFormatting?: boolean;
 }
@@ -317,7 +324,7 @@ function insertLessonHtmlIntoView(view: any, html: string) {
   view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView());
 }
 
-export function RichEmailEditor({ value, onChange, placeholder = "Compose your email…", className, preserveClipboardFormatting = false }: RichEmailEditorProps) {
+export function RichEmailEditor({ value, onChange, placeholder = "Compose your email…", className, showProspectLinks = false, preserveClipboardFormatting = false }: RichEmailEditorProps) {
   const [imageUploading, setImageUploading] = useState(false);
   const uploadImageMutation = trpc.crm.emailBranding.uploadImage.useMutation();
   const [linkDialog, setLinkDialog] = useState(false);
@@ -492,6 +499,10 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
     ).run();
     setMergeTagOpen(false);
   }
+
+  const availableMergeTags = showProspectLinks
+    ? [...MERGE_TAGS, ...PROSPECT_LINK_MERGE_TAGS]
+    : MERGE_TAGS;
 
   const ToolbarBtn = ({ active, onClick, title, children }: { active?: boolean; onClick: () => void; title: string; children: React.ReactNode }) => (
     <button
@@ -700,7 +711,7 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
           {mergeTagOpen && (
             <div className="absolute left-0 top-full mt-1 z-50 bg-background border rounded-lg shadow-lg py-1 w-52">
               <p className="text-xs text-muted-foreground px-3 py-1.5 font-medium border-b">Personalisation Tags</p>
-              {MERGE_TAGS.map((tag) => (
+              {availableMergeTags.map((tag) => (
                 <button
                   key={tag.token}
                   type="button"
@@ -713,7 +724,7 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
               ))}
               <div className="border-t px-3 py-2">
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Tags are replaced with the recipient's real name when the email is sent.
+                  Tags are replaced safely for each recipient when the email is sent.
                 </p>
               </div>
             </div>
@@ -805,6 +816,16 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
                 <label className="text-xs text-muted-foreground mb-1 block">Link URL</label>
                 <Input value={buttonUrl} onChange={(e) => setButtonUrl(e.target.value)} placeholder="https://..." />
               </div>
+              {showProspectLinks && (
+                <div className="rounded-md border bg-muted/30 p-2.5 space-y-1.5">
+                  <p className="text-xs font-medium">Prospect campaign links</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setButtonUrl("{{application_link}}")}>Use secure application link</Button>
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setButtonUrl("{{discovery_call_link}}")}>Use discovery-call link</Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">The application link is unique to each prospect; both links are tracked in campaign reporting.</p>
+                </div>
+              )}
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="text-xs text-muted-foreground mb-1 block">Background colour</label>

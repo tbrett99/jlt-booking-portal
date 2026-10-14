@@ -11,6 +11,13 @@ import { eq, isNotNull, inArray } from "drizzle-orm";
 import crypto from "crypto";
 import { getEmailBrandingSettings } from "./crm-db";
 import type { EmailBrandingSettings } from "../drizzle/schema";
+import {
+  encodeApplicationToken,
+  extractApplicationToken,
+  getRecruitmentProspectById,
+  updateRecruitmentProspect,
+} from "./recruitment-db";
+import { nanoid } from "nanoid";
 
 /**
  * Log a campaign email sent to an agent into the agent_emails audit table.
@@ -43,18 +50,102 @@ async function logCampaignEmailToAudit(params: {
   }
 }
 
+export const DISCOVERY_CALL_BOOKING_URL = "https://cal.com/jlt-group/jlt-discovery";
+
+export type MarketingMergeValues = {
+  applicationLink?: string;
+  discoveryCallLink?: string;
+};
+
 /**
- * Replace {{first_name}}, {{full_name}}, {{email}} merge tags with real values.
- * Mirrors the client-side applyMergeTags helper in RichEmailEditor.tsx.
+ * Campaigns created before the Email Marketing composer supported secure links
+ * can use the existing workflow-style camelCase tags. Keep both forms valid so
+ * staff never send a literal placeholder by mistake.
  */
-function applyMergeTags(html: string, recipient: { name?: string | null; email?: string | null }): string {
+export function hasApplicationLinkMergeTag(content: string): boolean {
+  return /\{\{application(?:_|)link\}\}/i.test(content);
+}
+
+/**
+ * Replace email campaign merge tags with the recipient's safe values.
+ * This deliberately runs server-side, immediately before email delivery: an
+ * individual application token is never stored in the campaign definition.
+ */
+export function applyMarketingMergeTags(
+  html: string,
+  recipient: { name?: string | null; email?: string | null },
+  values: MarketingMergeValues = {},
+): string {
   const fullName = recipient.name?.trim() ?? "";
   const firstName = fullName.split(" ")[0] ?? fullName;
   const email = recipient.email ?? "";
+  const applicationLink = values.applicationLink ?? "";
+  const discoveryCallLink = values.discoveryCallLink ?? DISCOVERY_CALL_BOOKING_URL;
   return html
     .replace(/\{\{first_name\}\}/gi, firstName || fullName || "there")
     .replace(/\{\{full_name\}\}/gi, fullName || firstName || "there")
-    .replace(/\{\{email\}\}/gi, email);
+    .replace(/\{\{email\}\}/gi, email)
+    .replace(/\{\{application_link\}\}/gi, applicationLink)
+    .replace(/\{\{applicationLink\}\}/g, applicationLink)
+    .replace(/\{\{discovery_call_link\}\}/gi, discoveryCallLink)
+    .replace(/\{\{discoveryCallLink\}\}/g, discoveryCallLink);
+}
+
+/**
+ * Retrieves or creates the application token for the queued recruitment
+ * prospect. The recipient email is checked as a defensive guard against a
+ * stale/mismatched queued recipient ID before a private link is produced.
+ */
+export async function getCampaignProspectMergeValues(opts: {
+  recipientId?: number | null;
+  recipientEmail: string;
+  baseUrl: string;
+}): Promise<MarketingMergeValues> {
+  if (!opts.recipientId) {
+    throw new Error("A secure application link needs a recruitment prospect record");
+  }
+
+  const prospect = await getRecruitmentProspectById(opts.recipientId);
+  if (!prospect || prospect.email.trim().toLowerCase() !== opts.recipientEmail.trim().toLowerCase()) {
+    throw new Error("Could not verify the recruitment prospect for the secure application link");
+  }
+
+  let token = extractApplicationToken(prospect.adminNotes);
+  if (!token) {
+    token = nanoid(32);
+    await updateRecruitmentProspect(
+      prospect.id,
+      { adminNotes: encodeApplicationToken(token, prospect.adminNotes) },
+    );
+  }
+
+  const baseUrl = opts.baseUrl.replace(/\/+$/, "");
+  return {
+    applicationLink: `${baseUrl}/apply/form?token=${encodeURIComponent(token)}`,
+    discoveryCallLink: DISCOVERY_CALL_BOOKING_URL,
+  };
+}
+
+export async function getCampaignRecipientMergeValues(opts: {
+  audienceType: "prospect" | "agent";
+  subject: string;
+  bodyHtml: string;
+  recipientId?: number | null;
+  recipientEmail: string;
+  baseUrl: string;
+}): Promise<MarketingMergeValues> {
+  const needsApplicationLink = hasApplicationLinkMergeTag(opts.subject) || hasApplicationLinkMergeTag(opts.bodyHtml);
+  if (!needsApplicationLink) {
+    return { discoveryCallLink: DISCOVERY_CALL_BOOKING_URL };
+  }
+  if (opts.audienceType !== "prospect") {
+    throw new Error("Secure application links can only be sent in prospect campaigns");
+  }
+  return getCampaignProspectMergeValues({
+    recipientId: opts.recipientId,
+    recipientEmail: opts.recipientEmail,
+    baseUrl: opts.baseUrl,
+  });
 }
 
 // Lazy-init Resend client
@@ -342,6 +433,7 @@ export async function sendMarketingEmail(opts: {
   dripStepId?: number;
   enrollmentId?: number;
   baseUrl: string;
+  mergeValues?: MarketingMergeValues;
 }): Promise<{ sendId: number; success: boolean; error?: string }> {
   const sendId = await createSendRecord({
     campaignId: opts.campaignId,
@@ -364,9 +456,11 @@ export async function sendMarketingEmail(opts: {
   // Load branding settings (cached per process — acceptable for email sends)
   const branding = await getEmailBrandingSettings();
 
-  // Apply personalisation merge tags ({{first_name}}, {{full_name}}, {{email}})
-  const personalisedBody = applyMergeTags(opts.bodyHtml, { name: opts.toName, email: opts.to });
-  const personalisedSubject = applyMergeTags(opts.subject, { name: opts.toName, email: opts.to });
+  // Apply personalisation immediately before delivery. Campaign callers supply
+  // recipient-specific secure links; ordinary marketing/drip callers retain the
+  // original name/email behaviour and may also use the standard call booking link.
+  const personalisedBody = applyMarketingMergeTags(opts.bodyHtml, { name: opts.toName, email: opts.to }, opts.mergeValues);
+  const personalisedSubject = applyMarketingMergeTags(opts.subject, { name: opts.toName, email: opts.to }, opts.mergeValues);
 
   // Wrap in branded template
   let html = wrapInBrandedTemplate({
@@ -582,13 +676,31 @@ export async function processCampaignQueue(
       );
     }
 
+    const baseUrl = process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk";
+    let mergeValues: MarketingMergeValues;
+    try {
+      mergeValues = await getCampaignRecipientMergeValues({
+        audienceType,
+        subject: campaign.subject,
+        bodyHtml: campaign.bodyHtml,
+        recipientId: row.recipientId,
+        recipientEmail: row.recipientEmail,
+        baseUrl,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not personalise campaign links";
+      await updateSendStatus(row.id, "failed", undefined, message);
+      failed++;
+      continue;
+    }
+
     const branding = await getEmailBrandingSettings();
-    const personalisedBody = applyMergeTags(campaign.bodyHtml, { name: row.recipientName, email: row.recipientEmail });
-    const personalisedSubject = applyMergeTags(campaign.subject, { name: row.recipientName, email: row.recipientEmail });
+    const personalisedBody = applyMarketingMergeTags(campaign.bodyHtml, { name: row.recipientName, email: row.recipientEmail }, mergeValues);
+    const personalisedSubject = applyMarketingMergeTags(campaign.subject, { name: row.recipientName, email: row.recipientEmail }, mergeValues);
 
     let html = wrapInBrandedTemplate({ bodyHtml: personalisedBody, audienceType, unsubscribeUrl, branding });
-    html = injectOpenPixel(html, row.id, process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk");
-    html = injectClickTracking(html, row.id, process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk");
+    html = injectOpenPixel(html, row.id, baseUrl);
+    html = injectClickTracking(html, row.id, baseUrl);
 
     try {
       const resend = getResend();

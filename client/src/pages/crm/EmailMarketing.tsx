@@ -380,7 +380,17 @@ function CampaignFormDialog({
             {previewMode ? (
               <EmailPreviewPanel bodyHtml={form.bodyHtml} />
             ) : (
-              <RichEmailEditor value={form.bodyHtml} onChange={(html) => setForm((f) => ({ ...f, bodyHtml: html }))} className="mt-1" />
+              <RichEmailEditor
+                value={form.bodyHtml}
+                onChange={(html) => setForm((f) => ({ ...f, bodyHtml: html }))}
+                className="mt-1"
+                showProspectLinks={form.audienceType === "prospect"}
+              />
+            )}
+            {form.audienceType === "prospect" && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Use the person icon or the CTA button tool to add a <strong>secure application link</strong> or the standard <strong>discovery-call booking link</strong>. Application links are personalised for each prospect only when the campaign is sent.
+              </p>
             )}
           </div>
         </div>
@@ -469,7 +479,12 @@ function TemplateFormDialog({
             {previewMode ? (
               <EmailPreviewPanel bodyHtml={form.bodyHtml} />
             ) : (
-              <RichEmailEditor value={form.bodyHtml} onChange={(html) => setForm((f) => ({ ...f, bodyHtml: html }))} className="mt-1" />
+              <RichEmailEditor
+                value={form.bodyHtml}
+                onChange={(html) => setForm((f) => ({ ...f, bodyHtml: html }))}
+                className="mt-1"
+                showProspectLinks={form.audienceType === "prospect"}
+              />
             )}
           </div>
         </div>

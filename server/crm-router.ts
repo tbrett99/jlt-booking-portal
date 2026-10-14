@@ -80,7 +80,11 @@ import {
 import { getAllUsers, getUserByEmail } from "./db";
 import { storagePut } from "./storage";
 import { sendDirectEmail } from "./email";
-import { enqueueCampaignRecipients } from "./resend-email";
+import {
+  enqueueCampaignRecipients,
+  getCampaignRecipientMergeValues,
+  hasApplicationLinkMergeTag,
+} from "./resend-email";
 import { createInAppNotification } from "./db";
 import { grantAcademyAccess } from "./academy-router";
 import {
@@ -3043,6 +3047,13 @@ export const crmRouter = router({
         const campaign = await getCampaignById(input.campaignId);
         if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
         if (campaign.status === "sent") throw new TRPCError({ code: "BAD_REQUEST", message: "Campaign already sent" });
+        const usesSecureApplicationLink = hasApplicationLinkMergeTag(campaign.subject) || hasApplicationLinkMergeTag(campaign.bodyHtml);
+        if (usesSecureApplicationLink && campaign.audienceType !== "prospect") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Secure application links can only be used in prospect campaigns",
+          });
+        }
 
         // Build recipient list from segmentFilters
         const rawFilters = campaign.segmentFilters ? JSON.parse(campaign.segmentFilters) : {};
@@ -3278,6 +3289,15 @@ export const crmRouter = router({
         const campaign = await getCampaignById(send.campaignId!);
         if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
         const { sendMarketingEmail } = await import("./resend-email");
+        const baseUrl = process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk";
+        const mergeValues = await getCampaignRecipientMergeValues({
+          audienceType: campaign.audienceType as "prospect" | "agent",
+          subject: campaign.subject,
+          bodyHtml: campaign.bodyHtml,
+          recipientId: send.recipientId,
+          recipientEmail: send.recipientEmail,
+          baseUrl,
+        });
         await sendMarketingEmail({
           to: send.recipientEmail,
           toName: send.recipientName ?? undefined,
@@ -3287,7 +3307,8 @@ export const crmRouter = router({
           campaignId: campaign.id,
           recipientId: send.recipientId ?? undefined,
           recipientType: campaign.audienceType as "prospect" | "agent",
-          baseUrl: process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk",
+          baseUrl,
+          mergeValues,
         });
         return { success: true };
       }),
@@ -3309,6 +3330,15 @@ export const crmRouter = router({
         for (let i = 0; i < unopened.length; i++) {
           const s = unopened[i];
           try {
+            const baseUrl = process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk";
+            const mergeValues = await getCampaignRecipientMergeValues({
+              audienceType: campaign.audienceType as "prospect" | "agent",
+              subject: campaign.subject,
+              bodyHtml: campaign.bodyHtml,
+              recipientId: s.recipientId,
+              recipientEmail: s.recipientEmail,
+              baseUrl,
+            });
             await sendMarketingEmail({
               to: s.recipientEmail,
               toName: s.recipientName ?? undefined,
@@ -3318,7 +3348,8 @@ export const crmRouter = router({
               campaignId: campaign.id,
               recipientId: s.recipientId ?? undefined,
               recipientType: campaign.audienceType as "prospect" | "agent",
-              baseUrl: process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk",
+              baseUrl,
+              mergeValues,
             });
             sent++;
           } catch { /* continue on individual failure */ }
