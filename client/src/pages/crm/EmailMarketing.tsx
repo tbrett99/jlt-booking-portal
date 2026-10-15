@@ -4,6 +4,7 @@
  */
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { normaliseMarketingEmailHtml } from "@shared/marketing-email-html";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -122,7 +123,7 @@ function EmailPreviewPanel({ bodyHtml }: { bodyHtml: string }) {
     .email-body h3 { font-size: 15px; font-weight: 700; margin: 0 0 8px 0; }
     .email-body a { color: #02E6D2; }
     .email-body strong { font-weight: 700; }
-  </style><div class="email-body">${bodyHtml}</div>`;
+  </style><div class="email-body">${normaliseMarketingEmailHtml(bodyHtml)}</div>`;
 
   return (
     <div className="border rounded-lg overflow-hidden">

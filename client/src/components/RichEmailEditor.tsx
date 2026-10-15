@@ -18,6 +18,7 @@ import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import { TableKit } from "@tiptap/extension-table";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { useEffect, useRef, useState } from "react";
+import { plainTextToMarketingEmailHtml } from "@shared/marketing-email-html";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -66,54 +67,65 @@ const FontSize = TextStyle.extend({
 const ButtonBlock = Node.create({
   name: "buttonBlock",
   group: "block",
-  content: "inline*",
-  atom: false,
+  atom: true,
   addAttributes() {
     return {
       href: { default: "#" },
       bgColor: { default: "#02E6D2" },
       textColor: { default: "#414141" },
+      label: { default: "Click here" },
     };
   },
   parseHTML() {
-    return [{ tag: "div[data-button-block]" }];
+    return [{
+      tag: "div[data-button-block]",
+      getAttrs: (element) => {
+        const button = element.querySelector("a");
+        const style = button?.getAttribute("style") ?? "";
+        const getStyle = (property: string) => style.match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, "i"))?.[1]?.trim();
+        return {
+          href: button?.getAttribute("href") ?? "#",
+          bgColor: getStyle("background") ?? getStyle("background-color") ?? "#02E6D2",
+          textColor: getStyle("color") ?? "#414141",
+          label: element.getAttribute("data-button-label") ?? element.textContent?.trim() ?? "Click here",
+        };
+      },
+    }];
   },
-  renderHTML({ HTMLAttributes, node }) {
+  renderHTML({ HTMLAttributes }) {
     return [
       "div",
-      mergeAttributes({ "data-button-block": "true", style: "text-align:center;margin:16px 0;" }),
+      mergeAttributes({
+        "data-button-block": "true",
+        "data-button-label": HTMLAttributes.label,
+        "data-button-href": HTMLAttributes.href,
+        "data-button-bg": HTMLAttributes.bgColor,
+        "data-button-text-color": HTMLAttributes.textColor,
+        style: "text-align:center;margin:16px 0;",
+      }),
       [
         "a",
         {
           href: HTMLAttributes.href,
           style: `display:inline-block;padding:12px 28px;background:${HTMLAttributes.bgColor};color:${HTMLAttributes.textColor};font-weight:600;border-radius:6px;text-decoration:none;font-family:Poppins,Arial,sans-serif;`,
         },
-        0,
+        HTMLAttributes.label,
       ],
     ];
   },
   addNodeView() {
-    return ({ node, getPos, editor }) => {
+    return ({ node }) => {
       const dom = document.createElement("div");
       dom.style.cssText = "text-align:center;margin:16px 0;";
 
       const btn = document.createElement("a");
       btn.href = node.attrs.href;
       btn.style.cssText = `display:inline-block;padding:12px 28px;background:${node.attrs.bgColor};color:${node.attrs.textColor};font-weight:600;border-radius:6px;text-decoration:none;font-family:Poppins,Arial,sans-serif;cursor:text;`;
-      btn.contentEditable = "true";
+      btn.textContent = node.attrs.label;
+      btn.contentEditable = "false";
 
       dom.appendChild(btn);
-
-      btn.addEventListener("input", () => {
-        const pos = typeof getPos === "function" ? getPos() : null;
-        if (pos !== null && pos !== undefined) {
-          const tr = editor.state.tr;
-          tr.insertText(btn.innerText, pos + 1, pos + 1 + node.content.size);
-          editor.view.dispatch(tr);
-        }
-      });
-
-      return { dom, contentDOM: btn };
+      return { dom };
     };
   },
 });
@@ -383,7 +395,18 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
           return true;
         },
       },
-    } : {}),
+    } : {
+      editorProps: {
+        handlePaste: (view, event) => {
+          const html = event.clipboardData?.getData("text/html").trim() ?? "";
+          const text = event.clipboardData?.getData("text/plain").trim() ?? "";
+          if (!text || html) return false;
+          event.preventDefault();
+          insertLessonHtmlIntoView(view, plainTextToMarketingEmailHtml(text));
+          return true;
+        },
+      },
+    }),
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
     },
@@ -484,8 +507,10 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
 
   function insertButtonBlock() {
     if (!buttonText || !buttonUrl) return;
-    const html = `<div data-button-block="true" style="text-align:center;margin:16px 0;"><a href="${buttonUrl}" style="display:inline-block;padding:12px 28px;background:${buttonBg};color:${buttonTextColor};font-weight:600;border-radius:6px;text-decoration:none;font-family:Poppins,Arial,sans-serif;">${buttonText}</a></div>`;
-    editor?.chain().focus().insertContent(html).run();
+    editor?.chain().focus().insertContent({
+      type: "buttonBlock",
+      attrs: { href: buttonUrl, bgColor: buttonBg, textColor: buttonTextColor, label: buttonText },
+    }).run();
     setButtonDialog(false);
     setButtonText("Click here");
     setButtonUrl("https://");
@@ -494,9 +519,7 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
   }
 
   function insertMergeTag(token: string) {
-    editor?.chain().focus().insertContent(
-      `<span style="background:#e0fdf4;color:#0f766e;border-radius:3px;padding:1px 4px;font-family:monospace;font-size:0.9em;">${token}</span>`
-    ).run();
+    editor?.chain().focus().insertContent(token).run();
     setMergeTagOpen(false);
   }
 

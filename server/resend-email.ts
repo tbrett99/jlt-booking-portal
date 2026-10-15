@@ -17,6 +17,7 @@ import {
   getRecruitmentProspectById,
   updateRecruitmentProspect,
 } from "./recruitment-db";
+import { normaliseMarketingEmailHtml } from "@shared/marketing-email-html";
 import { nanoid } from "nanoid";
 
 /**
@@ -282,7 +283,7 @@ function injectOpenPixel(html: string, sendId: number, baseUrl: string): string 
 /**
  * Wrap the user-composed HTML in a branded JLT email template.
  */
-function wrapInBrandedTemplate(opts: {
+export function wrapInBrandedTemplate(opts: {
   bodyHtml: string;
   audienceType: "prospect" | "agent";
   unsubscribeUrl?: string;
@@ -477,7 +478,11 @@ export async function sendMarketingEmail(opts: {
   // Apply personalisation immediately before delivery. Campaign callers supply
   // recipient-specific secure links; ordinary marketing/drip callers retain the
   // original name/email behaviour and may also use the standard call booking link.
-  const personalisedBody = applyMarketingMergeTags(opts.bodyHtml, { name: opts.toName, email: opts.to }, opts.mergeValues);
+  const personalisedBody = applyMarketingMergeTags(
+    normaliseMarketingEmailHtml(opts.bodyHtml),
+    { name: opts.toName, email: opts.to },
+    opts.mergeValues,
+  );
   const personalisedSubject = applyMarketingMergeTags(opts.subject, { name: opts.toName, email: opts.to }, opts.mergeValues);
 
   // Wrap in branded template
@@ -714,7 +719,11 @@ export async function processCampaignQueue(
     }
 
     const branding = await getEmailBrandingSettings();
-    const personalisedBody = applyMarketingMergeTags(campaign.bodyHtml, { name: row.recipientName, email: row.recipientEmail }, mergeValues);
+    const personalisedBody = applyMarketingMergeTags(
+      normaliseMarketingEmailHtml(campaign.bodyHtml),
+      { name: row.recipientName, email: row.recipientEmail },
+      mergeValues,
+    );
     const personalisedSubject = applyMarketingMergeTags(campaign.subject, { name: row.recipientName, email: row.recipientEmail }, mergeValues);
 
     let html = wrapInBrandedTemplate({ bodyHtml: personalisedBody, audienceType, unsubscribeUrl, branding });

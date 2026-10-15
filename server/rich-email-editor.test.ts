@@ -8,9 +8,9 @@ const editorSource = readFileSync(
 );
 
 describe("RichEmailEditor configuration", () => {
-  it("does not pass undefined editor props to ordinary email editors", () => {
+  it("uses a concrete plain-text paste handler for ordinary email editors", () => {
     expect(editorSource).toContain("...(preserveClipboardFormatting ? {");
-    expect(editorSource).toContain("} : {}),");
+    expect(editorSource).toContain("plainTextToMarketingEmailHtml(text)");
     expect(editorSource).not.toContain("editorProps: preserveClipboardFormatting ?");
   });
 
