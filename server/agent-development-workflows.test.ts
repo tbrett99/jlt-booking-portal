@@ -38,6 +38,7 @@ describe("Agent accountability and engagement safeguards", () => {
     expect(router).toContain('INSERT INTO agent_engagement_cases');
     expect(router).toContain('INSERT INTO agent_engagement_interactions');
     expect(router).toContain('UPDATE agent_engagement_cases');
+    expect(router).toContain('SELECT id FROM agent_engagement_cases WHERE agentId = ? AND status <> ? LIMIT 1');
   });
 
   it("publishes scheduled weekly plans once each Monday and keeps an audit-friendly engagement timeline", () => {

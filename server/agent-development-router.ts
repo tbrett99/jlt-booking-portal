@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, inArray, isNull, lte, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte } from "drizzle-orm";
 import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
 import { createInAppNotification, getDb, getRawDbPool } from "./db";
@@ -361,13 +361,19 @@ export const agentDevelopmentRouter = router({
     }),
 
     createEngagementCase: adminProcedure.input(z.object({ agentId: z.number().int().positive(), riskReason: z.string().trim().min(3).max(10_000), ownerId: z.number().int().positive().nullable().optional(), nextFollowUpAt: z.date().nullable().optional() })).mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [agent] = await db.select({ id: users.id, role: users.role, name: users.name }).from(users).where(eq(users.id, input.agentId)).limit(1);
-      if (!agent || agent.role !== "agent") throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
-      const [existing] = await db.select().from(agentEngagementCases).where(and(eq(agentEngagementCases.agentId, input.agentId), ne(agentEngagementCases.status, "closed"))).limit(1);
-      if (existing) throw new TRPCError({ code: "CONFLICT", message: "This agent already has an active engagement case" });
       const pool = await getRawDbPool();
+      const [agentRows] = await pool.execute(
+        "SELECT id, role, name FROM users WHERE id = ? LIMIT 1",
+        [input.agentId],
+      );
+      const agent = (agentRows as Array<{ id: number; role: string; name: string | null }>)[0];
+      if (!agent || agent.role !== "agent") throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+      const [existingRows] = await pool.execute(
+        "SELECT id FROM agent_engagement_cases WHERE agentId = ? AND status <> ? LIMIT 1",
+        [input.agentId, "closed"],
+      );
+      const existing = (existingRows as Array<{ id: number }>)[0];
+      if (existing) throw new TRPCError({ code: "CONFLICT", message: "This agent already has an active engagement case" });
       const [result] = await pool.execute(
         "INSERT INTO agent_engagement_cases (agentId, riskReason, ownerId, openedById, nextFollowUpAt) VALUES (?, ?, ?, ?, ?)",
         [input.agentId, input.riskReason, input.ownerId ?? ctx.user.id, ctx.user.id, input.nextFollowUpAt ?? null],
