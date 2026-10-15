@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, inArray, isNull, lte, ne } from "drizzle-orm";
 import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
-import { createInAppNotification, getDb } from "./db";
+import { createInAppNotification, getDb, getRawDbPool } from "./db";
 import { storagePut } from "./storage";
 import {
   academyActionAssignments,
@@ -84,7 +84,12 @@ async function createAssignments(params: { planId: number; agentIds: number[]; a
   const existingIds = new Set(existing.map((item) => item.agentId));
   const targetIds = params.agentIds.filter((id) => !existingIds.has(id));
   if (!targetIds.length) return { created: 0 };
-  await db.insert(academyActionAssignments).values(targetIds.map((agentId) => ({ planId: params.planId, agentId })) as any);
+  const pool = await getRawDbPool();
+  if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  await pool.execute(
+    `INSERT INTO academy_action_assignments (planId, agentId) VALUES ${targetIds.map(() => "(?, ?)").join(", ")}`,
+    targetIds.flatMap((agentId) => [params.planId, agentId]),
+  );
   await Promise.all(targetIds.map(async (agentId) => {
     await createInAppNotification({
       userId: agentId,
@@ -106,7 +111,11 @@ async function publishPlan(planId: number, actorId: number) {
   const agentIds = await getEligibleAgentIds(plan as any, explicit.map((row) => row.agentId));
   const assignmentResult = await createAssignments({ planId: plan.id, agentIds, actorId });
   const now = new Date();
-  await db.update(academyActionPlans).set({ status: "published", publishedAt: plan.publishedAt ?? now, publishedById: plan.publishedById ?? actorId }).where(eq(academyActionPlans.id, plan.id));
+  const pool = await getRawDbPool();
+  await pool.execute(
+    "UPDATE academy_action_plans SET status = ?, publishedAt = ?, publishedById = ? WHERE id = ?",
+    ["published", plan.publishedAt ?? now, plan.publishedById ?? actorId, plan.id],
+  );
   return { created: assignmentResult.created, plan: { ...plan, status: "published" as const } };
 }
 
@@ -183,16 +192,17 @@ export const agentDevelopmentRouter = router({
       if (row.plan.requiresUpload && !fileUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Upload the requested evidence before submitting" });
       const now = new Date();
       const status = row.plan.staffReviewRequired ? "review" : "completed";
-      await db.update(academyActionAssignments).set({
-        status,
-        completionNote: note,
-        evidenceUrl: url,
-        evidenceFileUrl: fileUrl,
-        evidenceFileKey: optionalText(input.evidence.fileKey),
-        evidenceFileName: optionalText(input.evidence.fileName),
-        submittedAt: now,
-        completedAt: status === "completed" ? now : null,
-      } as any).where(eq(academyActionAssignments.id, row.assignment.id));
+      const pool = await getRawDbPool();
+      await pool.execute(
+        `UPDATE academy_action_assignments
+         SET status = ?, completionNote = ?, evidenceUrl = ?, evidenceFileUrl = ?,
+             evidenceFileKey = ?, evidenceFileName = ?, submittedAt = ?, completedAt = ?
+         WHERE id = ?`,
+        [
+          status, note, url, fileUrl, optionalText(input.evidence.fileKey), optionalText(input.evidence.fileName),
+          now, status === "completed" ? now : null, row.assignment.id,
+        ],
+      );
       await createInAppNotification({ userId: ctx.user.id, message: status === "completed" ? "Academy action marked complete. Great work." : "Academy action submitted for review.", linkUrl: "/academy/actions", isUrgent: false });
       return { status };
     }),
@@ -234,7 +244,8 @@ export const agentDevelopmentRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      if (input.audience === "selected_agents" && !input.targetAgentIds.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose at least one agent for a selected-agent action" });
+      const targetAgentIds = Array.from(new Set(input.targetAgentIds));
+      if (input.audience === "selected_agents" && !targetAgentIds.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose at least one agent for a selected-agent action" });
       if (input.assignmentTrigger === "on_accelerator_entry" && input.audience !== "agent_accelerator") throw new TRPCError({ code: "BAD_REQUEST", message: "Entry actions can only target Agent Accelerator" });
       if (input.actionType === "weekly" && (!input.publishAt || !input.dueAt)) throw new TRPCError({ code: "BAD_REQUEST", message: "Weekly actions need a Monday publish date and Sunday deadline" });
       if (input.publishAt && input.dueAt && input.dueAt < input.publishAt) throw new TRPCError({ code: "BAD_REQUEST", message: "The deadline must be after the publish date" });
@@ -255,18 +266,44 @@ export const agentDevelopmentRouter = router({
         updatedById: ctx.user.id,
       };
       let planId = input.id;
+      const pool = await getRawDbPool();
       if (planId) {
         const [plan] = await db.select().from(academyActionPlans).where(eq(academyActionPlans.id, planId)).limit(1);
         if (!plan) throw new TRPCError({ code: "NOT_FOUND", message: "Academy action plan not found" });
         if (plan.status === "published") throw new TRPCError({ code: "BAD_REQUEST", message: "Create a new plan instead of changing an action already assigned to agents" });
-        await db.update(academyActionPlans).set(payload as any).where(eq(academyActionPlans.id, planId));
-        await db.delete(academyActionPlanTargets).where(eq(academyActionPlanTargets.planId, planId));
+        await pool.execute(
+          `UPDATE academy_action_plans
+           SET title = ?, instructions = ?, actionType = ?, audience = ?, assignmentTrigger = ?, status = ?,
+               publishAt = ?, dueAt = ?, requiresNote = ?, requiresUrl = ?, requiresUpload = ?,
+               staffReviewRequired = ?, updatedById = ?
+           WHERE id = ?`,
+          [
+            payload.title, payload.instructions, payload.actionType, payload.audience, payload.assignmentTrigger, payload.status,
+            payload.publishAt, payload.dueAt, payload.requiresNote, payload.requiresUrl, payload.requiresUpload,
+            payload.staffReviewRequired, payload.updatedById, planId,
+          ],
+        );
+        await pool.execute("DELETE FROM academy_action_plan_targets WHERE planId = ?", [planId]);
       } else {
-        const result = await db.insert(academyActionPlans).values({ ...payload, createdById: ctx.user.id } as any);
+        const [result] = await pool.execute(
+          `INSERT INTO academy_action_plans (
+            title, instructions, actionType, audience, assignmentTrigger, status,
+            publishAt, dueAt, requiresNote, requiresUrl, requiresUpload, staffReviewRequired,
+            createdById, updatedById
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            payload.title, payload.instructions, payload.actionType, payload.audience, payload.assignmentTrigger, payload.status,
+            payload.publishAt, payload.dueAt, payload.requiresNote, payload.requiresUrl, payload.requiresUpload,
+            payload.staffReviewRequired, ctx.user.id, payload.updatedById,
+          ],
+        );
         planId = Number((result as any).insertId);
       }
-      if (input.audience === "selected_agents" && input.targetAgentIds.length) {
-        await db.insert(academyActionPlanTargets).values(input.targetAgentIds.map((agentId) => ({ planId: planId!, agentId })) as any);
+      if (input.audience === "selected_agents" && targetAgentIds.length) {
+        await pool.execute(
+          `INSERT INTO academy_action_plan_targets (planId, agentId) VALUES ${targetAgentIds.map(() => "(?, ?)").join(", ")}`,
+          targetAgentIds.flatMap((agentId) => [planId!, agentId]),
+        );
       }
       return { id: planId };
     }),
@@ -276,7 +313,8 @@ export const agentDevelopmentRouter = router({
     archiveActionPlan: adminProcedure.input(z.object({ planId: z.number().int().positive() })).mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      await db.update(academyActionPlans).set({ status: "archived" }).where(eq(academyActionPlans.id, input.planId));
+      const pool = await getRawDbPool();
+      await pool.execute("UPDATE academy_action_plans SET status = ? WHERE id = ?", ["archived", input.planId]);
       return { success: true };
     }),
 
@@ -294,7 +332,11 @@ export const agentDevelopmentRouter = router({
       const [assignment] = await db.select().from(academyActionAssignments).where(eq(academyActionAssignments.id, input.assignmentId)).limit(1);
       if (!assignment) throw new TRPCError({ code: "NOT_FOUND", message: "Action assignment not found" });
       const now = new Date();
-      await db.update(academyActionAssignments).set({ status: input.outcome, reviewerFeedback: optionalText(input.feedback), reviewedAt: now, reviewedById: ctx.user.id, completedAt: input.outcome === "completed" ? now : null } as any).where(eq(academyActionAssignments.id, assignment.id));
+      const pool = await getRawDbPool();
+      await pool.execute(
+        "UPDATE academy_action_assignments SET status = ?, reviewerFeedback = ?, reviewedAt = ?, reviewedById = ?, completedAt = ? WHERE id = ?",
+        [input.outcome, optionalText(input.feedback), now, ctx.user.id, input.outcome === "completed" ? now : null, assignment.id],
+      );
       await createInAppNotification({
         userId: assignment.agentId,
         message: input.outcome === "completed" ? "Your Academy action has been approved." : "Your Academy action needs an update. Read the feedback and resubmit.",
@@ -325,9 +367,16 @@ export const agentDevelopmentRouter = router({
       if (!agent || agent.role !== "agent") throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       const [existing] = await db.select().from(agentEngagementCases).where(and(eq(agentEngagementCases.agentId, input.agentId), ne(agentEngagementCases.status, "closed"))).limit(1);
       if (existing) throw new TRPCError({ code: "CONFLICT", message: "This agent already has an active engagement case" });
-      const result = await db.insert(agentEngagementCases).values({ agentId: input.agentId, riskReason: input.riskReason, ownerId: input.ownerId ?? ctx.user.id, openedById: ctx.user.id, nextFollowUpAt: input.nextFollowUpAt ?? null } as any);
+      const pool = await getRawDbPool();
+      const [result] = await pool.execute(
+        "INSERT INTO agent_engagement_cases (agentId, riskReason, ownerId, openedById, nextFollowUpAt) VALUES (?, ?, ?, ?, ?)",
+        [input.agentId, input.riskReason, input.ownerId ?? ctx.user.id, ctx.user.id, input.nextFollowUpAt ?? null],
+      );
       const id = Number((result as any).insertId);
-      await db.insert(agentCrmNotes).values({ agentUserId: input.agentId, authorId: ctx.user.id, authorName: ctx.user.name ?? "Admin", content: `[Engagement opened] ${input.riskReason}` } as any);
+      await pool.execute(
+        "INSERT INTO agent_crm_notes (agentUserId, authorId, authorName, content) VALUES (?, ?, ?, ?)",
+        [input.agentId, ctx.user.id, ctx.user.name ?? "Admin", `[Engagement opened] ${input.riskReason}`],
+      );
       return { id };
     }),
 
@@ -350,9 +399,26 @@ export const agentDevelopmentRouter = router({
       const [caseRecord] = await db.select().from(agentEngagementCases).where(eq(agentEngagementCases.id, input.caseId)).limit(1);
       if (!caseRecord) throw new TRPCError({ code: "NOT_FOUND", message: "Engagement case not found" });
       const now = new Date();
-      await db.insert(agentEngagementInteractions).values({ caseId: caseRecord.id, agentId: caseRecord.agentId, createdById: ctx.user.id, channel: input.channel, summary: input.summary, outcome: optionalText(input.outcome), occurredAt: now, nextFollowUpAt: input.nextFollowUpAt ?? null } as any);
-      await db.update(agentEngagementCases).set({ status: input.status, lastContactAt: now, nextFollowUpAt: input.status === "closed" ? null : (input.nextFollowUpAt ?? null), outcome: optionalText(input.outcome), closedAt: input.status === "closed" ? now : null, closedById: input.status === "closed" ? ctx.user.id : null } as any).where(eq(agentEngagementCases.id, caseRecord.id));
-      await db.insert(agentCrmNotes).values({ agentUserId: caseRecord.agentId, authorId: ctx.user.id, authorName: ctx.user.name ?? "Admin", content: `[Engagement · ${input.channel}] ${input.summary}${input.outcome ? `\nOutcome: ${input.outcome}` : ""}${input.nextFollowUpAt ? `\nNext follow-up: ${input.nextFollowUpAt.toLocaleDateString("en-GB")}` : ""}` } as any);
+      const pool = await getRawDbPool();
+      await pool.execute(
+        `INSERT INTO agent_engagement_interactions
+         (caseId, agentId, createdById, channel, summary, outcome, occurredAt, nextFollowUpAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [caseRecord.id, caseRecord.agentId, ctx.user.id, input.channel, input.summary, optionalText(input.outcome), now, input.nextFollowUpAt ?? null],
+      );
+      await pool.execute(
+        `UPDATE agent_engagement_cases
+         SET status = ?, lastContactAt = ?, nextFollowUpAt = ?, outcome = ?, closedAt = ?, closedById = ?
+         WHERE id = ?`,
+        [
+          input.status, now, input.status === "closed" ? null : (input.nextFollowUpAt ?? null), optionalText(input.outcome),
+          input.status === "closed" ? now : null, input.status === "closed" ? ctx.user.id : null, caseRecord.id,
+        ],
+      );
+      await pool.execute(
+        "INSERT INTO agent_crm_notes (agentUserId, authorId, authorName, content) VALUES (?, ?, ?, ?)",
+        [caseRecord.agentId, ctx.user.id, ctx.user.name ?? "Admin", `[Engagement · ${input.channel}] ${input.summary}${input.outcome ? `\nOutcome: ${input.outcome}` : ""}${input.nextFollowUpAt ? `\nNext follow-up: ${input.nextFollowUpAt.toLocaleDateString("en-GB")}` : ""}`],
+      );
       return { success: true };
     }),
 
@@ -362,7 +428,17 @@ export const agentDevelopmentRouter = router({
       const [caseRecord] = await db.select().from(agentEngagementCases).where(eq(agentEngagementCases.id, input.caseId)).limit(1);
       if (!caseRecord) throw new TRPCError({ code: "NOT_FOUND", message: "Engagement case not found" });
       const now = new Date();
-      await db.update(agentEngagementCases).set({ status: input.status, ownerId: input.ownerId ?? caseRecord.ownerId, nextFollowUpAt: input.status === "closed" ? null : (input.nextFollowUpAt ?? caseRecord.nextFollowUpAt), riskReason: input.riskReason ?? caseRecord.riskReason, closedAt: input.status === "closed" ? now : null, closedById: input.status === "closed" ? ctx.user.id : null } as any).where(eq(agentEngagementCases.id, input.caseId));
+      const pool = await getRawDbPool();
+      await pool.execute(
+        `UPDATE agent_engagement_cases
+         SET status = ?, ownerId = ?, nextFollowUpAt = ?, riskReason = ?, closedAt = ?, closedById = ?
+         WHERE id = ?`,
+        [
+          input.status, input.ownerId ?? caseRecord.ownerId, input.status === "closed" ? null : (input.nextFollowUpAt ?? caseRecord.nextFollowUpAt),
+          input.riskReason ?? caseRecord.riskReason, input.status === "closed" ? now : null,
+          input.status === "closed" ? ctx.user.id : null, caseRecord.id,
+        ],
+      );
       return { success: true };
     }),
 

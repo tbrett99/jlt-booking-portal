@@ -61,6 +61,7 @@ export async function getDb() {
  */
 export async function getRawDbPool() {
   await getDb();
+  if (!_pool) throw new Error("Database unavailable");
   return _pool;
 }
 

@@ -30,6 +30,16 @@ describe("Agent accountability and engagement safeguards", () => {
     expect(router).toContain('row.plan.staffReviewRequired ? "review" : "completed"');
   });
 
+  it("uses native prepared writes for Academy Actions and Engagement records on live TiDB", () => {
+    expect(router).toContain('getRawDbPool');
+    expect(router).toContain('INSERT INTO academy_action_plans');
+    expect(router).toContain('INSERT INTO academy_action_plan_targets');
+    expect(router).toContain('INSERT INTO academy_action_assignments');
+    expect(router).toContain('INSERT INTO agent_engagement_cases');
+    expect(router).toContain('INSERT INTO agent_engagement_interactions');
+    expect(router).toContain('UPDATE agent_engagement_cases');
+  });
+
   it("publishes scheduled weekly plans once each Monday and keeps an audit-friendly engagement timeline", () => {
     expect(scheduler).toContain('publishScheduledAcademyActionPlans');
     expect(scheduler).toContain('"5 8 * * 1"');
