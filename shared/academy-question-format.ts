@@ -74,3 +74,12 @@ export function splitAcademyQuestionEmphasis(text: string) {
     return { text: strong ? part.slice(2, -2) : part, strong };
   });
 }
+
+/** Supports the rich editor's safe bold and italic text markers when rendering Academy questions. */
+export function splitAcademyQuestionInlineFormatting(text: string) {
+  return text.split(/(\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_)/g).filter(Boolean).map((part) => {
+    const bold = (part.startsWith("**") && part.endsWith("**")) || (part.startsWith("__") && part.endsWith("__"));
+    const italic = !bold && ((part.startsWith("*") && part.endsWith("*")) || (part.startsWith("_") && part.endsWith("_")));
+    return { text: bold ? part.slice(2, -2) : italic ? part.slice(1, -1) : part, bold, italic };
+  });
+}

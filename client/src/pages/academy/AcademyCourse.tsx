@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { useViewMode } from "@/contexts/ViewModeContext";
-import { formatAcademyQuestionPrompt, splitAcademyQuestionEmphasis } from "@shared/academy-question-format";
+import { formatAcademyQuestionPrompt, splitAcademyQuestionInlineFormatting } from "@shared/academy-question-format";
 
 function countWords(value: string) {
   return value.trim() ? value.trim().split(/\s+/).length : 0;
@@ -15,7 +15,10 @@ function countWords(value: string) {
 
 function AcademyStructuredQuestion({ text, className = "" }: { text: string; className?: string }) {
   return <div className={`academy-structured-question space-y-3 ${className}`}>{formatAcademyQuestionPrompt(text).map((block, index) => {
-    const renderText = (value: string) => splitAcademyQuestionEmphasis(value).map((part, partIndex) => part.strong ? <strong key={partIndex}>{part.text}</strong> : <span key={partIndex}>{part.text}</span>);
+    const renderText = (value: string) => splitAcademyQuestionInlineFormatting(value).map((part, partIndex) => {
+      const content = part.text.split("\n").map((line, lineIndex) => <span key={lineIndex}>{line}{lineIndex < part.text.split("\n").length - 1 && <br />}</span>);
+      return part.bold ? <strong key={partIndex}>{content}</strong> : part.italic ? <em key={partIndex}>{content}</em> : <span key={partIndex}>{content}</span>;
+    });
     if (block.type === "heading") return <p key={index} className="font-semibold leading-6">{renderText(block.text)}</p>;
     if (block.type === "bullet_list") return <ul key={index} className="list-disc space-y-1 pl-5 leading-6">{block.items.map((item, itemIndex) => <li key={itemIndex}>{renderText(item)}</li>)}</ul>;
     if (block.type === "numbered_list") return <ol key={index} className="list-decimal space-y-1 pl-5 leading-6">{block.items.map((item, itemIndex) => <li key={itemIndex}>{renderText(item)}</li>)}</ol>;

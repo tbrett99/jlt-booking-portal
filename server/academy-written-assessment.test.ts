@@ -7,6 +7,7 @@ const migration = readFileSync(resolve(process.cwd(), "drizzle/0150_gigantic_sha
 const router = readFileSync(resolve(process.cwd(), "server/academy-router.ts"), "utf8");
 const manager = readFileSync(resolve(process.cwd(), "client/src/pages/admin/AdminAcademy.tsx"), "utf8");
 const learner = readFileSync(resolve(process.cwd(), "client/src/pages/academy/AcademyCourse.tsx"), "utf8");
+const richEditor = readFileSync(resolve(process.cwd(), "client/src/components/AcademyQuestionRichTextEditor.tsx"), "utf8");
 
 describe("JLT Academy written assessment safeguards", () => {
   it("stores written submissions and marking separately from auto-graded attempts", () => {
@@ -51,5 +52,14 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(learner).toContain('AcademyStructuredQuestion text={question.prompt}');
     expect(router).toContain('explanation: question.explanation');
     expect(router).toContain('admin-only queue');
+  });
+
+  it("uses a safe rich editor for written questions and marking guides", () => {
+    expect(manager).toContain("AcademyQuestionRichTextEditor");
+    expect(richEditor).toContain("Paste from Word, Google Docs or ChatGPT");
+    expect(richEditor).toContain('toggleBold');
+    expect(richEditor).toContain('toggleItalic');
+    expect(richEditor).toContain('toggleBulletList');
+    expect(richEditor).toContain('toggleOrderedList');
   });
 });
