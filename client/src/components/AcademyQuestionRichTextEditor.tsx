@@ -1,10 +1,22 @@
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
+import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { useEffect, useRef } from "react";
 import { Bold, Heading2, Italic, List, ListOrdered, Redo2, Undo2 } from "lucide-react";
 import { academyQuestionHtmlToText, academyQuestionTextToHtml } from "@shared/academy-question-rich-text";
 import { cn } from "@/lib/utils";
+
+function insertQuestionHtml(view: any, html: string) {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+  const slice = ProseMirrorDOMParser.fromSchema(view.state.schema).parseSlice(container);
+  view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView());
+}
+
+function hasMeaningfulClipboardFormatting(html: string) {
+  return /<(?:h[1-6]|strong|b|em|i|ul|ol|li|br)\b/i.test(html);
+}
 
 export function AcademyQuestionRichTextEditor({
   value,
@@ -30,6 +42,17 @@ export function AcademyQuestionRichTextEditor({
       attributes: {
         class: "academy-question-rich-editor min-h-[180px] px-3 py-2 text-sm leading-6 focus:outline-none",
         "aria-label": label,
+      },
+      // ProseMirror's default plain-text paste parser collapses a single return
+      // into whitespace. Academy prompts commonly use one return per question
+      // or marking criterion, so preserve each one as a safe <br> instead.
+      handlePaste: (view, event) => {
+        const html = event.clipboardData?.getData("text/html").trim() ?? "";
+        const text = event.clipboardData?.getData("text/plain") ?? "";
+        if (!text.trim() || (html && hasMeaningfulClipboardFormatting(html))) return false;
+        event.preventDefault();
+        insertQuestionHtml(view, academyQuestionTextToHtml(text));
+        return true;
       },
     },
     onUpdate: ({ editor }) => {

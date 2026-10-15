@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatAcademyQuestionPrompt, splitAcademyQuestionEmphasis, splitAcademyQuestionInlineFormatting } from "../shared/academy-question-format";
+import { academyQuestionTextToHtml } from "../shared/academy-question-rich-text";
 
 describe("Academy written-question formatting", () => {
   it("keeps headings, paragraph breaks, bullets and numbered steps separate", () => {
@@ -39,5 +40,11 @@ describe("Academy written-question formatting", () => {
       { text: "explain why", bold: false, italic: true },
       { text: ".", bold: false, italic: false },
     ]);
+  });
+
+  it("keeps every single pasted line break inside an Academy prompt", () => {
+    expect(academyQuestionTextToHtml("Tell us:\nWho is travelling?\nWhat are their ages?")).toBe(
+      "<p>Tell us:<br>Who is travelling?<br>What are their ages?</p>",
+    );
   });
 });
