@@ -589,7 +589,6 @@ export const dashboardRouter = router({
           WHERE finalSupplierPaymentDate IS NOT NULL
             AND finalSupplierPaymentDate <= CURDATE()
             AND currentStage IN ('Added to PTS','Commission Ready for Review')
-            AND (isPersonalBooking IS NULL OR isPersonalBooking = 0)
             AND NOT EXISTS (
               SELECT 1
               FROM commission_claims

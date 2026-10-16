@@ -3425,7 +3425,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       .input(z.object({
         bookingId: z.number(),
         bookingType: z.enum(["lapland", "cruise", "disney", "other"]).default("other"),
-        grossAmount: z.number().positive({ message: "Please enter your expected gross commission amount" }),
+        grossAmount: z.number().min(0, { message: "Enter the expected gross commission amount, or £0 where no commission is due" }),
         bookingCompleteConfirmed: z.boolean().refine((value) => value, {
           message: "Confirm that the booking is complete before claiming commission",
         }),
@@ -4161,8 +4161,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       const agentBookings = allBookings.filter((b) =>
         b.agentId === ctx.user.id &&
         (b as any).finalSupplierPaymentDate &&
-        !terminalStages.includes(b.currentStage) &&
-        !(b as any).isPersonalBooking
+        !terminalStages.includes(b.currentStage)
       );
       return agentBookings.map((b) => {
         const claim = allClaims.find((c) => c.bookingId === b.id && c.status !== 'paid');

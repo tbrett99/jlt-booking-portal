@@ -27,7 +27,9 @@ async function resolveQueueActorId(movedById: number | null | undefined) {
 }
 
 /**
- * Move only genuinely due, non-personal bookings into the staff review queue.
+ * Move every genuinely due booking into the staff review queue, including
+ * personal bookings. A personal booking may have a £0 claim, but it still
+ * needs the same recorded review and completion trail.
  * This deliberately stops at review: a staff member must explicitly confirm
  * the file before the agent is invited to claim commission.
  */

@@ -168,7 +168,7 @@ export default function RegisterBooking() {
                 <div>
                   <span className="text-sm font-semibold">This is my personal booking</span>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Tick this if you are a passenger on this booking. No commission will be claimed.
+                    Tick this if you are a passenger on this booking. It follows the same Commission Due and claim process; enter £0 when no commission is due.
                   </p>
                 </div>
               </label>

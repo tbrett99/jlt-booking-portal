@@ -19,6 +19,7 @@ const agentBookingSource = readProjectFile("client/src/pages/agent/AgentBookingD
 const adminBookingSource = readProjectFile("client/src/pages/admin/AdminBookingDetail.tsx");
 const remittanceRouterSource = readProjectFile("server/remittance-router.ts");
 const schemaSource = readProjectFile("drizzle/schema.ts");
+const schedulerSource = readProjectFile("server/scheduler.ts");
 
 describe("commission payment lifecycle", () => {
   it("keeps a processed claim in the due-for-payment stage until payment is confirmed", () => {
@@ -69,6 +70,10 @@ describe("commission payment lifecycle", () => {
       ...baseBooking,
       currentStage: "Commission Ready for Review",
     }, now)).toBe(true);
+    expect(isBookingReadyForCommissionReview({
+      ...baseBooking,
+      isPersonalBooking: true,
+    }, now)).toBe(true);
     expect(routerSource).toContain("queueBookingForCommissionReview(bookingId, ctx.user.id)");
     expect(routerSource).toContain("it never makes the booking claimable without a human review");
   });
@@ -76,6 +81,7 @@ describe("commission payment lifecycle", () => {
   it("keeps historic agent-ready files separate from new staff review work", () => {
     expect(dbSource).toContain("export async function getAgentReadyUnclaimedBookings()");
     expect(dbSource).toContain('eq(bookings.currentStage, "Commission Claimable")');
+    expect(dbSource).not.toContain("const eligibleRows = rows.filter((booking) => !booking.isPersonalBooking)");
     expect(workflowSource).toContain("COMMISSION_REVIEW_ELIGIBLE_STAGES");
     expect(routerSource).toContain("agentReadyUnclaimed: adminProcedure.query");
     expect(adminCommissionsSource).toContain("Agent-ready, not yet claimed");
@@ -137,6 +143,7 @@ describe("commission payment lifecycle", () => {
     expect(dashboardSource).toContain("currentStage IN ('Added to PTS','Commission Ready for Review')");
     expect(dashboardSource).toContain("FROM commission_claims");
     expect(dashboardSource).toContain("WHERE commission_claims.bookingId = bookings.id");
+    expect(dashboardSource).not.toContain("AND (isPersonalBooking IS NULL OR isPersonalBooking = 0)");
     expect(dashboardSource).not.toContain("currentStage NOT IN ('Commission Claimable','Commission Claimed','Commission Due for Payment','Commission Paid','Cancelled')");
   });
 
@@ -185,6 +192,23 @@ describe("commission payment lifecycle", () => {
     expect(preAuthWorkflow).toContain('"awaiting_payment"');
     expect(preAuthWorkflow).toContain('updateBookingStage(input.bookingId, "Commission Due for Payment", ctx.user.id)');
     expect(preAuthWorkflow).toContain('triggerKey: "commission_due_for_payment"');
+  });
+
+  it("allows every booking type to complete the same claim record, including a £0 personal booking", () => {
+    const claimRoute = routerSource.slice(
+      routerSource.indexOf("claim: protectedProcedure"),
+      routerSource.indexOf("myCommissions: protectedProcedure"),
+    );
+
+    expect(claimRoute).toContain('grossAmount: z.number().min(0');
+    expect(claimRoute).not.toContain('grossAmount: z.number().positive');
+    expect(routerSource).not.toContain('!(b as any).isPersonalBooking');
+  });
+
+  it("regularly queues already-due payment-date files for review", () => {
+    expect(schedulerSource).toContain('import { queueDueBookingsForCommissionReview } from "./commission-review-queue"');
+    expect(schedulerSource).toContain('cron.schedule("*/15 * * * *"');
+    expect(schedulerSource).toContain("await queueDueBookingsForCommissionReview()");
   });
 
   it("maps the due-for-payment stage to an awaiting-payment Orbit status", () => {

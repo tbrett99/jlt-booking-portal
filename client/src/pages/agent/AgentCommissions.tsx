@@ -138,7 +138,7 @@ export default function AgentCommissions() {
   const paid = all.filter((b) => b.claim && b.claim.status === "paid");
 
   // Bookings missing a commission amount (active, not cancelled)
-  const missingCommission = notReady.filter((b) => !b.expectedCommission);
+  const missingCommission = notReady.filter((b) => b.expectedCommission == null);
 
   // Monetary totals
   const pendingTotal = sumCommission(notReady);
@@ -160,8 +160,8 @@ export default function AgentCommissions() {
   const submitClaim = () => {
     if (!claimTarget) return;
     const amount = parseFloat(grossAmount);
-    if (!grossAmount || isNaN(amount) || amount <= 0) {
-      toast.error("Please enter your expected gross commission amount");
+    if (!grossAmount || isNaN(amount) || amount < 0) {
+      toast.error("Enter the expected gross commission amount, or £0 where no commission is due");
       return;
     }
     if (!bookingCompleteConfirmed) {
@@ -193,12 +193,12 @@ export default function AgentCommissions() {
     highlightMissing?: boolean;
   }) => (
     <div className={`flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-accent/30 transition-colors ${
-      highlightMissing && !booking.expectedCommission ? "border-amber-300" : "border-border"
+      highlightMissing && booking.expectedCommission == null ? "border-amber-300" : "border-border"
     }`}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="font-semibold text-foreground truncate">{booking.clientName}</p>
-          {highlightMissing && !booking.expectedCommission && (
+          {highlightMissing && booking.expectedCommission == null && (
             <span className="flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full"
               style={{ background: '#fef3c7', color: '#92400e' }}>
               <AlertCircle size={10} /> No amount set
@@ -1107,14 +1107,14 @@ export default function AgentCommissions() {
                   Expected Gross Commission <span className="text-red-500">*</span>
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  Enter the total commission before PTS fees, card charges, and any commission split.
+                  Enter the total commission before PTS fees, card charges, and any commission split. For a personal booking with no commission due, enter £0 to complete the required claim record.
                 </p>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
                   <Input
                     id="gross-amount"
                     type="number"
-                    min="0.01"
+                    min="0"
                     step="0.01"
                     placeholder="0.00"
                     value={grossAmount}

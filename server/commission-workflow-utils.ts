@@ -57,7 +57,10 @@ export function isBookingReadyForCommissionReview(
   },
   now: Date,
 ) {
-  if (booking.isPersonalBooking || booking.currentStage === "Cancelled") return false;
+  // Personal bookings follow the same auditable review and claim lifecycle as
+  // every other booking. Their claim value can legitimately be £0, but the
+  // booking still needs to be checked and closed through the Portal.
+  if (booking.currentStage === "Cancelled") return false;
   // Commission Claimable is a completed staff decision, not a queue state.
   // Treating historic claimable files as newly due review work inflated the
   // Commission Due queue after the workflow repair.

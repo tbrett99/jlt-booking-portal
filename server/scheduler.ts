@@ -23,6 +23,7 @@ import { importInbox, decryptPassword } from "./imap";
 import { notifyOwner } from "./_core/notification";
 import { reconcilePaymentFailureSuspensions } from "./payment-failure-reconciliation";
 import { sendOutstandingTopUpReminders } from "./commission-topup-reminders";
+import { queueDueBookingsForCommissionReview } from "./commission-review-queue";
 
 // ─── Inbox auto-import state ──────────────────────────────────────────────────
 
@@ -536,6 +537,20 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
+  // Commission Due review queue: pick up dates imported or changed outside the
+  // booking editor as well as ordinary date updates. A £0 personal-booking
+  // claim follows the same auditable review path as every other booking.
+  cron.schedule("*/15 * * * *", async () => {
+    try {
+      const result = await queueDueBookingsForCommissionReview();
+      if (result.moved > 0) {
+        console.log(`[CommissionReviewQueue] Reviewed ${result.reviewed} booking(s), moved ${result.moved} to review`);
+      }
+    } catch (err: any) {
+      console.error("[CommissionReviewQueue] Error:", err?.message);
+    }
+  }, { timezone: "UTC" });
+
   // File-in-minus / Top-Up Required reminders: Monday morning in the business
   // timezone. Each agent receives one consolidated email covering every current
   // file that needs a top-up.
@@ -657,7 +672,7 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: task reminders (hourly), payment failure reconciliation (hourly), Academy action publishing (Monday 08:05 Europe/London), Top-Up Required reminders (Monday 09:00 Europe/London), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — nightly export DISABLED, inbox auto-import DISABLED");
+  console.log("[Scheduler] Cron jobs registered: task reminders (hourly), payment failure reconciliation (hourly), Commission Due review queue (every 15 min), Academy action publishing (Monday 08:05 Europe/London), Top-Up Required reminders (Monday 09:00 Europe/London), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — nightly export DISABLED, inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────

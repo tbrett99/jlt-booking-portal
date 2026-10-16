@@ -1139,8 +1139,7 @@ export async function getAgentReadyUnclaimedBookings() {
     .from(bookings)
     .where(eq(bookings.currentStage, "Commission Claimable"))
     .orderBy(desc(bookings.finalSupplierPaymentDate));
-  const eligibleRows = rows.filter((booking) => !booking.isPersonalBooking);
-  const bookingIds = eligibleRows.map((booking) => booking.id);
+  const bookingIds = rows.map((booking) => booking.id);
   if (bookingIds.length === 0) return [];
 
   const claimedBookingIds = new Set((await db
@@ -1149,7 +1148,7 @@ export async function getAgentReadyUnclaimedBookings() {
     .where(inArray(commissionClaims.bookingId, bookingIds)))
     .map((claim) => claim.bookingId));
 
-  return eligibleRows.filter((booking) => !claimedBookingIds.has(booking.id));
+  return rows.filter((booking) => !claimedBookingIds.has(booking.id));
 }
 
 // ─── Notification Templates ───────────────────────────────────────────────────
@@ -1624,8 +1623,7 @@ export async function getPtsMissingPaymentDate() {
         eq(bookings.currentStage, "Added to PTS"),
         sql`${bookings.finalSupplierPaymentDate} IS NULL`,
         eq(bookings.paymentDateDismissed, false),
-        not(eq(bookings.currentStage, "Cancelled")),
-        eq(bookings.isPersonalBooking, false)
+        not(eq(bookings.currentStage, "Cancelled"))
       )
     )
     .orderBy(bookings.createdAt);
@@ -1651,8 +1649,7 @@ export async function getCommissionClaimableMissingPaymentDate() {
       and(
         eq(bookings.currentStage, "Commission Claimable"),
         sql`${bookings.finalSupplierPaymentDate} IS NULL`,
-        eq(bookings.paymentDateDismissed, false),
-        eq(bookings.isPersonalBooking, false)
+        eq(bookings.paymentDateDismissed, false)
       )
     )
     .orderBy(bookings.createdAt);
