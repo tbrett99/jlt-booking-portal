@@ -213,6 +213,7 @@ export default function AdminMessages() {
       return (
         t.clientName.toLowerCase().includes(q) ||
         t.agentName.toLowerCase().includes(q) ||
+        t.latestAuthorName.toLowerCase().includes(q) ||
         (t.ptsRef ?? "").toLowerCase().includes(q) ||
         (t.topdogRef ?? "").toLowerCase().includes(q) ||
         t.latestMessage.toLowerCase().includes(q)
