@@ -197,13 +197,16 @@ export default function AdminMessages() {
     onError: (e) => toast.error(e.message),
   });
 
+  const isSearching = search.trim().length > 0;
   const sortedThreads = [...threads].sort((a, b) => {
     const oldestFirst = new Date(a.latestMessageAt).getTime() - new Date(b.latestMessageAt).getTime();
     return messageOrder === "oldest" ? oldestFirst : -oldestFirst;
   });
 
   const baseFiltered = sortedThreads.filter((t) => {
-    if (filter === "unread" && t.unreadCount === 0) return false;
+    // A targeted search must also find a thread mistakenly marked as read,
+    // without forcing staff to render the full historic message archive.
+    if (filter === "unread" && !isSearching && t.unreadCount === 0) return false;
     if (tagFilter && t.tag !== tagFilter) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -270,6 +273,11 @@ export default function AdminMessages() {
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 h-9 text-sm"
           />
+          {isSearching && filter === "unread" && (
+            <p className="absolute top-full mt-1 left-0 text-[11px] text-muted-foreground">
+              Search includes read threads so an accidental read can be restored.
+            </p>
+          )}
         </div>
         <div className="flex rounded-lg overflow-hidden border border-border text-sm">
           <button
