@@ -100,6 +100,7 @@ vi.mock("./db", () => ({
   deleteCalendarEvent: vi.fn().mockResolvedValue(undefined),
   getBookingsWithUnreadAgentNotes: vi.fn().mockResolvedValue([]),
   markNotesReadByAdmin: vi.fn().mockResolvedValue(undefined),
+  markLatestAgentNoteUnreadByAdmin: vi.fn().mockResolvedValue(false),
   areNotificationsPaused: vi.fn().mockResolvedValue(false),
   setSystemSetting: vi.fn().mockResolvedValue(undefined),
   updateUserProfile: vi.fn().mockResolvedValue(undefined),
@@ -274,6 +275,25 @@ describe("users.updateRole", () => {
 // ─── Notes tests ──────────────────────────────────────────────────────────────
 
 describe("notes", () => {
+  it("lets an admin restore only the newest agent message in a thread to unread", async () => {
+    const { markLatestAgentNoteUnreadByAdmin } = await import("./db");
+    vi.mocked(markLatestAgentNoteUnreadByAdmin).mockResolvedValueOnce(true);
+
+    const result = await appRouter.createCaller(makeCtx("admin")).notes.markLatestAgentNoteUnread({ bookingId: 42 });
+
+    expect(result).toEqual({ success: true });
+    expect(markLatestAgentNoteUnreadByAdmin).toHaveBeenCalledWith(42);
+  });
+
+  it("does not restore a thread when its latest shared message is staff-authored", async () => {
+    const { markLatestAgentNoteUnreadByAdmin } = await import("./db");
+    vi.mocked(markLatestAgentNoteUnreadByAdmin).mockResolvedValueOnce(false);
+
+    await expect(
+      appRouter.createCaller(makeCtx("admin")).notes.markLatestAgentNoteUnread({ bookingId: 42 })
+    ).rejects.toThrow(/newest shared message is from an agent/i);
+  });
+
   it("agents cannot post internal notes", async () => {
     const { getBookingById } = await import("./db");
     vi.mocked(getBookingById).mockResolvedValueOnce({

@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
-import { MessageSquare, Search, CheckCheck, ArrowRight, User, Tag, X } from "lucide-react";
+import { MessageSquare, Search, CheckCheck, ArrowRight, User, Tag, X, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,13 +88,15 @@ function TagSelector({ bookingId, currentTag, onTagSet }: { bookingId: number; c
   );
 }
 
-function ThreadCard({ thread, setTag, markRead }: {
+function ThreadCard({ thread, setTag, markRead, markUnread }: {
   thread: any;
   setTag: { mutate: (args: { bookingId: number; tag: DeptTag | null }) => void };
   markRead: { mutate: (args: { bookingId: number }) => void };
+  markUnread: { mutate: (args: { bookingId: number }) => void };
 }) {
   const isUnread = thread.unreadCount > 0;
   const isAgentLatest = thread.latestAuthorRole === "agent";
+  const canRestoreUnread = !isUnread && isAgentLatest;
   const currentTag = thread.tag as DeptTag | null;
   return (
     <div
@@ -157,6 +159,15 @@ function ThreadCard({ thread, setTag, markRead }: {
               <CheckCheck size={12} /> Mark read
             </button>
           )}
+          {canRestoreUnread && (
+            <button
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+              onClick={() => markUnread.mutate({ bookingId: thread.bookingId })}
+              title="Restore the newest agent message in this thread to unread"
+            >
+              <Undo2 size={12} /> Mark unread
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -173,6 +184,10 @@ export default function AdminMessages() {
   const { data: threads = [], isLoading, refetch } = trpc.notes.allThreads.useQuery();
   const markRead = trpc.notes.markBookingNotesRead.useMutation({
     onSuccess: () => { refetch(); utils.notes.totalUnreadCount.invalidate(); },
+  });
+  const markUnread = trpc.notes.markLatestAgentNoteUnread.useMutation({
+    onSuccess: () => { refetch(); utils.notes.totalUnreadCount.invalidate(); },
+    onError: (error) => toast.error(error.message),
   });
   const markAllRead = trpc.notes.markAllRead.useMutation({
     onSuccess: () => { refetch(); utils.notes.totalUnreadCount.invalidate(); },
@@ -347,7 +362,7 @@ export default function AdminMessages() {
               <p className="text-sm text-muted-foreground py-3 px-1">No unassigned conversations — great work!</p>
             ) : (
               <div className="space-y-2">
-                {unassignedThreads.map((thread) => <ThreadCard key={thread.bookingId} thread={thread} setTag={setTag} markRead={markRead} />)}
+                {unassignedThreads.map((thread) => <ThreadCard key={thread.bookingId} thread={thread} setTag={setTag} markRead={markRead} markUnread={markUnread} />)}
               </div>
             )}
           </div>
@@ -361,7 +376,7 @@ export default function AdminMessages() {
                 <div className="flex-1 h-px bg-border" />
               </div>
               <div className="space-y-2">
-                {assignedThreads.map((thread) => <ThreadCard key={thread.bookingId} thread={thread} setTag={setTag} markRead={markRead} />)}
+                {assignedThreads.map((thread) => <ThreadCard key={thread.bookingId} thread={thread} setTag={setTag} markRead={markRead} markUnread={markUnread} />)}
               </div>
             </div>
           )}

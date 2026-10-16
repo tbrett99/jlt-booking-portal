@@ -569,6 +569,37 @@ export async function markNotesReadByAdmin(bookingId: number) {
     .where(and(eq(notes.bookingId, bookingId), eq(notes.isReadByAdmin, false)));
 }
 
+/**
+ * Restore only the newest shared agent message in a booking thread to unread.
+ * This deliberately refuses to reopen a thread whose newest shared message is
+ * staff-authored, so a later staff reply is never presented as new agent work.
+ */
+export async function markLatestAgentNoteUnreadByAdmin(bookingId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const [latest] = await db
+    .select({ noteId: notes.id, authorRole: users.role })
+    .from(notes)
+    .innerJoin(users, eq(notes.authorId, users.id))
+    .where(and(
+      eq(notes.bookingId, bookingId),
+      eq(notes.isInternal, false),
+      not(like(notes.content, '[System]%')),
+    ))
+    .orderBy(desc(notes.createdAt), desc(notes.id))
+    .limit(1);
+
+  if (!latest || latest.authorRole !== 'agent') return false;
+
+  await db
+    .update(notes)
+    .set({ isReadByAdmin: false })
+    .where(eq(notes.id, latest.noteId));
+
+  return true;
+}
+
 // Get bookings that have unread agent notes (for admin dashboard panel)
 export async function getBookingsWithUnreadAgentNotes() {
   const db = await getDb();

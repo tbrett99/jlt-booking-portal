@@ -73,6 +73,7 @@ import {
   areNotificationsPaused,
   setSystemSetting,
   markNotesReadByAdmin,
+  markLatestAgentNoteUnreadByAdmin,
   getBookingsWithUnreadAgentNotes,
   getReimbursementDocs,
   addReimbursementDoc,
@@ -2345,6 +2346,21 @@ export const appRouter = router({
       .input(z.object({ bookingId: z.number() }))
       .mutation(async ({ input }) => {
         await markNotesReadByAdmin(input.bookingId);
+        return { success: true };
+      }),
+    // Admin: restore the newest shared agent message in a thread to unread.
+    // This is intentionally limited to one latest agent message rather than
+    // reopening every historic note in a booking conversation.
+    markLatestAgentNoteUnread: adminProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .mutation(async ({ input }) => {
+        const restored = await markLatestAgentNoteUnreadByAdmin(input.bookingId);
+        if (!restored) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Only a thread whose newest shared message is from an agent can be restored to unread.",
+          });
+        }
         return { success: true };
       }),
     list: protectedProcedure
