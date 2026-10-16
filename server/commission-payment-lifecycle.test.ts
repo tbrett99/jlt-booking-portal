@@ -207,6 +207,7 @@ describe("commission payment lifecycle", () => {
 
   it("regularly queues already-due payment-date files for review", () => {
     expect(schedulerSource).toContain('import { queueDueBookingsForCommissionReview } from "./commission-review-queue"');
+    expect(schedulerSource).toContain("void queueDueBookingsForCommissionReview()");
     expect(schedulerSource).toContain('cron.schedule("*/15 * * * *"');
     expect(schedulerSource).toContain("await queueDueBookingsForCommissionReview()");
   });

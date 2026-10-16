@@ -447,6 +447,19 @@ export async function runTaskReminders(): Promise<{ sent: number; errors: number
 // ─── Cron wiring ──────────────────────────────────────────────────────────────
 
 export function startScheduler() {
+  // Do not wait for the next cron boundary after a deployment: imported and
+  // historic final-payment dates must enter staff review as soon as the Portal
+  // is running again. The recurring job below keeps this catch-up durable.
+  void queueDueBookingsForCommissionReview()
+    .then((result) => {
+      if (result.moved > 0) {
+        console.log(`[CommissionReviewQueue] Startup sweep reviewed ${result.reviewed} booking(s), moved ${result.moved} to review`);
+      }
+    })
+    .catch((err: any) => {
+      console.error("[CommissionReviewQueue] Startup sweep error:", err?.message);
+    });
+
   // Nightly full data export — DISABLED (commented out 2026-07-07)
   // cron.schedule("0 4 * * *", async () => {
   //   console.log("[Scheduler] Starting nightly full data export…");
