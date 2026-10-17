@@ -14,7 +14,7 @@ describe("JLT Academy interface wiring", () => {
   it("exposes Academy for agents and the manager for admins", () => {
     expect(app).toContain('<Route path="/academy" component={AcademyHome} />');
     expect(app).toContain('<Route path="/admin/academy" component={AdminAcademy} />');
-    expect(navigation).toContain('{ label: "JLT Academy", href: "/academy"');
+    expect(agentHome).toContain("JLT Academy");
     expect(navigation).toContain('{ label: "Academy Manager", href: "/admin/academy"');
   });
 

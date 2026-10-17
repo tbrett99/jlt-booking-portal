@@ -8,6 +8,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { formatAcademyQuestionPrompt, splitAcademyQuestionInlineFormatting } from "@shared/academy-question-format";
+import { normaliseAcademyLessonContent } from "@shared/academy-lesson-content";
+import { loomEmbedUrl } from "@shared/loom-embed";
 
 function countWords(value: string) {
   return value.trim() ? value.trim().split(/\s+/).length : 0;
@@ -55,6 +57,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   const [acknowledged, setAcknowledged] = useState(false);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [writtenAnswers, setWrittenAnswers] = useState<Record<number, string>>({});
+  const [expandedModuleId, setExpandedModuleId] = useState<number | null>(null);
 
   const lessons = useMemo(() => data?.modules.flatMap((module) => module.lessons) ?? [], [data]);
   const selectedLesson = lessons.find((lesson) => lesson.id === selectedLessonId) ?? lessons[0] ?? null;
@@ -76,6 +79,8 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
     setAcknowledged(false);
     setAnswers({});
     setWrittenAnswers({});
+    const containingModule = data?.modules.find((module) => module.lessons.some((lesson) => lesson.id === selectedLesson.id));
+    if (containingModule) setExpandedModuleId((current) => current === containingModule.id ? current : containingModule.id);
     if (isPreview) return;
     viewLesson.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id });
   // Only record an intentional lesson switch, not every progress refresh.
@@ -90,6 +95,8 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
       setSelectedLessonId(blockingLesson?.id ?? lessonId);
       return;
     }
+    const containingModule = data?.modules.find((module) => module.lessons.some((lesson) => lesson.id === lessonId));
+    if (containingModule) setExpandedModuleId(containingModule.id);
     setSelectedLessonId(lessonId);
   };
 
@@ -99,6 +106,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
 
   const canComplete = !selectedLesson.progress?.completedAt && (!selectedLesson.requiresAcknowledgement || acknowledged) && !selectedLesson.requiresAssessment;
   const hasAnsweredAll = outstandingQuestions.length > 0 && outstandingQuestions.every((question) => question.questionType === "free_text" ? !!writtenAnswers[question.id]?.trim() : answers[question.id] !== undefined);
+  const embeddedLoomUrl = loomEmbedUrl(selectedLesson.videoUrl);
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -107,17 +115,28 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
       <header className="rounded-2xl border bg-card p-5 shadow-sm md:p-6"><div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">JLT Academy</p><h1 className="mt-1 text-2xl font-bold tracking-tight md:text-3xl">{data.course.title}</h1>{data.course.summary && <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{data.course.summary}</p>}</div><div className="min-w-44"><div className="mb-1.5 flex justify-between text-xs font-medium"><span>Course progress</span><span>{data.progress.percentage}%</span></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-[#00c9b4]" style={{ width: `${data.progress.percentage}%` }} /></div><p className="mt-1.5 text-right text-xs text-muted-foreground">{data.progress.completedRequiredLessons} / {data.progress.requiredLessons} required</p></div></div></header>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="h-fit rounded-2xl border bg-card p-3 shadow-sm lg:sticky lg:top-6">
-          <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Course lessons</p>
-          <div className="space-y-3">{data.modules.map((module, index) => <section key={module.id}><p className="px-2 py-1 text-xs font-semibold text-foreground">{index + 1}. {module.title}</p><div className="space-y-1">{module.lessons.map((lesson) => { const complete = !!lesson.progress?.completedAt; const current = lesson.id === selectedLesson.id; const blockedByFeedback = feedbackBlockingLessonIndex >= 0 && lessons.findIndex((item) => item.id === lesson.id) > feedbackBlockingLessonIndex; return <button type="button" key={lesson.id} disabled={blockedByFeedback} onClick={() => chooseLesson(lesson.id)} title={blockedByFeedback ? "Read and acknowledge your assessment feedback first" : undefined} className={`flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-sm transition ${current ? "bg-[#70FFE8]/25 text-foreground" : blockedByFeedback ? "cursor-not-allowed opacity-45" : "hover:bg-muted/70 text-muted-foreground"}`}><span className="mt-0.5 shrink-0">{complete ? <CheckCircle2 size={16} className="text-emerald-600" /> : blockedByFeedback ? <LockKeyhole size={15} /> : current ? <PlayCircle size={16} className="text-primary" /> : <Circle size={16} />}</span><span className="min-w-0 flex-1 leading-5">{lesson.title}{lesson.isRequired && <span className="ml-1 text-[10px] font-semibold uppercase text-muted-foreground">Required</span>}</span></button>; })}</div></section>)}</div>
+        <aside className="h-fit rounded-2xl border bg-card p-3 shadow-sm lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
+          <div className="flex items-center justify-between gap-2 px-2 pb-3"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Course map</p><span className="text-xs text-muted-foreground">{data.progress.completedRequiredLessons}/{data.progress.requiredLessons}</span></div>
+          <p className="px-2 pb-3 text-xs leading-5 text-muted-foreground">Open one section at a time, then choose a lesson.</p>
+          <div className="space-y-2">{data.modules.map((module, index) => {
+            const isOpen = expandedModuleId === module.id || (expandedModuleId === null && module.lessons.some((lesson) => lesson.id === selectedLesson.id));
+            const completed = module.lessons.filter((lesson) => !!lesson.progress?.completedAt).length;
+            return <section key={module.id} className="overflow-hidden rounded-xl border bg-background/60">
+              <button type="button" className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition hover:bg-muted/60" aria-expanded={isOpen} aria-controls={`academy-course-module-${module.id}`} onClick={() => setExpandedModuleId((current) => current === module.id ? null : module.id)}>
+                <span className="min-w-0"><span className="block text-xs font-semibold text-primary">Module {index + 1}</span><span className="mt-0.5 block line-clamp-2 text-sm font-semibold leading-5">{module.title}</span></span>
+                <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"><span>{completed}/{module.lessons.length}</span><span className={`text-base transition-transform ${isOpen ? "rotate-180" : ""}`}>⌄</span></span>
+              </button>
+              {isOpen && <div id={`academy-course-module-${module.id}`} className="space-y-1 border-t p-2">{module.lessons.map((lesson) => { const complete = !!lesson.progress?.completedAt; const current = lesson.id === selectedLesson.id; const blockedByFeedback = feedbackBlockingLessonIndex >= 0 && lessons.findIndex((item) => item.id === lesson.id) > feedbackBlockingLessonIndex; return <button type="button" key={lesson.id} disabled={blockedByFeedback} onClick={() => chooseLesson(lesson.id)} title={blockedByFeedback ? "Read and acknowledge your assessment feedback first" : undefined} className={`flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-sm transition ${current ? "bg-[#70FFE8]/25 text-foreground" : blockedByFeedback ? "cursor-not-allowed opacity-45" : "hover:bg-muted/70 text-muted-foreground"}`}><span className="mt-0.5 shrink-0">{complete ? <CheckCircle2 size={16} className="text-emerald-600" /> : blockedByFeedback ? <LockKeyhole size={15} /> : current ? <PlayCircle size={16} className="text-primary" /> : <Circle size={16} />}</span><span className="min-w-0 flex-1 leading-5">{lesson.title}{lesson.isRequired && <span className="ml-1 text-[10px] font-semibold uppercase text-muted-foreground">Required</span>}</span></button>; })}</div>}
+            </section>;
+          })}</div>
         </aside>
 
         <main className="min-w-0 rounded-2xl border bg-card p-5 shadow-sm md:p-8">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"><BookOpenCheck size={14} /> Lesson</div><h2 className="mt-2 text-2xl font-bold tracking-tight">{selectedLesson.title}</h2>{selectedLesson.summary && <p className="mt-2 max-w-3xl text-muted-foreground">{selectedLesson.summary}</p>}</div>{selectedLesson.progress?.completedAt ? <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800"><CheckCircle2 size={15} /> Completed</span> : <span className="rounded-full bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">In progress</span>}</div>
 
           {(selectedLesson.contentHtml || selectedLesson.videoUrl || selectedLesson.attachmentUrl) && <div className="mt-7 space-y-6">
-            {selectedLesson.contentHtml && <div className="academy-lesson-content prose prose-slate max-w-none prose-headings:font-bold prose-p:my-4 prose-p:leading-relaxed prose-ul:my-4 prose-ul:list-disc prose-ul:pl-7 prose-ol:my-4 prose-ol:list-decimal prose-ol:pl-7 prose-li:my-1 prose-a:text-primary prose-a:underline prose-img:rounded-xl prose-table:w-full prose-table:border-collapse prose-th:border prose-th:border-slate-200 prose-th:bg-slate-50 prose-th:p-2 prose-th:text-left prose-td:border prose-td:border-slate-200 prose-td:p-2" dangerouslySetInnerHTML={{ __html: selectedLesson.contentHtml }} />}
-            {selectedLesson.videoUrl && <a href={selectedLesson.videoUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-4 rounded-xl border border-[#70FFE8]/60 bg-[#70FFE8]/10 p-4 transition hover:bg-[#70FFE8]/20"><span className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-lg bg-[#414141] text-[#70FFE8]"><PlayCircle size={20} /></span><span><span className="block font-semibold">Watch the lesson video</span><span className="mt-0.5 block text-xs text-muted-foreground">Opens the approved video in a new tab</span></span></span><ExternalLink size={18} className="shrink-0" /></a>}
+            {selectedLesson.contentHtml && <div className="academy-lesson-content prose prose-slate max-w-none text-[15px] leading-7 text-foreground prose-headings:mt-8 prose-headings:font-bold prose-headings:tracking-tight prose-h2:border-b prose-h2:pb-2 prose-p:my-4 prose-p:leading-7 prose-ul:my-4 prose-ul:list-disc prose-ul:space-y-2 prose-ul:pl-7 prose-ol:my-4 prose-ol:list-decimal prose-ol:space-y-2 prose-ol:pl-7 prose-li:my-1 prose-a:text-primary prose-a:underline prose-img:rounded-xl prose-table:w-full prose-table:border-collapse prose-th:border prose-th:border-slate-200 prose-th:bg-slate-50 prose-th:p-2 prose-th:text-left prose-td:border prose-td:border-slate-200 prose-td:p-2" dangerouslySetInnerHTML={{ __html: normaliseAcademyLessonContent(selectedLesson.contentHtml) }} />}
+            {selectedLesson.videoUrl && (embeddedLoomUrl ? <section className="overflow-hidden rounded-2xl border border-[#70FFE8]/60 bg-[#70FFE8]/10"><div className="flex items-center justify-between gap-3 px-4 py-3"><span className="flex items-center gap-2 font-semibold"><span className="flex size-8 items-center justify-center rounded-lg bg-[#414141] text-[#70FFE8]"><PlayCircle size={17} /></span> Watch within the Portal</span><a href={selectedLesson.videoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-primary hover:underline">Open in Loom <ExternalLink className="ml-1 inline" size={13} /></a></div><div className="aspect-video bg-black"><iframe className="h-full w-full" title={`Loom video: ${selectedLesson.title}`} src={embeddedLoomUrl} allowFullScreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" /></div></section> : <a href={selectedLesson.videoUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-4 rounded-xl border border-[#70FFE8]/60 bg-[#70FFE8]/10 p-4 transition hover:bg-[#70FFE8]/20"><span className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-lg bg-[#414141] text-[#70FFE8]"><PlayCircle size={20} /></span><span><span className="block font-semibold">Watch the lesson video</span><span className="mt-0.5 block text-xs text-muted-foreground">Opens the approved video in a new tab</span></span></span><ExternalLink size={18} className="shrink-0" /></a>)}
             {selectedLesson.attachmentUrl && <a href={selectedLesson.attachmentUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-4 rounded-xl border bg-muted/30 p-4 transition hover:bg-muted"><span className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-lg bg-card text-primary shadow-sm"><FileText size={20} /></span><span><span className="block font-semibold">{selectedLesson.attachmentName || "Download lesson resource"}</span><span className="mt-0.5 block text-xs text-muted-foreground">Open or save your copy</span></span></span><Download size={18} className="shrink-0" /></a>}
           </div>}
 
