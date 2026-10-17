@@ -70,6 +70,71 @@ function preserveOptionalTranscript(value: string | null | undefined) {
   return value?.trim() ? value : null;
 }
 
+/**
+ * Migration 0157 adds private Loom transcripts. A Railway deployment can be
+ * serving newer code while its additive column is still awaiting application;
+ * the Academy itself must remain readable in that state. Keep the fallback
+ * narrow so an unrelated database fault is never hidden.
+ */
+export function isMissingAcademyTranscriptColumn(error: unknown) {
+  const pending: unknown[] = [error];
+  const visited = new Set<unknown>();
+  let sawMissingColumn = false;
+  let sawTranscript = false;
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current || typeof current !== "object" || visited.has(current)) continue;
+    visited.add(current);
+    const candidate = current as { code?: string; message?: string; cause?: unknown; errors?: unknown[] };
+    const detail = `${candidate.code ?? ""}\n${candidate.message ?? ""}`;
+    sawMissingColumn ||= candidate.code === "ER_BAD_FIELD_ERROR" || candidate.code === "ER_NO_SUCH_COLUMN" || /unknown column/i.test(detail);
+    sawTranscript ||= /videoTranscript/i.test(detail);
+    if (candidate.cause) pending.push(candidate.cause);
+    if (Array.isArray(candidate.errors)) pending.push(...candidate.errors);
+  }
+  return sawMissingColumn && sawTranscript;
+}
+
+const legacyAcademyLessonColumns = {
+  id: academyLessons.id,
+  moduleId: academyLessons.moduleId,
+  title: academyLessons.title,
+  summary: academyLessons.summary,
+  contentHtml: academyLessons.contentHtml,
+  videoUrl: academyLessons.videoUrl,
+  attachmentUrl: academyLessons.attachmentUrl,
+  attachmentKey: academyLessons.attachmentKey,
+  attachmentName: academyLessons.attachmentName,
+  estimatedMinutes: academyLessons.estimatedMinutes,
+  isRequired: academyLessons.isRequired,
+  requiresAcknowledgement: academyLessons.requiresAcknowledgement,
+  requiresAssessment: academyLessons.requiresAssessment,
+  assessmentPassMark: academyLessons.assessmentPassMark,
+  sortOrder: academyLessons.sortOrder,
+  createdAt: academyLessons.createdAt,
+  updatedAt: academyLessons.updatedAt,
+};
+
+type AcademyLesson = typeof academyLessons.$inferSelect;
+
+async function getAcademyLessonsForModules(moduleIds: number[]): Promise<AcademyLesson[]> {
+  if (!moduleIds.length) return [];
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  try {
+    return await db.select().from(academyLessons).where(inArray(academyLessons.moduleId, moduleIds))
+      .orderBy(asc(academyLessons.sortOrder), asc(academyLessons.id));
+  } catch (error) {
+    if (!isMissingAcademyTranscriptColumn(error)) throw error;
+    const legacyLessons = await db.select(legacyAcademyLessonColumns).from(academyLessons)
+      .where(inArray(academyLessons.moduleId, moduleIds))
+      .orderBy(asc(academyLessons.sortOrder), asc(academyLessons.id));
+    // Preserve every pre-existing lesson field. Only the optional private
+    // transcript is absent while the additive Railway migration catches up.
+    return legacyLessons.map((lesson) => ({ ...lesson, videoTranscript: null } as AcademyLesson));
+  }
+}
+
 /** Staff-created lesson HTML is stored separately from external content. */
 function sanitiseLessonHtml(value: string | null | undefined) {
   if (!value?.trim()) return null;
@@ -195,10 +260,7 @@ async function courseStructure(courseId: number) {
   const modules = await db.select().from(academyModules)
     .where(eq(academyModules.courseId, courseId)).orderBy(asc(academyModules.sortOrder), asc(academyModules.id));
   const moduleIds = modules.map((module) => module.id);
-  const lessons = moduleIds.length
-    ? await db.select().from(academyLessons).where(inArray(academyLessons.moduleId, moduleIds))
-      .orderBy(asc(academyLessons.sortOrder), asc(academyLessons.id))
-    : [];
+  const lessons = await getAcademyLessonsForModules(moduleIds);
   const lessonIds = lessons.map((lesson) => lesson.id);
   const questions = lessonIds.length
     ? await db.select().from(academyQuestions).where(inArray(academyQuestions.lessonId, lessonIds))
@@ -406,7 +468,7 @@ export const academyRouter = router({
       const courseIds = enrollments.map((row) => row.course.id);
       const modules = courseIds.length ? await db.select().from(academyModules).where(inArray(academyModules.courseId, courseIds)).orderBy(asc(academyModules.sortOrder)) : [];
       const moduleIds = modules.map((module) => module.id);
-      const lessons = moduleIds.length ? await db.select().from(academyLessons).where(inArray(academyLessons.moduleId, moduleIds)).orderBy(asc(academyLessons.sortOrder)) : [];
+      const lessons = await getAcademyLessonsForModules(moduleIds);
       const progress = enrollmentIds.length ? await db.select().from(academyLessonProgress).where(inArray(academyLessonProgress.enrollmentId, enrollmentIds)) : [];
       const upcomingSessions = (await getUpcomingAgentEvents(30)).filter((event) => event.eventCategory === "training" || event.eventCategory === "webinar" || event.eventCategory === "supplier_event");
       const now = new Date();
@@ -450,9 +512,7 @@ export const academyRouter = router({
         ? await db.select().from(academyModules).where(inArray(academyModules.courseId, courseIds)).orderBy(asc(academyModules.sortOrder))
         : [];
       const moduleIds = modules.map((module) => module.id);
-      const lessons = moduleIds.length
-        ? await db.select().from(academyLessons).where(inArray(academyLessons.moduleId, moduleIds)).orderBy(asc(academyLessons.sortOrder))
-        : [];
+      const lessons = await getAcademyLessonsForModules(moduleIds);
       const upcomingSessions = (await getUpcomingAgentEvents(30)).filter((event) => event.eventCategory === "training" || event.eventCategory === "webinar" || event.eventCategory === "supplier_event");
 
       return {
@@ -889,7 +949,7 @@ export const academyRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [enrollment] = await db.select().from(academyEnrollments).where(eq(academyEnrollments.id, input.enrollmentId)).limit(1);
-      const [lesson] = await db.select().from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
+      const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
       const [question] = await db.select().from(academyQuestions).where(and(eq(academyQuestions.id, input.questionId), eq(academyQuestions.lessonId, input.lessonId))).limit(1);
       if (!enrollment || !lesson || !question) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment question not found" });
       const [module] = await db.select().from(academyModules).where(and(eq(academyModules.id, lesson.moduleId), eq(academyModules.courseId, enrollment.courseId))).limit(1);
@@ -1002,41 +1062,62 @@ export const academyRouter = router({
       if (videoUrl && !safeHttpsUrl(videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Video links must use HTTPS" });
       const attachmentUrl = normaliseOptionalText(input.attachmentUrl);
       const payload = { title: input.title, summary: normaliseOptionalText(input.summary), contentHtml: sanitiseLessonHtml(input.contentHtml), videoUrl, videoTranscript: preserveOptionalTranscript(input.videoTranscript), attachmentUrl, attachmentKey: normaliseOptionalText(input.attachmentKey), attachmentName: normaliseOptionalText(input.attachmentName), estimatedMinutes: input.estimatedMinutes, isRequired: input.isRequired, requiresAcknowledgement: input.requiresAcknowledgement, requiresAssessment: input.requiresAssessment, assessmentPassMark: input.assessmentPassMark };
+      const { videoTranscript, ...legacyPayload } = payload;
       if (input.id) {
-        const [lesson] = await db.select().from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);
+        const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);
         if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
-        await db.update(academyLessons).set(payload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
+        try {
+          await db.update(academyLessons).set(payload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
+        } catch (error) {
+          if (!isMissingAcademyTranscriptColumn(error)) throw error;
+          if (videoTranscript) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Loom transcript storage is not ready on Railway yet. Apply the Academy transcript database update, then save this transcript." });
+          await db.update(academyLessons).set(legacyPayload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
+        }
         await addAudit({ courseId: module.courseId, actorId: ctx.user.id, action: "lesson_updated", summary: `Updated lesson: ${input.title}` });
         return { id: input.id };
       }
-      const existing = await db.select().from(academyLessons).where(eq(academyLessons.moduleId, input.moduleId)).orderBy(desc(academyLessons.sortOrder)).limit(1);
+      const existing = await db.select({ sortOrder: academyLessons.sortOrder }).from(academyLessons).where(eq(academyLessons.moduleId, input.moduleId)).orderBy(desc(academyLessons.sortOrder)).limit(1);
       // TiDB's Drizzle insert result does not reliably expose insertId. Use the
       // native prepared statement so a new lesson can be immediately linked to
       // its knowledge-check questions without sending a NaN lessonId to tRPC.
       const pool = await getRawDbPool();
       if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [result] = await pool.execute(
-        `INSERT INTO academy_lessons
-          (moduleId, title, summary, contentHtml, videoUrl, videoTranscript, attachmentUrl, attachmentKey, attachmentName, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentPassMark, sortOrder)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          input.moduleId,
-          payload.title,
-          payload.summary,
-          payload.contentHtml,
-          payload.videoUrl,
-          payload.videoTranscript,
-          payload.attachmentUrl,
-          payload.attachmentKey,
-          payload.attachmentName,
-          payload.estimatedMinutes,
-          payload.isRequired,
-          payload.requiresAcknowledgement,
-          payload.requiresAssessment,
-          payload.assessmentPassMark,
-          (existing[0]?.sortOrder ?? -1) + 1,
-        ],
-      );
+      const insertValues = [
+        input.moduleId,
+        payload.title,
+        payload.summary,
+        payload.contentHtml,
+        payload.videoUrl,
+        payload.videoTranscript,
+        payload.attachmentUrl,
+        payload.attachmentKey,
+        payload.attachmentName,
+        payload.estimatedMinutes,
+        payload.isRequired,
+        payload.requiresAcknowledgement,
+        payload.requiresAssessment,
+        payload.assessmentPassMark,
+        (existing[0]?.sortOrder ?? -1) + 1,
+      ];
+      let result: unknown;
+      try {
+        [result] = await pool.execute(
+          `INSERT INTO academy_lessons
+            (moduleId, title, summary, contentHtml, videoUrl, videoTranscript, attachmentUrl, attachmentKey, attachmentName, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentPassMark, sortOrder)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          insertValues,
+        );
+      } catch (error) {
+        if (!isMissingAcademyTranscriptColumn(error)) throw error;
+        if (videoTranscript) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Loom transcript storage is not ready on Railway yet. Apply the Academy transcript database update, then save this transcript." });
+        const legacyInsertValues = insertValues.filter((_, index) => index !== 5);
+        [result] = await pool.execute(
+          `INSERT INTO academy_lessons
+            (moduleId, title, summary, contentHtml, videoUrl, attachmentUrl, attachmentKey, attachmentName, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentPassMark, sortOrder)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          legacyInsertValues,
+        );
+      }
       const id = Number((result as any).insertId);
       if (!Number.isSafeInteger(id) || id < 1) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Academy lesson insert did not return an ID" });
@@ -1048,7 +1129,7 @@ export const academyRouter = router({
     deleteLesson: adminProcedure.input(z.object({ lessonId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [lesson] = await db.select().from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
+      const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
       if (!lesson) return { success: true };
       const [module] = await db.select().from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
       await db.delete(academyQuestions).where(eq(academyQuestions.lessonId, lesson.id));
@@ -1091,7 +1172,7 @@ export const academyRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [lesson] = await db.select().from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
+      const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
       if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
       if (input.questions.some((question) => question.questionType === "multiple_choice" && (question.answerOptions.length < 2 || question.answerOptions.some((option) => !option.trim()) || question.correctAnswerIndex >= question.answerOptions.length))) throw new TRPCError({ code: "BAD_REQUEST", message: "Each multiple-choice question needs at least two completed answers and one correct answer" });
       await db.delete(academyQuestions).where(eq(academyQuestions.lessonId, input.lessonId));
@@ -1116,7 +1197,7 @@ export const academyRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [lesson] = await db.select().from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
+      const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
       if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
       if (!lesson.requiresAssessment) throw new TRPCError({ code: "BAD_REQUEST", message: "Turn on the knowledge check for this lesson before importing questions" });
 
@@ -1191,7 +1272,7 @@ export const academyRouter = router({
       const progress = enrollmentIds.length ? await db.select().from(academyLessonProgress).where(inArray(academyLessonProgress.enrollmentId, enrollmentIds)) : [];
       const courseIds = Array.from(new Set(filtered.map((row) => row.course.id)));
       const modules = courseIds.length ? await db.select().from(academyModules).where(inArray(academyModules.courseId, courseIds)) : [];
-      const lessons = modules.length ? await db.select().from(academyLessons).where(inArray(academyLessons.moduleId, modules.map((module) => module.id))) : [];
+      const lessons = await getAcademyLessonsForModules(modules.map((module) => module.id));
       const now = new Date();
       return filtered.map((row) => {
         const courseLessons = lessons.filter((lesson) => modules.some((module) => module.courseId === row.course.id && module.id === lesson.moduleId));
