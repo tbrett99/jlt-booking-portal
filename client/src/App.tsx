@@ -25,6 +25,7 @@ import InfoFunnelPage from "./pages/InfoFunnelPage";
 
 // Lazy-loaded pages (split into separate chunks)
 const AgentDashboard = lazy(() => import("./pages/agent/AgentDashboard"));
+const AgentBookings = lazy(() => import("./pages/agent/AgentBookings"));
 const RegisterBooking = lazy(() => import("./pages/agent/RegisterBooking"));
 const AgentBookingDetail = lazy(() => import("./pages/agent/AgentBookingDetail"));
 const AmendmentForm = lazy(() => import("./pages/agent/AmendmentForm"));
@@ -310,6 +311,7 @@ function AuthRouter() {
           <Route path="/dd-complete" component={DdComplete} />
           <Route path="/" component={AgentDashboard} />
           <Route path="/dashboard" component={AgentDashboard} />
+          <Route path="/my-bookings" component={AgentBookings} />
           <Route path="/bookings/new" component={RegisterBooking} />
           <Route path="/bookings/:id">{(params) => <AgentBookingDetail key={params.id} />}</Route>
           <Route path="/bookings/:id/amend">{(params) => <AmendmentForm key={params.id} />}</Route>
@@ -367,6 +369,7 @@ function AuthRouter() {
           <Route path="/join/accept" component={JoinAccept} />
           <Route path="/" component={AgentDashboard} />
           <Route path="/dashboard" component={AgentDashboard} />
+          <Route path="/my-bookings" component={AgentBookings} />
           <Route path="/bookings/new" component={RegisterBooking} />
           {/* Agent booking detail — but admin still sees admin detail for pipeline management */}
           <Route path="/bookings/:id">{(params) => <AgentBookingDetail key={params.id} />}</Route>

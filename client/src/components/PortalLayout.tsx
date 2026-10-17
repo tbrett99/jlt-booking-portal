@@ -373,7 +373,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       icon: <Home size={16} />,
       defaultOpen: true,
       items: [
-        { label: "My Dashboard", href: "/dashboard", icon: <Home size={16} /> },
+        { label: "Home", href: "/dashboard", icon: <Home size={16} /> },
+        { label: "My Bookings & Requests", href: "/my-bookings", icon: <BookOpen size={16} /> },
         { label: "Register Booking", href: "/bookings/new", icon: <BookOpen size={16} /> },
         { label: "Request Amendment", href: "/request-amendment", icon: <PenLine size={16} /> },
         { label: "Cancel a Booking", href: "/cancel-booking", icon: <XCircle size={16} /> },
@@ -399,7 +400,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ],
     },
     {
-      label: "Community",
+      label: "Community & Events",
       icon: <Newspaper size={16} />,
       defaultOpen: false,
       items: [
@@ -407,15 +408,6 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Events Calendar", href: "/events", icon: <CalendarDays size={16} /> },
         { label: "Competitions", href: "/competitions", icon: <Trophy size={16} /> },
         { label: "Roadmap & Suggestions", href: "/roadmap", icon: <Rocket size={16} /> },
-      ],
-    },
-    {
-      label: "Learning",
-      icon: <GraduationCap size={16} />,
-      defaultOpen: true,
-      items: [
-        { label: "JLT Academy", href: "/academy", icon: <GraduationCap size={16} /> },
-        { label: "Academy Actions", href: "/academy/actions", icon: <ClipboardCheck size={16} /> },
       ],
     },
     {
