@@ -33,7 +33,7 @@ import { users, agentCrmProfiles, suppliers } from "../drizzle/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { prepareCommunityDigestDelivery } from "./community-digest-delivery-utils";
 import { formatCommunityDigestIntro } from "./community-digest-intro";
-import { awardMomentum, getMyMomentum, reverseMomentumForCommunityPost, reverseMomentumForSource } from "./momentum";
+import { awardMomentum, getMomentumAgentOverview, getMyMomentum, reverseMomentumForCommunityPost, reverseMomentumForSource } from "./momentum";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -268,8 +268,9 @@ export const communityRouter = router({
         ctx.user.id,
         input.emoji
       );
+      let momentumAward: { awarded: boolean; points: number } | null = null;
       if (result.created && post.authorId !== ctx.user.id) {
-        await awardMomentum({
+        momentumAward = await awardMomentum({
           agentId: ctx.user.id,
           ruleKey: "community_reaction",
           sourceType: "community_reaction",
@@ -277,7 +278,7 @@ export const communityRouter = router({
           sourceLabel: post.title,
         });
       }
-      return { activeEmoji: result.activeEmoji };
+      return { activeEmoji: result.activeEmoji, momentumAward };
     }),
 
   // ─── Comments ───────────────────────────────────────────────────────────────
@@ -305,8 +306,9 @@ export const communityRouter = router({
       });
       const { getMomentumRule } = await import("./momentum");
       const commentRule = await getMomentumRule("community_comment");
+      let momentumAward: { awarded: boolean; points: number } | null = null;
       if (post.authorId !== ctx.user.id && input.content.trim().length >= (commentRule?.minimumTextLength ?? 0)) {
-        await awardMomentum({
+        momentumAward = await awardMomentum({
           agentId: ctx.user.id,
           ruleKey: "community_comment",
           // The post ID intentionally makes this one award per agent/post rather
@@ -316,7 +318,7 @@ export const communityRouter = router({
           sourceLabel: post.title,
         });
       }
-      return { commentId };
+      return { commentId, momentumAward };
     }),
 
   deleteComment: adminProcedure
@@ -342,8 +344,9 @@ export const communityRouter = router({
       const post = await getReadableCommunityPostForUser(ctx.user, input.postId);
       if (!post.requiresConfirmation) throw new TRPCError({ code: "BAD_REQUEST", message: "This post does not require confirmation" });
       const confirmedNow = await confirmPost(input.postId, ctx.user.id);
+      let momentumAward: { awarded: boolean; points: number } | null = null;
       if (confirmedNow) {
-        await awardMomentum({
+        momentumAward = await awardMomentum({
           agentId: ctx.user.id,
           ruleKey: "community_confirmation",
           sourceType: "community_confirmation",
@@ -351,13 +354,14 @@ export const communityRouter = router({
           sourceLabel: post.title,
         });
       }
-      return { success: true, awarded: confirmedNow };
+      return { success: true, awarded: confirmedNow, momentumAward };
     }),
 
   // ─── Community Hub + Momentum summary ─────────────────────────────────────
   hub: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    if (!db) return { featured: [], newSinceLastVisit: [], latest: [], categories: [], momentum: await getMyMomentum(ctx.user.id) };
+    const momentum = await getMomentumAgentOverview(ctx.user.id);
+    if (!db) return { featured: [], newSinceLastVisit: [], latest: [], categories: [], momentum };
     const [profile] = await db
       .select({ membershipTier: agentCrmProfiles.membershipTier })
       .from(agentCrmProfiles)
@@ -377,7 +381,7 @@ export const communityRouter = router({
       count: feed.posts.filter((post) => post.category === category).length,
       latest: feed.posts.find((post) => post.category === category) ?? null,
     })).filter((category) => category.count > 0);
-    return { featured, newSinceLastVisit, latest, categories, momentum: await getMyMomentum(ctx.user.id) };
+    return { featured, newSinceLastVisit, latest, categories, momentum };
   }),
 
   confirmationStatus: protectedProcedure

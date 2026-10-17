@@ -152,6 +152,54 @@ export async function getMyMomentum(agentId: number) {
   };
 }
 
+/** The agent-facing Community view exposes only active-agent names and points. */
+export async function getMomentumAgentOverview(agentId: number) {
+  const personal = await getMyMomentum(agentId);
+  const pool = await getRawDbPool();
+  const monthStart = startOfUtcMonth();
+  const [leaderboardRows, ruleRows, rankRows] = await Promise.all([
+    pool.execute(
+      `SELECT l.agentId, COALESCE(NULLIF(u.name, ''), 'JLT agent') AS agentName, SUM(l.points) AS points
+       FROM momentum_ledger l
+       INNER JOIN users u ON u.id = l.agentId
+       WHERE l.status = 'awarded' AND l.awardedAt >= ?
+         AND u.role = 'agent' AND u.isActive = true AND u.portalStatus = 'active'
+       GROUP BY l.agentId, u.name
+       ORDER BY points DESC, agentName ASC
+       LIMIT 5`,
+      [monthStart],
+    ),
+    pool.execute(
+      `SELECT ruleKey, label, description, area, points, weeklyCap, minimumTextLength
+       FROM momentum_rules
+       WHERE enabled = true AND ruleKey IN ('community_reaction', 'community_comment', 'community_confirmation', 'community_agent_win', 'accountability_action')
+       ORDER BY FIELD(ruleKey, 'community_reaction', 'community_comment', 'community_confirmation', 'community_agent_win', 'accountability_action')`,
+    ),
+    personal.monthPoints > 0
+      ? pool.execute(
+          `SELECT 1 + COUNT(*) AS position
+           FROM (
+             SELECT l.agentId, SUM(l.points) AS points
+             FROM momentum_ledger l
+             INNER JOIN users u ON u.id = l.agentId
+             WHERE l.status = 'awarded' AND l.awardedAt >= ?
+               AND u.role = 'agent' AND u.isActive = true AND u.portalStatus = 'active'
+             GROUP BY l.agentId
+           ) monthly
+           WHERE monthly.points > ?`,
+          [monthStart, personal.monthPoints],
+        )
+      : Promise.resolve([[]] as unknown as [unknown[], unknown]),
+  ]);
+  return {
+    agentId,
+    ...personal,
+    leaderboard: leaderboardRows[0] as Array<{ agentId: number; agentName: string; points: number }>,
+    rank: personal.monthPoints > 0 ? Number((rankRows[0] as Array<{ position: number | string }>)[0]?.position ?? 0) : null,
+    rules: ruleRows[0] as Array<Pick<MomentumRule, "ruleKey" | "label" | "description" | "area" | "points" | "weeklyCap" | "minimumTextLength">>,
+  };
+}
+
 export async function getMomentumAdminDashboard() {
   const pool = await getRawDbPool();
   const [rules, leaderboardRows, recentRows] = await Promise.all([

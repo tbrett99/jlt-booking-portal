@@ -55,8 +55,11 @@ describe("JLT Momentum", () => {
   it("turns Community into a visible hub rather than a long undifferentiated feed", () => {
     expect(communityRouter).toContain("hub: protectedProcedure");
     expect(communityPage).toContain("CommunityHub");
-    expect(communityPage).toContain("New since your last visit");
+    expect(communityPage).toContain("Fresh conversations");
     expect(communityPage).toContain("JLT Momentum");
-    expect(communityPage).toContain("Explore what&apos;s happening");
+    expect(communityPage).toContain("This month&apos;s Momentum leaders");
+    expect(communityPage).toContain("recognition score for now");
+    expect(communityPage).toContain("Browse posts");
+    expect(communityRouter).toContain("getMomentumAgentOverview");
   });
 });
