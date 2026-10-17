@@ -23,6 +23,7 @@ import {
 } from "../drizzle/schema";
 import { getAccreditationEligibility, safeHttpsUrl, summariseAcademyProgress } from "../shared/academy-utils";
 import { parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
+import { buildAcademyLearningPath } from "../shared/academy-learning-path";
 import { assignAcceleratorEntryActions } from "./agent-development-router";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -179,6 +180,7 @@ function asResponses(value: unknown): Array<{ questionId: number; selectedIndex:
 }
 
 const MAX_QUESTION_ATTEMPTS = 3;
+const REQUIRED_ASSESSMENT_SCORE = 100;
 
 type QuestionResitState = {
   questionId: number;
@@ -215,9 +217,9 @@ function deriveQuestionResitStates(params: {
     const latest = questionAttempts[0] ?? null;
     const attemptCount = new Set(questionAttempts.map((item) => item.attempt.id)).size;
     const lastScore = latest?.response.score ?? null;
-    // A multiple-choice answer is either right or wrong. Written work follows
-    // the lesson pass mark set by the Academy team.
-    const passed = lastScore !== null && lastScore >= (question.questionType === "multiple_choice" ? 100 : params.passMark);
+    // Academy progression is deliberately mastery-based: every automatic or
+    // staff-marked answer needs 100% before the learner can move forward.
+    const passed = lastScore !== null && lastScore >= REQUIRED_ASSESSMENT_SCORE;
     const awaitingMarking = questionAttempts.some((item) => item.attempt.status === "awaiting_marking");
     const feedbackPending = questionAttempts.some((item) => item.attempt.status === "feedback_pending");
     return {
@@ -260,7 +262,11 @@ async function courseStructure(courseId: number) {
   const modules = await db.select().from(academyModules)
     .where(eq(academyModules.courseId, courseId)).orderBy(asc(academyModules.sortOrder), asc(academyModules.id));
   const moduleIds = modules.map((module) => module.id);
-  const lessons = await getAcademyLessonsForModules(moduleIds);
+  const rawLessons = await getAcademyLessonsForModules(moduleIds);
+  // The database lesson query is necessarily cross-module. Rebuild the flat
+  // course path module first, then lesson order, so every learner and server
+  // prerequisite gate shares one deterministic sequence.
+  const lessons = modules.flatMap((module) => rawLessons.filter((lesson) => lesson.moduleId === module.id));
   const lessonIds = lessons.map((lesson) => lesson.id);
   const questions = lessonIds.length
     ? await db.select().from(academyQuestions).where(inArray(academyQuestions.lessonId, lessonIds))
@@ -382,6 +388,11 @@ export async function grantAcademyAccess(params: { agentId: number; actorId: num
 async function resolveEnrollmentForAgent(enrollmentId: number, agentId: number) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [access] = await db.select({ status: academyAccess.status }).from(academyAccess)
+    .where(eq(academyAccess.agentId, agentId)).limit(1);
+  if (access?.status !== "active") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Academy access is not active" });
+  }
   const [enrollment] = await db.select().from(academyEnrollments)
     .where(and(eq(academyEnrollments.id, enrollmentId), eq(academyEnrollments.agentId, agentId))).limit(1);
   if (!enrollment) throw new TRPCError({ code: "NOT_FOUND", message: "Academy enrolment not found" });
@@ -409,6 +420,36 @@ async function ensureFeedbackAcknowledgedBeforeLesson(enrollment: { id: number; 
       message: "Read and acknowledge your assessment feedback before moving on to the next lesson",
     });
   }
+}
+
+/**
+ * The learner UI labels locked material, but this server-side guard is the
+ * authority. It prevents direct tRPC calls from opening, completing or
+ * submitting work for any unfinished material after the current required step.
+ */
+async function ensureSequentialAcademyLessonAccess(enrollment: { id: number; courseId: number }, lessonId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const { lessons } = await courseStructure(enrollment.courseId);
+  const target = lessons.find((lesson) => lesson.id === lessonId);
+  if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+
+  const progress = await db.select({ lessonId: academyLessonProgress.lessonId, completedAt: academyLessonProgress.completedAt })
+    .from(academyLessonProgress).where(eq(academyLessonProgress.enrollmentId, enrollment.id));
+  const completedLessonIds = new Set(progress.filter((item) => !!item.completedAt).map((item) => item.lessonId));
+  const path = buildAcademyLearningPath(lessons.map((lesson) => ({
+    id: lesson.id,
+    isRequired: lesson.isRequired,
+    completed: completedLessonIds.has(lesson.id),
+  })));
+  if (path.lockedLessonIds.has(lessonId)) {
+    const blockingLesson = lessons.find((lesson) => lesson.id === path.currentRequiredLessonId);
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `Complete ${blockingLesson?.title ?? "the current lesson"} before continuing.`,
+    });
+  }
+  return { lessons, target, progress, path };
 }
 
 async function recalculateCompletion(enrollmentId: number, actorId: number) {
@@ -560,6 +601,11 @@ export const academyRouter = router({
       const progressByLesson = new Map(progress.map((item) => [item.lessonId, item]));
       const attemptsByLesson = new Map<number, typeof attempts>();
       for (const attempt of attempts) attemptsByLesson.set(attempt.lessonId, [...(attemptsByLesson.get(attempt.lessonId) ?? []), attempt]);
+      const learningPath = buildAcademyLearningPath(structure.lessons.map((lesson) => ({
+        id: lesson.id,
+        isRequired: lesson.isRequired,
+        completed: !!progressByLesson.get(lesson.id)?.completedAt,
+      })));
       const requiredLessons = structure.lessons.filter((lesson) => lesson.isRequired).map((lesson) => lesson.id);
       const summary = summariseAcademyProgress(requiredLessons, progress.filter((item) => item.completedAt).map((item) => item.lessonId));
       return {
@@ -572,31 +618,39 @@ export const academyRouter = router({
             // The transcript is private staff source material. Do not leak it
             // to agent browsers before chatbot knowledge controls are added.
             const { videoTranscript: _videoTranscript, ...agentLesson } = lesson;
+            const locked = learningPath.lockedLessonIds.has(lesson.id);
             return {
-            ...agentLesson,
-            // Correct answer keys and staff-only question explanation stay server-side.
-            questions: lesson.questions.map((question) => {
-              const resit = deriveQuestionResitStates({
-                questions: lesson.questions,
-                attempts: attempts.filter((attempt) => attempt.lessonId === lesson.id),
-                responses: responses.filter((response) => response.attemptId && attempts.some((attempt) => attempt.id === response.attemptId && attempt.lessonId === lesson.id)),
-                resets: questionResets.filter((reset) => reset.lessonId === lesson.id),
-                passMark: lesson.assessmentPassMark,
-              }).find((state) => state.questionId === question.id)!;
-              return { id: question.id, prompt: question.prompt, questionType: question.questionType, answerOptions: asOptions(question.answerOptions), maxWords: question.maxWords, sortOrder: question.sortOrder, resit };
-            }),
-            progress: progressByLesson.get(lesson.id) ?? null,
-            attempts: (attemptsByLesson.get(lesson.id) ?? []).map((attempt) => ({
-              id: attempt.id,
-              status: attempt.status,
-              score: attempt.score,
-              passed: attempt.passed,
-              graderFeedback: attempt.graderFeedback,
-              feedbackAcknowledgedAt: attempt.feedbackAcknowledgedAt,
-              takenAt: attempt.takenAt,
-              responses: responses.filter((response) => response.attemptId === attempt.id).map((response) => ({ questionId: response.questionId, responseText: response.responseText, score: response.score, feedback: response.feedback })),
-            })),
-          };
+              ...agentLesson,
+              summary: locked ? "Complete the current lesson to unlock this section." : agentLesson.summary,
+              contentHtml: locked ? null : agentLesson.contentHtml,
+              videoUrl: locked ? null : agentLesson.videoUrl,
+              attachmentUrl: locked ? null : agentLesson.attachmentUrl,
+              attachmentKey: locked ? null : agentLesson.attachmentKey,
+              attachmentName: locked ? null : agentLesson.attachmentName,
+              locked,
+              // Correct answer keys and staff-only question explanation stay server-side.
+              questions: locked ? [] : lesson.questions.map((question) => {
+                const resit = deriveQuestionResitStates({
+                  questions: lesson.questions,
+                  attempts: attempts.filter((attempt) => attempt.lessonId === lesson.id),
+                  responses: responses.filter((response) => response.attemptId && attempts.some((attempt) => attempt.id === response.attemptId && attempt.lessonId === lesson.id)),
+                  resets: questionResets.filter((reset) => reset.lessonId === lesson.id),
+                  passMark: lesson.assessmentPassMark,
+                }).find((state) => state.questionId === question.id)!;
+                return { id: question.id, prompt: question.prompt, questionType: question.questionType, answerOptions: asOptions(question.answerOptions), maxWords: question.maxWords, sortOrder: question.sortOrder, resit };
+              }),
+              progress: locked ? null : progressByLesson.get(lesson.id) ?? null,
+              attempts: locked ? [] : (attemptsByLesson.get(lesson.id) ?? []).map((attempt) => ({
+                id: attempt.id,
+                status: attempt.status,
+                score: attempt.score,
+                passed: attempt.passed,
+                graderFeedback: attempt.graderFeedback,
+                feedbackAcknowledgedAt: attempt.feedbackAcknowledgedAt,
+                takenAt: attempt.takenAt,
+                responses: responses.filter((response) => response.attemptId === attempt.id).map((response) => ({ questionId: response.questionId, responseText: response.responseText, score: response.score, feedback: response.feedback })),
+              })),
+            };
           }),
         })),
       };
@@ -620,6 +674,7 @@ export const academyRouter = router({
           ...module,
           lessons: module.lessons.map((lesson) => ({
             ...lesson,
+            locked: false,
             // Keep the preview safe: answer keys and private marking guides are never sent to the browser.
             questions: lesson.questions.map((question) => ({
               id: question.id,
@@ -642,8 +697,7 @@ export const academyRouter = router({
         const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-        const { lessons } = await courseStructure(enrollment.courseId);
-        if (!lessons.some((lesson) => lesson.id === input.lessonId)) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+        await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
         await ensureFeedbackAcknowledgedBeforeLesson(enrollment, input.lessonId);
         const [existing] = await db.select().from(academyLessonProgress)
           .where(and(eq(academyLessonProgress.enrollmentId, enrollment.id), eq(academyLessonProgress.lessonId, input.lessonId))).limit(1);
@@ -659,9 +713,7 @@ export const academyRouter = router({
         const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-        const { lessons } = await courseStructure(enrollment.courseId);
-        const lesson = lessons.find((item) => item.id === input.lessonId);
-        if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+        const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
         await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
         if (lesson.requiresAcknowledgement && !input.acknowledged) throw new TRPCError({ code: "BAD_REQUEST", message: "Please confirm the acknowledgement before continuing" });
         if (lesson.requiresAssessment) throw new TRPCError({ code: "BAD_REQUEST", message: "Pass the knowledge check before completing this lesson" });
@@ -688,9 +740,8 @@ export const academyRouter = router({
         const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-        const { lessons } = await courseStructure(enrollment.courseId);
-        const lesson = lessons.find((item) => item.id === input.lessonId);
-        if (!lesson?.requiresAssessment) throw new TRPCError({ code: "BAD_REQUEST", message: "This lesson does not have an assessment" });
+        const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+        if (!lesson.requiresAssessment) throw new TRPCError({ code: "BAD_REQUEST", message: "This lesson does not have an assessment" });
         await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
         const questions = await db.select().from(academyQuestions).where(eq(academyQuestions.lessonId, lesson.id)).orderBy(asc(academyQuestions.sortOrder));
         if (!questions.length) throw new TRPCError({ code: "BAD_REQUEST", message: "No knowledge-check questions have been added yet" });
@@ -799,10 +850,10 @@ export const academyRouter = router({
         }
         if (writtenQuestions.length) {
           await addAudit({ agentId: ctx.user.id, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: "assessment_submitted_for_marking", summary: `Submitted ${writtenQuestions.length} outstanding written ${writtenQuestions.length === 1 ? "question" : "questions"} for ${lesson.title}`, metadata: { lessonId: lesson.id, attemptId, writtenQuestions: writtenQuestions.length } });
-          return { attemptId, status: "awaiting_marking" as const, passMark: lesson.assessmentPassMark, correct, total: outstandingQuestions.length };
+          return { attemptId, status: "awaiting_marking" as const, passMark: REQUIRED_ASSESSMENT_SCORE, correct, total: outstandingQuestions.length };
         }
         await addAudit({ agentId: ctx.user.id, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: assessmentPassed ? "assessment_passed" : "assessment_resit_required", summary: `${assessmentPassed ? "Completed" : "Submitted"} ${outstandingQuestions.length === 1 ? "an outstanding question" : `${outstandingQuestions.length} outstanding questions`} for ${lesson.title}`, metadata: { lessonId: lesson.id, score, passed: assessmentPassed, outstandingQuestionIds: allQuestionStates.filter((state) => !state.passed).map((state) => state.questionId) } });
-        return { attemptId, status: "auto_graded" as const, score, passed: assessmentPassed, passMark: lesson.assessmentPassMark, correct, total: outstandingQuestions.length };
+        return { attemptId, status: "auto_graded" as const, score, passed: assessmentPassed, passMark: REQUIRED_ASSESSMENT_SCORE, correct, total: outstandingQuestions.length };
       }),
 
     acknowledgeAssessmentFeedback: protectedProcedure.input(z.object({ attemptId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -818,6 +869,7 @@ export const academyRouter = router({
       const now = new Date();
       await db.update(academyAssessmentAttempts).set({ status: "feedback_acknowledged", feedbackAcknowledgedAt: now }).where(eq(academyAssessmentAttempts.id, row.attempt.id));
       if (row.attempt.passed) {
+        await ensureSequentialAcademyLessonAccess(row.enrollment, row.lesson.id);
         const [existing] = await db.select().from(academyLessonProgress).where(and(eq(academyLessonProgress.enrollmentId, row.enrollment.id), eq(academyLessonProgress.lessonId, row.lesson.id))).limit(1);
         if (existing) await db.update(academyLessonProgress).set({ completedAt: now, lastViewedAt: now, startedAt: existing.startedAt ?? now }).where(eq(academyLessonProgress.id, existing.id));
         else await db.insert(academyLessonProgress).values({ enrollmentId: row.enrollment.id, lessonId: row.lesson.id, startedAt: now, lastViewedAt: now, completedAt: now } as any);
@@ -862,7 +914,7 @@ export const academyRouter = router({
         attempt: row.attempt,
         enrollment: { id: row.enrollment.id, agentId: row.enrollment.agentId, courseId: row.enrollment.courseId },
         course: { id: row.course.id, title: row.course.title },
-        lesson: { id: row.lesson.id, title: row.lesson.title, assessmentPassMark: row.lesson.assessmentPassMark },
+        lesson: { id: row.lesson.id, title: row.lesson.title, assessmentPassMark: REQUIRED_ASSESSMENT_SCORE },
         agent: { id: row.agent.id, name: row.agent.name, email: row.agent.email },
         responses: questions.filter((question) => question.lessonId === row.lesson.id && question.questionType === "free_text" && responses.some((item) => item.attemptId === row.attempt.id && item.questionId === question.id)).map((question) => {
           const response = responses.find((item) => item.attemptId === row.attempt.id && item.questionId === question.id);
@@ -914,8 +966,8 @@ export const academyRouter = router({
       const passed = states.every((state) => state.passed);
       await db.update(academyAssessmentAttempts).set({ status: "feedback_pending", score, passed, graderFeedback: input.feedback, gradedById: ctx.user.id, gradedAt: now }).where(eq(academyAssessmentAttempts.id, currentAttempt.id));
       await createInAppNotification({ userId: row.agent.id, message: `Your ${row.course.title} assessment feedback is ready. Please read and acknowledge it before continuing.`, linkUrl: `/academy/course/${row.enrollment.id}`, isUrgent: true });
-      await addAudit({ agentId: row.agent.id, courseId: row.course.id, enrollmentId: row.enrollment.id, actorId: ctx.user.id, action: "assessment_marked", summary: `Marked ${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response" : "responses"} for ${row.lesson.title} (${score}% — ${passed ? "passed" : "targeted resit needed"})`, metadata: { attemptId: row.attempt.id, score, passed, passMark: row.lesson.assessmentPassMark, outstandingQuestionIds: states.filter((state) => !state.passed).map((state) => state.questionId) } });
-      return { score, passed, passMark: row.lesson.assessmentPassMark };
+      await addAudit({ agentId: row.agent.id, courseId: row.course.id, enrollmentId: row.enrollment.id, actorId: ctx.user.id, action: "assessment_marked", summary: `Marked ${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response" : "responses"} for ${row.lesson.title} (${score}% — ${passed ? "passed" : "targeted resit needed"})`, metadata: { attemptId: row.attempt.id, score, passed, passMark: REQUIRED_ASSESSMENT_SCORE, outstandingQuestionIds: states.filter((state) => !state.passed).map((state) => state.questionId) } });
+      return { score, passed, passMark: REQUIRED_ASSESSMENT_SCORE };
     }),
 
     supportQueue: adminProcedure.query(async () => {
@@ -1086,7 +1138,7 @@ export const academyRouter = router({
       const videoUrl = normaliseOptionalText(input.videoUrl);
       if (videoUrl && !safeHttpsUrl(videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Video links must use HTTPS" });
       const attachmentUrl = normaliseOptionalText(input.attachmentUrl);
-      const payload = { title: input.title, summary: normaliseOptionalText(input.summary), contentHtml: sanitiseLessonHtml(input.contentHtml), videoUrl, videoTranscript: preserveOptionalTranscript(input.videoTranscript), attachmentUrl, attachmentKey: normaliseOptionalText(input.attachmentKey), attachmentName: normaliseOptionalText(input.attachmentName), estimatedMinutes: input.estimatedMinutes, isRequired: input.isRequired, requiresAcknowledgement: input.requiresAcknowledgement, requiresAssessment: input.requiresAssessment, assessmentPassMark: input.assessmentPassMark };
+      const payload = { title: input.title, summary: normaliseOptionalText(input.summary), contentHtml: sanitiseLessonHtml(input.contentHtml), videoUrl, videoTranscript: preserveOptionalTranscript(input.videoTranscript), attachmentUrl, attachmentKey: normaliseOptionalText(input.attachmentKey), attachmentName: normaliseOptionalText(input.attachmentName), estimatedMinutes: input.estimatedMinutes, isRequired: input.isRequired, requiresAcknowledgement: input.requiresAcknowledgement, requiresAssessment: input.requiresAssessment, assessmentPassMark: input.requiresAssessment ? REQUIRED_ASSESSMENT_SCORE : input.assessmentPassMark };
       const { videoTranscript, ...legacyPayload } = payload;
       if (input.id) {
         const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);

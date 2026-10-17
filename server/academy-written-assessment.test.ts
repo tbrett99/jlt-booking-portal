@@ -24,6 +24,9 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(router).toContain('Score and feedback are required for every written response');
     expect(router).toContain('const score = Math.round(states.reduce');
     expect(router).toContain('status: "feedback_pending"');
+    expect(router).toContain('const REQUIRED_ASSESSMENT_SCORE = 100');
+    expect(router).toContain('passMark: REQUIRED_ASSESSMENT_SCORE');
+    expect(manager).toContain('100% required');
   });
 
   it("requires the agent to acknowledge feedback before later lessons can be opened or completed", () => {

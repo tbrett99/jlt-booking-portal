@@ -46,4 +46,13 @@ Keep your records up to date.`);
     expect(courseSource).toContain("Watch within the Portal");
     expect(courseSource).toContain("loomEmbedUrl(selectedLesson.videoUrl)");
   });
+
+  it("shows a single current learning path and a deliberate knowledge-check retry outcome", () => {
+    expect(courseSource).toContain("lesson.locked || blockedByFeedback");
+    expect(courseSource).toContain("Locked until the current lesson is passed");
+    expect(courseSource).toContain("const [failedKnowledgeCheck, setFailedKnowledgeCheck]");
+    expect(courseSource).toContain("Knowledge check not passed yet");
+    expect(courseSource).toContain("Retry knowledge check");
+    expect(courseSource).toContain("100% is required before you can move to the next lesson");
+  });
 });

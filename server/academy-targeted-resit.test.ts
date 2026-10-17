@@ -27,6 +27,15 @@ describe("JLT Academy targeted-question resits", () => {
     expect(router).toContain('assessment_resit_required');
   });
 
+  it("requires mastery before a lesson unlocks later Academy content", () => {
+    expect(router).toContain('const REQUIRED_ASSESSMENT_SCORE = 100');
+    expect(router).toContain('lastScore >= REQUIRED_ASSESSMENT_SCORE');
+    expect(router).toContain('ensureSequentialAcademyLessonAccess');
+    expect(router).toContain('Complete ${blockingLesson?.title ?? "the current lesson"} before continuing.');
+    expect(router).toContain('locked ? null : agentLesson.contentHtml');
+    expect(router).toContain('locked ? [] : lesson.questions.map');
+  });
+
   it("escalates a question after three unsuccessful attempts and permits a recorded support reset", () => {
     expect(router).toContain('supportRequired: !passed && !awaitingMarking && !feedbackPending && attemptCount >= MAX_QUESTION_ATTEMPTS');
     expect(router).toContain('supportQueue: adminProcedure');
