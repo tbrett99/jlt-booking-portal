@@ -20,6 +20,7 @@ Research destinations, hotels and suppliers.
 Compare options clearly.
 
 Keep your records up to date.`);
+    const editorParagraphList = normaliseAcademyLessonContent(`<p><strong>What You'll Learn</strong></p><p>The Academy will guide you through:</p><p>How the travel industry works and where you fit within it</p><p>The systems, suppliers and booking tools you'll use at JLT</p><p>How to confidently quote, book and manage your clients</p><p>The processes and standards you need to follow when running your business</p>`);
 
     expect(rendered).toContain("<h2>What You&#039;ll Learn</h2>");
     expect(rendered).toContain("<strong>The Academy covers:</strong>");
@@ -27,6 +28,8 @@ Keep your records up to date.`);
     expect(rendered).toContain("<p>Take your time with each lesson.</p>");
     expect(copiedList).toContain("<ul><li>Understand what the client needs.</li><li>Research destinations, hotels and suppliers.</li><li>Compare options clearly.</li></ul>");
     expect(copiedList).toContain("<p>Keep your records up to date.</p>");
+    expect(editorParagraphList).toContain("<h2><strong>What You'll Learn</strong></h2>");
+    expect(editorParagraphList).toContain("<ul><li>How the travel industry works and where you fit within it</li><li>The systems, suppliers and booking tools you'll use at JLT</li><li>How to confidently quote, book and manage your clients</li><li>The processes and standards you need to follow when running your business</li></ul>");
     expect(normaliseAcademyLessonContent("<p><strong>Rich text stays intact</strong></p>")).toBe("<p><strong>Rich text stays intact</strong></p>");
   });
 
@@ -54,5 +57,7 @@ Keep your records up to date.`);
     expect(courseSource).toContain("Knowledge check not passed yet");
     expect(courseSource).toContain("Retry knowledge check");
     expect(courseSource).toContain("100% is required before you can move to the next lesson");
+    expect(courseSource).toContain("const nextUnlockedLesson");
+    expect(courseSource).toContain("Next lesson");
   });
 });

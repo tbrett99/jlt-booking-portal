@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
-import { ArrowLeft, BookOpenCheck, CheckCircle2, Circle, ClipboardCheck, Download, ExternalLink, FileText, LockKeyhole, PlayCircle, ShieldCheck, Trophy } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpenCheck, CheckCircle2, Circle, ClipboardCheck, Download, ExternalLink, FileText, LockKeyhole, PlayCircle, ShieldCheck, Trophy } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -133,6 +133,8 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   const canComplete = !selectedLesson.progress?.completedAt && (!selectedLesson.requiresAcknowledgement || acknowledged) && !selectedLesson.requiresAssessment;
   const hasAnsweredAll = outstandingQuestions.length > 0 && outstandingQuestions.every((question) => question.questionType === "free_text" ? !!writtenAnswers[question.id]?.trim() : answers[question.id] !== undefined);
   const embeddedLoomUrl = loomEmbedUrl(selectedLesson.videoUrl);
+  const selectedLessonIndex = lessons.findIndex((lesson) => lesson.id === selectedLesson.id);
+  const nextUnlockedLesson = selectedLessonIndex >= 0 ? lessons.slice(selectedLessonIndex + 1).find((lesson) => !lesson.locked) ?? null : null;
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -186,6 +188,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
           </section>}
 
           {!selectedLesson.progress?.completedAt && !selectedLesson.requiresAssessment && <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6"><p className="text-sm text-muted-foreground">{selectedLesson.requiresAcknowledgement ? "Confirm your acknowledgement, then save this lesson as complete." : "When you are ready, save this lesson as complete."}</p><Button disabled={!canComplete || (!isPreview && completeLesson.isPending)} onClick={() => { if (isPreview) { toast.info("Preview only — no lesson completion or Academy progress was recorded."); return; } completeLesson.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id, acknowledged }); }}><ShieldCheck className="mr-2" size={17} />{isPreview ? "Preview completion (not recorded)" : completeLesson.isPending ? "Saving..." : "Complete lesson"}</Button></div>}
+          {selectedLesson.progress?.completedAt && nextUnlockedLesson && <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t pt-6"><div><p className="font-semibold">Ready to continue?</p><p className="mt-1 text-sm text-muted-foreground">Next: {nextUnlockedLesson.title}</p></div><Button onClick={() => chooseLesson(nextUnlockedLesson.id)}>Next lesson <ArrowRight className="ml-2" size={17} /></Button></div>}
           {data.progress.isComplete && <div className="mt-8 flex items-center gap-3 rounded-xl bg-emerald-50 p-4 text-emerald-900"><Trophy size={22} className="text-emerald-600" /><div><p className="font-bold">Course complete</p><p className="text-sm text-emerald-800">Your completion has been recorded in your Academy learning history.</p></div></div>}
         </main>
       </div>
