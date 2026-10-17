@@ -21,16 +21,16 @@ export type AgentHomeTile = {
 
 /**
  * The agent homepage is intentionally a service hub rather than a booking list.
- * Academy and Knowledge Base stay visible but non-navigable until their agent
- * experience is formally launched.
+ * The Academy is an active agent destination. Knowledge Base remains visible
+ * but non-navigable until its agent experience is formally launched.
  */
 export const AGENT_HOME_TILES: readonly AgentHomeTile[] = [
   {
     key: "academy",
     title: "JLT Academy",
-    description: "Your guided learning hub is on its way.",
+    description: "Open your assigned JLT learning pathway and keep your progress moving.",
+    href: "/academy",
     tone: "mint",
-    comingSoon: true,
   },
   {
     key: "knowledge_base",

@@ -49,4 +49,9 @@ describe("Portal sidebar navigation", () => {
     expect(source).toContain('setCollapsed(false)');
     expect(source).toContain("Explore portal");
   });
+
+  it("keeps the live JLT Academy route available in agent navigation", () => {
+    const learningGroup = source.slice(source.indexOf('label: "Learning"'), source.indexOf('label: "Community & Events"'));
+    expect(learningGroup).toContain('{ label: "JLT Academy", href: "/academy"');
+  });
 });
