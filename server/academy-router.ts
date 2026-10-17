@@ -426,16 +426,17 @@ export const academyRouter = router({
     }),
 
     /**
-     * Lets a staff member inspect the Academy exactly as it is presented to an
-     * agent, without creating Academy access, enrolments, progress, attempts,
-     * notices or CRM-stage changes for the staff account.
+     * Read-only Academy home for staff using My Agent View. This mirrors a current
+     * agent, while also allowing staff to inspect unpublished draft material,
+     * without creating Academy access, enrolments, progress, attempts, notices
+     * or CRM-stage changes for the staff account.
      */
     previewHome: adminProcedure.query(async () => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
       const courses = await db.select().from(academyCourses)
-        .where(eq(academyCourses.status, "published"))
+        .where(inArray(academyCourses.status, ["draft", "published"]))
         .orderBy(asc(academyCourses.title));
       const courseIds = courses.map((course) => course.id);
       const modules = courseIds.length
@@ -529,12 +530,12 @@ export const academyRouter = router({
       };
     }),
 
-    /** Read-only published-course preview for My Agent View. Correct answers and staff-only notes remain private. */
+    /** Read-only draft or published-course preview for My Agent View. Correct answers and staff-only notes remain private. */
     previewCourse: adminProcedure.input(z.object({ courseId: z.number().int().positive() })).query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, input.courseId)).limit(1);
-      if (!course || course.status !== "published") throw new TRPCError({ code: "NOT_FOUND", message: "Course not available" });
+      if (!course || !["draft", "published"].includes(course.status)) throw new TRPCError({ code: "NOT_FOUND", message: "Course not available" });
 
       const structure = await courseStructure(course.id);
       const requiredLessonIds = structure.lessons.filter((lesson) => lesson.isRequired).map((lesson) => lesson.id);

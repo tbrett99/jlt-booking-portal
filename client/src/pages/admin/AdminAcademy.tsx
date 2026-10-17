@@ -1,7 +1,9 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
-import { Archive, ArrowDown, ArrowUp, BookOpenCheck, CheckCircle2, ChevronRight, CirclePlus, Clock3, Download, FileText, GraduationCap, LayoutList, LockKeyhole, Pencil, Plus, Send, ShieldCheck, Trash2, Trophy, Upload, UsersRound } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, BookOpenCheck, CheckCircle2, ChevronRight, CirclePlus, Clock3, Download, Eye, FileText, GraduationCap, LayoutList, LockKeyhole, Pencil, Plus, Send, ShieldCheck, Trash2, Trophy, Upload, UsersRound } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { useViewMode } from "@/contexts/ViewModeContext";
 import { lessonHtmlToPlainText, plainTextToLessonHtml, RichEmailEditor } from "@/components/RichEmailEditor";
 import { academyQuizCsvTemplate } from "@shared/academy-quiz-csv";
 import { formatAcademyQuestionPrompt, splitAcademyQuestionInlineFormatting } from "@shared/academy-question-format";
@@ -55,6 +57,8 @@ function QuestionFormatPreview({ title, text }: { title: string; text: string })
 
 export default function AdminAcademy() {
   const utils = trpc.useUtils();
+  const [, navigate] = useLocation();
+  const { setViewMode } = useViewMode();
   const { data: courses = [], isLoading: coursesLoading } = trpc.academy.admin.courses.useQuery();
   const [courseId, setCourseId] = useState<number | null>(null);
   const { data: editor, isLoading: editorLoading } = trpc.academy.admin.editor.useQuery({ courseId: courseId ?? 0 }, { enabled: !!courseId });
@@ -149,7 +153,7 @@ export default function AdminAcademy() {
   if (coursesLoading) return <div className="space-y-5 animate-pulse"><div className="h-24 rounded-2xl bg-muted" /><div className="h-[500px] rounded-2xl bg-muted" /></div>;
 
   return <div className="mx-auto max-w-7xl space-y-6">
-    <header className="rounded-3xl border border-[#70FFE8]/45 bg-gradient-to-r from-[#414141] to-[#2d3534] p-6 text-white shadow-sm md:p-8"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex items-center gap-2 text-sm font-semibold text-[#70FFE8]"><GraduationCap size={18} /> Academy Manager</div><h1 className="mt-2 text-3xl font-bold tracking-tight">Build learning your way.</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-white/75">Create content when it is ready, enrol approved agents and keep a clear staff record of progress, assessments and development-stage decisions.</p></div><Button onClick={createCourse} className="bg-[#70FFE8] text-[#27302e] hover:bg-[#8cffef]"><CirclePlus className="mr-2" size={17} /> Create course</Button></div></header>
+    <header className="rounded-3xl border border-[#70FFE8]/45 bg-gradient-to-r from-[#414141] to-[#2d3534] p-6 text-white shadow-sm md:p-8"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex items-center gap-2 text-sm font-semibold text-[#70FFE8]"><GraduationCap size={18} /> Academy Manager</div><h1 className="mt-2 text-3xl font-bold tracking-tight">Build learning your way.</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-white/75">Create content when it is ready, enrol approved agents and keep a clear staff record of progress, assessments and development-stage decisions.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" className="border-white/45 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={() => { setViewMode("agent"); navigate("/academy"); }}><Eye className="mr-2" size={17} /> Preview as agent</Button><Button onClick={createCourse} className="bg-[#70FFE8] text-[#27302e] hover:bg-[#8cffef]"><CirclePlus className="mr-2" size={17} /> Create course</Button></div></div><p className="mt-4 text-xs text-white/70">Preview opens the agent-style Academy for every draft and published course. It never creates an enrolment or changes Max Kelly’s Academy record.</p></header>
 
     <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="h-fit rounded-2xl border bg-card p-3 shadow-sm xl:sticky xl:top-6"><div className="flex items-center justify-between px-2 pb-3"><span className="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">Courses</span><span className="rounded-full bg-muted px-2 py-0.5 text-xs font-bold">{courses.length}</span></div><div className="space-y-1">{courses.map((course) => <button type="button" key={course.id} onClick={() => { setCourseId(course.id); setOpenModuleId(null); setEditingModuleId(null); setEditingLessonId(null); setLessonModuleId(null); }} className={`w-full rounded-xl px-3 py-3 text-left transition ${course.id === courseId ? "bg-[#70FFE8]/25" : "hover:bg-muted"}`}><div className="flex items-start justify-between gap-2"><span className="font-semibold leading-5">{course.title}</span>{course.isCoreAcademy && <ShieldCheck className="shrink-0 text-primary" size={15} />}</div><div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground"><span className={`rounded-full px-1.5 py-0.5 font-semibold ${course.status === "published" ? "bg-emerald-100 text-emerald-700" : course.status === "archived" ? "bg-muted text-muted-foreground" : "bg-amber-100 text-amber-700"}`}>{course.status}</span><span>{course.completionCount}/{course.enrolmentCount} complete</span></div></button>)}</div>{!courses.length && <div className="p-3 text-sm text-muted-foreground">Create your first course to start building a content-ready Academy.</div>}</aside>

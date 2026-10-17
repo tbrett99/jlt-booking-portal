@@ -24,4 +24,10 @@ describe("Academy agent-view preview", () => {
     expect(course).toContain("Preview only — no assessment answer or learning record was created.");
     expect(course).toContain("Preview only — no lesson completion or Academy progress was recorded.");
   });
+
+  it("lets staff test draft courses without making them visible to real agents", () => {
+    expect(academyRouter).toContain('inArray(academyCourses.status, ["draft", "published"])');
+    expect(academyRouter).toContain('!["draft", "published"].includes(course.status)');
+    expect(home).toContain("every draft and published course");
+  });
 });
