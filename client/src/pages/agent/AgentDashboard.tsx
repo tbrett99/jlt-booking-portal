@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AGENT_HOME_TILES, countAgentBookingActions, type AgentHomeTileKey } from "@shared/agent-home";
+import { CompetitionsWidget } from "@/components/CompetitionsWidget";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,6 @@ import {
   Calendar,
   CheckCircle2,
   ChevronRight,
-  CircleHelp,
   Clock,
   ExternalLink,
   GraduationCap,
@@ -254,10 +254,7 @@ export default function AgentDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-[#a7f3e8] bg-[#f0fffb]">
-          <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-base"><CircleHelp size={17} className="text-[#047857]" /> Need a hand?</CardTitle></CardHeader>
-          <CardContent className="space-y-4"><p className="text-sm leading-6 text-muted-foreground">Your JLT support team is here when you need advice on a booking, process or next step.</p><Link href="/messages"><Button className="w-full gap-2 bg-[#70FFE8] font-semibold text-[#414141] hover:bg-[#54ead4]"><MessageSquare size={15} /> Message support</Button></Link><Link href="/my-bookings"><Button variant="outline" className="w-full gap-2 border-[#a7f3e8] bg-white/70"><BookOpen size={15} /> Find a booking or make a request</Button></Link></CardContent>
-        </Card>
+        <CompetitionsWidget />
       </section>
 
       <section>
@@ -283,6 +280,14 @@ export default function AgentDashboard() {
           </CardContent>
         </Card>
       </section>
+
+      <Link href="/roadmap">
+        <div className="group flex items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50/55 px-4 py-3 transition-all hover:-translate-y-0.5 hover:shadow-sm">
+          <div className="rounded-xl bg-white p-2 text-violet-700"><Rocket size={17} /></div>
+          <div className="min-w-0 flex-1"><p className="text-sm font-bold text-foreground">Orbit roadmap</p><p className="mt-0.5 text-xs text-muted-foreground">See what&apos;s planned for the Portal and Orbit transition, and share an idea that would help your business.</p></div>
+          <ChevronRight size={17} className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </div>
+      </Link>
 
       {myProfile?.orbitEnabled && <div className="flex items-center justify-between gap-4 rounded-2xl border border-[#a7f3e8] bg-[#f0fffb] px-5 py-4"><div className="flex min-w-0 items-center gap-3"><div className="rounded-xl bg-white p-2 text-[#047857]"><ExternalLink size={17} /></div><div><p className="text-sm font-bold text-foreground">Orbit is your live booking system</p><p className="mt-0.5 text-xs text-muted-foreground">Use Orbit to make and manage live bookings. Use this Portal for support, requests and your JLT resources.</p></div></div><Button onClick={handleOpenOrbit} disabled={openOrbit.isPending} variant="outline" className="shrink-0 border-[#70FFE8] bg-white">{openOrbit.isPending ? "Opening..." : "Open Orbit"}</Button></div>}
 

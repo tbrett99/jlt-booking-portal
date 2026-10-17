@@ -42,4 +42,11 @@ describe("Portal sidebar navigation", () => {
     expect(source).toContain("window.localStorage.setItem(groupPreferenceKey");
     expect(source).toContain("if (!group.pinned && isAnyActive)");
   });
+
+  it("starts the desktop sidebar collapsed for agents and gives them a clear way to expand it", () => {
+    expect(source).toContain('useState(() => user?.role === "agent")');
+    expect(source).toContain("const isAgentNavigation = isAgent || isAgentView");
+    expect(source).toContain('setCollapsed(false)');
+    expect(source).toContain("Explore portal");
+  });
 });

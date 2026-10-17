@@ -287,13 +287,16 @@ function SidebarGroup({
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [location] = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
   const { isAgentView, setViewMode } = useViewMode();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Agents arrive on a focused home page. They can expand the full navigation
+  // whenever they want it, without the sidebar competing with the content.
+  const [collapsed, setCollapsed] = useState(() => user?.role === "agent");
+  const [notifOpen, setNotifOpen] = useState(false);
 
   const isAdminUser = user?.role === "admin" || user?.role === "super_admin";
   const isAgent = user?.role === "agent";
+  const isAgentNavigation = isAgent || isAgentView;
 
   // Orbit beta access — only fetch for agents (admins always see it)
   // No staleTime so the flag is always fresh on page load/navigation
@@ -743,6 +746,12 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-lg hover:bg-muted">
               <Menu size={18} />
             </button>
+
+            {collapsed && isAgentNavigation && (
+              <button onClick={() => setCollapsed(false)} className="hidden lg:flex items-center gap-2 rounded-lg border border-[#a7f3e8] bg-[#f0fffb] px-3 py-2 text-xs font-bold text-[#065f46] transition-colors hover:bg-[#e5fff9]">
+                <Menu size={16} /> Explore portal
+              </button>
+            )}
 
             {isAdminUser && isAgentView && (
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" style={{ background: "rgba(112,255,232,0.15)", color: "#02E6D2", border: "1px solid rgba(2,230,210,0.3)" }}>

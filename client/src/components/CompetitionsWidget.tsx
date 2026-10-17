@@ -27,19 +27,17 @@ export function CompetitionsWidget() {
     );
   }
 
-  if (!summary || summary.length === 0) {
-    return null; // Don't show widget if no active competitions
-  }
+  const hasActiveCompetitions = Boolean(summary && summary.length > 0);
 
   return (
     <Card className="border-amber-200/60 bg-gradient-to-br from-amber-50/40 to-background">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <Trophy className="w-4 h-4 text-amber-500" /> Active Competitions
+          <Trophy className="w-4 h-4 text-amber-500" /> {hasActiveCompetitions ? "Active Competitions" : "Competitions & Wins"}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {summary.map(({ competition, tickets }) => {
+        {hasActiveCompetitions ? summary!.map(({ competition, tickets }) => {
           const competitionIsOpen = isCompetitionOpen(competition.endDate);
           const closingLabel = competitionClosingLabel(competition.endDate);
           return (
@@ -64,10 +62,15 @@ export function CompetitionsWidget() {
               </div>
             </div>
           );
-        })}
+        }) : (
+          <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-3">
+            <p className="text-sm font-semibold text-foreground">Keep an eye on the prize</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">New JLT competitions and agent wins will be shared here. Check the competitions page for the latest news and leaderboard.</p>
+          </div>
+        )}
         <Link href="/competitions">
           <Button variant="outline" size="sm" className="w-full gap-1 mt-1 text-xs h-8">
-            View Leaderboard <ChevronRight className="w-3 h-3" />
+            {hasActiveCompetitions ? "View Competition & Leaderboard" : "Explore Competitions"} <ChevronRight className="w-3 h-3" />
           </Button>
         </Link>
       </CardContent>

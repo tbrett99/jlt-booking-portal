@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { AlertTriangle, CheckCircle2, Info, Calculator } from "lucide-react";
+import { AlertTriangle, Banknote, CheckCircle2, Info, Calculator, CreditCard, ExternalLink } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -97,6 +97,21 @@ export default function PackagePricingCalculator() {
           </p>
         </div>
       </div>
+
+      <Card id="fee-guides" className="border-[#a7f3e8] bg-[#f0fffb]/55">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Looking for PTS or card fees?</CardTitle>
+          <p className="text-sm font-normal text-muted-foreground">These guides sit alongside the package pricing calculator, so you have the right tool for the question in front of you.</p>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2">
+          <a href="https://fees.thejltgroup.co.uk" target="_blank" rel="noopener noreferrer" className="group rounded-xl border border-[#a7f3e8] bg-white p-4 transition-all hover:-translate-y-0.5 hover:shadow-sm">
+            <div className="flex items-start gap-3"><div className="rounded-lg bg-[#f0fffb] p-2 text-[#047857]"><Banknote size={18} /></div><div className="min-w-0 flex-1"><p className="text-sm font-bold text-foreground">PTS fees guide</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Check the current PTS fee information.</p></div><ExternalLink size={15} className="mt-1 text-muted-foreground group-hover:text-[#047857]" /></div>
+          </a>
+          <a href="https://fees.thejltgroup.co.uk/card-fees" target="_blank" rel="noopener noreferrer" className="group rounded-xl border border-[#bfdbfe] bg-white p-4 transition-all hover:-translate-y-0.5 hover:shadow-sm">
+            <div className="flex items-start gap-3"><div className="rounded-lg bg-[#eff6ff] p-2 text-[#1d4ed8]"><CreditCard size={18} /></div><div className="min-w-0 flex-1"><p className="text-sm font-bold text-foreground">Card fees guide</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Check card-payment fees before you quote.</p></div><ExternalLink size={15} className="mt-1 text-muted-foreground group-hover:text-[#1d4ed8]" /></div>
+          </a>
+        </CardContent>
+      </Card>
 
       {/* VAT-on-commission note */}
       <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4 flex gap-3">
