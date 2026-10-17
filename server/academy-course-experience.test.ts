@@ -5,6 +5,7 @@ import { normaliseAcademyLessonContent } from "../shared/academy-lesson-content"
 import { loomEmbedUrl, parseLoomEmbedId } from "../shared/loom-embed";
 
 const courseSource = readFileSync(resolve(process.cwd(), "client/src/pages/academy/AcademyCourse.tsx"), "utf8");
+const portalCss = readFileSync(resolve(process.cwd(), "client/src/index.css"), "utf8");
 
 describe("Academy learner course experience", () => {
   it("renders legacy plain lesson content with readable paragraphs, headings and lists", () => {
@@ -57,6 +58,15 @@ Keep your records up to date.`);
     expect(courseSource).toContain("<iframe");
     expect(courseSource).toContain("Watch within the Portal");
     expect(courseSource).toContain("loomEmbedUrl(selectedLesson.videoUrl)");
+  });
+
+  it("uses explicit Academy lesson styles rather than optional Typography utilities", () => {
+    expect(courseSource).toContain('className="academy-lesson-content max-w-none text-[15px] leading-7 text-foreground"');
+    expect(courseSource).not.toContain("prose-ul:list-disc");
+    expect(portalCss).toContain(".academy-lesson-content p");
+    expect(portalCss).toContain(".academy-lesson-content ul { list-style-type: disc !important; }");
+    expect(portalCss).toContain(".academy-lesson-content ol { list-style-type: decimal !important; }");
+    expect(portalCss).toContain(".academy-lesson-content li");
   });
 
   it("shows a single current learning path and a deliberate knowledge-check retry outcome", () => {

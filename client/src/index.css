@@ -391,6 +391,60 @@ main > section.mx-auto.grid.max-w-6xl > article::after {
   margin-bottom: 0.25rem;
 }
 
+/* Academy lessons are authored as genuine HTML in the editor. Tailwind's base
+   reset removes browser list markers and paragraph margins, so the learner-side
+   renderer restores them explicitly rather than relying on Typography utilities. */
+.academy-lesson-content {
+  max-width: none;
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  line-height: 1.75rem;
+}
+.academy-lesson-content > :first-child { margin-top: 0; }
+.academy-lesson-content > :last-child { margin-bottom: 0; }
+.academy-lesson-content p {
+  margin: 1.15rem 0;
+  line-height: 1.75rem;
+}
+.academy-lesson-content h1,
+.academy-lesson-content h2,
+.academy-lesson-content h3,
+.academy-lesson-content h4 {
+  margin: 2rem 0 0.9rem;
+  color: var(--foreground);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+.academy-lesson-content h1 { font-size: 1.75rem; }
+.academy-lesson-content h2 { border-bottom: 1px solid var(--border); font-size: 1.35rem; padding-bottom: 0.5rem; }
+.academy-lesson-content h3 { font-size: 1.15rem; }
+.academy-lesson-content ul,
+.academy-lesson-content ol {
+  display: block;
+  margin: 1.15rem 0;
+  padding-left: 1.75rem;
+}
+.academy-lesson-content ul { list-style-type: disc !important; }
+.academy-lesson-content ol { list-style-type: decimal !important; }
+.academy-lesson-content li {
+  display: list-item !important;
+  margin: 0.45rem 0;
+  padding-left: 0.15rem;
+}
+.academy-lesson-content li > ul,
+.academy-lesson-content li > ol { margin: 0.45rem 0; }
+.academy-lesson-content strong,
+.academy-lesson-content b { font-weight: 700; }
+.academy-lesson-content em,
+.academy-lesson-content i { font-style: italic; }
+.academy-lesson-content a { color: var(--primary); font-weight: 600; text-decoration: underline; }
+.academy-lesson-content img { border-radius: 0.75rem; }
+.academy-lesson-content table { width: 100%; border-collapse: collapse; margin: 1.25rem 0; }
+.academy-lesson-content th,
+.academy-lesson-content td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; vertical-align: top; }
+.academy-lesson-content th { background: var(--muted); font-weight: 700; }
+
 @layer components {
   /**
    * Custom container utility that centers content and adds responsive padding.
