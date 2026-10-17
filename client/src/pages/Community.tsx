@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -14,7 +13,8 @@ import { toast } from "sonner";
 import {
   Pin, Search, Plus, ChevronDown, ChevronUp, MessageCircle,
   Lock, CheckCircle2, AlertCircle, Paperclip, ExternalLink,
-  MoreVertical, Pencil, EyeOff, Trash2, X, Filter,
+  MoreVertical, Pencil, EyeOff, Trash2, X, Filter, Sparkles, Trophy,
+  CalendarDays, ArrowRight, Newspaper, Zap,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -124,6 +124,18 @@ export default function Community() {
 
   const posts = data?.posts ?? [];
   const total = data?.total ?? 0;
+  const showHub = selectedCategory === "all" && !search && !supplierSubCategory && !supplierPostType && offset === 0;
+  const { data: hubData } = trpc.community.hub.useQuery(undefined, { enabled: showHub });
+  const markViewed = trpc.community.markViewed.useMutation({
+    onSuccess: () => { if (showHub) refetch(); },
+  });
+
+  function openHubPost(post: any) {
+    markViewed.mutate({ postId: post.id });
+    setSelectedCategory(post.category);
+    setOffset(0);
+    setExpandedPostId(post.id);
+  }
 
   // ─── Mutations ────────────────────────────────────────────────────────────────
 
@@ -268,12 +280,20 @@ export default function Community() {
           </div>
         )}
 
+        {showHub && (
+          <CommunityHub
+            data={hubData}
+            onOpenPost={openHubPost}
+            onChooseCategory={setSelectedCategory}
+          />
+        )}
+
         {/* Posts */}
         <div className="flex-1 px-4 lg:px-6 pb-8 space-y-4">
           {isLoading ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-40 rounded-xl" />
-            ))
+            <div className="rounded-2xl border bg-card px-5 py-6 text-center text-sm text-muted-foreground">
+              Updating the Community feed…
+            </div>
           ) : posts.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <p className="text-4xl mb-3">💬</p>
@@ -353,6 +373,51 @@ export default function Community() {
   );
 }
 
+function CommunityHub({
+  data,
+  onOpenPost,
+  onChooseCategory,
+}: {
+  data: any;
+  onOpenPost: (post: any) => void;
+  onChooseCategory: (category: string) => void;
+}) {
+  const featured = data?.featured ?? [];
+  const newSinceLastVisit = data?.newSinceLastVisit ?? [];
+  const latest = data?.latest ?? [];
+  const categories = data?.categories ?? [];
+  const momentum = data?.momentum;
+  const displayFeatured = featured[0] ?? latest[0];
+  const stripHtml = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const categoryFor = (id: string) => CATEGORIES.find((category) => category.id === id);
+
+  return <section className="space-y-5 px-4 pt-5 lg:px-6">
+    <div className="rounded-3xl border border-[#bdeee7] bg-gradient-to-br from-[#edfffb] via-white to-[#f3f0ff] p-5 shadow-sm lg:p-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div><div className="flex items-center gap-2 text-sm font-bold text-[#047857]"><Newspaper size={17} /> Community Hub</div><h2 className="mt-1 text-2xl font-bold tracking-tight text-foreground">Worth a look today.</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">Your important updates, new conversations, events and Momentum progress are all surfaced here — no need to hunt through a long feed.</p></div>
+        <div className="flex gap-2"><Link href="/events"><Button variant="outline" size="sm" className="bg-white"><CalendarDays className="mr-1.5" size={15} /> Events</Button></Link><Link href="/competitions"><Button variant="outline" size="sm" className="bg-white"><Trophy className="mr-1.5" size={15} /> Competitions</Button></Link></div>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <div className="rounded-2xl border border-[#b6e9df] bg-white/80 p-4"><div className="flex items-center gap-2 text-sm font-bold text-[#047857]"><Sparkles size={16} /> JLT Momentum</div><p className="mt-2 text-3xl font-bold text-foreground">{momentum?.totalPoints ?? 0}</p><p className="text-xs text-muted-foreground">Momentum Points total · {momentum?.monthPoints ?? 0} this month</p></div>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4"><div className="flex items-center gap-2 text-sm font-bold text-amber-800"><Zap size={16} /> New for you</div><p className="mt-2 text-3xl font-bold text-foreground">{newSinceLastVisit.length}</p><p className="text-xs text-muted-foreground">new posts since you last viewed Community</p></div>
+        <div className="rounded-2xl border border-violet-200 bg-violet-50/80 p-4"><div className="flex items-center gap-2 text-sm font-bold text-violet-800"><Trophy size={16} /> Your activity</div><p className="mt-2 text-sm font-semibold text-foreground">Small actions count.</p><p className="mt-1 text-xs text-muted-foreground">React, contribute useful comments and share wins to build Momentum.</p></div>
+      </div>
+    </div>
+
+    {displayFeatured && <button onClick={() => onOpenPost(displayFeatured)} className="group block w-full overflow-hidden rounded-2xl border border-[#414141] bg-[#414141] text-left text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md"><div className="grid min-h-44 gap-4 p-5 md:grid-cols-[1fr_auto] md:items-end"><div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.14em] text-[#70FFE8]"><Pin size={14} /> {displayFeatured.isPinned ? "Featured JLT update" : "Latest Community update"}</div><h3 className="mt-2 max-w-3xl text-xl font-bold leading-tight">{displayFeatured.title}</h3><p className="mt-2 max-w-3xl line-clamp-2 text-sm leading-6 text-white/75">{stripHtml(displayFeatured.bodyHtml)}</p></div><span className="inline-flex items-center gap-1 text-sm font-bold text-[#70FFE8]">Read update <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" /></span></div></button>}
+
+    {newSinceLastVisit.length > 0 && <div><div className="mb-3 flex items-center justify-between"><div><h3 className="font-bold">New since your last visit</h3><p className="text-xs text-muted-foreground">Start here so nothing useful is hidden.</p></div><button onClick={() => onChooseCategory("all")} className="text-xs font-bold text-primary hover:underline">View all posts</button></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{newSinceLastVisit.slice(0, 3).map((post: any) => <HubPostTile key={post.id} post={post} onClick={() => onOpenPost(post)} />)}</div></div>}
+
+    {categories.length > 0 && <div><div className="mb-3"><h3 className="font-bold">Explore what&apos;s happening</h3><p className="text-xs text-muted-foreground">Jump straight to the areas you care about.</p></div><div className="flex gap-2 overflow-x-auto pb-1">{categories.slice(0, 8).map((category: any) => { const definition = categoryFor(category.id); return <button key={category.id} onClick={() => onChooseCategory(category.id)} className="flex min-w-[178px] items-center gap-3 rounded-xl border bg-card p-3 text-left transition-shadow hover:shadow-sm"><span className="text-lg">{definition?.emoji ?? "💬"}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{definition?.label ?? category.id}</span><span className="block text-xs text-muted-foreground">{category.count} recent {category.count === 1 ? "post" : "posts"}</span></span><ArrowRight size={15} className="text-muted-foreground" /></button>; })}</div></div>}
+  </section>;
+}
+
+function HubPostTile({ post, onClick }: { post: any; onClick: () => void }) {
+  const category = CATEGORIES.find((item) => item.id === post.category);
+  const text = (post.bodyHtml ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return <button onClick={onClick} className="group rounded-2xl border bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm"><div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"><span>{category?.emoji ?? "💬"}</span><span className="truncate">{category?.label ?? post.category}</span></div><h4 className="mt-2 line-clamp-2 font-bold leading-snug text-foreground">{post.title}</h4><p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{text}</p><span className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-primary">Open post <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" /></span></button>;
+}
+
 // ─── PostCard ─────────────────────────────────────────────────────────────────
 
 function PostCard({
@@ -407,15 +472,10 @@ function PostCard({
   const imageUrls: string[] = parseJsonField<string>(post.imageUrls);
   const attachments: { name: string; url: string }[] = parseJsonField<{ name: string; url: string }>(post.attachmentUrls);
 
-  // Reaction totals
-  const reactionTotals: Record<string, number> = {};
-  let myReaction: string | null = null;
-  if (Array.isArray(post.reactions)) {
-    for (const r of post.reactions) {
-      reactionTotals[r.emoji] = (reactionTotals[r.emoji] ?? 0) + 1;
-      if (r.userId === currentUserId) myReaction = r.emoji;
-    }
-  }
+  // The Community list already returns aggregate counts and the current user's
+  // reaction, rather than a private raw list of everyone who reacted.
+  const reactionTotals: Record<string, number> = post.reactionCounts ?? {};
+  const myReaction: string | null = post.myReaction ?? null;
 
   const needsConfirmation = post.requiresConfirmation && !post.isConfirmed;
   const confirmedByMe = post.isConfirmed;

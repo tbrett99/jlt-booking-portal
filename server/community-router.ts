@@ -33,6 +33,7 @@ import { users, agentCrmProfiles, suppliers } from "../drizzle/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { prepareCommunityDigestDelivery } from "./community-digest-delivery-utils";
 import { formatCommunityDigestIntro } from "./community-digest-intro";
+import { awardMomentum, getMyMomentum, reverseMomentumForCommunityPost, reverseMomentumForSource } from "./momentum";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,27 @@ function getMembershipTier(user: { membershipTier?: string | null }): string {
 
 function isFirstClassMember(tier: string): boolean {
   return tier.toLowerCase().includes("first class");
+}
+
+async function getReadableCommunityPostForUser(user: { id: number; role: string }, postId: number) {
+  const post = await getCommunityPost(postId);
+  if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "Community post not found" });
+  const isAdmin = user.role === "admin" || user.role === "super_admin";
+  if (!isAdmin) {
+    if (post.isDraft || post.isHidden || (post.expiresAt && post.expiresAt <= new Date())) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Community post not found" });
+    }
+    if (post.category === "first_class_lounge") {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [profile] = await db
+        .select({ membershipTier: agentCrmProfiles.membershipTier })
+        .from(agentCrmProfiles)
+        .where(eq(agentCrmProfiles.userId, user.id));
+      if (!isFirstClassMember(profile?.membershipTier ?? "")) throw new TRPCError({ code: "FORBIDDEN" });
+    }
+  }
+  return post;
 }
 
 // ─── Category enum ────────────────────────────────────────────────────────────
@@ -98,26 +120,18 @@ export const communityRouter = router({
   get: protectedProcedure
     .input(z.object({ postId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const post = await getCommunityPost(input.postId);
-      if (!post) throw new TRPCError({ code: "NOT_FOUND" });
-      // First Class gating
-      if (post.category === "first_class_lounge") {
-      const [profile] = await db
-        .select({ membershipTier: agentCrmProfiles.membershipTier })
-        .from(agentCrmProfiles)
-        .where(eq(agentCrmProfiles.userId, ctx.user.id));
-      const tier = profile?.membershipTier ?? "";
-      const isAdmin =
-        ctx.user.role === "admin" || ctx.user.role === "super_admin";
-      if (!isAdmin && !isFirstClassMember(tier)) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
-      }
+      const post = await getReadableCommunityPostForUser(ctx.user, input.postId);
       // Record view
       await recordPostView(input.postId, ctx.user.id);
       return post;
+    }),
+
+  markViewed: protectedProcedure
+    .input(z.object({ postId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await getReadableCommunityPostForUser(ctx.user, input.postId);
+      await recordPostView(input.postId, ctx.user.id);
+      return { success: true };
     }),
 
   // ─── Create post ────────────────────────────────────────────────────────────
@@ -159,6 +173,13 @@ export const communityRouter = router({
       });
 
       if (!isAdmin && input.category === "agent_win" && !input.isDraft) {
+        await awardMomentum({
+          agentId: ctx.user.id,
+          ruleKey: "community_agent_win",
+          sourceType: "community_post",
+          sourceId: postId,
+          sourceLabel: input.title,
+        });
         const portalBaseUrl = process.env.PORTAL_BASE_URL ?? "https://portal.thejltgroup.co.uk";
         try {
           const alert = await sendDirectEmail({
@@ -222,12 +243,13 @@ export const communityRouter = router({
   // ─── Delete / hide post ─────────────────────────────────────────────────────
   delete: adminProcedure
     .input(z.object({ postId: z.number(), hide: z.boolean().default(false) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       if (input.hide) {
         await updateCommunityPost(input.postId, { isHidden: true });
       } else {
         await deleteCommunityPost(input.postId);
       }
+      await reverseMomentumForCommunityPost(input.postId, ctx.user.id, input.hide ? "Community post hidden by staff" : "Community post deleted by staff");
       return { success: true };
     }),
 
@@ -240,18 +262,29 @@ export const communityRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const post = await getReadableCommunityPostForUser(ctx.user, input.postId);
       const result = await toggleReaction(
         input.postId,
         ctx.user.id,
         input.emoji
       );
-      return { activeEmoji: result };
+      if (result.created && post.authorId !== ctx.user.id) {
+        await awardMomentum({
+          agentId: ctx.user.id,
+          ruleKey: "community_reaction",
+          sourceType: "community_reaction",
+          sourceId: input.postId,
+          sourceLabel: post.title,
+        });
+      }
+      return { activeEmoji: result.activeEmoji };
     }),
 
   // ─── Comments ───────────────────────────────────────────────────────────────
   listComments: protectedProcedure
     .input(z.object({ postId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      await getReadableCommunityPostForUser(ctx.user, input.postId);
       return listComments(input.postId);
     }),
 
@@ -259,23 +292,46 @@ export const communityRouter = router({
     .input(
       z.object({
         postId: z.number(),
-        content: z.string().min(1).max(2000),
+        content: z.string().trim().min(1).max(2000),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const post = await getReadableCommunityPostForUser(ctx.user, input.postId);
       const commentId = await createComment({
         postId: input.postId,
         authorId: ctx.user.id,
         authorName: ctx.user.name ?? "Agent",
         content: input.content,
       });
+      const { getMomentumRule } = await import("./momentum");
+      const commentRule = await getMomentumRule("community_comment");
+      if (post.authorId !== ctx.user.id && input.content.trim().length >= (commentRule?.minimumTextLength ?? 0)) {
+        await awardMomentum({
+          agentId: ctx.user.id,
+          ruleKey: "community_comment",
+          // The post ID intentionally makes this one award per agent/post rather
+          // than an incentive to leave several comments on the same post.
+          sourceType: "community_comment",
+          sourceId: input.postId,
+          sourceLabel: post.title,
+        });
+      }
       return { commentId };
     }),
 
   deleteComment: adminProcedure
     .input(z.object({ commentId: z.number() }))
-    .mutation(async ({ input }) => {
-      await deleteComment(input.commentId);
+    .mutation(async ({ ctx, input }) => {
+      const comment = await deleteComment(input.commentId);
+      if (comment) {
+        await reverseMomentumForSource({
+          agentId: comment.authorId,
+          sourceType: "community_comment",
+          sourceId: comment.postId,
+          reversedById: ctx.user.id,
+          reason: "Community comment removed by staff",
+        });
+      }
       return { success: true };
     }),
 
@@ -283,9 +339,46 @@ export const communityRouter = router({
   confirm: protectedProcedure
     .input(z.object({ postId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await confirmPost(input.postId, ctx.user.id);
-      return { success: true };
+      const post = await getReadableCommunityPostForUser(ctx.user, input.postId);
+      if (!post.requiresConfirmation) throw new TRPCError({ code: "BAD_REQUEST", message: "This post does not require confirmation" });
+      const confirmedNow = await confirmPost(input.postId, ctx.user.id);
+      if (confirmedNow) {
+        await awardMomentum({
+          agentId: ctx.user.id,
+          ruleKey: "community_confirmation",
+          sourceType: "community_confirmation",
+          sourceId: input.postId,
+          sourceLabel: post.title,
+        });
+      }
+      return { success: true, awarded: confirmedNow };
     }),
+
+  // ─── Community Hub + Momentum summary ─────────────────────────────────────
+  hub: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return { featured: [], newSinceLastVisit: [], latest: [], categories: [], momentum: await getMyMomentum(ctx.user.id) };
+    const [profile] = await db
+      .select({ membershipTier: agentCrmProfiles.membershipTier })
+      .from(agentCrmProfiles)
+      .where(eq(agentCrmProfiles.userId, ctx.user.id));
+    const feed = await listCommunityPosts({
+      userId: ctx.user.id,
+      userRole: ctx.user.role,
+      membershipTier: profile?.membershipTier ?? "",
+      limit: 40,
+      offset: 0,
+    });
+    const featured = feed.posts.filter((post) => post.isPinned).slice(0, 3);
+    const newSinceLastVisit = feed.posts.filter((post) => !post.isViewed && !post.isPinned).slice(0, 6);
+    const latest = feed.posts.filter((post) => !featured.some((featuredPost) => featuredPost.id === post.id)).slice(0, 12);
+    const categories = CATEGORIES.map((category) => ({
+      id: category,
+      count: feed.posts.filter((post) => post.category === category).length,
+      latest: feed.posts.find((post) => post.category === category) ?? null,
+    })).filter((category) => category.count > 0);
+    return { featured, newSinceLastVisit, latest, categories, momentum: await getMyMomentum(ctx.user.id) };
+  }),
 
   confirmationStatus: protectedProcedure
     .input(z.object({ postId: z.number() }))

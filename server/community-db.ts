@@ -345,7 +345,7 @@ export async function toggleReaction(
   emoji: "thumbs_up" | "heart" | "celebrate" | "fire" | "plane"
 ) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) return { activeEmoji: null, created: false };
   const [existing] = await db
     .select()
     .from(communityReactions)
@@ -362,18 +362,18 @@ export async function toggleReaction(
       await db
         .delete(communityReactions)
         .where(eq(communityReactions.id, existing.id));
-      return null;
+      return { activeEmoji: null, created: false };
     } else {
       // Replace reaction
       await db
         .update(communityReactions)
         .set({ emoji })
         .where(eq(communityReactions.id, existing.id));
-      return emoji;
+      return { activeEmoji: emoji, created: false };
     }
   } else {
     await db.insert(communityReactions).values({ postId, userId, emoji });
-    return emoji;
+    return { activeEmoji: emoji, created: true };
   }
 }
 
@@ -403,18 +403,24 @@ export async function createComment(data: {
 
 export async function deleteComment(commentId: number) {
   const db = await getDb();
-  if (!db) return;
+  if (!db) return null;
+  const [comment] = await db
+    .select({ postId: communityComments.postId, authorId: communityComments.authorId })
+    .from(communityComments)
+    .where(eq(communityComments.id, commentId));
+  if (!comment) return null;
   await db
     .update(communityComments)
     .set({ isDeleted: true })
     .where(eq(communityComments.id, commentId));
+  return comment;
 }
 
 // ─── Confirmations ────────────────────────────────────────────────────────────
 
 export async function confirmPost(postId: number, userId: number) {
   const db = await getDb();
-  if (!db) return;
+  if (!db) return false;
   const [existing] = await db
     .select({ id: communityConfirmations.id })
     .from(communityConfirmations)
@@ -426,7 +432,9 @@ export async function confirmPost(postId: number, userId: number) {
     );
   if (!existing) {
     await db.insert(communityConfirmations).values({ postId, userId });
+    return true;
   }
+  return false;
 }
 
 export async function getConfirmationStatus(postId: number, userId: number) {

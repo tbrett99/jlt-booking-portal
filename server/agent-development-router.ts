@@ -1,9 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, inArray, lte } from "drizzle-orm";
 import { z } from "zod";
+import { shouldAwardActionMomentum, validateActionMomentumConfiguration } from "@shared/momentum-policy";
 import { router, protectedProcedure } from "./_core/trpc";
 import { createInAppNotification, getDb, getRawDbPool } from "./db";
 import { storagePut } from "./storage";
+import { awardMomentum, getMomentumRule } from "./momentum";
 import {
   academyActionAssignments,
   academyActionPlans,
@@ -203,6 +205,19 @@ export const agentDevelopmentRouter = router({
           now, status === "completed" ? now : null, row.assignment.id,
         ],
       );
+      if (shouldAwardActionMomentum({ assignmentStatus: status, momentumAwardMode: row.plan.momentumAwardMode, completionPath: "self_declared", momentumPoints: row.plan.momentumPoints })) {
+        const masterRule = await getMomentumRule("accountability_action");
+        if (masterRule?.enabled) {
+          await awardMomentum({
+            agentId: ctx.user.id,
+            ruleKey: "accountability_action",
+            sourceType: "academy_action_assignment",
+            sourceId: row.assignment.id,
+            sourceLabel: row.plan.title,
+            pointsOverride: row.plan.momentumPoints,
+          });
+        }
+      }
       await createInAppNotification({ userId: ctx.user.id, message: status === "completed" ? "Academy action marked complete. Great work." : "Academy action submitted for review.", linkUrl: "/academy/actions", isUrgent: false });
       return { status };
     }),
@@ -240,6 +255,8 @@ export const agentDevelopmentRouter = router({
       requiresUrl: z.boolean().default(false),
       requiresUpload: z.boolean().default(false),
       staffReviewRequired: z.boolean().default(false),
+      momentumAwardMode: z.enum(["off", "self_declared_completion", "reviewed_completion"]).default("off"),
+      momentumPoints: z.number().int().min(0).max(1_000).default(0),
       targetAgentIds: z.array(z.number().int().positive()).max(2_000).default([]),
     })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -249,6 +266,8 @@ export const agentDevelopmentRouter = router({
       if (input.assignmentTrigger === "on_accelerator_entry" && input.audience !== "agent_accelerator") throw new TRPCError({ code: "BAD_REQUEST", message: "Entry actions can only target Agent Accelerator" });
       if (input.actionType === "weekly" && (!input.publishAt || !input.dueAt)) throw new TRPCError({ code: "BAD_REQUEST", message: "Weekly actions need a Monday publish date and Sunday deadline" });
       if (input.publishAt && input.dueAt && input.dueAt < input.publishAt) throw new TRPCError({ code: "BAD_REQUEST", message: "The deadline must be after the publish date" });
+      const momentumConfigurationError = validateActionMomentumConfiguration(input);
+      if (momentumConfigurationError) throw new TRPCError({ code: "BAD_REQUEST", message: momentumConfigurationError });
       const scheduledStatus = input.publishAt && input.publishAt > new Date() && input.assignmentTrigger !== "on_accelerator_entry" ? "scheduled" : "draft";
       const payload = {
         title: input.title,
@@ -262,6 +281,8 @@ export const agentDevelopmentRouter = router({
         requiresUrl: input.requiresUrl,
         requiresUpload: input.requiresUpload,
         staffReviewRequired: input.staffReviewRequired,
+        momentumAwardMode: input.momentumAwardMode,
+        momentumPoints: input.momentumAwardMode === "off" ? 0 : input.momentumPoints,
         status: scheduledStatus,
         updatedById: ctx.user.id,
       };
@@ -275,12 +296,12 @@ export const agentDevelopmentRouter = router({
           `UPDATE academy_action_plans
            SET title = ?, instructions = ?, actionType = ?, audience = ?, assignmentTrigger = ?, status = ?,
                publishAt = ?, dueAt = ?, requiresNote = ?, requiresUrl = ?, requiresUpload = ?,
-               staffReviewRequired = ?, updatedById = ?
+               staffReviewRequired = ?, momentumAwardMode = ?, momentumPoints = ?, updatedById = ?
            WHERE id = ?`,
           [
             payload.title, payload.instructions, payload.actionType, payload.audience, payload.assignmentTrigger, payload.status,
             payload.publishAt, payload.dueAt, payload.requiresNote, payload.requiresUrl, payload.requiresUpload,
-            payload.staffReviewRequired, payload.updatedById, planId,
+            payload.staffReviewRequired, payload.momentumAwardMode, payload.momentumPoints, payload.updatedById, planId,
           ],
         );
         await pool.execute("DELETE FROM academy_action_plan_targets WHERE planId = ?", [planId]);
@@ -289,12 +310,12 @@ export const agentDevelopmentRouter = router({
           `INSERT INTO academy_action_plans (
             title, instructions, actionType, audience, assignmentTrigger, status,
             publishAt, dueAt, requiresNote, requiresUrl, requiresUpload, staffReviewRequired,
-            createdById, updatedById
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            momentumAwardMode, momentumPoints, createdById, updatedById
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             payload.title, payload.instructions, payload.actionType, payload.audience, payload.assignmentTrigger, payload.status,
             payload.publishAt, payload.dueAt, payload.requiresNote, payload.requiresUrl, payload.requiresUpload,
-            payload.staffReviewRequired, ctx.user.id, payload.updatedById,
+            payload.staffReviewRequired, payload.momentumAwardMode, payload.momentumPoints, ctx.user.id, payload.updatedById,
           ],
         );
         planId = Number((result as any).insertId);
@@ -329,16 +350,33 @@ export const agentDevelopmentRouter = router({
     reviewAction: adminProcedure.input(z.object({ assignmentId: z.number().int().positive(), outcome: z.enum(["completed", "needs_revision"]), feedback: z.string().trim().max(10_000).nullable().optional() })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [assignment] = await db.select().from(academyActionAssignments).where(eq(academyActionAssignments.id, input.assignmentId)).limit(1);
-      if (!assignment) throw new TRPCError({ code: "NOT_FOUND", message: "Action assignment not found" });
+      const [row] = await db.select({ assignment: academyActionAssignments, plan: academyActionPlans })
+        .from(academyActionAssignments)
+        .innerJoin(academyActionPlans, eq(academyActionPlans.id, academyActionAssignments.planId))
+        .where(eq(academyActionAssignments.id, input.assignmentId)).limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Action assignment not found" });
+      if (row.assignment.status !== "review") throw new TRPCError({ code: "BAD_REQUEST", message: "Only an action awaiting review can be approved or returned" });
       const now = new Date();
       const pool = await getRawDbPool();
       await pool.execute(
         "UPDATE academy_action_assignments SET status = ?, reviewerFeedback = ?, reviewedAt = ?, reviewedById = ?, completedAt = ? WHERE id = ?",
-        [input.outcome, optionalText(input.feedback), now, ctx.user.id, input.outcome === "completed" ? now : null, assignment.id],
+        [input.outcome, optionalText(input.feedback), now, ctx.user.id, input.outcome === "completed" ? now : null, row.assignment.id],
       );
+      if (shouldAwardActionMomentum({ assignmentStatus: input.outcome, momentumAwardMode: row.plan.momentumAwardMode, completionPath: "reviewed", momentumPoints: row.plan.momentumPoints })) {
+        const masterRule = await getMomentumRule("accountability_action");
+        if (masterRule?.enabled) {
+          await awardMomentum({
+            agentId: row.assignment.agentId,
+            ruleKey: "accountability_action",
+            sourceType: "academy_action_assignment",
+            sourceId: row.assignment.id,
+            sourceLabel: row.plan.title,
+            pointsOverride: row.plan.momentumPoints,
+          });
+        }
+      }
       await createInAppNotification({
-        userId: assignment.agentId,
+        userId: row.assignment.agentId,
         message: input.outcome === "completed" ? "Your Academy action has been approved." : "Your Academy action needs an update. Read the feedback and resubmit.",
         linkUrl: "/academy/actions",
         isUrgent: input.outcome === "needs_revision",

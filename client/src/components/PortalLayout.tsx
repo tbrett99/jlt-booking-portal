@@ -534,6 +534,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       items: [
         { label: "Community Hub", href: "/community", icon: <Newspaper size={16} /> },
         { label: "Weekly Digest", href: "/admin/weekly-digest", icon: <Mail size={16} /> },
+        { label: "JLT Momentum", href: "/admin/momentum", icon: <Sparkles size={16} /> },
         { label: "Competitions", href: "/admin/competitions", icon: <Trophy size={16} /> },
         { label: "Roadmap Manager", href: "/admin/roadmap", icon: <Rocket size={16} /> },
       ],

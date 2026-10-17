@@ -1761,6 +1761,10 @@ export const academyActionPlans = mysqlTable("academy_action_plans", {
   requiresUrl: boolean("requiresUrl").default(false).notNull(),
   requiresUpload: boolean("requiresUpload").default(false).notNull(),
   staffReviewRequired: boolean("staffReviewRequired").default(false).notNull(),
+  // The plan author chooses whether completion earns Momentum, and whether that
+  // happens after self-declaration or the review already required for this task.
+  momentumAwardMode: mysqlEnum("momentumAwardMode", ["off", "self_declared_completion", "reviewed_completion"]).default("off").notNull(),
+  momentumPoints: int("momentumPoints").default(0).notNull(),
   createdById: int("createdById").notNull(),
   updatedById: int("updatedById").notNull(),
   publishedById: int("publishedById"),
@@ -2404,6 +2408,47 @@ export const communityConfirmationReminders = mysqlTable("community_confirmation
   sentAt: timestamp("sentAt").defaultNow().notNull(),
 });
 export type CommunityConfirmationReminder = typeof communityConfirmationReminders.$inferSelect;
+
+// ─── JLT Momentum ────────────────────────────────────────────────────────────
+// Rules are configured by staff once and then applied automatically to verified
+// Portal activity. The append-only ledger makes each award/reversal auditable.
+export const momentumRules = mysqlTable("momentum_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  ruleKey: varchar("ruleKey", { length: 80 }).notNull().unique(),
+  label: varchar("label", { length: 255 }).notNull(),
+  description: text("description").notNull(),
+  area: varchar("area", { length: 80 }).notNull(),
+  enabled: boolean("enabled").default(false).notNull(),
+  points: int("points").default(0).notNull(),
+  // Zero means there is no rolling Monday–Sunday cap for this rule.
+  weeklyCap: int("weeklyCap").default(0).notNull(),
+  // Used by free-text Community comments. Other rule types keep this at zero.
+  minimumTextLength: int("minimumTextLength").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type MomentumRule = typeof momentumRules.$inferSelect;
+
+export const momentumLedger = mysqlTable("momentum_ledger", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: int("agentId").notNull(),
+  ruleKey: varchar("ruleKey", { length: 80 }).notNull(),
+  sourceType: varchar("sourceType", { length: 80 }).notNull(),
+  sourceId: int("sourceId").notNull(),
+  sourceLabel: varchar("sourceLabel", { length: 500 }).notNull(),
+  points: int("points").notNull(),
+  status: mysqlEnum("status", ["awarded", "reversed"]).default("awarded").notNull(),
+  awardedAt: timestamp("awardedAt").defaultNow().notNull(),
+  reversedAt: timestamp("reversedAt"),
+  reversedById: int("reversedById"),
+  reversalReason: text("reversalReason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("momentum_ledger_agent_rule_source_unique").on(table.agentId, table.ruleKey, table.sourceType, table.sourceId),
+  index("momentum_ledger_agent_status_awarded_idx").on(table.agentId, table.status, table.awardedAt),
+  index("momentum_ledger_source_idx").on(table.sourceType, table.sourceId),
+]);
+export type MomentumLedgerEntry = typeof momentumLedger.$inferSelect;
 
 // ─── Community: Weekly Digests ────────────────────────────────────────────────
 export const communityDigests = mysqlTable("community_digests", {

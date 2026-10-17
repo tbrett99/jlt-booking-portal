@@ -161,6 +161,7 @@ import { recruitmentWorkflowRouter } from "./recruitment-workflow-router";
 import { dashboardRouter } from "./dashboard-router";
 import { suppliersRouter } from "./suppliers-router";
 import { communityRouter } from "./community-router";
+import { momentumRouter } from "./momentum-router";
 import { superAdminRouter } from "./super-admin-router";
 import { roadmapRouter } from "./roadmap-router";
 import { fnfRouter } from "./fnf-router";
@@ -5365,6 +5366,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
   dashboard: dashboardRouter,
   suppliers: suppliersRouter,
   community: communityRouter,
+  momentum: momentumRouter,
   academy: academyRouter,
   superAdmin: superAdminRouter,
   roadmap: roadmapRouter,

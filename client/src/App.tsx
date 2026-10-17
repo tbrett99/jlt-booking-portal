@@ -120,6 +120,7 @@ const AcademyCourse = lazy(() => import("./pages/academy/AcademyCourse"));
 const AdminAcademy = lazy(() => import("./pages/admin/AdminAcademy"));
 const AcademyActions = lazy(() => import("./pages/academy/AcademyActions"));
 const AdminAcademyActions = lazy(() => import("./pages/admin/AdminAcademyActions"));
+const AdminMomentum = lazy(() => import("./pages/admin/AdminMomentum"));
 const AdminAgentEngagement = lazy(() => import("./pages/admin/AdminAgentEngagement"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
@@ -481,6 +482,7 @@ function AuthRouter() {
         <Route path="/admin/system-workflows" component={SystemWorkflows} />
         <Route path="/community" component={Community} />
         <Route path="/admin/weekly-digest" component={WeeklyDigestAdmin} />
+        <Route path="/admin/momentum" component={AdminMomentum} />
         <Route path="/admin/roadmap" component={AdminRoadmap} />
         <Route path="/roadmap" component={Roadmap} />
         <Route path="/competitions" component={Competitions} />
