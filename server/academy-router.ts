@@ -48,6 +48,9 @@ const lessonInput = z.object({
   summary: z.string().trim().max(10_000).nullable().optional(),
   contentHtml: z.string().max(500_000).nullable().optional(),
   videoUrl: z.string().trim().max(1200).nullable().optional(),
+  // Preserve Loom's timestamp lines exactly. This private field is never sent
+  // to agents; it will form a cited Academy knowledge source for the chatbot.
+  videoTranscript: z.string().max(1_000_000).nullable().optional(),
   attachmentUrl: z.string().trim().max(10_000).nullable().optional(),
   attachmentKey: z.string().trim().max(600).nullable().optional(),
   attachmentName: z.string().trim().max(255).nullable().optional(),
@@ -61,6 +64,10 @@ const lessonInput = z.object({
 function normaliseOptionalText(value: string | null | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function preserveOptionalTranscript(value: string | null | undefined) {
+  return value?.trim() ? value : null;
 }
 
 /** Staff-created lesson HTML is stored separately from external content. */
@@ -501,8 +508,12 @@ export const academyRouter = router({
         progress: summary,
         modules: structure.modules.map((module) => ({
           ...module,
-          lessons: module.lessons.map((lesson) => ({
-            ...lesson,
+          lessons: module.lessons.map((lesson) => {
+            // The transcript is private staff source material. Do not leak it
+            // to agent browsers before chatbot knowledge controls are added.
+            const { videoTranscript: _videoTranscript, ...agentLesson } = lesson;
+            return {
+            ...agentLesson,
             // Correct answer keys and staff-only question explanation stay server-side.
             questions: lesson.questions.map((question) => {
               const resit = deriveQuestionResitStates({
@@ -525,7 +536,8 @@ export const academyRouter = router({
               takenAt: attempt.takenAt,
               responses: responses.filter((response) => response.attemptId === attempt.id).map((response) => ({ questionId: response.questionId, responseText: response.responseText, score: response.score, feedback: response.feedback })),
             })),
-          })),
+          };
+          }),
         })),
       };
     }),
@@ -989,7 +1001,7 @@ export const academyRouter = router({
       const videoUrl = normaliseOptionalText(input.videoUrl);
       if (videoUrl && !safeHttpsUrl(videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Video links must use HTTPS" });
       const attachmentUrl = normaliseOptionalText(input.attachmentUrl);
-      const payload = { title: input.title, summary: normaliseOptionalText(input.summary), contentHtml: sanitiseLessonHtml(input.contentHtml), videoUrl, attachmentUrl, attachmentKey: normaliseOptionalText(input.attachmentKey), attachmentName: normaliseOptionalText(input.attachmentName), estimatedMinutes: input.estimatedMinutes, isRequired: input.isRequired, requiresAcknowledgement: input.requiresAcknowledgement, requiresAssessment: input.requiresAssessment, assessmentPassMark: input.assessmentPassMark };
+      const payload = { title: input.title, summary: normaliseOptionalText(input.summary), contentHtml: sanitiseLessonHtml(input.contentHtml), videoUrl, videoTranscript: preserveOptionalTranscript(input.videoTranscript), attachmentUrl, attachmentKey: normaliseOptionalText(input.attachmentKey), attachmentName: normaliseOptionalText(input.attachmentName), estimatedMinutes: input.estimatedMinutes, isRequired: input.isRequired, requiresAcknowledgement: input.requiresAcknowledgement, requiresAssessment: input.requiresAssessment, assessmentPassMark: input.assessmentPassMark };
       if (input.id) {
         const [lesson] = await db.select().from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);
         if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
@@ -1005,14 +1017,15 @@ export const academyRouter = router({
       if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [result] = await pool.execute(
         `INSERT INTO academy_lessons
-          (moduleId, title, summary, contentHtml, videoUrl, attachmentUrl, attachmentKey, attachmentName, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentPassMark, sortOrder)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (moduleId, title, summary, contentHtml, videoUrl, videoTranscript, attachmentUrl, attachmentKey, attachmentName, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentPassMark, sortOrder)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           input.moduleId,
           payload.title,
           payload.summary,
           payload.contentHtml,
           payload.videoUrl,
+          payload.videoTranscript,
           payload.attachmentUrl,
           payload.attachmentKey,
           payload.attachmentName,

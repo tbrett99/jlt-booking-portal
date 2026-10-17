@@ -1100,6 +1100,13 @@
       "when": 1792242921080,
       "tag": "0156_pink_strong_guy",
       "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "5",
+      "when": 1792246814890,
+      "tag": "0157_clumsy_the_renegades",
+      "breakpoints": true
     }
   ]
 }

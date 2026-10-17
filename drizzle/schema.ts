@@ -1581,6 +1581,9 @@ export const academyLessons = mysqlTable("academy_lessons", {
   summary: text("summary"),
   contentHtml: longtext("contentHtml"),
   videoUrl: varchar("videoUrl", { length: 1200 }),
+  // Private source material for future Academy-aware search and chat. This is
+  // deliberately never returned by the normal agent course endpoint.
+  videoTranscript: longtext("videoTranscript"),
   attachmentUrl: text("attachmentUrl"),
   attachmentKey: varchar("attachmentKey", { length: 600 }),
   attachmentName: varchar("attachmentName", { length: 255 }),
