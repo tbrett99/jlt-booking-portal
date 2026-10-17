@@ -5,6 +5,13 @@
 import { router, protectedProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import {
+  addToComparisonRow,
+  buildComparisonPeriods,
+  findComparisonPeriodIndex,
+  initialiseComparisonRows,
+  totalComparisonRows,
+} from "../shared/business-intelligence-periods";
 
 const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "super_admin") {
@@ -1680,6 +1687,119 @@ export const superAdminRouter = router({
           agentRepliesThisMonth: n(agentRepliesThisMonth[0]?.count),
         },
         monthlyTrend,
+      };
+    }),
+
+  /**
+   * Calendar-year comparison for the five headline operational measures. The
+   * endpoint returns a complete weekly or monthly series, including zero-value
+   * future periods, so comparisons remain consistent throughout the year.
+   */
+  performanceComparison: superAdminProcedure
+    .input(z.object({
+      year: z.number().int().min(2020).max(2100),
+      cadence: z.enum(["weekly", "monthly"]),
+    }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const {
+        bookings,
+        commissionClaims,
+        gcMandates,
+        recruitmentProspects,
+        remittanceBatches,
+        remittanceLines,
+      } = await import("../drizzle/schema");
+      const { and, eq, gte, isNotNull, lt, or, sql } = await import("drizzle-orm");
+
+      const periods = buildComparisonPeriods(input.year, input.cadence);
+      const rows = initialiseComparisonRows(periods);
+      const yearStart = periods[0]!.start;
+      const yearEnd = periods[periods.length - 1]!.end;
+
+      const [registeredBookings, remittanceRuns, claims, prospects, paidJoiners] = await Promise.all([
+        db.select({ registeredAt: bookings.createdAt })
+          .from(bookings)
+          .where(and(gte(bookings.createdAt, yearStart), lt(bookings.createdAt, yearEnd))),
+        db.select({
+          processedAt: remittanceBatches.createdAt,
+          jltRevenue: sql<number>`COALESCE(SUM(${remittanceLines.jlt20}), 0)`,
+          agentPayouts: sql<number>`COALESCE(SUM(${remittanceLines.remit80}), 0)`,
+        })
+          .from(remittanceBatches)
+          .leftJoin(remittanceLines, eq(remittanceLines.batchId, remittanceBatches.id))
+          .where(and(gte(remittanceBatches.createdAt, yearStart), lt(remittanceBatches.createdAt, yearEnd)))
+          .groupBy(remittanceBatches.id, remittanceBatches.createdAt),
+        db.select({
+          createdAt: commissionClaims.createdAt,
+          paidAt: commissionClaims.paidAt,
+          status: commissionClaims.status,
+          grossAmount: commissionClaims.grossAmount,
+        })
+          .from(commissionClaims)
+          .where(or(
+            and(gte(commissionClaims.createdAt, yearStart), lt(commissionClaims.createdAt, yearEnd)),
+            and(isNotNull(commissionClaims.paidAt), gte(commissionClaims.paidAt, yearStart), lt(commissionClaims.paidAt, yearEnd)),
+          )),
+        db.select({ createdAt: recruitmentProspects.createdAt })
+          .from(recruitmentProspects)
+          .where(and(gte(recruitmentProspects.createdAt, yearStart), lt(recruitmentProspects.createdAt, yearEnd))),
+        db.select({ joinedAt: gcMandates.joiningFeePaidAt })
+          .from(gcMandates)
+          .where(and(
+            isNotNull(gcMandates.joiningFeePaidAt),
+            gte(gcMandates.joiningFeePaidAt, yearStart),
+            lt(gcMandates.joiningFeePaidAt, yearEnd),
+          )),
+      ]);
+
+      for (const booking of registeredBookings) {
+        addToComparisonRow(rows, findComparisonPeriodIndex(periods, booking.registeredAt), { bookingsRegistered: 1 });
+      }
+      for (const run of remittanceRuns) {
+        addToComparisonRow(rows, findComparisonPeriodIndex(periods, run.processedAt), {
+          jltRevenue: Number(run.jltRevenue ?? 0),
+          agentPayouts: Number(run.agentPayouts ?? 0),
+        });
+      }
+      for (const claim of claims) {
+        const grossAmount = Number(claim.grossAmount ?? 0);
+        addToComparisonRow(rows, findComparisonPeriodIndex(periods, claim.createdAt), {
+          commissionClaims: 1,
+          commissionClaimedValue: grossAmount,
+        });
+        if (claim.status === "paid" && claim.paidAt) {
+          addToComparisonRow(rows, findComparisonPeriodIndex(periods, claim.paidAt), {
+            commissionsPaid: 1,
+            commissionsPaidValue: grossAmount,
+          });
+        }
+      }
+      for (const prospect of prospects) {
+        addToComparisonRow(rows, findComparisonPeriodIndex(periods, prospect.createdAt), { newProspects: 1 });
+      }
+      for (const joiner of paidJoiners) {
+        addToComparisonRow(rows, findComparisonPeriodIndex(periods, joiner.joinedAt), { newAgents: 1 });
+      }
+
+      const now = new Date();
+      const selectedYearIsCurrent = now.getUTCFullYear() === input.year;
+      const currentPeriodIndex = selectedYearIsCurrent ? findComparisonPeriodIndex(periods, now) : periods.length - 1;
+      const yearToDateRows = selectedYearIsCurrent && currentPeriodIndex >= 0
+        ? rows.slice(0, currentPeriodIndex + 1)
+        : rows;
+
+      return {
+        year: input.year,
+        cadence: input.cadence,
+        rows,
+        fullYear: totalComparisonRows(rows),
+        yearToDate: totalComparisonRows(yearToDateRows),
+        selectedYearIsCurrent,
+        dataThrough: selectedYearIsCurrent ? now : yearEnd,
       };
     }),
 

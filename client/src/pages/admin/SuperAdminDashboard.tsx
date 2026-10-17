@@ -667,6 +667,176 @@ function CommissionMarginTab() {
   );
 }
 
+// ─── Calendar-Year Comparison ─────────────────────────────────────────────────
+function BusinessPerformanceComparison({ year }: { year: number }) {
+  const [cadence, setCadence] = useState<"weekly" | "monthly">("monthly");
+  const { data, isLoading, error } = trpc.superAdmin.performanceComparison.useQuery(
+    { year, cadence },
+    { staleTime: 120_000 },
+  );
+
+  if (isLoading) return <LoadingSkeleton />;
+  if (error) {
+    return (
+      <Card className="border-rose-200 bg-rose-50">
+        <CardContent className="pt-4 text-rose-700 text-sm">Failed to load comparison data. Please try refreshing.</CardContent>
+      </Card>
+    );
+  }
+  if (!data) return null;
+
+  const totals = data.selectedYearIsCurrent ? data.yearToDate : data.fullYear;
+  const scopeLabel = data.selectedYearIsCurrent
+    ? `${year} year to date`
+    : `${year} full year`;
+  const dataThrough = new Date(data.dataThrough).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const tickLabel = (value: string) => {
+    const date = new Date(`${value}T00:00:00Z`);
+    return date.toLocaleDateString("en-GB", {
+      month: cadence === "monthly" ? "short" : "numeric",
+      day: cadence === "weekly" ? "numeric" : undefined,
+      timeZone: "UTC",
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#70FFE8]/20 text-[#1a8a78]"><BarChart2 size={16} /></div>
+            <h2 className="text-base font-semibold text-foreground">Year-at-a-Glance Comparison</h2>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Compare the same core measures week by week or month by month, with the full {year} picture kept in view.
+          </p>
+        </div>
+        <div className="flex items-center self-start rounded-lg bg-muted p-1 lg:self-auto" aria-label="Comparison cadence">
+          <button
+            onClick={() => setCadence("weekly")}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${cadence === "weekly" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            Weekly
+          </button>
+          <button
+            onClick={() => setCadence("monthly")}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${cadence === "monthly" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            Monthly
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <p className="text-sm font-medium text-foreground">{scopeLabel}</p>
+        <p className="text-xs text-muted-foreground">
+          {data.selectedYearIsCurrent ? `Actuals through ${dataThrough}` : "Complete calendar-year actuals"}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+        <StatCard title="Bookings registered" value={fmt(totals.bookingsRegistered)} icon={BookOpen} accent="blue" sub="Portal registration date" />
+        <StatCard title="JLT commission retained" value={fmtGbp(totals.jltRevenue)} icon={PoundSterling} accent="green" sub="PTS remittance runs" />
+        <StatCard title="Agent payouts" value={fmtGbp(totals.agentPayouts)} icon={PoundSterling} accent="blue" sub="PTS remittance runs" />
+        <StatCard title="Commissions paid" value={fmt(totals.commissionsPaid)} icon={CheckCircle2} accent="purple" sub={`${fmtGbp(totals.commissionsPaidValue)} paid to agents`} />
+        <StatCard title="New prospects" value={fmt(totals.newProspects)} icon={Target} accent="amber" sub="Recruitment prospects created" />
+        <StatCard title="New agents" value={fmt(totals.newAgents)} icon={UserPlus} accent="green" sub="Confirmed joining-fee payments" />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold">Bookings, Prospects & New Agents</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={270}>
+              <BarChart data={data.rows} margin={{ top: 5, right: 8, left: -18, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="periodStart" tickFormatter={tickLabel} tick={{ fontSize: 11 }} interval={cadence === "weekly" ? 3 : 0} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                <Tooltip labelFormatter={(_, payload) => payload[0]?.payload?.period ?? ""} />
+                <Legend />
+                <Bar dataKey="bookingsRegistered" name="Bookings" fill="#60a5fa" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="newProspects" name="Prospects" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="newAgents" name="New agents" fill="#34d399" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold">Commission Activity (£)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={270}>
+              <LineChart data={data.rows} margin={{ top: 5, right: 8, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="periodStart" tickFormatter={tickLabel} tick={{ fontSize: 11 }} interval={cadence === "weekly" ? 3 : 0} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(value) => `£${Number(value).toLocaleString("en-GB")}`} />
+                <Tooltip labelFormatter={(_, payload) => payload[0]?.payload?.period ?? ""} formatter={(value: number) => fmtGbp(value)} />
+                <Legend />
+                <Line type="monotone" dataKey="jltRevenue" name="JLT retained" stroke="#10b981" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="agentPayouts" name="Agent payouts" stroke="#6366f1" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="commissionsPaidValue" name="Commissions paid" stroke="#a855f7" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-sm font-semibold">{cadence === "weekly" ? "Weekly" : "Monthly"} Comparison Table</CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">Every period is shown, including quiet periods, so the year can be compared without gaps.</p>
+            </div>
+            <Badge variant="secondary">{data.rows.length} {cadence === "weekly" ? "weeks" : "months"}</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="overflow-x-auto p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Period</TableHead>
+                <TableHead className="text-right">Bookings</TableHead>
+                <TableHead className="text-right">JLT retained</TableHead>
+                <TableHead className="text-right">Agent payouts</TableHead>
+                <TableHead className="text-right">Claims</TableHead>
+                <TableHead className="text-right">Paid</TableHead>
+                <TableHead className="text-right">Prospects</TableHead>
+                <TableHead className="text-right">New agents</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.rows.map((row) => (
+                <TableRow key={row.periodStart}>
+                  <TableCell className="min-w-44 font-medium">{row.period}</TableCell>
+                  <TableCell className="text-right">{fmt(row.bookingsRegistered)}</TableCell>
+                  <TableCell className="text-right">{fmtGbp(row.jltRevenue)}</TableCell>
+                  <TableCell className="text-right">{fmtGbp(row.agentPayouts)}</TableCell>
+                  <TableCell className="text-right"><span className="font-medium">{fmt(row.commissionClaims)}</span><span className="block text-xs text-muted-foreground">{fmtGbp(row.commissionClaimedValue)}</span></TableCell>
+                  <TableCell className="text-right"><span className="font-medium">{fmt(row.commissionsPaid)}</span><span className="block text-xs text-muted-foreground">{fmtGbp(row.commissionsPaidValue)}</span></TableCell>
+                  <TableCell className="text-right">{fmt(row.newProspects)}</TableCell>
+                  <TableCell className="text-right">{fmt(row.newAgents)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <div className="rounded-lg bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
+        <strong>Metric definitions:</strong> bookings are counted when registered in the Portal; JLT retained and agent payouts are taken from PTS remittance runs; commission claims are counted when submitted and commissions paid when marked paid; prospects are counted when created; new agents are confirmed joining-fee payments. Financial amounts are actual recorded values, not forecasts.
+      </div>
+    </div>
+  );
+}
+
 // ─── Monthly View ─────────────────────────────────────────────────────────────
 function MonthlyView({ monthStart }: { monthStart: string }) {
   const { data, isLoading, error } = trpc.superAdmin.monthlyStats.useQuery(
@@ -1245,9 +1415,10 @@ function DiscountCodesTab() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function SuperAdminDashboard() {
   const { user } = useAuth();
-  const [viewMode, setViewMode] = useState<"week" | "month">("week");
+  const [viewMode, setViewMode] = useState<"week" | "month" | "comparison">("week");
   const [currentMonday, setCurrentMonday] = useState(() => getMondayOfWeek(new Date()));
   const [currentMonth, setCurrentMonth] = useState(() => getFirstOfMonth(new Date()));
+  const [comparisonYear, setComparisonYear] = useState(() => new Date().getFullYear());
   const [drillDown, setDrillDown] = useState<DrillDownType>(null);
   const [mentionTaskFilter, setMentionTaskFilter] = useState<"all" | "open" | "in_progress" | "overdue">("all");
   const weekStartStr = useMemo(() => toISODate(currentMonday), [currentMonday]);
@@ -1311,6 +1482,13 @@ export default function SuperAdminDashboard() {
     if (isCurrentMonth) return;
     setCurrentMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1, 0, 0, 0, 0));
   }
+  function prevComparisonYear() {
+    setComparisonYear((year) => year - 1);
+  }
+  function nextComparisonYear() {
+    if (comparisonYear >= new Date().getFullYear()) return;
+    setComparisonYear((year) => year + 1);
+  }
 
   if (user?.role !== "super_admin") {
     return (
@@ -1347,6 +1525,12 @@ export default function SuperAdminDashboard() {
             >
               <Calendar size={13} className="inline mr-1" />Monthly
             </button>
+            <button
+              onClick={() => setViewMode("comparison")}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === "comparison" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <BarChart2 size={13} className="inline mr-1" />Compare
+            </button>
           </div>
 
           {/* Period navigator */}
@@ -1358,7 +1542,7 @@ export default function SuperAdminDashboard() {
               </span>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={nextWeek} disabled={isCurrentWeek}><ChevronRight size={16} /></Button>
             </div>
-          ) : (
+          ) : viewMode === "month" ? (
             <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={prevMonth}><ChevronLeft size={16} /></Button>
               <span className="text-sm font-medium min-w-[160px] text-center">
@@ -1366,9 +1550,18 @@ export default function SuperAdminDashboard() {
               </span>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={nextMonth} disabled={isCurrentMonth}><ChevronRight size={16} /></Button>
             </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={prevComparisonYear}><ChevronLeft size={16} /></Button>
+              <span className="text-sm font-medium min-w-[132px] text-center">{comparisonYear} comparison</span>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={nextComparisonYear} disabled={comparisonYear >= new Date().getFullYear()}><ChevronRight size={16} /></Button>
+            </div>
           )}
         </div>
       </div>
+
+      {/* Calendar-year comparison */}
+      {viewMode === "comparison" && <BusinessPerformanceComparison year={comparisonYear} />}
 
       {/* Monthly view */}
       {viewMode === "month" && <MonthlyView monthStart={monthStartStr} />}
