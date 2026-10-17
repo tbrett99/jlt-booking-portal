@@ -290,13 +290,6 @@ export default function Memberships() {
     },
     onError: (e) => { toast.error(e.message); setDeleteSignUpTarget(null); },
   });
-  const sendWelcome = trpc.crm.agentCrm.sendWelcomeEmail.useMutation({
-    onSuccess: (_, vars) => {
-      toast.success("Welcome email sent!");
-      utils.crm.agentCrm.getNewSignUps.invalidate();
-    },
-    onError: (e) => toast.error(`Failed to send: ${e.message}`),
-  });
 
   // Reinstate dialog state
   const [reinstateTarget, setReinstateTarget] = useState<{ userId: number; name: string | null } | null>(null);
@@ -449,7 +442,6 @@ export default function Memberships() {
                       { key: "jltEmailSetup", label: "JLT Email" },
                       { key: "idDocsReviewed", label: "ID Docs" },
                       { key: "contractReviewed", label: "Contract" },
-                      { key: "welcomeEmailSent", label: "Welcome Email" },
                       { key: "portalAccessApproved", label: "Portal Access" },
                       { key: "ddSubscriptionCreated", label: "DD Setup" },
                     ];
@@ -489,18 +481,6 @@ export default function Memberships() {
                             )}
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            {!agent.welcomeEmailSent && (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                className="gap-1.5"
-                                disabled={sendWelcome.isPending && sendWelcome.variables?.userId === agent.userId}
-                                onClick={() => sendWelcome.mutate({ userId: agent.userId })}
-                              >
-                                <Mail className="h-3.5 w-3.5" />
-                                {sendWelcome.isPending && sendWelcome.variables?.userId === agent.userId ? "Sending\u2026" : "Send Welcome"}
-                              </Button>
-                            )}
                             <Link href={`/crm/agents?agent=${agent.userId}&tab=onboarding`}>
                               <Button size="sm" variant="outline" className="gap-1.5">
                                 Open Checklist <ArrowRight className="h-3.5 w-3.5" />

@@ -3063,7 +3063,6 @@ const ONBOARDING_STEPS = [
   { key: "jltEmailSetup" as const, label: "Set Up JLT Email", description: "Create the @thejltgroup.co.uk email address based on the agent's preference and configure forwarding." },
   { key: "idDocsReviewed" as const, label: "Review ID Documents", description: "Verify the agent's photo ID and proof of address uploaded during onboarding." },
   { key: "contractReviewed" as const, label: "Review Contract", description: "Confirm the signed membership contract is complete and all details are correct." },
-  { key: "welcomeEmailSent" as const, label: "Send Welcome Email", description: "Send the official JLT Group welcome email with key resources and next steps." },
   { key: "portalAccessApproved" as const, label: "Approve Portal Access", description: "Activate the agent's portal access once all other steps are complete." },
   { key: "ddSubscriptionCreated" as const, label: "Set Up Direct Debit Subscription", description: "Create the GoCardless subscription for the agent's monthly membership fee." },
 ];
@@ -3112,7 +3111,6 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, paymentExe
     jltEmailSetup: false,
     idDocsReviewed: false,
     contractReviewed: false,
-    welcomeEmailSent: false,
     portalAccessApproved: false,
     ddSubscriptionCreated: false,
   });
@@ -3128,7 +3126,6 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, paymentExe
         jltEmailSetup: checklist?.jltEmailSetup ?? false,
         idDocsReviewed: checklist?.idDocsReviewed ?? false,
         contractReviewed: checklist?.contractReviewed ?? false,
-        welcomeEmailSent: checklist?.welcomeEmailSent ?? false,
         portalAccessApproved: checklist?.portalAccessApproved ?? false,
         ddSubscriptionCreated: subExists || (checklist?.ddSubscriptionCreated ?? false),
       });
@@ -3156,22 +3153,7 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, paymentExe
     onError: (e) => toast.error(e.message),
   });
 
-  const sendWelcomeEmailMutation = trpc.crm.agentCrm.sendWelcomeEmail.useMutation({
-    onSuccess: () => {
-      toast.success("Welcome email sent to agent!");
-      setLocalState(prev => ({ ...prev, welcomeEmailSent: true }));
-      utils.crm.agentCrm.getOnboardingChecklist.invalidate({ userId });
-      onRefresh();
-    },
-    onError: (e) => toast.error(`Failed to send welcome email: ${e.message}`),
-  });
-
   function handleToggle(key: ChecklistKey, value: boolean) {
-    // Welcome email step: send the actual email (which also marks the checklist)
-    if (key === "welcomeEmailSent" && value) {
-      sendWelcomeEmailMutation.mutate({ userId });
-      return;
-    }
     const newState = { ...localState, [key]: value };
     setLocalState(newState);
     updateChecklist.mutate({ userId, [key]: value });
