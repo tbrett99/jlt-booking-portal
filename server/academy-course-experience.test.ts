@@ -33,6 +33,15 @@ Keep your records up to date.`);
     expect(normaliseAcademyLessonContent("<p><strong>Rich text stays intact</strong></p>")).toBe("<p><strong>Rich text stays intact</strong></p>");
   });
 
+  it("preserves deliberate legacy breaks, inline emphasis and real rich blocks in the same lesson", () => {
+    const rendered = normaliseAcademyLessonContent(`<div class="word">What you will learn:</div><div>Find bookings in Orbit</div><div>Keep client records accurate</div><br class="Apple-interchange-newline"><p><strong>• Give practical advice</strong></p><ul><li>Already a real list</li></ul><div>Finish with this reminder.</div>`);
+    expect(rendered).toContain("<p><strong>What you will learn:</strong></p>");
+    expect(rendered).toContain("<ul><li>Find bookings in Orbit</li><li>Keep client records accurate</li></ul>");
+    expect(rendered).toContain("<ul><li><strong>Give practical advice</strong></li></ul>");
+    expect(rendered).toContain("<ul><li>Already a real list</li></ul>");
+    expect(rendered).toContain("<p>Finish with this reminder.</p>");
+  });
+
   it("embeds only recognised HTTPS Loom share URLs", () => {
     const id = "a1b2c3d4e5f6";
     expect(parseLoomEmbedId(`https://www.loom.com/share/${id}?sid=session`)).toBe(id);

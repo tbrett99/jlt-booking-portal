@@ -11,11 +11,24 @@ function visibleText(value: string) {
   return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").trim();
 }
 
-function asListItem(value: string) {
-  const match = visibleText(value).match(/^\s*(?:[-*•‣▪]|\d+[.)])\s+(.+)$/);
-  if (!match) return null;
-  // Preserve any pre-existing safe inline formatting after the list marker.
-  return value.replace(/^\s*(?:[-*•‣▪]|\d+[.)])\s+/, "").trim();
+function hasHtmlMarkup(value: string) {
+  return /<\/?[a-z][\w-]*(?:\s[^>]*)?>/i.test(value);
+}
+
+function listKind(value: string): "ordered" | "unordered" | null {
+  const text = visibleText(value);
+  if (/^\s*\d+[.)]\s+/.test(text)) return "ordered";
+  if (/^\s*[-*•‣▪]\s+/.test(text)) return "unordered";
+  return null;
+}
+
+function removeListMarker(value: string) {
+  // The marker can sit inside a preserved inline tag, e.g. <strong>• Important</strong>.
+  // Remove it after any leading inline wrappers while retaining the formatting.
+  return value.replace(
+    /^(\s*(?:(?:<\/?(?:strong|b|em|i|u|s|span|a)(?:\s[^>]*)?>)\s*)*)(?:[-*•‣▪]|\d+[.)])\s+/i,
+    "$1",
+  ).trim();
 }
 
 function looksLikeHeading(value: string) {
@@ -27,45 +40,44 @@ function looksLikeHeading(value: string) {
   );
 }
 
-function hasHtmlMarkup(value: string) {
-  return /<\/?[a-z][\w-]*(?:\s[^>]*)?>/i.test(value);
-}
-
-function hasStructuredHtml(value: string) {
-  return /<\/?(?:ul|ol|li|table|thead|tbody|tr|th|td|blockquote|pre|code|img|iframe|video|details|summary)\b/i.test(value);
+/**
+ * Keep genuine rich blocks untouched while normalising the plain / legacy runs
+ * around them. Existing lessons often have old p/div/br markup mixed with a
+ * real list or table; treating the entire document as already formatted makes
+ * the legacy parts collapse into one difficult-to-read block.
+ */
+function protectStructuredBlocks(source: string) {
+  const blocks: string[] = [];
+  const token = (index: number) => `@@JLT_ACADEMY_BLOCK_${index}@@`;
+  const protectedSource = source.replace(
+    /<(?:ul|ol|table|blockquote|pre|details)\b[^>]*>[\s\S]*?<\/(?:ul|ol|table|blockquote|pre|details)\s*>|<(?:img|iframe|video)\b[^>]*>(?:\s*<\/(?:iframe|video)\s*>)?/gi,
+    (match) => {
+      const index = blocks.push(match) - 1;
+      return `\n${token(index)}\n`;
+    },
+  );
+  return { protectedSource, blocks, token };
 }
 
 function legacyLines(source: string) {
-  // Older lessons were sometimes saved as rich-editor paragraph/line-break
-  // markup but without real list tags. Treat those as copyable legacy text so
-  // a "What you'll learn" paragraph followed by short lines becomes a list.
-  if (!hasHtmlMarkup(source) || hasStructuredHtml(source)) return source;
+  if (!hasHtmlMarkup(source)) return source;
   return source
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(?:p|div|h[1-6])>\s*/gi, "\n")
+    // Word and browser clipboard markup frequently decorates BR tags. Those
+    // still mean a deliberate content break.
+    .replace(/<br\b[^>]*>/gi, "\n")
+    .replace(/<\/(?:p|div|h[1-6])\s*>\s*/gi, "\n")
     .replace(/<(?:p|div|h[1-6])(?:\s[^>]*)?>/gi, "")
     .replace(/\n{3,}/g, "\n\n");
 }
 
 function renderInline(value: string, preserveInlineMarkup: boolean) {
-  // Lesson content is sanitised when saved. Retaining its existing inline
-  // markup preserves author emphasis while this compatibility layer supplies
-  // missing semantic blocks for legacy records.
+  // Lesson content is sanitised when saved. Retaining existing inline markup
+  // preserves author emphasis while this compatibility layer supplies missing
+  // semantic blocks for legacy records.
   return preserveInlineMarkup ? value.trim() : escapeHtml(value.trim());
 }
 
-/**
- * Older Academy lessons were saved as raw plain text or as simple rich-editor
- * paragraph markup. Render those records as safe semantic HTML without
- * changing the stored source. Modern rich text containing proper structural
- * elements (lists, tables, media, etc.) is passed through unchanged because
- * it is sanitised on save.
- */
-export function normaliseAcademyLessonContent(content: string | null | undefined) {
-  const source = content?.replace(/\r/g, "").trim() ?? "";
-  if (!source || hasStructuredHtml(source)) return source;
-
-  const preserveInlineMarkup = hasHtmlMarkup(source);
+function normaliseLegacyRun(source: string, preserveInlineMarkup: boolean, isToken: (value: string) => number | null, resolveToken: (index: number) => string) {
   const lines = legacyLines(source).split("\n").map((line) => line.trim());
   const blocks: string[] = [];
 
@@ -73,17 +85,20 @@ export function normaliseAcademyLessonContent(content: string | null | undefined
     const line = lines[index];
     if (!line) continue;
 
-    const item = asListItem(line);
-    if (item) {
-      const items = [item];
-      const ordered = /^\s*\d+[.)]\s+/.test(visibleText(line));
-      while (index + 1 < lines.length) {
-        const next = asListItem(lines[index + 1]);
-        if (!next) break;
-        items.push(next);
+    const tokenIndex = isToken(line);
+    if (tokenIndex !== null) {
+      blocks.push(resolveToken(tokenIndex));
+      continue;
+    }
+
+    const kind = listKind(line);
+    if (kind) {
+      const items = [removeListMarker(line)];
+      while (index + 1 < lines.length && listKind(lines[index + 1]) === kind) {
+        items.push(removeListMarker(lines[index + 1]));
         index += 1;
       }
-      const tag = ordered ? "ol" : "ul";
+      const tag = kind === "ordered" ? "ol" : "ul";
       blocks.push(`<${tag}>${items.map((entry) => `<li>${renderInline(entry, preserveInlineMarkup)}</li>`).join("")}</${tag}>`);
       continue;
     }
@@ -92,8 +107,13 @@ export function normaliseAcademyLessonContent(content: string | null | undefined
     if (text.endsWith(":")) {
       const items: string[] = [];
       let cursor = index + 1;
-      while (cursor < lines.length && lines[cursor] && !looksLikeHeading(lines[cursor]) && visibleText(lines[cursor]).length <= 110) {
-        items.push(asListItem(lines[cursor]) ?? lines[cursor]);
+      while (cursor < lines.length) {
+        const candidate = lines[cursor];
+        if (!candidate || isToken(candidate) !== null || looksLikeHeading(candidate) || visibleText(candidate).length > 110 || listKind(candidate) !== null) break;
+        // A sequence of short, unmarked lines after a label is the common
+        // pasted training-document pattern. Require two to avoid inventing a
+        // list from an ordinary sentence.
+        items.push(candidate);
         cursor += 1;
       }
       blocks.push(`<p><strong>${renderInline(line, preserveInlineMarkup)}</strong></p>`);
@@ -110,9 +130,32 @@ export function normaliseAcademyLessonContent(content: string | null | undefined
     }
 
     // A source newline in a legacy record is deliberate. Keeping each line as
-    // a paragraph makes existing lessons readable without rewriting their data.
+    // a paragraph makes existing lessons readable without altering stored data.
     blocks.push(`<p>${renderInline(line, preserveInlineMarkup)}</p>`);
   }
 
   return blocks.join("");
+}
+
+/**
+ * Render old Academy content with reliable paragraphs, lists and headings.
+ * Genuine rich blocks (lists, tables, quotations, code and media) remain
+ * untouched; only surrounding legacy p/div/br/plain-text fragments are fixed.
+ */
+export function normaliseAcademyLessonContent(content: string | null | undefined) {
+  const source = content?.replace(/\r/g, "").trim() ?? "";
+  if (!source) return "";
+
+  const { protectedSource, blocks, token } = protectStructuredBlocks(source);
+  const preserveInlineMarkup = hasHtmlMarkup(protectedSource);
+  const tokenPattern = /^@@JLT_ACADEMY_BLOCK_(\d+)@@$/;
+  return normaliseLegacyRun(
+    protectedSource,
+    preserveInlineMarkup,
+    (value) => {
+      const match = value.match(tokenPattern);
+      return match ? Number(match[1]) : null;
+    },
+    (index) => blocks[index] ?? token(index),
+  );
 }

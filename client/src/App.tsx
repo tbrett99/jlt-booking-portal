@@ -118,6 +118,7 @@ const AdminCompetitions = lazy(() => import("./pages/admin/AdminCompetitions"));
 const AcademyHome = lazy(() => import("./pages/academy/AcademyHome"));
 const AcademyCourse = lazy(() => import("./pages/academy/AcademyCourse"));
 const AdminAcademy = lazy(() => import("./pages/admin/AdminAcademy"));
+const AdminAcademyProgressInsights = lazy(() => import("./pages/admin/AdminAcademyProgressInsights"));
 const AcademyActions = lazy(() => import("./pages/academy/AcademyActions"));
 const AdminAcademyActions = lazy(() => import("./pages/admin/AdminAcademyActions"));
 const AdminMomentum = lazy(() => import("./pages/admin/AdminMomentum"));
@@ -488,6 +489,7 @@ function AuthRouter() {
         <Route path="/competitions" component={Competitions} />
         <Route path="/admin/competitions" component={AdminCompetitions} />
         <Route path="/admin/academy" component={AdminAcademy} />
+        <Route path="/admin/academy/insights" component={AdminAcademyProgressInsights} />
         <Route path="/admin/academy/actions" component={AdminAcademyActions} />
         <Route path="/admin/agent-engagement" component={AdminAgentEngagement} />
         <Route path="/profile" component={ProfilePage} />

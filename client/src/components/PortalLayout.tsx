@@ -74,6 +74,7 @@ interface NavItem {
   icon: React.ReactNode;
   badge?: number;
   external?: boolean;
+  exact?: boolean;
 }
 
 interface NavGroup {
@@ -139,8 +140,9 @@ function SidebarGroup({
   overdueCount?: number;
   preferenceScope: string;
 }) {
+  const matchesItem = (item: NavItem) => !item.external && (location === item.href || (!item.exact && item.href !== "/" && location.startsWith(item.href)));
   const isAnyActive = group.items.some(
-    (i) => location === i.href || (i.href !== "/" && location.startsWith(i.href))
+    (item) => matchesItem(item)
   );
   const groupPreferenceKey = `${preferenceScope}:${group.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   const [open, setOpen] = useState(() => {
@@ -186,7 +188,7 @@ function SidebarGroup({
     return (
       <>
         {group.items.map((item) => {
-          const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
+          const isActive = matchesItem(item);
           const badge = getItemBadge(item);
           return (
             <Link
@@ -233,7 +235,7 @@ function SidebarGroup({
       {(group.pinned || open) && (
         <div className="space-y-0.5 pl-1">
           {group.items.map((item) => {
-            const isActive = !item.external && (location === item.href || (item.href !== "/" && location.startsWith(item.href)));
+            const isActive = matchesItem(item);
             const badge = getItemBadge(item);
             const itemClass = `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${
               isActive ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground opacity-80 hover:opacity-100"
@@ -518,7 +520,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       icon: <GraduationCap size={16} />,
       defaultOpen: false,
       items: [
-        { label: "Academy Manager", href: "/admin/academy", icon: <GraduationCap size={16} /> },
+        { label: "Academy Manager", href: "/admin/academy", icon: <GraduationCap size={16} />, exact: true },
+        { label: "Academy Progress & Insights", href: "/admin/academy/insights", icon: <BarChart2 size={16} /> },
         { label: "Academy Actions", href: "/admin/academy/actions", icon: <ClipboardCheck size={16} /> },
       ],
     },

@@ -1027,6 +1027,194 @@ export const academyRouter = router({
       }));
     }),
 
+    /**
+     * One staff-only source for operational Academy metrics. The result is
+     * deliberately aggregated server-side: the browser receives exactly the
+     * current learner / curriculum signals it needs, rather than raw audit and
+     * assessment tables that would be expensive and easy to misinterpret.
+     */
+    insights: adminProcedure.input(z.object({
+      courseId: z.number().int().positive().optional(),
+      dueSoonDays: z.number().int().min(1).max(60).default(7),
+    }).optional()).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const asOf = new Date();
+      const dueSoonDays = input?.dueSoonDays ?? 7;
+      const courses = await db.select().from(academyCourses).orderBy(asc(academyCourses.status), asc(academyCourses.title));
+      const courseScope = input?.courseId ? courses.filter((course) => course.id === input.courseId) : courses;
+      const scopedCourseIds = courseScope.map((course) => course.id);
+      const allRows = await db.select({ enrollment: academyEnrollments, course: academyCourses, agent: users, profile: agentCrmProfiles })
+        .from(academyEnrollments)
+        .innerJoin(academyCourses, eq(academyCourses.id, academyEnrollments.courseId))
+        .innerJoin(users, eq(users.id, academyEnrollments.agentId))
+        .leftJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, academyEnrollments.agentId));
+      const rows = allRows.filter((row) => scopedCourseIds.includes(row.course.id));
+      const enrollmentIds = rows.map((row) => row.enrollment.id);
+      const modules = scopedCourseIds.length ? await db.select().from(academyModules).where(inArray(academyModules.courseId, scopedCourseIds)) : [];
+      const lessons = await getAcademyLessonsForModules(modules.map((module) => module.id));
+      const lessonIds = lessons.map((lesson) => lesson.id);
+      const progress = enrollmentIds.length ? await db.select().from(academyLessonProgress).where(inArray(academyLessonProgress.enrollmentId, enrollmentIds)) : [];
+      const attempts = enrollmentIds.length ? await db.select().from(academyAssessmentAttempts).where(inArray(academyAssessmentAttempts.enrollmentId, enrollmentIds)) : [];
+      const attemptIds = attempts.map((attempt) => attempt.id);
+      const responses = attemptIds.length ? await db.select().from(academyAssessmentResponses).where(inArray(academyAssessmentResponses.attemptId, attemptIds)) : [];
+      const questions = lessonIds.length ? await db.select().from(academyQuestions).where(inArray(academyQuestions.lessonId, lessonIds)).orderBy(asc(academyQuestions.sortOrder), asc(academyQuestions.id)) : [];
+      const resets = enrollmentIds.length ? await db.select().from(academyAssessmentQuestionResets).where(inArray(academyAssessmentQuestionResets.enrollmentId, enrollmentIds)) : [];
+      const terminal = new Set(["completed", "waived"]);
+      const dueSoonAt = new Date(asOf.getTime() + dueSoonDays * 24 * 60 * 60 * 1000);
+      const assessmentSupportLocks: Array<{ enrollmentId: number; lessonId: number; questionId: number }> = [];
+
+      for (const row of rows) {
+        const courseLessonIds = new Set(lessons.filter((lesson) => modules.some((module) => module.id === lesson.moduleId && module.courseId === row.course.id)).map((lesson) => lesson.id));
+        const enrollmentAttempts = attempts.filter((attempt) => attempt.enrollmentId === row.enrollment.id && courseLessonIds.has(attempt.lessonId));
+        const enrollmentAttemptIds = new Set(enrollmentAttempts.map((attempt) => attempt.id));
+        for (const lessonId of Array.from(courseLessonIds)) {
+          const lesson = lessons.find((item) => item.id === lessonId)!;
+          const lessonQuestions = questions.filter((question) => question.lessonId === lessonId);
+          if (!lessonQuestions.length) continue;
+          const states = deriveQuestionResitStates({
+            questions: lessonQuestions,
+            attempts: enrollmentAttempts.filter((attempt) => attempt.lessonId === lessonId),
+            responses: responses.filter((response) => enrollmentAttemptIds.has(response.attemptId) && lessonQuestions.some((question) => question.id === response.questionId)),
+            resets: resets.filter((reset) => reset.enrollmentId === row.enrollment.id && reset.lessonId === lessonId),
+            passMark: lesson.assessmentPassMark,
+          });
+          states.filter((state) => state.supportRequired).forEach((state) => assessmentSupportLocks.push({ enrollmentId: row.enrollment.id, lessonId, questionId: state.questionId }));
+        }
+      }
+
+      const learners = rows.map((row) => {
+        const courseLessonIds = new Set(lessons.filter((lesson) => modules.some((module) => module.id === lesson.moduleId && module.courseId === row.course.id)).map((lesson) => lesson.id));
+        const courseLessons = lessons.filter((lesson) => courseLessonIds.has(lesson.id));
+        const enrollmentProgress = progress.filter((item) => item.enrollmentId === row.enrollment.id);
+        const enrollmentAttempts = attempts.filter((attempt) => attempt.enrollmentId === row.enrollment.id && courseLessonIds.has(attempt.lessonId));
+        const completion = summariseAcademyProgress(courseLessons.filter((lesson) => lesson.isRequired).map((lesson) => lesson.id), enrollmentProgress.filter((item) => item.completedAt).map((item) => item.lessonId));
+        const activityDates = [
+          ...enrollmentProgress.flatMap((item) => [item.lastActivityAt, item.lastViewedAt, item.startedAt]),
+          ...enrollmentAttempts.map((attempt) => attempt.takenAt),
+        ].filter((value): value is Date => value instanceof Date);
+        const lastActivityAt = activityDates.length ? new Date(Math.max(...activityDates.map((value) => value.getTime()))) : null;
+        const inactiveDays = lastActivityAt ? Math.floor((asOf.getTime() - lastActivityAt.getTime()) / 86_400_000) : null;
+        const activeTimeSeconds = enrollmentProgress.reduce((total, item) => total + Number(item.lessonActiveSeconds ?? 0) + Number(item.assessmentActiveSeconds ?? 0), 0);
+        const overdue = !!row.enrollment.dueDate && !terminal.has(row.enrollment.status) && row.enrollment.dueDate < asOf;
+        const dueSoon = !!row.enrollment.dueDate && !terminal.has(row.enrollment.status) && row.enrollment.dueDate >= asOf && row.enrollment.dueDate <= dueSoonAt;
+        const currentRequiredLesson = courseLessons.find((lesson) => lesson.isRequired && !enrollmentProgress.some((item) => item.lessonId === lesson.id && item.completedAt)) ?? null;
+        return {
+          enrollment: row.enrollment,
+          learner: { id: row.agent.id, name: row.agent.name, email: row.agent.email, trainingStage: row.profile?.trainingStage ?? null },
+          course: { id: row.course.id, title: row.course.title, status: row.course.status },
+          completion,
+          due: { date: row.enrollment.dueDate, overdue, dueSoon },
+          lastActivityAt,
+          inactiveDays,
+          activeTimeSeconds,
+          currentRequiredLesson: currentRequiredLesson ? { id: currentRequiredLesson.id, title: currentRequiredLesson.title } : null,
+          assessment: {
+            awaitingMarking: enrollmentAttempts.filter((attempt) => attempt.status === "awaiting_marking").length,
+            feedbackPending: enrollmentAttempts.filter((attempt) => attempt.status === "feedback_pending").length,
+            supportLocks: assessmentSupportLocks.filter((item) => item.enrollmentId === row.enrollment.id).length,
+          },
+          accreditation: getAccreditationEligibility(row.profile?.academyAcceleratorStartedAt, asOf),
+        };
+      });
+
+      const nonTerminal = learners.filter((item) => !terminal.has(item.enrollment.status));
+      const inProgress = learners.filter((item) => item.enrollment.status === "in_progress");
+      const recordedActiveLearners = learners.filter((item) => item.activeTimeSeconds > 0);
+      const metrics = {
+        enrolments: {
+          total: learners.length,
+          uniqueLearners: new Set(learners.map((item) => item.learner.id)).size,
+          assigned: learners.filter((item) => item.enrollment.status === "assigned").length,
+          inProgress: inProgress.length,
+          completed: learners.filter((item) => item.enrollment.status === "completed").length,
+          waived: learners.filter((item) => item.enrollment.status === "waived").length,
+        },
+        due: { overdue: nonTerminal.filter((item) => item.due.overdue).length, dueSoon: nonTerminal.filter((item) => item.due.dueSoon).length, dueSoonDays },
+        inactivity: {
+          inactive7Plus: inProgress.filter((item) => item.inactiveDays !== null && item.inactiveDays >= 7).length,
+          inactive14Plus: inProgress.filter((item) => item.inactiveDays !== null && item.inactiveDays >= 14).length,
+          inactive30Plus: inProgress.filter((item) => item.inactiveDays !== null && item.inactiveDays >= 30).length,
+          noRecordedActivity: inProgress.filter((item) => item.inactiveDays === null).length,
+        },
+        assessments: {
+          awaitingMarking: attempts.filter((attempt) => attempt.status === "awaiting_marking").length,
+          feedbackPending: attempts.filter((attempt) => attempt.status === "feedback_pending").length,
+          feedbackAcknowledged: attempts.filter((attempt) => attempt.status === "feedback_acknowledged").length,
+          supportLocks: assessmentSupportLocks.length,
+        },
+        activeTime: {
+          totalSeconds: learners.reduce((total, item) => total + item.activeTimeSeconds, 0),
+          recordedLearners: recordedActiveLearners.length,
+          averageSecondsPerRecordedLearner: recordedActiveLearners.length ? Math.round(recordedActiveLearners.reduce((total, item) => total + item.activeTimeSeconds, 0) / recordedActiveLearners.length) : 0,
+        },
+      };
+
+      const curriculumLessons = lessons.map((lesson) => {
+        const module = modules.find((item) => item.id === lesson.moduleId)!;
+        const courseLearners = learners.filter((item) => item.course.id === module.courseId);
+        const relevantProgress = progress.filter((item) => item.lessonId === lesson.id && courseLearners.some((learner) => learner.enrollment.id === item.enrollmentId));
+        const relevantAttempts = attempts.filter((attempt) => attempt.lessonId === lesson.id && courseLearners.some((learner) => learner.enrollment.id === attempt.enrollmentId));
+        const started = relevantProgress.filter((item) => item.startedAt || item.lastViewedAt || item.lastActivityAt).length;
+        const completed = relevantProgress.filter((item) => item.completedAt).length;
+        const activeRecords = relevantProgress.filter((item) => Number(item.lessonActiveSeconds ?? 0) + Number(item.assessmentActiveSeconds ?? 0) > 0);
+        return {
+          courseId: module.courseId,
+          moduleId: module.id,
+          moduleTitle: module.title,
+          id: lesson.id,
+          title: lesson.title,
+          sortOrder: lesson.sortOrder,
+          isRequired: lesson.isRequired,
+          estimatedMinutes: lesson.estimatedMinutes,
+          requiresAcknowledgement: lesson.requiresAcknowledgement,
+          requiresAssessment: lesson.requiresAssessment,
+          enrolled: courseLearners.length,
+          started,
+          completed,
+          completionRate: started ? Math.round((completed / started) * 100) : null,
+          averageActiveSeconds: activeRecords.length ? Math.round(activeRecords.reduce((total, item) => total + Number(item.lessonActiveSeconds ?? 0), 0) / activeRecords.length) : 0,
+          averageAssessmentSeconds: activeRecords.length ? Math.round(activeRecords.reduce((total, item) => total + Number(item.assessmentActiveSeconds ?? 0), 0) / activeRecords.length) : 0,
+          awaitingMarking: relevantAttempts.filter((attempt) => attempt.status === "awaiting_marking").length,
+          feedbackPending: relevantAttempts.filter((attempt) => attempt.status === "feedback_pending").length,
+          supportLocks: assessmentSupportLocks.filter((item) => item.lessonId === lesson.id).length,
+        };
+      });
+
+      const curriculumQuestions = questions.map((question) => {
+        const lesson = lessons.find((item) => item.id === question.lessonId)!;
+        const module = modules.find((item) => item.id === lesson.moduleId)!;
+        const courseEnrollmentIds = new Set(learners.filter((item) => item.course.id === module.courseId).map((item) => item.enrollment.id));
+        const relevantAttempts = attempts.filter((attempt) => courseEnrollmentIds.has(attempt.enrollmentId) && attempt.lessonId === lesson.id);
+        const attemptById = new Map(relevantAttempts.map((attempt) => [attempt.id, attempt]));
+        const firstScoredByEnrollment = new Map<number, { score: number; takenAt: Date }>();
+        responses.filter((response) => response.questionId === question.id && response.score !== null).forEach((response) => {
+          const attempt = attemptById.get(response.attemptId);
+          if (!attempt) return;
+          const existing = firstScoredByEnrollment.get(attempt.enrollmentId);
+          if (!existing || attempt.takenAt < existing.takenAt) firstScoredByEnrollment.set(attempt.enrollmentId, { score: response.score!, takenAt: attempt.takenAt });
+        });
+        const scores = Array.from(firstScoredByEnrollment.values()).map((item) => item.score);
+        const correctRate = scores.length ? Math.round((scores.filter((score) => score >= REQUIRED_ASSESSMENT_SCORE).length / scores.length) * 100) : null;
+        return {
+          courseId: module.courseId,
+          lessonId: lesson.id,
+          lessonTitle: lesson.title,
+          id: question.id,
+          questionType: question.questionType,
+          prompt: question.prompt,
+          scoredLearners: scores.length,
+          firstAttemptCorrectRate: correctRate,
+          firstAttemptAverageScore: scores.length ? Math.round(scores.reduce((total, score) => total + score, 0) / scores.length) : null,
+          difficulty: scores.length < 5 ? "insufficient_data" as const : correctRate! < 50 ? "high" as const : correctRate! < 75 ? "medium" as const : "low" as const,
+          awaitingMarking: relevantAttempts.filter((attempt) => attempt.status === "awaiting_marking").length,
+          supportLocks: assessmentSupportLocks.filter((item) => item.questionId === question.id).length,
+        };
+      });
+
+      return { asOf, courses: courseScope.map((course) => ({ id: course.id, title: course.title, status: course.status, estimatedMinutes: course.estimatedMinutes })), metrics, learners, curriculum: { lessons: curriculumLessons, questions: curriculumQuestions } };
+    }),
+
     markingQueue: adminProcedure.query(async () => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
