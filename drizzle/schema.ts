@@ -1220,6 +1220,8 @@ export const agentStatusEvents = mysqlTable("agent_status_events", {
   notes: text("notes"),                                                     // optional admin notes
   pauseEndsAt: timestamp("pauseEndsAt"),                                    // for paused events
   noticeEndsAt: timestamp("noticeEndsAt"),                                  // for in_notice events
+  departureReasons: json("departureReasons"),                               // structured reason keys captured when an agent gives notice
+  departureDetails: text("departureDetails"),                               // optional staff context / detail behind the selected reasons
   cancelledAt: timestamp("cancelledAt"),                                    // for cancelled events
   cancelChecklist: json("cancelChecklist"),                                 // JSON array of ticked checklist items
   createdAt: timestamp("createdAt").defaultNow().notNull(),

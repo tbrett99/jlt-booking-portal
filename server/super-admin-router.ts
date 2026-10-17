@@ -12,6 +12,8 @@ import {
   initialiseComparisonRows,
   totalComparisonRows,
 } from "../shared/business-intelligence-periods";
+import { buildDepartureReasonBreakdown, normaliseDepartureReasons } from "../shared/departure-reporting";
+import { DEPARTURE_REASON_LABELS } from "../shared/departure-reasons";
 
 const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "super_admin") {
@@ -1221,6 +1223,59 @@ export const superAdminRouter = router({
           lt(agentStatusEvents.createdAt, weekEndDate),
         ))
         .orderBy(agentStatusEvents.createdAt);
+    }),
+
+  /**
+   * Retention insight: every agent placed In Notice during a selected period,
+   * including the structured reason(s) staff recorded at the point of notice.
+   */
+  departureReasons: superAdminProcedure
+    .input(z.object({ rangeStart: z.string(), rangeEnd: z.string() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { agentStatusEvents, users } = await import("../drizzle/schema");
+      const { gte, lt, and, eq } = await import("drizzle-orm");
+      const rangeStart = new Date(`${input.rangeStart}T00:00:00`);
+      const rangeEnd = new Date(`${input.rangeEnd}T00:00:00`);
+      if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime()) || rangeEnd <= rangeStart) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a valid reporting period." });
+      }
+      const rows = await db
+        .select({
+          id: agentStatusEvents.id,
+          userId: agentStatusEvents.userId,
+          agentName: users.name,
+          agentEmail: users.email,
+          noticeEndsAt: agentStatusEvents.noticeEndsAt,
+          departureReasons: agentStatusEvents.departureReasons,
+          departureDetails: agentStatusEvents.departureDetails,
+          notes: agentStatusEvents.notes,
+          recordedAt: agentStatusEvents.createdAt,
+        })
+        .from(agentStatusEvents)
+        .innerJoin(users, eq(agentStatusEvents.userId, users.id))
+        .where(and(
+          eq(agentStatusEvents.toStatus, "in_notice"),
+          gte(agentStatusEvents.createdAt, rangeStart),
+          lt(agentStatusEvents.createdAt, rangeEnd),
+        ))
+        .orderBy(agentStatusEvents.createdAt);
+
+      const records = rows.map((row) => {
+        const reasonKeys = normaliseDepartureReasons(row.departureReasons);
+        return {
+          ...row,
+          reasonKeys,
+          reasonLabels: reasonKeys.map((reason) => DEPARTURE_REASON_LABELS[reason]),
+        };
+      });
+      return {
+        records,
+        reasonBreakdown: buildDepartureReasonBreakdown(rows),
+        structuredCount: records.filter((record) => record.reasonKeys.length > 0).length,
+      };
     }),
 
   /**

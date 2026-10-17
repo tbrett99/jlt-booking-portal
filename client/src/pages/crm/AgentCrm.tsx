@@ -27,6 +27,7 @@ import { Download } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { DEPARTURE_REASON_OPTIONS, type DepartureReasonKey } from "@shared/departure-reasons";
 
 const UK_REGIONS = [
   "North West", "North East", "Yorkshire and the Humber", "East Midlands",
@@ -770,6 +771,8 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
   const [noticeEndsAt, setNoticeEndsAt] = useState("");
   const [cancelledAt, setCancelledAt] = useState("");
   const [statusNotes, setStatusNotes] = useState("");
+  const [departureReasons, setDepartureReasons] = useState<DepartureReasonKey[]>([]);
+  const [departureDetails, setDepartureDetails] = useState("");
   const [inContractChecked, setInContractChecked] = useState(false);
   const CANCEL_CHECKLIST_ITEMS = [
     "Supplier logins revoked",
@@ -795,11 +798,17 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
     const prev = profile?.agentStatus ?? "active";
     if (newStatus === prev) return;
     if (newStatus === "paused") { setPauseEndsAt(""); setStatusNotes(""); setStatusDialog("paused"); return; }
-    if (newStatus === "in_notice") { setNoticeEndsAt(""); setStatusNotes(""); setInContractChecked(!!profile?.inContract); setStatusDialog("in_notice"); return; }
+    if (newStatus === "in_notice") { setNoticeEndsAt(""); setStatusNotes(""); setDepartureReasons([]); setDepartureDetails(""); setInContractChecked(!!profile?.inContract); setStatusDialog("in_notice"); return; }
     if (newStatus === "cancelled") { setCancelledAt(new Date().toISOString().split("T")[0]); setCancelChecklist([]); setStatusNotes(""); setStatusDialog("cancelled"); return; }
     if (newStatus === "suspended") { setStatusNotes(""); setStatusDialog("suspended"); return; }
     // active — no dialog needed, update directly
     updateAgentStatus.mutate({ userId, newStatus: newStatus as any });
+  }
+
+  function toggleDepartureReason(reason: DepartureReasonKey, checked: boolean) {
+    setDepartureReasons((current) => checked
+      ? [...current, reason]
+      : current.filter((item) => item !== reason));
   }
 
   const updateProfile = trpc.crm.agentCrm.updateProfile.useMutation({
@@ -888,12 +897,33 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">In Notice</span>
               Set Final Date at JLT
             </DialogTitle>
-            <DialogDescription>Enter the agent's final date at JLT. An email will be sent to memberships to cancel their direct debit at the end of the notice period.</DialogDescription>
+            <DialogDescription>Enter the agent&apos;s final date and record why they are leaving. The reason is required for retention reporting; memberships will be emailed to cancel their direct debit at the end of the notice period.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Final Date at JLT <span className="text-destructive">*</span></Label>
               <Input type="date" value={noticeEndsAt} onChange={(e) => setNoticeEndsAt(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-2 block">Why is the agent leaving? <span className="text-destructive">*</span></Label>
+              <p className="mb-2 text-xs text-muted-foreground">Select every reason that applies. These choices feed into Business Intelligence reporting.</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {DEPARTURE_REASON_OPTIONS.map((reason) => (
+                  <label key={reason.key} className="flex items-start gap-2 rounded-md border bg-muted/20 px-2.5 py-2 text-xs cursor-pointer hover:bg-muted/40">
+                    <Checkbox
+                      checked={departureReasons.includes(reason.key)}
+                      onCheckedChange={(checked) => toggleDepartureReason(reason.key, checked === true)}
+                      className="mt-0.5"
+                    />
+                    <span>{reason.label}</span>
+                  </label>
+                ))}
+              </div>
+              {departureReasons.length === 0 && <p className="mt-2 text-xs text-destructive">Select at least one reason to continue.</p>}
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Departure details (optional)</Label>
+              <Textarea value={departureDetails} onChange={(e) => setDepartureDetails(e.target.value)} rows={3} maxLength={3000} placeholder="Add helpful context, feedback or the agent's own words..." />
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Admin Notes (optional)</Label>
@@ -910,8 +940,8 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
           <DialogFooter>
             <Button variant="outline" onClick={() => setStatusDialog(null)}>Cancel</Button>
             <Button
-              disabled={!noticeEndsAt || updateAgentStatus.isPending}
-              onClick={() => updateAgentStatus.mutate({ userId, newStatus: "in_notice", noticeEndsAt, notes: statusNotes || null, inContract: inContractChecked })}
+              disabled={!noticeEndsAt || departureReasons.length === 0 || updateAgentStatus.isPending}
+              onClick={() => updateAgentStatus.mutate({ userId, newStatus: "in_notice", noticeEndsAt, notes: statusNotes || null, departureReasons, departureDetails: departureDetails || null, inContract: inContractChecked })}
             >
               {updateAgentStatus.isPending ? "Saving..." : "Confirm In Notice"}
             </Button>

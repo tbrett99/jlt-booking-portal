@@ -6,6 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { isOnboardingEligible } from "./onboarding-eligibility";
+import { DEPARTURE_REASON_KEYS } from "../shared/departure-reasons";
 import {
   createRecruitmentProspect,
   getRecruitmentProspectByEmail,
@@ -1886,6 +1887,8 @@ export const crmRouter = router({
         cancelledAt: z.string().optional().nullable(),      // ISO date string for cancelled
         cancelChecklist: z.array(z.string()).optional(),    // ticked items for cancelled
         notes: z.string().optional().nullable(),
+        departureReasons: z.array(z.enum(DEPARTURE_REASON_KEYS)).optional(), // required when setting In Notice
+        departureDetails: z.string().trim().max(3000).optional().nullable(),
         inContract: z.boolean().optional(),                  // hold commission during notice until final client travel concludes
       }))
       .mutation(async ({ input, ctx }) => {
@@ -1900,6 +1903,13 @@ export const crmRouter = router({
         const existingProfile = await getAgentCrmProfile(input.userId);
         const fromStatus = existingProfile?.agentStatus ?? "active";
         const agentName = agentUser?.name ?? `Agent #${input.userId}`;
+
+        if (input.newStatus === "in_notice" && (!input.departureReasons || input.departureReasons.length === 0)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Select at least one reason for the agent leaving before setting In Notice.",
+          });
+        }
 
         // Build profile update
         const profileUpdate: Record<string, unknown> = { agentStatus: input.newStatus };
@@ -1989,6 +1999,8 @@ export const crmRouter = router({
           notes: input.notes ?? null,
           pauseEndsAt: input.pauseEndsAt ? new Date(input.pauseEndsAt) : null,
           noticeEndsAt: input.noticeEndsAt ? new Date(input.noticeEndsAt) : null,
+          departureReasons: input.newStatus === "in_notice" ? input.departureReasons ?? null : null,
+          departureDetails: input.newStatus === "in_notice" ? input.departureDetails ?? null : null,
           cancelledAt: input.cancelledAt ? new Date(input.cancelledAt) : null,
           cancelChecklist: input.cancelChecklist ?? null,
         });

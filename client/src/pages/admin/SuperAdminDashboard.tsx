@@ -165,6 +165,64 @@ function LoadingSkeleton() {
   );
 }
 
+function addDaysToIsoDate(isoDate: string, days: number): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day, 0, 0, 0, 0);
+  date.setDate(date.getDate() + days);
+  return toISODate(date);
+}
+
+function DepartureReasonInsights({ rangeStart, rangeEnd, title }: { rangeStart: string; rangeEnd: string; title: string }) {
+  const { data, isLoading, error } = trpc.superAdmin.departureReasons.useQuery(
+    { rangeStart, rangeEnd },
+    { staleTime: 60_000 },
+  );
+  if (isLoading) return <Skeleton className="h-64 rounded-xl" />;
+  if (error) return <Card className="border-rose-200 bg-rose-50"><CardContent className="pt-4 text-sm text-rose-700">Departure insights could not be loaded. Please retry.</CardContent></Card>;
+  if (!data) return null;
+  const maxCount = Math.max(1, ...data.reasonBreakdown.map((item) => item.count));
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base"><TrendingDown size={17} className="text-rose-600" />Departure reasons</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">{title}. Reasons are captured when an agent is moved to In Notice.</p>
+          </div>
+          <div className="flex gap-2"><Badge variant="secondary">{data.records.length} notice{data.records.length === 1 ? "" : "s"} recorded</Badge><Badge variant="outline">{data.structuredCount}/{data.records.length} structured</Badge></div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {data.records.length === 0 ? <div className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">No agents were moved to In Notice in this period.</div> : <>
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
+            <div className="rounded-xl border bg-muted/20 p-4">
+              <p className="mb-3 text-sm font-semibold">Reason trends</p>
+              <div className="space-y-3">
+                {data.reasonBreakdown.map((reason) => <div key={reason.reasonKey}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-xs"><span className="truncate font-medium">{reason.label}</span><span className="font-bold">{reason.count}</span></div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-rose-400" style={{ width: `${Math.round((reason.count / maxCount) * 100)}%` }} /></div>
+                </div>)}
+              </div>
+            </div>
+            <div className="overflow-x-auto rounded-xl border">
+              <Table>
+                <TableHeader><TableRow><TableHead>Agent</TableHead><TableHead>Reason(s)</TableHead><TableHead>Final date</TableHead><TableHead>Details</TableHead></TableRow></TableHeader>
+                <TableBody>{data.records.map((record) => <TableRow key={record.id}>
+                  <TableCell><div className="font-medium">{record.agentName ?? "Unknown agent"}</div><div className="text-xs text-muted-foreground">{new Date(record.recordedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</div></TableCell>
+                  <TableCell><div className="flex max-w-64 flex-wrap gap-1">{record.reasonLabels.length ? record.reasonLabels.map((reason) => <Badge key={reason} variant="secondary" className="whitespace-normal text-left text-[10px]">{reason}</Badge>) : <span className="text-xs text-muted-foreground">Not recorded</span>}</div></TableCell>
+                  <TableCell className="whitespace-nowrap text-sm">{record.noticeEndsAt ? new Date(record.noticeEndsAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}</TableCell>
+                  <TableCell className="min-w-48 max-w-xs whitespace-pre-wrap text-xs text-muted-foreground">{record.departureDetails || record.notes || "—"}</TableCell>
+                </TableRow>)}</TableBody>
+              </Table>
+            </div>
+          </div>
+          {data.structuredCount < data.records.length && <p className="text-xs text-muted-foreground">Older notice records without a selected reason remain visible as “Not recorded”; the Portal does not infer a reason retrospectively.</p>}
+        </>}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Stage label maps ─────────────────────────────────────────────────────────
 const STAGE_LABELS: Record<string, string> = {
   "New Booking": "New Booking",
@@ -852,6 +910,8 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
   if (!data) return null;
 
   const { membership, ddRevenue, bookings, financials, recruitment, staffProductivity, communications, monthlyTrend } = data;
+  const [monthYear, monthNumber] = monthStart.split("-").map(Number);
+  const nextMonthStart = toISODate(new Date(monthYear, monthNumber, 1, 0, 0, 0, 0));
 
   return (
     <div className="space-y-6">
@@ -904,6 +964,7 @@ function MonthlyView({ monthStart }: { monthStart: string }) {
             <StatCard title="In Notice Period" value={fmt(membership.inNoticeCount)} accent={membership.inNoticeCount > 0 ? "amber" : undefined} />
             <StatCard title="Paused Agents" value={fmt(membership.pausedCount)} accent={membership.pausedCount > 0 ? "amber" : undefined} />
           </div>
+          <DepartureReasonInsights rangeStart={monthStart} rangeEnd={nextMonthStart} title="Agents placed In Notice this month" />
           {membership.tierBreakdown.length > 0 && (
             <Card>
               <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">Active Agents by Tier</CardTitle></CardHeader>
@@ -1633,6 +1694,7 @@ export default function SuperAdminDashboard() {
                     <StatCard title="Paused Agents" value={fmt(data.membership.pausedCount)} accent={data.membership.pausedCount > 0 ? "amber" : undefined}
                       sub="Temporarily paused" link="/crm/agents" />
                   </div>
+                  <DepartureReasonInsights rangeStart={weekStartStr} rangeEnd={addDaysToIsoDate(weekStartStr, 7)} title="Agents placed In Notice this week" />
                   {data.membership.tierBreakdown.length > 0 && (
                     <Card>
                       <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">Active Agents by Membership Tier</CardTitle></CardHeader>
