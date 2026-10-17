@@ -720,8 +720,21 @@ export const academyRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "This assessment needs JLT team support before another attempt can be made" });
         }
         if (!outstandingQuestions.length) throw new TRPCError({ code: "BAD_REQUEST", message: "All questions in this assessment have already been passed" });
-        const answers = new Map(input.answers.map((answer) => [answer.questionId, answer]));
-        if (answers.size !== outstandingQuestions.length || outstandingQuestions.some((question) => !answers.has(question.id)) || Array.from(answers.keys()).some((questionId) => !outstandingQuestions.some((question) => question.id === questionId))) throw new TRPCError({ code: "BAD_REQUEST", message: "Please answer each outstanding question before submitting" });
+        // A learner can hold an older page that sends every question, including
+        // ones already passed. Accept those harmless extra values, but retain
+        // only the outstanding answers and reject duplicate or unknown IDs.
+        const submittedAnswers = new Map(input.answers.map((answer) => [answer.questionId, answer]));
+        const knownQuestionIds = new Set(questions.map((question) => question.id));
+        if (submittedAnswers.size !== input.answers.length) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Each outstanding question can only be submitted once" });
+        }
+        if (Array.from(submittedAnswers.keys()).some((questionId) => !knownQuestionIds.has(questionId))) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This assessment contains an unknown question" });
+        }
+        if (outstandingQuestions.some((question) => !submittedAnswers.has(question.id))) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Please answer each outstanding question before submitting" });
+        }
+        const answers = new Map(outstandingQuestions.map((question) => [question.id, submittedAnswers.get(question.id)!]));
         for (const question of outstandingQuestions) {
           const answer = answers.get(question.id)!;
           if (question.questionType === "free_text") {

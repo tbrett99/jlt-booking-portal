@@ -47,7 +47,17 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
     else toast.error(`You scored ${result.score}%. Please review the lesson and try again.`);
     utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId });
     utils.academy.agent.home.invalidate();
-  }, onError: (error) => toast.error(error.message) });
+  }, onError: (error) => {
+    if (error.message === "Please answer each outstanding question before submitting") {
+      // A staff edit or a prior attempt can change targeted-resit state while
+      // an agent has the form open. Refresh the source of truth, preserving
+      // any typed answers so only a genuinely newly-outstanding question needs attention.
+      utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId });
+      toast.error("Your question list has been refreshed. Please check the outstanding questions and submit again.");
+      return;
+    }
+    toast.error(error.message);
+  } });
   const acknowledgeAssessmentFeedback = trpc.academy.agent.acknowledgeAssessmentFeedback.useMutation({ onSuccess: (result) => {
     toast.success(result.passed ? "Feedback acknowledged — this lesson is now complete." : "Feedback acknowledged. Please update your response and submit again when you are ready.");
     utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId });

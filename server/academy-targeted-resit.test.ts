@@ -21,6 +21,9 @@ describe("JLT Academy targeted-question resits", () => {
     expect(router).toContain('Passed questions stay complete; only unsuccessful questions return in a resit.');
     expect(router).toContain('const outstandingQuestions = questions.filter');
     expect(router).toContain('Please answer each outstanding question before submitting');
+    expect(router).toContain('Accept those harmless extra values');
+    expect(router).toContain('const answers = new Map(outstandingQuestions.map');
+    expect(router).toContain('This assessment contains an unknown question');
     expect(router).toContain('assessment_resit_required');
   });
 
@@ -36,6 +39,8 @@ describe("JLT Academy targeted-question resits", () => {
     expect(learner).toContain('const outstandingQuestions = selectedLesson?.questions.filter');
     expect(learner).toContain('Only the outstanding');
     expect(learner).toContain('JLT team support required');
+    expect(learner).toContain('Your question list has been refreshed');
+    expect(learner).toContain('utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId })');
     expect(manager).toContain('Three-attempt escalation');
     expect(manager).toContain('Record support & reopen question');
   });
