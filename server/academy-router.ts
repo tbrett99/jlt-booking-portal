@@ -1,9 +1,9 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, inArray, lte, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
 import { getDb, getRawDbPool, createInAppNotification, getUpcomingAgentEvents } from "./db";
-import { sendDirectEmail } from "./email";
+import { sendDirectEmail, sendSupportEmail } from "./email";
 import { storagePut } from "./storage";
 import {
   academyAccess,
@@ -69,6 +69,50 @@ function normaliseOptionalText(value: string | null | undefined) {
 
 function preserveOptionalTranscript(value: string | null | undefined) {
   return value?.trim() ? value : null;
+}
+
+const ACADEMY_PORTAL_URL = "https://portal.thejltgroup.co.uk";
+
+function escapeAcademyEmailHtml(value: string | null | undefined) {
+  return (value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+async function sendAcademySupportAlert(params: {
+  subject: string;
+  agentName: string | null;
+  agentEmail: string | null;
+  courseTitle: string;
+  lessonTitle: string;
+  detail: string;
+}) {
+  const agentName = escapeAcademyEmailHtml(params.agentName || "Agent");
+  const agentEmail = escapeAcademyEmailHtml(params.agentEmail || "No email recorded");
+  const courseTitle = escapeAcademyEmailHtml(params.courseTitle);
+  const lessonTitle = escapeAcademyEmailHtml(params.lessonTitle);
+  const detail = escapeAcademyEmailHtml(params.detail);
+  await sendSupportEmail({
+    subject: params.subject,
+    html: `<h2>Academy support review needed</h2><p><strong>Agent:</strong> ${agentName} (${agentEmail})</p><p><strong>Course:</strong> ${courseTitle}<br/><strong>Lesson:</strong> ${lessonTitle}</p><p>${detail}</p><p><a href="${ACADEMY_PORTAL_URL}/admin/academy">Open Academy Manager</a></p>`,
+  });
+}
+
+async function sendAcademyAgentEmail(params: {
+  userId: number;
+  email: string | null;
+  name: string | null;
+  subject: string;
+  html: string;
+  triggerKey: string;
+}) {
+  if (!params.email) return;
+  await sendDirectEmail({
+    toEmail: params.email,
+    toName: params.name ?? "JLT Agent",
+    userId: params.userId,
+    subject: params.subject,
+    html: params.html,
+    triggerKey: params.triggerKey,
+  });
 }
 
 /**
@@ -702,11 +746,53 @@ export const academyRouter = router({
         const [existing] = await db.select().from(academyLessonProgress)
           .where(and(eq(academyLessonProgress.enrollmentId, enrollment.id), eq(academyLessonProgress.lessonId, input.lessonId))).limit(1);
         const now = new Date();
-        if (existing) await db.update(academyLessonProgress).set({ lastViewedAt: now, startedAt: existing.startedAt ?? now }).where(eq(academyLessonProgress.id, existing.id));
-        else await db.insert(academyLessonProgress).values({ enrollmentId: enrollment.id, lessonId: input.lessonId, startedAt: now, lastViewedAt: now } as any);
+        if (existing) await db.update(academyLessonProgress).set({ lastViewedAt: now, lastActivityAt: now, startedAt: existing.startedAt ?? now }).where(eq(academyLessonProgress.id, existing.id));
+        else await db.insert(academyLessonProgress).values({ enrollmentId: enrollment.id, lessonId: input.lessonId, startedAt: now, lastViewedAt: now, lastActivityAt: now } as any);
         if (enrollment.status === "assigned") await db.update(academyEnrollments).set({ status: "in_progress", startedAt: enrollment.startedAt ?? now }).where(eq(academyEnrollments.id, enrollment.id));
         return { success: true };
       }),
+
+    recordActivity: protectedProcedure.input(z.object({
+      enrollmentId: z.number().int().positive(),
+      lessonId: z.number().int().positive(),
+      area: z.enum(["lesson", "knowledge_check"]),
+    })).mutation(async ({ ctx, input }) => {
+      const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+      await ensureFeedbackAcknowledgedBeforeLesson(enrollment, input.lessonId);
+      const [existing] = await db.select().from(academyLessonProgress)
+        .where(and(eq(academyLessonProgress.enrollmentId, enrollment.id), eq(academyLessonProgress.lessonId, input.lessonId))).limit(1);
+      const now = new Date();
+      if (existing?.completedAt) return { creditedSeconds: 0 };
+      // Credit only elapsed visible-session time since the preceding heartbeat,
+      // capped at one minute so backgrounded/stale tabs cannot inflate totals.
+      const elapsedSeconds = existing?.lastActivityAt
+        ? Math.max(0, Math.min(60, Math.floor((now.getTime() - existing.lastActivityAt.getTime()) / 1000)))
+        : 0;
+      if (existing) {
+        await db.update(academyLessonProgress).set({
+          lastActivityAt: now,
+          lastViewedAt: now,
+          startedAt: existing.startedAt ?? now,
+          ...(input.area === "lesson"
+            ? { lessonActiveSeconds: sql`COALESCE(${academyLessonProgress.lessonActiveSeconds}, 0) + ${elapsedSeconds}` }
+            : { assessmentActiveSeconds: sql`COALESCE(${academyLessonProgress.assessmentActiveSeconds}, 0) + ${elapsedSeconds}` }),
+        }).where(eq(academyLessonProgress.id, existing.id));
+      } else {
+        await db.insert(academyLessonProgress).values({
+          enrollmentId: enrollment.id,
+          lessonId: input.lessonId,
+          startedAt: now,
+          lastViewedAt: now,
+          lastActivityAt: now,
+          lessonActiveSeconds: 0,
+          assessmentActiveSeconds: 0,
+        } as any);
+      }
+      return { creditedSeconds: elapsedSeconds };
+    }),
 
     acknowledgeLesson: protectedProcedure.input(z.object({ enrollmentId: z.number().int().positive(), lessonId: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => {
@@ -865,6 +951,7 @@ export const academyRouter = router({
         }))];
         const allQuestionStates = deriveQuestionResitStates({ questions, attempts: allAttempts, responses: allResponses, resets: questionResets, passMark: lesson.assessmentPassMark });
         const assessmentPassed = allQuestionStates.every((state) => state.passed);
+        const newlyEscalatedQuestions = allQuestionStates.filter((state) => state.supportRequired && !resitStates.find((previous) => previous.questionId === state.questionId)?.supportRequired);
         if (assessmentPassed) {
           const [existing] = await db.select().from(academyLessonProgress).where(and(eq(academyLessonProgress.enrollmentId, enrollment.id), eq(academyLessonProgress.lessonId, lesson.id))).limit(1);
           if (existing) await db.update(academyLessonProgress).set({ completedAt: now, lastViewedAt: now, startedAt: existing.startedAt ?? now }).where(eq(academyLessonProgress.id, existing.id));
@@ -874,9 +961,31 @@ export const academyRouter = router({
         }
         if (writtenQuestions.length) {
           await addAudit({ agentId: ctx.user.id, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: "assessment_submitted_for_marking", summary: `Submitted ${writtenQuestions.length} outstanding written ${writtenQuestions.length === 1 ? "question" : "questions"} for ${lesson.title}`, metadata: { lessonId: lesson.id, attemptId, writtenQuestions: writtenQuestions.length } });
+          const [course] = await db.select({ title: academyCourses.title }).from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
+          const [agent] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+          await sendAcademySupportAlert({
+            subject: `Academy written assessment ready to mark — ${agent?.name ?? "agent"}`,
+            agentName: agent?.name ?? null,
+            agentEmail: agent?.email ?? null,
+            courseTitle: course?.title ?? "JLT Academy",
+            lessonTitle: lesson.title,
+            detail: `${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response has" : "responses have"} been submitted and are waiting in the Academy marking queue.`,
+          });
           return { attemptId, status: "awaiting_marking" as const, passMark: REQUIRED_ASSESSMENT_SCORE, correct, total: outstandingQuestions.length };
         }
         await addAudit({ agentId: ctx.user.id, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: assessmentPassed ? "assessment_passed" : "assessment_resit_required", summary: `${assessmentPassed ? "Completed" : "Submitted"} ${outstandingQuestions.length === 1 ? "an outstanding question" : `${outstandingQuestions.length} outstanding questions`} for ${lesson.title}`, metadata: { lessonId: lesson.id, score, passed: assessmentPassed, outstandingQuestionIds: allQuestionStates.filter((state) => !state.passed).map((state) => state.questionId) } });
+        if (newlyEscalatedQuestions.length) {
+          const [course] = await db.select({ title: academyCourses.title }).from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
+          const [agent] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+          await sendAcademySupportAlert({
+            subject: `Academy support needed: three-attempt lock — ${agent?.name ?? "agent"}`,
+            agentName: agent?.name ?? null,
+            agentEmail: agent?.email ?? null,
+            courseTitle: course?.title ?? "JLT Academy",
+            lessonTitle: lesson.title,
+            detail: `${newlyEscalatedQuestions.length} knowledge-check ${newlyEscalatedQuestions.length === 1 ? "question has" : "questions have"} reached the three-attempt limit. Please provide support, then reopen the specific question from Academy Manager.`,
+          });
+        }
         return { attemptId, status: "auto_graded" as const, score, passed: assessmentPassed, passMark: REQUIRED_ASSESSMENT_SCORE, correct, total: outstandingQuestions.length };
       }),
 
@@ -990,6 +1099,14 @@ export const academyRouter = router({
       const passed = states.every((state) => state.passed);
       await db.update(academyAssessmentAttempts).set({ status: "feedback_pending", score, passed, graderFeedback: input.feedback, gradedById: ctx.user.id, gradedAt: now }).where(eq(academyAssessmentAttempts.id, currentAttempt.id));
       await createInAppNotification({ userId: row.agent.id, message: `Your ${row.course.title} assessment feedback is ready. Please read and acknowledge it before continuing.`, linkUrl: `/academy/course/${row.enrollment.id}`, isUrgent: true });
+      await sendAcademyAgentEmail({
+        userId: row.agent.id,
+        email: row.agent.email,
+        name: row.agent.name,
+        subject: `Your JLT Academy feedback is ready — ${row.lesson.title}`,
+        triggerKey: "academy_assessment_feedback_ready",
+        html: `<p>Hi ${escapeAcademyEmailHtml((row.agent.name ?? "there").split(" ")[0])},</p><p>Your written assessment feedback for <strong>${escapeAcademyEmailHtml(row.lesson.title)}</strong> is ready in the JLT Academy.</p><p>${passed ? "You achieved the required 100% standard. Please read and acknowledge the feedback to record this lesson as complete." : "Please read the feedback, acknowledge it, then revisit the outstanding response when you are ready."}</p><p><a href="${ACADEMY_PORTAL_URL}/academy/course/${row.enrollment.id}">Open your Academy feedback</a></p>`,
+      });
       await addAudit({ agentId: row.agent.id, courseId: row.course.id, enrollmentId: row.enrollment.id, actorId: ctx.user.id, action: "assessment_marked", summary: `Marked ${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response" : "responses"} for ${row.lesson.title} (${score}% — ${passed ? "passed" : "targeted resit needed"})`, metadata: { attemptId: row.attempt.id, score, passed, passMark: REQUIRED_ASSESSMENT_SCORE, outstandingQuestionIds: states.filter((state) => !state.passed).map((state) => state.questionId) } });
       return { score, passed, passMark: REQUIRED_ASSESSMENT_SCORE };
     }),
@@ -1068,6 +1185,15 @@ export const academyRouter = router({
       await db.update(academyLessonProgress).set({ completedAt: null, lastViewedAt: now }).where(and(eq(academyLessonProgress.enrollmentId, enrollment.id), eq(academyLessonProgress.lessonId, lesson.id)));
       await db.update(academyEnrollments).set({ status: "in_progress", completedAt: null, completionOutcomeAppliedAt: null }).where(eq(academyEnrollments.id, enrollment.id));
       await createInAppNotification({ userId: enrollment.agentId, message: `Your JLT Academy question in ${lesson.title} has been reopened following support. Please try it again when you are ready.`, linkUrl: `/academy/course/${enrollment.id}`, isUrgent: true });
+      const [agent] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, enrollment.agentId)).limit(1);
+      await sendAcademyAgentEmail({
+        userId: enrollment.agentId,
+        email: agent?.email ?? null,
+        name: agent?.name ?? null,
+        subject: `Your JLT Academy question has been reopened — ${lesson.title}`,
+        triggerKey: "academy_question_reopened",
+        html: `<p>Hi ${escapeAcademyEmailHtml((agent?.name ?? "there").split(" ")[0])},</p><p>Following support from the JLT team, your knowledge-check question in <strong>${escapeAcademyEmailHtml(lesson.title)}</strong> has been reopened.</p><p>You can now return to the lesson and try it again when you are ready.</p><p><a href="${ACADEMY_PORTAL_URL}/academy/course/${enrollment.id}">Continue in JLT Academy</a></p>`,
+      });
       await addAudit({ agentId: enrollment.agentId, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: "assessment_question_reset", summary: `Reset question after three unsuccessful attempts: ${question.prompt}`, metadata: { lessonId: lesson.id, questionId: question.id, reason: input.reason, previousAttempts: state.attemptCount } });
       return { success: true };
     }),

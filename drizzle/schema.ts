@@ -1663,6 +1663,11 @@ export const academyLessonProgress = mysqlTable("academy_lesson_progress", {
   lessonId: int("lessonId").notNull(),
   startedAt: timestamp("startedAt"),
   lastViewedAt: timestamp("lastViewedAt"),
+  // Active visible-portal seconds are recorded in bounded pulses. They are
+  // operational insight only, never a learner progression requirement.
+  lessonActiveSeconds: int("lessonActiveSeconds").default(0).notNull(),
+  assessmentActiveSeconds: int("assessmentActiveSeconds").default(0).notNull(),
+  lastActivityAt: timestamp("lastActivityAt"),
   acknowledgedAt: timestamp("acknowledgedAt"),
   completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
