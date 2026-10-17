@@ -736,17 +736,29 @@ export const academyRouter = router({
         const score = writtenQuestions.length ? null : Math.round((correct / outstandingQuestions.length) * 100);
         const passed = score === null ? null : correct === outstandingQuestions.length;
         const now = new Date();
-        const result = await db.insert(academyAssessmentAttempts).values({
-          enrollmentId: enrollment.id,
-          lessonId: lesson.id,
-          status: writtenQuestions.length ? "awaiting_marking" : "auto_graded",
-          score,
-          passed,
-          answers: input.answers,
-          takenAt: now,
-        } as any);
-        const attemptId = Number((result as any).insertId);
-        if (!Number.isSafeInteger(attemptId) || attemptId < 1) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Assessment submission was not assigned an ID" });
+        // Drizzle's TiDB insert result does not reliably expose insertId. The
+        // response rows must reference this exact attempt, so use the native
+        // parameterised path that is already used for Academy lesson inserts.
+        const pool = await getRawDbPool();
+        if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+        const [attemptInsert] = await pool.execute(
+          `INSERT INTO academy_assessment_attempts
+            (enrollmentId, lessonId, status, score, passed, answers, takenAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            enrollment.id,
+            lesson.id,
+            writtenQuestions.length ? "awaiting_marking" : "auto_graded",
+            score,
+            passed,
+            JSON.stringify(input.answers),
+            now,
+          ],
+        );
+        const attemptId = Number((attemptInsert as any).insertId);
+        if (!Number.isSafeInteger(attemptId) || attemptId < 1) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Academy assessment attempt insert did not return an ID" });
+        }
         await db.insert(academyAssessmentResponses).values(outstandingQuestions.map((question) => {
           const answer = answers.get(question.id)!;
           return {

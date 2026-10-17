@@ -36,4 +36,11 @@ describe("JLT Academy feature safeguards", () => {
     expect(source).toContain("Academy lesson insert did not return an ID");
     expect(source).toContain("Number.isSafeInteger(id)");
   });
+
+  it("uses a native prepared insert for assessment attempts before creating answer rows", () => {
+    expect(source).toContain("INSERT INTO academy_assessment_attempts");
+    expect(source).toContain("JSON.stringify(input.answers)");
+    expect(source).toContain("Academy assessment attempt insert did not return an ID");
+    expect(source).not.toContain("const result = await db.insert(academyAssessmentAttempts)");
+  });
 });
