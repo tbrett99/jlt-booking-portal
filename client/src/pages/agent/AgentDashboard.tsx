@@ -17,6 +17,7 @@ import {
   Calendar,
   CheckCircle2,
   ChevronRight,
+  ClipboardCheck,
   Clock,
   ExternalLink,
   GraduationCap,
@@ -98,6 +99,7 @@ export default function AgentDashboard() {
   const { data: unconfirmedUpdates = [], refetch: refetchUnconfirmed } = trpc.community.unconfirmedUpdates.useQuery();
   const { data: communityPosts = [] } = trpc.community.dashboardPosts.useQuery();
   const { data: unansweredThreads = [] } = trpc.notes.myUnansweredThreads.useQuery(undefined, { staleTime: 60_000 });
+  const { data: academyActions = [] } = trpc.agentDevelopment.actions.mine.useQuery();
   const { data: myProfile } = trpc.crm.agentCrm.getMyProfile.useQuery();
   const confirmPost = trpc.community.confirm.useMutation({ onSuccess: () => refetchUnconfirmed() });
   const openOrbit = trpc.sso.generateToken.useMutation();
@@ -110,6 +112,7 @@ export default function AgentDashboard() {
   );
   const flightQueries = flightRequests.filter((request) => request.status === "query");
   const unreadNotifications = notifications.filter((notification) => !notification.isRead);
+  const outstandingAcademyActions = (academyActions as any[]).filter((item) => ["assigned", "needs_revision"].includes(item.assignment.status));
   const bookingActionCount = countAgentBookingActions({
     bookingQueries: bookingQueries.length,
     ptsActions: requiresPtsAction.length,
@@ -169,11 +172,11 @@ export default function AgentDashboard() {
             <h2 className="text-base font-bold text-foreground">Your attention</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">The things most worth looking at today.</p>
           </div>
-          {bookingActionCount === 0 && unconfirmedUpdates.length === 0 && commissionClaimable.length === 0 && (
+          {bookingActionCount === 0 && outstandingAcademyActions.length === 0 && unconfirmedUpdates.length === 0 && commissionClaimable.length === 0 && (
             <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700"><CheckCircle2 size={16} /> All caught up</span>
           )}
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <Link href="/community">
             <Card className={`h-full border-l-4 transition-shadow hover:shadow-md ${unconfirmedUpdates.length > 0 ? "border-l-amber-500" : "border-l-slate-300"}`}>
               <CardContent className="flex items-center gap-3 p-4">
@@ -188,6 +191,15 @@ export default function AgentDashboard() {
               <CardContent className="flex items-center gap-3 p-4">
                 <div className="rounded-xl bg-orange-100 p-2 text-orange-700"><AlertCircle size={18} /></div>
                 <div className="min-w-0 flex-1"><p className="text-2xl font-bold">{bookingActionCount}</p><p className="text-xs font-medium text-muted-foreground">Booking action{bookingActionCount === 1 ? "" : "s"} to review</p></div>
+                <ChevronRight size={17} className="text-muted-foreground" />
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/academy/actions">
+            <Card className={`h-full border-l-4 transition-shadow hover:shadow-md ${outstandingAcademyActions.length > 0 ? "border-l-[#00c9b4]" : "border-l-slate-300"}`}>
+              <CardContent className="flex items-center gap-3 p-4">
+                <div className="rounded-xl bg-[#70FFE8]/30 p-2 text-[#047857]"><ClipboardCheck size={18} /></div>
+                <div className="min-w-0 flex-1"><p className="text-2xl font-bold">{outstandingAcademyActions.length}</p><p className="text-xs font-medium text-muted-foreground">Academy action{outstandingAcademyActions.length === 1 ? "" : "s"} to complete</p></div>
                 <ChevronRight size={17} className="text-muted-foreground" />
               </CardContent>
             </Card>
@@ -226,6 +238,19 @@ export default function AgentDashboard() {
                 <div className="flex gap-2"><Link href={`/community?postId=${update.id}`}><Button size="sm" variant="outline">Read</Button></Link><Button size="sm" onClick={() => confirmPost.mutate({ postId: update.id })} disabled={confirmPost.isPending} className="bg-amber-500 text-white hover:bg-amber-600"><CheckCircle2 size={14} className="mr-1" />Confirm</Button></div>
               </div>
             ))}
+          </div>
+        </section>
+      )}
+
+      {outstandingAcademyActions.length > 0 && (
+        <section className="rounded-2xl border-2 border-[#70FFE8]/70 bg-[#f0fffb] p-4 shadow-sm">
+          <div className="mb-3 flex items-start gap-3">
+            <div className="rounded-xl bg-white p-2 text-[#047857]"><ClipboardCheck size={18} /></div>
+            <div className="min-w-0 flex-1"><h2 className="font-bold text-foreground">Your Academy actions need attention</h2><p className="mt-0.5 text-sm text-muted-foreground">Complete the requested evidence or update anything returned by the JLT team.</p></div>
+            <Link href="/academy/actions"><Button size="sm" className="shrink-0 bg-[#047857] text-white hover:bg-[#065f46]">Open actions</Button></Link>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {outstandingAcademyActions.slice(0, 4).map((item) => <Link key={item.assignment.id} href="/academy/actions"><div className="flex items-center gap-3 rounded-xl border border-[#a7f3e8] bg-white/90 p-3 transition-colors hover:bg-white"><div className="rounded-lg bg-[#70FFE8]/30 p-1.5 text-[#047857]"><ClipboardCheck size={15} /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-foreground">{item.plan.title}</p><p className="mt-0.5 text-xs text-muted-foreground">{item.assignment.status === "needs_revision" ? "JLT has requested an update" : item.plan.dueAt ? `Due ${format(new Date(item.plan.dueAt), "d MMMM")}` : "Open to complete"}</p></div><ChevronRight size={16} className="text-muted-foreground" /></div></Link>)}
           </div>
         </section>
       )}

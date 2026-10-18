@@ -4,6 +4,7 @@ import { z } from "zod";
 import { shouldAwardActionMomentum, validateActionMomentumConfiguration } from "@shared/momentum-policy";
 import { router, protectedProcedure } from "./_core/trpc";
 import { createInAppNotification, getDb, getRawDbPool } from "./db";
+import { sendDirectEmail } from "./email";
 import { storagePut } from "./storage";
 import { awardMomentum, getMomentumRule } from "./momentum";
 import {
@@ -38,6 +39,65 @@ const evidence = z.object({
 function optionalText(value: string | null | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>'"]/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;",
+  }[character] ?? character));
+}
+
+function formatActionDueDate(value: Date | null) {
+  if (!value) return "No deadline has been set";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Europe/London",
+    timeZoneName: "short",
+  }).format(new Date(value));
+}
+
+async function sendAcademyActionEmail(params: {
+  agent: { id: number; email: string | null; name: string | null };
+  plan: { id: number; title: string; dueAt: Date | null };
+  reminder?: boolean;
+}) {
+  if (!params.agent.email) return { success: false, skipped: true } as const;
+  const safeTitle = escapeHtml(params.plan.title);
+  const greetingName = escapeHtml(params.agent.name ?? "there");
+  const dueDate = escapeHtml(formatActionDueDate(params.plan.dueAt));
+  const isReminder = params.reminder === true;
+  try {
+    const result = await sendDirectEmail({
+      toEmail: params.agent.email,
+      toName: params.agent.name ?? "Agent",
+      userId: params.agent.id,
+      triggerKey: isReminder ? `academy_action_reminder_${params.plan.id}` : `academy_action_assigned_${params.plan.id}`,
+      subject: isReminder ? `Reminder: Academy action — ${params.plan.title}` : `New Academy action: ${params.plan.title}`,
+      html: `
+        <p>Hi ${greetingName},</p>
+        <p>${isReminder ? "This is a reminder that you still have an Academy action to complete." : "Your JLT team has assigned you a new Academy action."}</p>
+        <div style="margin:20px 0;padding:16px 18px;background:#f0fffe;border-left:4px solid #70FFE8;border-radius:6px;">
+          <p style="margin:0 0 6px;"><strong>${safeTitle}</strong></p>
+          <p style="margin:0;color:#444;"><strong>Due:</strong> ${dueDate}</p>
+        </div>
+        <p>Open your Academy Actions area to read the instructions and provide any notes, link or evidence requested.</p>
+        <p style="margin:24px 0;"><a href="https://portal.thejltgroup.co.uk/academy/actions" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:11px 20px;border-radius:6px;text-decoration:none;font-weight:700;">Open Academy Actions &rarr;</a></p>
+      `,
+    });
+    if (!result.success) console.error(`[Academy Actions] Email notification was not sent for assignment plan ${params.plan.id}: ${result.error ?? "unknown error"}`);
+    return result;
+  } catch (error) {
+    console.error(`[Academy Actions] Email notification failed for assignment plan ${params.plan.id}:`, error);
+    return { success: false, skipped: false } as const;
+  }
 }
 
 async function getEligibleAgentIds(plan: {
@@ -77,12 +137,12 @@ async function getEligibleAgentIds(plan: {
   });
 }
 
-async function createAssignments(params: { planId: number; agentIds: number[]; actorId: number }) {
+async function createAssignments(params: { plan: { id: number; title: string; dueAt: Date | null }; agentIds: number[]; actorId: number }) {
   const db = await getDb();
   if (!db || !params.agentIds.length) return { created: 0 };
   const existing = await db.select({ agentId: academyActionAssignments.agentId })
     .from(academyActionAssignments)
-    .where(and(eq(academyActionAssignments.planId, params.planId), inArray(academyActionAssignments.agentId, params.agentIds)));
+    .where(and(eq(academyActionAssignments.planId, params.plan.id), inArray(academyActionAssignments.agentId, params.agentIds)));
   const existingIds = new Set(existing.map((item) => item.agentId));
   const targetIds = params.agentIds.filter((id) => !existingIds.has(id));
   if (!targetIds.length) return { created: 0 };
@@ -90,8 +150,12 @@ async function createAssignments(params: { planId: number; agentIds: number[]; a
   if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
   await pool.execute(
     `INSERT INTO academy_action_assignments (planId, agentId) VALUES ${targetIds.map(() => "(?, ?)").join(", ")}`,
-    targetIds.flatMap((agentId) => [params.planId, agentId]),
+    targetIds.flatMap((agentId) => [params.plan.id, agentId]),
   );
+  const recipients = await db.select({ id: users.id, email: users.email, name: users.name })
+    .from(users)
+    .where(inArray(users.id, targetIds));
+  const recipientsById = new Map(recipients.map((recipient) => [recipient.id, recipient]));
   await Promise.all(targetIds.map(async (agentId) => {
     await createInAppNotification({
       userId: agentId,
@@ -99,6 +163,8 @@ async function createAssignments(params: { planId: number; agentIds: number[]; a
       linkUrl: "/academy/actions",
       isUrgent: true,
     });
+    const recipient = recipientsById.get(agentId);
+    if (recipient) await sendAcademyActionEmail({ agent: recipient, plan: params.plan });
   }));
   return { created: targetIds.length };
 }
@@ -111,7 +177,7 @@ async function publishPlan(planId: number, actorId: number) {
   if (plan.status === "archived") throw new TRPCError({ code: "BAD_REQUEST", message: "Archived actions cannot be published" });
   const explicit = await db.select({ agentId: academyActionPlanTargets.agentId }).from(academyActionPlanTargets).where(eq(academyActionPlanTargets.planId, plan.id));
   const agentIds = await getEligibleAgentIds(plan as any, explicit.map((row) => row.agentId));
-  const assignmentResult = await createAssignments({ planId: plan.id, agentIds, actorId });
+  const assignmentResult = await createAssignments({ plan, agentIds, actorId });
   const now = new Date();
   const pool = await getRawDbPool();
   await pool.execute(
@@ -132,7 +198,7 @@ export async function assignAcceleratorEntryActions(agentId: number, actorId: nu
     eq(academyActionPlans.assignmentTrigger, "on_accelerator_entry"),
   ));
   let assigned = 0;
-  for (const plan of plans) assigned += (await createAssignments({ planId: plan.id, agentIds: [agentId], actorId })).created;
+  for (const plan of plans) assigned += (await createAssignments({ plan, agentIds: [agentId], actorId })).created;
   return { assigned };
 }
 
@@ -345,6 +411,31 @@ export const agentDevelopmentRouter = router({
       return db.select({ assignment: academyActionAssignments, agent: users })
         .from(academyActionAssignments).innerJoin(users, eq(users.id, academyActionAssignments.agentId))
         .where(eq(academyActionAssignments.planId, input.planId)).orderBy(asc(users.name));
+    }),
+
+    remindActionPlanAgents: adminProcedure.input(z.object({ planId: z.number().int().positive() })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [plan] = await db.select().from(academyActionPlans).where(eq(academyActionPlans.id, input.planId)).limit(1);
+      if (!plan) throw new TRPCError({ code: "NOT_FOUND", message: "Academy action plan not found" });
+      if (plan.status !== "published") throw new TRPCError({ code: "BAD_REQUEST", message: "Only published actions can be reminded" });
+      const rows = await db.select({ assignment: academyActionAssignments, agent: users })
+        .from(academyActionAssignments)
+        .innerJoin(users, eq(users.id, academyActionAssignments.agentId))
+        .where(eq(academyActionAssignments.planId, plan.id));
+      const outstanding = rows.filter((row) => ["assigned", "needs_revision"].includes(row.assignment.status));
+      let sent = 0;
+      await Promise.all(outstanding.map(async ({ agent }) => {
+        await createInAppNotification({
+          userId: agent.id,
+          message: `Reminder: your Academy action “${plan.title}” still needs your attention.`,
+          linkUrl: "/academy/actions",
+          isUrgent: true,
+        });
+        const outcome = await sendAcademyActionEmail({ agent, plan, reminder: true });
+        if (outcome.success) sent += 1;
+      }));
+      return { recipients: outstanding.length, sent };
     }),
 
     reviewAction: adminProcedure.input(z.object({ assignmentId: z.number().int().positive(), outcome: z.enum(["completed", "needs_revision"]), feedback: z.string().trim().max(10_000).nullable().optional() })).mutation(async ({ ctx, input }) => {

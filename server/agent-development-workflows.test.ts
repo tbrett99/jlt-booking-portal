@@ -8,6 +8,8 @@ const academy = readFileSync(resolve(process.cwd(), "server/academy-router.ts"),
 const scheduler = readFileSync(resolve(process.cwd(), "server/scheduler.ts"), "utf8");
 const app = readFileSync(resolve(process.cwd(), "client/src/App.tsx"), "utf8");
 const crm = readFileSync(resolve(process.cwd(), "client/src/pages/crm/AgentCrm.tsx"), "utf8");
+const agentDashboard = readFileSync(resolve(process.cwd(), "client/src/pages/agent/AgentDashboard.tsx"), "utf8");
+const actionManager = readFileSync(resolve(process.cwd(), "client/src/pages/admin/AdminAcademyActions.tsx"), "utf8");
 
 describe("Agent accountability and engagement safeguards", () => {
   it("keeps practical Academy actions separate from course progress with one assignment per plan and agent", () => {
@@ -54,5 +56,22 @@ describe("Agent accountability and engagement safeguards", () => {
     expect(app).toContain('path="/admin/agent-engagement"');
     expect(crm).toContain('TabsTrigger value="engagement"');
     expect(crm).toContain('function AgentEngagementTab');
+  });
+
+  it("delivers new Academy Actions through the dashboard, in-app notification and audited email", () => {
+    expect(router).toContain('sendAcademyActionEmail');
+    expect(router).toContain('New Academy action: ${params.plan.title}');
+    expect(router).toContain('linkUrl: "/academy/actions"');
+    expect(router).toContain('triggerKey: isReminder ? `academy_action_reminder_${params.plan.id}`');
+    expect(agentDashboard).toContain('outstandingAcademyActions');
+    expect(agentDashboard).toContain('Your Academy actions need attention');
+    expect(agentDashboard).toContain('Academy action');
+  });
+
+  it("lets staff send a deliberate reminder to only outstanding Action assignments", () => {
+    expect(router).toContain('remindActionPlanAgents');
+    expect(router).toContain('["assigned", "needs_revision"]');
+    expect(actionManager).toContain('Remind');
+    expect(actionManager).toContain('Send an email and Portal reminder');
   });
 });
