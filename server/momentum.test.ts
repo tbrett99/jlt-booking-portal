@@ -2,18 +2,29 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { shouldAwardActionMomentum, validateActionMomentumConfiguration } from "../shared/momentum-policy";
+import { isMomentumRuleEnabled } from "./momentum";
 
 const schema = readFileSync(fileURLToPath(new URL("../drizzle/schema.ts", import.meta.url)), "utf8");
 const migration = readFileSync(fileURLToPath(new URL("../drizzle/0155_simple_ghost_rider.sql", import.meta.url)), "utf8");
 const communityRouter = readFileSync(fileURLToPath(new URL("./community-router.ts", import.meta.url)), "utf8");
 const communityPage = readFileSync(fileURLToPath(new URL("../client/src/pages/Community.tsx", import.meta.url)), "utf8");
 const academyRouter = readFileSync(fileURLToPath(new URL("./agent-development-router.ts", import.meta.url)), "utf8");
+const momentumPage = readFileSync(fileURLToPath(new URL("../client/src/pages/admin/AdminMomentum.tsx", import.meta.url)), "utf8");
 
 function config(staffReviewRequired: boolean, momentumAwardMode: "off" | "self_declared_completion" | "reviewed_completion", momentumPoints: number) {
   return { staffReviewRequired, momentumAwardMode, momentumPoints };
 }
 
 describe("JLT Momentum", () => {
+  it("normalises MySQL/TiDB enabled values before deciding whether a rule is live", () => {
+    expect(isMomentumRuleEnabled(true)).toBe(true);
+    expect(isMomentumRuleEnabled(1)).toBe(true);
+    expect(isMomentumRuleEnabled("1")).toBe(true);
+    expect(isMomentumRuleEnabled(false)).toBe(false);
+    expect(isMomentumRuleEnabled(0)).toBe(false);
+    expect(isMomentumRuleEnabled("0")).toBe(false);
+  });
+
   it("requires a compatible completion trigger and a positive point value", () => {
     expect(validateActionMomentumConfiguration(config(false, "off", 0))).toBeNull();
     expect(validateActionMomentumConfiguration(config(false, "self_declared_completion", 10))).toBeNull();
@@ -61,5 +72,11 @@ describe("JLT Momentum", () => {
     expect(communityPage).toContain("recognition score for now");
     expect(communityPage).toContain("Browse posts");
     expect(communityRouter).toContain("getMomentumAgentOverview");
+  });
+
+  it("does not silently render a Momentum API failure as zero configured rules", () => {
+    expect(momentumPage).toContain("Momentum rules could not be loaded");
+    expect(momentumPage).toContain("activeRuleCount");
+    expect(momentumPage).toContain("Retry Momentum rules");
   });
 });

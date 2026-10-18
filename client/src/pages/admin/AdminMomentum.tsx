@@ -23,7 +23,7 @@ function formatDate(value: Date | string | null | undefined) {
 
 export default function AdminMomentum() {
   const utils = trpc.useUtils();
-  const { data, isLoading } = trpc.momentum.adminDashboard.useQuery();
+  const { data, isLoading, isError, error, refetch, isFetching } = trpc.momentum.adminDashboard.useQuery();
   const [expandedRule, setExpandedRule] = useState<string | null>(null);
   const updateRule = trpc.momentum.updateRule.useMutation({
     onSuccess: () => { toast.success("Momentum rule updated"); utils.momentum.adminDashboard.invalidate(); },
@@ -35,10 +35,11 @@ export default function AdminMomentum() {
   });
 
   if (isLoading) return <div className="space-y-5 animate-pulse"><div className="h-32 rounded-3xl bg-muted" /><div className="h-64 rounded-2xl bg-muted" /></div>;
+  if (isError || !data) return <div className="mx-auto max-w-3xl rounded-2xl border border-destructive/30 bg-destructive/5 p-6"><h1 className="text-xl font-bold">Momentum rules could not be loaded</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">The configured reward rules have not been changed. Please retry before treating any totals as zero.</p>{error?.message && <p className="mt-2 text-xs text-muted-foreground">Technical detail: {error.message}</p>}<Button className="mt-5" disabled={isFetching} onClick={() => refetch()}>{isFetching ? "Retrying..." : "Retry Momentum rules"}</Button></div>;
   const rules = data?.rules ?? [];
   const leaderboard = data?.leaderboard ?? [];
   const recent = data?.recent ?? [];
-  const activeRules = rules.filter((rule) => Boolean(rule.enabled)).length;
+  const activeRules = data.activeRuleCount;
 
   return <div className="mx-auto max-w-7xl space-y-6">
     <header className="overflow-hidden rounded-3xl border border-violet-200 bg-gradient-to-r from-[#2b2540] via-[#453165] to-[#6d4ca0] p-6 text-white shadow-sm md:p-8">

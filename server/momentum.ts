@@ -19,7 +19,7 @@ type MomentumRule = {
   label: string;
   description: string;
   area: string;
-  enabled: number | boolean;
+  enabled: number | boolean | string;
   points: number;
   weeklyCap: number;
   minimumTextLength: number;
@@ -33,6 +33,11 @@ export type MomentumAward = {
   sourceLabel: string;
   pointsOverride?: number;
 };
+
+/** MySQL/TiDB drivers can return TINYINT values as either numbers or strings. */
+export function isMomentumRuleEnabled(enabled: MomentumRule["enabled"] | null | undefined) {
+  return enabled === true || enabled === 1 || enabled === "1";
+}
 
 function startOfUtcWeek(date = new Date()) {
   const result = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -67,7 +72,7 @@ export async function awardMomentum(input: MomentumAward) {
   }
 
   const rule = await getMomentumRule(input.ruleKey);
-  if (!rule || !rule.enabled) return { awarded: false, reason: "rule_disabled", points: 0 } as const;
+  if (!rule || !isMomentumRuleEnabled(rule.enabled)) return { awarded: false, reason: "rule_disabled", points: 0 } as const;
   const points = Math.max(0, Math.floor(input.pointsOverride ?? rule.points));
   if (!points) return { awarded: false, reason: "no_points", points: 0 } as const;
 
@@ -218,8 +223,16 @@ export async function getMomentumAdminDashboard() {
        ORDER BY l.awardedAt DESC LIMIT 50`,
     ),
   ]);
+  const normalisedRules = (rules[0] as MomentumRule[]).map((rule) => ({
+    ...rule,
+    enabled: isMomentumRuleEnabled(rule.enabled),
+    points: Number(rule.points),
+    weeklyCap: Number(rule.weeklyCap),
+    minimumTextLength: Number(rule.minimumTextLength),
+  }));
   return {
-    rules: rules[0] as MomentumRule[],
+    rules: normalisedRules,
+    activeRuleCount: normalisedRules.filter((rule) => rule.enabled).length,
     leaderboard: leaderboardRows[0] as Array<{ agentId: number; agentName: string; points: number }>,
     recent: recentRows[0] as Array<{ id: number; agentId: number; agentName: string; ruleKey: string; sourceType: string; sourceId: number; sourceLabel: string; points: number; status: "awarded" | "reversed"; awardedAt: Date; reversalReason: string | null }>,
   };
