@@ -21,7 +21,7 @@ import {
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
   ChevronDown, ChevronLeft, ChevronRight, X, Pencil, Clock, ArrowRight, CheckCircle2,
-  Shield, ShieldOff, ExternalLink, FileSignature, ScrollText, Printer, Zap
+  Shield, ShieldOff, ExternalLink, FileSignature, ScrollText, Printer, RefreshCw, Zap
 } from "lucide-react";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
@@ -186,7 +186,7 @@ export default function AgentCrm() {
   const [selectedAgent, setSelectedAgent] = useState<AgentRow | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const { data: agents = [], refetch } = trpc.crm.agentCrm.list.useQuery();
+  const { data: agents = [], refetch, isLoading: agentsLoading, isError: agentsError, isFetching: agentsFetching } = trpc.crm.agentCrm.list.useQuery();
   const { data: recentFailedPayments = [] } = trpc.gocardless.adminGetRecentFailedPayments.useQuery();
   const failedPaymentUserIds = new Set((recentFailedPayments as any[]).map((e: any) => e.userId));
 
@@ -314,7 +314,27 @@ export default function AgentCrm() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.length === 0 ? (
+              {agentsLoading ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                    <RefreshCw className="mx-auto mb-2 h-7 w-7 animate-spin opacity-45" />
+                    <p>Loading registered agents…</p>
+                  </TableCell>
+                </TableRow>
+              ) : agentsError ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="py-12 text-center">
+                    <div className="mx-auto max-w-md rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4">
+                      <p className="font-medium text-foreground">The CRM list could not be loaded.</p>
+                      <p className="mt-1 text-sm text-muted-foreground">No agent records have been removed. Please retry the list.</p>
+                      <Button size="sm" variant="outline" className="mt-3" onClick={() => void refetch()} disabled={agentsFetching}>
+                        <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${agentsFetching ? "animate-spin" : ""}`} />
+                        {agentsFetching ? "Retrying…" : "Retry CRM list"}
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                     <UserCheck className="h-8 w-8 mx-auto mb-2 opacity-30" />
