@@ -1990,20 +1990,33 @@ export const crmRouter = router({
           actorUserId: ctx.user.id,
         });
 
-        // Log the status event
-        await db.insert(agentStatusEvents).values({
-          userId: input.userId,
-          fromStatus,
-          toStatus: input.newStatus,
-          adminId: ctx.user.id,
-          notes: input.notes ?? null,
-          pauseEndsAt: input.pauseEndsAt ? new Date(input.pauseEndsAt) : null,
-          noticeEndsAt: input.noticeEndsAt ? new Date(input.noticeEndsAt) : null,
-          departureReasons: input.newStatus === "in_notice" ? input.departureReasons ?? null : null,
-          departureDetails: input.newStatus === "in_notice" ? input.departureDetails ?? null : null,
-          cancelledAt: input.cancelledAt ? new Date(input.cancelledAt) : null,
-          cancelChecklist: input.cancelChecklist ?? null,
-        });
+        // Log the status event. TiDB rejects Drizzle's all-column DEFAULT
+        // projection for this table, so retain the audit trail through a
+        // parameterised native insert. JSON is serialised deliberately rather
+        // than relying on the driver to coerce arrays for the JSON columns.
+        const { getRawDbPool } = await import("./db");
+        const statusEventPool = await getRawDbPool();
+        await statusEventPool.execute(
+          `INSERT INTO agent_status_events
+             (userId, fromStatus, toStatus, adminId, notes, pauseEndsAt, noticeEndsAt,
+              departureReasons, departureDetails, cancelledAt, cancelChecklist)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            input.userId,
+            fromStatus,
+            input.newStatus,
+            ctx.user.id,
+            input.notes ?? null,
+            input.pauseEndsAt ? new Date(input.pauseEndsAt) : null,
+            input.noticeEndsAt ? new Date(input.noticeEndsAt) : null,
+            input.newStatus === "in_notice" && input.departureReasons
+              ? JSON.stringify(input.departureReasons)
+              : null,
+            input.newStatus === "in_notice" ? input.departureDetails ?? null : null,
+            input.cancelledAt ? new Date(input.cancelledAt) : null,
+            input.cancelChecklist ? JSON.stringify(input.cancelChecklist) : null,
+          ],
+        );
 
         // Send email and notifications based on new status
         try {
