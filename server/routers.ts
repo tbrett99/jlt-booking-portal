@@ -186,6 +186,10 @@ import {
   getAllGcMandates,
   getPaymentEventsByUserId,
   getRecentFailedPayments,
+  createGcMandateReplacement,
+  getGcMandateReplacementHistoryByUserId,
+  getOpenGcMandateReplacementByUserId,
+  updateGcMandate,
 } from "./gocardless-db";
 
 // ─── Role middleware ──────────────────────────────────────────────────────────
@@ -5459,6 +5463,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       .query(async ({ input }) => {
         const mandate = await getGcMandateByUserId(input.userId);
         const subscription = await getGcSubscriptionByUserId(input.userId);
+        const replacements = await getGcMandateReplacementHistoryByUserId(input.userId);
         // Also fetch preferredPaymentDay from CRM profile as the authoritative source
         const { getAgentCrmProfile } = await import("./agent-crm-db");
         const crmProfile = await getAgentCrmProfile(input.userId);
@@ -5476,7 +5481,102 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             mandateScheme = gcMandateInfo.scheme ?? null;
           } catch (_) { /* non-fatal */ }
         }
-        return { mandate: mandate ? { ...mandate, preferredPaymentDay, scheme: mandateScheme } : null, subscription };
+        return { mandate: mandate ? { ...mandate, preferredPaymentDay, scheme: mandateScheme } : null, subscription, replacements };
+      }),
+
+    /**
+     * Admin: ask an existing agent to authorise a replacement Bacs Direct Debit
+     * mandate. The Billing Request contains no payment request and therefore
+     * cannot collect money or create a subscription on its own.
+     */
+    adminRequestMandateReplacement: adminProcedure
+      .input(z.object({ userId: z.number().int(), preferredPaymentDay: z.number().int().min(1).max(28) }))
+      .mutation(async ({ input, ctx }) => {
+        const agent = await getUserById(input.userId);
+        if (!agent?.email) throw new TRPCError({ code: "NOT_FOUND", message: "This agent has no portal email address." });
+        const openReplacement = await getOpenGcMandateReplacementByUserId(input.userId);
+        if (openReplacement) {
+          throw new TRPCError({ code: "CONFLICT", message: "A replacement Direct Debit request is already awaiting this agent." });
+        }
+
+        const [givenName, ...familyNameParts] = (agent.name ?? "").trim().split(/\s+/).filter(Boolean);
+        const billingRequest = await createBillingRequest({
+          givenName,
+          familyName: familyNameParts.join(" ") || undefined,
+          email: agent.email,
+        });
+        const flow = await createBillingRequestFlow({
+          billingRequestId: billingRequest.id,
+          redirectUri: "https://portal.thejltgroup.co.uk/dashboard?directDebitUpdated=1",
+          exitUri: "https://portal.thejltgroup.co.uk/dashboard",
+          prefilledCustomer: { givenName, familyName: familyNameParts.join(" ") || undefined, email: agent.email },
+        });
+        const currentMandate = await getGcMandateByUserId(input.userId);
+        if (!currentMandate) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "No existing Portal Direct Debit record was found for this agent. Use the standard Direct Debit setup flow instead." });
+        }
+        await createGcMandateReplacement({
+          userId: input.userId,
+          previousMandateId: currentMandate.mandateId ?? null,
+          billingRequestId: billingRequest.id,
+          billingRequestFlowId: flow.id,
+          initiationMethod: "hosted_flow",
+          status: "pending",
+          preferredPaymentDay: input.preferredPaymentDay,
+          initiatedById: ctx.user.id,
+        });
+        // Retain the old provider mandate ID in the immutable replacement audit row
+        // above, then track the new hosted request on the current operational row.
+        // This lets the authoritative GoCardless webhook associate the active
+        // replacement with the correct agent without ever rewriting payments.
+        await updateGcMandate(currentMandate.id, {
+          billingRequestId: billingRequest.id,
+          billingRequestFlowId: flow.id,
+          status: "pending",
+          preferredPaymentDay: input.preferredPaymentDay,
+        });
+
+        await sendDirectEmail({
+          toEmail: agent.email,
+          toName: agent.name ?? "Agent",
+          subject: "Action required: update your Direct Debit details",
+          html: `<p>Hi ${agent.name ?? "there"},</p><p>We need you to update the bank details used for your JLT Direct Debit.</p><p><a href="${flow.authorisation_url}">Update my Direct Debit details</a></p><p>This secure GoCardless form only authorises your new Direct Debit mandate. It does not take a payment and will not change your Portal login or commission/reimbursement bank details.</p><p>Thank you,<br>The JLT Group</p>`,
+          userId: input.userId,
+          triggerKey: "direct_debit_mandate_replacement",
+        });
+
+        return { success: true, authorisationUrl: flow.authorisation_url };
+      }),
+
+    /** Admin: link a mandate that an agent has already completed in GoCardless. */
+    adminLinkReplacementMandate: adminProcedure
+      .input(z.object({ userId: z.number().int(), mandateId: z.string().trim().regex(/^MD/i, "Enter a GoCardless mandate ID beginning MD"), preferredPaymentDay: z.number().int().min(1).max(28) }))
+      .mutation(async ({ input, ctx }) => {
+        const agent = await getUserById(input.userId);
+        if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found." });
+        const gcMandate = await getGcMandate(input.mandateId.trim());
+        if (gcMandate.status === "cancelled" || gcMandate.status === "failed" || gcMandate.status === "expired") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `This GoCardless mandate is ${gcMandate.status} and cannot be linked.` });
+        }
+        const currentMandate = await getGcMandateByUserId(input.userId);
+        if (!currentMandate) throw new TRPCError({ code: "NOT_FOUND", message: "No existing Portal Direct Debit record was found for this agent." });
+        if (currentMandate.mandateId === gcMandate.id) throw new TRPCError({ code: "CONFLICT", message: "This mandate is already linked to the agent." });
+        await updateGcMandate(currentMandate.id, {
+          mandateId: gcMandate.id,
+          status: gcMandate.status === "active" ? "active" : "pending",
+          preferredPaymentDay: input.preferredPaymentDay,
+        });
+        await createGcMandateReplacement({
+          userId: input.userId,
+          previousMandateId: currentMandate.mandateId ?? null,
+          replacementMandateId: gcMandate.id,
+          initiationMethod: "manual_link",
+          status: gcMandate.status === "active" ? "linked" : "submitted",
+          preferredPaymentDay: input.preferredPaymentDay,
+          initiatedById: ctx.user.id,
+          completedAt: gcMandate.status === "active" ? new Date() : null,
+        });
+        return { success: true, status: gcMandate.status };
       }),
 
     /**

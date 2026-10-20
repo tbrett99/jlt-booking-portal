@@ -1,6 +1,6 @@
 import { getDb } from "./db";
-import { gcMandates, gcSubscriptions, gcPaymentEvents } from "../drizzle/schema";
-import { and, eq, desc } from "drizzle-orm";
+import { gcMandates, gcMandateReplacements, gcSubscriptions, gcPaymentEvents } from "../drizzle/schema";
+import { and, eq, desc, inArray } from "drizzle-orm";
 
 /**
  * Migration 0152 adds GoCardless' immutable event ID. Older production
@@ -119,7 +119,9 @@ export async function getGcMandateByMandateId(mandateId: string) {
 export async function updateGcMandate(
   id: number,
   data: Partial<{
-    mandateId: string;
+    mandateId: string | null;
+    billingRequestId: string | null;
+    billingRequestFlowId: string | null;
     status: "pending" | "pending_submission" | "submitted" | "active" | "cancelled" | "failed" | "expired";
     userId: number;
     joiningFeePaidAt: Date;
@@ -135,6 +137,79 @@ export async function getAllGcMandates() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(gcMandates).orderBy(gcMandates.createdAt);
+}
+
+// ─── Mandate-replacement audit helpers ─────────────────────────────────────────
+
+export async function createGcMandateReplacement(data: {
+  userId: number;
+  previousMandateId?: string | null;
+  replacementMandateId?: string | null;
+  billingRequestId?: string | null;
+  billingRequestFlowId?: string | null;
+  initiationMethod: "hosted_flow" | "manual_link";
+  status?: "pending" | "submitted" | "active" | "cancelled" | "failed" | "expired" | "linked";
+  preferredPaymentDay?: number | null;
+  initiatedById: number;
+  completedAt?: Date | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(gcMandateReplacements).values({
+    ...data,
+    status: data.status ?? "pending",
+  });
+  return result;
+}
+
+export async function getGcMandateReplacementByBillingRequestId(billingRequestId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(gcMandateReplacements)
+    .where(eq(gcMandateReplacements.billingRequestId, billingRequestId))
+    .orderBy(desc(gcMandateReplacements.createdAt))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getOpenGcMandateReplacementByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(gcMandateReplacements)
+    .where(and(
+      eq(gcMandateReplacements.userId, userId),
+      inArray(gcMandateReplacements.status, ["pending", "submitted"]),
+    ))
+    .orderBy(desc(gcMandateReplacements.createdAt))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getGcMandateReplacementHistoryByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(gcMandateReplacements)
+    .where(eq(gcMandateReplacements.userId, userId))
+    .orderBy(desc(gcMandateReplacements.createdAt));
+}
+
+export async function updateGcMandateReplacement(
+  id: number,
+  data: Partial<{
+    replacementMandateId: string | null;
+    status: "pending" | "submitted" | "active" | "cancelled" | "failed" | "expired" | "linked";
+    completedAt: Date | null;
+  }>,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(gcMandateReplacements).set(data).where(eq(gcMandateReplacements.id, id));
 }
 
 // ─── Subscription helpers ─────────────────────────────────────────────────────
@@ -170,8 +245,11 @@ export async function getGcSubscriptionByUserId(userId: number) {
   const rows = await db
     .select()
     .from(gcSubscriptions)
-    .where(eq(gcSubscriptions.userId, userId))
-    .orderBy(gcSubscriptions.createdAt)
+    .where(and(
+      eq(gcSubscriptions.userId, userId),
+      inArray(gcSubscriptions.status, ["active", "paused"]),
+    ))
+    .orderBy(desc(gcSubscriptions.createdAt))
     .limit(1);
   return rows[0] ?? null;
 }

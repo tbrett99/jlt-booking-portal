@@ -2561,6 +2561,11 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
   const [showCreateSub, setShowCreateSub] = useState(false);
   const [createSubDay, setCreateSubDay] = useState<number>(mandate?.preferredPaymentDay ?? 1);
   const [manualMandateId, setManualMandateId] = useState<string>(mandate?.mandateId ?? "");
+  const [showReplaceMandate, setShowReplaceMandate] = useState(false);
+  const [replacementMode, setReplacementMode] = useState<"send_link" | "link_existing">("send_link");
+  const [replacementMandateId, setReplacementMandateId] = useState("");
+  const [replacementPaymentDay, setReplacementPaymentDay] = useState<number>(mandate?.preferredPaymentDay ?? 1);
+  const [replacementConfirmed, setReplacementConfirmed] = useState(false);
   const createSubMutation = trpc.gocardless.adminCreateSubscription.useMutation({
     onSuccess: () => {
       setShowCreateSub(false);
@@ -2573,6 +2578,26 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
       setLocalMandate((prev: any) => prev ? { ...prev, status: data.status } : { mandateId: data.mandateId, status: data.status });
       refetchDdStatus();
       toast.success(`Mandate status updated: ${data.status}`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const requestReplacementMutation = trpc.gocardless.adminRequestMandateReplacement.useMutation({
+    onSuccess: () => {
+      toast.success("A secure Direct Debit update link has been emailed to the agent.");
+      setShowReplaceMandate(false);
+      setReplacementConfirmed(false);
+      refetchDdStatus();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const linkReplacementMutation = trpc.gocardless.adminLinkReplacementMandate.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Replacement mandate linked (${data.status}). No subscription or payment was created.`);
+      setShowReplaceMandate(false);
+      setReplacementMandateId("");
+      setReplacementConfirmed(false);
+      refetchDdStatus();
+      utils.gocardless.adminListMandates.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -2687,6 +2712,23 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
             </button>
           </div>
         )}
+        <div className="mt-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium text-amber-950">Agent has changed the bank account for Direct Debit?</p>
+              <p className="mt-0.5 text-xs text-amber-900/80">Request a new GoCardless authorisation, or link one they have already completed. Historic mandate and payment records stay intact.</p>
+            </div>
+            <Button size="sm" variant="outline" className="border-amber-300 bg-white" onClick={() => setShowReplaceMandate(true)}>
+              Replace mandate
+            </Button>
+          </div>
+        </div>
+        {ddStatus?.replacements?.[0] && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Latest replacement: <span className="font-medium">{ddStatus.replacements[0].status}</span>
+            {ddStatus.replacements[0].replacementMandateId ? ` · ${ddStatus.replacements[0].replacementMandateId}` : " · awaiting authorisation"}
+          </p>
+        )}
         {/* Link GC subscription by email — shown when no mandate exists */}
         {!mandate && (
           <div className="mt-2 space-y-2">
@@ -2785,6 +2827,59 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
             )}
           </div>
         )}
+        <Dialog open={showReplaceMandate} onOpenChange={(open) => {
+          setShowReplaceMandate(open);
+          if (!open) setReplacementConfirmed(false);
+        }}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Replace Direct Debit mandate</DialogTitle>
+              <DialogDescription>
+                The prior mandate, subscription and payment history will remain available for audit. This action does not take a payment or create a subscription now.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-1">
+              <div className="grid grid-cols-2 gap-2">
+                <Button type="button" variant={replacementMode === "send_link" ? "default" : "outline"} onClick={() => setReplacementMode("send_link")}>Email secure link</Button>
+                <Button type="button" variant={replacementMode === "link_existing" ? "default" : "outline"} onClick={() => setReplacementMode("link_existing")}>Link completed mandate</Button>
+              </div>
+              {replacementMode === "send_link" ? (
+                <div className="rounded-md bg-muted/50 p-3 text-sm">
+                  <p className="font-medium">Send a secure GoCardless authorisation link</p>
+                  <p className="mt-1 text-muted-foreground">The agent receives an email to update only the bank account used for Direct Debit. The Portal waits for GoCardless to confirm the new mandate.</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="replacement-mandate-id">New GoCardless mandate ID</Label>
+                  <Input id="replacement-mandate-id" value={replacementMandateId} onChange={(event) => setReplacementMandateId(event.target.value)} placeholder="MD01…" className="font-mono" />
+                  <p className="text-xs text-muted-foreground">Use only after checking the mandate belongs to this agent in GoCardless.</p>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label htmlFor="replacement-payment-day">Preferred monthly payment day</Label>
+                <Select value={String(replacementPaymentDay)} onValueChange={(value) => setReplacementPaymentDay(Number(value))}>
+                  <SelectTrigger id="replacement-payment-day"><SelectValue /></SelectTrigger>
+                  <SelectContent>{[1, 15, 28].map((day) => <SelectItem key={day} value={String(day)}>{day === 1 ? "1st" : day === 15 ? "15th" : "28th"} of the month</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <label className="flex items-start gap-2 rounded-md border p-3 text-sm cursor-pointer">
+                <Checkbox checked={replacementConfirmed} onCheckedChange={(checked) => setReplacementConfirmed(checked === true)} />
+                <span>I confirm this changes only the bank account used for the agent’s Direct Debit, not their commission or reimbursement bank details.</span>
+              </label>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowReplaceMandate(false)}>Cancel</Button>
+              <Button
+                disabled={!replacementConfirmed || requestReplacementMutation.isPending || linkReplacementMutation.isPending || (replacementMode === "link_existing" && !replacementMandateId.trim())}
+                onClick={() => replacementMode === "send_link"
+                  ? requestReplacementMutation.mutate({ userId, preferredPaymentDay: replacementPaymentDay })
+                  : linkReplacementMutation.mutate({ userId, mandateId: replacementMandateId.trim(), preferredPaymentDay: replacementPaymentDay })}
+              >
+                {requestReplacementMutation.isPending || linkReplacementMutation.isPending ? "Saving…" : replacementMode === "send_link" ? "Email secure link" : "Link mandate"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Subscription */}

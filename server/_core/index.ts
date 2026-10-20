@@ -21,6 +21,7 @@ import {
   createSubscription,
   calcSubscriptionStartDate,
   getMandate,
+  getSubscription,
 } from "../gocardless";
 import {
   getGcMandateByBillingRequestId,
@@ -29,6 +30,9 @@ import {
   createGcSubscription,
   createPaymentEvent,
   getGcSubscriptionByUserId,
+  updateGcSubscription,
+  getGcMandateReplacementByBillingRequestId,
+  updateGcMandateReplacement,
 } from "../gocardless-db";
 import { notifyOwner } from "./notification";
 import { externalApiRouter } from "../external-api";
@@ -1469,6 +1473,17 @@ async function startServer() {
 
           // Update local mandate status
           await updateGcMandate(localMandate.id, { mandateId, status: "active" });
+          if (billingRequestId) {
+            const replacement = await getGcMandateReplacementByBillingRequestId(billingRequestId);
+            if (replacement) {
+              await updateGcMandateReplacement(replacement.id, {
+                replacementMandateId: mandateId,
+                status: "active",
+                completedAt: new Date(),
+              });
+              console.log(`[GC Webhook] mandates.active: recorded replacement mandate ${mandateId} for user ${replacement.userId}`);
+            }
+          }
 
           // Fetch the live mandate from GoCardless to determine its scheme.
           // Faster Payments mandates do NOT support day_of_month or a custom start_date —
@@ -1491,9 +1506,24 @@ async function startServer() {
             ? (mandateNextChargeDate ?? calcSubscriptionStartDate(joiningFeeDate, dayOfMonth))
             : calcSubscriptionStartDate(joiningFeeDate, dayOfMonth);
 
-          // Guard: skip subscription creation if this user already has one in our DB.
-          // This prevents duplicate subscriptions when mandates are manually linked via admin scripts.
-          const existingSub = localMandate.userId ? await getGcSubscriptionByUserId(localMandate.userId) : null;
+          // Guard: skip when an existing subscription is still live. If the new
+          // mandate replaces a cancelled/finished subscription, refresh that
+          // subscription from GoCardless first, then safely permit the new one.
+          let existingSub = localMandate.userId ? await getGcSubscriptionByUserId(localMandate.userId) : null;
+          if (existingSub && existingSub.mandateId !== mandateId && existingSub.subscriptionId) {
+            const existingSubscriptionId = existingSub.subscriptionId;
+            try {
+              const liveExistingSub = await getSubscription(existingSubscriptionId);
+              if (["cancelled", "finished"].includes(liveExistingSub.status)) {
+                await updateGcSubscription(existingSub.id, { status: liveExistingSub.status as "cancelled" | "finished" });
+                existingSub = null;
+              }
+            } catch (existingSubErr: any) {
+              // On an uncertain provider response, do not risk a duplicate
+              // recurring collection. Support can resolve it from the CRM.
+              console.warn(`[GC Webhook] mandates.active: could not verify existing subscription ${existingSubscriptionId}:`, existingSubErr.message);
+            }
+          }
           if (existingSub) {
             console.log(`[GC Webhook] mandates.active: user ${localMandate.userId} already has subscription ${existingSub.subscriptionId} — skipping duplicate creation`);
             continue;

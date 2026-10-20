@@ -1392,6 +1392,27 @@ export const gcMandates = mysqlTable("gc_mandates", {
 });
 export type GcMandate = typeof gcMandates.$inferSelect;
 
+// ─── GoCardless Mandate Replacements ─────────────────────────────────────────
+// One immutable audit row for every attempt to replace an agent's Direct Debit
+// mandate. The current record remains in gc_mandates for operational reads;
+// this table retains the prior provider identity and who initiated the change.
+export const gcMandateReplacements = mysqlTable("gc_mandate_replacements", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  previousMandateId: varchar("previousMandateId", { length: 100 }),
+  replacementMandateId: varchar("replacementMandateId", { length: 100 }),
+  billingRequestId: varchar("billingRequestId", { length: 100 }),
+  billingRequestFlowId: varchar("billingRequestFlowId", { length: 100 }),
+  initiationMethod: mysqlEnum("initiationMethod", ["hosted_flow", "manual_link"]).notNull(),
+  status: mysqlEnum("status", ["pending", "submitted", "active", "cancelled", "failed", "expired", "linked"]).default("pending").notNull(),
+  preferredPaymentDay: int("preferredPaymentDay"),
+  initiatedById: int("initiatedById").notNull(),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type GcMandateReplacement = typeof gcMandateReplacements.$inferSelect;
+
 // ─── GoCardless Subscriptions ─────────────────────────────────────────────────
 
 export const gcSubscriptions = mysqlTable("gc_subscriptions", {
