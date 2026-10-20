@@ -1188,6 +1188,7 @@ export const crmRouter = router({
           jltEmail: z.string().email().optional().nullable(),
           personalEmail: z.string().email().optional().nullable(),
           businessEmail: z.string().email().optional().nullable(),
+          correspondenceEmailKind: z.enum(["jlt", "personal", "business"]).optional().nullable(),
           mobile: z.string().optional().nullable(),
           addressLine1: z.string().optional().nullable(),
           addressLine2: z.string().optional().nullable(),
@@ -1215,6 +1216,20 @@ export const crmRouter = router({
       )
       .mutation(async ({ input }) => {
         const { userId, ...data } = input;
+        if (data.correspondenceEmailKind) {
+          const existing = await getAgentCrmProfile(userId);
+          const selectedEmail = data.correspondenceEmailKind === "jlt"
+            ? data.jltEmail ?? existing?.jltEmail
+            : data.correspondenceEmailKind === "personal"
+              ? data.personalEmail ?? existing?.personalEmail
+              : data.businessEmail ?? existing?.businessEmail;
+          if (!selectedEmail) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Add a ${data.correspondenceEmailKind} email address before selecting it for Portal correspondence.`,
+            });
+          }
+        }
         await upsertAgentCrmProfile(userId, data as any);
         if (data.inContract === true) {
           const { enforcePublicProfileVisibilityForInContract } = await import("./consumer-site-router");
@@ -1246,6 +1261,7 @@ export const crmRouter = router({
                 await sendDirectEmail({
                   toEmail: agent.email,
                   toName: agent.name ?? "Agent",
+                  userId: input.userId,
                   subject: "Your Orbit Account is Now Live",
                   html: `
                     <div style="font-family:'Poppins',Arial,sans-serif;max-width:620px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:12px;">

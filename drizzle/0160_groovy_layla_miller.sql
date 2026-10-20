@@ -1,0 +1,1 @@
+ALTER TABLE `agent_crm_profiles` ADD `correspondenceEmailKind` enum('jlt','personal','business');

@@ -76,6 +76,7 @@ type CrmProfile = {
   jltEmail: string | null;
   personalEmail: string | null;
   businessEmail: string | null;
+  correspondenceEmailKind?: "jlt" | "personal" | "business" | null;
   mobile: string | null;
   ukRegion: string | null;
   bankAccountName: string | null;
@@ -748,6 +749,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
     jltEmail: profile?.jltEmail ?? "",
     personalEmail: profile?.personalEmail ?? "",
     businessEmail: profile?.businessEmail ?? "",
+    correspondenceEmailKind: profile?.correspondenceEmailKind ?? "",
     mobile: profile?.mobile ?? "",
     addressLine1: profile?.addressLine1 ?? "",
     addressLine2: profile?.addressLine2 ?? "",
@@ -836,6 +838,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
       jltEmail: profile?.jltEmail ?? "",
       personalEmail: profile?.personalEmail ?? "",
       businessEmail: profile?.businessEmail ?? "",
+      correspondenceEmailKind: profile?.correspondenceEmailKind ?? "",
       mobile: profile?.mobile ?? "",
       addressLine1: profile?.addressLine1 ?? "",
       addressLine2: profile?.addressLine2 ?? "",
@@ -1142,6 +1145,13 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
               <Field label="JLT Email" value={profile?.jltEmail} icon={<Mail className="h-3.5 w-3.5" />} />
               <Field label="Personal Email" value={profile?.personalEmail} icon={<Mail className="h-3.5 w-3.5" />} />
               <Field label="Business Email" value={profile?.businessEmail} icon={<Mail className="h-3.5 w-3.5" />} />
+              <Field label="Portal correspondence">
+                {profile?.correspondenceEmailKind ? (
+                  <Badge variant="secondary" className="capitalize">{profile.correspondenceEmailKind} email</Badge>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Login email (default)</span>
+                )}
+              </Field>
               <Field label="Mobile" value={profile?.mobile} icon={<Phone className="h-3.5 w-3.5" />} />
               <Field label="UK Region" value={profile?.ukRegion} icon={<MapPin className="h-3.5 w-3.5" />} />
             </div>
@@ -1258,6 +1268,19 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
               <Label className="text-xs text-muted-foreground mb-1.5 block">Business Email</Label>
               <Input value={form.businessEmail} onChange={(e) => setForm({ ...form, businessEmail: e.target.value })} />
             </div>
+            <div className="col-span-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <Label className="text-xs font-semibold text-foreground mb-1.5 block">Portal correspondence email</Label>
+              <p className="mb-2 text-xs text-muted-foreground">Choose which saved CRM address receives Portal correspondence, including operational, Academy, membership and campaign emails. The agent continues to sign in and reset their password with their original Portal login email.</p>
+              <Select value={form.correspondenceEmailKind || "login"} onValueChange={(v) => setForm({ ...form, correspondenceEmailKind: v === "login" ? "" : v as "jlt" | "personal" | "business" })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="login">Login email (default until chosen)</SelectItem>
+                  <SelectItem value="jlt">Use JLT email{form.jltEmail ? ` — ${form.jltEmail}` : ""}</SelectItem>
+                  <SelectItem value="personal">Use personal email{form.personalEmail ? ` — ${form.personalEmail}` : ""}</SelectItem>
+                  <SelectItem value="business">Use business email{form.businessEmail ? ` — ${form.businessEmail}` : ""}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Mobile</Label>
               <Input value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
@@ -1328,6 +1351,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
             jltEmail: form.jltEmail || null,
             personalEmail: form.personalEmail || null,
             businessEmail: form.businessEmail || null,
+            correspondenceEmailKind: (form.correspondenceEmailKind || null) as "jlt" | "personal" | "business" | null,
             mobile: form.mobile || null,
             addressLine1: form.addressLine1 || null,
             addressLine2: form.addressLine2 || null,

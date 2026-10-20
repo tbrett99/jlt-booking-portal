@@ -2581,6 +2581,7 @@ export const appRouter = router({
             void sendDirectEmail({
               toEmail: agent.email,
               toName: agent.name ?? "Agent",
+              userId: booking.agentId,
               subject: `New message on your booking: ${booking.clientName}`,
               injectPortalFooter: true,
               bookingId: input.bookingId,
@@ -3398,6 +3399,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           await sendDirectEmail({
             toEmail: agent.email,
             toName: agent.name ?? 'Agent',
+            userId: agent.id,
             subject: `Action required — Booking #${input.bookingId} (${booking.clientName})`,
             html: `<p>Hi ${agent.name ?? 'there'},</p>
 <p>${input.message.replace(/\n/g, '<br/>')}</p>
@@ -3897,6 +3899,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
               triggerKey: "commission_due_for_payment",
               toEmail: agent.email,
               toName: agent.name ?? "Agent",
+              userId: claim.agentId,
               variables: { clientName: booking.clientName },
               bookingId: booking.id,
             });
@@ -5029,6 +5032,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           void sendDirectEmail({
             toEmail: agent.email,
             toName: agent.name ?? "Agent",
+            userId: item.agentId,
             subject: `Reimbursement information needed: ${booking.clientName}`,
             injectPortalFooter: true,
             bookingId: booking.id,

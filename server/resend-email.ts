@@ -19,6 +19,7 @@ import {
 } from "./recruitment-db";
 import { normaliseMarketingEmailHtml } from "@shared/marketing-email-html";
 import { nanoid } from "nanoid";
+import { resolveAgentCorrespondence } from "./agent-correspondence";
 
 /**
  * Log a campaign email sent to an agent into the agent_emails audit table.
@@ -454,12 +455,17 @@ export async function sendMarketingEmail(opts: {
   baseUrl: string;
   mergeValues?: MarketingMergeValues;
 }): Promise<{ sendId: number; success: boolean; error?: string }> {
+  // Agent campaigns and drip emails use the CRM correspondence selection at the
+  // instant of delivery. Prospect sends are intentionally unchanged.
+  const recipient = opts.audienceType === "agent" && opts.recipientId
+    ? await resolveAgentCorrespondence({ userId: opts.recipientId, fallbackEmail: opts.to, fallbackName: opts.toName })
+    : { email: opts.to, name: opts.toName ?? "Agent" };
   const sendId = await createSendRecord({
     campaignId: opts.campaignId,
     dripStepId: opts.dripStepId,
     enrollmentId: opts.enrollmentId,
-    recipientEmail: opts.to,
-    recipientName: opts.toName,
+    recipientEmail: recipient.email,
+    recipientName: recipient.name,
     recipientType: opts.recipientType,
     recipientId: opts.recipientId,
     subject: opts.subject,
@@ -468,7 +474,7 @@ export async function sendMarketingEmail(opts: {
   // Build unsubscribe URL for prospect emails
   let unsubscribeUrl: string | undefined;
   if (opts.audienceType === "prospect") {
-    const token = await getOrCreateUnsubscribeToken(opts.to, opts.recipientId);
+    const token = await getOrCreateUnsubscribeToken(recipient.email, opts.recipientId);
     unsubscribeUrl = buildUnsubscribeUrl(opts.baseUrl, token);
   }
 
@@ -480,10 +486,10 @@ export async function sendMarketingEmail(opts: {
   // original name/email behaviour and may also use the standard call booking link.
   const personalisedBody = applyMarketingMergeTags(
     normaliseMarketingEmailHtml(opts.bodyHtml),
-    { name: opts.toName, email: opts.to },
+    { name: recipient.name, email: recipient.email },
     opts.mergeValues,
   );
-  const personalisedSubject = applyMarketingMergeTags(opts.subject, { name: opts.toName, email: opts.to }, opts.mergeValues);
+  const personalisedSubject = applyMarketingMergeTags(opts.subject, { name: recipient.name, email: recipient.email }, opts.mergeValues);
 
   // Wrap in branded template
   let html = wrapInBrandedTemplate({
@@ -502,7 +508,7 @@ export async function sendMarketingEmail(opts: {
     const result = await resend.emails.send({
       from: getFromAddress(opts.audienceType),
       replyTo: getReplyTo(opts.audienceType),
-      to: opts.to,
+      to: recipient.email,
       subject: personalisedSubject,
       html,
     });
@@ -516,8 +522,8 @@ export async function sendMarketingEmail(opts: {
     // Log agent-audience campaign emails to the agent_emails audit table
     if (opts.audienceType === "agent") {
       await logCampaignEmailToAudit({
-        recipientEmail: opts.to,
-        recipientName: opts.toName,
+        recipientEmail: recipient.email,
+        recipientName: recipient.name,
         recipientId: opts.recipientId,
         subject: personalisedSubject,
         bodyHtml: html,
@@ -531,8 +537,8 @@ export async function sendMarketingEmail(opts: {
     await updateSendStatus(sendId, "failed", undefined, msg);
     if (opts.audienceType === "agent") {
       await logCampaignEmailToAudit({
-        recipientEmail: opts.to,
-        recipientName: opts.toName,
+        recipientEmail: recipient.email,
+        recipientName: recipient.name,
         recipientId: opts.recipientId,
         subject: opts.subject,
         bodyHtml: opts.bodyHtml,
@@ -678,6 +684,17 @@ export async function processCampaignQueue(
     }
 
     const audienceType = campaign.audienceType as "prospect" | "agent";
+    const recipient = audienceType === "agent" && row.recipientId
+      ? await resolveAgentCorrespondence({
+        userId: row.recipientId,
+        fallbackEmail: row.recipientEmail,
+        fallbackName: row.recipientName,
+      })
+      : { email: row.recipientEmail, name: row.recipientName ?? "Agent" };
+    // Keep the campaign ledger truthful about the address used at delivery time.
+    if (recipient.email !== row.recipientEmail || recipient.name !== (row.recipientName ?? "")) {
+      await db.update(emailSends).set({ recipientEmail: recipient.email, recipientName: recipient.name }).where(eq(emailSends.id, row.id));
+    }
 
     // Skip unsubscribed prospects
     if (audienceType === "prospect") {
@@ -692,7 +709,7 @@ export async function processCampaignQueue(
     // Build unsubscribe URL
     let unsubscribeUrl: string | undefined;
     if (audienceType === "prospect") {
-      const token = await getOrCreateUnsubscribeToken(row.recipientEmail, row.recipientId ?? undefined);
+      const token = await getOrCreateUnsubscribeToken(recipient.email, row.recipientId ?? undefined);
       unsubscribeUrl = buildUnsubscribeUrl(
         process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk",
         token,
@@ -707,7 +724,7 @@ export async function processCampaignQueue(
         subject: campaign.subject,
         bodyHtml: campaign.bodyHtml,
         recipientId: row.recipientId,
-        recipientEmail: row.recipientEmail,
+        recipientEmail: recipient.email,
         baseUrl,
         discoveryCallLink: getCampaignDiscoveryCallLink(campaign.segmentFilters),
       });
@@ -721,10 +738,10 @@ export async function processCampaignQueue(
     const branding = await getEmailBrandingSettings();
     const personalisedBody = applyMarketingMergeTags(
       normaliseMarketingEmailHtml(campaign.bodyHtml),
-      { name: row.recipientName, email: row.recipientEmail },
+      { name: recipient.name, email: recipient.email },
       mergeValues,
     );
-    const personalisedSubject = applyMarketingMergeTags(campaign.subject, { name: row.recipientName, email: row.recipientEmail }, mergeValues);
+    const personalisedSubject = applyMarketingMergeTags(campaign.subject, { name: recipient.name, email: recipient.email }, mergeValues);
 
     let html = wrapInBrandedTemplate({ bodyHtml: personalisedBody, audienceType, unsubscribeUrl, branding });
     html = injectOpenPixel(html, row.id, baseUrl);
@@ -735,7 +752,7 @@ export async function processCampaignQueue(
       const result = await resend.emails.send({
         from: getFromAddress(audienceType),
         replyTo: getReplyTo(audienceType),
-        to: row.recipientEmail,
+        to: recipient.email,
         subject: personalisedSubject,
         html,
       });
@@ -745,8 +762,8 @@ export async function processCampaignQueue(
         failed++;
         if (audienceType === "agent") {
           await logCampaignEmailToAudit({
-            recipientEmail: row.recipientEmail,
-            recipientName: row.recipientName,
+            recipientEmail: recipient.email,
+            recipientName: recipient.name,
             recipientId: row.recipientId,
             subject: personalisedSubject,
             bodyHtml: html,
@@ -759,8 +776,8 @@ export async function processCampaignQueue(
         sent++;
         if (audienceType === "agent") {
           await logCampaignEmailToAudit({
-            recipientEmail: row.recipientEmail,
-            recipientName: row.recipientName,
+            recipientEmail: recipient.email,
+            recipientName: recipient.name,
             recipientId: row.recipientId,
             subject: personalisedSubject,
             bodyHtml: html,
@@ -775,8 +792,8 @@ export async function processCampaignQueue(
       failed++;
       if (audienceType === "agent") {
         await logCampaignEmailToAudit({
-          recipientEmail: row.recipientEmail,
-          recipientName: row.recipientName,
+          recipientEmail: recipient.email,
+          recipientName: recipient.name,
           recipientId: row.recipientId,
           subject: personalisedSubject,
           bodyHtml: html,

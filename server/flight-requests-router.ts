@@ -362,6 +362,7 @@ export const flightRequestsRouter = router({
             triggerKey: "flight_request_update",
             toEmail: req.agentEmail,
             toName: req.agentName ?? "Agent",
+            userId: req.agentId,
             variables: {
               clientName: req.clientName,
               pnr: req.pnr,
@@ -468,6 +469,7 @@ export const flightRequestsRouter = router({
           triggerKey: "flight_price_increase",
           toEmail: req.agentEmail,
           toName: req.agentName ?? "Agent",
+          userId: req.agentId,
           variables: {
             clientName: req.clientName,
             pnr: req.pnr,

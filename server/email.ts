@@ -227,8 +227,15 @@ export async function sendDirectEmail(params: {
   userId?: number | null;
   triggerKey?: string;
 }): Promise<{ success: boolean; error?: string }> {
+  const recipient = params.userId
+    ? await import("./agent-correspondence").then(({ resolveAgentCorrespondence }) => resolveAgentCorrespondence({
+      userId: params.userId!,
+      fallbackEmail: params.toEmail,
+      fallbackName: params.toName,
+    }))
+    : { email: params.toEmail, name: params.toName };
   if (await areNotificationsPaused()) {
-    console.log(`[Notifications] Paused — skipping direct email to ${params.toEmail}`);
+    console.log(`[Notifications] Paused — skipping direct email to ${recipient.email}`);
     return { success: false, error: "Notifications are currently paused" };
   }
 
@@ -240,14 +247,14 @@ export async function sendDirectEmail(params: {
     await resend.emails.send({
       from: FROM_AGENT,
       replyTo: REPLY_TO_AGENT,
-      to: `${params.toName} <${params.toEmail}>`,
+      to: `${recipient.name} <${recipient.email}>`,
       subject: params.subject,
       html,
     });
     await logAgentEmail({
       userId: params.userId ?? null,
-      toEmail: params.toEmail,
-      toName: params.toName,
+      toEmail: recipient.email,
+      toName: recipient.name,
       subject: params.subject,
       triggerKey: params.triggerKey ?? "direct",
       bodyHtml: html,
@@ -258,8 +265,8 @@ export async function sendDirectEmail(params: {
     console.error("[Email] Failed to send direct email:", err?.message);
     await logAgentEmail({
       userId: params.userId ?? null,
-      toEmail: params.toEmail,
-      toName: params.toName,
+      toEmail: recipient.email,
+      toName: recipient.name,
       subject: params.subject,
       triggerKey: params.triggerKey ?? "direct",
       bodyHtml: html,
@@ -281,8 +288,15 @@ export async function sendNotificationEmail(params: {
   overrideBody?: string;
   userId?: number | null;
 }): Promise<{ success: boolean; error?: string }> {
+  const recipient = params.userId
+    ? await import("./agent-correspondence").then(({ resolveAgentCorrespondence }) => resolveAgentCorrespondence({
+      userId: params.userId!,
+      fallbackEmail: params.toEmail,
+      fallbackName: params.toName,
+    }))
+    : { email: params.toEmail, name: params.toName };
   if (await areNotificationsPaused()) {
-    console.log(`[Notifications] Paused — skipping email (${params.triggerKey}) to ${params.toEmail}`);
+    console.log(`[Notifications] Paused — skipping email (${params.triggerKey}) to ${recipient.email}`);
     return { success: false, error: "Notifications are currently paused" };
   }
   const template = await getNotificationTemplate(params.triggerKey);
@@ -294,8 +308,8 @@ export async function sendNotificationEmail(params: {
   let body = params.overrideBody ?? template.bodyHtml;
 
   const vars: Record<string, string> = {
-    agentName: params.toName,
-    toName: params.toName,
+    agentName: recipient.name,
+    toName: recipient.name,
     bookingId: String(params.bookingId ?? ""),
     ...params.variables,
   };
@@ -323,14 +337,14 @@ export async function sendNotificationEmail(params: {
     await resend.emails.send({
       from: FROM_AGENT,
       replyTo: REPLY_TO_AGENT,
-      to: `${params.toName} <${params.toEmail}>`,
+      to: `${recipient.name} <${recipient.email}>`,
       subject,
       html,
     });
     await logAgentEmail({
       userId: params.userId ?? null,
-      toEmail: params.toEmail,
-      toName: params.toName,
+      toEmail: recipient.email,
+      toName: recipient.name,
       subject,
       triggerKey: params.triggerKey,
       bodyHtml: html,
@@ -341,8 +355,8 @@ export async function sendNotificationEmail(params: {
     console.error("[Email] Failed to send notification email:", err?.message);
     await logAgentEmail({
       userId: params.userId ?? null,
-      toEmail: params.toEmail,
-      toName: params.toName,
+      toEmail: recipient.email,
+      toName: recipient.name,
       subject,
       triggerKey: params.triggerKey,
       bodyHtml: html,

@@ -388,6 +388,7 @@ async function enrolAgentInCourse(params: {
       void sendDirectEmail({
         toEmail: agent.email,
         toName: agent.name ?? "JLT Agent",
+        userId: params.agentId,
         subject: `Your JLT Academy access is ready — ${course.title}`,
         html: `<p>Hi ${(agent.name ?? "there").split(" ")[0]},</p><p>You have been enrolled in <strong>${course.title}</strong>.</p>${params.dueDate ? `<p>Please complete it by <strong>${params.dueDate.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</strong>.</p>` : ""}<p><a href="${portalUrl}">Open JLT Academy</a></p>`,
       });
@@ -1817,7 +1818,7 @@ export const academyRouter = router({
       for (const { enrollment, course, agent } of actionable) {
         await createInAppNotification({ userId: agent.id, message: `${course.title} is now due. Please continue your Academy learning.`, linkUrl: "/academy", isUrgent: true });
         if (agent.email) {
-          void sendDirectEmail({ toEmail: agent.email, toName: agent.name ?? "JLT Agent", subject: `Academy reminder: ${course.title} is due`, html: `<p>Hi ${(agent.name ?? "there").split(" ")[0]},</p><p><strong>${course.title}</strong> is now due. Please complete your remaining learning in the JLT Academy.</p><p><a href="https://portal.thejltgroup.co.uk/academy">Continue learning</a></p>` });
+          void sendDirectEmail({ toEmail: agent.email, toName: agent.name ?? "JLT Agent", userId: agent.id, subject: `Academy reminder: ${course.title} is due`, html: `<p>Hi ${(agent.name ?? "there").split(" ")[0]},</p><p><strong>${course.title}</strong> is now due. Please complete your remaining learning in the JLT Academy.</p><p><a href="https://portal.thejltgroup.co.uk/academy">Continue learning</a></p>` });
         }
         await db.update(academyEnrollments).set({ lastReminderAt: now }).where(eq(academyEnrollments.id, enrollment.id));
         await addAudit({ agentId: agent.id, courseId: course.id, enrollmentId: enrollment.id, actorId: ctx.user.id, action: "due_reminder_sent", summary: `Sent Academy due reminder for ${course.title}` });

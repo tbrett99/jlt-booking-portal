@@ -903,6 +903,8 @@ export const agentCrmProfiles = mysqlTable("agent_crm_profiles", {
   preferredPaymentDay: int("preferredPaymentDay"),
   // JLT email address preference (collected during onboarding)
   jltEmailPreference: varchar("jltEmailPreference", { length: 320 }),
+  // Staff-selected operational correspondence route. Login and recovery remain users.email.
+  correspondenceEmailKind: mysqlEnum("correspondenceEmailKind", ["jlt", "personal", "business"]),
   // Orbit beta access — admin-controlled toggle
   orbitEnabled: boolean("orbitEnabled").default(false).notNull(),
   // Payment exemption — Duo/Trio secondary members covered by lead's subscription
