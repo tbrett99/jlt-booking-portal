@@ -216,20 +216,30 @@ function SidebarGroup({
   }
 
   return (
-    <div className={`space-y-0.5 ${group.pinned ? "pb-2 border-b border-sidebar-border/70" : ""}`}>
+    <div className={`space-y-1 ${group.pinned ? "pb-2 border-b border-sidebar-border/70" : "pt-1.5"}`}>
       {/* Group header */}
       {!group.pinned && (
         <button
           onClick={toggleGroup}
-          className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors text-sidebar-foreground opacity-50 hover:opacity-80"
+          aria-expanded={open}
+          className={`group flex items-center gap-2.5 w-full rounded-lg border px-2.5 py-2 text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${
+            open || isAnyActive
+              ? "border-[#70FFE8]/35 bg-[#70FFE8]/10 text-white shadow-sm"
+              : "border-white/10 bg-black/10 text-white/85 hover:border-[#70FFE8]/30 hover:bg-white/5 hover:text-white"
+          }`}
         >
-          <span className="flex-1 text-left">{group.label}</span>
+          <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md ${
+            open || isAnyActive ? "bg-[#70FFE8]/20 text-[#70FFE8]" : "bg-white/8 text-white/75 group-hover:text-[#70FFE8]"
+          }`}>
+            {group.icon}
+          </span>
+          <span className="flex-1 text-left text-[11px] font-extrabold uppercase tracking-[0.12em] leading-tight">{group.label}</span>
           {group.label === "Communication" && (unreadMessageCount ?? 0) > 0 && (
             <span className="min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center" style={{ background: '#ef4444', color: 'white' }}>
               {(unreadMessageCount ?? 0) > 99 ? '99+' : unreadMessageCount}
             </span>
           )}
-          <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+          <ChevronDown size={14} className={`flex-shrink-0 text-[#70FFE8] transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
         </button>
       )}
       {(group.pinned || open) && (
