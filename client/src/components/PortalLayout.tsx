@@ -706,7 +706,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         )}
 
         {/* Nav groups */}
-        <nav className="flex-1 px-2 py-3 space-y-1 overflow-y-auto">
+        <nav className="portal-sidebar-scroll flex-1 px-2 py-3 space-y-1 overflow-y-auto">
           {navGroups.map((group) => (
             <SidebarGroup
               key={group.label}
