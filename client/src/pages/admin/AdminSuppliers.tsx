@@ -55,6 +55,10 @@ type Supplier = {
   mediaAssetsUrl: string | null;
   phone: string | null;
   email: string | null;
+  outOfHoursContactName: string | null;
+  outOfHoursPhone: string | null;
+  outOfHoursEmail: string | null;
+  outOfHoursNotes: string | null;
   generalNotes: string | null;
   video1: string | null;
   video2: string | null;
@@ -201,6 +205,11 @@ export default function AdminSuppliers() {
                               ⭐ Preferred
                             </Badge>
                           )}
+                          {(s as any).outOfHoursPhone || (s as any).outOfHoursEmail ? (
+                            <Badge variant="outline" className="border-red-300 bg-red-50 text-xs text-red-700">
+                              Urgent support
+                            </Badge>
+                          ) : null}
                         </div>
                       </TableCell>
                       <TableCell>

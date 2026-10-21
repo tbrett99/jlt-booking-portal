@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, Video, Loader2, Upload, X, Paperclip, ImageIcon, KeyRound } from "lucide-react";
+import { Sparkles, Video, Loader2, Upload, X, Paperclip, ImageIcon, KeyRound, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 type Supplier = {
@@ -44,6 +44,10 @@ type Supplier = {
   mediaAssetsUrl: string | null;
   phone: string | null;
   email: string | null;
+  outOfHoursContactName: string | null;
+  outOfHoursPhone: string | null;
+  outOfHoursEmail: string | null;
+  outOfHoursNotes: string | null;
   generalNotes: string | null;
   video1: string | null;
   video2: string | null;
@@ -77,6 +81,10 @@ const EMPTY_FORM = {
   accountManager: "",
   phone: "",
   email: "",
+  outOfHoursContactName: "",
+  outOfHoursPhone: "",
+  outOfHoursEmail: "",
+  outOfHoursNotes: "",
   generalNotes: "",
   video1: "",
   video2: "",
@@ -148,6 +156,10 @@ export function SupplierFormDialog({
         accountManager: editSupplier.accountManager ?? "",
         phone: editSupplier.phone ?? "",
         email: editSupplier.email ?? "",
+        outOfHoursContactName: editSupplier.outOfHoursContactName ?? "",
+        outOfHoursPhone: editSupplier.outOfHoursPhone ?? "",
+        outOfHoursEmail: editSupplier.outOfHoursEmail ?? "",
+        outOfHoursNotes: editSupplier.outOfHoursNotes ?? "",
         generalNotes: editSupplier.generalNotes ?? "",
         video1: editSupplier.video1 ?? "",
         video2: editSupplier.video2 ?? "",
@@ -343,6 +355,10 @@ export function SupplierFormDialog({
       accountManager: form.accountManager || undefined,
       phone: form.phone || undefined,
       email: form.email || undefined,
+      outOfHoursContactName: form.outOfHoursContactName.trim() || null,
+      outOfHoursPhone: form.outOfHoursPhone.trim() || null,
+      outOfHoursEmail: form.outOfHoursEmail.trim() || null,
+      outOfHoursNotes: form.outOfHoursNotes.trim() || null,
       generalNotes: form.generalNotes || undefined,
       video1: form.video1 || undefined,
       video2: form.video2 || undefined,
@@ -550,6 +566,56 @@ export function SupplierFormDialog({
               value={form.email}
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
             />
+          </div>
+
+          {/* Emergency & out-of-hours support */}
+          <div className="col-span-2 rounded-lg border border-amber-300 bg-amber-50/70 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+              <div>
+                <h4 className="text-sm font-semibold text-amber-950">Emergency &amp; Out-of-Hours Support</h4>
+                <p className="mt-0.5 text-xs leading-relaxed text-amber-800">
+                  Add the supplier contact agents should use for genuinely urgent help outside normal hours. This is displayed prominently in the agent Supplier Directory.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label>Contact or Team</Label>
+                <Input
+                  value={form.outOfHoursContactName}
+                  onChange={(e) => setForm((f) => ({ ...f, outOfHoursContactName: e.target.value }))}
+                  placeholder="e.g. Emergency Duty Team"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Urgent Phone</Label>
+                <Input
+                  type="tel"
+                  value={form.outOfHoursPhone}
+                  onChange={(e) => setForm((f) => ({ ...f, outOfHoursPhone: e.target.value }))}
+                  placeholder="e.g. +44 20 1234 5678"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Urgent Email</Label>
+                <Input
+                  type="email"
+                  value={form.outOfHoursEmail}
+                  onChange={(e) => setForm((f) => ({ ...f, outOfHoursEmail: e.target.value }))}
+                  placeholder="e.g. emergency@supplier.co.uk"
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <Label>When to use / instructions</Label>
+                <Textarea
+                  value={form.outOfHoursNotes}
+                  onChange={(e) => setForm((f) => ({ ...f, outOfHoursNotes: e.target.value }))}
+                  rows={2}
+                  placeholder="e.g. For in-resort emergencies only. Quote the booking reference. Available 24/7."
+                />
+              </div>
+            </div>
           </div>
 
           {/* Categories */}

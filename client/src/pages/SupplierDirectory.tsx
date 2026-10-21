@@ -56,6 +56,7 @@ import {
   Paperclip,
   FileText,
   Download,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -78,6 +79,10 @@ type Supplier = {
   accountManager: string | null;
   phone: string | null;
   email: string | null;
+  outOfHoursContactName: string | null;
+  outOfHoursPhone: string | null;
+  outOfHoursEmail: string | null;
+  outOfHoursNotes: string | null;
   generalNotes: string | null;
   video1: string | null;
   video2: string | null;
@@ -237,6 +242,9 @@ function SupplierCard({
 
   const isPreferred = 'isPreferredPartner' in supplier && (supplier as Supplier).isPreferredPartner;
   const preferredNote = isPreferred ? (supplier as Supplier).preferredPartnerNote : null;
+  const hasUrgentSupport = 'outOfHoursPhone' in supplier && Boolean(
+    (supplier as Supplier).outOfHoursPhone || (supplier as Supplier).outOfHoursEmail
+  );
 
   return (
     <button
@@ -290,6 +298,12 @@ function SupplierCard({
           <p className="text-xs text-muted-foreground mb-2 line-clamp-1">
             {supplier.commission}
           </p>
+        )}
+
+        {hasUrgentSupport && (
+          <Badge variant="outline" className="mb-2 border-red-300 bg-red-50 text-xs font-semibold text-red-700">
+            <AlertTriangle className="mr-1 h-3 w-3" /> Urgent support available
+          </Badge>
         )}
 
         {/* AI relevance note */}
@@ -423,6 +437,52 @@ function SupplierModal({
                 )}
               </div>
             </div>
+          )}
+
+          {/* Emergency & out-of-hours support */}
+          {(supplier.outOfHoursPhone || supplier.outOfHoursEmail || supplier.outOfHoursContactName || supplier.outOfHoursNotes) && (
+            <section className="rounded-xl border-2 border-red-300 bg-gradient-to-br from-red-50 via-rose-50 to-amber-50 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-red-600 p-2 text-white shadow-sm">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-base font-bold text-red-950">Emergency &amp; Out-of-Hours Support</h4>
+                    <Badge className="bg-red-600 text-xs text-white hover:bg-red-600">Urgent use only</Badge>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-red-800">Use this supplier contact only when urgent support is needed outside normal hours.</p>
+                  {supplier.outOfHoursContactName && (
+                    <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-red-950">
+                      <User className="h-4 w-4 shrink-0" /> {supplier.outOfHoursContactName}
+                    </p>
+                  )}
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    {supplier.outOfHoursPhone && (
+                      <a
+                        href={`tel:${supplier.outOfHoursPhone.replace(/\s+/g, "")}`}
+                        className="inline-flex items-center justify-center gap-2 rounded-md bg-red-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-800"
+                      >
+                        <Phone className="h-4 w-4" /> Call {supplier.outOfHoursPhone}
+                      </a>
+                    )}
+                    {supplier.outOfHoursEmail && (
+                      <a
+                        href={`mailto:${supplier.outOfHoursEmail}`}
+                        className="inline-flex items-center justify-center gap-2 rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-800 transition-colors hover:bg-red-100"
+                      >
+                        <Mail className="h-4 w-4" /> Email urgent support
+                      </a>
+                    )}
+                  </div>
+                  {supplier.outOfHoursNotes && (
+                    <p className="mt-3 whitespace-pre-wrap rounded-md border border-red-200 bg-white/70 px-3 py-2 text-sm leading-relaxed text-red-900">
+                      {supplier.outOfHoursNotes}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </section>
           )}
 
           {/* AI Summary */}

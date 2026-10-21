@@ -2285,6 +2285,11 @@ export const suppliers = mysqlTable("suppliers", {
   accountManager: varchar("accountManager", { length: 255 }),
   phone: varchar("phone", { length: 500 }),
   email: varchar("email", { length: 320 }),
+  // Urgent supplier support details — shown prominently to agents when present.
+  outOfHoursContactName: varchar("outOfHoursContactName", { length: 255 }),
+  outOfHoursPhone: varchar("outOfHoursPhone", { length: 500 }),
+  outOfHoursEmail: varchar("outOfHoursEmail", { length: 320 }),
+  outOfHoursNotes: text("outOfHoursNotes"),
   generalNotes: longtext("generalNotes"),                        // free-text notes
   video1: text("video1"),                                        // Loom embed HTML
   video2: text("video2"),
