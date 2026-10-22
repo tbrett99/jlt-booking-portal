@@ -1,0 +1,43 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const insights = readFileSync(
+  resolve(
+    process.cwd(),
+    "client/src/pages/admin/AdminAcademyProgressInsights.tsx"
+  ),
+  "utf8"
+);
+const manager = readFileSync(
+  resolve(process.cwd(), "client/src/pages/admin/AdminAcademy.tsx"),
+  "utf8"
+);
+
+describe("Academy enrolment journey", () => {
+  it("keeps a clear enrolment panel visible in the Learners workspace", () => {
+    expect(insights).toContain("Academy enrolment");
+    expect(insights).toContain("Enrol an agent");
+    expect(insights).toContain("academy-enrol-course");
+    expect(insights).toContain("academy-enrol-agent");
+    expect(insights).toContain("Enrol agent");
+  });
+
+  it("only offers published courses and explains the safe draft-course block", () => {
+    expect(insights).toContain('course.status === "published"');
+    expect(insights).toContain(
+      "No published Academy courses are ready for enrolment."
+    );
+    expect(insights).toContain("Draft courses remain private and cannot");
+    expect(insights).toContain("be assigned.");
+  });
+
+  it("keeps course-specific progress management below the dedicated enrolment action", () => {
+    expect(manager).toContain(
+      "Use the visible Academy enrolment panel above to assign agents."
+    );
+    expect(manager).not.toContain(
+      "mt-5 grid gap-2 rounded-xl border bg-muted/15 p-4 md:grid-cols-[1fr_180px_auto]"
+    );
+  });
+});

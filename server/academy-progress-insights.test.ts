@@ -2,11 +2,29 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const routerSource = readFileSync(resolve(process.cwd(), "server/academy-router.ts"), "utf8");
-const managerSource = readFileSync(resolve(process.cwd(), "client/src/pages/admin/AdminAcademy.tsx"), "utf8");
-const insightsSource = readFileSync(resolve(process.cwd(), "client/src/pages/admin/AdminAcademyProgressInsights.tsx"), "utf8");
-const appSource = readFileSync(resolve(process.cwd(), "client/src/App.tsx"), "utf8");
-const navigationSource = readFileSync(resolve(process.cwd(), "client/src/components/PortalLayout.tsx"), "utf8");
+const routerSource = readFileSync(
+  resolve(process.cwd(), "server/academy-router.ts"),
+  "utf8"
+);
+const managerSource = readFileSync(
+  resolve(process.cwd(), "client/src/pages/admin/AdminAcademy.tsx"),
+  "utf8"
+);
+const insightsSource = readFileSync(
+  resolve(
+    process.cwd(),
+    "client/src/pages/admin/AdminAcademyProgressInsights.tsx"
+  ),
+  "utf8"
+);
+const appSource = readFileSync(
+  resolve(process.cwd(), "client/src/App.tsx"),
+  "utf8"
+);
+const navigationSource = readFileSync(
+  resolve(process.cwd(), "client/src/components/PortalLayout.tsx"),
+  "utf8"
+);
 
 describe("Academy Progress & Insights separation", () => {
   it("provides server-side LMS metrics without a new schema dependency", () => {
@@ -20,17 +38,24 @@ describe("Academy Progress & Insights separation", () => {
   });
 
   it("keeps authoring separate from enrolment, marking and support operations", () => {
-    expect(managerSource).toContain("Learner enrolment, progress, assessment review and support locks now live in Academy Progress &amp; Insights.");
+    expect(managerSource).toContain(
+      "Learner enrolment, progress, assessment review and support locks now"
+    );
+    expect(managerSource).toContain("live in Academy Progress &amp; Insights.");
     expect(insightsSource).toContain("Academy Progress &amp; Insights");
     expect(insightsSource).toContain("Learner records");
     expect(insightsSource).toContain("WrittenAssessmentQueue");
     expect(insightsSource).toContain("AssessmentSupportQueue");
+    expect(insightsSource).toContain("Academy enrolment");
+    expect(insightsSource).toContain("Enrol an agent");
     expect(insightsSource).toContain("LearnerManager");
   });
 
   it("registers a dedicated page and prevents Academy Manager remaining active beneath it", () => {
     expect(appSource).toContain('path="/admin/academy/insights"');
     expect(navigationSource).toContain('label: "Academy Progress & Insights"');
-    expect(navigationSource).toContain('label: "Academy Manager", href: "/admin/academy", icon: <GraduationCap size={16} />, exact: true');
+    expect(navigationSource).toContain(
+      'label: "Academy Manager", href: "/admin/academy", icon: <GraduationCap size={16} />, exact: true'
+    );
   });
 });
