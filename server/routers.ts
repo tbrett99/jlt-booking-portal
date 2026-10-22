@@ -5227,11 +5227,17 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
 
       // 1. Reimbursement items that are pending or scheduled (not yet paid) for this agent's bookings
       const agentBookingRows = await db
-        .select({ id: bookings.id, clientName: bookings.clientName })
+        .select({
+          id: bookings.id,
+          clientName: bookings.clientName,
+          topdogRef: bookings.topdogRef,
+          ptsRef: bookings.ptsRef,
+        })
         .from(bookings)
         .where(eq(bookings.agentId, agentId));
       const agentBookingIds = agentBookingRows.map((b) => b.id);
       const bookingNameMap = new Map(agentBookingRows.map((b) => [b.id, b.clientName]));
+      const bookingReferenceMap = new Map(agentBookingRows.map((b) => [b.id, b.ptsRef ?? b.topdogRef ?? null]));
 
       const reimbRows = agentBookingIds.length > 0
         ? await db
@@ -5250,7 +5256,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             .from(amendments)
             .where(and(
               inArray(amendments.bookingId, agentBookingIds),
-              ne(amendments.pipelineStage, "Actioned")
+              ne(amendments.pipelineStage, "Actioned"),
+              ne(amendments.status, "actioned"),
+              ne(amendments.status, "rejected"),
             ))
         : [];
 
@@ -5302,15 +5310,18 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           id: r.id,
           bookingId: r.bookingId,
           clientName: bookingNameMap.get(r.bookingId) ?? null,
+          bookingReference: bookingReferenceMap.get(r.bookingId) ?? null,
           supplierName: r.supplierName,
           amount: r.amount,
           status: r.status,
           isLate: r.isLate,
+          createdAt: r.createdAt,
         })),
         amendments: amendmentRows.map((a) => ({
           id: a.id,
           bookingId: a.bookingId,
           clientName: bookingNameMap.get(a.bookingId) ?? null,
+          bookingReference: bookingReferenceMap.get(a.bookingId) ?? null,
           pipelineStage: a.pipelineStage,
           createdAt: a.createdAt,
         })),
@@ -5318,6 +5329,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           id: r.id,
           bookingId: r.bookingId,
           clientName: bookingNameMap.get(r.bookingId) ?? null,
+          bookingReference: bookingReferenceMap.get(r.bookingId) ?? null,
           pipelineStage: r.pipelineStage,
           createdAt: r.createdAt,
         })),
@@ -5325,6 +5337,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           id: r.id,
           bookingId: r.bookingId,
           clientName: bookingNameMap.get(r.bookingId) ?? null,
+          bookingReference: bookingReferenceMap.get(r.bookingId) ?? null,
           requestType: r.requestType,
           supplier: r.supplier,
           status: r.status,
@@ -5336,6 +5349,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           id: r.id,
           bookingId: r.bookingId,
           clientName: bookingNameMap.get(r.bookingId) ?? null,
+          bookingReference: bookingReferenceMap.get(r.bookingId) ?? null,
           confirmedAt: r.confirmedAt,
           status: r.status,
         })),

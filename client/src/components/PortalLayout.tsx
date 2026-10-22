@@ -390,6 +390,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       items: [
         { label: "Home", href: "/dashboard", icon: <Home size={16} /> },
         { label: "My Bookings & Requests", href: "/my-bookings", icon: <BookOpen size={16} /> },
+        { label: "Request Tracker", href: "/my-requests", icon: <Clock size={16} /> },
         { label: "Register Booking", href: "/bookings/new", icon: <BookOpen size={16} /> },
         { label: "Request Amendment", href: "/request-amendment", icon: <PenLine size={16} /> },
         { label: "Cancel a Booking", href: "/cancel-booking", icon: <XCircle size={16} /> },

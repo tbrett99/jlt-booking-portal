@@ -146,7 +146,7 @@ export default function AgentDashboard() {
       title: "Flight requests",
       count: openRequestCounts.flightRequests,
       icon: Plane,
-      href: "/flight-requests",
+      href: "/my-requests?type=flights",
       tone: "sky",
       emptyCopy: "No flight requests in progress",
     },
@@ -155,7 +155,7 @@ export default function AgentDashboard() {
       title: "Amendments",
       count: openRequestCounts.amendments,
       icon: FilePenLine,
-      href: openRequestSummary?.amendments[0] ? `/bookings/${openRequestSummary.amendments[0].bookingId}` : "/request-amendment",
+      href: "/my-requests?type=amendments",
       tone: "violet",
       emptyCopy: "No amendments in progress",
     },
@@ -164,7 +164,7 @@ export default function AgentDashboard() {
       title: "Reimbursements",
       count: openRequestCounts.reimbursements,
       icon: ReceiptText,
-      href: openRequestSummary?.reimbursements[0] ? `/bookings/${openRequestSummary.reimbursements[0].bookingId}` : "/my-bookings",
+      href: "/my-requests?type=reimbursements",
       tone: "amber",
       emptyCopy: "No reimbursements in progress",
     },
@@ -173,7 +173,7 @@ export default function AgentDashboard() {
       title: "Refund requests",
       count: openRequestCounts.refunds,
       icon: RotateCcw,
-      href: openRequestSummary?.refunds[0] ? `/bookings/${openRequestSummary.refunds[0].bookingId}` : "/my-bookings",
+      href: "/my-requests?type=refunds",
       tone: "rose",
       emptyCopy: "No refund requests in progress",
     },
@@ -182,7 +182,7 @@ export default function AgentDashboard() {
       title: "Cancellation requests",
       count: openRequestCounts.cancellations,
       icon: XCircle,
-      href: openRequestSummary?.cancellations[0] ? `/bookings/${openRequestSummary.cancellations[0].bookingId}` : "/cancel-booking",
+      href: "/my-requests?type=cancellations",
       tone: "rose",
       emptyCopy: "No cancellation requests in progress",
     },
@@ -301,7 +301,7 @@ export default function AgentDashboard() {
               <p className="mt-0.5 text-sm text-muted-foreground">Track every flight, amendment, reimbursement, refund and cancellation request that JLT is still working on.</p>
             </div>
           </div>
-          {!isLoadingOpenRequests && !isOpenRequestsError && <span className={`rounded-full px-3 py-1 text-sm font-bold ${openRequestTotal > 0 ? "bg-[#047857] text-white" : "bg-emerald-100 text-emerald-800"}`}>{openRequestTotal === 0 ? "All up to date" : `${openRequestTotal} open`}</span>}
+          {!isLoadingOpenRequests && !isOpenRequestsError && <Link href="/my-requests" className={`rounded-full px-3 py-1 text-sm font-bold transition-opacity hover:opacity-85 ${openRequestTotal > 0 ? "bg-[#047857] text-white" : "bg-emerald-100 text-emerald-800"}`}>{openRequestTotal === 0 ? "All up to date" : `${openRequestTotal} open`}</Link>}
         </div>
 
         {isLoadingOpenRequests ? (
