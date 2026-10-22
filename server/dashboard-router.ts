@@ -587,8 +587,18 @@ export const dashboardRouter = router({
           SELECT COUNT(*) AS commissionDue
           FROM bookings
           WHERE finalSupplierPaymentDate IS NOT NULL
-            AND finalSupplierPaymentDate <= CURDATE()
+            -- Match isBookingReadyForCommissionReview(): dates are compared as
+            -- UTC calendar days, and pre-authorised bookings only enter review
+            -- after seven complete days from departure.
+            AND DATE(finalSupplierPaymentDate) <= UTC_DATE()
             AND currentStage IN ('Added to PTS','Commission Ready for Review')
+            AND (
+              COALESCE(commissionPreAuthorised, 0) = 0
+              OR (
+                departureDate IS NOT NULL
+                AND DATE(departureDate) <= DATE_SUB(UTC_DATE(), INTERVAL 7 DAY)
+              )
+            )
             AND NOT EXISTS (
               SELECT 1
               FROM commission_claims

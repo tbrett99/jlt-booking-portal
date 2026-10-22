@@ -78,6 +78,19 @@ describe("commission payment lifecycle", () => {
     expect(routerSource).toContain("it never makes the booking claimable without a human review");
   });
 
+  it("keeps the global Commission Due badge aligned with the review queue eligibility", () => {
+    const urgentCountQuery = dashboardSource.slice(
+      dashboardSource.indexOf("SELECT COUNT(*) AS commissionDue"),
+      dashboardSource.indexOf("db.execute(sql`", dashboardSource.indexOf("SELECT COUNT(*) AS commissionDue") + 1),
+    );
+
+    expect(urgentCountQuery).toContain("DATE(finalSupplierPaymentDate) <= UTC_DATE()");
+    expect(urgentCountQuery).toContain("COALESCE(commissionPreAuthorised, 0) = 0");
+    expect(urgentCountQuery).toContain("departureDate IS NOT NULL");
+    expect(urgentCountQuery).toContain("DATE(departureDate) <= DATE_SUB(UTC_DATE(), INTERVAL 7 DAY)");
+    expect(urgentCountQuery).toContain("NOT EXISTS");
+  });
+
   it("keeps historic agent-ready files separate from new staff review work", () => {
     expect(dbSource).toContain("export async function getAgentReadyUnclaimedBookings()");
     expect(dbSource).toContain('eq(bookings.currentStage, "Commission Claimable")');
