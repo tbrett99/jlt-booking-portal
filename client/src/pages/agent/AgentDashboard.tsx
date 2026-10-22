@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AGENT_HOME_TILES, countAgentBookingActions, type AgentHomeTileKey } from "@shared/agent-home";
+import { countAgentOpenRequests } from "@shared/agent-open-requests";
 import { CompetitionsWidget } from "@/components/CompetitionsWidget";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -20,6 +21,10 @@ import {
   ClipboardCheck,
   Clock,
   ExternalLink,
+  FilePenLine,
+  Plane,
+  ReceiptText,
+  RotateCcw,
   GraduationCap,
   Library,
   MessageSquare,
@@ -28,6 +33,7 @@ import {
   Sparkles,
   Users,
   Wallet,
+  XCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -101,6 +107,12 @@ export default function AgentDashboard() {
   const { data: unansweredThreads = [] } = trpc.notes.myUnansweredThreads.useQuery(undefined, { staleTime: 60_000 });
   const { data: academyActions = [] } = trpc.agentDevelopment.actions.mine.useQuery();
   const { data: myProfile } = trpc.crm.agentCrm.getMyProfile.useQuery();
+  const {
+    data: openRequestSummary,
+    isLoading: isLoadingOpenRequests,
+    isError: isOpenRequestsError,
+    refetch: refetchOpenRequests,
+  } = trpc.reimbursements.agentOutstandingSummary.useQuery();
   const confirmPost = trpc.community.confirm.useMutation({ onSuccess: () => refetchUnconfirmed() });
   const openOrbit = trpc.sso.generateToken.useMutation();
 
@@ -120,6 +132,61 @@ export default function AgentDashboard() {
     flightQueries: flightQueries.length,
     topUps: topUpRequests.length,
   });
+  const openRequestCounts = {
+    flightRequests: openRequestSummary?.flightRequests.length ?? 0,
+    amendments: openRequestSummary?.amendments.length ?? 0,
+    reimbursements: openRequestSummary?.reimbursements.length ?? 0,
+    refunds: openRequestSummary?.refunds.length ?? 0,
+    cancellations: openRequestSummary?.cancellations.length ?? 0,
+  };
+  const openRequestTotal = countAgentOpenRequests(openRequestCounts);
+  const openRequestCards = [
+    {
+      key: "flight-requests",
+      title: "Flight requests",
+      count: openRequestCounts.flightRequests,
+      icon: Plane,
+      href: "/flight-requests",
+      tone: "sky",
+      emptyCopy: "No flight requests in progress",
+    },
+    {
+      key: "amendments",
+      title: "Amendments",
+      count: openRequestCounts.amendments,
+      icon: FilePenLine,
+      href: openRequestSummary?.amendments[0] ? `/bookings/${openRequestSummary.amendments[0].bookingId}` : "/request-amendment",
+      tone: "violet",
+      emptyCopy: "No amendments in progress",
+    },
+    {
+      key: "reimbursements",
+      title: "Reimbursements",
+      count: openRequestCounts.reimbursements,
+      icon: ReceiptText,
+      href: openRequestSummary?.reimbursements[0] ? `/bookings/${openRequestSummary.reimbursements[0].bookingId}` : "/my-bookings",
+      tone: "amber",
+      emptyCopy: "No reimbursements in progress",
+    },
+    {
+      key: "refunds",
+      title: "Refund requests",
+      count: openRequestCounts.refunds,
+      icon: RotateCcw,
+      href: openRequestSummary?.refunds[0] ? `/bookings/${openRequestSummary.refunds[0].bookingId}` : "/my-bookings",
+      tone: "rose",
+      emptyCopy: "No refund requests in progress",
+    },
+    {
+      key: "cancellations",
+      title: "Cancellation requests",
+      count: openRequestCounts.cancellations,
+      icon: XCircle,
+      href: openRequestSummary?.cancellations[0] ? `/bookings/${openRequestSummary.cancellations[0].bookingId}` : "/cancel-booking",
+      tone: "rose",
+      emptyCopy: "No cancellation requests in progress",
+    },
+  ] as const;
 
   const actionPreview = useMemo(() => [
     ...bookingQueries.map((booking) => ({ bookingId: booking.id, clientName: booking.clientName, label: "Booking query needs your reply" })),
@@ -223,6 +290,38 @@ export default function AgentDashboard() {
             </Card>
           </Link>
         </div>
+      </section>
+
+      <section className={`rounded-2xl border-2 p-4 shadow-sm sm:p-5 ${openRequestTotal > 0 ? "border-[#a7f3e8] bg-[#f0fffb]/55" : "border-slate-200 bg-card"}`}>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className={`rounded-xl p-2.5 ${openRequestTotal > 0 ? "bg-[#70FFE8]/35 text-[#047857]" : "bg-slate-100 text-slate-600"}`}><ClipboardCheck size={19} /></div>
+            <div>
+              <h2 className="text-base font-bold text-foreground">Requests in progress</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">Track every flight, amendment, reimbursement, refund and cancellation request that JLT is still working on.</p>
+            </div>
+          </div>
+          {!isLoadingOpenRequests && !isOpenRequestsError && <span className={`rounded-full px-3 py-1 text-sm font-bold ${openRequestTotal > 0 ? "bg-[#047857] text-white" : "bg-emerald-100 text-emerald-800"}`}>{openRequestTotal === 0 ? "All up to date" : `${openRequestTotal} open`}</span>}
+        </div>
+
+        {isLoadingOpenRequests ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-24 animate-pulse rounded-xl border bg-muted/45" />)}</div>
+        ) : isOpenRequestsError ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>We couldn&apos;t load your request progress. No request records have been removed.</span><Button size="sm" variant="outline" onClick={() => refetchOpenRequests()}>Retry</Button></div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {openRequestCards.map(({ key, title, count, icon: Icon, href, tone, emptyCopy }) => {
+              const styles = {
+                sky: { background: "#eff6ff", border: "#bfdbfe", icon: "#1d4ed8" },
+                violet: { background: "#f5f3ff", border: "#ddd6fe", icon: "#6d28d9" },
+                amber: { background: "#fffbeb", border: "#fde68a", icon: "#b45309" },
+                rose: { background: "#fff1f2", border: "#fecdd3", icon: "#be123c" },
+              } as const;
+              const style = styles[tone];
+              return <Link key={key} href={href}><div className="group h-full rounded-xl border p-3.5 transition-all hover:-translate-y-0.5 hover:shadow-md" style={{ background: style.background, borderColor: style.border }}><div className="flex items-start gap-2.5"><div className="rounded-lg bg-white/80 p-2 shadow-sm" style={{ color: style.icon }}><Icon size={16} /></div><div className="min-w-0 flex-1"><p className="text-2xl font-bold text-foreground">{count}</p><p className="mt-0.5 text-sm font-bold leading-4 text-foreground">{title}</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{count === 0 ? emptyCopy : "Open to see the latest status"}</p></div><ChevronRight size={16} className="mt-1 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" /></div></div></Link>;
+            })}
+          </div>
+        )}
       </section>
 
       {unconfirmedUpdates.length > 0 && (

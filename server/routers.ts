@@ -5220,10 +5220,10 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       const agentId = ctx.user.id;
       const { getDb } = await import("./db");
       const db = await getDb();
-      if (!db) return { reimbursements: [], amendments: [], refunds: [], flightRequests: [] };
+      if (!db) return { reimbursements: [], amendments: [], refunds: [], flightRequests: [], cancellations: [] };
 
-      const { reimbursementItems, amendments, refunds, flightRequests, bookings } = await import("../drizzle/schema");
-      const { and, eq, ne, inArray } = await import("drizzle-orm");
+      const { reimbursementItems, amendments, refunds, flightRequests, cancellations, bookings } = await import("../drizzle/schema");
+      const { and, desc, eq, ne, inArray } = await import("drizzle-orm");
 
       // 1. Reimbursement items that are pending or scheduled (not yet paid) for this agent's bookings
       const agentBookingRows = await db
@@ -5284,6 +5284,19 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           ne(flightRequests.status, "cancelled")
         ));
 
+      // Keep cancellation requests visible until JLT has actioned them, even if
+      // a booking stage has changed while the operational request is open.
+      const cancellationRows = await db
+        .select({
+          id: cancellations.id,
+          bookingId: cancellations.bookingId,
+          confirmedAt: cancellations.confirmedAt,
+          status: cancellations.status,
+        })
+        .from(cancellations)
+        .where(and(eq(cancellations.agentId, agentId), eq(cancellations.status, "pending")))
+        .orderBy(desc(cancellations.confirmedAt));
+
       return {
         reimbursements: reimbRows.map((r) => ({
           id: r.id,
@@ -5318,6 +5331,13 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           queryMessage: r.queryMessage,
           ticketingDeadline: r.ticketingDeadline,
           createdAt: r.createdAt,
+        })),
+        cancellations: cancellationRows.map((r) => ({
+          id: r.id,
+          bookingId: r.bookingId,
+          clientName: bookingNameMap.get(r.bookingId) ?? null,
+          confirmedAt: r.confirmedAt,
+          status: r.status,
         })),
       };
     }),
