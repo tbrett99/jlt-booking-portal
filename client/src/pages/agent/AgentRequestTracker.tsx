@@ -1,5 +1,5 @@
 import { useMemo, type ElementType } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useSearchParams } from "wouter";
 import { format } from "date-fns";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -109,7 +109,7 @@ function money(value: unknown) {
 }
 
 export default function AgentRequestTracker() {
-  const [location] = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     data: summary,
     isLoading,
@@ -118,9 +118,18 @@ export default function AgentRequestTracker() {
   } = trpc.reimbursements.agentOutstandingSummary.useQuery();
 
   const selectedType = useMemo<RequestType>(() => {
-    const value = new URLSearchParams(window.location.search).get("type");
+    const value = searchParams.get("type");
     return REQUEST_TYPES.includes(value as RequestType) ? value as RequestType : "all";
-  }, [location]);
+  }, [searchParams]);
+
+  const selectType = (type: RequestType) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (type === "all") next.delete("type");
+      else next.set("type", type);
+      return next;
+    });
+  };
 
   const requestRows = useMemo<TrackerRow[]>(() => {
     if (!summary) return [];
@@ -211,23 +220,19 @@ export default function AgentRequestTracker() {
       </section>
 
       <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Link href="/my-requests">
-          <div className={`flex h-full items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold transition-colors ${selectedType === "all" ? "border-[#70FFE8] bg-[#f0fffb] text-[#065f46]" : "bg-card text-foreground hover:bg-muted/40"}`}>
-            <Clock3 size={16} /> All requests
-            <span className="ml-auto rounded-full bg-white/80 px-2 py-0.5 text-xs">{requestRows.length}</span>
-          </div>
-        </Link>
+        <Button type="button" variant="outline" onClick={() => selectType("all")} className={`h-full justify-start gap-2 rounded-xl border px-3 py-3 text-sm font-bold shadow-none transition-colors ${selectedType === "all" ? "border-[#70FFE8] bg-[#f0fffb] text-[#065f46] hover:bg-[#e7fff8]" : "bg-card text-foreground hover:bg-muted/40"}`}>
+          <Clock3 size={16} /> All requests
+          <span className="ml-auto rounded-full bg-white/80 px-2 py-0.5 text-xs">{requestRows.length}</span>
+        </Button>
         {(Object.keys(requestTypeMeta) as Exclude<RequestType, "all">[]).map((type) => {
           const meta = requestTypeMeta[type];
           const Icon = meta.icon;
           const count = requestRows.filter((row) => row.kind === type).length;
           return (
-            <Link key={type} href={`/my-requests?type=${type}`}>
-              <div className={`flex h-full items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold transition-colors ${selectedType === type ? meta.activeClass : "bg-card text-foreground hover:bg-muted/40"}`}>
-                <Icon size={16} /> <span className="min-w-0 flex-1 truncate">{meta.label}</span>
-                <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs">{count}</span>
-              </div>
-            </Link>
+            <Button key={type} type="button" variant="outline" onClick={() => selectType(type)} className={`h-full justify-start gap-2 rounded-xl border px-3 py-3 text-sm font-bold shadow-none transition-colors ${selectedType === type ? meta.activeClass : "bg-card text-foreground hover:bg-muted/40"}`}>
+              <Icon size={16} /> <span className="min-w-0 flex-1 truncate">{meta.label}</span>
+              <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs">{count}</span>
+            </Button>
           );
         })}
       </section>
@@ -244,9 +249,7 @@ export default function AgentRequestTracker() {
               </p>
             </div>
             {selectedMeta && (
-              <Link href={selectedMeta.createHref}>
-                <Button size="sm" variant="outline" className="gap-1.5"><ArrowRight size={14} /> {selectedMeta.createLabel}</Button>
-              </Link>
+              <Button asChild size="sm" variant="outline" className="gap-1.5"><Link href={selectedMeta.createHref}><ArrowRight size={14} /> {selectedMeta.createLabel}</Link></Button>
             )}
           </div>
         </CardHeader>
@@ -264,7 +267,7 @@ export default function AgentRequestTracker() {
               <CheckCircle2 size={30} className="mx-auto text-emerald-600" />
               <p className="mt-3 font-semibold text-foreground">{selectedMeta?.emptyCopy ?? "There are no requests in progress right now."}</p>
               <p className="mt-1 text-sm text-muted-foreground">When JLT is working on a request for you, its latest status will appear here.</p>
-              {selectedMeta && <Link href={selectedMeta.createHref}><Button className="mt-4" size="sm" variant="outline">{selectedMeta.createLabel}</Button></Link>}
+              {selectedMeta && <Button asChild className="mt-4" size="sm" variant="outline"><Link href={selectedMeta.createHref}>{selectedMeta.createLabel}</Link></Button>}
             </div>
           ) : (
             <div className="divide-y">

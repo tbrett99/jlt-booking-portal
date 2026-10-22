@@ -34,4 +34,14 @@ describe("agent request tracker", () => {
     expect(tracker).toContain("agentOutstandingSummary.useQuery");
     expect(tracker).toContain("Booking #{row.bookingId}");
   });
+
+  it("uses an updating search-param control for filters and valid link-button composition", () => {
+    const tracker = read("client/src/pages/agent/AgentRequestTracker.tsx");
+    expect(tracker).toContain("useSearchParams");
+    expect(tracker).toContain("const [searchParams, setSearchParams] = useSearchParams()");
+    expect(tracker).toContain("const selectType = (type: RequestType)");
+    expect(tracker).toContain('onClick={() => selectType(type)}');
+    expect(tracker).toContain("<Button asChild size=\"sm\" variant=\"outline\"");
+    expect(tracker).not.toContain("<Link href={selectedMeta.createHref}>\n                <Button");
+  });
 });
