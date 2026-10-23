@@ -242,6 +242,7 @@ export const dashboardRouter = router({
 
     const [
       myTasksResult,
+      myTaskAttentionCountResult,
       teamTasksResult,
       recentAcknowledgementsResult,
       unreadMessagesResult,
@@ -250,15 +251,19 @@ export const dashboardRouter = router({
       ptsMissingResult,
       claimableMissingResult,
       missedMandatesResult,
+      missedMandatesCountResult,
       todayCalendarResult,
       cancellationsResult,
+      cancellationCountResult,
       queueHealthResult,
       pipelineRowsResult,
       membershipSummaryResult,
       membershipWatchResult,
+      membershipWatchCountResult,
       changeRequestsResult,
       changeRequestCountResult,
       agentWinsResult,
+      unseenAgentWinsCountResult,
       adminUsersResult,
     ] = await Promise.all([
       db.execute(sql`
@@ -288,6 +293,25 @@ export const dashboardRouter = router({
           t.dueDate ASC,
           t.createdAt DESC
         LIMIT 12
+      `),
+      // The dashboard cards deliberately preview only a few records. The jump
+      // bar needs the complete count of this admin's open work instead.
+      db.execute(sql`
+        SELECT COUNT(*) AS count
+        FROM admin_tasks t
+        LEFT JOIN users assignee ON assignee.id = t.assigneeId
+        LEFT JOIN users creator ON creator.id = t.createdById
+        WHERE t.status != 'done'
+          AND (
+            t.acknowledgedAt IS NULL
+            OR (t.dueDate IS NOT NULL AND t.dueDate <= NOW())
+          )
+          AND (
+            t.assigneeId = ${ctx.user.id}
+            OR (t.assigneeId IS NULL AND t.createdById = ${ctx.user.id})
+            OR (${taskOwnerEmail} != '' AND LOWER(TRIM(assignee.email)) = ${taskOwnerEmail})
+            OR (${taskOwnerEmail} != '' AND t.assigneeId IS NULL AND LOWER(TRIM(creator.email)) = ${taskOwnerEmail})
+          )
       `),
       db.execute(sql`
         SELECT t.id, t.title, t.status, t.priority, t.dueDate, t.acknowledgedAt,
@@ -387,6 +411,12 @@ export const dashboardRouter = router({
         ORDER BY u.name ASC
         LIMIT 4
       `),
+      db.execute(sql`
+        SELECT COUNT(*) AS count
+        FROM gc_mandates m
+        LEFT JOIN gc_subscriptions s ON s.userId = m.userId
+        WHERE m.status = 'active' AND s.id IS NULL
+      `),
       // Use the exact source query that powers Team Calendar, then expand the
       // same recurrence rules within a UK calendar-day window below.
       getCalendarEvents(todayWindow.start, todayWindow.end),
@@ -400,6 +430,7 @@ export const dashboardRouter = router({
         ORDER BY c.confirmedAt ASC
         LIMIT 5
       `),
+      db.execute(sql`SELECT COUNT(*) AS count FROM cancellations WHERE status = 'pending'`),
       db.execute(sql`
         SELECT 'Amendments' AS label, '/amendments/pipeline' AS href,
                COUNT(*) AS count, DATEDIFF(CURDATE(), MIN(createdAt)) AS oldestAgeDays,
@@ -456,6 +487,12 @@ export const dashboardRouter = router({
         LIMIT 8
       `),
       db.execute(sql`
+        SELECT COUNT(*) AS count
+        FROM agent_crm_profiles p
+        WHERE (p.agentStatus = 'in_notice' AND p.noticeEndsAt IS NOT NULL AND p.noticeEndsAt <= DATE_ADD(CURDATE(), INTERVAL 14 DAY))
+           OR (p.agentStatus = 'paused' AND p.pauseEndsAt IS NOT NULL AND p.pauseEndsAt <= DATE_ADD(CURDATE(), INTERVAL 14 DAY))
+      `),
+      db.execute(sql`
         SELECT r.id, r.fieldLabel, r.createdAt, u.name AS agentName
         FROM agent_change_requests r
         INNER JOIN users u ON u.id = r.userId
@@ -474,6 +511,21 @@ export const dashboardRouter = router({
         ORDER BY createdAt DESC
         LIMIT 5
       `),
+      // Agent Wins do not require staff approval. The only meaningful action
+      // count is therefore the number the signed-in staff member has not yet
+      // opened; their own posts are already known to them.
+      db.execute(sql`
+        SELECT COUNT(*) AS count
+        FROM community_posts p
+        LEFT JOIN community_post_views v
+          ON v.postId = p.id AND v.userId = ${ctx.user.id}
+        WHERE p.category = 'agent_win'
+          AND p.authorId != ${ctx.user.id}
+          AND p.isHidden = 0
+          AND p.isDraft = 0
+          AND (p.expiresAt IS NULL OR p.expiresAt >= NOW())
+          AND v.id IS NULL
+      `),
       db.execute(sql`
         SELECT id, name, email
         FROM users
@@ -485,6 +537,13 @@ export const dashboardRouter = router({
     const controls = unwrapOne(controlCountsResult);
     const membership = unwrapOne(membershipSummaryResult);
     const changeRequests = unwrapOne(changeRequestCountResult);
+    const queueHealth = unwrap(queueHealthResult).map((row) => ({
+      ...row,
+      count: Number(row.count ?? 0),
+      oldestAgeDays: Number(row.oldestAgeDays ?? 0),
+      overTargetCount: Number(row.overTargetCount ?? 0),
+      targetDays: 3,
+    }));
     const todayEvents = unwrap(todayCalendarResult)
       .flatMap((event) => expandCalendarOccurrences(event, todayWindow.start, todayWindow.end))
       .map(({ occurrenceStart, occurrenceEnd, ...event }) => ({
@@ -501,6 +560,13 @@ export const dashboardRouter = router({
       ...row,
       endDate: row.noticeEndsAt ?? row.pauseEndsAt,
     }));
+    const missedMandatesCount = Number(unwrapOne(missedMandatesCountResult).count ?? 0);
+    const controlCheckCount = Number(controls.ptsMissingCount ?? 0)
+      + Number(controls.claimableMissingCount ?? 0)
+      + missedMandatesCount;
+    const queueActionCount = queueHealth.reduce((total, queue) => total + queue.overTargetCount, 0);
+    const membershipAttentionCount = Number(unwrapOne(membershipWatchCountResult).count ?? 0)
+      + Number(changeRequests.count ?? 0);
     const adminUsersByEmail = new Map<string, { id: number; name: string }>();
     unwrap(adminUsersResult).forEach((user) => {
       const email = normaliseTaskIdentityEmail(user.email);
@@ -517,39 +583,49 @@ export const dashboardRouter = router({
       recentAcknowledgements: unwrap(recentAcknowledgementsResult),
       unreadMessages: unwrap(unreadMessagesResult),
       unreadMessageCount: Number(unwrapOne(unreadMessageCountResult).count ?? 0),
+      // One concise, full-count contract for the persistent jump bar. Each
+      // number represents a thing staff can act on or should check now.
+      navigationCounts: {
+        tasks: Number(unwrapOne(myTaskAttentionCountResult).count ?? 0),
+        messages: Number(unwrapOne(unreadMessageCountResult).count ?? 0),
+        today: todayEvents.length,
+        cancellations: Number(unwrapOne(cancellationCountResult).count ?? 0),
+        checks: controlCheckCount,
+        queues: queueActionCount,
+        membership: membershipAttentionCount,
+        agentWins: Number(unwrapOne(unseenAgentWinsCountResult).count ?? 0),
+      },
       controls: {
         ptsMissing: { count: Number(controls.ptsMissingCount ?? 0), records: unwrap(ptsMissingResult) },
         claimableMissing: { count: Number(controls.claimableMissingCount ?? 0), records: unwrap(claimableMissingResult) },
-        missedMandates: { count: unwrap(missedMandatesResult).length, records: unwrap(missedMandatesResult) },
+        missedMandates: { count: missedMandatesCount, records: unwrap(missedMandatesResult) },
       },
       today: {
         events: todayEvents,
         away: todayEvents.filter((event) => event.type === 'holiday'),
       },
       cancellations: {
-        count: cancellationRecords.length,
+        count: Number(unwrapOne(cancellationCountResult).count ?? 0),
         records: cancellationRecords,
       },
-      queues: unwrap(queueHealthResult).map((row) => ({
-        ...row,
-        count: Number(row.count ?? 0),
-        oldestAgeDays: Number(row.oldestAgeDays ?? 0),
-        overTargetCount: Number(row.overTargetCount ?? 0),
-        targetDays: 3,
-      })),
+      queues: queueHealth,
       pipelineHealth: buildPipelineHealth(unwrap(pipelineRowsResult), now),
       membership: {
         active: Number(membership.active ?? 0),
         paused: Number(membership.paused ?? 0),
         inNotice: Number(membership.inNotice ?? 0),
         suspended: Number(membership.suspended ?? 0),
+        watchCount: Number(unwrapOne(membershipWatchCountResult).count ?? 0),
         watch: membershipWatch,
       },
       changeRequests: {
         count: Number(changeRequests.count ?? 0),
         records: unwrap(changeRequestsResult),
       },
-      agentWins: unwrap(agentWinsResult),
+      agentWins: {
+        latest: unwrap(agentWinsResult),
+        unseenCount: Number(unwrapOne(unseenAgentWinsCountResult).count ?? 0),
+      },
       adminUsers: Array.from(adminUsersByEmail.values()),
     };
   }),

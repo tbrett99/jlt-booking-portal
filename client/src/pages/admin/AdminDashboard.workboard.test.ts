@@ -88,4 +88,24 @@ describe("Admin Dashboard operational workboard", () => {
     expect(source).toContain('id="membership"');
     expect(source).toContain('id="wins"');
   });
+
+  it("shows an accurate, accessible action count beside every persistent jump tab", () => {
+    expect(source).toContain("navigationCounts");
+    expect(source).toContain("section.countKey");
+    expect(source).toContain("section.countLabel");
+    expect(source).toContain("aria-label={`${count} ${section.countLabel}`}");
+    expect(source).toContain('countLabel: "unresolved control checks"');
+    expect(source).toContain('countLabel: "queue items over the three-day target"');
+    expect(source).toContain('countLabel: "Agent Wins you have not opened"');
+  });
+
+  it("uses full database counts instead of the compact card preview limits", () => {
+    expect(dataSource).toContain("navigationCounts: {");
+    expect(dataSource).toContain("myTaskAttentionCountResult");
+    expect(dataSource).toContain("membershipWatchCountResult");
+    expect(dataSource).toContain("unseenAgentWinsCountResult");
+    expect(dataSource).toContain("queueHealth.reduce((total, queue) => total + queue.overTargetCount, 0)");
+    expect(dataSource).toContain("AND v.id IS NULL");
+    expect(dataSource).toContain("p.authorId != ${ctx.user.id}");
+  });
 });

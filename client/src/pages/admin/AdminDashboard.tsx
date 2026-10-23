@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "wouter";
 import { format, formatDistanceToNowStrict, differenceInCalendarDays, isToday, isPast } from "date-fns";
 import {
@@ -74,14 +74,14 @@ const CONTROL_TILES = [
 ] as const;
 
 const WORKBOARD_SECTIONS = [
-  { id: "tasks", label: "Tasks" },
-  { id: "messages", label: "Messages" },
-  { id: "calendar", label: "Today" },
-  { id: "cancellations", label: "Cancellations" },
-  { id: "checks", label: "Checks" },
-  { id: "queues", label: "Queues" },
-  { id: "membership", label: "Membership" },
-  { id: "wins", label: "Agent Wins" },
+  { id: "tasks", label: "Tasks", countKey: "tasks", countLabel: "tasks requiring your attention" },
+  { id: "messages", label: "Messages", countKey: "messages", countLabel: "unread agent conversations" },
+  { id: "calendar", label: "Today", countKey: "today", countLabel: "calendar items today" },
+  { id: "cancellations", label: "Cancellations", countKey: "cancellations", countLabel: "pending cancellation requests" },
+  { id: "checks", label: "Checks", countKey: "checks", countLabel: "unresolved control checks" },
+  { id: "queues", label: "Queues", countKey: "queues", countLabel: "queue items over the three-day target" },
+  { id: "membership", label: "Membership", countKey: "membership", countLabel: "membership dates or change requests to check" },
+  { id: "wins", label: "Agent Wins", countKey: "agentWins", countLabel: "Agent Wins you have not opened" },
 ] as const;
 
 function daysLabel(value: number) {
@@ -276,20 +276,26 @@ export default function AdminDashboard() {
   const pipelineHealth = (workboard?.pipelineHealth ?? []) as any[];
   const membershipWatch = (workboard?.membership?.watch ?? []) as any[];
   const changeRequests = (workboard?.changeRequests?.records ?? []) as any[];
-  const agentWins = (workboard?.agentWins ?? []) as any[];
+  const agentWins = (workboard?.agentWins?.latest ?? []) as any[];
   const todayEvents = (workboard?.today?.events ?? []) as any[];
   const todayAway = (workboard?.today?.away ?? []) as any[];
   const cancellations = (workboard?.cancellations?.records ?? []) as any[];
   const adminUsers = (workboard?.adminUsers ?? []) as { id: number; name: string }[];
+  const navigationCounts = workboard?.navigationCounts ?? {
+    tasks: 0,
+    messages: 0,
+    today: 0,
+    cancellations: 0,
+    checks: 0,
+    queues: 0,
+    membership: 0,
+    agentWins: 0,
+  };
 
   const jumpToSection = (event: React.MouseEvent<HTMLAnchorElement>, id: string) => {
     event.preventDefault();
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
-
-  const taskAttentionCount = useMemo(() => {
-    return myTasks.filter((task) => !task.acknowledgedAt || (task.dueDate && new Date(task.dueDate) <= now)).length;
-  }, [myTasks, now]);
 
   if (isLoading) return <LoadingWorkboard />;
 
@@ -317,7 +323,7 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 text-xs">
-              <Link href="/admin/tasks" className="font-semibold hover:underline text-[#0f766e]">{taskAttentionCount} task{taskAttentionCount === 1 ? "" : "s"} need attention</Link>
+              <Link href="/admin/tasks" className="font-semibold hover:underline text-[#0f766e]">{navigationCounts.tasks} task{navigationCounts.tasks === 1 ? "" : "s"} need attention</Link>
               <Link href="/messages" className="font-semibold hover:underline text-[#7c3aed]">{workboard.unreadMessageCount} unread conversation{workboard.unreadMessageCount === 1 ? "" : "s"}</Link>
               <Link href="/admin/calendar" className="font-semibold hover:underline text-[#92400e]">{todayEvents.length} calendar item{todayEvents.length === 1 ? "" : "s"} today</Link>
             </div>
@@ -334,16 +340,25 @@ export default function AdminDashboard() {
 
       <nav aria-label="Jump to dashboard section" className="sticky top-2 z-20 rounded-xl border bg-card/95 p-2 shadow-sm backdrop-blur">
         <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-          {WORKBOARD_SECTIONS.map((section) => (
+          {WORKBOARD_SECTIONS.map((section) => {
+            const count = navigationCounts[section.countKey];
+            return (
             <a
               key={section.id}
               href={`#${section.id}`}
               onClick={(event) => jumpToSection(event, section.id)}
-              className="shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-[#ecfffb] hover:text-[#0f766e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#02E6D2]"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-[#ecfffb] hover:text-[#0f766e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#02E6D2]"
             >
               {section.label}
+              <span
+                className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold tabular-nums ${count > 0 ? "bg-[#02E6D2]/25 text-[#065f46]" : "bg-muted text-muted-foreground"}`}
+                aria-label={`${count} ${section.countLabel}`}
+              >
+                {count}
+              </span>
             </a>
-          ))}
+            );
+          })}
         </div>
       </nav>
 
