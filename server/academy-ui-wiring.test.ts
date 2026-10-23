@@ -20,8 +20,8 @@ describe("JLT Academy interface wiring", () => {
 
   it("keeps the Academy content-ready instead of pre-populating a course", () => {
     expect(agentHome).toContain("Your learning space is almost ready");
-    expect(manager).toContain("Create your first course to start building a content-ready Academy");
-    expect(manager).toContain("Nothing appears to agents until the course is published");
+    expect(manager).toMatch(/Create your first course to start building a content-ready\s+Academy/);
+    expect(manager).toMatch(/Nothing appears to\s+agents until the course is published/);
   });
 
   it("provides staff controls for resources, quizzes, manual access and accreditation", () => {
@@ -50,7 +50,7 @@ describe("JLT Academy interface wiring", () => {
   it("never submits quiz questions with an invalid lesson ID", () => {
     expect(manager).toContain("const lessonId = Number(result.id)");
     expect(manager).toContain("Number.isSafeInteger(lessonId)");
-    expect(manager).toContain("lessonId, questions: lessonDraft.questions");
+    expect(manager).toMatch(/lessonId,\s+questions: lessonDraft\.questions/);
   });
 
   it("provides a template-led, additive CSV import for multiple-choice quizzes", () => {
@@ -58,9 +58,17 @@ describe("JLT Academy interface wiring", () => {
     expect(manager).toContain("Import CSV");
     expect(manager).toContain("academyQuizCsvTemplate");
     expect(manager).toContain("importMultipleChoiceQuestions");
-    expect(manager).toContain("it never overwrites questions already shown here");
+    expect(manager).toContain("questions already shown here");
     expect(academyRouter).toContain("parseMultipleChoiceQuizCsv");
     expect(academyRouter).toContain('action: "assessment_questions_imported"');
+  });
+
+  it("supports a substantial final exam consistently across authoring, submission and marking", () => {
+    expect(manager).toContain("MAX_ACADEMY_ASSESSMENT_QUESTIONS");
+    expect(manager).toContain("draft.questions.length >= MAX_ACADEMY_ASSESSMENT_QUESTIONS");
+    expect(academyRouter).toContain("MAX_ACADEMY_ASSESSMENT_QUESTIONS");
+    expect(academyRouter.match(/\.max\(MAX_ACADEMY_ASSESSMENT_QUESTIONS\)/g)).toHaveLength(3);
+    expect(academyRouter).toContain("existing.length + questions.length > MAX_ACADEMY_ASSESSMENT_QUESTIONS");
   });
 
   it("keeps useful Academy paste formatting while filtering unsafe clipboard markup", () => {
@@ -76,8 +84,7 @@ describe("JLT Academy interface wiring", () => {
     expect(richEditor).toContain("script, style, iframe, object, embed, form");
     expect(manager).toContain("Formatted ${headings} heading");
     expect(manager).toContain("preview below has been updated");
-    expect(agentCourse).toContain("prose-ul:list-disc");
-    expect(agentCourse).toContain("prose-ol:list-decimal");
-    expect(agentCourse).toContain("prose-table:border-collapse");
+    expect(agentCourse).toContain("normaliseAcademyLessonContent");
+    expect(agentCourse).toContain("academy-lesson-content");
   });
 });

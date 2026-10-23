@@ -22,7 +22,7 @@ import {
   users,
 } from "../drizzle/schema";
 import { getAccreditationEligibility, safeHttpsUrl, summariseAcademyProgress } from "../shared/academy-utils";
-import { parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
+import { MAX_ACADEMY_ASSESSMENT_QUESTIONS, parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
 import { buildAcademyLearningPath } from "../shared/academy-learning-path";
 import { assignAcceleratorEntryActions } from "./agent-development-router";
 
@@ -840,7 +840,7 @@ export const academyRouter = router({
         questionId: z.number().int().positive(),
         selectedIndex: z.number().int().min(0).max(20).nullable().optional(),
         responseText: z.string().trim().min(1).max(20_000).nullable().optional(),
-      })).min(1).max(50),
+      })).min(1).max(MAX_ACADEMY_ASSESSMENT_QUESTIONS),
     }))
       .mutation(async ({ ctx, input }) => {
         const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
@@ -1249,7 +1249,7 @@ export const academyRouter = router({
     markWrittenAssessment: adminProcedure.input(z.object({
       attemptId: z.number().int().positive(),
       feedback: z.string().trim().min(3).max(10_000),
-      responses: z.array(z.object({ questionId: z.number().int().positive(), score: z.number().int().min(0).max(100), feedback: z.string().trim().min(3).max(10_000) })).min(1).max(50),
+      responses: z.array(z.object({ questionId: z.number().int().positive(), score: z.number().int().min(0).max(100), feedback: z.string().trim().min(3).max(10_000) })).min(1).max(MAX_ACADEMY_ASSESSMENT_QUESTIONS),
     })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -1584,7 +1584,7 @@ export const academyRouter = router({
         correctAnswerIndex: z.number().int().min(0).max(7).default(0),
         maxWords: z.number().int().min(10).max(2_000).default(250),
         explanation: z.string().trim().max(10_000).nullable().optional(),
-      })).max(30),
+      })).max(MAX_ACADEMY_ASSESSMENT_QUESTIONS),
     })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -1629,8 +1629,8 @@ export const academyRouter = router({
 
       const existing = await db.select({ id: academyQuestions.id, sortOrder: academyQuestions.sortOrder })
         .from(academyQuestions).where(eq(academyQuestions.lessonId, lesson.id)).orderBy(desc(academyQuestions.sortOrder), desc(academyQuestions.id));
-      if (existing.length + questions.length > 30) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `This import would create ${existing.length + questions.length} questions. A knowledge check can contain up to 30 questions.` });
+      if (existing.length + questions.length > MAX_ACADEMY_ASSESSMENT_QUESTIONS) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `This import would create ${existing.length + questions.length} questions. A knowledge check can contain up to ${MAX_ACADEMY_ASSESSMENT_QUESTIONS} questions.` });
       }
       await db.insert(academyQuestions).values(questions.map((question, index) => ({
         lessonId: lesson.id,

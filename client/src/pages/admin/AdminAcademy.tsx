@@ -34,7 +34,7 @@ import {
   plainTextToLessonHtml,
   RichEmailEditor,
 } from "@/components/RichEmailEditor";
-import { academyQuizCsvTemplate } from "@shared/academy-quiz-csv";
+import { academyQuizCsvTemplate, MAX_ACADEMY_ASSESSMENT_QUESTIONS } from "@shared/academy-quiz-csv";
 import {
   formatAcademyQuestionPrompt,
   splitAcademyQuestionInlineFormatting,
@@ -1416,6 +1416,9 @@ function LessonEditor({
                   are sent to the staff marking queue with feedback and
                   acknowledgement required.
                 </p>
+                <p className="mt-1 text-xs font-medium text-muted-foreground">
+                  Up to {MAX_ACADEMY_ASSESSMENT_QUESTIONS} questions per knowledge check or final exam. CSV import is recommended for longer exams.
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -1450,6 +1453,8 @@ function LessonEditor({
                   type="button"
                   variant="outline"
                   size="sm"
+                  disabled={draft.questions.length >= MAX_ACADEMY_ASSESSMENT_QUESTIONS}
+                  title={draft.questions.length >= MAX_ACADEMY_ASSESSMENT_QUESTIONS ? `A knowledge check can contain up to ${MAX_ACADEMY_ASSESSMENT_QUESTIONS} questions.` : "Add a question"}
                   onClick={() =>
                     setDraft({
                       ...draft,
@@ -1474,7 +1479,7 @@ function LessonEditor({
             <p className="mt-2 text-xs text-muted-foreground">
               Use the template exactly as downloaded. Import adds
               multiple-choice questions to this lesson; it never overwrites
-              questions already shown here.
+              questions already shown here. {draft.questions.length}/{MAX_ACADEMY_ASSESSMENT_QUESTIONS} questions currently in this knowledge check.
             </p>
             <div className="mt-4 space-y-4">
               {draft.questions.map((question, index) => (

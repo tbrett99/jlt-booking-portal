@@ -51,7 +51,7 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(manager).toContain('Agent preview');
     expect(manager).toContain('Staff marking-guide preview');
     expect(manager).toContain('Private marking guide');
-    expect(manager).toContain('AcademyStructuredText text={response.prompt}');
+    expect(manager).toMatch(/<AcademyStructuredText\s+text=\{response\.prompt\}/);
     expect(learner).toContain('AcademyStructuredQuestion text={question.prompt}');
     expect(router).toContain('explanation: question.explanation');
     expect(router).toContain('admin-only queue');

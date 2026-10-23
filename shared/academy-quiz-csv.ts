@@ -14,6 +14,12 @@ export class QuizCsvImportError extends Error {
   }
 }
 
+/**
+ * Allows substantial final exams while bounding one assessment's authoring,
+ * submission and marking workload at a practical, consistent size.
+ */
+export const MAX_ACADEMY_ASSESSMENT_QUESTIONS = 100;
+
 const HEADER_ALIASES = {
   prompt: new Set(["question", "prompt", "questiontext"]),
   options: new Set(["options", "answeroptions", "answers"]),
@@ -113,7 +119,9 @@ export function parseMultipleChoiceQuizCsv(input: string): ImportedMultipleChoic
   if (!individualOptionColumns.length && packedOptionsColumn < 0) headerErrors.push("Add Option 1 and Option 2 columns (up to Option 8), or one Options column using | between answers.");
   if (headerErrors.length) throw new QuizCsvImportError("The CSV headings need attention.", headerErrors);
 
-  if (rows.length - 1 > 30) throw new QuizCsvImportError("An Academy knowledge check can contain up to 30 questions. Split this CSV into smaller uploads.", []);
+  if (rows.length - 1 > MAX_ACADEMY_ASSESSMENT_QUESTIONS) {
+    throw new QuizCsvImportError(`An Academy knowledge check can contain up to ${MAX_ACADEMY_ASSESSMENT_QUESTIONS} questions. Split this CSV into smaller uploads.`, []);
+  }
 
   const errors: string[] = [];
   const questions = rows.slice(1).flatMap((row, rowOffset) => {

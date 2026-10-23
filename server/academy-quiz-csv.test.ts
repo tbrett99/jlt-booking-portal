@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { academyQuizCsvTemplate, parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
+import { academyQuizCsvTemplate, MAX_ACADEMY_ASSESSMENT_QUESTIONS, parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
 
 describe("Academy multiple-choice quiz CSV import", () => {
   it("parses the downloaded template with numbered option columns", () => {
@@ -51,5 +51,20 @@ describe("Academy multiple-choice quiz CSV import", () => {
 
   it("requires the exact template headings needed to build a quiz", () => {
     expect(() => parseMultipleChoiceQuizCsv("Title,Answer\nTest,One")).toThrow("The CSV headings need attention.");
+  });
+
+  it("accepts a 100-question final exam while rejecting oversized uploads", () => {
+    const header = "Question,Option 1,Option 2,Correct Option";
+    const rows = Array.from(
+      { length: MAX_ACADEMY_ASSESSMENT_QUESTIONS },
+      (_, index) => `Final exam question ${index + 1},Correct,Incorrect,1`,
+    );
+    expect(parseMultipleChoiceQuizCsv([header, ...rows].join("\n"))).toHaveLength(MAX_ACADEMY_ASSESSMENT_QUESTIONS);
+
+    const tooManyRows = Array.from(
+      { length: MAX_ACADEMY_ASSESSMENT_QUESTIONS + 1 },
+      (_, index) => `Final exam question ${index + 1},Correct,Incorrect,1`,
+    );
+    expect(() => parseMultipleChoiceQuizCsv([header, ...tooManyRows].join("\n"))).toThrow(`up to ${MAX_ACADEMY_ASSESSMENT_QUESTIONS} questions`);
   });
 });
