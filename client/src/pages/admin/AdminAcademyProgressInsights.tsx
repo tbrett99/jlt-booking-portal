@@ -148,6 +148,9 @@ export default function AdminAcademyProgressInsights() {
   const [reviewEnrollmentId, setReviewEnrollmentId] = useState<number | null>(
     null
   );
+  const [aiReviewingAttemptId, setAiReviewingAttemptId] = useState<
+    number | null
+  >(null);
 
   const { data: courses = [] } = trpc.academy.admin.courses.useQuery();
   const insights = trpc.academy.admin.insights.useQuery(
@@ -210,6 +213,18 @@ export default function AdminAcademyProgressInsights() {
         invalidate();
       },
       onError: error => toast.error(error.message),
+    });
+  const generateAiMarkingReview =
+    trpc.academy.admin.generateAiMarkingReview.useMutation({
+      onMutate: variables => setAiReviewingAttemptId(variables.attemptId),
+      onSuccess: result => {
+        toast.success(
+          `AI review prepared for ${result.reviewedResponses} written ${result.reviewedResponses === 1 ? "answer" : "answers"}. Staff approval is still required.`
+        );
+        invalidate();
+      },
+      onError: error => toast.error(error.message),
+      onSettled: () => setAiReviewingAttemptId(null),
     });
   const resetQuestionAttempts =
     trpc.academy.admin.resetQuestionAttempts.useMutation({
@@ -971,6 +986,10 @@ export default function AdminAcademyProgressInsights() {
               markWrittenAssessment.mutate({ attemptId, feedback, responses })
             }
             marking={markWrittenAssessment.isPending}
+            onGenerateAiReview={(attemptId: number) =>
+              generateAiMarkingReview.mutate({ attemptId })
+            }
+            aiReviewingAttemptId={aiReviewingAttemptId}
           />
           <AssessmentSupportQueue
             items={courseSupport}

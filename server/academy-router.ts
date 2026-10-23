@@ -25,6 +25,14 @@ import { getAccreditationEligibility, safeHttpsUrl, summariseAcademyProgress } f
 import { MAX_ACADEMY_ASSESSMENT_QUESTIONS, parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
 import { buildAcademyLearningPath } from "../shared/academy-learning-path";
 import { assignAcceleratorEntryActions } from "./agent-development-router";
+import {
+  ACADEMY_AI_MARKING_MODEL,
+  ACADEMY_AI_REVIEW_AUDIT_ACTION,
+  buildAcademyAiMarkingPrompt,
+  parseAcademyAiMarkingAuditMetadata,
+  parseAcademyAiMarkingResponse,
+  splitAcademyAiMarkingQuestions,
+} from "./academy-ai-marking";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
@@ -1232,18 +1240,135 @@ export const academyRouter = router({
       const lessonIds = Array.from(new Set(rows.map((row) => row.lesson.id)));
       const responses = attemptIds.length ? await db.select().from(academyAssessmentResponses).where(inArray(academyAssessmentResponses.attemptId, attemptIds)) : [];
       const questions = lessonIds.length ? await db.select().from(academyQuestions).where(inArray(academyQuestions.lessonId, lessonIds)).orderBy(asc(academyQuestions.sortOrder)) : [];
+      const enrollmentIds = Array.from(new Set(rows.map((row) => row.enrollment.id)));
+      // AI suggestions are an append-only internal audit record. Only the
+      // newest recorded review for an awaiting-marking attempt is displayed;
+      // previous runs remain preserved in the Academy audit history.
+      const aiReviewEvents = enrollmentIds.length
+        ? await db.select().from(academyAuditLog)
+          .where(and(
+            inArray(academyAuditLog.enrollmentId, enrollmentIds),
+            eq(academyAuditLog.action, ACADEMY_AI_REVIEW_AUDIT_ACTION),
+          ))
+          .orderBy(desc(academyAuditLog.createdAt), desc(academyAuditLog.id))
+        : [];
+      const aiReviewByAttemptId = new Map<number, {
+        generatedAt: Date;
+        model: string;
+        suggestions: NonNullable<ReturnType<typeof parseAcademyAiMarkingAuditMetadata>>["suggestions"];
+      }>();
+      for (const event of aiReviewEvents) {
+        const metadata = parseAcademyAiMarkingAuditMetadata(event.metadata);
+        if (!metadata || !attemptIds.includes(metadata.attemptId) || aiReviewByAttemptId.has(metadata.attemptId)) continue;
+        aiReviewByAttemptId.set(metadata.attemptId, {
+          generatedAt: event.createdAt,
+          model: metadata.model,
+          suggestions: metadata.suggestions,
+        });
+      }
       return rows.map((row) => ({
         attempt: row.attempt,
         enrollment: { id: row.enrollment.id, agentId: row.enrollment.agentId, courseId: row.enrollment.courseId },
         course: { id: row.course.id, title: row.course.title },
         lesson: { id: row.lesson.id, title: row.lesson.title, assessmentPassMark: REQUIRED_ASSESSMENT_SCORE },
         agent: { id: row.agent.id, name: row.agent.name, email: row.agent.email },
+        aiReview: aiReviewByAttemptId.get(row.attempt.id) ?? null,
         responses: questions.filter((question) => question.lessonId === row.lesson.id && question.questionType === "free_text" && responses.some((item) => item.attemptId === row.attempt.id && item.questionId === question.id)).map((question) => {
           const response = responses.find((item) => item.attemptId === row.attempt.id && item.questionId === question.id);
           // The marking guide is deliberately available only in this admin-only queue.
           return { questionId: question.id, prompt: question.prompt, explanation: question.explanation, responseText: response?.responseText ?? "", maxWords: question.maxWords };
         }),
       }));
+    }),
+
+    generateAiMarkingReview: adminProcedure.input(z.object({
+      attemptId: z.number().int().positive(),
+    })).mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [row] = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: users })
+        .from(academyAssessmentAttempts)
+        .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
+        .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
+        .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+        .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
+        .innerJoin(users, eq(users.id, academyEnrollments.agentId))
+        .where(eq(academyAssessmentAttempts.id, input.attemptId)).limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment submission not found" });
+      if (row.attempt.status !== "awaiting_marking") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "AI review is available only while this written assessment awaits staff marking" });
+      }
+
+      const questions = await db.select().from(academyQuestions)
+        .where(eq(academyQuestions.lessonId, row.lesson.id)).orderBy(asc(academyQuestions.sortOrder));
+      const savedResponses = await db.select().from(academyAssessmentResponses)
+        .where(eq(academyAssessmentResponses.attemptId, row.attempt.id));
+      const writtenQuestions = questions.flatMap((question) => {
+        if (question.questionType !== "free_text") return [];
+        const response = savedResponses.find((item) => item.questionId === question.id);
+        return response ? [{
+          questionId: question.id,
+          prompt: question.prompt,
+          markingGuide: question.explanation,
+          responseText: response.responseText,
+        }] : [];
+      });
+      if (!writtenQuestions.length) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This assessment has no written answers to review" });
+      }
+
+      const { invokeLLM } = await import("./_core/llm");
+      const suggestions = [] as ReturnType<typeof parseAcademyAiMarkingResponse>;
+      try {
+        for (const questionBatch of splitAcademyAiMarkingQuestions(writtenQuestions)) {
+          const result = await invokeLLM({
+            model: ACADEMY_AI_MARKING_MODEL,
+            messages: [
+              {
+                role: "system",
+                content: "You provide structured internal review suggestions for trained staff. You never make final learner decisions.",
+              },
+              {
+                role: "user",
+                content: buildAcademyAiMarkingPrompt({
+                  courseTitle: row.course.title,
+                  lessonTitle: row.lesson.title,
+                  questions: questionBatch,
+                }),
+              },
+            ],
+            response_format: { type: "json_object" },
+          });
+          const content = result.choices[0]?.message?.content;
+          if (typeof content !== "string") throw new Error("The AI review did not return text");
+          suggestions.push(...parseAcademyAiMarkingResponse(content, questionBatch.map((question) => question.questionId)));
+        }
+      } catch (error) {
+        console.error("[AcademyAIReview] Review generation failed", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "The AI review is temporarily unavailable. No grade or feedback has been changed; please try again.",
+        });
+      }
+
+      // This AI review is for staff guidance only. It never writes a score,
+      // changes assessment status, contacts the learner or grants progression.
+      await addAudit({
+        agentId: row.agent.id,
+        courseId: row.course.id,
+        enrollmentId: row.enrollment.id,
+        actorId: ctx.user.id,
+        action: ACADEMY_AI_REVIEW_AUDIT_ACTION,
+        summary: `AI review generated for ${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response" : "responses"} in ${row.lesson.title}; staff review and release remain required`,
+        metadata: {
+          version: 1,
+          attemptId: row.attempt.id,
+          model: ACADEMY_AI_MARKING_MODEL,
+          sourceQuestions: writtenQuestions,
+          suggestions,
+        },
+      });
+      return { success: true, reviewedResponses: suggestions.length };
     }),
 
     markWrittenAssessment: adminProcedure.input(z.object({
@@ -1296,7 +1421,7 @@ export const academyRouter = router({
         triggerKey: "academy_assessment_feedback_ready",
         html: `<p>Hi ${escapeAcademyEmailHtml((row.agent.name ?? "there").split(" ")[0])},</p><p>Your written assessment feedback for <strong>${escapeAcademyEmailHtml(row.lesson.title)}</strong> is ready in the JLT Academy.</p><p>${passed ? "You achieved the required 100% standard. Please read and acknowledge the feedback to record this lesson as complete." : "Please read the feedback, acknowledge it, then revisit the outstanding response when you are ready."}</p><p><a href="${ACADEMY_PORTAL_URL}/academy/course/${row.enrollment.id}">Open your Academy feedback</a></p>`,
       });
-      await addAudit({ agentId: row.agent.id, courseId: row.course.id, enrollmentId: row.enrollment.id, actorId: ctx.user.id, action: "assessment_marked", summary: `Marked ${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response" : "responses"} for ${row.lesson.title} (${score}% — ${passed ? "passed" : "targeted resit needed"})`, metadata: { attemptId: row.attempt.id, score, passed, passMark: REQUIRED_ASSESSMENT_SCORE, outstandingQuestionIds: states.filter((state) => !state.passed).map((state) => state.questionId) } });
+      await addAudit({ agentId: row.agent.id, courseId: row.course.id, enrollmentId: row.enrollment.id, actorId: ctx.user.id, action: "assessment_marked", summary: `Marked ${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response" : "responses"} for ${row.lesson.title} (${score}% — ${passed ? "passed" : "targeted resit needed"})`, metadata: { attemptId: row.attempt.id, score, passed, passMark: REQUIRED_ASSESSMENT_SCORE, staffApprovedScores: input.responses.map(({ questionId, score: responseScore }) => ({ questionId, score: responseScore })), finalFeedbackReleased: true, outstandingQuestionIds: states.filter((state) => !state.passed).map((state) => state.questionId) } });
       return { score, passed, passMark: REQUIRED_ASSESSMENT_SCORE };
     }),
 

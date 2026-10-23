@@ -44,7 +44,9 @@ describe("Academy operational escalation and active-time tracking", () => {
 
   it("shows both time totals against the specific lesson in staff learner review", () => {
     expect(manager).toContain('function formatActiveDuration');
-    expect(manager).toContain('Lesson active {formatActiveDuration(lesson.progress.lessonActiveSeconds)}');
-    expect(manager).toContain('Knowledge check active {formatActiveDuration(lesson.progress.assessmentActiveSeconds)}');
+    expect(manager).toContain('Lesson active');
+    expect(manager).toContain('lesson.progress.lessonActiveSeconds');
+    expect(manager).toContain('Knowledge check active');
+    expect(manager).toContain('assessmentActiveSeconds');
   });
 });

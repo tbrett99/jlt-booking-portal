@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Trophy,
   Upload,
@@ -1717,6 +1718,8 @@ export function WrittenAssessmentQueue({
   setDrafts,
   onMark,
   marking,
+  onGenerateAiReview,
+  aiReviewingAttemptId,
 }: any) {
   const draftFor = (submission: any) =>
     drafts[submission.attempt.id] ?? {
@@ -1737,6 +1740,30 @@ export function WrittenAssessmentQueue({
       ...current,
       [attemptId]: update(current[attemptId] ?? fallback),
     }));
+  const useAiReviewAsDraft = (submission: any, fallback: any) => {
+    const suggestions = submission.aiReview?.suggestions ?? [];
+    if (!suggestions.length) return;
+    updateDraft(
+      submission.attempt.id,
+      (current: any) => ({
+        ...current,
+        feedback: current.feedback.trim() || `Please review the question-level feedback below. The suggestions have been checked by a member of the JLT Academy team before release.`,
+        responses: {
+          ...current.responses,
+          ...Object.fromEntries(
+            suggestions.map((suggestion: any) => [
+              suggestion.questionId,
+              {
+                score: suggestion.suggestedScore,
+                feedback: suggestion.suggestedFeedback,
+              },
+            ])
+          ),
+        },
+      }),
+      fallback
+    );
+  };
 
   return (
     <section className="rounded-2xl border bg-card p-5 shadow-sm">
@@ -1792,12 +1819,61 @@ export function WrittenAssessmentQueue({
                     mark {submission.lesson.assessmentPassMark}%
                   </div>
                 </div>
+                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/60 p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 text-violet-950">
+                        <Sparkles size={17} />
+                        <p className="text-sm font-bold">AI-assisted staff review</p>
+                      </div>
+                      <p className="mt-1 max-w-3xl text-xs leading-5 text-violet-950/80">
+                        This compares the submitted answers with the private marking guide to create editable suggestions. Nothing is sent to the agent, no result changes and no pass/fail decision is made until staff review and use the normal release action below.
+                      </p>
+                      {submission.aiReview && (
+                        <p className="mt-2 text-xs font-medium text-violet-900">
+                          Latest internal review generated {formatDate(submission.aiReview.generatedAt)} using {submission.aiReview.model}.
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="border-violet-300 bg-white text-violet-950 hover:bg-violet-100"
+                        disabled={Boolean(aiReviewingAttemptId)}
+                        onClick={() => onGenerateAiReview(submission.attempt.id)}
+                      >
+                        <Sparkles className="mr-1.5" size={15} />
+                        {aiReviewingAttemptId === submission.attempt.id
+                          ? "Preparing review..."
+                          : submission.aiReview
+                            ? "Generate fresh AI review"
+                            : "Generate AI review"}
+                      </Button>
+                      {submission.aiReview && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="border-violet-300 bg-white text-violet-950 hover:bg-violet-100"
+                          onClick={() => useAiReviewAsDraft(submission, fallback)}
+                        >
+                          Use suggestions as editable draft
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
                 <div className="mt-4 space-y-4">
                   {submission.responses.map((response: any, index: number) => {
                     const grade = draft.responses[response.questionId] ?? {
                       score: -1,
                       feedback: "",
                     };
+                    const aiSuggestion = submission.aiReview?.suggestions?.find(
+                      (suggestion: any) => suggestion.questionId === response.questionId
+                    );
                     return (
                       <div
                         key={response.questionId}
@@ -1826,6 +1902,52 @@ export function WrittenAssessmentQueue({
                         <div className="mt-2 rounded-md bg-muted/50 p-3 text-sm leading-6 whitespace-pre-wrap">
                           {response.responseText}
                         </div>
+                        {aiSuggestion && (
+                          <div className="mt-3 rounded-md border border-violet-200 bg-violet-50/70 p-3 text-sm text-violet-950">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <p className="font-semibold">
+                                  Internal AI suggestion · {aiSuggestion.suggestedScore}% · {aiSuggestion.confidence} confidence
+                                </p>
+                                <p className="mt-1 text-xs leading-5">
+                                  Staff attention: <strong>{aiSuggestion.staffAttention}</strong>
+                                  {aiSuggestion.attentionReason ? ` — ${aiSuggestion.attentionReason}` : ""}
+                                </p>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="shrink-0 border-violet-300 bg-white text-violet-950 hover:bg-violet-100"
+                                onClick={() =>
+                                  updateDraft(
+                                    submission.attempt.id,
+                                    (current: any) => ({
+                                      ...current,
+                                      responses: {
+                                        ...current.responses,
+                                        [response.questionId]: {
+                                          score: aiSuggestion.suggestedScore,
+                                          feedback: aiSuggestion.suggestedFeedback,
+                                        },
+                                      },
+                                    }),
+                                    fallback
+                                  )
+                                }
+                              >
+                                Use this suggestion
+                              </Button>
+                            </div>
+                            {aiSuggestion.strengths.length > 0 && (
+                              <p className="mt-2 text-xs leading-5"><strong>Identified strengths:</strong> {aiSuggestion.strengths.join("; ")}</p>
+                            )}
+                            {aiSuggestion.missingOrIncorrect.length > 0 && (
+                              <p className="mt-1 text-xs leading-5"><strong>Missing or unclear:</strong> {aiSuggestion.missingOrIncorrect.join("; ")}</p>
+                            )}
+                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6"><strong>Draft feedback:</strong> {aiSuggestion.suggestedFeedback}</p>
+                          </div>
+                        )}
                         <div className="mt-3 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)]">
                           <div>
                             <Label>Score (%)</Label>

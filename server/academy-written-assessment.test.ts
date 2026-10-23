@@ -47,6 +47,18 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(learner).toContain('I have read and acknowledge this feedback');
   });
 
+  it("keeps AI suggestions internal until a staff member deliberately reviews and releases a grade", () => {
+    expect(router).toContain('generateAiMarkingReview: adminProcedure');
+    expect(router).toContain('ACADEMY_AI_REVIEW_AUDIT_ACTION');
+    expect(router).toContain('parseAcademyAiMarkingResponse');
+    expect(router).toContain('This AI review is for staff guidance only');
+    expect(router).toContain('staffApprovedScores: input.responses.map');
+    expect(router).toContain('markWrittenAssessment: adminProcedure');
+    expect(manager).toContain('Generate AI review');
+    expect(manager).toContain('Use suggestions as editable draft');
+    expect(manager).toContain('Nothing is sent to the agent');
+  });
+
   it("formats long written prompts and private marking guides for their intended readers", () => {
     expect(manager).toContain('Agent preview');
     expect(manager).toContain('Staff marking-guide preview');
