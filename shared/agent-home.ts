@@ -21,8 +21,8 @@ export type AgentHomeTile = {
 
 /**
  * The agent homepage is intentionally a service hub rather than a booking list.
- * The Academy is an active agent destination. Knowledge Base remains visible
- * but non-navigable until its agent experience is formally launched.
+ * The Academy, Knowledge Base and Webinar Library are active agent destinations
+ * with distinct learning purposes and navigation routes.
  */
 export const AGENT_HOME_TILES: readonly AgentHomeTile[] = [
   {
@@ -35,15 +35,15 @@ export const AGENT_HOME_TILES: readonly AgentHomeTile[] = [
   {
     key: "knowledge_base",
     title: "Knowledge Base",
-    description: "Find trusted JLT answers in one place — coming soon.",
+    description: "Find trusted JLT guidance, processes and practical answers.",
+    href: "/knowledge-base",
     tone: "lavender",
-    comingSoon: true,
   },
   {
     key: "webinars",
-    title: "Webinars & Events",
-    description: "See live sessions, events and dates for your diary.",
-    href: "/events",
+    title: "Webinar Library",
+    description: "Watch recorded business-development calls and practical JLT sessions.",
+    href: "/webinars",
     tone: "sky",
   },
   {

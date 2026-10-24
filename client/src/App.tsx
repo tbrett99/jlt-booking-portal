@@ -124,6 +124,9 @@ const AcademyActions = lazy(() => import("./pages/academy/AcademyActions"));
 const AdminAcademyActions = lazy(() => import("./pages/admin/AdminAcademyActions"));
 const AdminMomentum = lazy(() => import("./pages/admin/AdminMomentum"));
 const AdminAgentEngagement = lazy(() => import("./pages/admin/AdminAgentEngagement"));
+const KnowledgeBase = lazy(() => import("./pages/library/KnowledgeBase"));
+const WebinarLibrary = lazy(() => import("./pages/library/WebinarLibrary"));
+const AdminLibrary = lazy(() => import("./pages/admin/AdminLibrary"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -341,6 +344,8 @@ function AuthRouter() {
           <Route path="/competitions" component={Competitions} />
           <Route path="/academy" component={AcademyHome} />
           <Route path="/academy/actions" component={AcademyActions} />
+          <Route path="/knowledge-base" component={KnowledgeBase} />
+          <Route path="/webinars" component={WebinarLibrary} />
           <Route path="/academy/preview/course/:courseId">{(params) => <AcademyCourse previewCourseId={params.courseId} />}</Route>
           <Route path="/academy/course/:enrollmentId">{(params) => <AcademyCourse enrollmentId={params.enrollmentId} />}</Route>
           {/* Terms & Policies — accessible to logged-in agents */}
@@ -401,6 +406,8 @@ function AuthRouter() {
           <Route path="/competitions" component={Competitions} />
           <Route path="/academy" component={AcademyHome} />
           <Route path="/academy/actions" component={AcademyActions} />
+          <Route path="/knowledge-base" component={KnowledgeBase} />
+          <Route path="/webinars" component={WebinarLibrary} />
           <Route path="/academy/preview/course/:courseId">{(params) => <AcademyCourse previewCourseId={params.courseId} />}</Route>
           <Route path="/academy/course/:enrollmentId">{(params) => <AcademyCourse enrollmentId={params.enrollmentId} />}</Route>
           {/* Terms & Policies — accessible to admins in agent view */}
@@ -494,7 +501,10 @@ function AuthRouter() {
         <Route path="/admin/academy" component={AdminAcademy} />
         <Route path="/admin/academy/insights" component={AdminAcademyProgressInsights} />
         <Route path="/admin/academy/actions" component={AdminAcademyActions} />
+        <Route path="/admin/library" component={AdminLibrary} />
         <Route path="/admin/agent-engagement" component={AdminAgentEngagement} />
+        <Route path="/knowledge-base" component={KnowledgeBase} />
+        <Route path="/webinars" component={WebinarLibrary} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/my-profile" component={MyProfile} />
         <Route path="/my-public-profile" component={MyPublicProfile} />

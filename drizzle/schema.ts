@@ -2548,6 +2548,107 @@ export const momentumLedger = mysqlTable("momentum_ledger", {
 ]);
 export type MomentumLedgerEntry = typeof momentumLedger.$inferSelect;
 
+// ─── Knowledge Base & Webinar Library ───────────────────────────────────────
+// File bytes live in managed object storage; these records retain only safe
+// storage references, searchable metadata and an auditable publishing history.
+export const knowledgeBaseArticles = mysqlTable("knowledge_base_articles", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  summary: text("summary"),
+  contentHtml: longtext("contentHtml"),
+  category: varchar("category", { length: 120 }).notNull().default("General"),
+  tags: json("tags"), // string[] — searchable staff-curated labels
+  status: mysqlEnum("status", ["draft", "published", "archived"]).notNull().default("draft"),
+  isFeatured: boolean("isFeatured").notNull().default(false),
+  publishedAt: timestamp("publishedAt"),
+  publishedById: int("publishedById"),
+  createdById: int("createdById").notNull(),
+  updatedById: int("updatedById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("knowledge_base_articles_status_published_idx").on(table.status, table.publishedAt),
+  index("knowledge_base_articles_category_idx").on(table.category),
+]);
+export type KnowledgeBaseArticle = typeof knowledgeBaseArticles.$inferSelect;
+
+export const webinarLibraryItems = mysqlTable("webinar_library_items", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  summary: text("summary"),
+  descriptionHtml: longtext("descriptionHtml"),
+  category: varchar("category", { length: 120 }).notNull().default("Business development"),
+  tags: json("tags"), // string[] — searchable staff-curated labels
+  videoUrl: varchar("videoUrl", { length: 1200 }),
+  // Staff-only source for the future JLT assistant. It is never sent in agent
+  // list/detail payloads without a later explicit product decision.
+  privateTranscript: longtext("privateTranscript"),
+  durationMinutes: int("durationMinutes"),
+  recordedAt: timestamp("recordedAt"),
+  linkedEventId: int("linkedEventId"),
+  status: mysqlEnum("status", ["draft", "published", "archived"]).notNull().default("draft"),
+  isFeatured: boolean("isFeatured").notNull().default(false),
+  publishedAt: timestamp("publishedAt"),
+  publishedById: int("publishedById"),
+  createdById: int("createdById").notNull(),
+  updatedById: int("updatedById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("webinar_library_items_status_published_idx").on(table.status, table.publishedAt),
+  index("webinar_library_items_category_idx").on(table.category),
+  index("webinar_library_items_event_idx").on(table.linkedEventId),
+]);
+export type WebinarLibraryItem = typeof webinarLibraryItems.$inferSelect;
+
+export const libraryResources = mysqlTable("library_resources", {
+  id: int("id").autoincrement().primaryKey(),
+  contentType: mysqlEnum("contentType", ["article", "webinar"]).notNull(),
+  contentId: int("contentId").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  fileUrl: text("fileUrl").notNull(),
+  fileKey: varchar("fileKey", { length: 600 }).notNull(),
+  mimeType: varchar("mimeType", { length: 180 }),
+  uploadedById: int("uploadedById").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("library_resources_content_idx").on(table.contentType, table.contentId),
+]);
+export type LibraryResource = typeof libraryResources.$inferSelect;
+
+/** One durable completion record per agent and piece of library content. */
+export const libraryContentActivity = mysqlTable("library_content_activity", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  contentType: mysqlEnum("contentType", ["article", "webinar"]).notNull(),
+  contentId: int("contentId").notNull(),
+  firstViewedAt: timestamp("firstViewedAt").defaultNow().notNull(),
+  lastViewedAt: timestamp("lastViewedAt").defaultNow().onUpdateNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("library_activity_user_content_unique").on(table.userId, table.contentType, table.contentId),
+  index("library_activity_content_completed_idx").on(table.contentType, table.contentId, table.completedAt),
+  index("library_activity_user_completed_idx").on(table.userId, table.completedAt),
+]);
+export type LibraryContentActivity = typeof libraryContentActivity.$inferSelect;
+
+/** Append-only staff trail for published content and resource governance. */
+export const libraryAuditLog = mysqlTable("library_audit_log", {
+  id: int("id").autoincrement().primaryKey(),
+  entityType: mysqlEnum("entityType", ["article", "webinar", "resource"]).notNull(),
+  entityId: int("entityId").notNull(),
+  action: varchar("action", { length: 100 }).notNull(),
+  summary: text("summary").notNull(),
+  metadata: json("metadata"),
+  actorId: int("actorId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("library_audit_entity_idx").on(table.entityType, table.entityId, table.createdAt),
+]);
+export type LibraryAuditLogEntry = typeof libraryAuditLog.$inferSelect;
+
 // ─── Community: Weekly Digests ────────────────────────────────────────────────
 export const communityDigests = mysqlTable("community_digests", {
   id: int("id").autoincrement().primaryKey(),

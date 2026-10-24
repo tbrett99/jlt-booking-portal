@@ -169,6 +169,7 @@ import { competitionsRouter } from "./competitions-router";
 import { consumerSiteRouter } from "./consumer-site-router";
 import { academyRouter } from "./academy-router";
 import { agentDevelopmentRouter } from "./agent-development-router";
+import { libraryRouter } from "./library-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -486,6 +487,7 @@ async function ensureProspectWon(email: string, name: string, userId: number): P
 export const appRouter = router({
   system: systemRouter,
   agentDevelopment: agentDevelopmentRouter,
+  library: libraryRouter,
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   auth: router({
