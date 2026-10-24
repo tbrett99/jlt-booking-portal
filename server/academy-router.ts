@@ -1754,6 +1754,9 @@ export const academyRouter = router({
         [payload.title, payload.summary, payload.coverImageUrl, payload.isCoreAcademy, payload.isAcceleratorJourney, payload.estimatedMinutes, ctx.user.id, ctx.user.id],
       );
       const id = Number((result as any).insertId);
+      if (!Number.isSafeInteger(id) || id < 1) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Academy course insert did not return an ID" });
+      }
       await addAudit({ courseId: id, actorId: ctx.user.id, action: "course_created", summary: `Created Academy course: ${input.title}` });
       return { id };
     }),

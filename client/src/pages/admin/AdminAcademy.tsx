@@ -211,6 +211,7 @@ export default function AdminAcademy() {
   const { data: courses = [], isLoading: coursesLoading } =
     trpc.academy.admin.courses.useQuery();
   const [courseId, setCourseId] = useState<number | null>(null);
+  const [isCreatingCourse, setIsCreatingCourse] = useState(false);
   const {
     data: editor,
     error: editorError,
@@ -255,6 +256,7 @@ export default function AdminAcademy() {
   const saveCourse = trpc.academy.admin.saveCourse.useMutation({
     onSuccess: result => {
       toast.success("Course saved");
+      setIsCreatingCourse(false);
       setCourseId(result.id);
       invalidateAcademy();
     },
@@ -351,8 +353,10 @@ export default function AdminAcademy() {
   });
 
   useEffect(() => {
-    if (!courseId && courses.length) setCourseId(courses[0].id);
-  }, [courses, courseId]);
+    if (!courseId && !isCreatingCourse && courses.length) {
+      setCourseId(courses[0].id);
+    }
+  }, [courses, courseId, isCreatingCourse]);
   useEffect(() => {
     if (!editor) return;
     setCourseDraft({
@@ -396,6 +400,7 @@ export default function AdminAcademy() {
 
   function createCourse() {
     if (!confirmDiscardOpenDraft()) return;
+    setIsCreatingCourse(true);
     setCourseId(null);
     setCourseDraft(emptyCourse);
     setOpenModuleId(null);
@@ -617,6 +622,7 @@ export default function AdminAcademy() {
                 key={course.id}
                 onClick={() => {
                   if (course.id !== courseId && !confirmDiscardOpenDraft()) return;
+                  setIsCreatingCourse(false);
                   setCourseId(course.id);
                   setOpenModuleId(null);
                   setEditingModuleId(null);

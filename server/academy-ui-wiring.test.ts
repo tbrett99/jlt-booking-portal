@@ -24,6 +24,13 @@ describe("JLT Academy interface wiring", () => {
     expect(manager).toMatch(/Nothing appears to\s+agents until the course is published/);
   });
 
+  it("keeps the blank new-course editor open instead of immediately reselecting an existing course", () => {
+    expect(manager).toContain("const [isCreatingCourse, setIsCreatingCourse] = useState(false)");
+    expect(manager).toContain("!courseId && !isCreatingCourse && courses.length");
+    expect(manager).toContain("setIsCreatingCourse(true)");
+    expect(manager).toContain("setIsCreatingCourse(false)");
+  });
+
   it("provides staff controls for resources, quizzes, manual access and accreditation", () => {
     expect(manager).toContain("Downloadable resource");
     expect(manager).toContain("Knowledge-check questions");
