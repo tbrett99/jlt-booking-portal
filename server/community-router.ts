@@ -34,6 +34,7 @@ import { eq, and, asc } from "drizzle-orm";
 import { prepareCommunityDigestDelivery } from "./community-digest-delivery-utils";
 import { formatCommunityDigestIntro } from "./community-digest-intro";
 import { awardMomentum, getMomentumAgentOverview, getMyMomentum, reverseMomentumForCommunityPost, reverseMomentumForSource } from "./momentum";
+import { sendCommunityReplyNotifications } from "./community-reply-notifications";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -304,6 +305,27 @@ export const communityRouter = router({
         authorName: ctx.user.name ?? "Agent",
         content: input.content,
       });
+
+      // The reply is already durable. Notification delivery is deliberately
+      // best-effort inside its own dispatcher, so email or notification issues
+      // cannot reject a valid Community reply.
+      void sendCommunityReplyNotifications({
+        post: {
+          id: post.id,
+          authorId: post.authorId,
+          authorName: post.authorName,
+          title: post.title,
+        },
+        commenter: {
+          id: ctx.user.id,
+          name: ctx.user.name,
+          role: ctx.user.role,
+          content: input.content,
+        },
+      }).catch((error) => {
+        console.error("[Community] Reply notification dispatcher failed:", error);
+      });
+
       const { getMomentumRule } = await import("./momentum");
       const commentRule = await getMomentumRule("community_comment");
       let momentumAward: { awarded: boolean; points: number } | null = null;
