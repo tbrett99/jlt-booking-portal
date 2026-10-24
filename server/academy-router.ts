@@ -397,15 +397,31 @@ async function enrolAgentInCourse(params: {
     return { enrollment: existing, created: false };
   }
 
-  const result = await db.insert(academyEnrollments).values({
-    agentId: params.agentId,
-    courseId: params.courseId,
-    enrolledById: params.enrolledById,
-    journeyStartedAt: course.isAcceleratorJourney ? (params.journeyStartedAt ?? new Date()) : null,
-    dueDate: params.dueDate ?? null,
-  } as any);
-  const enrollmentId = Number((result as any).insertId);
+  // Drizzle's TiDB insert result does not reliably expose insertId here. A
+  // valid enrolment ID is required immediately for the learner record and its
+  // audit event, so use the provider-compatible prepared insert instead.
+  const pool = await getRawDbPool();
+  if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [insertResult] = await pool.execute(
+    `INSERT INTO academy_enrollments
+      (agentId, courseId, enrolledById, journeyStartedAt, dueDate)
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      params.agentId,
+      params.courseId,
+      params.enrolledById,
+      course.isAcceleratorJourney ? (params.journeyStartedAt ?? new Date()) : null,
+      params.dueDate ?? null,
+    ],
+  );
+  const enrollmentId = Number((insertResult as any).insertId);
+  if (!Number.isSafeInteger(enrollmentId) || enrollmentId < 1) {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Academy enrolment insert did not return an ID" });
+  }
   const [enrollment] = await db.select().from(academyEnrollments).where(eq(academyEnrollments.id, enrollmentId)).limit(1);
+  if (!enrollment) {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Academy enrolment could not be reloaded after creation" });
+  }
   await addAudit({
     agentId: params.agentId,
     courseId: params.courseId,
