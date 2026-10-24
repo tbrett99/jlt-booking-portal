@@ -1572,6 +1572,10 @@ export const academyCourses = mysqlTable("academy_courses", {
   // Exactly one course is normally marked as JLT Academy. Completing it moves
   // the agent to Agent Accelerator; ordinary future courses do not change stage.
   isCoreAcademy: boolean("isCoreAcademy").default(false).notNull(),
+  // An individual eight-week Accelerator journey begins when an agent enters
+  // the Accelerator stage. Its introduction is immediate and later modules
+  // release on the learner's own Friday calendar.
+  isAcceleratorJourney: boolean("isAcceleratorJourney").default(false).notNull(),
   estimatedMinutes: int("estimatedMinutes").default(0).notNull(),
   createdById: int("createdById").notNull(),
   updatedById: int("updatedById").notNull(),
@@ -1581,6 +1585,7 @@ export const academyCourses = mysqlTable("academy_courses", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => [
   index("academy_courses_status_core_idx").on(table.status, table.isCoreAcademy),
+  index("academy_courses_accelerator_journey_idx").on(table.status, table.isAcceleratorJourney),
 ]);
 export type AcademyCourse = typeof academyCourses.$inferSelect;
 
@@ -1589,6 +1594,9 @@ export const academyModules = mysqlTable("academy_modules", {
   courseId: int("courseId").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   summary: text("summary"),
+  // Week 0 is immediately available course orientation. Weeks 1–8 unlock at
+  // 09:00 Europe/London on the learner's individual Friday release schedule.
+  releaseWeek: int("releaseWeek").default(0).notNull(),
   sortOrder: int("sortOrder").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -1666,6 +1674,9 @@ export const academyEnrollments = mysqlTable("academy_enrollments", {
   status: mysqlEnum("status", ["assigned", "in_progress", "completed", "waived"]).default("assigned").notNull(),
   enrolledById: int("enrolledById").notNull(),
   enrolledAt: timestamp("enrolledAt").defaultNow().notNull(),
+  // Set only on an individual Accelerator journey and retained for an auditable
+  // release schedule even if staff later update course structure.
+  journeyStartedAt: timestamp("journeyStartedAt"),
   dueDate: timestamp("dueDate"),
   startedAt: timestamp("startedAt"),
   completedAt: timestamp("completedAt"),
@@ -1677,6 +1688,7 @@ export const academyEnrollments = mysqlTable("academy_enrollments", {
   uniqueIndex("academy_enrollments_agent_course_unique").on(table.agentId, table.courseId),
   index("academy_enrollments_agent_status_idx").on(table.agentId, table.status),
   index("academy_enrollments_course_status_due_idx").on(table.courseId, table.status, table.dueDate),
+  index("academy_enrollments_journey_schedule_idx").on(table.courseId, table.status, table.journeyStartedAt),
 ]);
 export type AcademyEnrollment = typeof academyEnrollments.$inferSelect;
 
@@ -1790,6 +1802,10 @@ export const academyActionPlans = mysqlTable("academy_action_plans", {
   status: mysqlEnum("status", ["draft", "scheduled", "published", "archived"]).default("draft").notNull(),
   publishAt: timestamp("publishAt"),
   dueAt: timestamp("dueAt"),
+  // When present, this Action follows an individual learner's release schedule
+  // for the selected Accelerator journey course/week rather than global dates.
+  courseId: int("courseId"),
+  courseWeek: int("courseWeek"),
   requiresNote: boolean("requiresNote").default(true).notNull(),
   requiresUrl: boolean("requiresUrl").default(false).notNull(),
   requiresUpload: boolean("requiresUpload").default(false).notNull(),
@@ -1807,6 +1823,7 @@ export const academyActionPlans = mysqlTable("academy_action_plans", {
 }, (table) => [
   index("academy_action_plans_status_publish_idx").on(table.status, table.publishAt),
   index("academy_action_plans_audience_trigger_idx").on(table.audience, table.assignmentTrigger),
+  index("academy_action_plans_course_week_idx").on(table.courseId, table.courseWeek, table.status),
 ]);
 export type AcademyActionPlan = typeof academyActionPlans.$inferSelect;
 
@@ -1825,6 +1842,9 @@ export const academyActionAssignments = mysqlTable("academy_action_assignments",
   id: int("id").autoincrement().primaryKey(),
   planId: int("planId").notNull(),
   agentId: int("agentId").notNull(),
+  // Journey actions are released on each agent's own calendar, so their
+  // deadline belongs to the assignment rather than a global action plan.
+  dueAt: timestamp("dueAt"),
   status: mysqlEnum("status", ["assigned", "submitted", "review", "completed", "needs_revision"]).default("assigned").notNull(),
   completionNote: text("completionNote"),
   evidenceUrl: text("evidenceUrl"),
@@ -1842,8 +1862,48 @@ export const academyActionAssignments = mysqlTable("academy_action_assignments",
   uniqueIndex("academy_action_assignment_plan_agent_unique").on(table.planId, table.agentId),
   index("academy_action_assignments_agent_status_idx").on(table.agentId, table.status),
   index("academy_action_assignments_plan_status_idx").on(table.planId, table.status),
+  index("academy_action_assignments_due_status_idx").on(table.dueAt, table.status),
 ]);
 export type AcademyActionAssignment = typeof academyActionAssignments.$inferSelect;
+
+// ─── Academy email alerts ────────────────────────────────────────────────────
+// Staff can subscribe support or a bespoke address to a lifecycle event for a
+// course. Delivery rows keep every alert auditable and retry-safe.
+export const academyEmailAlerts = mysqlTable("academy_email_alerts", {
+  id: int("id").autoincrement().primaryKey(),
+  courseId: int("courseId").notNull(),
+  moduleId: int("moduleId"),
+  eventType: mysqlEnum("eventType", ["week_released", "module_started", "module_completed", "action_submitted_for_review", "action_overdue", "course_completed", "written_assessment_ready", "three_attempt_lock"]).notNull(),
+  recipientType: mysqlEnum("recipientType", ["support", "custom"]).default("support").notNull(),
+  recipientEmail: varchar("recipientEmail", { length: 320 }),
+  recipientName: varchar("recipientName", { length: 255 }),
+  subjectTemplate: varchar("subjectTemplate", { length: 500 }).notNull(),
+  bodyHtmlTemplate: longtext("bodyHtmlTemplate").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdById: int("createdById").notNull(),
+  updatedById: int("updatedById").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("academy_email_alerts_course_event_active_idx").on(table.courseId, table.eventType, table.isActive),
+  index("academy_email_alerts_module_event_active_idx").on(table.moduleId, table.eventType, table.isActive),
+]);
+export type AcademyEmailAlert = typeof academyEmailAlerts.$inferSelect;
+
+export const academyEmailAlertDeliveries = mysqlTable("academy_email_alert_deliveries", {
+  id: int("id").autoincrement().primaryKey(),
+  alertId: int("alertId").notNull(),
+  enrollmentId: int("enrollmentId").notNull(),
+  moduleId: int("moduleId"),
+  eventKey: varchar("eventKey", { length: 180 }).notNull(),
+  recipientEmail: varchar("recipientEmail", { length: 320 }).notNull(),
+  sentAt: timestamp("sentAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("academy_email_alert_delivery_unique").on(table.alertId, table.enrollmentId, table.eventKey),
+  index("academy_email_alert_deliveries_enrollment_idx").on(table.enrollmentId, table.sentAt),
+]);
+export type AcademyEmailAlertDelivery = typeof academyEmailAlertDeliveries.$inferSelect;
 
 // ─── Agent Engagement Hub ────────────────────────────────────────────────────
 // The engagement case is the operational workboard. Every logged interaction is

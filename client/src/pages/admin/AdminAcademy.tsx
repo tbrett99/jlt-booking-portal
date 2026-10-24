@@ -52,6 +52,7 @@ const emptyCourse = {
   summary: "",
   estimatedMinutes: 0,
   isCoreAcademy: false,
+  isAcceleratorJourney: false,
 };
 type DraftQuestion = {
   prompt: string;
@@ -222,15 +223,27 @@ export default function AdminAcademy() {
   const [courseDraft, setCourseDraft] = useState(emptyCourse);
   const [moduleTitle, setModuleTitle] = useState("");
   const [moduleSummary, setModuleSummary] = useState("");
+  const [moduleReleaseWeek, setModuleReleaseWeek] = useState(0);
   const [openModuleId, setOpenModuleId] = useState<number | null>(null);
   const [editingModuleId, setEditingModuleId] = useState<number | null>(null);
   const [editingModuleDraft, setEditingModuleDraft] = useState({
     title: "",
     summary: "",
+    releaseWeek: 0,
   });
   const [editingLessonId, setEditingLessonId] = useState<number | null>(null);
   const [lessonModuleId, setLessonModuleId] = useState<number | null>(null);
   const [lessonDraft, setLessonDraft] = useState(emptyLesson);
+  const [alertDraft, setAlertDraft] = useState({
+    moduleId: "",
+    eventType: "week_released" as "week_released" | "module_started" | "module_completed" | "action_submitted_for_review" | "action_overdue" | "course_completed" | "written_assessment_ready" | "three_attempt_lock",
+    recipientType: "support" as "support" | "custom",
+    recipientEmail: "",
+    recipientName: "",
+    subjectTemplate: "Academy alert: {{event_label}} — {{agent_name}}",
+    bodyHtmlTemplate: "<p><strong>{{agent_name}}</strong> has triggered an Academy alert.</p><p><strong>Course:</strong> {{course_title}}<br /><strong>Module:</strong> {{module_title}}<br /><strong>Event:</strong> {{event_label}}</p><p><a href=\"{{course_url}}\">Open the learner course</a></p>",
+  });
+  const { data: emailAlerts = [] } = trpc.academy.admin.emailAlerts.useQuery({ courseId: courseId ?? 0 }, { enabled: !!courseId });
 
   const invalidateAcademy = () => {
     utils.academy.admin.courses.invalidate();
@@ -258,6 +271,7 @@ export default function AdminAcademy() {
       if (!variables.id) {
         setModuleTitle("");
         setModuleSummary("");
+        setModuleReleaseWeek(0);
         setOpenModuleId(result.id);
       }
       setEditingModuleId(null);
@@ -301,6 +315,20 @@ export default function AdminAcademy() {
     },
     onError: e => toast.error(e.message),
   });
+  const saveEmailAlert = trpc.academy.admin.saveEmailAlert.useMutation({
+    onSuccess: () => {
+      toast.success("Academy email alert saved");
+      if (courseId) utils.academy.admin.emailAlerts.invalidate({ courseId });
+    },
+    onError: error => toast.error(error.message),
+  });
+  const archiveEmailAlert = trpc.academy.admin.archiveEmailAlert.useMutation({
+    onSuccess: () => {
+      toast.success("Academy email alert switched off");
+      if (courseId) utils.academy.admin.emailAlerts.invalidate({ courseId });
+    },
+    onError: error => toast.error(error.message),
+  });
   const replaceQuestions = trpc.academy.admin.replaceQuestions.useMutation({
     onError: e => toast.error(e.message),
   });
@@ -330,6 +358,7 @@ export default function AdminAcademy() {
       summary: editor.course.summary ?? "",
       estimatedMinutes: editor.course.estimatedMinutes ?? 0,
       isCoreAcademy: editor.course.isCoreAcademy,
+      isAcceleratorJourney: editor.course.isAcceleratorJourney,
     });
     setOpenModuleId(current =>
       current && editor.modules.some(module => module.id === current)
@@ -355,18 +384,21 @@ export default function AdminAcademy() {
       summary: courseDraft.summary || null,
       estimatedMinutes: Number(courseDraft.estimatedMinutes) || 0,
       isCoreAcademy: courseDraft.isCoreAcademy,
+      isAcceleratorJourney: courseDraft.isAcceleratorJourney,
     });
   }
   function editModule(module: {
     id: number;
     title: string;
     summary?: string | null;
+    releaseWeek?: number | null;
   }) {
     setOpenModuleId(module.id);
     setEditingModuleId(module.id);
     setEditingModuleDraft({
       title: module.title,
       summary: module.summary ?? "",
+      releaseWeek: module.releaseWeek ?? 0,
     });
   }
   function saveModuleEdit() {
@@ -376,6 +408,7 @@ export default function AdminAcademy() {
       courseId: editor.course.id,
       title: editingModuleDraft.title,
       summary: editingModuleDraft.summary || null,
+      releaseWeek: editingModuleDraft.releaseWeek,
     });
   }
   function startNewLesson(moduleId: number) {
@@ -648,6 +681,14 @@ export default function AdminAcademy() {
                 }
                 statusPending={setStatus.isPending}
               />
+              <section className="rounded-2xl border border-violet-200 bg-violet-50/35 p-5 shadow-sm">
+                <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-violet-800">Academy notifications</p><h2 className="mt-1 text-xl font-bold">Email the right person at the right milestone</h2><p className="mt-1 text-sm text-muted-foreground">Add a support alert or a bespoke recipient for this course. Existing delivery records are retained; switching an alert off only stops future emails.</p></div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2"><div><Label>When</Label><select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm" value={alertDraft.eventType} onChange={event => setAlertDraft({ ...alertDraft, eventType: event.target.value as typeof alertDraft.eventType })}><option value="week_released">A weekly section is released</option><option value="module_started">A module is started</option><option value="module_completed">A module is completed</option><option value="action_submitted_for_review">A course Action needs review</option><option value="action_overdue">A course Action becomes overdue</option><option value="course_completed">The course is completed</option><option value="written_assessment_ready">Written assessment is ready to mark</option><option value="three_attempt_lock">A learner reaches the three-attempt support lock</option></select></div><div><Label>Scope</Label><select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm" value={alertDraft.moduleId} onChange={event => setAlertDraft({ ...alertDraft, moduleId: event.target.value })}><option value="">Whole course</option>{editor.modules.map(module => <option key={module.id} value={module.id}>{module.title}</option>)}</select></div><div><Label>Recipient</Label><select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm" value={alertDraft.recipientType} onChange={event => setAlertDraft({ ...alertDraft, recipientType: event.target.value as "support" | "custom" })}><option value="support">JLT Support</option><option value="custom">Custom recipient</option></select></div>{alertDraft.recipientType === "custom" && <><Input className="mt-6" placeholder="Recipient name (optional)" value={alertDraft.recipientName} onChange={event => setAlertDraft({ ...alertDraft, recipientName: event.target.value })} /><Input placeholder="recipient@example.com" value={alertDraft.recipientEmail} onChange={event => setAlertDraft({ ...alertDraft, recipientEmail: event.target.value })} /></>}</div>
+                <div className="mt-3"><Label>Email subject</Label><Input className="mt-1.5" value={alertDraft.subjectTemplate} onChange={event => setAlertDraft({ ...alertDraft, subjectTemplate: event.target.value })} /></div>
+                <div className="mt-3"><Label>Email content</Label><RichEmailEditor value={alertDraft.bodyHtmlTemplate} onChange={bodyHtmlTemplate => setAlertDraft({ ...alertDraft, bodyHtmlTemplate })} placeholder="Write the alert email…" /><p className="mt-2 text-xs text-muted-foreground">Insert supported Academy merge fields from the template guidance when needed.</p></div>
+                <div className="mt-4 flex justify-end"><Button disabled={saveEmailAlert.isPending || !alertDraft.subjectTemplate.trim() || !alertDraft.bodyHtmlTemplate.trim() || (alertDraft.recipientType === "custom" && !alertDraft.recipientEmail.trim())} onClick={() => saveEmailAlert.mutate({ courseId: editor.course.id, moduleId: alertDraft.moduleId ? Number(alertDraft.moduleId) : null, eventType: alertDraft.eventType, recipientType: alertDraft.recipientType, recipientEmail: alertDraft.recipientType === "custom" ? alertDraft.recipientEmail || null : null, recipientName: alertDraft.recipientType === "custom" ? alertDraft.recipientName || null : null, subjectTemplate: alertDraft.subjectTemplate, bodyHtmlTemplate: alertDraft.bodyHtmlTemplate, isActive: true })}>{saveEmailAlert.isPending ? "Saving…" : "Add email alert"}</Button></div>
+                {emailAlerts.length > 0 && <div className="mt-5 divide-y rounded-xl border bg-background/80 px-4">{emailAlerts.map(alert => <div key={alert.id} className="flex flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">{alert.eventType.replaceAll("_", " ")} · {alert.recipientType === "support" ? "JLT Support" : alert.recipientEmail}</p><p className="text-xs text-muted-foreground">{alert.moduleId ? `Module #${alert.moduleId}` : "Whole course"} · {alert.isActive ? "Active" : "Switched off"}</p></div>{alert.isActive && <Button size="sm" variant="outline" className="text-destructive" onClick={() => archiveEmailAlert.mutate({ id: alert.id })}>Switch off</Button>}</div>)}</div>}
+              </section>
               <section className="rounded-2xl border bg-card p-5 shadow-sm">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">
@@ -663,7 +704,7 @@ export default function AdminAcademy() {
                 </div>
                 <div className="mt-5 rounded-xl border bg-muted/20 p-4">
                   <p className="text-sm font-semibold">Add module</p>
-                  <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.4fr_auto]">
+                  <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.4fr_180px_auto]">
                     <Input
                       placeholder="e.g. Welcome to JLT"
                       value={moduleTitle}
@@ -674,6 +715,17 @@ export default function AdminAcademy() {
                       value={moduleSummary}
                       onChange={e => setModuleSummary(e.target.value)}
                     />
+                    {editor.course.isAcceleratorJourney && (
+                      <select
+                        aria-label="Accelerator release week"
+                        className="h-10 rounded-md border bg-background px-3 text-sm"
+                        value={moduleReleaseWeek}
+                        onChange={event => setModuleReleaseWeek(Number(event.target.value))}
+                      >
+                        <option value={0}>Introduction — immediate</option>
+                        {Array.from({ length: 8 }, (_, index) => <option key={index + 1} value={index + 1}>Week {index + 1} — Friday</option>)}
+                      </select>
+                    )}
                     <Button
                       disabled={!moduleTitle.trim() || saveModule.isPending}
                       onClick={() =>
@@ -681,6 +733,7 @@ export default function AdminAcademy() {
                           courseId: editor.course.id,
                           title: moduleTitle,
                           summary: moduleSummary || null,
+                          releaseWeek: editor.course.isAcceleratorJourney ? moduleReleaseWeek : 0,
                         })
                       }
                     >
@@ -722,6 +775,7 @@ export default function AdminAcademy() {
                                 {index + 1}. {module.title}
                               </p>
                               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                                {editor.course.isAcceleratorJourney && <span className="font-semibold text-violet-700">{module.releaseWeek ? `Week ${module.releaseWeek} · Friday release` : "Introduction · immediate"}</span>}
                                 <span>
                                   {module.summary || lessonCountLabel}
                                   {module.summary
@@ -788,7 +842,7 @@ export default function AdminAcademy() {
                           >
                             {editingModuleId === module.id && (
                               <div className="border-b bg-muted/15 p-4">
-                                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_auto_auto]">
+                                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_180px_auto_auto]">
                                   <Input
                                     aria-label="Module name"
                                     value={editingModuleDraft.title}
@@ -810,6 +864,15 @@ export default function AdminAcademy() {
                                       })
                                     }
                                   />
+                                  {editor.course.isAcceleratorJourney && <select
+                                    aria-label="Module release week"
+                                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                                    value={editingModuleDraft.releaseWeek}
+                                    onChange={event => setEditingModuleDraft({ ...editingModuleDraft, releaseWeek: Number(event.target.value) })}
+                                  >
+                                    <option value={0}>Introduction — immediate</option>
+                                    {Array.from({ length: 8 }, (_, index) => <option key={index + 1} value={index + 1}>Week {index + 1}</option>)}
+                                  </select>}
                                   <Button
                                     size="sm"
                                     disabled={
@@ -1086,6 +1149,20 @@ function CourseSetup({
               <span className="mt-0.5 block text-xs text-muted-foreground">
                 When an approved agent completes it, their CRM training stage
                 moves to Agent Accelerator.
+              </span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-violet-200 bg-violet-50/60 p-3 text-sm">
+            <Checkbox
+              checked={draft.isAcceleratorJourney}
+              onCheckedChange={checked =>
+                setDraft({ ...draft, isAcceleratorJourney: checked === true })
+              }
+            />
+            <span>
+              <span className="font-semibold">Agent Accelerator: eight-week Friday journey</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Introduction modules are immediate. Modules tagged Week 1–8 unlock at 9am UK time on each learner&apos;s own Friday schedule after they enter Accelerator.
               </span>
             </span>
           </label>

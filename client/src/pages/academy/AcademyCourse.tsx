@@ -137,6 +137,10 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
     const targetIndex = lessons.findIndex((lesson) => lesson.id === lessonId);
     const target = lessons[targetIndex];
     if (target?.locked) {
+      if (target.lockedReason) {
+        toast.error(target.lockedReason);
+        return;
+      }
       const blockingLesson = lessons.find((lesson) => !lesson.progress?.completedAt && !lesson.locked && lesson.isRequired);
       toast.error(`Complete ${blockingLesson?.title ?? "the current lesson"} to unlock this lesson.`);
       return;
@@ -177,7 +181,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
             const completed = module.lessons.filter((lesson) => !!lesson.progress?.completedAt).length;
             return <section key={module.id} className="overflow-hidden rounded-xl border bg-background/60">
               <button type="button" className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition hover:bg-muted/60" aria-expanded={isOpen} aria-controls={`academy-course-module-${module.id}`} onClick={() => setExpandedModuleId((current) => current === module.id ? null : module.id)}>
-                <span className="min-w-0"><span className="block text-xs font-semibold text-primary">Module {index + 1}</span><span className="mt-0.5 block line-clamp-2 text-sm font-semibold leading-5">{module.title}</span></span>
+                <span className="min-w-0"><span className="block text-xs font-semibold text-primary">{data.course.isAcceleratorJourney ? (module.releaseWeek ? `Week ${module.releaseWeek}` : "Introduction") : `Module ${index + 1}`}</span><span className="mt-0.5 block line-clamp-2 text-sm font-semibold leading-5">{module.title}</span>{data.course.isAcceleratorJourney && <span className={`mt-1 block text-[10px] font-medium ${module.releaseLocked ? "text-amber-700" : "text-emerald-700"}`}>{module.releaseLocked ? `Available ${module.releaseLabel}` : module.releaseWeek ? "Weekly section unlocked" : "Available now"}</span>}</span>
                 <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"><span>{completed}/{module.lessons.length}</span><span className={`text-base transition-transform ${isOpen ? "rotate-180" : ""}`}>⌄</span></span>
               </button>
               {isOpen && <div id={`academy-course-module-${module.id}`} className="space-y-1 border-t p-2">{module.lessons.map((lesson) => {
@@ -187,8 +191,8 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
                 const locked = lesson.locked || blockedByFeedback;
                 const lockedReason = blockedByFeedback
                   ? "Read and acknowledge your assessment feedback first"
-                  : "Complete the current lesson to unlock this section";
-                return <button type="button" key={lesson.id} disabled={locked} aria-disabled={locked} onClick={() => chooseLesson(lesson.id)} title={locked ? lockedReason : undefined} className={`flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-sm transition ${current ? "bg-[#70FFE8]/25 text-foreground" : locked ? "cursor-not-allowed opacity-45" : "hover:bg-muted/70 text-muted-foreground"}`}><span className="mt-0.5 shrink-0">{complete ? <CheckCircle2 size={16} className="text-emerald-600" /> : locked ? <LockKeyhole size={15} /> : current ? <PlayCircle size={16} className="text-primary" /> : <Circle size={16} />}</span><span className="min-w-0 flex-1 leading-5">{lesson.title}{lesson.isRequired && <span className="ml-1 text-[10px] font-semibold uppercase text-muted-foreground">Required</span>}{locked && <span className="mt-0.5 block text-[10px] font-medium text-muted-foreground">Locked until the current lesson is passed</span>}</span></button>;
+                  : lesson.lockedReason || "Complete the current lesson to unlock this section";
+                return <button type="button" key={lesson.id} disabled={locked} aria-disabled={locked} onClick={() => chooseLesson(lesson.id)} title={locked ? lockedReason : undefined} className={`flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-sm transition ${current ? "bg-[#70FFE8]/25 text-foreground" : locked ? "cursor-not-allowed opacity-45" : "hover:bg-muted/70 text-muted-foreground"}`}><span className="mt-0.5 shrink-0">{complete ? <CheckCircle2 size={16} className="text-emerald-600" /> : locked ? <LockKeyhole size={15} /> : current ? <PlayCircle size={16} className="text-primary" /> : <Circle size={16} />}</span><span className="min-w-0 flex-1 leading-5">{lesson.title}{lesson.isRequired && <span className="ml-1 text-[10px] font-semibold uppercase text-muted-foreground">Required</span>}{locked && <span className="mt-0.5 block text-[10px] font-medium text-muted-foreground">{lockedReason}</span>}</span></button>;
               })}</div>}
             </section>;
           })}</div>

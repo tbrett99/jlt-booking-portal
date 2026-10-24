@@ -89,7 +89,7 @@ import {
   hasApplicationLinkMergeTag,
 } from "./resend-email";
 import { createInAppNotification } from "./db";
-import { grantAcademyAccess } from "./academy-router";
+import { enrolAgentInAcceleratorJourneys, grantAcademyAccess } from "./academy-router";
 import {
   listAgentsWithCrm,
   getAgentCrmProfile,
@@ -1214,7 +1214,7 @@ export const crmRouter = router({
           inContract: z.boolean().optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const { userId, ...data } = input;
         if (data.correspondenceEmailKind) {
           const existing = await getAgentCrmProfile(userId);
@@ -1231,6 +1231,9 @@ export const crmRouter = router({
           }
         }
         await upsertAgentCrmProfile(userId, data as any);
+        if (data.trainingStage === "Agent Accelerator") {
+          await enrolAgentInAcceleratorJourneys({ agentId: userId, actorId: ctx.user.id });
+        }
         if (data.inContract === true) {
           const { enforcePublicProfileVisibilityForInContract } = await import("./consumer-site-router");
           await enforcePublicProfileVisibilityForInContract({ userId });

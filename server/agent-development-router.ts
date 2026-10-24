@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, lte, ne } from "drizzle-orm";
 import { z } from "zod";
 import { shouldAwardActionMomentum, validateActionMomentumConfiguration } from "@shared/momentum-policy";
 import { router, protectedProcedure } from "./_core/trpc";
@@ -11,12 +11,17 @@ import {
   academyActionAssignments,
   academyActionPlans,
   academyActionPlanTargets,
+  academyCourses,
+  academyEnrollments,
+  academyModules,
   agentCrmNotes,
   agentCrmProfiles,
   agentEngagementCases,
   agentEngagementInteractions,
   users,
 } from "../drizzle/schema";
+import { acceleratorWeekActionDueAt, acceleratorWeekReleaseAt } from "./academy-journey";
+import { dispatchAcademyEmailAlerts } from "./academy-email-alerts";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
@@ -67,12 +72,13 @@ function formatActionDueDate(value: Date | null) {
 async function sendAcademyActionEmail(params: {
   agent: { id: number; email: string | null; name: string | null };
   plan: { id: number; title: string; dueAt: Date | null };
+  assignmentDueAt?: Date | null;
   reminder?: boolean;
 }) {
   if (!params.agent.email) return { success: false, skipped: true } as const;
   const safeTitle = escapeHtml(params.plan.title);
   const greetingName = escapeHtml(params.agent.name ?? "there");
-  const dueDate = escapeHtml(formatActionDueDate(params.plan.dueAt));
+  const dueDate = escapeHtml(formatActionDueDate(params.assignmentDueAt ?? params.plan.dueAt));
   const isReminder = params.reminder === true;
   try {
     const result = await sendDirectEmail({
@@ -137,7 +143,7 @@ async function getEligibleAgentIds(plan: {
   });
 }
 
-async function createAssignments(params: { plan: { id: number; title: string; dueAt: Date | null }; agentIds: number[]; actorId: number }) {
+async function createAssignments(params: { plan: { id: number; title: string; dueAt: Date | null }; agentIds: number[]; actorId: number; dueAt?: Date | null }) {
   const db = await getDb();
   if (!db || !params.agentIds.length) return { created: 0 };
   const existing = await db.select({ agentId: academyActionAssignments.agentId })
@@ -149,8 +155,8 @@ async function createAssignments(params: { plan: { id: number; title: string; du
   const pool = await getRawDbPool();
   if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
   await pool.execute(
-    `INSERT INTO academy_action_assignments (planId, agentId) VALUES ${targetIds.map(() => "(?, ?)").join(", ")}`,
-    targetIds.flatMap((agentId) => [params.plan.id, agentId]),
+    `INSERT INTO academy_action_assignments (planId, agentId, dueAt) VALUES ${targetIds.map(() => "(?, ?, ?)").join(", ")}`,
+    targetIds.flatMap((agentId) => [params.plan.id, agentId, params.dueAt ?? params.plan.dueAt]),
   );
   const recipients = await db.select({ id: users.id, email: users.email, name: users.name })
     .from(users)
@@ -164,7 +170,7 @@ async function createAssignments(params: { plan: { id: number; title: string; du
       isUrgent: true,
     });
     const recipient = recipientsById.get(agentId);
-    if (recipient) await sendAcademyActionEmail({ agent: recipient, plan: params.plan });
+    if (recipient) await sendAcademyActionEmail({ agent: recipient, plan: params.plan, assignmentDueAt: params.dueAt });
   }));
   return { created: targetIds.length };
 }
@@ -176,7 +182,10 @@ async function publishPlan(planId: number, actorId: number) {
   if (!plan) throw new TRPCError({ code: "NOT_FOUND", message: "Academy action plan not found" });
   if (plan.status === "archived") throw new TRPCError({ code: "BAD_REQUEST", message: "Archived actions cannot be published" });
   const explicit = await db.select({ agentId: academyActionPlanTargets.agentId }).from(academyActionPlanTargets).where(eq(academyActionPlanTargets.planId, plan.id));
-  const agentIds = await getEligibleAgentIds(plan as any, explicit.map((row) => row.agentId));
+  // Course-linked Accelerator actions publish as a reusable week template. They
+  // are assigned only by releaseAvailableJourneyActions when each individual
+  // learner reaches that week, never to the whole Accelerator audience at once.
+  const agentIds = plan.courseId && plan.courseWeek ? [] : await getEligibleAgentIds(plan as any, explicit.map((row) => row.agentId));
   const assignmentResult = await createAssignments({ plan, agentIds, actorId });
   const now = new Date();
   const pool = await getRawDbPool();
@@ -215,6 +224,102 @@ export async function publishScheduledAcademyActionPlans() {
   return { published: plans.length, assignments };
 }
 
+/**
+ * Materialises only the weekly work that has reached its own learner-specific
+ * Friday release time. It is safe to call from the Heartbeat task and on
+ * Academy reads: the Action unique key and email-delivery keys prevent replay.
+ */
+export async function releaseAvailableJourneyActions(now = new Date()) {
+  const db = await getDb();
+  if (!db) return { releasedWeeks: 0, assignments: 0, alerts: 0 };
+  const journeys = await db.select({ enrollment: academyEnrollments, course: academyCourses, agent: users })
+    .from(academyEnrollments)
+    .innerJoin(academyCourses, eq(academyCourses.id, academyEnrollments.courseId))
+    .innerJoin(users, eq(users.id, academyEnrollments.agentId))
+    .where(and(
+      eq(academyCourses.isAcceleratorJourney, true),
+      eq(academyCourses.status, "published"),
+      ne(academyEnrollments.status, "completed"),
+      ne(academyEnrollments.status, "waived"),
+    ));
+  let releasedWeeks = 0;
+  let assignments = 0;
+  let alerts = 0;
+  for (const { enrollment, course, agent } of journeys) {
+    if (!enrollment.journeyStartedAt) continue;
+    const modules = await db.select().from(academyModules).where(eq(academyModules.courseId, course.id));
+    const plans = await db.select().from(academyActionPlans).where(and(
+      eq(academyActionPlans.courseId, course.id),
+      eq(academyActionPlans.status, "published"),
+    ));
+    for (let week = 1; week <= 8; week++) {
+      const releaseAt = acceleratorWeekReleaseAt(enrollment.journeyStartedAt, week);
+      if (releaseAt > now) continue;
+      const weekModules = modules.filter((module) => Number(module.releaseWeek) === week);
+      const hasPreviouslyReleasedWeek = weekModules.some(() => true);
+      if (!hasPreviouslyReleasedWeek) continue;
+      const weekPlans = plans.filter((plan) => Number(plan.courseWeek) === week);
+      for (const plan of weekPlans) {
+        assignments += (await createAssignments({
+          plan,
+          agentIds: [agent.id],
+          actorId: plan.createdById,
+          dueAt: acceleratorWeekActionDueAt(enrollment.journeyStartedAt, week),
+        })).created;
+      }
+      const releaseResults = await Promise.all(weekModules.map((module) => dispatchAcademyEmailAlerts({
+        eventType: "week_released",
+        eventKey: `week-released-${week}`,
+        enrollmentId: enrollment.id,
+        courseId: course.id,
+        courseTitle: course.title,
+        moduleId: module.id,
+        moduleTitle: module.title,
+        agentId: agent.id,
+        agentName: agent.name,
+        agentEmail: agent.email,
+      })));
+      alerts += releaseResults.reduce((total, result) => total + result.sent, 0);
+      releasedWeeks += 1;
+    }
+  }
+  return { releasedWeeks, assignments, alerts };
+}
+
+/** Sends configured support/bespoke alerts once when a course-week Action is overdue. */
+export async function sendOverdueJourneyActionAlerts(now = new Date()) {
+  const db = await getDb();
+  if (!db) return { alerts: 0 };
+  const rows = await db.select({ assignment: academyActionAssignments, plan: academyActionPlans, enrollment: academyEnrollments, course: academyCourses, agent: users })
+    .from(academyActionAssignments)
+    .innerJoin(academyActionPlans, eq(academyActionPlans.id, academyActionAssignments.planId))
+    .innerJoin(academyEnrollments, and(eq(academyEnrollments.agentId, academyActionAssignments.agentId), eq(academyEnrollments.courseId, academyActionPlans.courseId)))
+    .innerJoin(academyCourses, eq(academyCourses.id, academyActionPlans.courseId))
+    .innerJoin(users, eq(users.id, academyActionAssignments.agentId))
+    .where(and(
+      eq(academyCourses.isAcceleratorJourney, true),
+      lte(academyActionAssignments.dueAt, now),
+      inArray(academyActionAssignments.status, ["assigned", "needs_revision"]),
+    ));
+  let alerts = 0;
+  for (const { assignment, plan, enrollment, course, agent } of rows) {
+    const result = await dispatchAcademyEmailAlerts({
+      eventType: "action_overdue",
+      eventKey: `action-overdue-${assignment.id}`,
+      enrollmentId: enrollment.id,
+      courseId: course.id,
+      courseTitle: course.title,
+      agentId: agent.id,
+      agentName: agent.name,
+      agentEmail: agent.email,
+      actionTitle: plan.title,
+      dueDate: assignment.dueAt,
+    });
+    alerts += result.sent;
+  }
+  return { alerts };
+}
+
 export const agentDevelopmentRouter = router({
   actions: router({
     mine: protectedProcedure.query(async ({ ctx }) => {
@@ -228,7 +333,7 @@ export const agentDevelopmentRouter = router({
       const now = new Date();
       return rows.map((row) => ({
         ...row,
-        isOverdue: !!row.plan.dueAt && !["completed"].includes(row.assignment.status) && new Date(row.plan.dueAt) < now,
+        isOverdue: !!(row.assignment.dueAt ?? row.plan.dueAt) && !["completed"].includes(row.assignment.status) && new Date(row.assignment.dueAt ?? row.plan.dueAt!) < now,
       }));
     }),
 
@@ -285,6 +390,27 @@ export const agentDevelopmentRouter = router({
         }
       }
       await createInAppNotification({ userId: ctx.user.id, message: status === "completed" ? "Academy action marked complete. Great work." : "Academy action submitted for review.", linkUrl: "/academy/actions", isUrgent: false });
+      if (status === "review" && row.plan.courseId) {
+        const [enrollment] = await db.select().from(academyEnrollments).where(and(
+          eq(academyEnrollments.agentId, ctx.user.id),
+          eq(academyEnrollments.courseId, row.plan.courseId),
+        )).limit(1);
+        const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, row.plan.courseId)).limit(1);
+        if (enrollment && course) {
+          void dispatchAcademyEmailAlerts({
+            eventType: "action_submitted_for_review",
+            eventKey: `action-submitted-${row.assignment.id}`,
+            enrollmentId: enrollment.id,
+            courseId: course.id,
+            courseTitle: course.title,
+            agentId: ctx.user.id,
+            agentName: ctx.user.name,
+            agentEmail: ctx.user.email,
+            actionTitle: row.plan.title,
+            dueDate: row.assignment.dueAt ?? row.plan.dueAt,
+          }).catch((error) => console.error("[Academy Actions] Course alert dispatch failed:", error));
+        }
+      }
       return { status };
     }),
   }),
@@ -317,6 +443,8 @@ export const agentDevelopmentRouter = router({
       assignmentTrigger: z.enum(["immediate", "on_accelerator_entry"]),
       publishAt: z.date().nullable().optional(),
       dueAt: z.date().nullable().optional(),
+      courseId: z.number().int().positive().nullable().optional(),
+      courseWeek: z.number().int().min(1).max(8).nullable().optional(),
       requiresNote: z.boolean().default(true),
       requiresUrl: z.boolean().default(false),
       requiresUpload: z.boolean().default(false),
@@ -330,11 +458,18 @@ export const agentDevelopmentRouter = router({
       const targetAgentIds = Array.from(new Set(input.targetAgentIds));
       if (input.audience === "selected_agents" && !targetAgentIds.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose at least one agent for a selected-agent action" });
       if (input.assignmentTrigger === "on_accelerator_entry" && input.audience !== "agent_accelerator") throw new TRPCError({ code: "BAD_REQUEST", message: "Entry actions can only target Agent Accelerator" });
-      if (input.actionType === "weekly" && (!input.publishAt || !input.dueAt)) throw new TRPCError({ code: "BAD_REQUEST", message: "Weekly actions need a Monday publish date and Sunday deadline" });
+      const isJourneyAction = !!input.courseId || !!input.courseWeek;
+      if (isJourneyAction && (!input.courseId || !input.courseWeek)) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose both an Accelerator journey course and a week" });
+      if (isJourneyAction) {
+        if (input.audience !== "agent_accelerator") throw new TRPCError({ code: "BAD_REQUEST", message: "Course-week actions can only target Agent Accelerator" });
+        const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, input.courseId!)).limit(1);
+        if (!course?.isAcceleratorJourney) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a course marked as an Agent Accelerator journey" });
+      }
+      if (input.actionType === "weekly" && !isJourneyAction && (!input.publishAt || !input.dueAt)) throw new TRPCError({ code: "BAD_REQUEST", message: "Weekly actions need a publish date and deadline, unless they are linked to an Accelerator course week" });
       if (input.publishAt && input.dueAt && input.dueAt < input.publishAt) throw new TRPCError({ code: "BAD_REQUEST", message: "The deadline must be after the publish date" });
       const momentumConfigurationError = validateActionMomentumConfiguration(input);
       if (momentumConfigurationError) throw new TRPCError({ code: "BAD_REQUEST", message: momentumConfigurationError });
-      const scheduledStatus = input.publishAt && input.publishAt > new Date() && input.assignmentTrigger !== "on_accelerator_entry" ? "scheduled" : "draft";
+      const scheduledStatus = !isJourneyAction && input.publishAt && input.publishAt > new Date() && input.assignmentTrigger !== "on_accelerator_entry" ? "scheduled" : "draft";
       const payload = {
         title: input.title,
         instructions: input.instructions,
@@ -343,6 +478,8 @@ export const agentDevelopmentRouter = router({
         assignmentTrigger: input.assignmentTrigger,
         publishAt: input.publishAt ?? null,
         dueAt: input.dueAt ?? null,
+        courseId: input.courseId ?? null,
+        courseWeek: input.courseWeek ?? null,
         requiresNote: input.requiresNote,
         requiresUrl: input.requiresUrl,
         requiresUpload: input.requiresUpload,
@@ -361,12 +498,12 @@ export const agentDevelopmentRouter = router({
         await pool.execute(
           `UPDATE academy_action_plans
            SET title = ?, instructions = ?, actionType = ?, audience = ?, assignmentTrigger = ?, status = ?,
-               publishAt = ?, dueAt = ?, requiresNote = ?, requiresUrl = ?, requiresUpload = ?,
+               publishAt = ?, dueAt = ?, courseId = ?, courseWeek = ?, requiresNote = ?, requiresUrl = ?, requiresUpload = ?,
                staffReviewRequired = ?, momentumAwardMode = ?, momentumPoints = ?, updatedById = ?
            WHERE id = ?`,
           [
             payload.title, payload.instructions, payload.actionType, payload.audience, payload.assignmentTrigger, payload.status,
-            payload.publishAt, payload.dueAt, payload.requiresNote, payload.requiresUrl, payload.requiresUpload,
+            payload.publishAt, payload.dueAt, payload.courseId, payload.courseWeek, payload.requiresNote, payload.requiresUrl, payload.requiresUpload,
             payload.staffReviewRequired, payload.momentumAwardMode, payload.momentumPoints, payload.updatedById, planId,
           ],
         );
@@ -375,12 +512,12 @@ export const agentDevelopmentRouter = router({
         const [result] = await pool.execute(
           `INSERT INTO academy_action_plans (
             title, instructions, actionType, audience, assignmentTrigger, status,
-            publishAt, dueAt, requiresNote, requiresUrl, requiresUpload, staffReviewRequired,
+            publishAt, dueAt, courseId, courseWeek, requiresNote, requiresUrl, requiresUpload, staffReviewRequired,
             momentumAwardMode, momentumPoints, createdById, updatedById
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             payload.title, payload.instructions, payload.actionType, payload.audience, payload.assignmentTrigger, payload.status,
-            payload.publishAt, payload.dueAt, payload.requiresNote, payload.requiresUrl, payload.requiresUpload,
+            payload.publishAt, payload.dueAt, payload.courseId, payload.courseWeek, payload.requiresNote, payload.requiresUrl, payload.requiresUpload,
             payload.staffReviewRequired, payload.momentumAwardMode, payload.momentumPoints, ctx.user.id, payload.updatedById,
           ],
         );

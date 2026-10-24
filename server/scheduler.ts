@@ -590,6 +590,31 @@ export function startScheduler() {
     }
   }, { timezone: "Europe/London" });
 
+  // Accelerator journeys release work at 09:00 UK time every Friday for each
+  // learner's own schedule. Both assignments and configured alert emails are
+  // durable and idempotent, so retries cannot duplicate them.
+  cron.schedule("0 9 * * 5", async () => {
+    try {
+      const { releaseAvailableJourneyActions } = await import("./agent-development-router");
+      const result = await releaseAvailableJourneyActions();
+      if (result.assignments || result.alerts) console.log(`[AcceleratorJourney] Friday release: ${result.assignments} Action(s), ${result.alerts} alert email(s)`);
+    } catch (err: any) {
+      console.error("[AcceleratorJourney] Friday release error:", err?.message);
+    }
+  }, { timezone: "Europe/London" });
+
+  // A weekday catch-up for overdue course-week Actions. Each alert has a unique
+  // delivery record, so staff receive one escalation per configured rule.
+  cron.schedule("10 8 * * 1-5", async () => {
+    try {
+      const { sendOverdueJourneyActionAlerts } = await import("./agent-development-router");
+      const result = await sendOverdueJourneyActionAlerts();
+      if (result.alerts) console.log(`[AcceleratorJourney] Sent ${result.alerts} overdue Action alert(s)`);
+    } catch (err: any) {
+      console.error("[AcceleratorJourney] Overdue Action alert error:", err?.message);
+    }
+  }, { timezone: "Europe/London" });
+
   // Database backup to S3: DISABLED — Railway native backups are used instead.
   // cron.schedule("0 */4 * * *", async () => { ... }, { timezone: "UTC" });
 
