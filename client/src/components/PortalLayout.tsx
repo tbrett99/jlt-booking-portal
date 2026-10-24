@@ -421,6 +421,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: true,
       items: [
         { label: "JLT Academy", href: "/academy", icon: <GraduationCap size={16} /> },
+        { label: "My Academy Actions", href: "/academy/actions", icon: <ClipboardCheck size={16} /> },
       ],
     },
     {

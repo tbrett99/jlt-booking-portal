@@ -12,6 +12,7 @@ import {
   academyAssessmentQuestionResets,
   academyAuditLog,
   academyCourses,
+  academyEmailAlertDeliveries,
   academyEmailAlerts,
   academyEnrollments,
   academyLessonProgress,
@@ -27,7 +28,13 @@ import { MAX_ACADEMY_ASSESSMENT_QUESTIONS, parseMultipleChoiceQuizCsv, QuizCsvIm
 import { buildAcademyLearningPath } from "../shared/academy-learning-path";
 import { assignAcceleratorEntryActions, releaseAvailableJourneyActions } from "./agent-development-router";
 import { ACCELERATOR_JOURNEY_WEEKS, acceleratorWeekReleaseLabel, isAcceleratorWeekAvailable } from "./academy-journey";
-import { ACADEMY_ALERT_EVENTS, academyAlertTemplateHint, dispatchAcademyEmailAlerts } from "./academy-email-alerts";
+import {
+  ACADEMY_ALERT_EVENTS,
+  academyAlertAllowsModuleScope,
+  academyAlertTemplateHint,
+  dispatchAcademyEmailAlerts,
+  hasActiveAcademySupportAlert,
+} from "./academy-email-alerts";
 import {
   ACADEMY_AI_MARKING_MODEL,
   ACADEMY_AI_REVIEW_AUDIT_ACTION,
@@ -71,7 +78,9 @@ const lessonInput = z.object({
   isRequired: z.boolean().default(true),
   requiresAcknowledgement: z.boolean().default(false),
   requiresAssessment: z.boolean().default(false),
-  assessmentPassMark: z.number().int().min(1).max(100).default(80),
+  // Academy progression is deliberately 100%. Retain the field for legacy
+  // records, but make the authoring contract reflect the actual learner rule.
+  assessmentPassMark: z.number().int().min(1).max(100).default(100),
 });
 
 function normaliseOptionalText(value: string | null | undefined) {
@@ -339,6 +348,23 @@ async function courseStructure(courseId: number) {
     })),
     lessons,
   };
+}
+
+/**
+ * Course content is evidence once a learner has opened it or submitted an
+ * assessment. We keep the original records intact rather than hard-deleting
+ * them underneath a learner's progress, feedback or staff audit trail.
+ */
+async function hasAcademyLearnerEvidence(lessonIds: number[]) {
+  if (!lessonIds.length) return false;
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [progress] = await db.select({ id: academyLessonProgress.id })
+    .from(academyLessonProgress).where(inArray(academyLessonProgress.lessonId, lessonIds)).limit(1);
+  if (progress) return true;
+  const [attempt] = await db.select({ id: academyAssessmentAttempts.id })
+    .from(academyAssessmentAttempts).where(inArray(academyAssessmentAttempts.lessonId, lessonIds)).limit(1);
+  return !!attempt;
 }
 
 async function enrolAgentInCourse(params: {
@@ -1046,30 +1072,38 @@ export const academyRouter = router({
           await addAudit({ agentId: ctx.user.id, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: "assessment_submitted_for_marking", summary: `Submitted ${writtenQuestions.length} outstanding written ${writtenQuestions.length === 1 ? "question" : "questions"} for ${lesson.title}`, metadata: { lessonId: lesson.id, attemptId, writtenQuestions: writtenQuestions.length } });
           const [course] = await db.select({ title: academyCourses.title }).from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
           const [agent] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
-          await sendAcademySupportAlert({
-            subject: `Academy written assessment ready to mark — ${agent?.name ?? "agent"}`,
-            agentName: agent?.name ?? null,
-            agentEmail: agent?.email ?? null,
-            courseTitle: course?.title ?? "JLT Academy",
-            lessonTitle: lesson.title,
-            detail: `${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response has" : "responses have"} been submitted and are waiting in the Academy marking queue.`,
-          });
-          void dispatchAcademyEmailAlerts({ eventType: "written_assessment_ready", eventKey: `written-assessment-${attemptId}`, enrollmentId: enrollment.id, courseId: enrollment.courseId, courseTitle: course?.title ?? "JLT Academy", agentId: ctx.user.id, agentName: agent?.name ?? null, agentEmail: agent?.email ?? null }).catch((error) => console.error("[Academy] Written-assessment alert dispatch failed:", error));
+          const [module] = await db.select({ id: academyModules.id, title: academyModules.title }).from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
+          const configuredSupportAlert = await hasActiveAcademySupportAlert({ courseId: enrollment.courseId, eventType: "written_assessment_ready", moduleId: module?.id });
+          if (!configuredSupportAlert) {
+            await sendAcademySupportAlert({
+              subject: `Academy written assessment ready to mark — ${agent?.name ?? "agent"}`,
+              agentName: agent?.name ?? null,
+              agentEmail: agent?.email ?? null,
+              courseTitle: course?.title ?? "JLT Academy",
+              lessonTitle: lesson.title,
+              detail: `${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response has" : "responses have"} been submitted and are waiting in the Academy marking queue.`,
+            });
+          }
+          void dispatchAcademyEmailAlerts({ eventType: "written_assessment_ready", eventKey: `written-assessment-${attemptId}`, enrollmentId: enrollment.id, courseId: enrollment.courseId, courseTitle: course?.title ?? "JLT Academy", moduleId: module?.id, moduleTitle: module?.title, agentId: ctx.user.id, agentName: agent?.name ?? null, agentEmail: agent?.email ?? null }).catch((error) => console.error("[Academy] Written-assessment alert dispatch failed:", error));
           return { attemptId, status: "awaiting_marking" as const, passMark: REQUIRED_ASSESSMENT_SCORE, correct, total: outstandingQuestions.length };
         }
         await addAudit({ agentId: ctx.user.id, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: assessmentPassed ? "assessment_passed" : "assessment_resit_required", summary: `${assessmentPassed ? "Completed" : "Submitted"} ${outstandingQuestions.length === 1 ? "an outstanding question" : `${outstandingQuestions.length} outstanding questions`} for ${lesson.title}`, metadata: { lessonId: lesson.id, score, passed: assessmentPassed, outstandingQuestionIds: allQuestionStates.filter((state) => !state.passed).map((state) => state.questionId) } });
         if (newlyEscalatedQuestions.length) {
           const [course] = await db.select({ title: academyCourses.title }).from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
           const [agent] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
-          await sendAcademySupportAlert({
-            subject: `Academy support needed: three-attempt lock — ${agent?.name ?? "agent"}`,
-            agentName: agent?.name ?? null,
-            agentEmail: agent?.email ?? null,
-            courseTitle: course?.title ?? "JLT Academy",
-            lessonTitle: lesson.title,
-            detail: `${newlyEscalatedQuestions.length} knowledge-check ${newlyEscalatedQuestions.length === 1 ? "question has" : "questions have"} reached the three-attempt limit. Please provide support, then reopen the specific question from Academy Manager.`,
-          });
-          void dispatchAcademyEmailAlerts({ eventType: "three_attempt_lock", eventKey: `three-attempt-lock-${attemptId}`, enrollmentId: enrollment.id, courseId: enrollment.courseId, courseTitle: course?.title ?? "JLT Academy", agentId: ctx.user.id, agentName: agent?.name ?? null, agentEmail: agent?.email ?? null }).catch((error) => console.error("[Academy] Three-attempt alert dispatch failed:", error));
+          const [module] = await db.select({ id: academyModules.id, title: academyModules.title }).from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
+          const configuredSupportAlert = await hasActiveAcademySupportAlert({ courseId: enrollment.courseId, eventType: "three_attempt_lock", moduleId: module?.id });
+          if (!configuredSupportAlert) {
+            await sendAcademySupportAlert({
+              subject: `Academy support needed: three-attempt lock — ${agent?.name ?? "agent"}`,
+              agentName: agent?.name ?? null,
+              agentEmail: agent?.email ?? null,
+              courseTitle: course?.title ?? "JLT Academy",
+              lessonTitle: lesson.title,
+              detail: `${newlyEscalatedQuestions.length} knowledge-check ${newlyEscalatedQuestions.length === 1 ? "question has" : "questions have"} reached the three-attempt limit. Please provide support, then reopen the specific question from Academy Manager.`,
+            });
+          }
+          void dispatchAcademyEmailAlerts({ eventType: "three_attempt_lock", eventKey: `three-attempt-lock-${attemptId}`, enrollmentId: enrollment.id, courseId: enrollment.courseId, courseTitle: course?.title ?? "JLT Academy", moduleId: module?.id, moduleTitle: module?.title, agentId: ctx.user.id, agentName: agent?.name ?? null, agentEmail: agent?.email ?? null }).catch((error) => console.error("[Academy] Three-attempt alert dispatch failed:", error));
         }
         return { attemptId, status: "auto_graded" as const, score, passed: assessmentPassed, passMark: REQUIRED_ASSESSMENT_SCORE, correct, total: outstandingQuestions.length };
       }),
@@ -1120,6 +1154,27 @@ export const academyRouter = router({
         .orderBy(desc(academyEmailAlerts.createdAt));
     }),
 
+    emailAlertActivity: adminProcedure.input(z.object({ courseId: z.number().int().positive() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const alerts = await db.select({
+        id: academyEmailAlerts.id,
+        eventType: academyEmailAlerts.eventType,
+        recipientType: academyEmailAlerts.recipientType,
+        recipientEmail: academyEmailAlerts.recipientEmail,
+      }).from(academyEmailAlerts).where(eq(academyEmailAlerts.courseId, input.courseId));
+      if (!alerts.length) return [];
+      const alertById = new Map(alerts.map((alert) => [alert.id, alert]));
+      const deliveries = await db.select().from(academyEmailAlertDeliveries)
+        .where(inArray(academyEmailAlertDeliveries.alertId, alerts.map((alert) => alert.id)))
+        .orderBy(desc(academyEmailAlertDeliveries.sentAt), desc(academyEmailAlertDeliveries.id))
+        .limit(100);
+      return deliveries.map((delivery) => ({
+        ...delivery,
+        alert: alertById.get(delivery.alertId) ?? null,
+      }));
+    }),
+
     saveEmailAlert: adminProcedure.input(z.object({
       id: z.number().int().positive().optional(),
       courseId: z.number().int().positive(),
@@ -1135,6 +1190,12 @@ export const academyRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       if (input.recipientType === "custom" && !input.recipientEmail) throw new TRPCError({ code: "BAD_REQUEST", message: "Enter the custom recipient email address" });
+      if (input.moduleId && !academyAlertAllowsModuleScope(input.eventType)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This milestone is course-wide, so it cannot be limited to an individual module.",
+        });
+      }
       if (input.moduleId) {
         const [module] = await db.select().from(academyModules).where(and(eq(academyModules.id, input.moduleId), eq(academyModules.courseId, input.courseId))).limit(1);
         if (!module) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a module in this course" });
@@ -1689,6 +1750,14 @@ export const academyRouter = router({
       if (input.status === "published") {
         const structure = await courseStructure(course.id);
         if (!structure.lessons.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one lesson before publishing a course" });
+        const incompleteKnowledgeChecks = structure.modules.flatMap((module) => module.lessons)
+          .filter((lesson) => lesson.requiresAssessment && lesson.questions.length === 0);
+        if (incompleteKnowledgeChecks.length) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Add at least one question before publishing: ${incompleteKnowledgeChecks.map((lesson) => lesson.title).join(", ")}`,
+          });
+        }
         if (course.isCoreAcademy) await db.update(academyCourses).set({ isCoreAcademy: false }).where(and(eq(academyCourses.isCoreAcademy, true), eq(academyCourses.status, "published"), ne(academyCourses.id, input.courseId)));
       }
       const now = new Date();
@@ -1724,6 +1793,12 @@ export const academyRouter = router({
       if (!module) return { success: true };
       const lessons = await db.select({ id: academyLessons.id }).from(academyLessons).where(eq(academyLessons.moduleId, module.id));
       const lessonIds = lessons.map((lesson) => lesson.id);
+      if (await hasAcademyLearnerEvidence(lessonIds)) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "This module has learner progress or assessment evidence and cannot be deleted. Archive the course or create a replacement module so the learner and audit history remain intact.",
+        });
+      }
       if (lessonIds.length) await db.delete(academyQuestions).where(inArray(academyQuestions.lessonId, lessonIds));
       if (lessonIds.length) await db.delete(academyLessons).where(inArray(academyLessons.id, lessonIds));
       await db.delete(academyModules).where(eq(academyModules.id, module.id));
@@ -1744,6 +1819,12 @@ export const academyRouter = router({
       if (input.id) {
         const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);
         if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+        if (await hasAcademyLearnerEvidence([lesson.id])) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "This lesson has learner evidence and is now preserved as part of the Academy record. Create a replacement lesson for a material revision rather than changing historic learning content.",
+          });
+        }
         try {
           await db.update(academyLessons).set(payload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
         } catch (error) {
@@ -1810,6 +1891,12 @@ export const academyRouter = router({
       const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
       if (!lesson) return { success: true };
       const [module] = await db.select().from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
+      if (await hasAcademyLearnerEvidence([lesson.id])) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "This lesson has learner progress or assessment evidence and cannot be deleted. Create a replacement lesson so existing learning and audit history stay accurate.",
+        });
+      }
       await db.delete(academyQuestions).where(eq(academyQuestions.lessonId, lesson.id));
       await db.delete(academyLessons).where(eq(academyLessons.id, lesson.id));
       await addAudit({ courseId: module?.courseId ?? null, actorId: ctx.user.id, action: "lesson_deleted", summary: `Deleted lesson: ${lesson.title}` });
@@ -1853,6 +1940,12 @@ export const academyRouter = router({
       const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
       if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
       if (input.questions.some((question) => question.questionType === "multiple_choice" && (question.answerOptions.length < 2 || question.answerOptions.some((option) => !option.trim()) || question.correctAnswerIndex >= question.answerOptions.length))) throw new TRPCError({ code: "BAD_REQUEST", message: "Each multiple-choice question needs at least two completed answers and one correct answer" });
+      if (await hasAcademyLearnerEvidence([lesson.id])) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "This knowledge check has learner evidence and its questions are now preserved. Create a replacement lesson for a revised assessment rather than changing historic learner records.",
+        });
+      }
       await db.delete(academyQuestions).where(eq(academyQuestions.lessonId, input.lessonId));
       if (input.questions.length) await db.insert(academyQuestions).values(input.questions.map((question, sortOrder) => ({
         lessonId: input.lessonId,
@@ -1878,6 +1971,12 @@ export const academyRouter = router({
       const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
       if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
       if (!lesson.requiresAssessment) throw new TRPCError({ code: "BAD_REQUEST", message: "Turn on the knowledge check for this lesson before importing questions" });
+      if (await hasAcademyLearnerEvidence([lesson.id])) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "This knowledge check has learner evidence and cannot be changed by CSV import. Create a replacement lesson for a revised assessment.",
+        });
+      }
 
       let questions;
       try {
@@ -2049,7 +2148,14 @@ export const academyRouter = router({
       const nextStatus = input.action === "reopen" ? "in_progress" : input.action === "waive" ? "waived" : "completed";
       await db.update(academyEnrollments).set({ status: nextStatus, completedAt: input.action === "reopen" ? null : now, completionOutcomeAppliedAt: input.action === "reopen" ? null : now }).where(eq(academyEnrollments.id, enrollment.id));
       const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
-      if (course?.isCoreAcademy && input.action !== "reopen") await db.update(agentCrmProfiles).set({ trainingStage: "Agent Accelerator", academyAcceleratorStartedAt: now }).where(eq(agentCrmProfiles.userId, enrollment.agentId));
+      if (course?.isCoreAcademy && input.action !== "reopen") {
+        await db.update(agentCrmProfiles).set({ trainingStage: "Agent Accelerator", academyAcceleratorStartedAt: now }).where(eq(agentCrmProfiles.userId, enrollment.agentId));
+        // Staff overrides are a deliberate outcome, not a shortcut around the
+        // normal progression hand-off. Both operations are idempotent through
+        // their enrolment and assignment keys.
+        await enrolAgentInAcceleratorJourneys({ agentId: enrollment.agentId, actorId: ctx.user.id, startedAt: now });
+        await assignAcceleratorEntryActions(enrollment.agentId, ctx.user.id);
+      }
       await addAudit({ agentId: enrollment.agentId, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: `completion_${input.action}_override`, summary: `Staff ${input.action} override: ${input.reason}` });
       return { success: true };
     }),

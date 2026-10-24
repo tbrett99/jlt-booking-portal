@@ -41,6 +41,7 @@ import {
   splitAcademyQuestionInlineFormatting,
 } from "@shared/academy-question-format";
 import { AcademyQuestionRichTextEditor } from "@/components/AcademyQuestionRichTextEditor";
+import { AcademyWorkspaceNav } from "@/components/AcademyWorkspaceNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -75,7 +76,7 @@ const emptyLesson = {
   isRequired: true,
   requiresAcknowledgement: false,
   requiresAssessment: false,
-  assessmentPassMark: 80,
+  assessmentPassMark: 100,
   questions: [] as DraftQuestion[],
 };
 
@@ -244,6 +245,7 @@ export default function AdminAcademy() {
     bodyHtmlTemplate: "<p><strong>{{agent_name}}</strong> has triggered an Academy alert.</p><p><strong>Course:</strong> {{course_title}}<br /><strong>Module:</strong> {{module_title}}<br /><strong>Event:</strong> {{event_label}}</p><p><a href=\"{{course_url}}\">Open the learner course</a></p>",
   });
   const { data: emailAlerts = [] } = trpc.academy.admin.emailAlerts.useQuery({ courseId: courseId ?? 0 }, { enabled: !!courseId });
+  const { data: emailAlertActivity = [] } = trpc.academy.admin.emailAlertActivity.useQuery({ courseId: courseId ?? 0 }, { enabled: !!courseId });
 
   const invalidateAcademy = () => {
     utils.academy.admin.courses.invalidate();
@@ -368,8 +370,32 @@ export default function AdminAcademy() {
   }, [editor?.course.id, editor?.course.updatedAt]);
 
   const selectedCourse = courses.find(course => course.id === courseId) ?? null;
+  const alertAllowsModuleScope = ["week_released", "module_started", "module_completed", "written_assessment_ready", "three_attempt_lock"].includes(alertDraft.eventType);
+  const courseHasUnsavedChanges = !!editor && (
+    courseDraft.title !== editor.course.title ||
+    courseDraft.summary !== (editor.course.summary ?? "") ||
+    Number(courseDraft.estimatedMinutes) !== Number(editor.course.estimatedMinutes ?? 0) ||
+    courseDraft.isCoreAcademy !== editor.course.isCoreAcademy ||
+    courseDraft.isAcceleratorJourney !== editor.course.isAcceleratorJourney
+  );
+  const hasOpenDraft = Boolean(lessonModuleId || editingModuleId) || (!courseId && Boolean(courseDraft.title || courseDraft.summary)) || courseHasUnsavedChanges;
+
+  useEffect(() => {
+    if (!hasOpenDraft) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [hasOpenDraft]);
+
+  function confirmDiscardOpenDraft() {
+    return !hasOpenDraft || window.confirm("You have an unsaved Academy draft open. Leave this area and discard those unsaved changes?");
+  }
 
   function createCourse() {
+    if (!confirmDiscardOpenDraft()) return;
     setCourseId(null);
     setCourseDraft(emptyCourse);
     setOpenModuleId(null);
@@ -435,7 +461,7 @@ export default function AdminAcademy() {
       isRequired: lesson.isRequired,
       requiresAcknowledgement: lesson.requiresAcknowledgement,
       requiresAssessment: lesson.requiresAssessment,
-      assessmentPassMark: lesson.assessmentPassMark ?? 80,
+      assessmentPassMark: lesson.assessmentPassMark ?? 100,
       questions: lesson.questions.map((q: any) => ({
         prompt: q.prompt,
         questionType: q.questionType ?? "multiple_choice",
@@ -551,6 +577,7 @@ export default function AdminAcademy() {
               variant="outline"
               className="border-white/45 bg-white/10 text-white hover:bg-white/20 hover:text-white"
               onClick={() => {
+                if (!confirmDiscardOpenDraft()) return;
                 setViewMode("agent");
                 navigate("/academy");
               }}
@@ -571,6 +598,8 @@ export default function AdminAcademy() {
         </p>
       </header>
 
+      <AcademyWorkspaceNav active="courses" />
+
       <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="h-fit rounded-2xl border bg-card p-3 shadow-sm xl:sticky xl:top-6">
           <div className="flex items-center justify-between px-2 pb-3">
@@ -587,6 +616,7 @@ export default function AdminAcademy() {
                 type="button"
                 key={course.id}
                 onClick={() => {
+                  if (course.id !== courseId && !confirmDiscardOpenDraft()) return;
                   setCourseId(course.id);
                   setOpenModuleId(null);
                   setEditingModuleId(null);
@@ -681,13 +711,90 @@ export default function AdminAcademy() {
                 }
                 statusPending={setStatus.isPending}
               />
-              <section className="rounded-2xl border border-violet-200 bg-violet-50/35 p-5 shadow-sm">
-                <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-violet-800">Academy notifications</p><h2 className="mt-1 text-xl font-bold">Email the right person at the right milestone</h2><p className="mt-1 text-sm text-muted-foreground">Add a support alert or a bespoke recipient for this course. Existing delivery records are retained; switching an alert off only stops future emails.</p></div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2"><div><Label>When</Label><select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm" value={alertDraft.eventType} onChange={event => setAlertDraft({ ...alertDraft, eventType: event.target.value as typeof alertDraft.eventType })}><option value="week_released">A weekly section is released</option><option value="module_started">A module is started</option><option value="module_completed">A module is completed</option><option value="action_submitted_for_review">A course Action needs review</option><option value="action_overdue">A course Action becomes overdue</option><option value="course_completed">The course is completed</option><option value="written_assessment_ready">Written assessment is ready to mark</option><option value="three_attempt_lock">A learner reaches the three-attempt support lock</option></select></div><div><Label>Scope</Label><select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm" value={alertDraft.moduleId} onChange={event => setAlertDraft({ ...alertDraft, moduleId: event.target.value })}><option value="">Whole course</option>{editor.modules.map(module => <option key={module.id} value={module.id}>{module.title}</option>)}</select></div><div><Label>Recipient</Label><select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm" value={alertDraft.recipientType} onChange={event => setAlertDraft({ ...alertDraft, recipientType: event.target.value as "support" | "custom" })}><option value="support">JLT Support</option><option value="custom">Custom recipient</option></select></div>{alertDraft.recipientType === "custom" && <><Input className="mt-6" placeholder="Recipient name (optional)" value={alertDraft.recipientName} onChange={event => setAlertDraft({ ...alertDraft, recipientName: event.target.value })} /><Input placeholder="recipient@example.com" value={alertDraft.recipientEmail} onChange={event => setAlertDraft({ ...alertDraft, recipientEmail: event.target.value })} /></>}</div>
-                <div className="mt-3"><Label>Email subject</Label><Input className="mt-1.5" value={alertDraft.subjectTemplate} onChange={event => setAlertDraft({ ...alertDraft, subjectTemplate: event.target.value })} /></div>
-                <div className="mt-3"><Label>Email content</Label><RichEmailEditor value={alertDraft.bodyHtmlTemplate} onChange={bodyHtmlTemplate => setAlertDraft({ ...alertDraft, bodyHtmlTemplate })} placeholder="Write the alert email…" /><p className="mt-2 text-xs text-muted-foreground">Insert supported Academy merge fields from the template guidance when needed.</p></div>
-                <div className="mt-4 flex justify-end"><Button disabled={saveEmailAlert.isPending || !alertDraft.subjectTemplate.trim() || !alertDraft.bodyHtmlTemplate.trim() || (alertDraft.recipientType === "custom" && !alertDraft.recipientEmail.trim())} onClick={() => saveEmailAlert.mutate({ courseId: editor.course.id, moduleId: alertDraft.moduleId ? Number(alertDraft.moduleId) : null, eventType: alertDraft.eventType, recipientType: alertDraft.recipientType, recipientEmail: alertDraft.recipientType === "custom" ? alertDraft.recipientEmail || null : null, recipientName: alertDraft.recipientType === "custom" ? alertDraft.recipientName || null : null, subjectTemplate: alertDraft.subjectTemplate, bodyHtmlTemplate: alertDraft.bodyHtmlTemplate, isActive: true })}>{saveEmailAlert.isPending ? "Saving…" : "Add email alert"}</Button></div>
-                {emailAlerts.length > 0 && <div className="mt-5 divide-y rounded-xl border bg-background/80 px-4">{emailAlerts.map(alert => <div key={alert.id} className="flex flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">{alert.eventType.replaceAll("_", " ")} · {alert.recipientType === "support" ? "JLT Support" : alert.recipientEmail}</p><p className="text-xs text-muted-foreground">{alert.moduleId ? `Module #${alert.moduleId}` : "Whole course"} · {alert.isActive ? "Active" : "Switched off"}</p></div>{alert.isActive && <Button size="sm" variant="outline" className="text-destructive" onClick={() => archiveEmailAlert.mutate({ id: alert.id })}>Switch off</Button>}</div>)}</div>}
+              <section id="notifications" className="rounded-2xl border border-violet-200 bg-violet-50/35 p-5 shadow-sm">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[.16em] text-violet-800">Notifications &amp; governance</p>
+                    <h2 className="mt-1 text-xl font-bold">Course milestone alerts</h2>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Create one clear route for each operational milestone. Support rules replace the built-in Support fallback for written work and three-attempt locks, so the same event is never emailed twice.</p>
+                  </div>
+                  <div className="rounded-xl border border-violet-200 bg-background/80 px-3 py-2 text-xs font-semibold text-violet-950">
+                    {emailAlerts.filter(alert => alert.isActive).length} active rule{emailAlerts.filter(alert => alert.isActive).length === 1 ? "" : "s"}
+                  </div>
+                </div>
+                <div className="mt-5 grid gap-3 rounded-xl border bg-background/80 p-4 md:grid-cols-2">
+                  <div>
+                    <Label>Milestone</Label>
+                    <select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm" value={alertDraft.eventType} onChange={event => {
+                      const eventType = event.target.value as typeof alertDraft.eventType;
+                      const moduleScoped = ["week_released", "module_started", "module_completed", "written_assessment_ready", "three_attempt_lock"].includes(eventType);
+                      setAlertDraft(current => ({ ...current, eventType, moduleId: moduleScoped ? current.moduleId : "" }));
+                    }}>
+                      <option value="week_released">A weekly section is released</option>
+                      <option value="module_started">A module is started</option>
+                      <option value="module_completed">A module is completed</option>
+                      <option value="action_submitted_for_review">A course Action needs review</option>
+                      <option value="action_overdue">A course Action becomes overdue</option>
+                      <option value="course_completed">The course is completed</option>
+                      <option value="written_assessment_ready">Written assessment is ready to mark</option>
+                      <option value="three_attempt_lock">A learner reaches the three-attempt support lock</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Scope</Label>
+                    <select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60" value={alertAllowsModuleScope ? alertDraft.moduleId : ""} disabled={!alertAllowsModuleScope} onChange={event => setAlertDraft(current => ({ ...current, moduleId: event.target.value }))}>
+                      <option value="">Whole course</option>
+                      {editor.modules.map(module => <option key={module.id} value={module.id}>{module.title}</option>)}
+                    </select>
+                    <p className="mt-1 text-xs text-muted-foreground">{alertAllowsModuleScope ? "Choose a module only when the milestone needs a narrower alert." : "This milestone is course-wide, so module scope is not available."}</p>
+                  </div>
+                  <div>
+                    <Label>Recipient</Label>
+                    <select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm" value={alertDraft.recipientType} onChange={event => setAlertDraft(current => ({ ...current, recipientType: event.target.value as "support" | "custom" }))}>
+                      <option value="support">JLT Support</option>
+                      <option value="custom">Custom recipient</option>
+                    </select>
+                  </div>
+                  {alertDraft.recipientType === "custom" && <div className="grid gap-2 sm:grid-cols-2">
+                    <Input placeholder="Recipient name (optional)" value={alertDraft.recipientName} onChange={event => setAlertDraft(current => ({ ...current, recipientName: event.target.value }))} />
+                    <Input placeholder="recipient@example.com" value={alertDraft.recipientEmail} onChange={event => setAlertDraft(current => ({ ...current, recipientEmail: event.target.value }))} />
+                  </div>}
+                </div>
+                <div className="mt-4">
+                  <Label>Email subject</Label>
+                  <Input className="mt-1.5" value={alertDraft.subjectTemplate} onChange={event => setAlertDraft(current => ({ ...current, subjectTemplate: event.target.value }))} />
+                </div>
+                <div className="mt-4">
+                  <Label>Email content</Label>
+                  <RichEmailEditor value={alertDraft.bodyHtmlTemplate} onChange={bodyHtmlTemplate => setAlertDraft(current => ({ ...current, bodyHtmlTemplate }))} placeholder="Write the alert email…" />
+                  <p className="mt-2 text-xs text-muted-foreground">Use the Academy merge fields in the template guidance for the learner, course, milestone and direct course link.</p>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <Button disabled={saveEmailAlert.isPending || !alertDraft.subjectTemplate.trim() || !alertDraft.bodyHtmlTemplate.trim() || (alertDraft.recipientType === "custom" && !alertDraft.recipientEmail.trim())} onClick={() => saveEmailAlert.mutate({ courseId: editor.course.id, moduleId: alertAllowsModuleScope && alertDraft.moduleId ? Number(alertDraft.moduleId) : null, eventType: alertDraft.eventType, recipientType: alertDraft.recipientType, recipientEmail: alertDraft.recipientType === "custom" ? alertDraft.recipientEmail || null : null, recipientName: alertDraft.recipientType === "custom" ? alertDraft.recipientName || null : null, subjectTemplate: alertDraft.subjectTemplate, bodyHtmlTemplate: alertDraft.bodyHtmlTemplate, isActive: true })}>
+                    {saveEmailAlert.isPending ? "Saving…" : "Add email alert"}
+                  </Button>
+                </div>
+                {emailAlerts.length > 0 && <div className="mt-5 divide-y rounded-xl border bg-background/80 px-4">
+                  {emailAlerts.map(alert => <div key={alert.id} className="flex flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-semibold">{alert.eventType.replaceAll("_", " ")} · {alert.recipientType === "support" ? "JLT Support" : alert.recipientEmail}</p>
+                      <p className="text-xs text-muted-foreground">{alert.moduleId ? `Module #${alert.moduleId}` : "Whole course"} · {alert.isActive ? "Active" : "Switched off"}</p>
+                    </div>
+                    {alert.isActive && <Button size="sm" variant="outline" className="text-destructive" onClick={() => archiveEmailAlert.mutate({ id: alert.id })}>Switch off</Button>}
+                  </div>)}
+                </div>}
+                <div className="mt-5 rounded-xl border bg-background/70 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div><p className="font-semibold">Recent alert delivery</p><p className="text-xs text-muted-foreground">The most recent 100 configured-alert deliveries are retained here for operational traceability.</p></div>
+                    <span className="rounded-full bg-muted px-2 py-1 text-xs font-bold">{emailAlertActivity.length}</span>
+                  </div>
+                  {emailAlertActivity.length ? <div className="mt-3 max-h-56 divide-y overflow-y-auto">
+                    {emailAlertActivity.slice(0, 12).map(delivery => <div key={delivery.id} className="flex flex-col gap-1 py-2 text-xs sm:flex-row sm:items-center sm:justify-between">
+                      <span className="font-semibold">{delivery.alert?.eventType?.replaceAll("_", " ") ?? "Academy alert"}</span>
+                      <span className="text-muted-foreground">{delivery.recipientEmail} · {formatDateTime(delivery.sentAt)}</span>
+                    </div>)}
+                  </div> : <p className="mt-3 text-sm text-muted-foreground">No configured Academy alert has been delivered for this course yet.</p>}
+                </div>
               </section>
               <section className="rounded-2xl border bg-card p-5 shadow-sm">
                 <div>

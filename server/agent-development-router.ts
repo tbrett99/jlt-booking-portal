@@ -175,23 +175,29 @@ async function createAssignments(params: { plan: { id: number; title: string; du
   return { created: targetIds.length };
 }
 
-async function publishPlan(planId: number, actorId: number) {
+async function publishPlan(planId: number, actorId: number, options: { publishNow?: boolean } = {}) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
   const [plan] = await db.select().from(academyActionPlans).where(eq(academyActionPlans.id, planId)).limit(1);
   if (!plan) throw new TRPCError({ code: "NOT_FOUND", message: "Academy action plan not found" });
   if (plan.status === "archived") throw new TRPCError({ code: "BAD_REQUEST", message: "Archived actions cannot be published" });
+  const now = new Date();
+  if (plan.status === "scheduled" && plan.publishAt && plan.publishAt > now && !options.publishNow) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `This Action is scheduled for ${formatActionDueDate(plan.publishAt)}. Keep its schedule or use the explicit Publish now control.`,
+    });
+  }
   const explicit = await db.select({ agentId: academyActionPlanTargets.agentId }).from(academyActionPlanTargets).where(eq(academyActionPlanTargets.planId, plan.id));
   // Course-linked Accelerator actions publish as a reusable week template. They
   // are assigned only by releaseAvailableJourneyActions when each individual
   // learner reaches that week, never to the whole Accelerator audience at once.
   const agentIds = plan.courseId && plan.courseWeek ? [] : await getEligibleAgentIds(plan as any, explicit.map((row) => row.agentId));
   const assignmentResult = await createAssignments({ plan, agentIds, actorId });
-  const now = new Date();
   const pool = await getRawDbPool();
   await pool.execute(
     "UPDATE academy_action_plans SET status = ?, publishedAt = ?, publishedById = ? WHERE id = ?",
-    ["published", plan.publishedAt ?? now, plan.publishedById ?? actorId, plan.id],
+    ["published", now, plan.publishedById ?? actorId, plan.id],
   );
   return { created: assignmentResult.created, plan: { ...plan, status: "published" as const } };
 }
@@ -532,7 +538,7 @@ export const agentDevelopmentRouter = router({
       return { id: planId };
     }),
 
-    publishActionPlan: adminProcedure.input(z.object({ planId: z.number().int().positive() })).mutation(async ({ ctx, input }) => publishPlan(input.planId, ctx.user.id)),
+    publishActionPlan: adminProcedure.input(z.object({ planId: z.number().int().positive(), publishNow: z.boolean().optional().default(false) })).mutation(async ({ ctx, input }) => publishPlan(input.planId, ctx.user.id, { publishNow: input.publishNow })),
 
     archiveActionPlan: adminProcedure.input(z.object({ planId: z.number().int().positive() })).mutation(async ({ input }) => {
       const db = await getDb();
@@ -562,14 +568,14 @@ export const agentDevelopmentRouter = router({
         .where(eq(academyActionAssignments.planId, plan.id));
       const outstanding = rows.filter((row) => ["assigned", "needs_revision"].includes(row.assignment.status));
       let sent = 0;
-      await Promise.all(outstanding.map(async ({ agent }) => {
+      await Promise.all(outstanding.map(async ({ agent, assignment }) => {
         await createInAppNotification({
           userId: agent.id,
           message: `Reminder: your Academy action “${plan.title}” still needs your attention.`,
           linkUrl: "/academy/actions",
           isUrgent: true,
         });
-        const outcome = await sendAcademyActionEmail({ agent, plan, reminder: true });
+        const outcome = await sendAcademyActionEmail({ agent, plan, assignmentDueAt: assignment.dueAt, reminder: true });
         if (outcome.success) sent += 1;
       }));
       return { recipients: outstanding.length, sent };

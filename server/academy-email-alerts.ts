@@ -19,6 +19,21 @@ export const ACADEMY_ALERT_EVENTS = [
 
 export type AcademyAlertEvent = (typeof ACADEMY_ALERT_EVENTS)[number];
 
+// These events have an actual module context at dispatch time. Other events
+// are deliberately course-wide: allowing a module selector for them would
+// create a rule that can never send.
+export const ACADEMY_MODULE_SCOPED_ALERT_EVENTS = [
+  "week_released",
+  "module_started",
+  "module_completed",
+  "written_assessment_ready",
+  "three_attempt_lock",
+] as const satisfies readonly AcademyAlertEvent[];
+
+export function academyAlertAllowsModuleScope(eventType: AcademyAlertEvent) {
+  return (ACADEMY_MODULE_SCOPED_ALERT_EVENTS as readonly string[]).includes(eventType);
+}
+
 type AlertContext = {
   eventType: AcademyAlertEvent;
   eventKey: string;
@@ -79,6 +94,32 @@ function renderTemplate(template: string, context: AlertContext) {
 
 function isDuplicateDeliveryError(error: any) {
   return error?.code === "ER_DUP_ENTRY" || error?.cause?.code === "ER_DUP_ENTRY";
+}
+
+/**
+ * The written-assessment and support-lock milestones have a built-in Support
+ * fallback so they work before staff create any rules. Once staff configure a
+ * matching Support rule, that rule replaces the fallback rather than creating
+ * two emails for the same learner event.
+ */
+export async function hasActiveAcademySupportAlert(params: {
+  courseId: number;
+  eventType: AcademyAlertEvent;
+  moduleId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return false;
+  const scope = params.moduleId
+    ? or(eq(academyEmailAlerts.moduleId, params.moduleId), isNull(academyEmailAlerts.moduleId))
+    : isNull(academyEmailAlerts.moduleId);
+  const [rule] = await db.select({ id: academyEmailAlerts.id }).from(academyEmailAlerts).where(and(
+    eq(academyEmailAlerts.courseId, params.courseId),
+    eq(academyEmailAlerts.eventType, params.eventType),
+    eq(academyEmailAlerts.recipientType, "support"),
+    eq(academyEmailAlerts.isActive, true),
+    scope,
+  )).limit(1);
+  return !!rule;
 }
 
 /**

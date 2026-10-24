@@ -18,6 +18,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { AcademyWorkspaceNav } from "@/components/AcademyWorkspaceNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -391,6 +392,8 @@ export default function AdminAcademyProgressInsights() {
           </div>
         </div>
       </header>
+
+      <AcademyWorkspaceNav active="learners" />
 
       <section className="rounded-2xl border bg-card p-4 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

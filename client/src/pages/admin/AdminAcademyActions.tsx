@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ClipboardCheck, Clock3, Eye, FileUp, Link2, Mail, Plus, Send, ShieldCheck, Sparkles, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { AcademyWorkspaceNav } from "@/components/AcademyWorkspaceNav";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -48,7 +49,10 @@ export default function AdminAcademyActions() {
   const { data: agents = [] } = trpc.users.listAgents.useQuery();
   const [draft, setDraft] = useState(blank);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+  const [journeyCourseId, setJourneyCourseId] = useState<number | null>(null);
   const { data: assignments = [] } = trpc.agentDevelopment.admin.actionAssignments.useQuery({ planId: selectedPlanId ?? 0 }, { enabled: !!selectedPlanId });
+  const acceleratorCourses = useMemo(() => academyCourses.filter((course: any) => course.isAcceleratorJourney), [academyCourses]);
+  const journeyEditor = trpc.academy.admin.editor.useQuery({ courseId: journeyCourseId ?? 0 }, { enabled: !!journeyCourseId });
   const save = trpc.agentDevelopment.admin.saveActionPlan.useMutation({
     onSuccess: () => {
       toast.success(draft.publishAt && new Date(draft.publishAt) > new Date() ? "Academy action scheduled" : "Academy action saved as a draft");
@@ -76,6 +80,10 @@ export default function AdminAcademyActions() {
     return { monday: dateTimeForInput(monday), sunday: dateTimeForInput(sunday) };
   }, []);
 
+  useEffect(() => {
+    if (!journeyCourseId && acceleratorCourses.length) setJourneyCourseId(acceleratorCourses[0].id);
+  }, [acceleratorCourses, journeyCourseId]);
+
   function savePlan() { save.mutate({ ...draft, publishAt: toDate(draft.publishAt), dueAt: toDate(draft.dueAt) }); }
   function toggleAgent(agentId: number, checked: boolean) {
     setDraft((current) => ({ ...current, targetAgentIds: checked ? [...current.targetAgentIds, agentId] : current.targetAgentIds.filter((id) => id !== agentId) }));
@@ -91,14 +99,45 @@ export default function AdminAcademyActions() {
   if (isLoading) return <div className="space-y-5 animate-pulse"><div className="h-28 rounded-3xl bg-muted" /><div className="h-[520px] rounded-2xl bg-muted" /></div>;
 
   return <div className="mx-auto max-w-7xl space-y-6">
-    <header className="rounded-3xl border border-[#70FFE8]/45 bg-gradient-to-r from-[#414141] to-[#2d3534] p-6 text-white shadow-sm md:p-8">
+      <header className="rounded-3xl border border-[#70FFE8]/45 bg-gradient-to-r from-[#414141] to-[#2d3534] p-6 text-white shadow-sm md:p-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div><div className="flex items-center gap-2 text-sm font-semibold text-[#70FFE8]"><ClipboardCheck size={18} /> Academy Actions</div><h1 className="mt-2 text-3xl font-bold tracking-tight">Create the habits that grow an agent&apos;s business.</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-white/75">Set one-off onboarding actions, publish two focused Accelerator actions per week, or coach selected agents with evidence and staff review where it matters.</p></div>
         <Button onClick={newWeeklyPlan} className="bg-[#70FFE8] text-[#27302e] hover:bg-[#8cffef]"><Plus className="mr-2" size={17} /> New weekly action</Button>
-      </div>
-    </header>
+        </div>
+      </header>
 
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <AcademyWorkspaceNav active="actions" />
+
+      {acceleratorCourses.length > 0 && <section className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50/80 via-card to-card p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.16em] text-violet-800">Accelerator journey planner</p>
+            <h2 className="mt-1 text-xl font-bold">See eight weeks of learning and accountability together</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">The introduction opens immediately. Every weekly section and linked Action releases at 9:00am UK time on the learner&apos;s own Friday, then linked Actions are due the following Thursday at 8:00pm.</p>
+          </div>
+          <select aria-label="Choose Agent Accelerator journey" className="h-10 min-w-[260px] rounded-md border bg-background px-3 text-sm" value={journeyCourseId ?? ""} onChange={event => setJourneyCourseId(event.target.value ? Number(event.target.value) : null)}>
+            {acceleratorCourses.map((course: any) => <option key={course.id} value={course.id}>{course.title} · {course.status}</option>)}
+          </select>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 9 }, (_, week) => {
+            const modules = (journeyEditor.data?.modules ?? []).filter((module: any) => Number(module.releaseWeek ?? 0) === week);
+            const linkedPlans = plans.filter((plan: any) => plan.courseId === journeyCourseId && Number(plan.courseWeek) === week);
+            return <article key={week} className={`rounded-xl border p-4 ${week === 0 ? "border-[#70FFE8]/70 bg-[#70FFE8]/10" : "bg-background/80"}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div><p className="text-xs font-semibold uppercase tracking-[.13em] text-muted-foreground">{week === 0 ? "Introduction" : `Week ${week}`}</p><p className="mt-1 font-bold">{week === 0 ? "Available immediately" : "Friday release"}</p></div>
+                <span className={`rounded-full px-2 py-1 text-xs font-bold ${modules.length || linkedPlans.length ? "bg-[#27302e] text-white" : "bg-muted text-muted-foreground"}`}>{modules.length + linkedPlans.length}</span>
+              </div>
+              <div className="mt-3 space-y-2 text-sm">
+                {modules.length ? modules.map((module: any) => <div key={module.id} className="rounded-lg bg-muted/60 px-3 py-2"><span className="font-semibold">Learning:</span> {module.title}<span className="mt-0.5 block text-xs text-muted-foreground">{module.lessons.length} lesson{module.lessons.length === 1 ? "" : "s"}</span></div>) : <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">No learning module planned yet.</p>}
+                {week > 0 && (linkedPlans.length ? linkedPlans.map((plan: any) => <div key={plan.id} className="rounded-lg border border-violet-200 bg-violet-50/70 px-3 py-2"><span className="font-semibold text-violet-950">Action:</span> {plan.title}<span className="mt-0.5 block text-xs text-violet-800">{plan.status} · {plan.counts.assigned} assigned</span></div>) : <button type="button" onClick={() => setDraft({ ...blank, title: `Week ${week} Action`, actionType: "weekly", audience: "agent_accelerator", assignmentTrigger: "immediate", courseId: journeyCourseId, courseWeek: week })} className="w-full rounded-lg border border-dashed border-violet-300 px-3 py-2 text-left text-xs font-semibold text-violet-800 transition hover:bg-violet-100">+ Add Week {week} Action</button>)}
+              </div>
+            </article>;
+          })}
+        </div>
+      </section>}
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
       <section className="space-y-5">
         <Card>
           <CardHeader><CardTitle className="text-xl">Create an Academy action</CardTitle><p className="text-sm text-muted-foreground">Draft first, then publish immediately or schedule it for Monday. New Accelerator agents receive entry actions only — not a backlog of weekly tasks.</p></CardHeader>
@@ -115,7 +154,14 @@ export default function AdminAcademyActions() {
           </CardContent>
         </Card>
 
-        <Card><CardHeader><CardTitle className="text-xl">Action plans</CardTitle><p className="text-sm text-muted-foreground">Publishing alerts each newly assigned agent in the Portal and by email. Use a reminder only for agents whose action is still outstanding.</p></CardHeader><CardContent>{plans.length ? <div className="divide-y">{plans.map((plan: any) => <div key={plan.id} className="py-4 first:pt-0"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap gap-2"><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${plan.status === "published" ? "bg-emerald-100 text-emerald-800" : plan.status === "scheduled" ? "bg-blue-100 text-blue-800" : plan.status === "archived" ? "bg-muted text-muted-foreground" : "bg-amber-100 text-amber-800"}`}>{plan.status}</span><span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">{plan.actionType.replace("_", " ")}</span>{plan.momentumAwardMode !== "off" && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800">✦ {plan.momentumPoints} Momentum</span>}</div><h3 className="mt-2 font-bold">{plan.title}</h3><p className="mt-1 text-sm text-muted-foreground">{plan.audience.replaceAll("_", " ")} · due {formatDate(plan.dueAt)}</p><div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground"><span><UsersRound className="mr-1 inline" size={13} />{plan.counts.assigned} assigned</span><span><CheckCircle2 className="mr-1 inline" size={13} />{plan.counts.completed} complete</span>{plan.counts.awaitingReview > 0 && <span className="font-semibold text-amber-700"><Clock3 className="mr-1 inline" size={13} />{plan.counts.awaitingReview} to review</span>}</div></div><div className="flex shrink-0 flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => setSelectedPlanId(plan.id)}><Eye className="mr-1" size={15} /> View</Button>{plan.status === "published" && plan.counts.assigned > plan.counts.completed && <Button variant="outline" size="sm" onClick={() => window.confirm("Send an email and Portal reminder to every agent whose action is still outstanding?") && remind.mutate({ planId: plan.id })} disabled={remind.isPending}><Mail className="mr-1" size={15} /> {remind.isPending ? "Sending…" : "Remind"}</Button>}{plan.status === "draft" || plan.status === "scheduled" ? <Button size="sm" onClick={() => publish.mutate({ planId: plan.id })} disabled={publish.isPending}><Send className="mr-1" size={15} /> Publish</Button> : plan.status !== "archived" ? <Button variant="ghost" size="sm" className="text-destructive" onClick={() => window.confirm("Archive this action plan? Existing submissions will be retained.") && archive.mutate({ planId: plan.id })}>Archive</Button> : null}</div></div></div>)}</div> : <p className="py-8 text-center text-sm text-muted-foreground">No action plans yet.</p>}</CardContent></Card>
+        <Card><CardHeader><CardTitle className="text-xl">Action plans</CardTitle><p className="text-sm text-muted-foreground">Publishing alerts each newly assigned agent in the Portal and by email. Use a reminder only for agents whose action is still outstanding.</p></CardHeader><CardContent>{plans.length ? <div className="divide-y">{plans.map((plan: any) => <div key={plan.id} className="py-4 first:pt-0"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap gap-2"><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${plan.status === "published" ? "bg-emerald-100 text-emerald-800" : plan.status === "scheduled" ? "bg-blue-100 text-blue-800" : plan.status === "archived" ? "bg-muted text-muted-foreground" : "bg-amber-100 text-amber-800"}`}>{plan.status}</span><span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">{plan.actionType.replace("_", " ")}</span>{plan.momentumAwardMode !== "off" && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800">✦ {plan.momentumPoints} Momentum</span>}</div><h3 className="mt-2 font-bold">{plan.title}</h3><p className="mt-1 text-sm text-muted-foreground">{plan.audience.replaceAll("_", " ")} · due {formatDate(plan.dueAt)}</p><div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground"><span><UsersRound className="mr-1 inline" size={13} />{plan.counts.assigned} assigned</span><span><CheckCircle2 className="mr-1 inline" size={13} />{plan.counts.completed} complete</span>{plan.counts.awaitingReview > 0 && <span className="font-semibold text-amber-700"><Clock3 className="mr-1 inline" size={13} />{plan.counts.awaitingReview} to review</span>}</div></div><div className="flex shrink-0 flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => setSelectedPlanId(plan.id)}><Eye className="mr-1" size={15} /> View</Button>{plan.status === "published" && plan.counts.assigned > plan.counts.completed && <Button variant="outline" size="sm" onClick={() => window.confirm("Send an email and Portal reminder to every agent whose action is still outstanding?") && remind.mutate({ planId: plan.id })} disabled={remind.isPending}><Mail className="mr-1" size={15} /> {remind.isPending ? "Sending…" : "Remind"}</Button>}{plan.status === "draft" || plan.status === "scheduled" ? <Button size="sm" onClick={() => {
+              if (plan.status === "scheduled") {
+                if (!window.confirm(`This Action is scheduled for ${formatDate(plan.publishAt)}. Publish it now and notify eligible agents instead?`)) return;
+                publish.mutate({ planId: plan.id, publishNow: true });
+                return;
+              }
+              publish.mutate({ planId: plan.id, publishNow: false });
+            }} disabled={publish.isPending}><Send className="mr-1" size={15} /> {plan.status === "scheduled" ? "Publish now" : "Publish"}</Button> : plan.status !== "archived" ? <Button variant="ghost" size="sm" className="text-destructive" onClick={() => window.confirm("Archive this action plan? Existing submissions will be retained.") && archive.mutate({ planId: plan.id })}>Archive</Button> : null}</div></div></div>)}</div> : <p className="py-8 text-center text-sm text-muted-foreground">No action plans yet.</p>}</CardContent></Card>
       </section>
       <aside className="h-fit space-y-4 xl:sticky xl:top-6"><Card><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">Delivery rules</p><div className="mt-4 space-y-4 text-sm"><div className="flex gap-3"><ClipboardCheck className="shrink-0 text-[#00c9b4]" size={19} /><p><strong>Two focused actions each week.</strong><br /><span className="text-muted-foreground">Publish Monday morning, due Sunday evening.</span></p></div><div className="flex gap-3"><ShieldCheck className="shrink-0 text-[#00c9b4]" size={19} /><p><strong>Self-declaration by default.</strong><br /><span className="text-muted-foreground">Turn on staff review only when evidence needs checking.</span></p></div><div className="flex gap-3"><Sparkles className="shrink-0 text-violet-700" size={19} /><p><strong>Momentum is optional and rule-based.</strong><br /><span className="text-muted-foreground">Choose the exact points and completion trigger for each action.</span></p></div><div className="flex gap-3"><UsersRound className="shrink-0 text-[#00c9b4]" size={19} /><p><strong>New Accelerator agents start simply.</strong><br /><span className="text-muted-foreground">They get an entry action, not an immediate backlog.</span></p></div></div></CardContent></Card>{selectedPlanId && <Card><CardHeader><CardTitle className="text-base">Assignments</CardTitle></CardHeader><CardContent>{assignments.length ? <div className="space-y-4">{assignments.map((row: any) => <div key={row.assignment.id} className="rounded-xl border p-3"><div className="flex items-start justify-between gap-2"><div><p className="font-semibold text-sm">{row.agent.name || row.agent.email}</p><p className="text-xs text-muted-foreground">{row.assignment.status.replace("_", " ")}</p></div>{row.assignment.status === "review" && <div className="flex gap-1"><Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" onClick={() => review.mutate({ assignmentId: row.assignment.id, outcome: "completed", feedback: null })}>Approve</Button><Button size="sm" variant="outline" className="h-7" onClick={() => { const feedback = window.prompt("What should the agent update?"); if (feedback?.trim()) review.mutate({ assignmentId: row.assignment.id, outcome: "needs_revision", feedback }); }}>Revise</Button></div>}</div>{row.assignment.completionNote && <p className="mt-2 whitespace-pre-line text-xs text-muted-foreground">{row.assignment.completionNote}</p>}{row.assignment.evidenceUrl && <a href={row.assignment.evidenceUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"><Link2 size={13} /> Open link</a>}{row.assignment.evidenceFileUrl && <a href={row.assignment.evidenceFileUrl} target="_blank" rel="noreferrer" className="mt-2 ml-3 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"><FileUp size={13} /> Evidence</a>}</div>)}</div> : <p className="text-sm text-muted-foreground">No assignments yet.</p>}</CardContent></Card>}</aside>
     </div>
