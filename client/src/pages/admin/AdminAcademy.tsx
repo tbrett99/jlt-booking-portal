@@ -1,5 +1,5 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import {
   Archive,
@@ -7,6 +7,7 @@ import {
   ArrowUp,
   BookOpenCheck,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   CirclePlus,
   Clock3,
@@ -19,6 +20,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Send,
   ShieldCheck,
   Sparkles,
@@ -2368,11 +2370,30 @@ export function LearnerManager({
   reviewEnrollmentId,
   setReviewEnrollmentId,
 }: any) {
+  const [lessonSearch, setLessonSearch] = useState("");
+  const [expandedModuleIds, setExpandedModuleIds] = useState<Set<number>>(
+    () => new Set()
+  );
   const learnerReview = trpc.academy.admin.learnerReview.useQuery(
     { enrollmentId: reviewEnrollmentId ?? 0 },
     { enabled: !!reviewEnrollmentId }
   );
   const review = learnerReview.data;
+  const normalisedLessonSearch = lessonSearch.trim().toLocaleLowerCase();
+
+  useEffect(() => {
+    setLessonSearch("");
+    setExpandedModuleIds(new Set());
+  }, [reviewEnrollmentId]);
+
+  const toggleModule = (moduleId: number) => {
+    setExpandedModuleIds(current => {
+      const next = new Set(current);
+      if (next.has(moduleId)) next.delete(moduleId);
+      else next.add(moduleId);
+      return next;
+    });
+  };
 
   return (
     <section className="rounded-2xl border bg-card p-5 shadow-sm">
@@ -2415,9 +2436,13 @@ export function LearnerManager({
                 }
               >
                 <td className="px-2 py-4">
-                  <div className="font-semibold">
+                  <Link
+                    href={`/crm/agents?agent=${row.agent.id}`}
+                    className="font-semibold text-primary underline-offset-4 hover:underline"
+                    title="Open this agent in CRM"
+                  >
                     {row.agent.name || "Unnamed agent"}
-                  </div>
+                  </Link>
                   <div className="text-xs text-muted-foreground">
                     {row.agent.email}
                   </div>
@@ -2596,9 +2621,13 @@ export function LearnerManager({
                   <p className="text-xs font-semibold uppercase tracking-[.16em] text-primary">
                     Learner review
                   </p>
-                  <h3 className="mt-1 text-xl font-bold">
+                  <Link
+                    href={`/crm/agents?agent=${review.agent.id}`}
+                    className="mt-1 inline-block text-xl font-bold text-primary underline-offset-4 hover:underline"
+                    title="Open this agent in CRM"
+                  >
                     {review.agent.name || review.agent.email}
-                  </h3>
+                  </Link>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {review.course.title} ·{" "}
                     {review.agent.trainingStage || "Training"}
@@ -2647,18 +2676,54 @@ export function LearnerManager({
               </div>
               <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
                 <div>
-                  <p className="text-sm font-semibold">
-                    Lesson progress and assessment history
-                  </p>
-                  <div className="mt-3 space-y-4">
-                    {review.modules.map((module: any, moduleIndex: number) => (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold">
+                        Lesson progress and assessment history
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Modules are collapsed by default. Search opens relevant results only.
+                      </p>
+                    </div>
+                    <label className="relative block sm:w-80">
+                      <span className="sr-only">Search modules and lessons</span>
+                      <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={15} />
+                      <Input
+                        value={lessonSearch}
+                        onChange={event => setLessonSearch(event.target.value)}
+                        placeholder="Search a module or lesson…"
+                        className="h-9 pl-9 text-sm"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {review.modules.filter((module: any) => {
+                      if (!normalisedLessonSearch) return true;
+                      return module.title.toLocaleLowerCase().includes(normalisedLessonSearch)
+                        || module.lessons.some((lesson: any) => lesson.title.toLocaleLowerCase().includes(normalisedLessonSearch));
+                    }).map((module: any, moduleIndex: number) => {
+                      const moduleTitleMatches = module.title.toLocaleLowerCase().includes(normalisedLessonSearch);
+                      const visibleLessons = normalisedLessonSearch && !moduleTitleMatches
+                        ? module.lessons.filter((lesson: any) => lesson.title.toLocaleLowerCase().includes(normalisedLessonSearch))
+                        : module.lessons;
+                      const expanded = normalisedLessonSearch.length > 0 || expandedModuleIds.has(module.id);
+                      return (
                       <section
                         key={module.id}
                         className="overflow-hidden rounded-xl border bg-card"
                       >
                         <div className="flex flex-col gap-3 border-b bg-muted/35 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 text-left"
+                            onClick={() => toggleModule(module.id)}
+                            aria-expanded={expanded}
+                            aria-controls={`academy-module-${module.id}`}
+                          >
                             <p className="text-xs font-semibold uppercase tracking-[.12em] text-primary">
+                              <span className="mr-1.5 inline-flex align-text-bottom">
+                                {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                              </span>
                               Module {moduleIndex + 1}
                             </p>
                             <h4 className="mt-0.5 font-semibold">
@@ -2667,7 +2732,7 @@ export function LearnerManager({
                             <p className="mt-1 text-xs text-muted-foreground">
                               {module.completion.completedRequiredLessons}/{module.completion.requiredLessons} required lessons complete
                             </p>
-                          </div>
+                          </button>
                           <Button
                             size="sm"
                             variant="outline"
@@ -2684,8 +2749,9 @@ export function LearnerManager({
                             Record module complete
                           </Button>
                         </div>
-                        <div className="divide-y">
-                          {module.lessons.map((lesson: any) => (
+                        {expanded && (
+                        <div id={`academy-module-${module.id}`} className="divide-y">
+                          {visibleLessons.map((lesson: any) => (
                             <article key={lesson.id} className="p-4">
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                 <div>
@@ -2914,8 +2980,15 @@ export function LearnerManager({
                             </article>
                           ))}
                         </div>
+                        )}
                       </section>
-                    ))}
+                      );
+                    })}
+                    {normalisedLessonSearch && !review.modules.some((module: any) => module.title.toLocaleLowerCase().includes(normalisedLessonSearch) || module.lessons.some((lesson: any) => lesson.title.toLocaleLowerCase().includes(normalisedLessonSearch))) && (
+                      <div className="rounded-xl border border-dashed bg-muted/15 p-6 text-center text-sm text-muted-foreground">
+                        No module or lesson matches “{lessonSearch.trim()}”.
+                      </div>
+                    )}
                   </div>
                 </div>
                 <aside className="space-y-4">
