@@ -1181,6 +1181,111 @@ export const crmRouter = router({
         };
       }),
 
+    /**
+     * Bounded operational snapshot for the default CRM record view. This
+     * intentionally uses persisted Portal evidence only: live GoCardless
+     * schedules stay in the Direct Debit detail because retry dates must never
+     * be inferred from a mandate, subscription or historical failure.
+     */
+    getOverview: adminProcedure
+      .input(z.object({ userId: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+        const {
+          agentCrmNotes, agentEngagementCases, agentEngagementInteractions,
+          agentTeams, agentCrmProfiles, users, gcMandates, gcSubscriptions,
+          gcPaymentEvents, gcPaymentFailures, bookings, commissionClaims,
+          academyAccess, academyEnrollments, academyCourses,
+        } = await import("../drizzle/schema");
+        const { and, desc, eq, inArray, ne, sql } = await import("drizzle-orm");
+        const profile = await getAgentCrmProfile(input.userId);
+        const correspondenceEmail = profile?.correspondenceEmailKind === "jlt"
+          ? profile.jltEmail
+          : profile?.correspondenceEmailKind === "personal"
+            ? profile.personalEmail
+            : profile?.correspondenceEmailKind === "business"
+              ? profile.businessEmail
+              : null;
+
+        const [mandateRows, subscriptionRows, paymentEventRows, failureRows, noteRows, openCaseRows, activityRows, academyAccessRows, enrollmentRows] = await Promise.all([
+          db.select({ status: gcMandates.status, preferredPaymentDay: gcMandates.preferredPaymentDay, updatedAt: gcMandates.updatedAt, joiningFeePaidAt: gcMandates.joiningFeePaidAt })
+            .from(gcMandates).where(eq(gcMandates.userId, input.userId)).orderBy(desc(gcMandates.updatedAt), desc(gcMandates.createdAt)).limit(1),
+          db.select({ status: gcSubscriptions.status, amount: gcSubscriptions.amount, currency: gcSubscriptions.currency, nextChargeDate: gcSubscriptions.nextChargeDate, updatedAt: gcSubscriptions.updatedAt })
+            .from(gcSubscriptions).where(and(eq(gcSubscriptions.userId, input.userId), inArray(gcSubscriptions.status, ["active", "paused"]))).orderBy(desc(gcSubscriptions.updatedAt), desc(gcSubscriptions.createdAt)).limit(1),
+          db.select({ eventType: gcPaymentEvents.eventType, status: gcPaymentEvents.status, amount: gcPaymentEvents.amount, currency: gcPaymentEvents.currency, failureDescription: gcPaymentEvents.failureDescription, occurredAt: gcPaymentEvents.occurredAt })
+            .from(gcPaymentEvents).where(eq(gcPaymentEvents.userId, input.userId)).orderBy(desc(gcPaymentEvents.occurredAt), desc(gcPaymentEvents.id)).limit(1),
+          db.select({ consecutiveFailures: gcPaymentFailures.consecutiveFailures, lastFailedAt: gcPaymentFailures.lastFailedAt, autoSuspendedAt: gcPaymentFailures.autoSuspendedAt, updatedAt: gcPaymentFailures.updatedAt })
+            .from(gcPaymentFailures).where(eq(gcPaymentFailures.userId, input.userId)).limit(1),
+          db.select({ content: agentCrmNotes.content, authorName: agentCrmNotes.authorName, createdAt: agentCrmNotes.createdAt })
+            .from(agentCrmNotes).where(eq(agentCrmNotes.agentUserId, input.userId)).orderBy(desc(agentCrmNotes.createdAt), desc(agentCrmNotes.id)).limit(1),
+          db.select({ id: agentEngagementCases.id, status: agentEngagementCases.status, riskReason: agentEngagementCases.riskReason, ownerId: agentEngagementCases.ownerId, lastContactAt: agentEngagementCases.lastContactAt, nextFollowUpAt: agentEngagementCases.nextFollowUpAt, openedAt: agentEngagementCases.openedAt, ownerName: users.name })
+            .from(agentEngagementCases).leftJoin(users, eq(users.id, agentEngagementCases.ownerId))
+            .where(and(eq(agentEngagementCases.agentId, input.userId), ne(agentEngagementCases.status, "closed"))).orderBy(desc(agentEngagementCases.openedAt)).limit(1),
+          Promise.all([
+            db.select({ total: sql<number>`COUNT(*)` }).from(bookings).where(eq(bookings.agentId, input.userId)),
+            db.select({ createdAt: bookings.createdAt, clientName: bookings.clientName, currentStage: bookings.currentStage }).from(bookings).where(eq(bookings.agentId, input.userId)).orderBy(desc(bookings.createdAt)).limit(1),
+            db.select({ outstanding: sql<string | number>`COALESCE(SUM(CASE WHEN ${commissionClaims.status} <> 'paid' THEN ${commissionClaims.grossAmount} ELSE 0 END), 0)` }).from(commissionClaims).where(eq(commissionClaims.agentId, input.userId)),
+          ]),
+          db.select({ status: academyAccess.status, grantedAt: academyAccess.grantedAt, revokedAt: academyAccess.revokedAt }).from(academyAccess).where(eq(academyAccess.agentId, input.userId)).limit(1),
+          db.select({ status: academyEnrollments.status, dueDate: academyEnrollments.dueDate, completedAt: academyEnrollments.completedAt, updatedAt: academyEnrollments.updatedAt, courseTitle: academyCourses.title })
+            .from(academyEnrollments).innerJoin(academyCourses, eq(academyCourses.id, academyEnrollments.courseId))
+            .where(eq(academyEnrollments.agentId, input.userId)).orderBy(desc(academyEnrollments.updatedAt)).limit(1),
+        ]);
+
+        const activeCase = openCaseRows[0] ?? null;
+        const [latestInteraction] = activeCase
+          ? await db.select({ channel: agentEngagementInteractions.channel, summary: agentEngagementInteractions.summary, occurredAt: agentEngagementInteractions.occurredAt })
+            .from(agentEngagementInteractions).where(eq(agentEngagementInteractions.caseId, activeCase.id)).orderBy(desc(agentEngagementInteractions.occurredAt), desc(agentEngagementInteractions.id)).limit(1)
+          : [];
+        const team = profile?.teamId
+          ? await (async () => {
+            const [teamRow] = await db.select({ id: agentTeams.id, name: agentTeams.name, membershipTier: agentTeams.membershipTier, monthlySub: agentTeams.monthlySub })
+              .from(agentTeams).where(eq(agentTeams.id, profile.teamId!)).limit(1);
+            if (!teamRow) return null;
+            const members = await db.select({ userId: agentCrmProfiles.userId, name: users.name, email: users.email })
+              .from(agentCrmProfiles).innerJoin(users, eq(users.id, agentCrmProfiles.userId)).where(eq(agentCrmProfiles.teamId, teamRow.id));
+            return { ...teamRow, members };
+          })()
+          : null;
+        const [bookingCountRows, lastBookingRows, commissionRows] = activityRows;
+        const mandate = mandateRows[0] ?? null;
+        const subscription = subscriptionRows[0] ?? null;
+        const failureRun = failureRows[0] ?? null;
+        return {
+          contact: {
+            correspondenceEmail: correspondenceEmail,
+            correspondenceKind: profile?.correspondenceEmailKind ?? null,
+            jltEmail: profile?.jltEmail ?? null,
+            personalEmail: profile?.personalEmail ?? null,
+            businessEmail: profile?.businessEmail ?? null,
+            mobile: profile?.mobile ?? null,
+            ukRegion: profile?.ukRegion ?? null,
+          },
+          membership: {
+            tier: profile?.membershipTier ?? null,
+            monthlySub: profile?.monthlySub ?? null,
+            paymentExempt: profile?.paymentExempt ?? false,
+            paymentExemptReason: profile?.paymentExemptReason ?? null,
+            trainingStage: profile?.trainingStage ?? null,
+            agentStatus: profile?.agentStatus ?? null,
+            inContract: profile?.inContract ?? false,
+            dateJoined: profile?.dateJoined ?? null,
+          },
+          directDebit: { mandate, subscription, latestPaymentEvent: paymentEventRows[0] ?? null, failureRun },
+          latestNote: noteRows[0] ?? null,
+          engagement: activeCase ? { activeCase, latestInteraction: latestInteraction ?? null } : null,
+          team,
+          activity: {
+            bookingCount: Number(bookingCountRows[0]?.total ?? 0),
+            lastBooking: lastBookingRows[0] ?? null,
+            commissionOutstanding: Number(commissionRows[0]?.outstanding ?? 0),
+          },
+          academy: { access: academyAccessRows[0] ?? null, latestEnrollment: enrollmentRows[0] ?? null },
+        };
+      }),
+
     updateProfile: adminProcedure
       .input(
         z.object({

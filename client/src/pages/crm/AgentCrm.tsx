@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,9 +20,9 @@ import {
   Search, UserCheck, Banknote, Eye, EyeOff, Plus, Trash2,
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
-  ChevronDown, ChevronLeft, ChevronRight, X, Pencil, Clock, ArrowRight, CheckCircle2,
+  ChevronDown, X, Pencil, Clock, ArrowRight, CheckCircle2,
   Shield, ShieldOff, ExternalLink, FileSignature, ScrollText, Printer, RefreshCw, Zap,
-  GraduationCap
+  GraduationCap, LayoutDashboard, HandHeart, WalletCards, Wrench, Archive
 } from "lucide-react";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
@@ -122,6 +122,42 @@ type AgentRow = {
   crmProfile: CrmProfile | null;
   teamId?: number | null;
 };
+
+export const CRM_AGENT_RECORD_SECTIONS = [
+  { id: "overview", label: "Overview", description: "Contact, membership and attention", icon: LayoutDashboard },
+  { id: "relationship", label: "Relationship", description: "Notes, engagement, team and emails", icon: HandHeart },
+  { id: "membership-payments", label: "Membership & payments", description: "Direct Debit, bank details and F&F", icon: WalletCards },
+  { id: "academy", label: "Academy", description: "Training access and learning activity", icon: GraduationCap },
+  { id: "operations", label: "Operations", description: "Onboarding and supplier access", icon: Wrench },
+  { id: "record-history", label: "Record & history", description: "Profile, documents and history", icon: Archive },
+] as const;
+
+export type CrmAgentRecordSection = typeof CRM_AGENT_RECORD_SECTIONS[number]["id"];
+
+const LEGACY_CRM_TAB_SECTION: Record<string, CrmAgentRecordSection> = {
+  profile: "record-history",
+  activity: "record-history",
+  docs: "record-history",
+  history: "record-history",
+  emails: "relationship",
+  notes: "relationship",
+  engagement: "relationship",
+  team: "relationship",
+  tags: "relationship",
+  dd: "membership-payments",
+  bank: "membership-payments",
+  fnf: "membership-payments",
+  academy: "academy",
+  onboarding: "operations",
+  suppliers: "operations",
+};
+
+export function resolveCrmAgentRecordSection(value?: string | null): CrmAgentRecordSection {
+  if (value && CRM_AGENT_RECORD_SECTIONS.some((section) => section.id === value)) {
+    return value as CrmAgentRecordSection;
+  }
+  return LEGACY_CRM_TAB_SECTION[value ?? ""] ?? "overview";
+}
 
 // Render note content with attachment links as clickable anchors
 function NoteContent({ content }: { content: string }) {
@@ -412,12 +448,152 @@ export default function AgentCrm() {
 
 // ─── Agent CRM Sheet ──────────────────────────────────────────────────────────
 
+function OverviewMetric({ label, value, detail, tone = "default" }: { label: string; value: React.ReactNode; detail?: React.ReactNode; tone?: "default" | "warning" | "danger" | "success" }) {
+  const tones = {
+    default: "border-border bg-card",
+    warning: "border-amber-200 bg-amber-50/70",
+    danger: "border-rose-200 bg-rose-50/70",
+    success: "border-emerald-200 bg-emerald-50/70",
+  };
+  return (
+    <div className={`rounded-xl border p-3 ${tones[tone]}`}>
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <div className="mt-1 text-sm font-semibold leading-5">{value}</div>
+      {detail && <div className="mt-1 text-xs leading-4 text-muted-foreground">{detail}</div>}
+    </div>
+  );
+}
+
+function formatCrmDate(value: Date | string | null | undefined, includeTime = false) {
+  if (!value) return "Not recorded";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    ...(includeTime ? { hour: "2-digit", minute: "2-digit" } : {}),
+  }).format(new Date(value));
+}
+
+function formatCrmCurrency(value: number | string | null | undefined) {
+  const amount = Number(value ?? 0);
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function OverviewSection({ title, description, action, children }: { title: string; description?: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="font-semibold">{title}</h3>
+          {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function AgentOverviewTab({ agent, profile, onNavigate }: { agent: AgentRow; profile: CrmProfile | null; onNavigate: (section: CrmAgentRecordSection) => void }) {
+  const { data, isLoading, isError, refetch } = trpc.crm.agentCrm.getOverview.useQuery({ userId: agent.id });
+  if (isLoading) return <div className="grid gap-4 lg:grid-cols-2">{[1, 2, 3, 4].map((item) => <div key={item} className="h-44 animate-pulse rounded-2xl bg-muted" />)}</div>;
+  if (isError || !data) return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center">
+      <p className="font-semibold text-amber-950">The at-a-glance CRM record could not be loaded.</p>
+      <p className="mt-1 text-sm text-amber-900/80">Your detailed record sections are still available below.</p>
+      <Button size="sm" variant="outline" className="mt-3" onClick={() => void refetch()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry overview</Button>
+    </div>
+  );
+
+  const paymentEvent = data.directDebit.latestPaymentEvent;
+  const failureCount = Number(data.directDebit.failureRun?.consecutiveFailures ?? 0);
+  const currentCourse = data.academy.latestEnrollment;
+  const courseOverdue = !!currentCourse?.dueDate && !["completed", "waived"].includes(currentCourse.status) && new Date(currentCourse.dueDate) < new Date();
+  const correspondenceLabel = data.contact.correspondenceKind
+    ? `${data.contact.correspondenceKind[0].toUpperCase()}${data.contact.correspondenceKind.slice(1)} email selected for correspondence`
+    : "Portal login email used for correspondence";
+  const correspondenceEmail = data.contact.correspondenceEmail ?? agent.email ?? "No correspondence email recorded";
+  const attentionItems = [
+    data.membership.paymentExempt ? { key: "exempt", label: "Payment exempt", tone: "warning" as const } : null,
+    failureCount > 0 ? { key: "failure", label: `${failureCount} current failed collection${failureCount === 1 ? "" : "s"}`, tone: "danger" as const } : null,
+    !data.directDebit.mandate && !data.membership.paymentExempt ? { key: "mandate", label: "No Direct Debit mandate", tone: "danger" as const } : null,
+    data.membership.inContract ? { key: "contract", label: "In Contract — commission hold", tone: "danger" as const } : null,
+    data.engagement ? { key: "engagement", label: "Open engagement case", tone: "warning" as const } : null,
+    courseOverdue ? { key: "academy", label: "Academy course overdue", tone: "warning" as const } : null,
+  ].filter(Boolean) as Array<{ key: string; label: string; tone: "warning" | "danger" }>;
+
+  return (
+    <div className="space-y-4 pb-8">
+      <div className="rounded-2xl border border-[#70FFE8]/55 bg-gradient-to-br from-[#70FFE8]/20 via-card to-card p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#078f85]">Agent overview</p>
+            <h2 className="mt-1 text-xl font-bold">Everything staff need first</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Contact, membership health and the latest relationship context. Open a detailed section only when you need to act.</p>
+          </div>
+          <Button size="sm" variant="outline" className="w-fit" onClick={() => onNavigate("record-history")}><Pencil className="mr-1.5 h-3.5 w-3.5" />Edit profile</Button>
+        </div>
+        {attentionItems.length ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {attentionItems.map((item) => <span key={item.key} className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.tone === "danger" ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"}`}>{item.label}</span>)}
+          </div>
+        ) : <p className="mt-4 text-sm font-medium text-emerald-800">No immediate membership, payment, engagement or training attention is recorded.</p>}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <OverviewSection title="Contact & business" description="The selected correspondence route is shown first." action={<Button size="sm" variant="ghost" onClick={() => onNavigate("record-history")}>Full profile</Button>}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <OverviewMetric label="Correspondence" value={correspondenceEmail} detail={correspondenceLabel} />
+            <OverviewMetric label="Mobile" value={data.contact.mobile ?? "Not recorded"} detail={data.contact.ukRegion ?? "Region not recorded"} />
+            <OverviewMetric label="Business" value={profile?.businessName ?? "Not recorded"} detail={profile?.retailerCode ? `Retailer code: ${profile.retailerCode}` : "No retailer code recorded"} />
+            <OverviewMetric label="Joined JLT" value={formatCrmDate(data.membership.dateJoined)} detail={profile?.uniqueAgentId ? `Agent ID: ${profile.uniqueAgentId}` : "No Agent ID assigned"} />
+          </div>
+          {(data.contact.jltEmail || data.contact.personalEmail || data.contact.businessEmail) && <p className="mt-3 text-xs text-muted-foreground">Other saved addresses: {[data.contact.jltEmail, data.contact.personalEmail, data.contact.businessEmail].filter(Boolean).join(" · ")}</p>}
+        </OverviewSection>
+
+        <OverviewSection title="Membership & payment health" description="Mandate, subscription and payment events are deliberately shown as different things." action={<Button size="sm" variant="ghost" onClick={() => onNavigate("membership-payments")}>Open payments</Button>}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <OverviewMetric label="Membership" value={data.membership.tier ?? "Not set"} detail={data.membership.monthlySub ? `${data.membership.monthlySub} monthly subscription` : "Monthly subscription not set"} />
+            <OverviewMetric label="Direct Debit mandate" value={data.membership.paymentExempt ? "Payment exempt" : data.directDebit.mandate?.status ?? "No mandate recorded"} detail={data.directDebit.mandate?.preferredPaymentDay ? `Preferred day: ${data.directDebit.mandate.preferredPaymentDay} of month` : "A mandate is bank authority, not proof of payment"} tone={data.membership.paymentExempt ? "warning" : data.directDebit.mandate?.status === "active" ? "success" : "danger"} />
+            <OverviewMetric label="Subscription" value={data.directDebit.subscription ? `${formatCrmCurrency(Number(data.directDebit.subscription.amount) / 100)} / month` : "No active or paused subscription"} detail={data.directDebit.subscription ? `${data.directDebit.subscription.status} · recorded next charge: ${data.directDebit.subscription.nextChargeDate ?? "not available"}` : "Open Direct Debit to review history"} tone={data.directDebit.subscription?.status === "active" ? "success" : "default"} />
+            <OverviewMetric label="Latest provider event" value={paymentEvent ? `${paymentEvent.eventType.replaceAll("_", " ")}` : "No event recorded"} detail={paymentEvent ? `${formatCrmDate(paymentEvent.occurredAt, true)}${paymentEvent.amount ? ` · ${formatCrmCurrency(Number(paymentEvent.amount) / 100)}` : ""}${paymentEvent.failureDescription ? ` · ${paymentEvent.failureDescription}` : ""}` : "Payment history is available in Direct Debit"} tone={failureCount > 0 ? "danger" : "default"} />
+          </div>
+          {failureCount > 0 && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800">Current failed-collection run: {failureCount}. This is separate from mandate and subscription status; the Direct Debit detail holds the provider event history.</p>}
+        </OverviewSection>
+
+        <OverviewSection title="Relationship context" description="Latest CRM note and any open engagement case; the two records are not artificially deduplicated." action={<Button size="sm" variant="ghost" onClick={() => onNavigate("relationship")}>Open relationship</Button>}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border bg-muted/20 p-3">
+              <p className="text-xs font-semibold text-muted-foreground">Latest CRM note</p>
+              {data.latestNote ? <><p className="mt-2 line-clamp-3 text-sm leading-5">{data.latestNote.content}</p><p className="mt-2 text-xs text-muted-foreground">{data.latestNote.authorName ?? "Staff"} · {formatCrmDate(data.latestNote.createdAt, true)}</p></> : <p className="mt-2 text-sm text-muted-foreground">No CRM notes recorded yet.</p>}
+            </div>
+            <div className="rounded-xl border bg-muted/20 p-3">
+              <p className="text-xs font-semibold text-muted-foreground">Engagement</p>
+              {data.engagement ? <><p className="mt-2 text-sm font-medium capitalize">{data.engagement.activeCase.status} · {data.engagement.activeCase.riskReason}</p><p className="mt-1 text-xs text-muted-foreground">Owner: {data.engagement.activeCase.ownerName ?? "Not assigned"} · Follow-up: {formatCrmDate(data.engagement.activeCase.nextFollowUpAt)}</p>{data.engagement.latestInteraction && <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">Latest {data.engagement.latestInteraction.channel}: {data.engagement.latestInteraction.summary}</p>}</> : <p className="mt-2 text-sm text-muted-foreground">No open engagement case.</p>}
+            </div>
+          </div>
+        </OverviewSection>
+
+        <OverviewSection title="Team, Academy & operations" description="A concise snapshot; detailed work remains in its own section.">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <OverviewMetric label="Team" value={data.team?.name ?? "Not in a team"} detail={data.team ? `${data.team.members.length} member${data.team.members.length === 1 ? "" : "s"} · ${data.team.members.map((member) => member.name ?? member.email).join(", ")}` : "Create or manage a team in Relationship"} />
+            <OverviewMetric label="Academy" value={data.academy.access?.status === "active" ? data.academy.latestEnrollment?.courseTitle ?? "Access active" : data.academy.access?.status === "revoked" ? "Access revoked" : "No access record"} detail={data.academy.latestEnrollment ? `${data.academy.latestEnrollment.status.replaceAll("_", " ")}${data.academy.latestEnrollment.dueDate ? ` · due ${formatCrmDate(data.academy.latestEnrollment.dueDate)}` : ""}` : "Open Academy for learning detail"} tone={courseOverdue ? "warning" : "default"} />
+            <OverviewMetric label="Portal activity" value={`${data.activity.bookingCount} booking${data.activity.bookingCount === 1 ? "" : "s"}`} detail={data.activity.lastBooking ? `Latest: ${data.activity.lastBooking.clientName ?? "Booking"} · ${formatCrmDate(data.activity.lastBooking.createdAt)}` : `No booking recorded · ${formatCrmCurrency(data.activity.commissionOutstanding)} commission outstanding`} />
+          </div>
+        </OverviewSection>
+      </div>
+    </div>
+  );
+}
+
 export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   agent: AgentRow; open: boolean; onClose: () => void; onRefresh: () => void;
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [activeSection, setActiveSection] = useState<CrmAgentRecordSection>("overview");
   const { data: crmData, refetch: refetchCrm, isLoading: crmLoading, isError: crmError } = trpc.crm.agentCrm.get.useQuery(
     { userId: agent.id },
     { enabled: open, retry: 1, retryDelay: 1500, placeholderData: (prev: any) => prev }
@@ -434,9 +610,6 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
     onError: (e) => toast.error(e.message),
   });
 
-  const { data: agentDdStatus } = trpc.gocardless.adminListMandates.useQuery(undefined, { enabled: open });
-  const agentMandate = agentDdStatus?.find((m: any) => m.userId === agent.id);
-
   // Fall back to the list-level crmProfile while the detailed query is loading
   const profile = (crmData?.profile ?? agent.crmProfile) as CrmProfile | null ?? null;
 
@@ -451,6 +624,9 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   useEffect(() => {
     if (!open) setOrbitChecked(null);
   }, [open]);
+  useEffect(() => {
+    if (open) setActiveSection("overview");
+  }, [agent.id, open]);
 
   const toggleOrbitAccess = trpc.crm.agentCrm.toggleOrbitAccess.useMutation({
     onSuccess: (data) => {
@@ -478,7 +654,7 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
   return (
     <>
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-3xl overflow-y-auto p-0">
+      <SheetContent side="right" className="w-full sm:max-w-6xl overflow-y-auto p-0">
         {/* Header */}
         <div className="sticky top-0 z-10 bg-background border-b px-6 py-4">
           <div className="flex items-start justify-between gap-4">
@@ -508,26 +684,6 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
                     <Zap size={10} /> Orbit Access
                   </span>
                 ) : null}
-                {/* DD mandate status badge */}
-                {agentMandate ? (
-                  agentMandate.status === "active" ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
-                      <CreditCard size={10} /> DD Active
-                    </span>
-                  ) : agentMandate.status === "pending" ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      <CreditCard size={10} /> DD Pending
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                      <CreditCard size={10} /> DD {agentMandate.status}
-                    </span>
-                  )
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
-                    <CreditCard size={10} /> No DD
-                  </span>
-                )}
                 {/* Payment exempt badge */}
                 {crmData?.paymentExempt && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800" title={crmData.paymentExemptReason ?? "Payment exempt"}>
@@ -552,7 +708,7 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
           </div>
         )}
 
-        {/* Tabs */}
+        {/* Global record actions */}
         <div className="px-6 pt-4">
           {/* Portal access + delete actions */}
           <div className="flex justify-between items-center mb-3">
@@ -602,56 +758,43 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
               </Button>
             )}
           </div>
-          <Tabs defaultValue="profile">
-            <ScrollableTabs />
-
-            <TabsContent value="profile" className="mt-5 pb-8">
-              <ProfileTab userId={agent.id} profile={profile} supplierLogins={crmData?.supplierLogins ?? []} onRefresh={refresh} />
-            </TabsContent>
-            <TabsContent value="activity" className="mt-5 pb-8">
-              <ActivityTab userId={agent.id} />
-            </TabsContent>
-            <TabsContent value="academy" className="mt-5 pb-8">
-              <AcademyTab userId={agent.id} />
-            </TabsContent>
-            <TabsContent value="emails" className="mt-5 pb-8">
-              <AgentEmailsTab userId={agent.id} />
-            </TabsContent>
-            <TabsContent value="suppliers" className="mt-5 pb-8">
-              <SupplierAccessTab userId={agent.id} supplierLogins={crmData?.supplierLogins ?? []} onRefresh={refresh} />
-            </TabsContent>
-            <TabsContent value="bank" className="mt-5 pb-8">
-              <BankDetailsTab userId={agent.id} profile={profile} onRefresh={refresh} />
-            </TabsContent>
-            <TabsContent value="docs" className="mt-5 pb-8">
-              <DocsTab userId={agent.id} profile={profile} contractData={crmData?.contractData ?? null} onRefresh={refresh} />
-            </TabsContent>
-            <TabsContent value="team" className="mt-5 pb-8">
-              <TeamTab userId={agent.id} profile={profile} onRefresh={refresh} />
-            </TabsContent>
-            <TabsContent value="tags" className="mt-5 pb-8">
-              <TagsTab userId={agent.id} tags={agent.tags} onRefresh={refresh} />
-            </TabsContent>
-            <TabsContent value="history" className="mt-5 pb-8">
-              <StatusHistoryTab userId={agent.id} />
-            </TabsContent>
-            <TabsContent value="dd" className="mt-5 pb-8">
-              <DirectDebitTab userId={agent.id} mandate={agentMandate} paymentExempt={crmData?.paymentExempt ?? false} paymentExemptReason={crmData?.paymentExemptReason ?? null} />
-            </TabsContent>
-            <TabsContent value="onboarding" className="mt-5 pb-8">
-              <AdminOnboardingChecklistTab userId={agent.id} agentName={agent.name ?? ""} agentEmail={agent.email ?? ""} paymentExempt={crmData?.paymentExempt ?? false} open={open} onRefresh={refresh} />
-            </TabsContent>
-            <TabsContent value="notes" className="mt-5 pb-8">
-              <AgentNotesTab userId={agent.id} />
-            </TabsContent>
-            <TabsContent value="engagement" className="mt-5 pb-8">
-              <AgentEngagementTab userId={agent.id} />
-            </TabsContent>
-            <TabsContent value="fnf" className="mt-5 pb-8">
-              <FnfVoucherAdminTab userId={agent.id} agentName={agent.name ?? ""} />
-            </TabsContent>
-
-          </Tabs>
+          <div className="mt-4 grid gap-5 pb-8 lg:grid-cols-[12rem_minmax(0,1fr)]">
+            <AgentRecordNavigation activeSection={activeSection} onSelect={setActiveSection} />
+            <div className="min-w-0">
+              {activeSection === "overview" && <AgentOverviewTab agent={agent} profile={profile} onNavigate={setActiveSection} />}
+              {activeSection === "relationship" && (
+                <RecordDetailGroup title="Relationship" description="Communications, relationship context and team membership." defaultValue={["notes"]}>
+                  <RecordDetailPanel value="notes" label="CRM notes" description="Read and add the agent’s relationship notes."><AgentNotesTab userId={agent.id} /></RecordDetailPanel>
+                  <RecordDetailPanel value="engagement" label="Engagement" description="Check-ins, follow-ups and at-risk support."><AgentEngagementTab userId={agent.id} /></RecordDetailPanel>
+                  <RecordDetailPanel value="emails" label="Portal emails" description="Recent portal email delivery history."><AgentEmailsTab userId={agent.id} /></RecordDetailPanel>
+                  <RecordDetailPanel value="team" label="Team membership" description="Team details and other members."><TeamTab userId={agent.id} profile={profile} onRefresh={refresh} /></RecordDetailPanel>
+                  <RecordDetailPanel value="tags" label="Tags" description="CRM segmentation labels."><TagsTab userId={agent.id} tags={agent.tags} onRefresh={refresh} /></RecordDetailPanel>
+                </RecordDetailGroup>
+              )}
+              {activeSection === "membership-payments" && (
+                <RecordDetailGroup title="Membership & payments" description="Direct Debit authority, recurring instruction, payment history and reimbursement bank details." defaultValue={["direct-debit"]}>
+                  <RecordDetailPanel value="direct-debit" label="Direct Debit & payment history" description="Mandate, subscription, provider event history and explicit live collection schedule."><DirectDebitTab userId={agent.id} mandate={null} paymentExempt={crmData?.paymentExempt ?? false} paymentExemptReason={crmData?.paymentExemptReason ?? null} /></RecordDetailPanel>
+                  <RecordDetailPanel value="bank" label="Commission & reimbursement bank details" description="Separate from the bank account used for Direct Debit."><BankDetailsTab userId={agent.id} profile={profile} onRefresh={refresh} /></RecordDetailPanel>
+                  <RecordDetailPanel value="fnf" label="Friends & Family vouchers" description="F&F allocation and redemption administration."><FnfVoucherAdminTab userId={agent.id} agentName={agent.name ?? ""} /></RecordDetailPanel>
+                </RecordDetailGroup>
+              )}
+              {activeSection === "academy" && <AcademyTab userId={agent.id} />}
+              {activeSection === "operations" && (
+                <RecordDetailGroup title="Operations" description="Onboarding readiness and supplier access administration." defaultValue={isOnboarding ? ["onboarding"] : []}>
+                  <RecordDetailPanel value="onboarding" label="Onboarding checklist" description="Controlled portal-access and onboarding hand-off tasks."><AdminOnboardingChecklistTab userId={agent.id} agentName={agent.name ?? ""} agentEmail={agent.email ?? ""} paymentExempt={crmData?.paymentExempt ?? false} open={open} onRefresh={refresh} /></RecordDetailPanel>
+                  <RecordDetailPanel value="suppliers" label="Supplier access" description="Supplier-portal access recorded for this agent."><SupplierAccessTab userId={agent.id} supplierLogins={crmData?.supplierLogins ?? []} onRefresh={refresh} /></RecordDetailPanel>
+                </RecordDetailGroup>
+              )}
+              {activeSection === "record-history" && (
+                <RecordDetailGroup title="Record & history" description="Editable profile data, legal evidence and operational activity history." defaultValue={["profile"]}>
+                  <RecordDetailPanel value="profile" label="Contact, membership & profile" description="Edit the CRM record and agent status."><ProfileTab userId={agent.id} profile={profile} supplierLogins={crmData?.supplierLogins ?? []} onRefresh={refresh} /></RecordDetailPanel>
+                  <RecordDetailPanel value="activity" label="Bookings & operational activity" description="Bookings, commissions, refunds and reimbursements."><ActivityTab userId={agent.id} /></RecordDetailPanel>
+                  <RecordDetailPanel value="documents" label="Documents & contract evidence" description="Uploaded identity documents and contract signing evidence."><DocsTab userId={agent.id} profile={profile} contractData={crmData?.contractData ?? null} onRefresh={refresh} /></RecordDetailPanel>
+                  <RecordDetailPanel value="status-history" label="Status history" description="Agent-status changes and recorded reasons."><StatusHistoryTab userId={agent.id} /></RecordDetailPanel>
+                </RecordDetailGroup>
+              )}
+            </div>
+          </div>
         </div>
       </SheetContent>
     </Sheet>
@@ -686,76 +829,56 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
 
 // ─── Scrollable Tabs Bar ─────────────────────────────────────────────────────
 
-function ScrollableTabs() {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const checkScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 4);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
-  };
-
-  useEffect(() => {
-    checkScroll();
-    const el = scrollRef.current;
-    if (!el) return;
-    el.addEventListener('scroll', checkScroll);
-    const ro = new ResizeObserver(checkScroll);
-    ro.observe(el);
-    return () => { el.removeEventListener('scroll', checkScroll); ro.disconnect(); };
-  }, []);
-
-  const scroll = (dir: 'left' | 'right') => {
-    scrollRef.current?.scrollBy({ left: dir === 'left' ? -120 : 120, behavior: 'smooth' });
-  };
-
+function AgentRecordNavigation({ activeSection, onSelect }: { activeSection: CrmAgentRecordSection; onSelect: (section: CrmAgentRecordSection) => void }) {
   return (
-    <div className="relative flex items-center">
-      {canScrollLeft && (
-        <button
-          onClick={() => scroll('left')}
-          className="absolute left-0 z-10 flex items-center justify-center w-7 h-7 rounded-full bg-background border shadow-md text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Scroll tabs left"
-        >
-          <ChevronLeft size={14} />
-        </button>
-      )}
-      <div
-        ref={scrollRef}
-        className="overflow-x-auto w-full scrollbar-none"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-      >
-        <TabsList className="inline-flex w-max h-auto gap-0 rounded-lg p-1">
-          <TabsTrigger value="profile" className="text-xs px-3 py-1.5 whitespace-nowrap">Profile</TabsTrigger>
-          <TabsTrigger value="activity" className="text-xs px-3 py-1.5 whitespace-nowrap">Activity</TabsTrigger>
-          <TabsTrigger value="academy" className="text-xs px-3 py-1.5 whitespace-nowrap">Academy</TabsTrigger>
-          <TabsTrigger value="emails" className="text-xs px-3 py-1.5 whitespace-nowrap">Emails</TabsTrigger>
-          <TabsTrigger value="team" className="text-xs px-3 py-1.5 whitespace-nowrap">Team</TabsTrigger>
-          <TabsTrigger value="suppliers" className="text-xs px-3 py-1.5 whitespace-nowrap">Suppliers</TabsTrigger>
-          <TabsTrigger value="bank" className="text-xs px-3 py-1.5 whitespace-nowrap">Bank</TabsTrigger>
-          <TabsTrigger value="docs" className="text-xs px-3 py-1.5 whitespace-nowrap">Docs</TabsTrigger>
-          <TabsTrigger value="tags" className="text-xs px-3 py-1.5 whitespace-nowrap">Tags</TabsTrigger>
-          <TabsTrigger value="history" className="text-xs px-3 py-1.5 whitespace-nowrap">History</TabsTrigger>
-          <TabsTrigger value="dd" className="text-xs px-3 py-1.5 whitespace-nowrap">Direct Debit</TabsTrigger>
-          <TabsTrigger value="onboarding" className="text-xs px-3 py-1.5 whitespace-nowrap">Onboarding</TabsTrigger>
-          <TabsTrigger value="notes" className="text-xs px-3 py-1.5 whitespace-nowrap">Notes</TabsTrigger>
-          <TabsTrigger value="engagement" className="text-xs px-3 py-1.5 whitespace-nowrap">Engagement</TabsTrigger>
-          <TabsTrigger value="fnf" className="text-xs px-3 py-1.5 whitespace-nowrap">F&amp;F Vouchers</TabsTrigger>
-        </TabsList>
-      </div>
-      {canScrollRight && (
-        <button
-          onClick={() => scroll('right')}
-          className="absolute right-0 z-10 flex items-center justify-center w-7 h-7 rounded-full bg-background border shadow-md text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Scroll tabs right"
-        >
-          <ChevronRight size={14} />
-        </button>
-      )}
-    </div>
+    <nav aria-label="Agent record sections" className="grid gap-2 sm:grid-cols-2 lg:block lg:space-y-1">
+      {CRM_AGENT_RECORD_SECTIONS.map((section) => {
+        const Icon = section.icon;
+        const active = section.id === activeSection;
+        return (
+          <button
+            key={section.id}
+            type="button"
+            onClick={() => onSelect(section.id)}
+            className={`flex w-full items-start gap-2.5 rounded-xl border px-3 py-3 text-left transition-colors ${active ? "border-[#00c9b4]/50 bg-[#70FFE8]/15 text-foreground shadow-sm" : "border-transparent bg-muted/35 text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground"}`}
+            aria-current={active ? "page" : undefined}
+          >
+            <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${active ? "text-[#078f85]" : ""}`} />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold leading-4">{section.label}</span>
+              <span className="mt-1 block text-[11px] leading-4 opacity-80">{section.description}</span>
+            </span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function RecordDetailGroup({ title, description, defaultValue, children }: { title: string; description: string; defaultValue?: string[]; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
+      <p className="text-xs font-semibold uppercase tracking-[.15em] text-[#078f85]">Agent record</p>
+      <h2 className="mt-1 text-xl font-bold">{title}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <Accordion type="multiple" defaultValue={defaultValue} className="mt-4 rounded-xl border bg-background px-4">
+        {children}
+      </Accordion>
+    </section>
+  );
+}
+
+function RecordDetailPanel({ value, label, description, children }: { value: string; label: string; description: string; children: React.ReactNode }) {
+  return (
+    <AccordionItem value={value}>
+      <AccordionTrigger className="hover:no-underline">
+        <span>
+          <span className="block font-semibold">{label}</span>
+          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{description}</span>
+        </span>
+      </AccordionTrigger>
+      <AccordionContent className="pt-2">{children}</AccordionContent>
+    </AccordionItem>
   );
 }
 
@@ -2712,6 +2835,10 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
     error: paymentScheduleError,
     refetch: refetchPaymentSchedule,
   } = trpc.gocardless.adminGetPaymentSchedule.useQuery({ userId });
+
+  useEffect(() => {
+    if (ddStatus?.mandate) setLocalMandate(ddStatus.mandate);
+  }, [ddStatus?.mandate]);
 
   const [showCreateSub, setShowCreateSub] = useState(false);
   const [createSubDay, setCreateSubDay] = useState<number>(mandate?.preferredPaymentDay ?? 1);
