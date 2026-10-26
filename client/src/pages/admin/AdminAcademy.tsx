@@ -1,5 +1,5 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import {
   Archive,
@@ -2359,14 +2359,9 @@ export function AssessmentSupportQueue({
 }
 
 export function LearnerManager({
-  course,
-  progress,
-  onAccess,
-  accessNotes,
-  setAccessNotes,
+  onAccredit,
   onOverride,
   onRecordMigrationCompletion,
-  onAccredit,
   reviewEnrollmentId,
   setReviewEnrollmentId,
 }: any) {
@@ -2395,201 +2390,12 @@ export function LearnerManager({
     });
   };
 
-  return (
-    <section className="rounded-2xl border bg-card p-5 shadow-sm">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">
-            Learners
-          </p>
-          <h2 className="mt-1 text-xl font-bold">Enrolment and progress</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Use the visible Academy enrolment panel above to assign agents. Open
-            a learner review here to see their current lesson, saved
-            acknowledgements, every assessment attempt, written responses and
-            staff feedback in one place.
-          </p>
-        </div>
-        <div className="rounded-lg bg-muted/60 px-3 py-2 text-sm font-semibold">
-          {progress.length} enrolments
-        </div>
-      </div>
-      <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[960px] text-left text-sm">
-          <thead className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-2 py-3 font-semibold">Agent</th>
-              <th className="px-2 py-3 font-semibold">Progress</th>
-              <th className="px-2 py-3 font-semibold">Due / status</th>
-              <th className="px-2 py-3 font-semibold">Development stage</th>
-              <th className="px-2 py-3 font-semibold text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {progress.map((row: any) => (
-              <tr
-                key={row.enrollment.id}
-                className={
-                  row.enrollment.id === reviewEnrollmentId
-                    ? "bg-[#70FFE8]/10"
-                    : undefined
-                }
-              >
-                <td className="px-2 py-4">
-                  <Link
-                    href={`/crm/agents?agent=${row.agent.id}`}
-                    className="font-semibold text-primary underline-offset-4 hover:underline"
-                    title="Open this agent in CRM"
-                  >
-                    {row.agent.name || "Unnamed agent"}
-                  </Link>
-                  <div className="text-xs text-muted-foreground">
-                    {row.agent.email}
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Input
-                      className="h-7 max-w-[190px] text-xs"
-                      placeholder="Optional access note"
-                      value={accessNotes[row.agent.id] ?? ""}
-                      onChange={e =>
-                        setAccessNotes({
-                          ...accessNotes,
-                          [row.agent.id]: e.target.value,
-                        })
-                      }
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      onClick={() => onAccess(row.agent.id, true)}
-                    >
-                      <LockKeyhole className="mr-1" size={12} />
-                      Grant Academy
-                    </Button>
-                  </div>
-                </td>
-                <td className="px-2 py-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-24 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full bg-[#00c9b4]"
-                        style={{ width: `${row.completion.percentage}%` }}
-                      />
-                    </div>
-                    <span className="font-semibold">
-                      {row.completion.percentage}%
-                    </span>
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {row.completion.completedRequiredLessons}/
-                    {row.completion.requiredLessons} required
-                  </div>
-                </td>
-                <td className="px-2 py-4">
-                  <span
-                    className={`rounded-full px-2 py-1 text-xs font-semibold ${row.enrollment.status === "completed" ? "bg-emerald-100 text-emerald-700" : row.enrollment.status === "waived" ? "bg-blue-100 text-blue-700" : row.overdue ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}
-                  >
-                    {row.enrollment.status.replace("_", " ")}
-                  </span>
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    {row.enrollment.dueDate
-                      ? `${row.overdue ? "Overdue" : "Due"} ${formatDate(row.enrollment.dueDate)}`
-                      : "No deadline"}
-                  </div>
-                </td>
-                <td className="px-2 py-4">
-                  <p className="font-medium">
-                    {row.profile?.trainingStage || "Training"}
-                  </p>
-                  {row.accreditation.eligible ? (
-                    <span className="mt-1 inline-flex rounded-full bg-[#70FFE8]/30 px-2 py-0.5 text-xs font-semibold text-[#27302e]">
-                      Accreditation available
-                    </span>
-                  ) : row.accreditation.daysRemaining !== null ? (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {row.accreditation.daysRemaining} day
-                      {row.accreditation.daysRemaining === 1 ? "" : "s"} until
-                      review window
-                    </p>
-                  ) : null}
-                </td>
-                <td className="px-2 py-4 text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button
-                      size="sm"
-                      variant={
-                        row.enrollment.id === reviewEnrollmentId
-                          ? "default"
-                          : "outline"
-                      }
-                      className="text-xs"
-                      onClick={() => setReviewEnrollmentId(row.enrollment.id)}
-                    >
-                      <Eye className="mr-1" size={13} />
-                      Review
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs"
-                      onClick={() => onOverride(row.enrollment.id, "complete")}
-                    >
-                      <CheckCircle2 className="mr-1" size={13} />
-                      Complete
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs"
-                      onClick={() => onOverride(row.enrollment.id, "waive")}
-                    >
-                      Waive
-                    </Button>
-                    {["completed", "waived"].includes(
-                      row.enrollment.status
-                    ) && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-xs"
-                        onClick={() => onOverride(row.enrollment.id, "reopen")}
-                      >
-                        Reopen
-                      </Button>
-                    )}
-                    {row.accreditation.eligible &&
-                      row.profile?.trainingStage !== "Accredited" && (
-                        <Button
-                          size="sm"
-                          className="text-xs"
-                          onClick={() => onAccredit(row.agent.id)}
-                        >
-                          <Trophy className="mr-1" size={13} />
-                          Accredit
-                        </Button>
-                      )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {!progress.length && (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="px-2 py-8 text-center text-sm text-muted-foreground"
-                >
-                  No agents are enrolled in {course.title} yet. Select an active
-                  agent above to assign this course.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+  if (!reviewEnrollmentId) return null;
 
-      {reviewEnrollmentId && (
-        <section className="mt-6 rounded-2xl border-2 border-[#70FFE8]/55 bg-muted/10 p-4 md:p-5">
+  return (
+    <section className="rounded-2xl border-2 border-[#70FFE8]/55 bg-muted/10 p-4 shadow-sm md:p-5">
+
+      <div>
           {learnerReview.isLoading ? (
             <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
               <RefreshCw className="animate-spin" size={16} /> Loading the
@@ -2621,13 +2427,9 @@ export function LearnerManager({
                   <p className="text-xs font-semibold uppercase tracking-[.16em] text-primary">
                     Learner review
                   </p>
-                  <Link
-                    href={`/crm/agents?agent=${review.agent.id}`}
-                    className="mt-1 inline-block text-xl font-bold text-primary underline-offset-4 hover:underline"
-                    title="Open this agent in CRM"
-                  >
+                  <h2 className="mt-1 text-xl font-bold">
                     {review.agent.name || review.agent.email}
-                  </Link>
+                  </h2>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {review.course.title} ·{" "}
                     {review.agent.trainingStage || "Training"}
@@ -2637,6 +2439,41 @@ export function LearnerManager({
                   <span className="rounded-full bg-card px-3 py-1.5 text-sm font-semibold shadow-sm">
                     {review.completion.percentage}% complete
                   </span>
+                  {review.accreditation?.eligible && review.agent.trainingStage !== "Accredited" && (
+                    <Button
+                      size="sm"
+                      onClick={() => onAccredit(review.agent.id)}
+                    >
+                      <Trophy className="mr-1" size={13} />
+                      Accredit
+                    </Button>
+                  )}
+                  {["completed", "waived"].includes(review.enrollment.status) ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onOverride(review.enrollment.id, "reopen")}
+                    >
+                      Reopen course
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onOverride(review.enrollment.id, "complete")}
+                      >
+                        Mark course complete
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onOverride(review.enrollment.id, "waive")}
+                      >
+                        Waive course
+                      </Button>
+                    </>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
@@ -3035,8 +2872,7 @@ export function LearnerManager({
               </div>
             </>
           )}
-        </section>
-      )}
+      </div>
     </section>
   );
 }

@@ -42,9 +42,10 @@ describe("Academy original-training completion recording", () => {
     expect(insightsSource).toContain("This will be kept in the Academy audit history.");
   });
 
-  it("keeps learner reviews navigable with CRM links, collapsed modules and searchable lesson history", () => {
-    expect(learnerManagerSource).toContain('href={`/crm/agents?agent=${row.agent.id}`}');
-    expect(learnerManagerSource).toContain('href={`/crm/agents?agent=${review.agent.id}`}');
+  it("keeps learner reviews inside Academy with collapsed modules and searchable lesson history", () => {
+    expect(learnerManagerSource).not.toContain("/crm/agents?agent=");
+    expect(learnerManagerSource).toContain("Learner review");
+    expect(learnerManagerSource).toContain("Close review");
     expect(learnerManagerSource).toContain("Search a module or lesson…");
     expect(learnerManagerSource).toContain("Modules are collapsed by default. Search opens relevant results only.");
     expect(learnerManagerSource).toContain("expandedModuleIds");

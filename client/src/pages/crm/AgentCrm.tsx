@@ -21,7 +21,8 @@ import {
   Upload, BadgeCheck, MapPin, Phone, Mail, Building2,
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
   ChevronDown, ChevronLeft, ChevronRight, X, Pencil, Clock, ArrowRight, CheckCircle2,
-  Shield, ShieldOff, ExternalLink, FileSignature, ScrollText, Printer, RefreshCw, Zap
+  Shield, ShieldOff, ExternalLink, FileSignature, ScrollText, Printer, RefreshCw, Zap,
+  GraduationCap
 } from "lucide-react";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
@@ -610,6 +611,9 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
             <TabsContent value="activity" className="mt-5 pb-8">
               <ActivityTab userId={agent.id} />
             </TabsContent>
+            <TabsContent value="academy" className="mt-5 pb-8">
+              <AcademyTab userId={agent.id} />
+            </TabsContent>
             <TabsContent value="emails" className="mt-5 pb-8">
               <AgentEmailsTab userId={agent.id} />
             </TabsContent>
@@ -727,6 +731,7 @@ function ScrollableTabs() {
         <TabsList className="inline-flex w-max h-auto gap-0 rounded-lg p-1">
           <TabsTrigger value="profile" className="text-xs px-3 py-1.5 whitespace-nowrap">Profile</TabsTrigger>
           <TabsTrigger value="activity" className="text-xs px-3 py-1.5 whitespace-nowrap">Activity</TabsTrigger>
+          <TabsTrigger value="academy" className="text-xs px-3 py-1.5 whitespace-nowrap">Academy</TabsTrigger>
           <TabsTrigger value="emails" className="text-xs px-3 py-1.5 whitespace-nowrap">Emails</TabsTrigger>
           <TabsTrigger value="team" className="text-xs px-3 py-1.5 whitespace-nowrap">Team</TabsTrigger>
           <TabsTrigger value="suppliers" className="text-xs px-3 py-1.5 whitespace-nowrap">Suppliers</TabsTrigger>
@@ -2106,6 +2111,112 @@ function Field({ label, value, icon, children }: { label: string; value?: string
         {icon && <span className="text-muted-foreground">{icon}</span>}
         {children ?? <p className="text-sm font-medium">{value || <span className="text-muted-foreground font-normal">—</span>}</p>}
       </div>
+    </div>
+  );
+}
+
+function AcademyTab({ userId }: { userId: number }) {
+  const { data, isLoading, isError, refetch } = trpc.academy.admin.agentSummary.useQuery({ agentId: userId });
+  const formatDateTime = (value: Date | string | null | undefined) => value
+    ? new Date(value).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+    : "No recorded activity";
+  const formatDuration = (seconds: number) => {
+    if (!seconds) return "No recorded time";
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return hours ? `${hours}h ${minutes}m` : `${Math.max(1, minutes)}m`;
+  };
+
+  if (isLoading) return <div className="space-y-3">{[1, 2, 3].map(item => <div key={item} className="h-24 animate-pulse rounded-xl bg-muted" />)}</div>;
+  if (isError || !data) return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+      <p className="font-semibold">Academy information could not be loaded.</p>
+      <Button size="sm" variant="outline" className="mt-3" onClick={() => refetch()}><RefreshCw className="mr-1" size={14} />Retry</Button>
+    </div>
+  );
+
+  const activeAccess = data.access?.status === "active";
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 rounded-xl border bg-gradient-to-r from-[#70FFE8]/15 to-card p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="rounded-xl bg-background p-2 text-primary"><GraduationCap size={20} /></span>
+          <div>
+            <p className="font-semibold">Academy overview</p>
+            <p className="text-sm text-muted-foreground">Read-only activity summary for this agent.</p>
+          </div>
+        </div>
+        <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${activeAccess ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"}`}>
+          {activeAccess ? "Academy access active" : data.access?.status === "revoked" ? "Academy access revoked" : "No Academy access record"}
+        </span>
+      </div>
+
+      {data.enrolments.length ? (
+        <div className="space-y-3">
+          {data.enrolments.map((item: any) => (
+            <article key={item.enrollment.id} className="rounded-xl border bg-card p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-semibold">{item.course.title}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Enrolled {formatDateTime(item.enrollment.enrolledAt)}
+                    {item.enrollment.dueDate ? ` · ${item.overdue ? "Overdue" : "Due"} ${new Date(item.enrollment.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}` : " · No deadline"}
+                  </p>
+                </div>
+                <span className={`w-fit rounded-full px-2 py-1 text-xs font-semibold ${item.enrollment.status === "completed" ? "bg-emerald-100 text-emerald-800" : item.enrollment.status === "waived" ? "bg-sky-100 text-sky-800" : item.overdue ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"}`}>
+                  {item.enrollment.status.replaceAll("_", " ")}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Progress</p>
+                  <p className="mt-1 font-semibold">{item.completion.percentage}% · {item.completion.completedRequiredLessons}/{item.completion.requiredLessons} required</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Current section</p>
+                  <p className="mt-1 text-sm font-medium">{item.nextLesson?.title || "All required lessons complete"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Activity</p>
+                  <p className="mt-1 text-sm font-medium">{formatDuration(item.activeTimeSeconds)}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{formatDateTime(item.lastActivityAt)}</p>
+                </div>
+              </div>
+              {(item.assessment.awaitingMarking > 0 || item.assessment.feedbackPending > 0) && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {item.assessment.awaitingMarking > 0 && <span className="rounded-full bg-sky-100 px-2 py-1 text-xs font-semibold text-sky-800">{item.assessment.awaitingMarking} awaiting marking</span>}
+                  {item.assessment.feedbackPending > 0 && <span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-semibold text-violet-800">Feedback acknowledgement pending</span>}
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed p-6 text-center">
+          <p className="font-medium">No Academy courses are assigned to this agent.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Enrol courses from Academy Progress &amp; Insights when they are ready to begin.</p>
+        </div>
+      )}
+
+      <section className="rounded-xl border bg-card p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-semibold">Recent Academy activity</p>
+            <p className="mt-1 text-xs text-muted-foreground">Latest recorded Academy events for this agent.</p>
+          </div>
+          <Link href="/admin/academy/insights" className="text-sm font-semibold text-primary hover:underline">Open work queue</Link>
+        </div>
+        {data.recentActivity.length ? (
+          <div className="mt-4 space-y-3">
+            {data.recentActivity.map((event: any) => (
+              <div key={event.id} className="border-l-2 border-[#70FFE8] pl-3">
+                <p className="text-sm leading-5">{event.summary}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(event.createdAt)}</p>
+              </div>
+            ))}
+          </div>
+        ) : <p className="mt-3 text-sm text-muted-foreground">No Academy activity has been recorded yet.</p>}
+      </section>
     </div>
   );
 }

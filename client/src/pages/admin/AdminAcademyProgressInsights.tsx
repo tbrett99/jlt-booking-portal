@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Activity,
@@ -131,12 +131,12 @@ export default function AdminAcademyProgressInsights() {
   const [tab, setTab] = useState<Tab>("overview");
   const [courseId, setCourseId] = useState<number | null>(null);
   const [learnerSearch, setLearnerSearch] = useState("");
+  const [learnerPage, setLearnerPage] = useState(1);
   const [riskFilter, setRiskFilter] = useState<
     "all" | "attention" | "overdue" | "inactive" | "marking"
   >("all");
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [accessNotes, setAccessNotes] = useState<Record<number, string>>({});
   const [gradingDrafts, setGradingDrafts] = useState<
     Record<
       number,
@@ -157,9 +157,6 @@ export default function AdminAcademyProgressInsights() {
   const insights = trpc.academy.admin.insights.useQuery(
     courseId ? { courseId } : undefined
   );
-  const { data: progress = [] } = trpc.academy.admin.progress.useQuery(
-    courseId ? { courseId } : undefined
-  );
   const { data: markingQueue = [] } =
     trpc.academy.admin.markingQueue.useQuery();
   const { data: supportQueue = [] } =
@@ -170,7 +167,6 @@ export default function AdminAcademyProgressInsights() {
 
   const invalidate = () => {
     utils.academy.admin.insights.invalidate();
-    utils.academy.admin.progress.invalidate();
     utils.academy.admin.markingQueue.invalidate();
     utils.academy.admin.supportQueue.invalidate();
     utils.academy.admin.learnerReview.invalidate();
@@ -181,13 +177,6 @@ export default function AdminAcademyProgressInsights() {
       toast.success(
         result.created ? "Agent enrolled" : "Agent is already enrolled"
       );
-      invalidate();
-    },
-    onError: error => toast.error(error.message),
-  });
-  const setAccess = trpc.academy.admin.setAccess.useMutation({
-    onSuccess: () => {
-      toast.success("Academy access updated");
       invalidate();
     },
     onError: error => toast.error(error.message),
@@ -285,6 +274,24 @@ export default function AdminAcademyProgressInsights() {
       }),
     [insights.data?.learners, learnerSearch, riskFilter]
   );
+  const learnersPerPage = 25;
+  const learnerPageCount = Math.max(
+    1,
+    Math.ceil(learners.length / learnersPerPage)
+  );
+  const safeLearnerPage = Math.min(learnerPage, learnerPageCount);
+  const visibleLearners = useMemo(
+    () =>
+      learners.slice(
+        (safeLearnerPage - 1) * learnersPerPage,
+        safeLearnerPage * learnersPerPage
+      ),
+    [learners, safeLearnerPage]
+  );
+
+  useEffect(() => {
+    setLearnerPage(1);
+  }, [courseId, learnerSearch, riskFilter]);
   const agentOptions = useMemo(
     () =>
       agents
@@ -778,13 +785,11 @@ export default function AdminAcademyProgressInsights() {
                 <p className="text-xs font-semibold uppercase tracking-[.15em] text-muted-foreground">
                   Learner records
                 </p>
-                <h2 className="mt-1 text-xl font-bold">
-                  Progress, risk and individual history
-                </h2>
+                <h2 className="mt-1 text-xl font-bold">Academy work queue</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Each learner record opens the full course journey: lessons,
-                  acknowledgement, active time, every attempt, written answer
-                  and staff feedback.
+                  Search, filter and open an agent’s Academy record here. The
+                  full learning history stays inside Academy; CRM has a separate
+                  Academy summary for wider relationship management.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -815,7 +820,15 @@ export default function AdminAcademyProgressInsights() {
                 </select>
               </div>
             </div>
-            <div className="mt-5 overflow-x-auto">
+            <div className="mt-4 flex flex-col gap-2 border-y py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <p className="font-medium">
+                {learners.length} matching enrolment{learners.length === 1 ? "" : "s"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Showing {learners.length ? (safeLearnerPage - 1) * learnersPerPage + 1 : 0}–{Math.min(safeLearnerPage * learnersPerPage, learners.length)} of {learners.length}
+              </p>
+            </div>
+            <div className="mt-2 overflow-x-auto">
               <table className="w-full min-w-[1080px] text-left text-sm">
                 <thead className="border-b text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
@@ -828,12 +841,17 @@ export default function AdminAcademyProgressInsights() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {learners.map(item => (
+                  {visibleLearners.map(item => (
                     <tr key={item.enrollment.id}>
                       <td className="px-2 py-4">
-                        <p className="font-semibold">
+                        <button
+                          type="button"
+                          className="font-semibold text-primary underline-offset-4 hover:underline"
+                          onClick={() => openLearner(item)}
+                          title="Open this agent's Academy record"
+                        >
                           {item.learner.name || "Unnamed agent"}
-                        </p>
+                        </button>
                         <p className="text-xs text-muted-foreground">
                           {item.learner.email}
                         </p>
@@ -925,7 +943,7 @@ export default function AdminAcademyProgressInsights() {
                           onClick={() => openLearner(item)}
                         >
                           <Eye className="mr-1" size={14} />
-                          Review
+                          Open Academy record
                         </Button>
                       </td>
                     </tr>
@@ -943,39 +961,39 @@ export default function AdminAcademyProgressInsights() {
                 </tbody>
               </table>
             </div>
+            {learners.length > learnersPerPage && (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  Page {safeLearnerPage} of {learnerPageCount}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={safeLearnerPage === 1}
+                    onClick={() => setLearnerPage(page => Math.max(1, page - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={safeLearnerPage === learnerPageCount}
+                    onClick={() => setLearnerPage(page => Math.min(learnerPageCount, page + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </section>
-          {selectedCourse ? (
-            <LearnerManager
-              course={selectedCourse}
-              progress={progress}
-              agents={agentOptions}
-              onAccess={(agentId: number, enabled: boolean) =>
-                setAccess.mutate({
-                  agentId,
-                  enabled,
-                  note: accessNotes[agentId] || null,
-                })
-              }
-              accessNotes={accessNotes}
-              setAccessNotes={setAccessNotes}
-              onOverride={override}
-              onRecordMigrationCompletion={recordOriginalTrainingCompletion}
-              onAccredit={accredit}
-              reviewEnrollmentId={reviewEnrollmentId}
-              setReviewEnrollmentId={setReviewEnrollmentId}
-            />
-          ) : (
-            <section className="rounded-2xl border border-dashed bg-muted/10 p-6 text-center">
-              <h2 className="font-bold">
-                Choose a published course above to manage its learners
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                The enrolment panel is now always visible. Select its course to
-                see course-specific progress, access controls and individual
-                reviews below.
-              </p>
-            </section>
-          )}
+          <LearnerManager
+            onAccredit={accredit}
+            onOverride={override}
+            onRecordMigrationCompletion={recordOriginalTrainingCompletion}
+            reviewEnrollmentId={reviewEnrollmentId}
+            setReviewEnrollmentId={setReviewEnrollmentId}
+          />
         </div>
       )}
 

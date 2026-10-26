@@ -2083,6 +2083,87 @@ export const academyRouter = router({
       });
     }),
 
+    /** A compact, read-only Academy snapshot for an individual CRM record. */
+    agentSummary: adminProcedure.input(z.object({ agentId: z.number().int().positive() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [access] = await db.select().from(academyAccess)
+        .where(eq(academyAccess.agentId, input.agentId)).limit(1);
+      const enrollments = await db.select({ enrollment: academyEnrollments, course: academyCourses })
+        .from(academyEnrollments)
+        .innerJoin(academyCourses, eq(academyCourses.id, academyEnrollments.courseId))
+        .where(eq(academyEnrollments.agentId, input.agentId))
+        .orderBy(desc(academyEnrollments.updatedAt));
+      const enrollmentIds = enrollments.map((row) => row.enrollment.id);
+      const courseIds = Array.from(new Set(enrollments.map((row) => row.course.id)));
+      const modules = courseIds.length
+        ? await db.select().from(academyModules).where(inArray(academyModules.courseId, courseIds))
+        : [];
+      const lessons = await getAcademyLessonsForModules(modules.map((module) => module.id));
+      const progress = enrollmentIds.length
+        ? await db.select().from(academyLessonProgress).where(inArray(academyLessonProgress.enrollmentId, enrollmentIds))
+        : [];
+      const attempts = enrollmentIds.length
+        ? await db.select().from(academyAssessmentAttempts).where(inArray(academyAssessmentAttempts.enrollmentId, enrollmentIds))
+        : [];
+      const activity = await db.select().from(academyAuditLog)
+        .where(eq(academyAuditLog.agentId, input.agentId))
+        .orderBy(desc(academyAuditLog.createdAt), desc(academyAuditLog.id))
+        .limit(12);
+      const now = new Date();
+
+      return {
+        access: access
+          ? { status: access.status, grantedAt: access.grantedAt, revokedAt: access.revokedAt }
+          : null,
+        enrolments: enrollments.map(({ enrollment, course }) => {
+          const courseModuleIds = new Set(modules.filter((module) => module.courseId === course.id).map((module) => module.id));
+          const courseLessons = lessons.filter((lesson) => courseModuleIds.has(lesson.moduleId));
+          const enrollmentProgress = progress.filter((item) => item.enrollmentId === enrollment.id);
+          const enrollmentAttempts = attempts.filter((item) => item.enrollmentId === enrollment.id);
+          const completion = summariseAcademyProgress(
+            courseLessons.filter((lesson) => lesson.isRequired).map((lesson) => lesson.id),
+            enrollmentProgress.filter((item) => item.completedAt).map((item) => item.lessonId)
+          );
+          const nextLesson = courseLessons.find((lesson) => lesson.isRequired && !enrollmentProgress.some((item) => item.lessonId === lesson.id && item.completedAt)) ?? null;
+          const activityDates = [
+            ...enrollmentProgress.flatMap((item) => [item.lastActivityAt, item.lastViewedAt, item.startedAt]),
+            ...enrollmentAttempts.map((item) => item.takenAt),
+          ].filter((value): value is Date => value instanceof Date);
+          const lastActivityAt = activityDates.length ? new Date(Math.max(...activityDates.map((value) => value.getTime()))) : null;
+          const activeTimeSeconds = enrollmentProgress.reduce(
+            (total, item) => total + Number(item.lessonActiveSeconds ?? 0) + Number(item.assessmentActiveSeconds ?? 0),
+            0
+          );
+          return {
+            enrollment: {
+              id: enrollment.id,
+              status: enrollment.status,
+              enrolledAt: enrollment.enrolledAt,
+              dueDate: enrollment.dueDate,
+              completedAt: enrollment.completedAt,
+            },
+            course: { id: course.id, title: course.title, status: course.status },
+            completion,
+            nextLesson: nextLesson ? { id: nextLesson.id, title: nextLesson.title } : null,
+            overdue: !!enrollment.dueDate && !["completed", "waived"].includes(enrollment.status) && enrollment.dueDate < now,
+            lastActivityAt,
+            activeTimeSeconds,
+            assessment: {
+              awaitingMarking: enrollmentAttempts.filter((item) => item.status === "awaiting_marking").length,
+              feedbackPending: enrollmentAttempts.filter((item) => item.status === "feedback_pending").length,
+            },
+          };
+        }),
+        recentActivity: activity.map((item) => ({
+          id: item.id,
+          action: item.action,
+          summary: item.summary,
+          createdAt: item.createdAt,
+        })),
+      };
+    }),
+
     learnerReview: adminProcedure.input(z.object({ enrollmentId: z.number().int().positive() })).query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -2133,6 +2214,7 @@ export const academyRouter = router({
         enrollment: row.enrollment,
         agent: { id: row.agent.id, name: row.agent.name, email: row.agent.email, trainingStage: row.profile?.trainingStage ?? null },
         course: { id: row.course.id, title: row.course.title },
+        accreditation: getAccreditationEligibility(row.profile?.academyAcceleratorStartedAt, new Date()),
         completion,
         currentRequiredLesson: currentRequiredLesson ? { id: currentRequiredLesson.id, title: currentRequiredLesson.title } : null,
         modules: structure.modules.map((module) => ({
