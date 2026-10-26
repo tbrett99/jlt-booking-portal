@@ -199,6 +199,17 @@ export default function AdminAcademyProgressInsights() {
     },
     onError: error => toast.error(error.message),
   });
+  const recordMigrationCompletion = trpc.academy.admin.recordMigrationCompletion.useMutation({
+    onSuccess: result => {
+      toast.success(
+        result.courseCompleted
+          ? `${result.recordedLessonIds.length} lesson${result.recordedLessonIds.length === 1 ? "" : "s"} recorded — ${result.courseTitle} is now complete`
+          : `${result.recordedLessonIds.length} original-training lesson${result.recordedLessonIds.length === 1 ? "" : "s"} recorded as complete`
+      );
+      invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
   const approveAccreditation =
     trpc.academy.admin.approveAccreditation.useMutation({
       onSuccess: () => {
@@ -297,6 +308,25 @@ export default function AdminAcademyProgressInsights() {
     );
     if (reason?.trim())
       overrideCompletion.mutate({ enrollmentId, action, reason });
+  }
+  function recordOriginalTrainingCompletion(input: {
+    enrollmentId: number;
+    scope: "lesson" | "module";
+    lessonId?: number;
+    moduleId?: number;
+    label: string;
+  }) {
+    const reason = window.prompt(
+      `Why can ${input.label} be recorded as complete from the original training? This will be kept in the Academy audit history.`
+    );
+    if (reason?.trim())
+      recordMigrationCompletion.mutate({
+        enrollmentId: input.enrollmentId,
+        scope: input.scope,
+        lessonId: input.lessonId,
+        moduleId: input.moduleId,
+        reason,
+      });
   }
   function accredit(agentId: number) {
     const reason = window.prompt(
@@ -929,6 +959,7 @@ export default function AdminAcademyProgressInsights() {
               accessNotes={accessNotes}
               setAccessNotes={setAccessNotes}
               onOverride={override}
+              onRecordMigrationCompletion={recordOriginalTrainingCompletion}
               onAccredit={accredit}
               reviewEnrollmentId={reviewEnrollmentId}
               setReviewEnrollmentId={setReviewEnrollmentId}

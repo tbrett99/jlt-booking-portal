@@ -2363,6 +2363,7 @@ export function LearnerManager({
   accessNotes,
   setAccessNotes,
   onOverride,
+  onRecordMigrationCompletion,
   onAccredit,
   reviewEnrollmentId,
   setReviewEnrollmentId,
@@ -2655,13 +2656,33 @@ export function LearnerManager({
                         key={module.id}
                         className="overflow-hidden rounded-xl border bg-card"
                       >
-                        <div className="border-b bg-muted/35 px-4 py-3">
-                          <p className="text-xs font-semibold uppercase tracking-[.12em] text-primary">
-                            Module {moduleIndex + 1}
-                          </p>
-                          <h4 className="mt-0.5 font-semibold">
-                            {module.title}
-                          </h4>
+                        <div className="flex flex-col gap-3 border-b bg-muted/35 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[.12em] text-primary">
+                              Module {moduleIndex + 1}
+                            </p>
+                            <h4 className="mt-0.5 font-semibold">
+                              {module.title}
+                            </h4>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {module.completion.completedRequiredLessons}/{module.completion.requiredLessons} required lessons complete
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="self-start text-xs sm:self-auto"
+                            disabled={!module.completion.requiredLessons || module.completion.completedRequiredLessons === module.completion.requiredLessons}
+                            onClick={() => onRecordMigrationCompletion({
+                              enrollmentId: review.enrollment.id,
+                              scope: "module",
+                              moduleId: module.id,
+                              label: `the required lessons in ${module.title}`,
+                            })}
+                          >
+                            <CheckCircle2 className="mr-1" size={13} />
+                            Record module complete
+                          </Button>
                         </div>
                         <div className="divide-y">
                           {module.lessons.map((lesson: any) => (
@@ -2683,7 +2704,7 @@ export function LearnerManager({
                                       : ""}
                                   </p>
                                 </div>
-                                <div className="flex flex-wrap gap-1.5 text-xs font-semibold">
+                                <div className="flex flex-wrap items-center justify-end gap-1.5 text-xs font-semibold">
                                   {lesson.progress?.completedAt ? (
                                     <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800">
                                       Completed
@@ -2705,6 +2726,26 @@ export function LearnerManager({
                                         ? "Acknowledged"
                                         : "Not acknowledged"}
                                     </span>
+                                  )}
+                                  {lesson.staffRecordedCompletion && (
+                                    <span className="rounded-full bg-violet-100 px-2 py-1 text-violet-800">
+                                      Staff-recorded
+                                    </span>
+                                  )}
+                                  {!lesson.progress?.completedAt && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs"
+                                      onClick={() => onRecordMigrationCompletion({
+                                        enrollmentId: review.enrollment.id,
+                                        scope: "lesson",
+                                        lessonId: lesson.id,
+                                        label: lesson.title,
+                                      })}
+                                    >
+                                      Record complete
+                                    </Button>
                                   )}
                                 </div>
                               </div>
@@ -2750,6 +2791,11 @@ export function LearnerManager({
                                     {formatDateTime(
                                       lesson.progress.completedAt
                                     )}
+                                  </span>
+                                )}
+                                {lesson.staffRecordedCompletion && (
+                                  <span title={lesson.staffRecordedCompletion.reason}>
+                                    Recorded from original training {formatDateTime(lesson.staffRecordedCompletion.recordedAt)}
                                   </span>
                                 )}
                               </div>

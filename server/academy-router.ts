@@ -2103,6 +2103,28 @@ export const academyRouter = router({
       const responses = attemptIds.length ? await db.select().from(academyAssessmentResponses).where(inArray(academyAssessmentResponses.attemptId, attemptIds)) : [];
       const audit = await db.select().from(academyAuditLog)
         .where(eq(academyAuditLog.enrollmentId, row.enrollment.id)).orderBy(desc(academyAuditLog.createdAt)).limit(100);
+      const migrationCompletionAudit = await db.select().from(academyAuditLog)
+        .where(and(
+          eq(academyAuditLog.enrollmentId, row.enrollment.id),
+          eq(academyAuditLog.action, "migration_completion_recorded"),
+        ))
+        .orderBy(desc(academyAuditLog.createdAt), desc(academyAuditLog.id));
+      // A migration completion uses the same progress record needed by the
+      // learner path, but its immutable audit record remains the authority for
+      // the staff-recorded badge. Genuine learner attempts are never changed.
+      const staffRecordedCompletionByLessonId = new Map<number, { recordedAt: Date; reason: string }>();
+      for (const event of migrationCompletionAudit) {
+        if (!event.metadata || typeof event.metadata !== "object") continue;
+        const metadata = event.metadata as { completedLessonIds?: unknown; reason?: unknown };
+        if (!Array.isArray(metadata.completedLessonIds)) continue;
+        const reason = typeof metadata.reason === "string" ? metadata.reason : "Original training completed";
+        for (const value of metadata.completedLessonIds) {
+          const lessonId = Number(value);
+          if (Number.isSafeInteger(lessonId) && lessonId > 0 && !staffRecordedCompletionByLessonId.has(lessonId)) {
+            staffRecordedCompletionByLessonId.set(lessonId, { recordedAt: event.createdAt, reason });
+          }
+        }
+      }
       const requiredLessonIds = structure.lessons.filter((lesson) => lesson.isRequired).map((lesson) => lesson.id);
       const completion = summariseAcademyProgress(requiredLessonIds, progress.filter((item) => item.completedAt).map((item) => item.lessonId));
       const currentRequiredLesson = structure.lessons.find((lesson) => lesson.isRequired && !progress.some((item) => item.lessonId === lesson.id && item.completedAt)) ?? null;
@@ -2116,6 +2138,10 @@ export const academyRouter = router({
         modules: structure.modules.map((module) => ({
           id: module.id,
           title: module.title,
+          completion: {
+            requiredLessons: module.lessons.filter((lesson) => lesson.isRequired).length,
+            completedRequiredLessons: module.lessons.filter((lesson) => lesson.isRequired && !!progress.find((item) => item.lessonId === lesson.id)?.completedAt).length,
+          },
           lessons: module.lessons.map((lesson) => {
             const lessonProgress = progress.find((item) => item.lessonId === lesson.id) ?? null;
             const lessonAttempts = attempts.filter((attempt) => attempt.lessonId === lesson.id);
@@ -2126,6 +2152,7 @@ export const academyRouter = router({
               requiresAcknowledgement: lesson.requiresAcknowledgement,
               requiresAssessment: lesson.requiresAssessment,
               progress: lessonProgress,
+              staffRecordedCompletion: staffRecordedCompletionByLessonId.get(lesson.id) ?? null,
               attempts: lessonAttempts.map((attempt) => ({
                 id: attempt.id,
                 status: attempt.status,
@@ -2155,6 +2182,102 @@ export const academyRouter = router({
           }),
         })),
         audit: audit.map((item) => ({ id: item.id, action: item.action, summary: item.summary, metadata: item.metadata, createdAt: item.createdAt })),
+      };
+    }),
+
+    recordMigrationCompletion: adminProcedure.input(z.object({
+      enrollmentId: z.number().int().positive(),
+      scope: z.enum(["lesson", "module"]),
+      lessonId: z.number().int().positive().optional(),
+      moduleId: z.number().int().positive().optional(),
+      reason: z.string().trim().min(3).max(10_000),
+    }).superRefine((input, context) => {
+      if (input.scope === "lesson" && !input.lessonId) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["lessonId"], message: "Choose a lesson to record as complete" });
+      }
+      if (input.scope === "module" && !input.moduleId) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["moduleId"], message: "Choose a module to record as complete" });
+      }
+    })).mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [enrollment] = await db.select().from(academyEnrollments).where(eq(academyEnrollments.id, input.enrollmentId)).limit(1);
+      if (!enrollment) throw new TRPCError({ code: "NOT_FOUND", message: "Academy enrolment not found" });
+      if (["completed", "waived"].includes(enrollment.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Reopen this course before changing individual completion records" });
+      }
+
+      const structure = await courseStructure(enrollment.courseId);
+      const module = input.moduleId ? structure.modules.find((item) => item.id === input.moduleId) : null;
+      const lesson = input.lessonId ? structure.lessons.find((item) => item.id === input.lessonId) : null;
+      if (input.scope === "lesson" && !lesson) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "This lesson does not belong to the selected Academy course" });
+      }
+      if (input.scope === "module" && !module) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "This module does not belong to the selected Academy course" });
+      }
+
+      // A module migration record covers its required pathway only. Optional
+      // content remains deliberately optional and can be recorded individually
+      // if it was completed in the original training programme.
+      const targetLessons = input.scope === "lesson"
+        ? [lesson!]
+        : module!.lessons.filter((item) => item.isRequired);
+      if (!targetLessons.length) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This module has no required lessons. Record any completed optional lesson individually." });
+      }
+
+      const targetLessonIds = targetLessons.map((item) => item.id);
+      const existingProgress = await db.select().from(academyLessonProgress).where(and(
+        eq(academyLessonProgress.enrollmentId, enrollment.id),
+        inArray(academyLessonProgress.lessonId, targetLessonIds),
+      ));
+      const completedLessonIds = new Set(existingProgress.filter((item) => !!item.completedAt).map((item) => item.lessonId));
+      const lessonIdsToRecord = targetLessonIds.filter((lessonId) => !completedLessonIds.has(lessonId));
+      if (!lessonIdsToRecord.length) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Every selected lesson is already recorded as complete" });
+      }
+
+      const pool = await getRawDbPool();
+      if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const now = new Date();
+      for (const lessonId of lessonIdsToRecord) {
+        await pool.execute(
+          `INSERT INTO academy_lesson_progress (enrollmentId, lessonId, startedAt, lastViewedAt, completedAt)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             startedAt = COALESCE(startedAt, VALUES(startedAt)),
+             lastViewedAt = VALUES(lastViewedAt),
+             completedAt = VALUES(completedAt)`,
+          [enrollment.id, lessonId, now, now, now],
+        );
+      }
+
+      const [course] = await db.select({ title: academyCourses.title }).from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
+      await addAudit({
+        agentId: enrollment.agentId,
+        courseId: enrollment.courseId,
+        enrollmentId: enrollment.id,
+        actorId: ctx.user.id,
+        action: "migration_completion_recorded",
+        summary: `Recorded ${lessonIdsToRecord.length} ${lessonIdsToRecord.length === 1 ? "lesson" : "lessons"} as completed in original training${input.scope === "module" ? ` for module: ${module!.title}` : `: ${lesson!.title}`}`,
+        metadata: {
+          source: "original_training_migration",
+          scope: input.scope,
+          moduleId: module?.id ?? null,
+          lessonId: lesson?.id ?? null,
+          completedLessonIds: lessonIdsToRecord,
+          skippedAlreadyCompletedLessonIds: targetLessonIds.filter((lessonId) => completedLessonIds.has(lessonId)),
+          reason: input.reason,
+          recordedAt: now.toISOString(),
+        },
+      });
+      const completion = await recalculateCompletion(enrollment.id, ctx.user.id);
+      return {
+        success: true,
+        recordedLessonIds: lessonIdsToRecord,
+        courseCompleted: completion?.status === "completed",
+        courseTitle: course?.title ?? "Academy course",
       };
     }),
 
