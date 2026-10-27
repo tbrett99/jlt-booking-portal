@@ -23,11 +23,12 @@ describe("Academy workspace and governance overhaul", () => {
     expect(navigation).toContain('{ label: "My Academy Actions", href: "/academy/actions"');
   });
 
-  it("blocks publishing a knowledge check with no questions and keeps 100% as the authoring default", () => {
+  it("blocks publishing a knowledge check with no questions and provides a clear written-assessment pass-mark setting", () => {
     expect(router).toContain("incompleteKnowledgeChecks");
     expect(router).toContain("Add at least one question before publishing");
-    expect(router).toContain("assessmentPassMark: z.number().int().min(1).max(100).default(100)");
-    expect(manager).toContain("assessmentPassMark: 100");
+    expect(router).toContain("assessmentPassMark: z.number().int().min(1).max(100).default(DEFAULT_WRITTEN_ASSESSMENT_PASS_MARK)");
+    expect(manager).toContain("assessmentPassMark: 90");
+    expect(manager).toContain("Written assessment overall pass mark");
   });
 
   it("keeps destructive actions and assessment rewrites protected while allowing staff to revise evidenced lesson content", () => {

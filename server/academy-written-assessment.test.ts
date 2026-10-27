@@ -18,15 +18,20 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(migration).toContain("'awaiting_marking','feedback_pending','feedback_acknowledged'");
   });
 
-  it("queues written answers for staff and calculates a percentage when graded", () => {
+  it("queues written answers for staff and applies the saved overall pass mark when graded", () => {
     expect(router).toContain('status: writtenQuestions.length ? "awaiting_marking" : "auto_graded"');
     expect(router).toContain('markWrittenAssessment: adminProcedure');
     expect(router).toContain('Score and feedback are required for every written response');
-    expect(router).toContain('const score = Math.round(states.reduce');
+    expect(router).toContain('const score = Math.round(writtenStates.reduce');
+    expect(router).toContain('const writtenStates = states.filter');
+    expect(router).toContain('writtenStates.reduce');
     expect(router).toContain('status: "feedback_pending"');
-    expect(router).toContain('const REQUIRED_ASSESSMENT_SCORE = 100');
-    expect(router).toContain('passMark: REQUIRED_ASSESSMENT_SCORE');
-    expect(manager).toContain('100% required');
+    expect(router).toContain('const DEFAULT_WRITTEN_ASSESSMENT_PASS_MARK = 90');
+    expect(router).toContain('const WRITTEN_ANSWER_INTERVENTION_MARK = 70');
+    expect(router).toContain('score >= row.lesson.assessmentPassMark');
+    expect(router).toContain('passMark: row.lesson.assessmentPassMark');
+    expect(manager).toContain('Written assessment overall pass mark');
+    expect(manager).toContain('Overall draft:');
   });
 
   it("requires the agent to acknowledge feedback before later lessons can be opened or completed", () => {
@@ -45,6 +50,8 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(learner).toContain('onPaste={(event) => { event.preventDefault();');
     expect(learner).toContain('onDrop={(event) => { event.preventDefault();');
     expect(learner).toContain('I have read and acknowledge this feedback');
+    expect(learner).toContain('Passed — no resubmission');
+    expect(learner).toContain('Needs attention — resubmit this answer');
   });
 
   it("keeps AI suggestions internal until a staff member deliberately reviews and releases a grade", () => {

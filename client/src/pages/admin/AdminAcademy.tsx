@@ -79,7 +79,7 @@ const emptyLesson = {
   isRequired: true,
   requiresAcknowledgement: false,
   requiresAssessment: false,
-  assessmentPassMark: 100,
+  assessmentPassMark: 90,
   questions: [] as DraftQuestion[],
 };
 
@@ -496,7 +496,7 @@ export default function AdminAcademy() {
       isRequired: lesson.isRequired,
       requiresAcknowledgement: lesson.requiresAcknowledgement,
       requiresAssessment: lesson.requiresAssessment,
-      assessmentPassMark: lesson.assessmentPassMark ?? 100,
+      assessmentPassMark: lesson.assessmentPassMark ?? 90,
       questions,
     });
     setOriginalQuestionSignature(academyQuestionDraftSignature(questions));
@@ -1611,12 +1611,24 @@ function LessonEditor({
           </label>
           {draft.requiresAssessment && (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2">
-              <Label>Progression standard</Label>
-              <p className="mt-1 text-sm font-semibold text-emerald-900">
-                100% required
-              </p>
-              <p className="mt-0.5 text-xs text-emerald-800">
-                Every answer must achieve 100% before the learner can continue.
+              <Label htmlFor="academy-written-pass-mark">Written assessment overall pass mark</Label>
+              <div className="mt-1.5 flex items-center gap-2">
+                <Input
+                  id="academy-written-pass-mark"
+                  className="w-24 bg-background"
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={draft.assessmentPassMark}
+                  onChange={event => setDraft({
+                    ...draft,
+                    assessmentPassMark: Math.max(1, Math.min(100, Number(event.target.value) || 90)),
+                  })}
+                />
+                <span className="text-sm font-semibold text-emerald-900">%</span>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-emerald-800">
+                Written assessments pass on the overall average. The default is 90%. Answers below 70% always return for a targeted resit; otherwise, if the overall result falls short, only answers below this chosen mark return. Multiple-choice questions always remain 100% mastery checks.
               </p>
             </div>
           )}
@@ -2038,6 +2050,9 @@ export function WrittenAssessmentQueue({
             Oldest submissions appear first. Open one assessment, then only the
             individual answers you are marking, so the queue stays easy to scan.
           </p>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-amber-900">
+            <strong>Written assessment rule:</strong> the overall average must meet this assessment&apos;s pass mark. Answers below 70% always need attention; otherwise, a resit returns only answers below the pass mark when the overall result falls short.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="rounded-full bg-amber-100 px-3 py-1.5 text-sm font-bold text-amber-800">
@@ -2056,6 +2071,18 @@ export function WrittenAssessmentQueue({
             const draft = draftFor(submission);
             const fallback = draftFor(submission);
             const assessmentExpanded = expandedAttemptIds.has(submission.attempt.id);
+            const passMark = submission.lesson.assessmentPassMark;
+            const gradedResponses = submission.responses.filter((response: any) => {
+              const score = draft.responses[response.questionId]?.score;
+              return Number.isInteger(score) && score >= 0;
+            });
+            const draftOverallScore = gradedResponses.length
+              ? Math.round(gradedResponses.reduce((total: number, response: any) => total + draft.responses[response.questionId].score, 0) / gradedResponses.length)
+              : null;
+            const resitDraftCount = gradedResponses.filter((response: any) => draft.responses[response.questionId]?.score < passMark).length;
+            const criticalDraftCount = gradedResponses.filter((response: any) => draft.responses[response.questionId]?.score < 70).length;
+            const allAnswersGraded = gradedResponses.length === submission.responses.length;
+            const draftWouldPass = allAnswersGraded && criticalDraftCount === 0 && (draftOverallScore ?? 0) >= passMark;
             const readyToMark =
               draft.feedback.trim().length >= 3 &&
               submission.responses.every((response: any) => {
@@ -2167,8 +2194,11 @@ export function WrittenAssessmentQueue({
                           Number.isInteger(grade.score) &&
                           grade.score >= 0 &&
                           grade.feedback.trim().length >= 3;
+                        const hasScore = Number.isInteger(grade.score) && grade.score >= 0;
+                        const meetsPassMark = hasScore && grade.score >= passMark;
+                        const needsIntervention = hasScore && grade.score < 70;
                         return (
-                          <div key={response.questionId} className="overflow-hidden rounded-lg border bg-card">
+                          <div key={response.questionId} className={`overflow-hidden rounded-lg border ${needsIntervention ? "border-rose-300 bg-rose-50/45" : hasScore ? meetsPassMark ? "border-emerald-200 bg-emerald-50/35" : "border-amber-300 bg-amber-50/45" : "bg-card"}`}>
                             <button
                               type="button"
                               className="flex w-full items-center gap-3 p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
@@ -2178,7 +2208,15 @@ export function WrittenAssessmentQueue({
                               {questionExpanded ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
                               <span className="min-w-0 flex-1 font-semibold">Written question {index + 1}</span>
                               {questionComplete ? (
-                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">Draft complete</span>
+                                needsIntervention ? (
+                                  <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-900">Below 70% — targeted resit</span>
+                                ) : meetsPassMark ? (
+                                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">At or above pass mark</span>
+                                ) : (
+                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">Below pass mark</span>
+                                )
+                              ) : hasScore ? (
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${needsIntervention ? "bg-rose-100 text-rose-900" : meetsPassMark ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>{needsIntervention ? "Below 70% — add feedback" : meetsPassMark ? "Add feedback to complete" : "Below pass mark — add feedback"}</span>
                               ) : (
                                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Needs marking</span>
                               )}
@@ -2255,7 +2293,7 @@ export function WrittenAssessmentQueue({
                                 )}
                                 <div className="mt-3 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)]">
                                   <div>
-                                    <Label>Score (%)</Label>
+                                    <Label>Score (%) · overall pass mark {passMark}%</Label>
                                     <Input
                                       className="mt-1.5"
                                       aria-label={`Score for written question ${index + 1}`}
@@ -2274,6 +2312,9 @@ export function WrittenAssessmentQueue({
                                         },
                                       }), fallback)}
                                     />
+                                    {needsIntervention && <p className="mt-1.5 text-xs leading-5 text-rose-900">This answer is below 70%, so it will be returned for a targeted resit even if the overall mark is high.</p>}
+                                    {hasScore && !needsIntervention && !meetsPassMark && <p className="mt-1.5 text-xs leading-5 text-amber-900">If the final overall result is below {passMark}%, this answer will be returned for resubmission.</p>}
+                                    {hasScore && meetsPassMark && <p className="mt-1.5 text-xs leading-5 text-emerald-800">This answer meets the pass mark.</p>}
                                   </div>
                                   <div>
                                     <Label>Feedback for this answer</Label>
@@ -2317,7 +2358,13 @@ export function WrittenAssessmentQueue({
                     </div>
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                       <p className="text-xs text-muted-foreground">
-                        {readyToMark ? "All answers have a score and feedback." : "Open each question to add a score and at least three characters of feedback."}
+                        {readyToMark
+                          ? draftWouldPass
+                            ? `Overall draft: ${draftOverallScore}% — passes the ${passMark}% standard. No answers will be returned.`
+                            : criticalDraftCount
+                              ? `Overall draft: ${draftOverallScore}% — ${criticalDraftCount} ${criticalDraftCount === 1 ? "answer is" : "answers are"} below 70%, so a targeted resit is required.`
+                              : `Overall draft: ${draftOverallScore}% — below the ${passMark}% standard. ${resitDraftCount} ${resitDraftCount === 1 ? "answer is" : "answers are"} below ${passMark}% and will be returned.`
+                          : "Open each question to add a score and at least three characters of feedback."}
                       </p>
                       <Button
                         disabled={!readyToMark || marking}

@@ -51,6 +51,11 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+const MAX_QUESTION_ATTEMPTS = 3;
+const AUTOMATIC_ASSESSMENT_PASS_MARK = 100;
+const DEFAULT_WRITTEN_ASSESSMENT_PASS_MARK = 90;
+const WRITTEN_ANSWER_INTERVENTION_MARK = 70;
+
 const courseInput = z.object({
   id: z.number().int().positive().optional(),
   title: z.string().trim().min(2).max(255),
@@ -78,9 +83,9 @@ const lessonInput = z.object({
   isRequired: z.boolean().default(true),
   requiresAcknowledgement: z.boolean().default(false),
   requiresAssessment: z.boolean().default(false),
-  // Academy progression is deliberately 100%. Retain the field for legacy
-  // records, but make the authoring contract reflect the actual learner rule.
-  assessmentPassMark: z.number().int().min(1).max(100).default(100),
+  // Written assessments use this overall pass mark. Automatic multiple-choice
+  // checks deliberately remain 100% mastery-based.
+  assessmentPassMark: z.number().int().min(1).max(100).default(DEFAULT_WRITTEN_ASSESSMENT_PASS_MARK),
 });
 
 function normaliseOptionalText(value: string | null | undefined) {
@@ -244,9 +249,6 @@ function asResponses(value: unknown): Array<{ questionId: number; selectedIndex:
   });
 }
 
-const MAX_QUESTION_ATTEMPTS = 3;
-const REQUIRED_ASSESSMENT_SCORE = 100;
-
 type QuestionResitState = {
   questionId: number;
   attemptCount: number;
@@ -263,7 +265,7 @@ type QuestionResitState = {
  */
 function deriveQuestionResitStates(params: {
   questions: Array<{ id: number; questionType: "multiple_choice" | "free_text" }>;
-  attempts: Array<{ id: number; status: string; takenAt: Date | string }>;
+  attempts: Array<{ id: number; status: string; takenAt: Date | string; passed?: boolean | null }>;
   responses: Array<{ attemptId: number; questionId: number; score: number | null }>;
   resets: Array<{ questionId: number; createdAt: Date | string }>;
   passMark: number;
@@ -282,9 +284,17 @@ function deriveQuestionResitStates(params: {
     const latest = questionAttempts[0] ?? null;
     const attemptCount = new Set(questionAttempts.map((item) => item.attempt.id)).size;
     const lastScore = latest?.response.score ?? null;
-    // Academy progression is deliberately mastery-based: every automatic or
-    // staff-marked answer needs 100% before the learner can move forward.
-    const passed = lastScore !== null && lastScore >= REQUIRED_ASSESSMENT_SCORE;
+    // Automatic multiple-choice checks remain mastery based. A written answer
+    // counts towards its lesson's overall mark when it meets the saved written
+    // threshold, or when the staff-approved overall assessment result passed.
+    // A strong overall written assessment therefore passes without returning a
+    // minor omission, but an answer below the intervention threshold remains
+    // a targeted resit even when the overall average is high.
+    const passed = question.questionType === "multiple_choice"
+      ? lastScore !== null && lastScore >= AUTOMATIC_ASSESSMENT_PASS_MARK
+      : lastScore !== null
+        && lastScore >= WRITTEN_ANSWER_INTERVENTION_MARK
+        && (latest?.attempt.passed === true || lastScore >= params.passMark);
     const awaitingMarking = questionAttempts.some((item) => item.attempt.status === "awaiting_marking");
     const feedbackPending = questionAttempts.some((item) => item.attempt.status === "feedback_pending");
     return {
@@ -1127,7 +1137,7 @@ export const academyRouter = router({
             });
           }
           void dispatchAcademyEmailAlerts({ eventType: "written_assessment_ready", eventKey: `written-assessment-${attemptId}`, enrollmentId: enrollment.id, courseId: enrollment.courseId, courseTitle: course?.title ?? "JLT Academy", moduleId: module?.id, moduleTitle: module?.title, agentId: ctx.user.id, agentName: agent?.name ?? null, agentEmail: agent?.email ?? null }).catch((error) => console.error("[Academy] Written-assessment alert dispatch failed:", error));
-          return { attemptId, status: "awaiting_marking" as const, passMark: REQUIRED_ASSESSMENT_SCORE, correct, total: outstandingQuestions.length };
+          return { attemptId, status: "awaiting_marking" as const, passMark: lesson.assessmentPassMark, correct, total: outstandingQuestions.length };
         }
         await addAudit({ agentId: ctx.user.id, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: assessmentPassed ? "assessment_passed" : "assessment_resit_required", summary: `${assessmentPassed ? "Completed" : "Submitted"} ${outstandingQuestions.length === 1 ? "an outstanding question" : `${outstandingQuestions.length} outstanding questions`} for ${lesson.title}`, metadata: { lessonId: lesson.id, score, passed: assessmentPassed, outstandingQuestionIds: allQuestionStates.filter((state) => !state.passed).map((state) => state.questionId) } });
         if (newlyEscalatedQuestions.length) {
@@ -1147,7 +1157,7 @@ export const academyRouter = router({
           }
           void dispatchAcademyEmailAlerts({ eventType: "three_attempt_lock", eventKey: `three-attempt-lock-${attemptId}`, enrollmentId: enrollment.id, courseId: enrollment.courseId, courseTitle: course?.title ?? "JLT Academy", moduleId: module?.id, moduleTitle: module?.title, agentId: ctx.user.id, agentName: agent?.name ?? null, agentEmail: agent?.email ?? null }).catch((error) => console.error("[Academy] Three-attempt alert dispatch failed:", error));
         }
-        return { attemptId, status: "auto_graded" as const, score, passed: assessmentPassed, passMark: REQUIRED_ASSESSMENT_SCORE, correct, total: outstandingQuestions.length };
+        return { attemptId, status: "auto_graded" as const, score, passed: assessmentPassed, passMark: AUTOMATIC_ASSESSMENT_PASS_MARK, correct, total: outstandingQuestions.length };
       }),
 
     acknowledgeAssessmentFeedback: protectedProcedure.input(z.object({ attemptId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -1441,7 +1451,10 @@ export const academyRouter = router({
           if (!existing || attempt.takenAt < existing.takenAt) firstScoredByEnrollment.set(attempt.enrollmentId, { score: response.score!, takenAt: attempt.takenAt });
         });
         const scores = Array.from(firstScoredByEnrollment.values()).map((item) => item.score);
-        const correctRate = scores.length ? Math.round((scores.filter((score) => score >= REQUIRED_ASSESSMENT_SCORE).length / scores.length) * 100) : null;
+        const questionPassMark = question.questionType === "multiple_choice"
+          ? AUTOMATIC_ASSESSMENT_PASS_MARK
+          : lesson.assessmentPassMark;
+        const correctRate = scores.length ? Math.round((scores.filter((score) => score >= questionPassMark).length / scores.length) * 100) : null;
         return {
           courseId: module.courseId,
           lessonId: lesson.id,
@@ -1507,7 +1520,7 @@ export const academyRouter = router({
         attempt: row.attempt,
         enrollment: { id: row.enrollment.id, agentId: row.enrollment.agentId, courseId: row.enrollment.courseId },
         course: { id: row.course.id, title: row.course.title },
-        lesson: { id: row.lesson.id, title: row.lesson.title, assessmentPassMark: REQUIRED_ASSESSMENT_SCORE },
+        lesson: { id: row.lesson.id, title: row.lesson.title, assessmentPassMark: row.lesson.assessmentPassMark },
         agent: { id: row.agent.id, name: row.agent.name, email: row.agent.email },
         aiReview: aiReviewByAttemptId.get(row.attempt.id) ?? null,
         responses: questions.filter((question) => question.lessonId === row.lesson.id && question.questionType === "free_text" && responses.some((item) => item.attemptId === row.attempt.id && item.questionId === question.id)).map((question) => {
@@ -1652,8 +1665,21 @@ export const academyRouter = router({
       const currentAttempt = attempts.find((attempt) => attempt.id === row.attempt.id)!;
       const allAttempts = attempts.map((attempt) => attempt.id === row.attempt.id ? { ...attempt, status: "feedback_pending" } : attempt);
       const states = deriveQuestionResitStates({ questions, attempts: allAttempts, responses, resets, passMark: row.lesson.assessmentPassMark });
-      const score = Math.round(states.reduce((total, state) => total + (state.lastScore ?? 0), 0) / Math.max(states.length, 1));
-      const passed = states.every((state) => state.passed);
+      const writtenStates = states.filter((state) => questions.find((question) => question.id === state.questionId)?.questionType === "free_text");
+      const score = Math.round(writtenStates.reduce((total, state) => total + (state.lastScore ?? 0), 0) / Math.max(writtenStates.length, 1));
+      const automaticQuestionsPassed = questions
+        .filter((question) => question.questionType === "multiple_choice")
+        .every((question) => states.find((state) => state.questionId === question.id)?.passed);
+      const lowWrittenAnswer = writtenStates
+        .some((state) => (state.lastScore ?? 0) < WRITTEN_ANSWER_INTERVENTION_MARK);
+      const passed = automaticQuestionsPassed && !lowWrittenAnswer && score >= row.lesson.assessmentPassMark;
+      const finalStates = deriveQuestionResitStates({
+        questions,
+        attempts: allAttempts.map((attempt) => attempt.id === currentAttempt.id ? { ...attempt, passed } : attempt),
+        responses,
+        resets,
+        passMark: row.lesson.assessmentPassMark,
+      });
       await db.update(academyAssessmentAttempts).set({ status: "feedback_pending", score, passed, graderFeedback: input.feedback, gradedById: ctx.user.id, gradedAt: now }).where(eq(academyAssessmentAttempts.id, currentAttempt.id));
       await createInAppNotification({ userId: row.agent.id, message: `Your ${row.course.title} assessment feedback is ready. Please read and acknowledge it before continuing.`, linkUrl: `/academy/course/${row.enrollment.id}`, isUrgent: true });
       await sendAcademyAgentEmail({
@@ -1662,10 +1688,10 @@ export const academyRouter = router({
         name: row.agent.name,
         subject: `Your JLT Academy feedback is ready — ${row.lesson.title}`,
         triggerKey: "academy_assessment_feedback_ready",
-        html: `<p>Hi ${escapeAcademyEmailHtml((row.agent.name ?? "there").split(" ")[0])},</p><p>Your written assessment feedback for <strong>${escapeAcademyEmailHtml(row.lesson.title)}</strong> is ready in the JLT Academy.</p><p>${passed ? "You achieved the required 100% standard. Please read and acknowledge the feedback to record this lesson as complete." : "Please read the feedback, acknowledge it, then revisit the outstanding response when you are ready."}</p><p><a href="${ACADEMY_PORTAL_URL}/academy/course/${row.enrollment.id}">Open your Academy feedback</a></p>`,
+        html: `<p>Hi ${escapeAcademyEmailHtml((row.agent.name ?? "there").split(" ")[0])},</p><p>Your written assessment feedback for <strong>${escapeAcademyEmailHtml(row.lesson.title)}</strong> is ready in the JLT Academy.</p><p>${passed ? `You achieved the required ${row.lesson.assessmentPassMark}% overall standard. Please read and acknowledge the feedback to record this lesson as complete.` : `Please read the feedback, acknowledge it, then revisit only the answers marked for resubmission when you are ready.`}</p><p><a href="${ACADEMY_PORTAL_URL}/academy/course/${row.enrollment.id}">Open your Academy feedback</a></p>`,
       });
-      await addAudit({ agentId: row.agent.id, courseId: row.course.id, enrollmentId: row.enrollment.id, actorId: ctx.user.id, action: "assessment_marked", summary: `Marked ${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response" : "responses"} for ${row.lesson.title} (${score}% — ${passed ? "passed" : "targeted resit needed"})`, metadata: { attemptId: row.attempt.id, score, passed, passMark: REQUIRED_ASSESSMENT_SCORE, staffApprovedScores: input.responses.map(({ questionId, score: responseScore }) => ({ questionId, score: responseScore })), finalFeedbackReleased: true, outstandingQuestionIds: states.filter((state) => !state.passed).map((state) => state.questionId) } });
-      return { score, passed, passMark: REQUIRED_ASSESSMENT_SCORE };
+      await addAudit({ agentId: row.agent.id, courseId: row.course.id, enrollmentId: row.enrollment.id, actorId: ctx.user.id, action: "assessment_marked", summary: `Marked ${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response" : "responses"} for ${row.lesson.title} (${score}% — ${passed ? "passed" : "targeted resit needed"})`, metadata: { attemptId: row.attempt.id, score, passed, passMark: row.lesson.assessmentPassMark, staffApprovedScores: input.responses.map(({ questionId, score: responseScore }) => ({ questionId, score: responseScore })), finalFeedbackReleased: true, outstandingQuestionIds: finalStates.filter((state) => !state.passed).map((state) => state.questionId) } });
+      return { score, passed, passMark: row.lesson.assessmentPassMark };
     }),
 
     supportQueue: adminProcedure.query(async () => {
@@ -1865,7 +1891,7 @@ export const academyRouter = router({
       const videoUrl = normaliseOptionalText(input.videoUrl);
       if (videoUrl && !safeHttpsUrl(videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Video links must use HTTPS" });
       const attachmentUrl = normaliseOptionalText(input.attachmentUrl);
-      const payload = { title: input.title, summary: normaliseOptionalText(input.summary), contentHtml: sanitiseLessonHtml(input.contentHtml), videoUrl, videoTranscript: preserveOptionalTranscript(input.videoTranscript), attachmentUrl, attachmentKey: normaliseOptionalText(input.attachmentKey), attachmentName: normaliseOptionalText(input.attachmentName), estimatedMinutes: input.estimatedMinutes, isRequired: input.isRequired, requiresAcknowledgement: input.requiresAcknowledgement, requiresAssessment: input.requiresAssessment, assessmentPassMark: input.requiresAssessment ? REQUIRED_ASSESSMENT_SCORE : input.assessmentPassMark };
+      const payload = { title: input.title, summary: normaliseOptionalText(input.summary), contentHtml: sanitiseLessonHtml(input.contentHtml), videoUrl, videoTranscript: preserveOptionalTranscript(input.videoTranscript), attachmentUrl, attachmentKey: normaliseOptionalText(input.attachmentKey), attachmentName: normaliseOptionalText(input.attachmentName), estimatedMinutes: input.estimatedMinutes, isRequired: input.isRequired, requiresAcknowledgement: input.requiresAcknowledgement, requiresAssessment: input.requiresAssessment, assessmentPassMark: input.requiresAssessment ? input.assessmentPassMark : AUTOMATIC_ASSESSMENT_PASS_MARK };
       const { videoTranscript, ...legacyPayload } = payload;
       if (input.id) {
         const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);

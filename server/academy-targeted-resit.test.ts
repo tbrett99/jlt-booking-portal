@@ -27,9 +27,11 @@ describe("JLT Academy targeted-question resits", () => {
     expect(router).toContain('assessment_resit_required');
   });
 
-  it("requires mastery before a lesson unlocks later Academy content", () => {
-    expect(router).toContain('const REQUIRED_ASSESSMENT_SCORE = 100');
-    expect(router).toContain('lastScore >= REQUIRED_ASSESSMENT_SCORE');
+  it("keeps automatic checks at mastery while using saved overall written-assessment standards", () => {
+    expect(router).toContain('const AUTOMATIC_ASSESSMENT_PASS_MARK = 100');
+    expect(router).toContain('const DEFAULT_WRITTEN_ASSESSMENT_PASS_MARK = 90');
+    expect(router).toContain('lastScore >= AUTOMATIC_ASSESSMENT_PASS_MARK');
+    expect(router).toContain('latest?.attempt.passed === true || lastScore >= params.passMark');
     expect(router).toContain('ensureSequentialAcademyLessonAccess');
     expect(router).toContain('Complete ${blockingLesson?.title ?? "the current lesson"} before continuing.');
     expect(router).toContain('locked ? null : agentLesson.contentHtml');
