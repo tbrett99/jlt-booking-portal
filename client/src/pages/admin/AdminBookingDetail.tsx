@@ -1129,6 +1129,11 @@ export default function AdminBookingDetail() {
   const [mergeTarget, setMergeTarget] = useState<{ id: number; clientName: string } | null>(null);
   const [mergeSearchQuery, setMergeSearchQuery] = useState("");
   const [awaitingReimbursementTarget, setAwaitingReimbursementTarget] = useState<any | null>(null);
+  const [reimbursementDocumentMove, setReimbursementDocumentMove] = useState<{
+    document: any;
+    fromItem: any;
+    targetItemId: string;
+  } | null>(null);
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
   // @mention state
@@ -1196,6 +1201,14 @@ export default function AdminBookingDetail() {
   });
   const deleteReimbItem = trpc.reimbursements.deleteItem.useMutation({
     onSuccess: () => { void refreshReimbursements(); toast.success('Reimbursement item deleted'); },
+    onError: (e) => toast.error(e.message),
+  });
+  const moveReimbursementDocument = trpc.reimbursements.moveItemDoc.useMutation({
+    onSuccess: async () => {
+      setReimbursementDocumentMove(null);
+      await refreshReimbursements();
+      toast.success('Document reassigned and recorded in reimbursement activity');
+    },
     onError: (e) => toast.error(e.message),
   });
   const toggleSuppliersAndDocs = trpc.bookings.toggleSuppliersAndDocs.useMutation({
@@ -1853,6 +1866,12 @@ export default function AdminBookingDetail() {
                           {entry.action === 'agent_response_checked' && (
                             <span className="text-muted-foreground"> confirmed the requested information was checked and returned it to <span className="font-medium text-amber-800">Pending</span></span>
                           )}
+                          {entry.action === 'document_reassigned_out' && (
+                            <span className="text-muted-foreground"> moved a document out of this reimbursement</span>
+                          )}
+                          {entry.action === 'document_reassigned_in' && (
+                            <span className="text-muted-foreground"> moved a document into this reimbursement</span>
+                          )}
                           {entry.note && !isBackfill && (
                             <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-foreground">{entry.note}</p>
                           )}
@@ -1951,6 +1970,17 @@ export default function AdminBookingDetail() {
                               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#065f46" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                               <a href={resolveDocUrl(doc.fileUrl, doc.fileKey) ?? '#'} target="_blank" rel="noopener noreferrer" className="underline truncate flex-1" style={{ color: '#065f46' }}>{doc.fileName}</a>
                               <span className="text-muted-foreground flex-shrink-0">{doc.createdAt ? new Date(doc.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : ''}</span>
+                              {isAdmin && (reimbItems as any[]).length > 1 && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 shrink-0 border-sky-200 px-2 text-[10px] text-sky-800 hover:bg-sky-50"
+                                  onClick={() => setReimbursementDocumentMove({ document: doc, fromItem: item, targetItemId: '' })}
+                                >
+                                  Move
+                                </Button>
+                              )}
                             </div>
                           ))
                         )}
@@ -2587,6 +2617,67 @@ export default function AdminBookingDetail() {
           <BookingWorkspaceOverview currentStage={booking.currentStage} items={bookingOverviewItems} />
         </div>
       </div>
+
+      <Dialog open={!!reimbursementDocumentMove} onOpenChange={(open) => { if (!open) setReimbursementDocumentMove(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sky-900">
+              <FolderOpen className="h-5 w-5" /> Move reimbursement document
+            </DialogTitle>
+            <DialogDescription className="space-y-2 pt-1 text-sm leading-relaxed">
+              <span className="block">Use this only to correct a document saved against the wrong reimbursement on this booking.</span>
+              <span className="block">The file will not be deleted or replaced. Its original and new reimbursement will both receive an activity record.</span>
+            </DialogDescription>
+          </DialogHeader>
+          {reimbursementDocumentMove && (
+            <div className="space-y-4 py-2">
+              <div className="rounded-lg border border-sky-100 bg-sky-50 p-3 text-sm text-sky-950">
+                <p className="font-semibold break-words">{reimbursementDocumentMove.document.fileName}</p>
+                <p className="mt-1 text-xs text-sky-900/75">Currently attached to: {reimbursementDocumentMove.fromItem.supplierName} (£{Number(reimbursementDocumentMove.fromItem.amount).toFixed(2)})</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="reimbursement-document-target">Move to reimbursement</Label>
+                <Select
+                  value={reimbursementDocumentMove.targetItemId || undefined}
+                  onValueChange={(targetItemId) => setReimbursementDocumentMove((current) => current ? { ...current, targetItemId } : current)}
+                >
+                  <SelectTrigger id="reimbursement-document-target">
+                    <SelectValue placeholder="Select the correct reimbursement" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(reimbItems as any[])
+                      .filter((item: any) => item.id !== reimbursementDocumentMove.fromItem.id)
+                      .map((item: any) => (
+                        <SelectItem key={item.id} value={String(item.id)}>
+                          {item.supplierName} · £{Number(item.amount).toFixed(2)} · {item.status.replace(/_/g, " ")}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" onClick={() => setReimbursementDocumentMove(null)} disabled={moveReimbursementDocument.isPending}>Cancel</Button>
+            <Button
+              className="bg-sky-700 text-white hover:bg-sky-800"
+              disabled={moveReimbursementDocument.isPending || !reimbursementDocumentMove?.targetItemId}
+              onClick={() => {
+                if (!reimbursementDocumentMove?.targetItemId) return;
+                moveReimbursementDocument.mutate({
+                  documentId: reimbursementDocumentMove.document.id,
+                  bookingId,
+                  fromReimbursementItemId: reimbursementDocumentMove.fromItem.id,
+                  toReimbursementItemId: Number(reimbursementDocumentMove.targetItemId),
+                });
+              }}
+            >
+              {moveReimbursementDocument.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FolderOpen className="mr-1.5 h-4 w-4" />}
+              Move &amp; record correction
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!cancellationActionTarget} onOpenChange={(open) => { if (!open) setCancellationActionTarget(null); }}>
         <DialogContent>

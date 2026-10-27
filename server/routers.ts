@@ -5173,6 +5173,26 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         }
         return getReimbursementItemDocs(input.reimbursementItemId);
       }),
+    // Admin: correct a document linked to the wrong reimbursement item on the
+    // same booking. This preserves the file and creates activity on both items.
+    moveItemDoc: adminProcedure
+      .input(z.object({
+        documentId: z.number().int().positive(),
+        bookingId: z.number().int().positive(),
+        fromReimbursementItemId: z.number().int().positive(),
+        toReimbursementItemId: z.number().int().positive(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { moveReimbursementItemDoc } = await import("./db");
+        try {
+          return await moveReimbursementItemDoc({ ...input, actedById: ctx.user.id });
+        } catch (error) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error instanceof Error ? error.message : "The document could not be reassigned safely",
+          });
+        }
+      }),
 
     // Admin/Agent: get audit log for a booking's reimbursements
     auditLog: protectedProcedure

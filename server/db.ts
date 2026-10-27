@@ -2413,18 +2413,55 @@ export async function createReimbursementItems(items: Array<{
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   if (items.length === 0) return [];
-  await db.insert(reimbursementItems).values(
-    items.map((item) => ({
-      bookingId: item.bookingId,
-      agentId: item.agentId,
-      supplierName: item.supplierName,
-      amount: String(item.amount),
-      status: "pending" as const,
-      isLate: item.isLate ?? false,
-      jltCompanyCard: item.jltCompanyCard ?? false,
-    }))
-  );
-  return db.select().from(reimbursementItems).where(eq(reimbursementItems.bookingId, items[0].bookingId));
+  // Callers use the returned rows to attach each uploaded document to its own
+  // newly-created reimbursement. Returning every reimbursement on the booking
+  // made an older item appear at the front of this response, so later evidence
+  // could be attached to the wrong supplier. Insert one item at a time through
+  // the provider-compatible prepared path and reload precisely those IDs in the
+  // same submitted order.
+  const pool = await getRawDbPool();
+  const connection = await pool.getConnection();
+  const createdIds: number[] = [];
+  try {
+    await connection.beginTransaction();
+    for (const item of items) {
+      const [result] = await connection.execute(
+        `INSERT INTO reimbursement_items
+          (bookingId, agentId, supplierName, amount, status, isLate, jltCompanyCard)
+         VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+        [
+          item.bookingId,
+          item.agentId,
+          item.supplierName,
+          String(item.amount),
+          item.isLate ?? false,
+          item.jltCompanyCard ?? false,
+        ],
+      );
+      const id = Number((result as { insertId?: number }).insertId);
+      if (!Number.isSafeInteger(id) || id < 1) {
+        throw new Error("Reimbursement item insert did not return an ID");
+      }
+      createdIds.push(id);
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+
+  const created = await db
+    .select()
+    .from(reimbursementItems)
+    .where(inArray(reimbursementItems.id, createdIds));
+  const createdById = new Map(created.map((item) => [item.id, item]));
+  return createdIds.map((id) => {
+    const createdItem = createdById.get(id);
+    if (!createdItem) throw new Error("Created reimbursement items could not be reloaded");
+    return createdItem;
+  });
 }
 
 export async function getReimbursementsByBooking(bookingId: number) {
@@ -2782,6 +2819,89 @@ export async function getReimbursementItemDocsByBooking(bookingId: number) {
     .from(reimbursementItemDocs)
     .where(eq(reimbursementItemDocs.bookingId, bookingId))
     .orderBy(reimbursementItemDocs.createdAt);
+}
+
+/**
+ * Correct a document that was associated with the wrong reimbursement item on
+ * the same booking. The document object remains intact; only its parent item is
+ * changed and both sides receive immutable activity records.
+ */
+export async function moveReimbursementItemDoc(params: {
+  documentId: number;
+  bookingId: number;
+  fromReimbursementItemId: number;
+  toReimbursementItemId: number;
+  actedById: number;
+}) {
+  if (params.fromReimbursementItemId === params.toReimbursementItemId) {
+    throw new Error("Choose a different reimbursement item");
+  }
+
+  const pool = await getRawDbPool();
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [sourceRows] = await connection.execute(
+      `SELECT id, supplierName
+       FROM reimbursement_items
+       WHERE id = ? AND bookingId = ?
+       LIMIT 1 FOR UPDATE`,
+      [params.fromReimbursementItemId, params.bookingId],
+    );
+    const source = (sourceRows as Array<{ id: number; supplierName: string }>)[0];
+    if (!source) throw new Error("The original reimbursement item was not found on this booking");
+
+    const [targetRows] = await connection.execute(
+      `SELECT id, supplierName
+       FROM reimbursement_items
+       WHERE id = ? AND bookingId = ?
+       LIMIT 1 FOR UPDATE`,
+      [params.toReimbursementItemId, params.bookingId],
+    );
+    const target = (targetRows as Array<{ id: number; supplierName: string }>)[0];
+    if (!target) throw new Error("The selected reimbursement item was not found on this booking");
+
+    const [documentRows] = await connection.execute(
+      `SELECT id, fileName
+       FROM reimbursement_item_docs
+       WHERE id = ? AND bookingId = ? AND reimbursementItemId = ?
+       LIMIT 1 FOR UPDATE`,
+      [params.documentId, params.bookingId, params.fromReimbursementItemId],
+    );
+    const document = (documentRows as Array<{ id: number; fileName: string }>)[0];
+    if (!document) throw new Error("The document is no longer attached to the selected reimbursement item");
+
+    const [updateResult] = await connection.execute(
+      `UPDATE reimbursement_item_docs
+       SET reimbursementItemId = ?
+       WHERE id = ? AND bookingId = ? AND reimbursementItemId = ?`,
+      [params.toReimbursementItemId, params.documentId, params.bookingId, params.fromReimbursementItemId],
+    );
+    if (Number((updateResult as { affectedRows?: number }).affectedRows ?? 0) !== 1) {
+      throw new Error("The document could not be reassigned safely");
+    }
+
+    const note = `Document "${document.fileName}" reassigned from ${source.supplierName} (#${source.id}) to ${target.supplierName} (#${target.id}).`;
+    await connection.execute(
+      `INSERT INTO reimbursement_audit_logs
+       (reimbursementItemId, bookingId, action, actedById, note)
+       VALUES (?, ?, 'document_reassigned_out', ?, ?)`,
+      [source.id, params.bookingId, params.actedById, note],
+    );
+    await connection.execute(
+      `INSERT INTO reimbursement_audit_logs
+       (reimbursementItemId, bookingId, action, actedById, note)
+       VALUES (?, ?, 'document_reassigned_in', ?, ?)`,
+      [target.id, params.bookingId, params.actedById, note],
+    );
+    await connection.commit();
+    return { documentId: document.id, fromReimbursementItemId: source.id, toReimbursementItemId: target.id };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 // Get bookings for an agent that have at least one reimbursement item with no uploaded docs
