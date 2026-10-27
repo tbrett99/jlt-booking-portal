@@ -15,6 +15,42 @@ function hasHtmlMarkup(value: string) {
   return /<\/?[a-z][\w-]*(?:\s[^>]*)?>/i.test(value);
 }
 
+function decodeComparableHtmlEntities(value: string) {
+  return value
+    .replace(/&nbsp;|&#160;|&#xA0;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;|&#x0*27;/gi, "'");
+}
+
+/**
+ * A stable representation of what a learner can read and open from a lesson.
+ * It deliberately ignores purely presentational markup, whitespace and editor
+ * wrappers, while retaining text order plus linked resource destinations. It
+ * is used only to allow safe visual formatting corrections after a lesson has
+ * learner evidence; substantive lesson or link changes remain protected.
+ */
+export function academyLessonContentFingerprint(content: string | null | undefined) {
+  const source = content ?? "";
+  const resourceReferences = Array.from(
+    source.matchAll(/\s(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi),
+    (match) => decodeComparableHtmlEntities(match[1] ?? match[2] ?? match[3] ?? "").trim(),
+  ).filter(Boolean);
+  const readableLines = decodeComparableHtmlEntities(
+    source
+      .replace(/\r/g, "")
+      .replace(/<br\b[^>]*>/gi, "\n")
+      .replace(/<\/(?:p|div|li|h[1-6]|tr|blockquote|pre|details|ul|ol)\s*>/gi, "\n")
+      .replace(/<[^>]*>/g, " "),
+  )
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim().replace(/^(?:[-*•‣▪]|\d+[.)])\s+/, ""))
+    .filter(Boolean);
+  return `${readableLines.join("\n")}\n@@resources:${resourceReferences.join("\n")}`;
+}
+
 function listKind(value: string): "ordered" | "unordered" | null {
   const text = visibleText(value);
   if (/^\s*\d+[.)]\s+/.test(text)) return "ordered";

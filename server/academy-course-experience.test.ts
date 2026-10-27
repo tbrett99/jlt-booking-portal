@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { normaliseAcademyLessonContent } from "../shared/academy-lesson-content";
+import { academyLessonContentFingerprint, normaliseAcademyLessonContent } from "../shared/academy-lesson-content";
 import { loomEmbedUrl, parseLoomEmbedId } from "../shared/loom-embed";
 
 const courseSource = readFileSync(resolve(process.cwd(), "client/src/pages/academy/AcademyCourse.tsx"), "utf8");
@@ -43,6 +43,16 @@ Keep your records up to date.`);
     expect(rendered).toContain("<p>Finish with this reminder.</p>");
   });
 
+  it("recognises equivalent Academy formatting without treating new wording or resources as a visual-only correction", () => {
+    const legacy = `Before you begin
+• Read the material
+• Make a note of your questions`;
+    const formatted = `<h2>Before you begin</h2><ul><li>Read the material</li><li>Make a note of your questions</li></ul>`;
+    expect(academyLessonContentFingerprint(legacy)).toBe(academyLessonContentFingerprint(formatted));
+    expect(academyLessonContentFingerprint(formatted)).not.toBe(academyLessonContentFingerprint(`<h2>Before you begin</h2><ul><li>Read the revised material</li><li>Make a note of your questions</li></ul>`));
+    expect(academyLessonContentFingerprint(`<p>Open <a href="https://example.com/one">the guide</a></p>`)).not.toBe(academyLessonContentFingerprint(`<p>Open <a href="https://example.com/two">the guide</a></p>`));
+  });
+
   it("embeds only recognised HTTPS Loom share URLs", () => {
     const id = "a1b2c3d4e5f6";
     expect(parseLoomEmbedId(`https://www.loom.com/share/${id}?sid=session`)).toBe(id);
@@ -71,12 +81,19 @@ Keep your records up to date.`);
 
   it("shows a single current learning path and a deliberate knowledge-check retry outcome", () => {
     expect(courseSource).toContain("lesson.locked || blockedByFeedback");
-    expect(courseSource).toContain("Locked until the current lesson is passed");
+    expect(courseSource).toContain('Complete ${blockingLesson?.title ?? "the current lesson"} to unlock this lesson.');
     expect(courseSource).toContain("const [failedKnowledgeCheck, setFailedKnowledgeCheck]");
     expect(courseSource).toContain("Knowledge check not passed yet");
     expect(courseSource).toContain("Retry knowledge check");
     expect(courseSource).toContain("100% is required before you can move to the next lesson");
     expect(courseSource).toContain("const nextUnlockedLesson");
     expect(courseSource).toContain("Next lesson");
+  });
+
+  it("returns a learner to the top only after the next lesson has rendered", () => {
+    expect(courseSource).toContain("const scrollToTopAfterNextLesson = useRef(false)");
+    expect(courseSource).toContain("window.scrollTo({");
+    expect(courseSource).toContain('window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"');
+    expect(courseSource).toContain("chooseLesson(nextUnlockedLesson.id, { scrollToTop: true })");
   });
 });

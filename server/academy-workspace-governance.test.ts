@@ -30,11 +30,14 @@ describe("Academy workspace and governance overhaul", () => {
     expect(manager).toContain("assessmentPassMark: 100");
   });
 
-  it("preserves learner evidence by refusing destructive course-content rewrites", () => {
+  it("preserves learner evidence by refusing material course-content rewrites while allowing visual-only formatting", () => {
     expect(router).toContain("async function hasAcademyLearnerEvidence");
     expect(router).toContain("cannot be deleted");
     expect(router).toContain("knowledge check has learner evidence");
     expect(router).toContain("Create a replacement lesson");
+    expect(router).toContain("isFormattingOnlyContentUpdate");
+    expect(router).toContain("academyLessonContentFingerprint");
+    expect(router).toContain("formatting-only changes");
   });
 
   it("makes staff overrides use the same Accelerator journey and entry-Action hand-off as normal completion", () => {

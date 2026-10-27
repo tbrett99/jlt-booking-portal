@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, BookOpenCheck, CheckCircle2, Circle, ClipboardCheck, Download, ExternalLink, FileText, LockKeyhole, PlayCircle, ShieldCheck, Trophy } from "lucide-react";
@@ -77,6 +77,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   const [writtenAnswers, setWrittenAnswers] = useState<Record<number, string>>({});
   const [expandedModuleId, setExpandedModuleId] = useState<number | null>(null);
   const [isWorkingOnKnowledgeCheck, setIsWorkingOnKnowledgeCheck] = useState(false);
+  const scrollToTopAfterNextLesson = useRef(false);
 
   const lessons = useMemo(() => data?.modules.flatMap((module) => module.lessons) ?? [], [data]);
   const selectedLesson = lessons.find((lesson) => lesson.id === selectedLessonId) ?? lessons.find((lesson) => !lesson.locked) ?? null;
@@ -113,6 +114,16 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   }, [selectedLesson?.id, isPreview]);
 
   useEffect(() => {
+    if (!selectedLesson || !scrollToTopAfterNextLesson.current) return;
+    scrollToTopAfterNextLesson.current = false;
+    window.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  }, [selectedLesson?.id]);
+
+  useEffect(() => {
     if (isPreview || !selectedLesson || selectedLesson.progress?.completedAt) return;
     const recordVisibleActivity = (includeHidden = false) => {
       if (!includeHidden && document.hidden) return;
@@ -133,7 +144,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
     };
   }, [isPreview, isWorkingOnKnowledgeCheck, numericEnrollmentId, recordActivity, selectedLesson?.id, selectedLesson?.progress?.completedAt]);
 
-  const chooseLesson = (lessonId: number) => {
+  const chooseLesson = (lessonId: number, options?: { scrollToTop?: boolean }) => {
     const targetIndex = lessons.findIndex((lesson) => lesson.id === lessonId);
     const target = lessons[targetIndex];
     if (target?.locked) {
@@ -153,6 +164,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
     }
     const containingModule = data?.modules.find((module) => module.lessons.some((lesson) => lesson.id === lessonId));
     if (containingModule) setExpandedModuleId(containingModule.id);
+    if (options?.scrollToTop) scrollToTopAfterNextLesson.current = true;
     setSelectedLessonId(lessonId);
   };
 
@@ -218,7 +230,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
           </section>}
 
           {!selectedLesson.progress?.completedAt && !selectedLesson.requiresAssessment && <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6"><p className="text-sm text-muted-foreground">{selectedLesson.requiresAcknowledgement && !selectedLesson.progress?.acknowledgedAt ? "Acknowledge this lesson above before marking it complete." : "When you are ready, save this lesson as complete."}</p><Button disabled={!canComplete || (!isPreview && completeLesson.isPending)} onClick={() => { if (isPreview) { toast.info("Preview only — no lesson completion or Academy progress was recorded."); return; } completeLesson.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id }); }}><ShieldCheck className="mr-2" size={17} />{isPreview ? "Preview completion (not recorded)" : completeLesson.isPending ? "Saving..." : "Complete lesson"}</Button></div>}
-          {selectedLesson.progress?.completedAt && nextUnlockedLesson && <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t pt-6"><div><p className="font-semibold">Ready to continue?</p><p className="mt-1 text-sm text-muted-foreground">Next: {nextUnlockedLesson.title}</p></div><Button onClick={() => chooseLesson(nextUnlockedLesson.id)}>Next lesson <ArrowRight className="ml-2" size={17} /></Button></div>}
+          {selectedLesson.progress?.completedAt && nextUnlockedLesson && <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t pt-6"><div><p className="font-semibold">Ready to continue?</p><p className="mt-1 text-sm text-muted-foreground">Next: {nextUnlockedLesson.title}</p></div><Button onClick={() => chooseLesson(nextUnlockedLesson.id, { scrollToTop: true })}>Next lesson <ArrowRight className="ml-2" size={17} /></Button></div>}
           {data.progress.isComplete && <div className="mt-8 flex items-center gap-3 rounded-xl bg-emerald-50 p-4 text-emerald-900"><Trophy size={22} className="text-emerald-600" /><div><p className="font-bold">Course complete</p><p className="text-sm text-emerald-800">Your completion has been recorded in your Academy learning history.</p></div></div>}
         </main>
       </div>

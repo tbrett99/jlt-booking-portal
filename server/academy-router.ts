@@ -26,6 +26,7 @@ import {
 import { getAccreditationEligibility, safeHttpsUrl, summariseAcademyProgress } from "../shared/academy-utils";
 import { MAX_ACADEMY_ASSESSMENT_QUESTIONS, parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
 import { buildAcademyLearningPath } from "../shared/academy-learning-path";
+import { academyLessonContentFingerprint } from "../shared/academy-lesson-content";
 import { assignAcceleratorEntryActions, releaseAvailableJourneyActions } from "./agent-development-router";
 import { ACCELERATOR_JOURNEY_WEEKS, acceleratorWeekReleaseLabel, isAcceleratorWeekAvailable } from "./academy-journey";
 import {
@@ -1838,10 +1839,23 @@ export const academyRouter = router({
       if (input.id) {
         const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);
         if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
-        if (await hasAcademyLearnerEvidence([lesson.id])) {
+        const hasLearnerEvidence = await hasAcademyLearnerEvidence([lesson.id]);
+        const isFormattingOnlyContentUpdate = lesson.title === payload.title
+          && lesson.summary === payload.summary
+          && lesson.videoUrl === payload.videoUrl
+          && lesson.attachmentUrl === payload.attachmentUrl
+          && lesson.attachmentKey === payload.attachmentKey
+          && lesson.attachmentName === payload.attachmentName
+          && lesson.estimatedMinutes === payload.estimatedMinutes
+          && lesson.isRequired === payload.isRequired
+          && lesson.requiresAcknowledgement === payload.requiresAcknowledgement
+          && lesson.requiresAssessment === payload.requiresAssessment
+          && lesson.assessmentPassMark === payload.assessmentPassMark
+          && academyLessonContentFingerprint(lesson.contentHtml) === academyLessonContentFingerprint(payload.contentHtml);
+        if (hasLearnerEvidence && !isFormattingOnlyContentUpdate) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: "This lesson has learner evidence and is now preserved as part of the Academy record. Create a replacement lesson for a material revision rather than changing historic learning content.",
+            message: "This lesson has learner evidence and is now preserved as part of the Academy record. You can save formatting-only changes, but create a replacement lesson for changes to its wording, requirements, resources or learning content.",
           });
         }
         try {
@@ -1851,7 +1865,7 @@ export const academyRouter = router({
           if (videoTranscript) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Loom transcript storage is not ready on Railway yet. Apply the Academy transcript database update, then save this transcript." });
           await db.update(academyLessons).set(legacyPayload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
         }
-        await addAudit({ courseId: module.courseId, actorId: ctx.user.id, action: "lesson_updated", summary: `Updated lesson: ${input.title}` });
+        await addAudit({ courseId: module.courseId, actorId: ctx.user.id, action: "lesson_updated", summary: `Updated lesson: ${input.title}`, metadata: hasLearnerEvidence ? { formattingOnly: true } : undefined });
         return { id: input.id };
       }
       const existing = await db.select({ sortOrder: academyLessons.sortOrder }).from(academyLessons).where(eq(academyLessons.moduleId, input.moduleId)).orderBy(desc(academyLessons.sortOrder)).limit(1);
