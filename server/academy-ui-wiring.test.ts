@@ -7,6 +7,7 @@ const navigation = readFileSync(resolve(process.cwd(), "client/src/components/Po
 const agentHome = readFileSync(resolve(process.cwd(), "client/src/pages/academy/AcademyHome.tsx"), "utf8");
 const agentCourse = readFileSync(resolve(process.cwd(), "client/src/pages/academy/AcademyCourse.tsx"), "utf8");
 const manager = readFileSync(resolve(process.cwd(), "client/src/pages/admin/AdminAcademy.tsx"), "utf8");
+const learnerOperations = readFileSync(resolve(process.cwd(), "client/src/pages/admin/AdminAcademyProgressInsights.tsx"), "utf8");
 const academyRouter = readFileSync(resolve(process.cwd(), "server/academy-router.ts"), "utf8");
 const richEditor = readFileSync(resolve(process.cwd(), "client/src/components/RichEmailEditor.tsx"), "utf8");
 
@@ -31,10 +32,10 @@ describe("JLT Academy interface wiring", () => {
     expect(manager).toContain("setIsCreatingCourse(false)");
   });
 
-  it("provides staff controls for resources, quizzes, manual access and accreditation", () => {
+  it("provides staff controls for resources, quizzes, learner enrolment and accreditation in their respective Academy workspaces", () => {
     expect(manager).toContain("Downloadable resource");
     expect(manager).toContain("Knowledge-check questions");
-    expect(manager).toContain("Grant Academy");
+    expect(learnerOperations).toContain("Enrol an agent");
     expect(manager).toContain("Accredit");
   });
 
@@ -58,6 +59,14 @@ describe("JLT Academy interface wiring", () => {
     expect(manager).toContain("const lessonId = Number(result.id)");
     expect(manager).toContain("Number.isSafeInteger(lessonId)");
     expect(manager).toMatch(/lessonId,\s+questions: lessonDraft\.questions/);
+  });
+
+  it("does not re-submit unchanged assessment questions when saving an existing lesson's content", () => {
+    expect(manager).toContain("originalQuestionSignature");
+    expect(manager).toContain("academyQuestionDraftSignature");
+    expect(manager).toContain("const shouldReplaceQuestions");
+    expect(manager).toContain("editingLessonId === null");
+    expect(manager).toContain("Saving lesson wording, resources or layout does not update these questions.");
   });
 
   it("provides a template-led, additive CSV import for multiple-choice quizzes", () => {

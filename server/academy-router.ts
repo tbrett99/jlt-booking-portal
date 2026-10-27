@@ -26,6 +26,7 @@ import {
 import { getAccreditationEligibility, safeHttpsUrl, summariseAcademyProgress } from "../shared/academy-utils";
 import { MAX_ACADEMY_ASSESSMENT_QUESTIONS, parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
 import { buildAcademyLearningPath } from "../shared/academy-learning-path";
+import { academyQuestionContentFingerprint } from "../shared/academy-question-rich-text";
 import { assignAcceleratorEntryActions, releaseAvailableJourneyActions } from "./agent-development-router";
 import { ACCELERATOR_JOURNEY_WEEKS, acceleratorWeekReleaseLabel, isAcceleratorWeekAvailable } from "./academy-journey";
 import {
@@ -365,6 +366,34 @@ async function hasAcademyLearnerEvidence(lessonIds: number[]) {
   const [attempt] = await db.select({ id: academyAssessmentAttempts.id })
     .from(academyAssessmentAttempts).where(inArray(academyAssessmentAttempts.lessonId, lessonIds)).limit(1);
   return !!attempt;
+}
+
+function sameStringArray(left: unknown, right: unknown) {
+  return Array.isArray(left) && Array.isArray(right)
+    && left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
+function isFormattingOnlyAssessmentQuestionRevision(existingQuestions: Array<typeof academyQuestions.$inferSelect>, submittedQuestions: Array<{
+  id?: number;
+  prompt: string;
+  questionType: "multiple_choice" | "free_text";
+  answerOptions: string[];
+  correctAnswerIndex: number;
+  maxWords: number;
+  explanation?: string | null;
+}>) {
+  return existingQuestions.length === submittedQuestions.length
+    && existingQuestions.every((existing, index) => {
+      const submitted = submittedQuestions[index];
+      return submitted?.id === existing.id
+        && submitted.questionType === existing.questionType
+        && sameStringArray(existing.answerOptions, submitted.answerOptions)
+        && submitted.correctAnswerIndex === existing.correctAnswerIndex
+        && submitted.maxWords === existing.maxWords
+        && academyQuestionContentFingerprint(existing.prompt) === academyQuestionContentFingerprint(submitted.prompt)
+        && academyQuestionContentFingerprint(existing.explanation) === academyQuestionContentFingerprint(submitted.explanation);
+    });
 }
 
 async function enrolAgentInCourse(params: {
@@ -1960,10 +1989,27 @@ export const academyRouter = router({
       const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
       if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
       if (input.questions.some((question) => question.questionType === "multiple_choice" && (question.answerOptions.length < 2 || question.answerOptions.some((option) => !option.trim()) || question.correctAnswerIndex >= question.answerOptions.length))) throw new TRPCError({ code: "BAD_REQUEST", message: "Each multiple-choice question needs at least two completed answers and one correct answer" });
-      if (await hasAcademyLearnerEvidence([lesson.id])) {
+      const existingQuestions = await db.select().from(academyQuestions).where(eq(academyQuestions.lessonId, lesson.id)).orderBy(asc(academyQuestions.sortOrder), asc(academyQuestions.id));
+      const hasLearnerEvidence = await hasAcademyLearnerEvidence([lesson.id]);
+      if (hasLearnerEvidence) {
+        if (isFormattingOnlyAssessmentQuestionRevision(existingQuestions, input.questions)) {
+          await Promise.all(existingQuestions.map((question, index) => db.update(academyQuestions).set({
+            prompt: input.questions[index].prompt,
+            explanation: normaliseOptionalText(input.questions[index].explanation),
+          }).where(eq(academyQuestions.id, question.id))));
+          const [module] = await db.select().from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
+          await addAudit({
+            courseId: module?.courseId ?? null,
+            actorId: ctx.user.id,
+            action: "assessment_formatting_updated",
+            summary: `Updated assessment formatting: ${lesson.title}`,
+            metadata: { lessonId: lesson.id, questionCount: existingQuestions.length, learnerEvidencePresent: true },
+          });
+          return { success: true, formattingOnly: true };
+        }
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: "This knowledge check has learner evidence and its questions are now preserved. Create a replacement lesson for a revised assessment rather than changing historic learner records.",
+          message: "This knowledge check has learner evidence. You can save presentation-only changes to question text and private marking guides, but answers, marking settings, question order and substantive wording are protected so historic results remain accurate.",
         });
       }
       await db.delete(academyQuestions).where(eq(academyQuestions.lessonId, input.lessonId));

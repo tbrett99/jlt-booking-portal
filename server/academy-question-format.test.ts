@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatAcademyQuestionPrompt, splitAcademyQuestionEmphasis, splitAcademyQuestionInlineFormatting } from "../shared/academy-question-format";
-import { academyQuestionTextToHtml } from "../shared/academy-question-rich-text";
+import { academyQuestionContentFingerprint, academyQuestionTextToHtml } from "../shared/academy-question-rich-text";
 
 describe("Academy written-question formatting", () => {
   it("keeps headings, paragraph breaks, bullets and numbered steps separate", () => {
@@ -46,5 +46,12 @@ describe("Academy written-question formatting", () => {
     expect(academyQuestionTextToHtml("Tell us:\nWho is travelling?\nWhat are their ages?")).toBe(
       "<p>Tell us:<br>Who is travelling?<br>What are their ages?</p>",
     );
+  });
+
+  it("recognises headings, lists and emphasis as presentation while retaining a substantive text change", () => {
+    const plain = "Explain the booking process\nConfirm the supplier\nCheck the dates";
+    const formatted = "## Explain the booking process\n\n- **Confirm the supplier**\n- *Check the dates*";
+    expect(academyQuestionContentFingerprint(plain)).toBe(academyQuestionContentFingerprint(formatted));
+    expect(academyQuestionContentFingerprint(formatted)).not.toBe(academyQuestionContentFingerprint("## Explain the booking process\n\n- **Confirm the hotel**\n- *Check the dates*"));
   });
 });

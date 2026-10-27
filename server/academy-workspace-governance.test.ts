@@ -41,6 +41,14 @@ describe("Academy workspace and governance overhaul", () => {
     expect(lessonSaveSection).not.toContain("if (hasLearnerEvidence &&");
   });
 
+  it("allows only presentation-only assessment question edits after learner activity", () => {
+    const assessmentSaveSection = router.slice(router.indexOf("replaceQuestions:"), router.indexOf("importMultipleChoiceQuestions:"));
+    expect(assessmentSaveSection).toContain("isFormattingOnlyAssessmentQuestionRevision");
+    expect(assessmentSaveSection).toContain('action: "assessment_formatting_updated"');
+    expect(assessmentSaveSection).toContain("presentation-only changes to question text and private marking guides");
+    expect(assessmentSaveSection).toContain("answers, marking settings, question order and substantive wording are protected");
+  });
+
   it("makes staff overrides use the same Accelerator journey and entry-Action hand-off as normal completion", () => {
     const overrideSection = router.slice(router.indexOf("overrideCompletion:"), router.indexOf("approveAccreditation:"));
     expect(overrideSection).toContain("await enrolAgentInAcceleratorJourneys");

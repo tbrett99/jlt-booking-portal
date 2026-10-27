@@ -58,6 +58,7 @@ const emptyCourse = {
   isAcceleratorJourney: false,
 };
 type DraftQuestion = {
+  id?: number;
   prompt: string;
   questionType: "multiple_choice" | "free_text";
   answerOptions: string[];
@@ -81,6 +82,18 @@ const emptyLesson = {
   assessmentPassMark: 100,
   questions: [] as DraftQuestion[],
 };
+
+function academyQuestionDraftSignature(questions: DraftQuestion[]) {
+  return JSON.stringify(questions.map((question) => ({
+    id: question.id ?? null,
+    prompt: question.prompt,
+    questionType: question.questionType,
+    answerOptions: question.answerOptions,
+    correctAnswerIndex: question.correctAnswerIndex,
+    maxWords: question.maxWords,
+    explanation: question.explanation ?? "",
+  })));
+}
 
 function dateForInput(value: Date | string | null | undefined) {
   if (!value) return "";
@@ -238,6 +251,7 @@ export default function AdminAcademy() {
   const [editingLessonId, setEditingLessonId] = useState<number | null>(null);
   const [lessonModuleId, setLessonModuleId] = useState<number | null>(null);
   const [lessonDraft, setLessonDraft] = useState(emptyLesson);
+  const [originalQuestionSignature, setOriginalQuestionSignature] = useState("");
   const [alertDraft, setAlertDraft] = useState({
     moduleId: "",
     eventType: "week_released" as "week_released" | "module_started" | "module_completed" | "action_submitted_for_review" | "action_overdue" | "course_completed" | "written_assessment_ready" | "three_attempt_lock",
@@ -301,7 +315,11 @@ export default function AdminAcademy() {
         );
         return;
       }
-      if (lessonDraft.requiresAssessment)
+      const shouldReplaceQuestions = lessonDraft.requiresAssessment && (
+        editingLessonId === null
+        || originalQuestionSignature !== academyQuestionDraftSignature(lessonDraft.questions)
+      );
+      if (shouldReplaceQuestions)
         await replaceQuestions.mutateAsync({
           lessonId,
           questions: lessonDraft.questions,
@@ -450,11 +468,21 @@ export default function AdminAcademy() {
     setEditingLessonId(null);
     setLessonModuleId(moduleId);
     setLessonDraft(emptyLesson);
+    setOriginalQuestionSignature("");
   }
   function editLesson(moduleId: number, lesson: any) {
     setOpenModuleId(moduleId);
     setLessonModuleId(moduleId);
     setEditingLessonId(lesson.id);
+    const questions = lesson.questions.map((q: any) => ({
+      id: q.id,
+      prompt: q.prompt,
+      questionType: q.questionType ?? "multiple_choice",
+      answerOptions: Array.isArray(q.answerOptions) ? q.answerOptions : [],
+      correctAnswerIndex: q.correctAnswerIndex ?? 0,
+      maxWords: q.maxWords ?? 250,
+      explanation: q.explanation ?? "",
+    }));
     setLessonDraft({
       title: lesson.title,
       summary: lesson.summary ?? "",
@@ -469,15 +497,9 @@ export default function AdminAcademy() {
       requiresAcknowledgement: lesson.requiresAcknowledgement,
       requiresAssessment: lesson.requiresAssessment,
       assessmentPassMark: lesson.assessmentPassMark ?? 100,
-      questions: lesson.questions.map((q: any) => ({
-        prompt: q.prompt,
-        questionType: q.questionType ?? "multiple_choice",
-        answerOptions: Array.isArray(q.answerOptions) ? q.answerOptions : [],
-        correctAnswerIndex: q.correctAnswerIndex ?? 0,
-        maxWords: q.maxWords ?? 250,
-        explanation: q.explanation ?? "",
-      })),
+      questions,
     });
+    setOriginalQuestionSignature(academyQuestionDraftSignature(questions));
   }
   function submitLesson() {
     if (!lessonModuleId) return;
@@ -1611,6 +1633,9 @@ function LessonEditor({
                 </p>
                 <p className="mt-1 text-xs font-medium text-muted-foreground">
                   Up to {MAX_ACADEMY_ASSESSMENT_QUESTIONS} questions per knowledge check or final exam. CSV import is recommended for longer exams.
+                </p>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  Saving lesson wording, resources or layout does not update these questions. If learners already have activity, presentation-only changes to the question or private marking guide are allowed; answers, marks, question order and word limits stay protected.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
