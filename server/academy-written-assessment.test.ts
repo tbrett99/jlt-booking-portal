@@ -60,6 +60,10 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(manager).toContain('Generate AI review');
     expect(manager).toContain('Use suggestions as editable draft');
     expect(manager).toContain('Nothing is sent to the agent');
+    expect(manager).toContain('At a glance');
+    expect(manager).toContain('Covered in the answer');
+    expect(manager).toContain('Missing or unclear');
+    expect(manager).toContain('Suggested improvement');
   });
 
   it("formats long written prompts and private marking guides for their intended readers", () => {

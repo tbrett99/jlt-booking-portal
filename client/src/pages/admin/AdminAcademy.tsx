@@ -2223,9 +2223,34 @@ export function WrittenAssessmentQueue({
                                         Use this suggestion
                                       </Button>
                                     </div>
-                                    {aiSuggestion.strengths.length > 0 && <p className="mt-2 text-xs leading-5"><strong>Identified strengths:</strong> {aiSuggestion.strengths.join("; ")}</p>}
-                                    {aiSuggestion.missingOrIncorrect.length > 0 && <p className="mt-1 text-xs leading-5"><strong>Missing or unclear:</strong> {aiSuggestion.missingOrIncorrect.join("; ")}</p>}
-                                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6"><strong>Draft feedback:</strong> {aiSuggestion.suggestedFeedback}</p>
+                                    {aiSuggestion.staffSummary && (
+                                      <div className="mt-3 rounded-md border border-violet-200 bg-white/80 px-3 py-2">
+                                        <p className="text-xs font-semibold uppercase tracking-[.12em] text-violet-800">At a glance</p>
+                                        <p className="mt-1 font-medium leading-5">{aiSuggestion.staffSummary}</p>
+                                      </div>
+                                    )}
+                                    <div className="mt-3 grid gap-2 lg:grid-cols-3">
+                                      <div className="rounded-md border border-emerald-200 bg-emerald-50/80 p-2.5">
+                                        <p className="text-xs font-bold uppercase tracking-[.1em] text-emerald-800">Covered in the answer</p>
+                                        {aiSuggestion.strengths.length ? (
+                                          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs leading-5 text-emerald-950">
+                                            {aiSuggestion.strengths.slice(0, 3).map((strength: string, strengthIndex: number) => <li key={`${strengthIndex}-${strength}`}>{strength}</li>)}
+                                          </ul>
+                                        ) : <p className="mt-1.5 text-xs leading-5 text-emerald-950">No clear requirement was evidenced.</p>}
+                                      </div>
+                                      <div className="rounded-md border border-amber-200 bg-amber-50/80 p-2.5">
+                                        <p className="text-xs font-bold uppercase tracking-[.1em] text-amber-900">Missing or unclear</p>
+                                        {aiSuggestion.missingOrIncorrect.length ? (
+                                          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs leading-5 text-amber-950">
+                                            {aiSuggestion.missingOrIncorrect.slice(0, 3).map((missing: string, missingIndex: number) => <li key={`${missingIndex}-${missing}`}>{missing}</li>)}
+                                          </ul>
+                                        ) : <p className="mt-1.5 text-xs leading-5 text-amber-950">No material gap identified.</p>}
+                                      </div>
+                                      <div className="rounded-md border border-sky-200 bg-sky-50/80 p-2.5">
+                                        <p className="text-xs font-bold uppercase tracking-[.1em] text-sky-900">Suggested improvement</p>
+                                        <p className="mt-1.5 whitespace-pre-wrap text-xs leading-5 text-sky-950">{aiSuggestion.suggestedFeedback}</p>
+                                      </div>
+                                    </div>
                                   </div>
                                 )}
                                 <div className="mt-3 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)]">

@@ -24,6 +24,9 @@ describe("Academy AI marking review safeguards", () => {
     expect(prompt).toContain("privateMarkingGuide");
     expect(prompt).toContain("internal staff assistant, not the final marker");
     expect(prompt).toContain("do not send a message to the learner");
+    expect(prompt).toContain("busy staff marker who needs to decide quickly");
+    expect(prompt).toContain("1–3 short bullets");
+    expect(prompt).toContain("staffSummary");
     expect(prompt).not.toContain("Agent name");
   });
 
