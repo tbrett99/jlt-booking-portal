@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { academyLessonContentFingerprint, normaliseAcademyLessonContent } from "../shared/academy-lesson-content";
+import { normaliseAcademyLessonContent } from "../shared/academy-lesson-content";
 import { loomEmbedUrl, parseLoomEmbedId } from "../shared/loom-embed";
 
 const courseSource = readFileSync(resolve(process.cwd(), "client/src/pages/academy/AcademyCourse.tsx"), "utf8");
@@ -41,16 +41,6 @@ Keep your records up to date.`);
     expect(rendered).toContain("<ul><li><strong>Give practical advice</strong></li></ul>");
     expect(rendered).toContain("<ul><li>Already a real list</li></ul>");
     expect(rendered).toContain("<p>Finish with this reminder.</p>");
-  });
-
-  it("recognises equivalent Academy formatting without treating new wording or resources as a visual-only correction", () => {
-    const legacy = `Before you begin
-• Read the material
-• Make a note of your questions`;
-    const formatted = `<h2>Before you begin</h2><ul><li>Read the material</li><li>Make a note of your questions</li></ul>`;
-    expect(academyLessonContentFingerprint(legacy)).toBe(academyLessonContentFingerprint(formatted));
-    expect(academyLessonContentFingerprint(formatted)).not.toBe(academyLessonContentFingerprint(`<h2>Before you begin</h2><ul><li>Read the revised material</li><li>Make a note of your questions</li></ul>`));
-    expect(academyLessonContentFingerprint(`<p>Open <a href="https://example.com/one">the guide</a></p>`)).not.toBe(academyLessonContentFingerprint(`<p>Open <a href="https://example.com/two">the guide</a></p>`));
   });
 
   it("embeds only recognised HTTPS Loom share URLs", () => {
