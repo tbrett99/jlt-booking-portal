@@ -64,6 +64,12 @@ export type InvokeParams = {
   tool_choice?: ToolChoice;
   maxTokens?: number;
   max_tokens?: number;
+  maxCompletionTokens?: number;
+  max_completion_tokens?: number;
+  /** Provider-specific reasoning controls. Forwarded only when the caller supplies them. */
+  reasoning?: Record<string, unknown>;
+  /** Provider-specific thinking controls. Forwarded only when the caller supplies them. */
+  thinking?: Record<string, unknown>;
   outputSchema?: OutputSchema;
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
@@ -111,6 +117,13 @@ export type ResponseFormat =
   | { type: "text" }
   | { type: "json_object" }
   | { type: "json_schema"; json_schema: JsonSchema };
+
+type LlmProxyErrorBody = {
+  error?: {
+    code?: string | number;
+    message?: string;
+  };
+};
 
 const ensureArray = (
   value: MessageContent | MessageContent[]
@@ -267,15 +280,24 @@ const normalizeResponseFormat = ({
   };
 };
 
-export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertApiKey();
-
+/**
+ * Produces an OpenAI-compatible request body without imposing one provider's
+ * token or reasoning dialect on every model. Callers that select a model must
+ * provide any provider-specific controls explicitly.
+ */
+export function buildInvokePayload(params: InvokeParams): Record<string, unknown> {
   const {
     model,
     messages,
     tools,
     toolChoice,
     tool_choice,
+    maxTokens,
+    max_tokens,
+    maxCompletionTokens,
+    max_completion_tokens,
+    reasoning,
+    thinking,
     outputSchema,
     output_schema,
     responseFormat,
@@ -299,10 +321,17 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
+  const requestedMaxTokens = maxTokens ?? max_tokens;
+  if (typeof requestedMaxTokens === "number") {
+    payload.max_tokens = requestedMaxTokens;
   }
+  const requestedMaxCompletionTokens =
+    maxCompletionTokens ?? max_completion_tokens;
+  if (typeof requestedMaxCompletionTokens === "number") {
+    payload.max_completion_tokens = requestedMaxCompletionTokens;
+  }
+  if (reasoning) payload.reasoning = reasoning;
+  if (thinking) payload.thinking = thinking;
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
@@ -315,6 +344,35 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
+  return payload;
+}
+
+function describeProxyError(body: unknown, status?: number): Error {
+  const error =
+    body && typeof body === "object"
+      ? (body as LlmProxyErrorBody).error
+      : undefined;
+  const code = error?.code === undefined ? "" : ` (${String(error.code).slice(0, 120)})`;
+  const message = error?.message?.trim().slice(0, 500) || "The AI provider did not return a usable completion.";
+  const prefix = status ? `LLM invoke failed: HTTP ${status}` : "LLM proxy error";
+  return new Error(`${prefix}${code}: ${message}`);
+}
+
+/** Parses both normal proxy responses and HTTP-200 proxy error envelopes. */
+export function parseInvokeResponseBody(body: unknown): InvokeResult {
+  if (body && typeof body === "object" && "error" in body && (body as LlmProxyErrorBody).error) {
+    throw describeProxyError(body);
+  }
+  if (!body || typeof body !== "object" || !Array.isArray((body as { choices?: unknown }).choices)) {
+    throw new Error("LLM invoke returned no completion choices");
+  }
+  return body as InvokeResult;
+}
+
+export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
+  assertApiKey();
+  const payload = buildInvokePayload(params);
+
   const response = await fetch(resolveApiUrl(), {
     method: "POST",
     headers: {
@@ -324,12 +382,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     body: JSON.stringify(payload),
   });
 
+  const body = await response.json().catch(() => null);
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
-    );
+    throw describeProxyError(body, response.status);
   }
 
-  return (await response.json()) as InvokeResult;
+  return parseInvokeResponseBody(body);
 }

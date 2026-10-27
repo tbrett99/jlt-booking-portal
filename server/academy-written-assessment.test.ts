@@ -51,6 +51,9 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(router).toContain('generateAiMarkingReview: adminProcedure');
     expect(router).toContain('ACADEMY_AI_REVIEW_AUDIT_ACTION');
     expect(router).toContain('parseAcademyAiMarkingResponse');
+    expect(router).toContain('reasoning: { effort: "low" }');
+    expect(router).toContain('max_completion_tokens: 4_000');
+    expect(router).not.toMatch(/generateAiMarkingReview:[\s\S]*?response_format: \{ type: "json_object" \}/);
     expect(router).toContain('This AI review is for staff guidance only');
     expect(router).toContain('staffApprovedScores: input.responses.map');
     expect(router).toContain('markWrittenAssessment: adminProcedure');

@@ -91,7 +91,12 @@ export function buildAcademyAiMarkingPrompt(input: {
 export function parseAcademyAiMarkingResponse(raw: string, expectedQuestionIds: number[]): AcademyAiMarkingSuggestion[] {
   let parsedJson: unknown;
   try {
-    parsedJson = JSON.parse(raw);
+    // The configured model cannot use response_format JSON mode while its
+    // built-in web-search capability is enabled. The prompt still requests
+    // raw JSON; accept only an optional enclosing JSON code fence, then apply
+    // the same strict schema and exact-question validation below.
+    const normalized = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/\s*```$/, "");
+    parsedJson = JSON.parse(normalized);
   } catch {
     throw new Error("The AI review returned an unreadable response. Please try again.");
   }

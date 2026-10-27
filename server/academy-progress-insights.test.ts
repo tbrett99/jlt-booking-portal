@@ -51,6 +51,17 @@ describe("Academy Progress & Insights separation", () => {
     expect(insightsSource).toContain("LearnerManager");
   });
 
+  it("keeps written assessments oldest-first and makes the marking queue scannable", () => {
+    expect(routerSource).toContain(
+      "orderBy(asc(academyAssessmentAttempts.takenAt))"
+    );
+    expect(managerSource).toContain("Oldest submissions appear first.");
+    expect(managerSource).toContain("expandedAttemptIds");
+    expect(managerSource).toContain("expandedQuestionKeys");
+    expect(managerSource).toContain("Expand all assessments");
+    expect(managerSource).toContain("Written question {index + 1}");
+  });
+
   it("registers a dedicated page and prevents Academy Manager remaining active beneath it", () => {
     expect(appSource).toContain('path="/admin/academy/insights"');
     expect(navigationSource).toContain('label: "Academy Progress & Insights"');

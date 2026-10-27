@@ -29,6 +29,7 @@ describe("Academy AI marking review safeguards", () => {
 
   it("requires exactly one well-formed suggestion for every written response", () => {
     expect(parseAcademyAiMarkingResponse(JSON.stringify(review), [11, 12])).toEqual(review.reviews);
+    expect(parseAcademyAiMarkingResponse(`\`\`\`json\n${JSON.stringify(review)}\n\`\`\``, [11, 12])).toEqual(review.reviews);
     expect(() => parseAcademyAiMarkingResponse(JSON.stringify({ reviews: [review.reviews[0]] }), [11, 12])).toThrow("did not cover every written answer");
     expect(() => parseAcademyAiMarkingResponse(JSON.stringify({ reviews: [{ ...review.reviews[0], questionId: 999 }] }), [11])).toThrow("did not match this assessment");
   });

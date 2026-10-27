@@ -1560,6 +1560,10 @@ export const academyRouter = router({
         for (const questionBatch of splitAcademyAiMarkingQuestions(writtenQuestions)) {
           const result = await invokeLLM({
             model: ACADEMY_AI_MARKING_MODEL,
+            // gpt-5.5 uses OpenAI's reasoning and completion-token fields.
+            // Do not send generic Gemini/Claude thinking controls here.
+            reasoning: { effort: "low" },
+            max_completion_tokens: 4_000,
             messages: [
               {
                 role: "system",
@@ -1574,14 +1578,16 @@ export const academyRouter = router({
                 }),
               },
             ],
-            response_format: { type: "json_object" },
           });
           const content = result.choices[0]?.message?.content;
           if (typeof content !== "string") throw new Error("The AI review did not return text");
           suggestions.push(...parseAcademyAiMarkingResponse(content, questionBatch.map((question) => question.questionId)));
         }
       } catch (error) {
-        console.error("[AcademyAIReview] Review generation failed", error);
+        console.error("[AcademyAIReview] Review generation failed", {
+          model: ACADEMY_AI_MARKING_MODEL,
+          reason: error instanceof Error ? error.message : "Unknown AI review error",
+        });
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "The AI review is temporarily unavailable. No grade or feedback has been changed; please try again.",

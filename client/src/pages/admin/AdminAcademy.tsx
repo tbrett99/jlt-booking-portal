@@ -1938,6 +1938,21 @@ export function WrittenAssessmentQueue({
   onGenerateAiReview,
   aiReviewingAttemptId,
 }: any) {
+  const [expandedAttemptIds, setExpandedAttemptIds] = useState<Set<number>>(
+    () => new Set()
+  );
+  const [expandedQuestionKeys, setExpandedQuestionKeys] = useState<Set<string>>(
+    () => new Set()
+  );
+  const orderedSubmissions = useMemo(
+    () =>
+      [...submissions].sort(
+        (left, right) =>
+          new Date(left.attempt.takenAt).getTime() -
+          new Date(right.attempt.takenAt).getTime()
+      ),
+    [submissions]
+  );
   const draftFor = (submission: any) =>
     drafts[submission.attempt.id] ?? {
       feedback: "",
@@ -1957,6 +1972,33 @@ export function WrittenAssessmentQueue({
       ...current,
       [attemptId]: update(current[attemptId] ?? fallback),
     }));
+  const toggleAttempt = (attemptId: number) =>
+    setExpandedAttemptIds(current => {
+      const next = new Set(current);
+      next.has(attemptId) ? next.delete(attemptId) : next.add(attemptId);
+      return next;
+    });
+  const toggleQuestion = (key: string) =>
+    setExpandedQuestionKeys(current => {
+      const next = new Set(current);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  const allAssessmentsExpanded =
+    orderedSubmissions.length > 0 &&
+    orderedSubmissions.every((submission: any) =>
+      expandedAttemptIds.has(submission.attempt.id)
+    );
+  const toggleAllAssessments = () => {
+    if (allAssessmentsExpanded) {
+      setExpandedAttemptIds(new Set());
+      setExpandedQuestionKeys(new Set());
+      return;
+    }
+    setExpandedAttemptIds(
+      new Set(orderedSubmissions.map((submission: any) => submission.attempt.id))
+    );
+  };
   const useAiReviewAsDraft = (submission: any, fallback: any) => {
     const suggestions = submission.aiReview?.suggestions ?? [];
     if (!suggestions.length) return;
@@ -1964,7 +2006,9 @@ export function WrittenAssessmentQueue({
       submission.attempt.id,
       (current: any) => ({
         ...current,
-        feedback: current.feedback.trim() || `Please review the question-level feedback below. The suggestions have been checked by a member of the JLT Academy team before release.`,
+        feedback:
+          current.feedback.trim() ||
+          "Please review the question-level feedback below. The suggestions have been checked by a member of the JLT Academy team before release.",
         responses: {
           ...current.responses,
           ...Object.fromEntries(
@@ -1990,21 +2034,28 @@ export function WrittenAssessmentQueue({
             Staff marking queue
           </p>
           <h2 className="mt-1 text-xl font-bold">Written assessment reviews</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Score each written answer, provide constructive feedback, then
-            release it to the agent. They must read and acknowledge it before
-            progressing.
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+            Oldest submissions appear first. Open one assessment, then only the
+            individual answers you are marking, so the queue stays easy to scan.
           </p>
         </div>
-        <div className="rounded-full bg-amber-100 px-3 py-1.5 text-sm font-bold text-amber-800">
-          {submissions.length} awaiting review
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="rounded-full bg-amber-100 px-3 py-1.5 text-sm font-bold text-amber-800">
+            {orderedSubmissions.length} awaiting review
+          </div>
+          {orderedSubmissions.length > 1 && (
+            <Button type="button" size="sm" variant="outline" onClick={toggleAllAssessments}>
+              {allAssessmentsExpanded ? "Collapse all assessments" : "Expand all assessments"}
+            </Button>
+          )}
         </div>
       </div>
-      {submissions.length ? (
-        <div className="mt-5 space-y-5">
-          {submissions.map((submission: any) => {
+      {orderedSubmissions.length ? (
+        <div className="mt-5 space-y-3">
+          {orderedSubmissions.map((submission: any, assessmentIndex: number) => {
             const draft = draftFor(submission);
             const fallback = draftFor(submission);
+            const assessmentExpanded = expandedAttemptIds.has(submission.attempt.id);
             const readyToMark =
               draft.feedback.trim().length >= 3 &&
               submission.responses.every((response: any) => {
@@ -2020,275 +2071,253 @@ export function WrittenAssessmentQueue({
             return (
               <article
                 key={submission.attempt.id}
-                className="rounded-xl border bg-muted/15 p-4"
+                className={`overflow-hidden rounded-xl border transition-colors ${assessmentExpanded ? "border-amber-300 bg-amber-50/30 shadow-sm" : "bg-card hover:border-amber-200"}`}
               >
-                <div className="flex flex-col gap-2 border-b pb-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="font-bold">
-                      {submission.agent.name || submission.agent.email}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
+                <button
+                  type="button"
+                  className="flex w-full items-start gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  aria-expanded={assessmentExpanded}
+                  onClick={() => toggleAttempt(submission.attempt.id)}
+                >
+                  <span className="mt-0.5 rounded-md bg-amber-100 p-1.5 text-amber-900">
+                    {assessmentExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="font-bold">
+                        {submission.agent.name || submission.agent.email}
+                      </span>
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                        Assessment {assessmentIndex + 1}
+                      </span>
+                    </span>
+                    <span className="mt-1 block text-sm text-muted-foreground">
                       {submission.course.title} · {submission.lesson.title}
-                    </p>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Submitted {formatDate(submission.attempt.takenAt)} · Pass
-                    mark {submission.lesson.assessmentPassMark}%
-                  </div>
-                </div>
-                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/60 p-3">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 text-violet-950">
-                        <Sparkles size={17} />
-                        <p className="text-sm font-bold">AI-assisted staff review</p>
-                      </div>
-                      <p className="mt-1 max-w-3xl text-xs leading-5 text-violet-950/80">
-                        This compares the submitted answers with the private marking guide to create editable suggestions. Nothing is sent to the agent, no result changes and no pass/fail decision is made until staff review and use the normal release action below.
-                      </p>
-                      {submission.aiReview && (
-                        <p className="mt-2 text-xs font-medium text-violet-900">
-                          Latest internal review generated {formatDate(submission.aiReview.generatedAt)} using {submission.aiReview.model}.
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="border-violet-300 bg-white text-violet-950 hover:bg-violet-100"
-                        disabled={Boolean(aiReviewingAttemptId)}
-                        onClick={() => onGenerateAiReview(submission.attempt.id)}
-                      >
-                        <Sparkles className="mr-1.5" size={15} />
-                        {aiReviewingAttemptId === submission.attempt.id
-                          ? "Preparing review..."
-                          : submission.aiReview
-                            ? "Generate fresh AI review"
-                            : "Generate AI review"}
-                      </Button>
-                      {submission.aiReview && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="border-violet-300 bg-white text-violet-950 hover:bg-violet-100"
-                          onClick={() => useAiReviewAsDraft(submission, fallback)}
-                        >
-                          Use suggestions as editable draft
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-4 space-y-4">
-                  {submission.responses.map((response: any, index: number) => {
-                    const grade = draft.responses[response.questionId] ?? {
-                      score: -1,
-                      feedback: "",
-                    };
-                    const aiSuggestion = submission.aiReview?.suggestions?.find(
-                      (suggestion: any) => suggestion.questionId === response.questionId
-                    );
-                    return (
-                      <div
-                        key={response.questionId}
-                        className="rounded-lg border bg-card p-3"
-                      >
+                    </span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {submission.responses.length} written {submission.responses.length === 1 ? "answer" : "answers"} · Submitted {formatDate(submission.attempt.takenAt)} · Pass mark {submission.lesson.assessmentPassMark}%
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs font-semibold text-amber-800">
+                    {assessmentExpanded ? "Collapse" : "Review"}
+                  </span>
+                </button>
+
+                {assessmentExpanded && (
+                  <div className="border-t border-amber-200/80 p-4">
+                    <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                          <p className="font-semibold">
-                            Written question {index + 1}
+                          <div className="flex items-center gap-2 text-violet-950">
+                            <Sparkles size={17} />
+                            <p className="text-sm font-bold">AI-assisted staff review</p>
+                          </div>
+                          <p className="mt-1 max-w-3xl text-xs leading-5 text-violet-950/80">
+                            This compares submitted answers with the private marking guide to create editable suggestions. Nothing is sent to the agent and no result changes until staff review and release the grade below.
                           </p>
-                          <AcademyStructuredText
-                            text={response.prompt}
-                            className="mt-2 text-sm"
-                          />
-                          {response.explanation && (
-                            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50/60 p-3">
-                              <p className="text-xs font-semibold uppercase tracking-[.12em] text-amber-900">
-                                Private marking guide
-                              </p>
-                              <AcademyStructuredText
-                                text={response.explanation}
-                                className="mt-2 text-sm text-amber-950"
-                              />
-                            </div>
+                          {submission.aiReview && (
+                            <p className="mt-2 text-xs font-medium text-violet-900">
+                              Latest internal review generated {formatDate(submission.aiReview.generatedAt)} using {submission.aiReview.model}.
+                            </p>
                           )}
                         </div>
-                        <div className="mt-2 rounded-md bg-muted/50 p-3 text-sm leading-6 whitespace-pre-wrap">
-                          {response.responseText}
-                        </div>
-                        {aiSuggestion && (
-                          <div className="mt-3 rounded-md border border-violet-200 bg-violet-50/70 p-3 text-sm text-violet-950">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                              <div>
-                                <p className="font-semibold">
-                                  Internal AI suggestion · {aiSuggestion.suggestedScore}% · {aiSuggestion.confidence} confidence
-                                </p>
-                                <p className="mt-1 text-xs leading-5">
-                                  Staff attention: <strong>{aiSuggestion.staffAttention}</strong>
-                                  {aiSuggestion.attentionReason ? ` — ${aiSuggestion.attentionReason}` : ""}
-                                </p>
-                              </div>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="shrink-0 border-violet-300 bg-white text-violet-950 hover:bg-violet-100"
-                                onClick={() =>
-                                  updateDraft(
-                                    submission.attempt.id,
-                                    (current: any) => ({
-                                      ...current,
-                                      responses: {
-                                        ...current.responses,
-                                        [response.questionId]: {
-                                          score: aiSuggestion.suggestedScore,
-                                          feedback: aiSuggestion.suggestedFeedback,
-                                        },
-                                      },
-                                    }),
-                                    fallback
-                                  )
-                                }
-                              >
-                                Use this suggestion
-                              </Button>
-                            </div>
-                            {aiSuggestion.strengths.length > 0 && (
-                              <p className="mt-2 text-xs leading-5"><strong>Identified strengths:</strong> {aiSuggestion.strengths.join("; ")}</p>
-                            )}
-                            {aiSuggestion.missingOrIncorrect.length > 0 && (
-                              <p className="mt-1 text-xs leading-5"><strong>Missing or unclear:</strong> {aiSuggestion.missingOrIncorrect.join("; ")}</p>
-                            )}
-                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6"><strong>Draft feedback:</strong> {aiSuggestion.suggestedFeedback}</p>
-                          </div>
-                        )}
-                        <div className="mt-3 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)]">
-                          <div>
-                            <Label>Score (%)</Label>
-                            <Input
-                              className="mt-1.5"
-                              aria-label={`Score for written question ${index + 1}`}
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={grade.score < 0 ? "" : grade.score}
-                              onChange={event =>
-                                updateDraft(
-                                  submission.attempt.id,
-                                  (current: any) => ({
-                                    ...current,
-                                    responses: {
-                                      ...current.responses,
-                                      [response.questionId]: {
-                                        ...current.responses[
-                                          response.questionId
-                                        ],
-                                        score:
-                                          event.target.value === ""
-                                            ? -1
-                                            : Math.max(
-                                                0,
-                                                Math.min(
-                                                  100,
-                                                  Number(event.target.value)
-                                                )
-                                              ),
-                                      },
-                                    },
-                                  }),
-                                  fallback
-                                )
-                              }
-                            />
-                          </div>
-                          <div>
-                            <Label>Feedback for this answer</Label>
-                            <Textarea
-                              className="mt-1.5"
-                              rows={3}
-                              value={grade.feedback}
-                              placeholder="Explain what was done well and what the agent should improve."
-                              onChange={event =>
-                                updateDraft(
-                                  submission.attempt.id,
-                                  (current: any) => ({
-                                    ...current,
-                                    responses: {
-                                      ...current.responses,
-                                      [response.questionId]: {
-                                        ...current.responses[
-                                          response.questionId
-                                        ],
-                                        feedback: event.target.value,
-                                      },
-                                    },
-                                  }),
-                                  fallback
-                                )
-                              }
-                            />
-                          </div>
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="border-violet-300 bg-white text-violet-950 hover:bg-violet-100"
+                            disabled={Boolean(aiReviewingAttemptId)}
+                            onClick={() => onGenerateAiReview(submission.attempt.id)}
+                          >
+                            <Sparkles className="mr-1.5" size={15} />
+                            {aiReviewingAttemptId === submission.attempt.id
+                              ? "Preparing review..."
+                              : submission.aiReview
+                                ? "Generate fresh AI review"
+                                : "Generate AI review"}
+                          </Button>
+                          {submission.aiReview && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="border-violet-300 bg-white text-violet-950 hover:bg-violet-100"
+                              onClick={() => useAiReviewAsDraft(submission, fallback)}
+                            >
+                              Use suggestions as editable draft
+                            </Button>
+                          )}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-4">
-                  <Label>Overall feedback for the agent</Label>
-                  <Textarea
-                    className="mt-1.5"
-                    rows={4}
-                    value={draft.feedback}
-                    placeholder="Summarise the assessment result and the practical next step."
-                    onChange={event =>
-                      updateDraft(
-                        submission.attempt.id,
-                        (current: any) => ({
-                          ...current,
-                          feedback: event.target.value,
-                        }),
-                        fallback
-                      )
-                    }
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    This message is shown to the agent alongside their
-                    question-level feedback and must be acknowledged before they
-                    continue.
-                  </p>
-                </div>
-                <div className="mt-4 flex justify-end">
-                  <Button
-                    disabled={!readyToMark || marking}
-                    onClick={() =>
-                      onMark(
-                        submission.attempt.id,
-                        draft.feedback,
-                        submission.responses.map((response: any) => ({
-                          questionId: response.questionId,
-                          score: draft.responses[response.questionId].score,
-                          feedback:
-                            draft.responses[response.questionId].feedback,
-                        }))
-                      )
-                    }
-                  >
-                    {marking
-                      ? "Saving feedback..."
-                      : "Save grade and send feedback"}
-                  </Button>
-                </div>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {submission.responses.map((response: any, index: number) => {
+                        const grade = draft.responses[response.questionId] ?? {
+                          score: -1,
+                          feedback: "",
+                        };
+                        const questionKey = `${submission.attempt.id}:${response.questionId}`;
+                        const questionExpanded = expandedQuestionKeys.has(questionKey);
+                        const aiSuggestion = submission.aiReview?.suggestions?.find(
+                          (suggestion: any) => suggestion.questionId === response.questionId
+                        );
+                        const questionComplete =
+                          Number.isInteger(grade.score) &&
+                          grade.score >= 0 &&
+                          grade.feedback.trim().length >= 3;
+                        return (
+                          <div key={response.questionId} className="overflow-hidden rounded-lg border bg-card">
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-3 p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                              aria-expanded={questionExpanded}
+                              onClick={() => toggleQuestion(questionKey)}
+                            >
+                              {questionExpanded ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                              <span className="min-w-0 flex-1 font-semibold">Written question {index + 1}</span>
+                              {questionComplete ? (
+                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">Draft complete</span>
+                              ) : (
+                                <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Needs marking</span>
+                              )}
+                              <span className="text-xs text-muted-foreground">{questionExpanded ? "Collapse" : "Open"}</span>
+                            </button>
+
+                            {questionExpanded && (
+                              <div className="border-t bg-muted/10 p-3">
+                                <AcademyStructuredText text={response.prompt} className="text-sm" />
+                                {response.explanation && (
+                                  <div className="mt-3 rounded-md border border-amber-200 bg-amber-50/60 p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-[.12em] text-amber-900">Private marking guide</p>
+                                    <AcademyStructuredText text={response.explanation} className="mt-2 text-sm text-amber-950" />
+                                  </div>
+                                )}
+                                <div className="mt-3 rounded-md bg-muted/50 p-3 text-sm leading-6 whitespace-pre-wrap">
+                                  {response.responseText}
+                                </div>
+                                {aiSuggestion && (
+                                  <div className="mt-3 rounded-md border border-violet-200 bg-violet-50/70 p-3 text-sm text-violet-950">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                      <div>
+                                        <p className="font-semibold">Internal AI suggestion · {aiSuggestion.suggestedScore}% · {aiSuggestion.confidence} confidence</p>
+                                        <p className="mt-1 text-xs leading-5">Staff attention: <strong>{aiSuggestion.staffAttention}</strong>{aiSuggestion.attentionReason ? ` — ${aiSuggestion.attentionReason}` : ""}</p>
+                                      </div>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="shrink-0 border-violet-300 bg-white text-violet-950 hover:bg-violet-100"
+                                        onClick={() => updateDraft(submission.attempt.id, (current: any) => ({
+                                          ...current,
+                                          responses: {
+                                            ...current.responses,
+                                            [response.questionId]: {
+                                              score: aiSuggestion.suggestedScore,
+                                              feedback: aiSuggestion.suggestedFeedback,
+                                            },
+                                          },
+                                        }), fallback)}
+                                      >
+                                        Use this suggestion
+                                      </Button>
+                                    </div>
+                                    {aiSuggestion.strengths.length > 0 && <p className="mt-2 text-xs leading-5"><strong>Identified strengths:</strong> {aiSuggestion.strengths.join("; ")}</p>}
+                                    {aiSuggestion.missingOrIncorrect.length > 0 && <p className="mt-1 text-xs leading-5"><strong>Missing or unclear:</strong> {aiSuggestion.missingOrIncorrect.join("; ")}</p>}
+                                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6"><strong>Draft feedback:</strong> {aiSuggestion.suggestedFeedback}</p>
+                                  </div>
+                                )}
+                                <div className="mt-3 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)]">
+                                  <div>
+                                    <Label>Score (%)</Label>
+                                    <Input
+                                      className="mt-1.5"
+                                      aria-label={`Score for written question ${index + 1}`}
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      value={grade.score < 0 ? "" : grade.score}
+                                      onChange={event => updateDraft(submission.attempt.id, (current: any) => ({
+                                        ...current,
+                                        responses: {
+                                          ...current.responses,
+                                          [response.questionId]: {
+                                            ...current.responses[response.questionId],
+                                            score: event.target.value === "" ? -1 : Math.max(0, Math.min(100, Number(event.target.value))),
+                                          },
+                                        },
+                                      }), fallback)}
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label>Feedback for this answer</Label>
+                                    <Textarea
+                                      className="mt-1.5"
+                                      rows={3}
+                                      value={grade.feedback}
+                                      placeholder="Explain what was done well and what the agent should improve."
+                                      onChange={event => updateDraft(submission.attempt.id, (current: any) => ({
+                                        ...current,
+                                        responses: {
+                                          ...current.responses,
+                                          [response.questionId]: {
+                                            ...current.responses[response.questionId],
+                                            feedback: event.target.value,
+                                          },
+                                        },
+                                      }), fallback)}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 rounded-xl border bg-card p-3">
+                      <Label>Overall feedback for the agent</Label>
+                      <Textarea
+                        className="mt-1.5"
+                        rows={4}
+                        value={draft.feedback}
+                        placeholder="Summarise the assessment result and the practical next step."
+                        onChange={event => updateDraft(submission.attempt.id, (current: any) => ({ ...current, feedback: event.target.value }), fallback)}
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        This message is shown alongside question-level feedback and must be acknowledged before the agent can continue.
+                      </p>
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-xs text-muted-foreground">
+                        {readyToMark ? "All answers have a score and feedback." : "Open each question to add a score and at least three characters of feedback."}
+                      </p>
+                      <Button
+                        disabled={!readyToMark || marking}
+                        onClick={() => onMark(
+                          submission.attempt.id,
+                          draft.feedback,
+                          submission.responses.map((response: any) => ({
+                            questionId: response.questionId,
+                            score: draft.responses[response.questionId].score,
+                            feedback: draft.responses[response.questionId].feedback,
+                          }))
+                        )}
+                      >
+                        {marking ? "Saving feedback..." : "Save grade and send feedback"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </article>
             );
           })}
         </div>
       ) : (
         <div className="mt-5 rounded-xl border border-dashed bg-muted/15 p-6 text-center text-sm text-muted-foreground">
-          No written assessments are waiting for review. Multiple-choice checks
-          continue to score automatically.
+          No written assessments are waiting for review. Multiple-choice checks continue to score automatically.
         </div>
       )}
     </section>
