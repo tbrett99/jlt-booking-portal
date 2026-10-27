@@ -1635,7 +1635,7 @@ function LessonEditor({
                   Up to {MAX_ACADEMY_ASSESSMENT_QUESTIONS} questions per knowledge check or final exam. CSV import is recommended for longer exams.
                 </p>
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  Saving lesson wording, resources or layout does not update these questions. If learners already have activity, presentation-only changes to the question or private marking guide are allowed; answers, marks, question order and word limits stay protected.
+                  Saving lesson wording, resources or layout does not update these questions. If learners already have activity, you can revise question wording and private marking guides; answer options, the correct answer, question type, question order and word limits stay protected.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">

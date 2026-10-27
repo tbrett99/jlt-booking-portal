@@ -26,7 +26,6 @@ import {
 import { getAccreditationEligibility, safeHttpsUrl, summariseAcademyProgress } from "../shared/academy-utils";
 import { MAX_ACADEMY_ASSESSMENT_QUESTIONS, parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
 import { buildAcademyLearningPath } from "../shared/academy-learning-path";
-import { academyQuestionContentFingerprint } from "../shared/academy-question-rich-text";
 import { assignAcceleratorEntryActions, releaseAvailableJourneyActions } from "./agent-development-router";
 import { ACCELERATOR_JOURNEY_WEEKS, acceleratorWeekReleaseLabel, isAcceleratorWeekAvailable } from "./academy-journey";
 import {
@@ -374,7 +373,7 @@ function sameStringArray(left: unknown, right: unknown) {
     && left.every((value, index) => value === right[index]);
 }
 
-function isFormattingOnlyAssessmentQuestionRevision(existingQuestions: Array<typeof academyQuestions.$inferSelect>, submittedQuestions: Array<{
+function isAssessmentQuestionNarrativeRevision(existingQuestions: Array<typeof academyQuestions.$inferSelect>, submittedQuestions: Array<{
   id?: number;
   prompt: string;
   questionType: "multiple_choice" | "free_text";
@@ -390,9 +389,7 @@ function isFormattingOnlyAssessmentQuestionRevision(existingQuestions: Array<typ
         && submitted.questionType === existing.questionType
         && sameStringArray(existing.answerOptions, submitted.answerOptions)
         && submitted.correctAnswerIndex === existing.correctAnswerIndex
-        && submitted.maxWords === existing.maxWords
-        && academyQuestionContentFingerprint(existing.prompt) === academyQuestionContentFingerprint(submitted.prompt)
-        && academyQuestionContentFingerprint(existing.explanation) === academyQuestionContentFingerprint(submitted.explanation);
+        && submitted.maxWords === existing.maxWords;
     });
 }
 
@@ -1992,7 +1989,7 @@ export const academyRouter = router({
       const existingQuestions = await db.select().from(academyQuestions).where(eq(academyQuestions.lessonId, lesson.id)).orderBy(asc(academyQuestions.sortOrder), asc(academyQuestions.id));
       const hasLearnerEvidence = await hasAcademyLearnerEvidence([lesson.id]);
       if (hasLearnerEvidence) {
-        if (isFormattingOnlyAssessmentQuestionRevision(existingQuestions, input.questions)) {
+        if (isAssessmentQuestionNarrativeRevision(existingQuestions, input.questions)) {
           await Promise.all(existingQuestions.map((question, index) => db.update(academyQuestions).set({
             prompt: input.questions[index].prompt,
             explanation: normaliseOptionalText(input.questions[index].explanation),
@@ -2001,15 +1998,15 @@ export const academyRouter = router({
           await addAudit({
             courseId: module?.courseId ?? null,
             actorId: ctx.user.id,
-            action: "assessment_formatting_updated",
-            summary: `Updated assessment formatting: ${lesson.title}`,
+            action: "assessment_question_text_updated",
+            summary: `Updated assessment question text: ${lesson.title}`,
             metadata: { lessonId: lesson.id, questionCount: existingQuestions.length, learnerEvidencePresent: true },
           });
-          return { success: true, formattingOnly: true };
+          return { success: true, narrativeRevision: true };
         }
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: "This knowledge check has learner evidence. You can save presentation-only changes to question text and private marking guides, but answers, marking settings, question order and substantive wording are protected so historic results remain accurate.",
+          message: "This knowledge check has learner evidence. You can revise question wording and private marking guides, but answer options, the correct answer, question type, word limit and question order are protected so completed results remain meaningful.",
         });
       }
       await db.delete(academyQuestions).where(eq(academyQuestions.lessonId, input.lessonId));

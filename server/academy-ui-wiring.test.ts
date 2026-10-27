@@ -67,6 +67,7 @@ describe("JLT Academy interface wiring", () => {
     expect(manager).toContain("const shouldReplaceQuestions");
     expect(manager).toContain("editingLessonId === null");
     expect(manager).toContain("Saving lesson wording, resources or layout does not update these questions.");
+    expect(manager).toContain("you can revise question wording and private marking guides");
   });
 
   it("provides a template-led, additive CSV import for multiple-choice quizzes", () => {

@@ -15,31 +15,6 @@ function inlineMarkdownToHtml(value: string) {
 }
 
 /**
- * Returns the learner-visible words of a stored Academy question or marking
- * guide without its editor-only presentation markers. It deliberately treats
- * headings, lists, emphasis, blank lines and whitespace as formatting so a
- * staff member can improve readability without changing an answer, mark or
- * assessment meaning.
- */
-export function academyQuestionContentFingerprint(value: string | null | undefined) {
-  return (value ?? "")
-    .replace(/\r/g, "")
-    .split("\n")
-    .map((line) => line
-      .trim()
-      .replace(/^#{1,3}\s+/, "")
-      .replace(/^(?:[-*•]|\d+[.)])\s+/, "")
-      .replace(/(\*\*|__)(.+?)\1/g, "$2")
-      .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "$1")
-      .replace(/(?<!_)_([^_\n]+)_(?!_)/g, "$1"),
-    )
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
  * Renders the legacy Markdown-like Academy question format into safe editor HTML.
  * Existing prompts therefore open correctly in the rich editor without migration.
  */

@@ -41,12 +41,12 @@ describe("Academy workspace and governance overhaul", () => {
     expect(lessonSaveSection).not.toContain("if (hasLearnerEvidence &&");
   });
 
-  it("allows only presentation-only assessment question edits after learner activity", () => {
+  it("allows staff to revise assessment question wording after learner activity without altering scoring safeguards", () => {
     const assessmentSaveSection = router.slice(router.indexOf("replaceQuestions:"), router.indexOf("importMultipleChoiceQuestions:"));
-    expect(assessmentSaveSection).toContain("isFormattingOnlyAssessmentQuestionRevision");
-    expect(assessmentSaveSection).toContain('action: "assessment_formatting_updated"');
-    expect(assessmentSaveSection).toContain("presentation-only changes to question text and private marking guides");
-    expect(assessmentSaveSection).toContain("answers, marking settings, question order and substantive wording are protected");
+    expect(assessmentSaveSection).toContain("isAssessmentQuestionNarrativeRevision");
+    expect(assessmentSaveSection).toContain('action: "assessment_question_text_updated"');
+    expect(assessmentSaveSection).toContain("You can revise question wording and private marking guides");
+    expect(assessmentSaveSection).toContain("answer options, the correct answer, question type, word limit and question order are protected");
   });
 
   it("makes staff overrides use the same Accelerator journey and entry-Action hand-off as normal completion", () => {
