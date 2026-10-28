@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, inArray, lt, lte, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { shouldAwardActionMomentum, validateActionMomentumConfiguration } from "@shared/momentum-policy";
 import { router, protectedProcedure } from "./_core/trpc";
@@ -44,6 +44,10 @@ const evidence = z.object({
 function optionalText(value: string | null | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function escapeLikeTerm(value: string) {
+  return value.replace(/[\\%_]/g, "\\$&");
 }
 
 function escapeHtml(value: string) {
@@ -427,17 +431,102 @@ export const agentDevelopmentRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const plans = await db.select().from(academyActionPlans).orderBy(desc(academyActionPlans.createdAt));
       const planIds = plans.map((plan) => plan.id);
-      const assignments = planIds.length ? await db.select().from(academyActionAssignments).where(inArray(academyActionAssignments.planId, planIds)) : [];
       const targets = planIds.length ? await db.select().from(academyActionPlanTargets).where(inArray(academyActionPlanTargets.planId, planIds)) : [];
+      const assignmentCounts = planIds.length
+        ? await db.select({
+          planId: academyActionAssignments.planId,
+          assigned: sql<number>`COUNT(*)`,
+          completed: sql<number>`SUM(CASE WHEN ${academyActionAssignments.status} = 'completed' THEN 1 ELSE 0 END)`,
+          awaitingReview: sql<number>`SUM(CASE WHEN ${academyActionAssignments.status} = 'review' THEN 1 ELSE 0 END)`,
+        })
+          .from(academyActionAssignments)
+          .where(inArray(academyActionAssignments.planId, planIds))
+          .groupBy(academyActionAssignments.planId)
+        : [];
+      const countsByPlanId = new Map(assignmentCounts.map((row) => [row.planId, {
+        assigned: Number(row.assigned ?? 0),
+        completed: Number(row.completed ?? 0),
+        awaitingReview: Number(row.awaitingReview ?? 0),
+      }]));
       return plans.map((plan) => ({
         ...plan,
         targetAgentIds: targets.filter((target) => target.planId === plan.id).map((target) => target.agentId),
-        counts: {
-          assigned: assignments.filter((item) => item.planId === plan.id).length,
-          completed: assignments.filter((item) => item.planId === plan.id && item.status === "completed").length,
-          awaitingReview: assignments.filter((item) => item.planId === plan.id && item.status === "review").length,
-        },
+        counts: countsByPlanId.get(plan.id) ?? { assigned: 0, completed: 0, awaitingReview: 0 },
       }));
+    }),
+
+    actionReviewSummary: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [summary] = await db.select({
+        awaitingReview: sql<number>`SUM(CASE WHEN ${academyActionAssignments.status} = 'review' THEN 1 ELSE 0 END)`,
+        submitted: sql<number>`SUM(CASE WHEN ${academyActionAssignments.status} = 'submitted' THEN 1 ELSE 0 END)`,
+        needsRevision: sql<number>`SUM(CASE WHEN ${academyActionAssignments.status} = 'needs_revision' THEN 1 ELSE 0 END)`,
+        livePlans: sql<number>`COUNT(DISTINCT CASE WHEN ${academyActionPlans.status} = 'published' THEN ${academyActionPlans.id} ELSE NULL END)`,
+      })
+        .from(academyActionAssignments)
+        .innerJoin(academyActionPlans, eq(academyActionPlans.id, academyActionAssignments.planId));
+      return {
+        awaitingReview: Number(summary?.awaitingReview ?? 0),
+        submitted: Number(summary?.submitted ?? 0),
+        needsRevision: Number(summary?.needsRevision ?? 0),
+        livePlans: Number(summary?.livePlans ?? 0),
+      };
+    }),
+
+    actionReviewQueue: adminProcedure.input(z.object({
+      query: z.string().trim().max(160).optional().default(""),
+      planId: z.number().int().positive().nullable().optional(),
+      courseId: z.number().int().positive().nullable().optional(),
+      courseWeek: z.number().int().min(1).max(8).nullable().optional(),
+      due: z.enum(["all", "overdue", "due_soon"]).optional().default("all"),
+      cursor: z.object({ submittedAt: z.date(), id: z.number().int().positive() }).nullable().optional(),
+      limit: z.number().int().min(1).max(50).optional().default(25),
+    })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const now = new Date();
+      const soon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const filters = [
+        eq(academyActionAssignments.status, "review"),
+        isNotNull(academyActionAssignments.submittedAt),
+      ];
+      if (input.planId) filters.push(eq(academyActionAssignments.planId, input.planId));
+      if (input.courseId) filters.push(eq(academyActionPlans.courseId, input.courseId));
+      if (input.courseWeek) filters.push(eq(academyActionPlans.courseWeek, input.courseWeek));
+      if (input.due === "overdue") filters.push(lt(academyActionAssignments.dueAt, now));
+      if (input.due === "due_soon") filters.push(and(lte(academyActionAssignments.dueAt, soon), sql`${academyActionAssignments.dueAt} >= ${now}`)!);
+      if (input.query) {
+        const term = `%${escapeLikeTerm(input.query)}%`;
+        filters.push(or(
+          like(users.name, term),
+          like(users.email, term),
+          like(academyActionPlans.title, term),
+        )!);
+      }
+      if (input.cursor) {
+        filters.push(or(
+          lt(academyActionAssignments.submittedAt, input.cursor.submittedAt),
+          and(eq(academyActionAssignments.submittedAt, input.cursor.submittedAt), lt(academyActionAssignments.id, input.cursor.id)),
+        )!);
+      }
+      const rows = await db.select({ assignment: academyActionAssignments, plan: academyActionPlans, agent: users, course: academyCourses })
+        .from(academyActionAssignments)
+        .innerJoin(academyActionPlans, eq(academyActionPlans.id, academyActionAssignments.planId))
+        .innerJoin(users, eq(users.id, academyActionAssignments.agentId))
+        .leftJoin(academyCourses, eq(academyCourses.id, academyActionPlans.courseId))
+        .where(and(...filters))
+        .orderBy(asc(academyActionAssignments.submittedAt), asc(academyActionAssignments.id))
+        .limit(input.limit + 1);
+      const hasMore = rows.length > input.limit;
+      const items = hasMore ? rows.slice(0, input.limit) : rows;
+      const last = items.at(-1);
+      return {
+        items,
+        nextCursor: hasMore && last?.assignment.submittedAt
+          ? { submittedAt: last.assignment.submittedAt, id: last.assignment.id }
+          : null,
+      };
     }),
 
     saveActionPlan: adminProcedure.input(z.object({

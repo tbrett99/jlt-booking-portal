@@ -1,0 +1,1 @@
+CREATE INDEX `academy_action_assignments_review_submitted_idx` ON `academy_action_assignments` (`status`,`submittedAt`,`id`);

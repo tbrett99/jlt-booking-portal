@@ -1286,6 +1286,138 @@ export const crmRouter = router({
         };
       }),
 
+    /**
+     * Bounded, read-only briefing for a staff member preparing for an agent 1:1.
+     * It intentionally returns operational summaries and short history windows,
+     * never raw assessment answers, uploaded Action evidence or bank details.
+     */
+    getCallSnapshot: adminProcedure
+      .input(z.object({ userId: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+        const {
+          academyActionAssignments, academyActionPlans, academyAssessmentAttempts,
+          academyCourses, academyEnrollments, academyLessons, agentCrmNotes,
+          agentEngagementCases, agentEngagementInteractions,
+        } = await import("../drizzle/schema");
+        const { and, desc, eq, inArray, ne, sql } = await import("drizzle-orm");
+        const [enrollments, assessmentCounts, actionCounts, recentAssessments, recentActions, recentNotes, recentEngagement, openCases] = await Promise.all([
+          db.select({
+            courseId: academyEnrollments.courseId,
+            courseTitle: academyCourses.title,
+            status: academyEnrollments.status,
+            dueDate: academyEnrollments.dueDate,
+            completedAt: academyEnrollments.completedAt,
+            updatedAt: academyEnrollments.updatedAt,
+          })
+            .from(academyEnrollments)
+            .innerJoin(academyCourses, eq(academyCourses.id, academyEnrollments.courseId))
+            .where(eq(academyEnrollments.agentId, input.userId))
+            .orderBy(desc(academyEnrollments.updatedAt)),
+          db.select({ status: academyAssessmentAttempts.status, total: sql<number>`COUNT(*)` })
+            .from(academyAssessmentAttempts)
+            .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
+            .where(eq(academyEnrollments.agentId, input.userId))
+            .groupBy(academyAssessmentAttempts.status),
+          db.select({ status: academyActionAssignments.status, total: sql<number>`COUNT(*)` })
+            .from(academyActionAssignments)
+            .where(eq(academyActionAssignments.agentId, input.userId))
+            .groupBy(academyActionAssignments.status),
+          db.select({
+            id: academyAssessmentAttempts.id,
+            status: academyAssessmentAttempts.status,
+            score: academyAssessmentAttempts.score,
+            passed: academyAssessmentAttempts.passed,
+            takenAt: academyAssessmentAttempts.takenAt,
+            gradedAt: academyAssessmentAttempts.gradedAt,
+            courseTitle: academyCourses.title,
+            lessonTitle: academyLessons.title,
+          })
+            .from(academyAssessmentAttempts)
+            .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
+            .innerJoin(academyCourses, eq(academyCourses.id, academyEnrollments.courseId))
+            .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
+            .where(eq(academyEnrollments.agentId, input.userId))
+            .orderBy(desc(academyAssessmentAttempts.takenAt), desc(academyAssessmentAttempts.id))
+            .limit(6),
+          db.select({
+            id: academyActionAssignments.id,
+            status: academyActionAssignments.status,
+            dueAt: academyActionAssignments.dueAt,
+            submittedAt: academyActionAssignments.submittedAt,
+            reviewedAt: academyActionAssignments.reviewedAt,
+            completedAt: academyActionAssignments.completedAt,
+            title: academyActionPlans.title,
+            courseWeek: academyActionPlans.courseWeek,
+            courseTitle: academyCourses.title,
+          })
+            .from(academyActionAssignments)
+            .innerJoin(academyActionPlans, eq(academyActionPlans.id, academyActionAssignments.planId))
+            .leftJoin(academyCourses, eq(academyCourses.id, academyActionPlans.courseId))
+            .where(eq(academyActionAssignments.agentId, input.userId))
+            .orderBy(desc(academyActionAssignments.updatedAt), desc(academyActionAssignments.id))
+            .limit(6),
+          db.select({ id: agentCrmNotes.id, content: agentCrmNotes.content, authorName: agentCrmNotes.authorName, createdAt: agentCrmNotes.createdAt })
+            .from(agentCrmNotes)
+            .where(eq(agentCrmNotes.agentUserId, input.userId))
+            .orderBy(desc(agentCrmNotes.createdAt), desc(agentCrmNotes.id))
+            .limit(6),
+          db.select({
+            id: agentEngagementInteractions.id,
+            channel: agentEngagementInteractions.channel,
+            summary: agentEngagementInteractions.summary,
+            outcome: agentEngagementInteractions.outcome,
+            occurredAt: agentEngagementInteractions.occurredAt,
+            nextFollowUpAt: agentEngagementInteractions.nextFollowUpAt,
+            caseStatus: agentEngagementCases.status,
+            riskReason: agentEngagementCases.riskReason,
+          })
+            .from(agentEngagementInteractions)
+            .innerJoin(agentEngagementCases, eq(agentEngagementCases.id, agentEngagementInteractions.caseId))
+            .where(eq(agentEngagementInteractions.agentId, input.userId))
+            .orderBy(desc(agentEngagementInteractions.occurredAt), desc(agentEngagementInteractions.id))
+            .limit(6),
+          db.select({
+            id: agentEngagementCases.id,
+            status: agentEngagementCases.status,
+            riskReason: agentEngagementCases.riskReason,
+            nextFollowUpAt: agentEngagementCases.nextFollowUpAt,
+            lastContactAt: agentEngagementCases.lastContactAt,
+          })
+            .from(agentEngagementCases)
+            .where(and(eq(agentEngagementCases.agentId, input.userId), ne(agentEngagementCases.status, "closed")))
+            .orderBy(desc(agentEngagementCases.openedAt))
+            .limit(3),
+        ]);
+        const totalFor = (rows: Array<{ status: string; total: number | string }>, status: string) => Number(rows.find((row) => row.status === status)?.total ?? 0);
+        return {
+          academy: {
+            enrollments,
+            counts: {
+              inProgress: enrollments.filter((enrollment) => ["assigned", "in_progress"].includes(enrollment.status)).length,
+              completed: enrollments.filter((enrollment) => enrollment.status === "completed").length,
+              awaitingMarking: totalFor(assessmentCounts, "awaiting_marking"),
+              feedbackPending: totalFor(assessmentCounts, "feedback_pending"),
+              feedbackAcknowledged: totalFor(assessmentCounts, "feedback_acknowledged"),
+            },
+            recentAssessments,
+          },
+          actions: {
+            counts: {
+              assigned: totalFor(actionCounts, "assigned"),
+              awaitingReview: totalFor(actionCounts, "review"),
+              needsRevision: totalFor(actionCounts, "needs_revision"),
+              completed: totalFor(actionCounts, "completed"),
+            },
+            recent: recentActions,
+          },
+          engagement: { openCases, recent: recentEngagement },
+          notes: recentNotes,
+        };
+      }),
+
     updateProfile: adminProcedure
       .input(
         z.object({

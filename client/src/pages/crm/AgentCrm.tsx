@@ -22,7 +22,7 @@ import {
   Calendar, CreditCard, User, FileText, CheckSquare, Square,
   ChevronDown, X, Pencil, Clock, ArrowRight, CheckCircle2,
   Shield, ShieldOff, ExternalLink, FileSignature, ScrollText, Printer, RefreshCw, Zap,
-  GraduationCap, LayoutDashboard, HandHeart, WalletCards, Wrench, Archive
+  GraduationCap, LayoutDashboard, HandHeart, WalletCards, Wrench, Archive, ClipboardCheck
 } from "lucide-react";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
@@ -495,6 +495,48 @@ function OverviewSection({ title, description, action, children }: { title: stri
   );
 }
 
+function SnapshotStatus({ value }: { value: string }) {
+  const label = value.replaceAll("_", " ");
+  const tone = value === "completed" || value === "feedback_acknowledged"
+    ? "bg-emerald-100 text-emerald-800"
+    : value === "awaiting_marking" || value === "review" || value === "feedback_pending"
+      ? "bg-amber-100 text-amber-800"
+      : value === "needs_revision"
+        ? "bg-rose-100 text-rose-800"
+        : "bg-muted text-muted-foreground";
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${tone}`}>{label}</span>;
+}
+
+function AgentCallSnapshot({ userId, onNavigate }: { userId: number; onNavigate: (section: CrmAgentRecordSection) => void }) {
+  const { data, isLoading, isError, refetch } = trpc.crm.agentCrm.getCallSnapshot.useQuery({ userId });
+  if (isLoading) return <div className="mt-4 grid gap-3 md:grid-cols-4">{[1, 2, 3, 4].map((item) => <div key={item} className="h-24 animate-pulse rounded-xl bg-muted" />)}</div>;
+  if (isError || !data) return <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-semibold">The 1:1 call snapshot could not be loaded.</p><Button size="sm" variant="outline" className="mt-2" onClick={() => void refetch()}>Retry snapshot</Button></div>;
+
+  const academy = data.academy;
+  const actions = data.actions;
+  const attention = academy.counts.awaitingMarking + academy.counts.feedbackPending + actions.counts.awaitingReview + actions.counts.needsRevision + data.engagement.openCases.length;
+  return (
+    <section className="mt-4 rounded-2xl border border-[#70FFE8]/55 bg-gradient-to-br from-[#70FFE8]/14 via-card to-card p-4 shadow-sm sm:p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-[#078f85]">1:1 call snapshot</p><h3 className="mt-1 text-lg font-bold">Learning, accountability and relationship context</h3><p className="mt-1 max-w-3xl text-sm text-muted-foreground">A concise live brief for the conversation. It shows outcomes and operational status, not assessment answers or uploaded evidence.</p></div>
+        <div className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${attention ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-800"}`}>{attention ? `${attention} item${attention === 1 ? "" : "s"} to discuss` : "No current learning or engagement attention"}</div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <OverviewMetric label="Academy courses" value={`${academy.counts.inProgress} in progress`} detail={`${academy.counts.completed} completed`} tone={academy.counts.inProgress ? "default" : "success"} />
+        <OverviewMetric label="Assessment attention" value={academy.counts.awaitingMarking ? `${academy.counts.awaitingMarking} awaiting marking` : "No marking queue"} detail={academy.counts.feedbackPending ? `${academy.counts.feedbackPending} feedback acknowledgement${academy.counts.feedbackPending === 1 ? "" : "s"} pending` : `${academy.counts.feedbackAcknowledged} feedback item${academy.counts.feedbackAcknowledged === 1 ? "" : "s"} acknowledged`} tone={academy.counts.awaitingMarking || academy.counts.feedbackPending ? "warning" : "success"} />
+        <OverviewMetric label="Academy Actions" value={actions.counts.awaitingReview ? `${actions.counts.awaitingReview} awaiting review` : `${actions.counts.completed} approved`} detail={actions.counts.needsRevision ? `${actions.counts.needsRevision} needs an update` : `${actions.counts.assigned} currently assigned`} tone={actions.counts.awaitingReview || actions.counts.needsRevision ? "warning" : "default"} />
+        <OverviewMetric label="Engagement" value={data.engagement.openCases.length ? `${data.engagement.openCases.length} open case${data.engagement.openCases.length === 1 ? "" : "s"}` : "No open case"} detail={data.engagement.openCases[0]?.nextFollowUpAt ? `Next follow-up: ${formatCrmDate(data.engagement.openCases[0].nextFollowUpAt)}` : data.engagement.openCases[0]?.riskReason ?? "No current support case"} tone={data.engagement.openCases.length ? "warning" : "success"} />
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <div className="rounded-xl border bg-background/90 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">Academy & accountability</p><p className="mt-0.5 text-xs text-muted-foreground">Latest assessment outcomes and Action activity.</p></div><Button size="sm" variant="ghost" onClick={() => onNavigate("academy")}>Open Academy</Button></div><div className="mt-3 space-y-2">{[...academy.recentAssessments.map((item) => ({ kind: "Assessment", title: `${item.courseTitle} · ${item.lessonTitle}`, date: item.gradedAt ?? item.takenAt, status: item.status, detail: item.score === null ? "Score awaiting staff review" : `${item.score}%${item.passed === true ? " · passed" : item.passed === false ? " · needs attention" : ""}` })), ...actions.recent.map((item) => ({ kind: "Action", title: item.title, date: item.reviewedAt ?? item.submittedAt ?? item.completedAt ?? item.dueAt, status: item.status, detail: `${item.courseTitle ? `${item.courseTitle}${item.courseWeek ? ` · Week ${item.courseWeek}` : ""} · ` : ""}${item.dueAt ? `due ${formatCrmDate(item.dueAt)}` : "no due date"}` }))].sort((a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime()).slice(0, 6).map((item, index) => <div key={`${item.kind}-${index}`} className="flex gap-3 rounded-lg border bg-muted/20 p-3"><div className="mt-0.5 rounded-md bg-muted p-1.5">{item.kind === "Assessment" ? <GraduationCap size={14} /> : <ClipboardCheck size={14} />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-medium">{item.title}</p><SnapshotStatus value={item.status} /></div><p className="mt-1 text-xs text-muted-foreground">{item.kind} · {item.detail}</p></div><p className="shrink-0 text-right text-[11px] text-muted-foreground">{formatCrmDate(item.date)}</p></div>)}{academy.recentAssessments.length === 0 && actions.recent.length === 0 && <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">No Academy assessment or Action history is recorded yet.</p>}</div></div>
+        <div className="rounded-xl border bg-background/90 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">Relationship & engagement</p><p className="mt-0.5 text-xs text-muted-foreground">Latest CRM notes and logged engagement conversations.</p></div><Button size="sm" variant="ghost" onClick={() => onNavigate("relationship")}>Open relationship</Button></div><div className="mt-3 space-y-2">{[...data.notes.map((item) => ({ kind: "CRM note", title: item.content, detail: item.authorName ?? "Staff", date: item.createdAt })), ...data.engagement.recent.map((item) => ({ kind: item.channel, title: item.summary, detail: `${item.caseStatus.replaceAll("_", " ")} · ${item.riskReason}`, date: item.occurredAt }))].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6).map((item, index) => <div key={`${item.kind}-${index}`} className="flex gap-3 rounded-lg border bg-muted/20 p-3"><div className="mt-0.5 rounded-md bg-muted p-1.5"><HandHeart size={14} /></div><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold capitalize text-muted-foreground">{item.kind}</p><p className="shrink-0 text-[11px] text-muted-foreground">{formatCrmDate(item.date, true)}</p></div><p className="mt-1 line-clamp-2 text-sm leading-5">{item.title}</p><p className="mt-1 text-xs text-muted-foreground">{item.detail}</p></div></div>)}{data.notes.length === 0 && data.engagement.recent.length === 0 && <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">No relationship notes or engagement conversations are recorded yet.</p>}</div></div>
+      </div>
+    </section>
+  );
+}
+
 function AgentOverviewTab({ agent, profile, onNavigate }: { agent: AgentRow; profile: CrmProfile | null; onNavigate: (section: CrmAgentRecordSection) => void }) {
   const { data, isLoading, isError, refetch } = trpc.crm.agentCrm.getOverview.useQuery({ userId: agent.id });
   if (isLoading) return <div className="grid gap-4 lg:grid-cols-2">{[1, 2, 3, 4].map((item) => <div key={item} className="h-44 animate-pulse rounded-2xl bg-muted" />)}</div>;
@@ -540,6 +582,8 @@ function AgentOverviewTab({ agent, profile, onNavigate }: { agent: AgentRow; pro
           </div>
         ) : <p className="mt-4 text-sm font-medium text-emerald-800">No immediate membership, payment, engagement or training attention is recorded.</p>}
       </div>
+
+      <AgentCallSnapshot userId={agent.id} onNavigate={onNavigate} />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <OverviewSection title="Contact & business" description="The selected correspondence route is shown first." action={<Button size="sm" variant="ghost" onClick={() => onNavigate("record-history")}>Full profile</Button>}>

@@ -28,28 +28,20 @@ export function AcademyWorkspaceNav({ active, className = "" }: AcademyWorkspace
   const [, navigate] = useLocation();
   const { data: courses = [] } = trpc.academy.admin.courses.useQuery();
   const { data: insights } = trpc.academy.admin.insights.useQuery();
-  const { data: actionPlans = [] } = trpc.agentDevelopment.admin.actionPlans.useQuery();
+  const { data: actionReviewSummary } = trpc.agentDevelopment.admin.actionReviewSummary.useQuery();
 
   const counts = useMemo(() => {
     const metrics = insights?.metrics;
-    const actionsAwaitingReview = actionPlans.reduce(
-      (total: number, plan: any) => total + Number(plan.counts?.awaitingReview ?? 0),
-      0,
-    );
-    const actionOutstanding = actionPlans.reduce(
-      (total: number, plan: any) => total + Math.max(0, Number(plan.counts?.assigned ?? 0) - Number(plan.counts?.completed ?? 0)),
-      0,
-    );
     return {
       courses: courses.length,
       publishedCourses: courses.filter((course) => course.status === "published").length,
       learners: Number(metrics?.enrolments.inProgress ?? 0),
       assessmentAttention: Number(metrics?.assessments.awaitingMarking ?? 0) + Number(metrics?.assessments.supportLocks ?? 0),
       feedbackPending: Number(metrics?.assessments.feedbackPending ?? 0),
-      actionsAwaitingReview,
-      actionOutstanding,
+      actionsAwaitingReview: Number(actionReviewSummary?.awaitingReview ?? 0),
+      actionsNeedingRevision: Number(actionReviewSummary?.needsRevision ?? 0),
     };
-  }, [actionPlans, courses, insights?.metrics]);
+  }, [actionReviewSummary, courses, insights?.metrics]);
 
   const workspaces: Array<{
     id: AcademyWorkspace;
@@ -88,7 +80,9 @@ export function AcademyWorkspaceNav({ active, className = "" }: AcademyWorkspace
       count: counts.actionsAwaitingReview,
       countLabel: counts.actionsAwaitingReview
         ? `${plural(counts.actionsAwaitingReview, "Action")} to review`
-        : `${plural(counts.actionOutstanding, "live Action")} outstanding`,
+        : counts.actionsNeedingRevision
+          ? `${plural(counts.actionsNeedingRevision, "Action")} with agents`
+          : "No evidence awaiting review",
       icon: <ClipboardCheck size={19} />,
     },
     {

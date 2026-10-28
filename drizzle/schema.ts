@@ -1863,6 +1863,7 @@ export const academyActionAssignments = mysqlTable("academy_action_assignments",
   index("academy_action_assignments_agent_status_idx").on(table.agentId, table.status),
   index("academy_action_assignments_plan_status_idx").on(table.planId, table.status),
   index("academy_action_assignments_due_status_idx").on(table.dueAt, table.status),
+  index("academy_action_assignments_review_submitted_idx").on(table.status, table.submittedAt, table.id),
 ]);
 export type AcademyActionAssignment = typeof academyActionAssignments.$inferSelect;
 

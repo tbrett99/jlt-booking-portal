@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ClipboardCheck, Clock3, Eye, FileUp, Link2, Mail, Plus, Send, ShieldCheck, Sparkles, UsersRound } from "lucide-react";
+import { CheckCircle2, ClipboardCheck, Clock3, Eye, FileUp, Link2, Mail, Plus, Search, Send, ShieldCheck, Sparkles, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { AcademyWorkspaceNav } from "@/components/AcademyWorkspaceNav";
@@ -41,6 +41,108 @@ function formatDate(value: Date | string | null | undefined) {
   return value ? new Date(value).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 }
 function toDate(value: string) { return value ? new Date(value) : null; }
+
+function ActionReviewQueue({ plans, academyCourses }: { plans: any[]; academyCourses: any[] }) {
+  const utils = trpc.useUtils();
+  const [query, setQuery] = useState("");
+  const [planId, setPlanId] = useState<number | null>(null);
+  const [courseId, setCourseId] = useState<number | null>(null);
+  const [courseWeek, setCourseWeek] = useState<number | null>(null);
+  const [due, setDue] = useState<"all" | "overdue" | "due_soon">("all");
+  const [cursor, setCursor] = useState<{ submittedAt: Date; id: number } | null>(null);
+  const [rows, setRows] = useState<any[]>([]);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [feedbackByAssignment, setFeedbackByAssignment] = useState<Record<number, string>>({});
+  const reviewFilterKey = `${query}|${planId ?? ""}|${courseId ?? ""}|${courseWeek ?? ""}|${due}`;
+  const { data: summary } = trpc.agentDevelopment.admin.actionReviewSummary.useQuery();
+  const reviewQueue = trpc.agentDevelopment.admin.actionReviewQueue.useQuery({ query, planId, courseId, courseWeek, due, cursor, limit: 25 });
+  const review = trpc.agentDevelopment.admin.reviewAction.useMutation({
+    onSuccess: () => {
+      toast.success("Action review recorded");
+      setCursor(null);
+      setRows([]);
+      setExpandedId(null);
+      setFeedbackByAssignment({});
+      void utils.agentDevelopment.admin.actionReviewQueue.invalidate();
+      void utils.agentDevelopment.admin.actionReviewSummary.invalidate();
+      void utils.agentDevelopment.admin.actionPlans.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  useEffect(() => {
+    setCursor(null);
+    setRows([]);
+  }, [reviewFilterKey]);
+
+  useEffect(() => {
+    if (!reviewQueue.data) return;
+    const received = reviewQueue.data.items as any[];
+    setRows((current) => cursor
+      ? [...current, ...received.filter((candidate) => !current.some((existing) => existing.assignment.id === candidate.assignment.id))]
+      : received);
+  }, [cursor, reviewQueue.data]);
+
+  const activePlans = plans.filter((plan) => plan.status === "published");
+  const acceleratorCourses = academyCourses.filter((course) => course.isAcceleratorJourney);
+  const resetFilters = () => {
+    setQuery("");
+    setPlanId(null);
+    setCourseId(null);
+    setCourseWeek(null);
+    setDue("all");
+  };
+
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50/80 via-card to-card p-5 shadow-sm">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[.16em] text-amber-800">Review inbox</p>
+          <h2 className="mt-1 text-xl font-bold">Submitted Actions waiting for staff</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Work from the oldest submission first. This inbox shows only evidence that genuinely needs a decision, rather than every live Action plan and every agent assignment.</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl border border-amber-200 bg-background px-3 py-2"><p className="text-lg font-bold text-amber-800">{summary?.awaitingReview ?? 0}</p><p className="text-[11px] font-medium text-muted-foreground">to review</p></div>
+          <div className="rounded-xl border bg-background px-3 py-2"><p className="text-lg font-bold">{summary?.needsRevision ?? 0}</p><p className="text-[11px] font-medium text-muted-foreground">with agent</p></div>
+          <div className="rounded-xl border bg-background px-3 py-2"><p className="text-lg font-bold">{summary?.livePlans ?? 0}</p><p className="text-[11px] font-medium text-muted-foreground">live plans</p></div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,180px))_auto]">
+        <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search agent or Action title" /></div>
+        <select aria-label="Filter by Action plan" className="h-10 rounded-md border bg-background px-3 text-sm" value={planId ?? ""} onChange={(event) => setPlanId(event.target.value ? Number(event.target.value) : null)}><option value="">All Action plans</option>{activePlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.title}</option>)}</select>
+        <select aria-label="Filter by Accelerator course" className="h-10 rounded-md border bg-background px-3 text-sm" value={courseId ?? ""} onChange={(event) => { const nextCourseId = event.target.value ? Number(event.target.value) : null; setCourseId(nextCourseId); setCourseWeek(null); }}><option value="">All courses</option>{acceleratorCourses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}</select>
+        <select aria-label="Filter by due date" className="h-10 rounded-md border bg-background px-3 text-sm" value={due} onChange={(event) => setDue(event.target.value as typeof due)}><option value="all">Any deadline</option><option value="overdue">Overdue</option><option value="due_soon">Due in 7 days</option></select>
+        <Button type="button" variant="ghost" size="sm" onClick={resetFilters} disabled={!query && !planId && !courseId && !courseWeek && due === "all"}>Clear</Button>
+      </div>
+      {courseId && <div className="mt-3 flex items-center gap-3"><Label className="text-xs">Accelerator week</Label><select aria-label="Filter by Accelerator week" className="h-9 rounded-md border bg-background px-3 text-sm" value={courseWeek ?? ""} onChange={(event) => setCourseWeek(event.target.value ? Number(event.target.value) : null)}><option value="">All weeks</option>{Array.from({ length: 8 }, (_, index) => <option key={index + 1} value={index + 1}>Week {index + 1}</option>)}</select></div>}
+
+      <div className="mt-5 space-y-3">
+        {reviewQueue.isLoading && rows.length === 0 ? <div className="space-y-3">{[1, 2, 3].map((item) => <div key={item} className="h-24 animate-pulse rounded-xl bg-muted" />)}</div> : null}
+        {!reviewQueue.isLoading && rows.length === 0 ? <div className="rounded-xl border border-dashed bg-background/70 px-5 py-10 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600" /><p className="mt-3 font-semibold">Nothing needs review with these filters.</p><p className="mt-1 text-sm text-muted-foreground">Approved Action evidence will stay in the agent&apos;s history; it does not remain in this working inbox.</p></div> : null}
+        {rows.map((row) => {
+          const assignment = row.assignment;
+          const isExpanded = expandedId === assignment.id;
+          const deadline = assignment.dueAt ?? row.plan.dueAt;
+          const isOverdue = !!deadline && new Date(deadline) < new Date();
+          const feedback = feedbackByAssignment[assignment.id] ?? "";
+          return <article key={assignment.id} className="rounded-xl border bg-background shadow-sm">
+            <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">Awaiting review</span>{row.plan.courseWeek ? <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800">Week {row.plan.courseWeek}</span> : null}{isOverdue ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">Overdue</span> : null}</div>
+                <h3 className="mt-2 font-bold">{row.plan.title}</h3>
+                <p className="mt-1 text-sm text-muted-foreground"><span className="font-medium text-foreground">{row.agent.name || row.agent.email}</span> · submitted {formatDate(assignment.submittedAt)}{deadline ? ` · due ${formatDate(deadline)}` : ""}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setExpandedId(isExpanded ? null : assignment.id)}>{isExpanded ? "Hide submission" : "Review submission"}</Button>
+            </div>
+            {isExpanded && <div className="border-t bg-muted/20 p-4"><div className="grid gap-4 xl:grid-cols-2"><div className="space-y-3"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-muted-foreground">Action brief</p><p className="mt-1 whitespace-pre-line text-sm leading-6">{row.plan.instructions}</p></div><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-muted-foreground">Agent notes</p><p className="mt-1 whitespace-pre-line rounded-lg border bg-background p-3 text-sm leading-6">{assignment.completionNote || "No completion note was provided."}</p></div>{(assignment.evidenceUrl || assignment.evidenceFileUrl) && <div className="flex flex-wrap gap-2">{assignment.evidenceUrl && <a href={assignment.evidenceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border bg-background px-3 py-2 text-xs font-semibold text-primary hover:bg-muted"><Link2 size={14} />Open link evidence</a>}{assignment.evidenceFileUrl && <a href={assignment.evidenceFileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border bg-background px-3 py-2 text-xs font-semibold text-primary hover:bg-muted"><FileUp size={14} />{assignment.evidenceFileName || "Open uploaded evidence"}</a>}</div>}</div><div className="rounded-xl border bg-background p-4"><Label htmlFor={`review-feedback-${assignment.id}`}>Feedback to agent</Label><Textarea id={`review-feedback-${assignment.id}`} className="mt-2" rows={6} value={feedback} placeholder="Required only when returning this Action. Explain exactly what needs updating." onChange={(event) => setFeedbackByAssignment((current) => ({ ...current, [assignment.id]: event.target.value }))} /><div className="mt-4 flex flex-wrap gap-2"><Button className="bg-emerald-600 hover:bg-emerald-700" disabled={review.isPending} onClick={() => review.mutate({ assignmentId: assignment.id, outcome: "completed", feedback: feedback.trim() || null })}><CheckCircle2 className="mr-1.5" size={15} />Approve Action</Button><Button variant="outline" disabled={review.isPending || !feedback.trim()} onClick={() => review.mutate({ assignmentId: assignment.id, outcome: "needs_revision", feedback: feedback.trim() })}>Request changes</Button></div><p className="mt-3 text-xs leading-5 text-muted-foreground">Approving completes the Action and awards any configured reviewed Momentum points. Requesting changes returns it to the agent with this feedback.</p></div></div></div>}
+          </article>;
+        })}
+      </div>
+      {reviewQueue.data?.nextCursor && <div className="mt-4 flex justify-center"><Button variant="outline" onClick={() => setCursor(reviewQueue.data!.nextCursor)} disabled={reviewQueue.isFetching}>{reviewQueue.isFetching ? "Loading…" : "Load next submissions"}</Button></div>}
+    </section>
+  );
+}
 
 export default function AdminAcademyActions() {
   const utils = trpc.useUtils();
@@ -107,6 +209,8 @@ export default function AdminAcademyActions() {
       </header>
 
       <AcademyWorkspaceNav active="actions" />
+
+      <ActionReviewQueue plans={plans as any[]} academyCourses={academyCourses as any[]} />
 
       {acceleratorCourses.length > 0 && <section className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50/80 via-card to-card p-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

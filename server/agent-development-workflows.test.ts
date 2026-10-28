@@ -54,7 +54,7 @@ describe("Agent accountability and engagement safeguards", () => {
   it("exposes actions to agents and places engagement both in its workboard and CRM profile", () => {
     expect(app).toContain('path="/academy/actions"');
     expect(app).toContain('path="/admin/agent-engagement"');
-    expect(crm).toContain('TabsTrigger value="engagement"');
+    expect(crm).toContain('engagement: "relationship"');
     expect(crm).toContain('function AgentEngagementTab');
   });
 
