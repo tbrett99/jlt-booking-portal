@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -35,14 +35,17 @@ function completionLabel(item: { activity?: { completedAt?: Date | string | null
 
 export default function LibraryBrowser({ kind }: { kind: LibraryKind }) {
   const utils = trpc.useUtils();
-  const [location, navigate] = useLocation();
+  const [, navigate] = useLocation();
+  // `useLocation` tracks the pathname only. Library cards keep that pathname
+  // and change just ?article= / ?webinar=, so subscribe to Wouter's search
+  // string as well or the detail panel will never render after a card click.
+  const searchParams = useSearch();
   const paramName = kind === "article" ? "article" : "webinar";
   const selectedId = useMemo(() => {
-    if (typeof window === "undefined") return null;
-    const raw = new URLSearchParams(window.location.search).get(paramName);
+    const raw = new URLSearchParams(searchParams).get(paramName);
     const parsed = raw ? Number(raw) : null;
     return parsed && Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
-  }, [location, paramName]);
+  }, [paramName, searchParams]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>("");
   const browseInput = useMemo(() => ({ search, category: category || null }), [search, category]);
