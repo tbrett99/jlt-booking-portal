@@ -15,6 +15,8 @@
 - [x] Issue gfryer18@gmail.com a replacement discovery-call booking link without changing her accepted application status
 - [x] Assess live portal slowness and present prioritised speed-improvement options before making changes
 - [ ] Improve Railway baseline responsiveness and production asset compression/cache behaviour, then measure live impact
+  - [x] Establish and document a true live baseline (28 Oct 2026: Brotli is active; initial entry transferred 231 KB, CSS transferred 36 KB; static assets have one-year immutable caching)
+  - [ ] Remove development-only JSX location metadata from production bundles, then re-measure live transfer sizes and response timing
 - [x] Scope an Airwallex virtual single-use card request, approval, evidence, and reimbursement-recovery workflow before implementation
 - [x] Scope a 12-week departure-date commission safeguard covering manual claims and pre-authorised bookings
 - [x] Build a duplicate-safe PTS booking CSV export for bookings awaiting addition to PTS, using the existing Orbit Ref and fixed Flight Only booking type

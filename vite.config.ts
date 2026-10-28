@@ -150,7 +150,16 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+// Location annotations and the browser debug collector are valuable while
+// developing, but add diagnostic payload to every JSX element. Keep them out
+// of the Railway production bundle so initial Portal downloads stay lean.
+const isProductionBuild = process.env.NODE_ENV === "production";
+const plugins = [
+  react(),
+  tailwindcss(),
+  ...(isProductionBuild ? [] : [jsxLocPlugin(), vitePluginManusDebugCollector()]),
+  vitePluginManusRuntime(),
+];
 
 export default defineConfig({
   plugins,
