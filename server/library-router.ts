@@ -6,6 +6,7 @@ import { createInAppNotification, getDb } from "./db";
 import { sendDirectEmail } from "./email";
 import { awardMomentum } from "./momentum";
 import { storagePut } from "./storage";
+import { KnowledgeBaseCsvImportError, parseKnowledgeBaseArticleCsv } from "../shared/knowledge-base-csv";
 import {
   calendarEvents,
   knowledgeBaseArticles,
@@ -348,6 +349,78 @@ export const libraryRouter = router({
         .where(and(eq(libraryAuditLog.entityType, input.contentType), eq(libraryAuditLog.entityId, input.contentId)))
         .orderBy(desc(libraryAuditLog.createdAt))
         .limit(100);
+    }),
+
+    importArticlesCsv: adminProcedure.input(z.object({ csvText: z.string().min(1).max(12_000_000), fileName: z.string().trim().min(1).max(255) })).mutation(async ({ ctx, input }) => {
+      let imported;
+      try {
+        imported = parseKnowledgeBaseArticleCsv(input.csvText);
+      } catch (error) {
+        if (error instanceof KnowledgeBaseCsvImportError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: { rowErrors: error.rowErrors } });
+        }
+        throw error;
+      }
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const existing = await db.select({ title: knowledgeBaseArticles.title, category: knowledgeBaseArticles.category }).from(knowledgeBaseArticles);
+      const existingKeys = new Set(existing.map((article) => `${article.category.trim().toLocaleLowerCase()}::${article.title.trim().toLocaleLowerCase()}`));
+      const duplicates = imported.filter((article) => existingKeys.has(`${article.category.trim().toLocaleLowerCase()}::${article.title.trim().toLocaleLowerCase()}`));
+      if (duplicates.length) {
+        const names = duplicates.slice(0, 8).map((article) => `“${article.title}” (${article.category})`).join(", ");
+        const suffix = duplicates.length > 8 ? ` and ${duplicates.length - 8} more` : "";
+        throw new TRPCError({ code: "CONFLICT", message: `Nothing was imported because ${duplicates.length === 1 ? "this article already exists" : `${duplicates.length} articles already exist`}: ${names}${suffix}. Remove those rows or change the title/category; imports never overwrite existing articles.` });
+      }
+
+      const now = new Date();
+      const created = await db.transaction(async (tx) => {
+        const records: Array<{ id: number; title: string; status: "draft" | "published" }> = [];
+        for (const article of imported) {
+          const result = await tx.insert(knowledgeBaseArticles).values({
+            title: article.title,
+            summary: article.summary,
+            contentHtml: sanitiseLibraryHtml(article.contentHtml),
+            category: article.category,
+            tags: normaliseTags(article.tags),
+            status: article.status,
+            isFeatured: article.isFeatured,
+            createdById: ctx.user.id,
+            updatedById: ctx.user.id,
+            publishedAt: article.status === "published" ? now : null,
+            publishedById: article.status === "published" ? ctx.user.id : null,
+          }).$returningId();
+          const id = Number(result[0]?.id);
+          if (!Number.isSafeInteger(id) || id < 1) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Article “${article.title}” was not assigned an ID. No articles were imported.` });
+          await tx.insert(libraryAuditLog).values({
+            entityType: "article",
+            entityId: id,
+            action: "csv_imported",
+            summary: `Imported Knowledge Base article from CSV: ${article.title}`,
+            actorId: ctx.user.id,
+            metadata: {
+              fileName: input.fileName,
+              status: article.status,
+              category: article.category,
+              tags: normaliseTags(article.tags),
+              loomEmbedded: !!article.loomUrl,
+              sopLinked: !!article.sopUrl,
+            },
+          });
+          records.push({ id, title: article.title, status: article.status });
+        }
+        return records;
+      });
+
+      return {
+        imported: created.length,
+        drafts: created.filter((article) => article.status === "draft").length,
+        published: created.filter((article) => article.status === "published").length,
+        articles: created,
+        // Bulk publishing deliberately creates no agent notifications or emails.
+        // Staff can review imported drafts and announce selected articles later.
+        agentsNotified: 0,
+      };
     }),
 
     saveArticle: adminProcedure.input(adminContentInput).mutation(async ({ ctx, input }) => {

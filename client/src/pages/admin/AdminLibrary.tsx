@@ -5,7 +5,9 @@ import {
   BellRing,
   BookOpen,
   CheckCircle2,
+  Download,
   FileText,
+  FileSpreadsheet,
   Library,
   Link2,
   Loader2,
@@ -23,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { knowledgeBaseArticleCsvTemplate } from "@shared/knowledge-base-csv";
 
 type Draft = {
   id?: number;
@@ -82,6 +85,16 @@ function toBase64(file: File) {
   });
 }
 
+function downloadKnowledgeBaseCsvTemplate() {
+  const blob = new Blob([`\uFEFF${knowledgeBaseArticleCsvTemplate}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "jlt-knowledge-base-bulk-import-template.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function AdminLibrary() {
   const utils = trpc.useUtils();
   const { data, isLoading, isError, error, refetch, isFetching } = trpc.library.admin.overview.useQuery();
@@ -121,6 +134,14 @@ export default function AdminLibrary() {
   });
   const removeResource = trpc.library.admin.removeResource.useMutation({
     onSuccess: async () => { await refresh(); toast.success("Resource withdrawn from the Portal."); },
+    onError: (mutationError) => toast.error(mutationError.message),
+  });
+  const importArticlesCsv = trpc.library.admin.importArticlesCsv.useMutation({
+    onSuccess: async (result) => {
+      await refresh();
+      setArticleDraft(blankArticle());
+      toast.success(`Imported ${result.imported} Knowledge Base ${result.imported === 1 ? "article" : "articles"}: ${result.drafts} draft${result.drafts === 1 ? "" : "s"}, ${result.published} published. No agent notifications were sent.`);
+    },
     onError: (mutationError) => toast.error(mutationError.message),
   });
 
@@ -220,6 +241,25 @@ export default function AdminLibrary() {
     }
   };
 
+  const onImportArticlesCsv = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.name.toLocaleLowerCase().endsWith(".csv")) {
+      toast.error("Choose a CSV file (.csv). Export Numbers or Excel files as CSV first.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Keep a Knowledge Base CSV below 8 MB. Split a larger migration into smaller files.");
+      return;
+    }
+    try {
+      await importArticlesCsv.mutateAsync({ csvText: await file.text(), fileName: file.name });
+    } catch {
+      // The mutation toast contains row-level validation or conflict guidance.
+    }
+  };
+
   if (isLoading) return <div className="mx-auto max-w-7xl space-y-5 animate-pulse"><div className="h-44 rounded-3xl bg-muted" /><div className="h-96 rounded-3xl bg-muted" /></div>;
   if (isError || !data) return <div className="mx-auto max-w-3xl rounded-2xl border border-destructive/30 bg-destructive/5 p-6"><h1 className="text-xl font-bold">Knowledge and webinar content could not be loaded</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Nothing has been changed. {error?.message}</p><Button className="mt-5" disabled={isFetching} onClick={() => refetch()}>{isFetching ? "Retrying…" : "Retry library"}</Button></div>;
 
@@ -233,6 +273,7 @@ export default function AdminLibrary() {
     <div className="grid gap-6 xl:grid-cols-[0.78fr_1.22fr]">
       <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start"><Card><CardHeader className="pb-3"><div className="flex items-center justify-between gap-3"><CardTitle className="text-lg">Library content</CardTitle><Button size="sm" variant="outline" className="gap-1.5" onClick={() => activeKind === "article" ? setArticleDraft(blankArticle()) : setWebinarDraft(blankWebinar())}><Plus size={15} /> New</Button></div><div className="mt-3 grid grid-cols-2 rounded-xl bg-muted p-1"><button type="button" onClick={() => setActiveTab("articles")} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${activeTab === "articles" ? "bg-background shadow-sm" : "text-muted-foreground"}`}><BookOpen className="mr-1.5 inline" size={15} /> Articles</button><button type="button" onClick={() => setActiveTab("webinars")} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${activeTab === "webinars" ? "bg-background shadow-sm" : "text-muted-foreground"}`}><Video className="mr-1.5 inline" size={15} /> Webinars</button></div></CardHeader><CardContent className="space-y-2">{records.length ? records.map((record: any) => <button type="button" key={record.id} onClick={() => activeKind === "article" ? chooseArticle(record) : chooseWebinar(record)} className={`w-full rounded-xl border p-3 text-left transition hover:bg-muted/50 ${draft.id === record.id ? "border-primary bg-primary/5" : "border-transparent bg-muted/30"}`}><div className="flex items-start justify-between gap-2"><p className="line-clamp-2 text-sm font-bold">{record.title}</p><StatusBadge status={record.status} /></div><p className="mt-1 truncate text-xs text-muted-foreground">{record.category} · {record.completionCount} complete</p></button>) : <p className="rounded-xl bg-muted/40 p-4 text-sm leading-6 text-muted-foreground">No {activeKind === "article" ? "Knowledge Base articles" : "webinars"} yet. Create the first draft here.</p>}</CardContent></Card>
         <Card className="border-amber-200 bg-amber-50/60"><CardContent className="p-4"><div className="flex gap-3"><Sparkles className="mt-0.5 shrink-0 text-amber-700" size={18} /><div><p className="text-sm font-bold text-amber-950">Momentum is opt-in</p><p className="mt-1 text-xs leading-5 text-amber-900/80">Completion is recorded for every resource, but points only award once if the relevant Momentum rule is switched on in JLT Momentum.</p></div></div></CardContent></Card>
+        {activeKind === "article" ? <KnowledgeBaseCsvImportPanel importing={importArticlesCsv.isPending} onDownload={downloadKnowledgeBaseCsvTemplate} onUpload={onImportArticlesCsv} /> : null}
       </aside>
 
       <main className="space-y-6"><Card><CardHeader><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="flex items-center gap-2 text-xl">{activeKind === "article" ? <BookOpen className="text-indigo-700" size={21} /> : <Video className="text-rose-700" size={21} />}{draft.id ? `Edit ${activeKind === "article" ? "article" : "webinar"}` : `New ${activeKind === "article" ? "Knowledge Base article" : "webinar"}`}</CardTitle><p className="mt-1 text-sm text-muted-foreground">Save as a draft while you write. Only Published content is visible to agents.</p></div>{draft.id && selectedRecord ? <div className="text-right text-xs text-muted-foreground"><p>{selectedRecord.viewCount} agents opened it</p><p>{selectedRecord.completionCount} marked complete</p></div> : null}</div></CardHeader><CardContent className="space-y-6">
@@ -250,6 +291,10 @@ export default function AdminLibrary() {
       </main>
     </div>
   </div>;
+}
+
+function KnowledgeBaseCsvImportPanel({ importing, onDownload, onUpload }: { importing: boolean; onDownload: () => void; onUpload: (event: ChangeEvent<HTMLInputElement>) => void }) {
+  return <Card className="border-indigo-200 bg-indigo-50/40"><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="text-indigo-700" size={18} /> Bulk article import</CardTitle><p className="text-xs leading-5 text-muted-foreground">Migrate up to 500 new Knowledge Base articles at once. Imports create only — they never overwrite an existing article or announce it to agents.</p></CardHeader><CardContent className="space-y-3"><div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={onDownload}><Download className="mr-1.5" size={15} /> Download CSV template</Button><label className={`inline-flex cursor-pointer items-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 ${importing ? "pointer-events-none opacity-60" : ""}`}><Upload className="mr-1.5" size={15} /> {importing ? "Checking & importing…" : "Upload CSV"}<input type="file" className="sr-only" accept=".csv,text/csv" disabled={importing} onChange={onUpload} /></label></div><ul className="space-y-1 text-xs leading-5 text-muted-foreground"><li><strong>Required columns:</strong> Title, Category and Content HTML. Keep cells containing commas, headings, links or multi-line HTML wrapped in double quotes.</li><li><strong>Loom URL:</strong> paste a Loom share URL and it becomes an in-Portal player. <strong>SOP URL:</strong> paste an HTTPS link and a labelled online-SOP link is appended to the article.</li><li>Use <strong>Draft</strong> while you review migrated content. Published rows become visible to agents but are deliberately not emailed or notified in bulk.</li></ul></CardContent></Card>;
 }
 
 function Metric({ value, label }: { value: number; label: string }) {

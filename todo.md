@@ -16,7 +16,10 @@
 - [x] Assess live portal slowness and present prioritised speed-improvement options before making changes
 - [ ] Improve Railway baseline responsiveness and production asset compression/cache behaviour, then measure live impact
   - [x] Establish and document a true live baseline (28 Oct 2026: Brotli is active; initial entry transferred 231 KB, CSS transferred 36 KB; static assets have one-year immutable caching)
-  - [ ] Remove development-only JSX location metadata from production bundles, then re-measure live transfer sizes and response timing
+  - [x] Remove development-only JSX location metadata from production bundles (initial client bundle reduced by 120,748 bytes / 13.3% before compression)
+  - [ ] Re-measure the live post-deployment HTML and initial-entry response timings, transfer sizes and compression; keep the task open until this evidence is recorded
+- [x] Repair Knowledge Base articles containing RichEmailEditor Loom thumbnails so recognised Loom recordings play in the Portal instead of showing a broken email-only image card
+- [x] Add a create-only, all-or-nothing Knowledge Base article CSV import with an editable template, HTML preservation, recognised Loom in-Portal players, and labelled HTTPS online-SOP links; imports intentionally send no bulk agent notifications
 - [x] Scope an Airwallex virtual single-use card request, approval, evidence, and reimbursement-recovery workflow before implementation
 - [x] Scope a 12-week departure-date commission safeguard covering manual claims and pre-authorised bookings
 - [x] Build a duplicate-safe PTS booking CSV export for bookings awaiting addition to PTS, using the existing Orbit Ref and fixed Flight Only booking type
