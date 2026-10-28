@@ -391,6 +391,75 @@ main > section.mx-auto.grid.max-w-6xl > article::after {
   margin-bottom: 0.25rem;
 }
 
+/* Community post bodies are saved as genuine rich HTML. The Portal does not
+   load Tailwind Typography, so restore the reading structure explicitly rather
+   than relying on optional `prose` utility classes. */
+.community-post-content {
+  max-width: none;
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  line-height: 1.75rem;
+  overflow-wrap: break-word;
+}
+.community-post-content > :first-child { margin-top: 0; }
+.community-post-content > :last-child { margin-bottom: 0; }
+.community-post-content p {
+  margin: 1rem 0;
+  line-height: 1.75rem;
+}
+.community-post-content h1,
+.community-post-content h2,
+.community-post-content h3,
+.community-post-content h4 {
+  margin: 1.75rem 0 0.75rem;
+  color: var(--foreground);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+.community-post-content h1 { font-size: 1.6rem; }
+.community-post-content h2 { font-size: 1.35rem; }
+.community-post-content h3 { font-size: 1.15rem; }
+.community-post-content ul,
+.community-post-content ol {
+  display: block;
+  margin: 1rem 0;
+  padding-left: 1.6rem;
+}
+.community-post-content ul { list-style-type: disc !important; }
+.community-post-content ol { list-style-type: decimal !important; }
+.community-post-content li {
+  display: list-item !important;
+  margin: 0.4rem 0;
+  padding-left: 0.15rem;
+}
+.community-post-content li > ul,
+.community-post-content li > ol { margin: 0.4rem 0; }
+.community-post-content strong,
+.community-post-content b { font-weight: 700; }
+.community-post-content em,
+.community-post-content i { font-style: italic; }
+.community-post-content a {
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.community-post-content blockquote {
+  margin: 1.15rem 0;
+  border-left: 3px solid color-mix(in oklch, var(--primary) 58%, transparent);
+  border-radius: 0 0.5rem 0.5rem 0;
+  background: color-mix(in oklch, var(--muted) 56%, transparent);
+  padding: 0.65rem 0.9rem;
+}
+.community-post-content blockquote p { margin: 0.4rem 0; }
+.community-post-content img { max-width: 100%; border-radius: 0.75rem; }
+.community-post-content table { width: 100%; margin: 1.15rem 0; border-collapse: collapse; }
+.community-post-content th,
+.community-post-content td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; vertical-align: top; }
+.community-post-content th { background: var(--muted); font-weight: 700; }
+.community-post-content--collapsed { max-height: 15.75rem; overflow: hidden; }
+
 /* Academy lessons are authored as genuine HTML in the editor. Tailwind's base
    reset removes browser list markers and paragraph margins, so the learner-side
    renderer restores them explicitly rather than relying on Typography utilities. */
