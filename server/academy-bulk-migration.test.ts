@@ -112,6 +112,25 @@ describe("Academy bulk original-training migration", () => {
     expect(router).toContain("Only current agents can be classified here");
     expect(router).toContain("academyAcceleratorStartedAt");
     expect(insights).toContain("CLASSIFY AS TRAINING");
-    expect(insights).toContain("Move to Accelerator");
+    expect(insights).toContain("Set Accelerator + complete");
+  });
+
+  it("offers selected current agents all three stages while reserving legacy completion for Accelerator or Accredited", () => {
+    const helper = router.slice(
+      router.indexOf("async function bulkUpdateAcademyMigrationStages"),
+      router.indexOf("async function applyBulkAcademyMigration")
+    );
+    expect(router).toContain("bulkUpdateMigrationTrainingStages: adminProcedure");
+    expect(router).toContain('confirmation: z.literal("UPDATE SELECTED STAGES")');
+    expect(helper).toContain('params.trainingStage === "Agent Accelerator" || params.trainingStage === "Accredited"');
+    expect(helper).toContain("academy_lesson_progress");
+    expect(helper).toContain("migration_training_stage_selected_update");
+    expect(helper).toContain("academy_migration_stage_queue_selected");
+    expect(helper).toContain("One or more selected agents are no longer current");
+    expect(helper).not.toContain("INSERT INTO academy_assessment_attempts");
+    expect(insights).toContain("Set Accredited + complete");
+    expect(insights).toContain("Set Accelerator + complete");
+    expect(insights).toContain("Select all on this page");
+    expect(insights).toContain("UPDATE SELECTED STAGES");
   });
 });

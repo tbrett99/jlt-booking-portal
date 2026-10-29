@@ -14,12 +14,12 @@
 - [x] Diagnose Mackay's missing recruitment application and audit Railway intake records for other potentially missed submissions; synchronise the legacy application route into the recruitment pipeline
 - [x] Issue gfryer18@gmail.com a replacement discovery-call booking link without changing her accepted application status
 - [x] Assess live portal slowness and present prioritised speed-improvement options before making changes
-- [ ] Improve Railway baseline responsiveness and production asset compression/cache behaviour, then measure live impact
+- [x] Improve Railway baseline responsiveness and production asset compression/cache behaviour, then measure live impact
   - [x] Establish and document a true live baseline (28 Oct 2026: Brotli is active; initial entry transferred 231 KB, CSS transferred 36 KB; static assets have one-year immutable caching)
   - [x] Remove development-only JSX location metadata from production bundles (initial client bundle reduced by 120,748 bytes / 13.3% before compression)
-  - [ ] Re-measure the live post-deployment HTML and initial-entry response timings, transfer sizes and compression; keep the task open until this evidence is recorded
+  - [x] Re-measure the live post-deployment HTML and initial-entry response timings, transfer sizes and compression (29 Oct 2026: active entry transferred 221,735 bytes with `--compressed`, down from 231 KB; it retains one-year immutable cache control; observed root/entry times were 2.41s/2.69s on a single external HTTP sample)
 - [x] Release the controlled Academy bulk-enrolment migration: exclude In Notice/cancelled agents, complete every lesson for Agent Accelerator/Accredited agents, retain manual progress for Training agents, and preserve existing audit history
-- [ ] Release a searchable and paginated Academy stage-review queue so staff can find Training, missing-stage and legacy-stage records, classify current agents with an audit trail, and start an Accelerator journey deliberately
+- [x] Release a searchable and paginated Academy stage-review queue so staff can find Training, missing-stage and legacy-stage records, classify current agents with an audit trail, and start an Accelerator journey deliberately; active Railway bundle verified 29 October 2026
 - [x] Repair Knowledge Base articles containing RichEmailEditor Loom thumbnails so recognised Loom recordings play in the Portal instead of showing a broken email-only image card
 - [x] Add a create-only, all-or-nothing Knowledge Base article CSV import with an editable template, HTML preservation, recognised Loom in-Portal players, and labelled HTTPS online-SOP links; imports intentionally send no bulk agent notifications
 - [x] Scope an Airwallex virtual single-use card request, approval, evidence, and reimbursement-recovery workflow before implementation

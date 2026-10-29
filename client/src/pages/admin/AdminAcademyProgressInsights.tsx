@@ -20,6 +20,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { AcademyWorkspaceNav } from "@/components/AcademyWorkspaceNav";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -159,6 +160,9 @@ export default function AdminAcademyProgressInsights() {
   const [migrationStagePage, setMigrationStagePage] = useState(1);
   const [classifyingMigrationAgentId, setClassifyingMigrationAgentId] =
     useState<number | null>(null);
+  const [selectedMigrationAgentIds, setSelectedMigrationAgentIds] = useState<
+    number[]
+  >([]);
 
   const { data: courses = [] } = trpc.academy.admin.courses.useQuery();
   const insights = trpc.academy.admin.insights.useQuery(
@@ -235,6 +239,20 @@ export default function AdminAcademyProgressInsights() {
         toast.success(
           `${result.classified} agent${result.classified === 1 ? "" : "s"} classified as Training`
         );
+        invalidate();
+      },
+      onError: error => toast.error(error.message),
+    });
+  const bulkUpdateMigrationTrainingStages =
+    trpc.academy.admin.bulkUpdateMigrationTrainingStages.useMutation({
+      onSuccess: result => {
+        const completionNote = result.automaticallyCompleted
+          ? ` ${result.automaticallyCompleted} selected learner${result.automaticallyCompleted === 1 ? "" : "s"} had ${result.course.title} recorded as complete from original training.`
+          : " Selected Training agents keep their Academy progress for manual review.";
+        toast.success(
+          `${result.changed} stage${result.changed === 1 ? "" : "s"} updated to ${result.trainingStage}.${completionNote}`
+        );
+        setSelectedMigrationAgentIds([]);
         invalidate();
       },
       onError: error => toast.error(error.message),
@@ -352,6 +370,7 @@ export default function AdminAcademyProgressInsights() {
   }, [courseId, learnerSearch, riskFilter]);
   useEffect(() => {
     setMigrationStagePage(1);
+    setSelectedMigrationAgentIds([]);
   }, [courseId, migrationStageSearch, migrationStageFilter]);
   const agentOptions = useMemo(
     () =>
@@ -421,19 +440,9 @@ export default function AdminAcademyProgressInsights() {
     }
   }
   function classifyMigrationAgent(
-    agent: { id: number; name: string | null; email: string | null },
-    trainingStage: "Training" | "Agent Accelerator"
+    agent: { id: number; name: string | null; email: string | null }
   ) {
-    const label = agent.name || agent.email || "this agent";
-    if (
-      trainingStage === "Agent Accelerator" &&
-      !window.confirm(
-        `Move ${label} to Agent Accelerator? This starts their Accelerator journey and may assign the normal entry Action. It cannot mark their Academy lessons complete.`
-      )
-    ) {
-      return;
-    }
-    classifyMigrationTrainingStage.mutate({ agentId: agent.id, trainingStage });
+    classifyMigrationTrainingStage.mutate({ agentId: agent.id, trainingStage: "Training" });
   }
   function confirmBulkTrainingClassification(sourceCategory: "missing" | "legacy") {
     if (!selectedCourse || !migrationStageReview.data) return;
@@ -451,6 +460,40 @@ export default function AdminAcademyProgressInsights() {
       });
     } else if (confirmation !== null) {
       toast.error('No changes made. Type "CLASSIFY AS TRAINING" exactly to continue.');
+    }
+  }
+  function toggleMigrationAgentSelection(agentId: number, checked: boolean) {
+    setSelectedMigrationAgentIds(current =>
+      checked
+        ? current.includes(agentId)
+          ? current
+          : [...current, agentId]
+        : current.filter(id => id !== agentId)
+    );
+  }
+  function confirmSelectedMigrationStage(
+    trainingStage: "Training" | "Agent Accelerator" | "Accredited"
+  ) {
+    if (!selectedCourse || !selectedMigrationAgentIds.length) return;
+    const count = selectedMigrationAgentIds.length;
+    const outcome = trainingStage === "Training"
+      ? "Their Academy progress will remain unchanged for manual review."
+      : `Every lesson in ${selectedCourse.title} will be recorded as complete from original training. No assessment attempts are created.`;
+    const acceleratorNote = trainingStage === "Agent Accelerator"
+      ? " Their Accelerator journey and eligible entry Action will also start."
+      : "";
+    const confirmation = window.prompt(
+      `Set ${count} selected current agent${count === 1 ? "" : "s"} to ${trainingStage}?\n\n${outcome}${acceleratorNote}\n\nThis records an Academy audit event for each agent. In Notice and cancelled agents are blocked.\n\nType UPDATE SELECTED STAGES to continue.`
+    );
+    if (confirmation === "UPDATE SELECTED STAGES") {
+      bulkUpdateMigrationTrainingStages.mutate({
+        courseId: selectedCourse.id,
+        agentIds: selectedMigrationAgentIds,
+        trainingStage,
+        confirmation: "UPDATE SELECTED STAGES",
+      });
+    } else if (confirmation !== null) {
+      toast.error('No changes made. Type "UPDATE SELECTED STAGES" exactly to continue.');
     }
   }
   function resetQuestion(item: any) {
@@ -959,10 +1002,10 @@ export default function AdminAcademyProgressInsights() {
                         Stage review queue
                       </p>
                       <h4 className="mt-1 font-bold text-violet-950">
-                        Find Training agents and fix missing tags before migration
+                        Find Training agents, fix missing tags and classify completed legacy learning
                       </h4>
                       <p className="mt-1 max-w-3xl text-xs leading-5 text-violet-950/75">
-                        This is a separate classification step. Marking an agent as Training never changes Academy progress. Moving an agent to Accelerator starts their normal journey, but never completes their Academy lessons.
+                        Select agents below to update them together. Training retains manual Academy progress; selected Accelerator or Accredited agents have this course recorded as completed from original training. Every change is audited.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1020,10 +1063,69 @@ export default function AdminAcademyProgressInsights() {
                       ))}
                     </div>
                   </div>
+                  {selectedMigrationAgentIds.length ? (
+                    <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#70FFE8]/70 bg-[#70FFE8]/10 p-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="text-sm font-bold text-violet-950">
+                          {selectedMigrationAgentIds.length} selected agent{selectedMigrationAgentIds.length === 1 ? "" : "s"}
+                        </p>
+                        <p className="mt-0.5 text-xs text-violet-950/75">
+                          Training preserves progress. Accelerator or Accredited completes the selected course from original training.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={bulkUpdateMigrationTrainingStages.isPending}
+                          onClick={() => confirmSelectedMigrationStage("Training")}
+                        >
+                          Set Training
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-violet-300 bg-white text-violet-950 hover:bg-violet-100"
+                          disabled={bulkUpdateMigrationTrainingStages.isPending}
+                          onClick={() => confirmSelectedMigrationStage("Agent Accelerator")}
+                        >
+                          Set Accelerator + complete
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="bg-emerald-700 text-white hover:bg-emerald-800"
+                          disabled={bulkUpdateMigrationTrainingStages.isPending}
+                          onClick={() => confirmSelectedMigrationStage("Accredited")}
+                        >
+                          {bulkUpdateMigrationTrainingStages.isPending ? "Updating…" : "Set Accredited + complete"}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setSelectedMigrationAgentIds([])}>
+                          Clear selection
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                   {migrationStageReview.isLoading ? (
                     <p className="mt-4 text-sm text-violet-950/70">Loading the current stage review queue…</p>
                   ) : migrationStageReview.data?.items.length ? (
                     <>
+                      <div className="mt-4 flex items-center justify-between gap-3 text-xs text-violet-950/75">
+                        <label className="flex cursor-pointer items-center gap-2 font-semibold">
+                          <Checkbox
+                            checked={migrationStageReview.data.items.every(item => selectedMigrationAgentIds.includes(item.agent.id))}
+                            onCheckedChange={checked => {
+                              const visibleIds = migrationStageReview.data!.items.map(item => item.agent.id);
+                              setSelectedMigrationAgentIds(current =>
+                                checked === true
+                                  ? Array.from(new Set([...current, ...visibleIds]))
+                                  : current.filter(id => !visibleIds.includes(id))
+                              );
+                            }}
+                          />
+                          Select all on this page
+                        </label>
+                        <span>Changes apply only to selected current agents.</span>
+                      </div>
                       <div className="mt-4 overflow-hidden rounded-lg border border-violet-100">
                         {migrationStageReview.data.items.map(item => {
                           const isBusy = classifyingMigrationAgentId === item.agent.id;
@@ -1035,9 +1137,16 @@ export default function AdminAcademyProgressInsights() {
                               : "Training — manual progress";
                           return (
                             <div key={item.agent.id} className="flex flex-col gap-3 border-b border-violet-100 p-3 last:border-b-0 xl:flex-row xl:items-center xl:justify-between">
-                              <div className="min-w-0">
-                                <p className="font-semibold text-violet-950">{item.agent.name || "Unnamed agent"}</p>
-                                <p className="truncate text-xs text-muted-foreground">{item.agent.email || "No login email recorded"}</p>
+                              <div className="flex min-w-0 items-center gap-3">
+                                <Checkbox
+                                  aria-label={`Select ${item.agent.name || item.agent.email || "agent"}`}
+                                  checked={selectedMigrationAgentIds.includes(item.agent.id)}
+                                  onCheckedChange={checked => toggleMigrationAgentSelection(item.agent.id, checked === true)}
+                                />
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-violet-950">{item.agent.name || "Unnamed agent"}</p>
+                                  <p className="truncate text-xs text-muted-foreground">{item.agent.email || "No login email recorded"}</p>
+                                </div>
                               </div>
                               <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
                                 <span className={`rounded-full px-2 py-1 text-xs font-semibold ${item.reviewCategory === "training" ? "bg-sky-100 text-sky-900" : "bg-amber-100 text-amber-950"}`}>
@@ -1060,18 +1169,14 @@ export default function AdminAcademyProgressInsights() {
                                     size="sm"
                                     variant="outline"
                                     disabled={isBusy}
-                                    onClick={() => classifyMigrationAgent(item.agent, "Training")}
+                                    onClick={() => classifyMigrationAgent(item.agent)}
                                   >
                                     Set Training
                                   </Button>
                                 ) : null}
-                                <Button
-                                  size="sm"
-                                  disabled={isBusy}
-                                  onClick={() => classifyMigrationAgent(item.agent, "Agent Accelerator")}
-                                >
-                                  {isBusy ? "Updating…" : "Move to Accelerator"}
-                                </Button>
+                                <span className="text-xs text-violet-950/65">
+                                  Select to set Accelerator or Accredited with completion
+                                </span>
                               </div>
                             </div>
                           );
@@ -1090,7 +1195,7 @@ export default function AdminAcademyProgressInsights() {
                   )}
                 </div>
                 <p className="mt-4 text-xs leading-5 text-violet-950/70">
-                  Existing lesson completion, assessment attempts, feedback and waivers are retained. This bulk operation creates no assessment attempts, sends no agent emails and does not change an agent’s CRM training stage.
+                  Existing lesson completion, assessment attempts, feedback and waivers are retained. Original bulk enrolment does not change CRM stages. The selected stage actions above do, with a typed confirmation and audit event; neither workflow creates assessment attempts or sends agent emails.
                 </p>
               </article>
             )}

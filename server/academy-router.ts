@@ -626,6 +626,7 @@ async function getBulkAcademyMigrationPreview(courseId: number) {
 const academyMigrationStageOptions = [
   "Training",
   "Agent Accelerator",
+  "Accredited",
 ] as const;
 
 async function getAcademyMigrationStageReviewQueue(params: {
@@ -806,6 +807,175 @@ async function bulkClassifyAcademyMigrationTrainingStage(params: {
     connection.release();
   }
   return { classified: toClassify.length, sourceCategory: params.sourceCategory };
+}
+
+async function bulkUpdateAcademyMigrationStages(params: {
+  courseId: number;
+  agentIds: number[];
+  trainingStage: (typeof academyMigrationStageOptions)[number];
+  actorId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, params.courseId)).limit(1);
+  if (!course) throw new TRPCError({ code: "NOT_FOUND", message: "Academy course not found" });
+  if (course.status !== "published") {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Publish the course before updating selected Academy migration records" });
+  }
+
+  const distinctAgentIds = Array.from(new Set(params.agentIds));
+  const { candidates } = await getBulkAcademyMigrationCandidates();
+  const candidatesById = new Map(candidates.map((agent) => [agent.id, agent]));
+  const selectedAgents = distinctAgentIds.map((agentId) => candidatesById.get(agentId)).filter(Boolean) as BulkAcademyCandidate[];
+  if (selectedAgents.length !== distinctAgentIds.length) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "One or more selected agents are no longer current. In Notice and cancelled agents cannot be changed here.",
+    });
+  }
+
+  const structure = await courseStructure(course.id);
+  const lessonIds = structure.lessons.map((lesson) => lesson.id);
+  const existingEnrollments = selectedAgents.length
+    ? await db.select().from(academyEnrollments).where(and(
+      eq(academyEnrollments.courseId, course.id),
+      inArray(academyEnrollments.agentId, selectedAgents.map((agent) => agent.id)),
+    ))
+    : [];
+  const enrollmentByAgentId = new Map(existingEnrollments.map((enrollment) => [enrollment.agentId, enrollment]));
+  const profileRows = selectedAgents.length
+    ? await db.select({
+      userId: agentCrmProfiles.userId,
+      academyAcceleratorStartedAt: agentCrmProfiles.academyAcceleratorStartedAt,
+    }).from(agentCrmProfiles).where(inArray(agentCrmProfiles.userId, selectedAgents.map((agent) => agent.id)))
+    : [];
+  const profileByAgentId = new Map(profileRows.map((profile) => [profile.userId, profile]));
+  const now = new Date();
+  const pool = await getRawDbPool();
+  const connection = await pool.getConnection();
+  const summary = {
+    selected: selectedAgents.length,
+    changed: 0,
+    alreadyAtStage: 0,
+    enrolled: 0,
+    automaticallyCompleted: 0,
+    waivedPreserved: 0,
+    acceleratorJourneysStarted: 0,
+  };
+
+  try {
+    await connection.beginTransaction();
+    for (const agent of selectedAgents) {
+      const previousStage = normaliseAcademyTrainingStage(agent.trainingStage);
+      const profile = profileByAgentId.get(agent.id);
+      const shouldSetJourneyStart = params.trainingStage === "Agent Accelerator" && !profile?.academyAcceleratorStartedAt;
+      await connection.execute(
+        `INSERT INTO agent_crm_profiles (userId, trainingStage, academyAcceleratorStartedAt)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           trainingStage = VALUES(trainingStage),
+           academyAcceleratorStartedAt = IF(VALUES(academyAcceleratorStartedAt) IS NULL, academyAcceleratorStartedAt, COALESCE(academyAcceleratorStartedAt, VALUES(academyAcceleratorStartedAt)))`,
+        [agent.id, params.trainingStage, shouldSetJourneyStart ? now : null],
+      );
+      if (previousStage === params.trainingStage) summary.alreadyAtStage++;
+      else summary.changed++;
+
+      let enrollment = enrollmentByAgentId.get(agent.id);
+      if (params.trainingStage === "Agent Accelerator" || params.trainingStage === "Accredited") {
+        await connection.execute(
+          `INSERT INTO academy_access (agentId, status, grantedById, grantedAt, revokedById, revokedAt, note)
+           VALUES (?, 'active', ?, ?, NULL, NULL, ?)
+           ON DUPLICATE KEY UPDATE
+             grantedById = IF(status = 'revoked', VALUES(grantedById), grantedById),
+             grantedAt = IF(status = 'revoked', VALUES(grantedAt), grantedAt),
+             note = IF(status = 'revoked', VALUES(note), note),
+             status = 'active',
+             revokedById = NULL,
+             revokedAt = NULL`,
+          [agent.id, params.actorId, now, "Selected Academy migration stage update"],
+        );
+        if (!enrollment) {
+          const [result] = await connection.execute(
+            "INSERT INTO academy_enrollments (agentId, courseId, enrolledById) VALUES (?, ?, ?)",
+            [agent.id, course.id, params.actorId],
+          );
+          const enrollmentId = Number((result as { insertId?: number }).insertId);
+          if (!Number.isSafeInteger(enrollmentId) || enrollmentId < 1) {
+            throw new Error("Selected Academy migration enrolment insert did not return an ID");
+          }
+          enrollment = { id: enrollmentId, status: "assigned" } as typeof academyEnrollments.$inferSelect;
+          enrollmentByAgentId.set(agent.id, enrollment);
+          summary.enrolled++;
+        }
+      }
+
+      if ((params.trainingStage === "Agent Accelerator" || params.trainingStage === "Accredited") && enrollment) {
+        if (lessonIds.length) {
+          const placeholders = lessonIds.map(() => "(?, ?, ?, ?, ?)").join(", ");
+          const values = lessonIds.flatMap((lessonId) => [enrollment!.id, lessonId, now, now, now]);
+          await connection.execute(
+            `INSERT INTO academy_lesson_progress (enrollmentId, lessonId, startedAt, lastViewedAt, completedAt)
+             VALUES ${placeholders}
+             ON DUPLICATE KEY UPDATE
+               startedAt = COALESCE(startedAt, VALUES(startedAt)),
+               lastViewedAt = COALESCE(lastViewedAt, VALUES(lastViewedAt)),
+               completedAt = COALESCE(completedAt, VALUES(completedAt))`,
+            values,
+          );
+        }
+        if (enrollment.status === "waived") {
+          summary.waivedPreserved++;
+        } else {
+          await connection.execute(
+            `UPDATE academy_enrollments
+             SET status = 'completed',
+                 completedAt = COALESCE(completedAt, ?),
+                 completionOutcomeAppliedAt = COALESCE(completionOutcomeAppliedAt, ?)
+             WHERE id = ?`,
+            [now, now, enrollment.id],
+          );
+        }
+        summary.automaticallyCompleted++;
+      }
+
+      await connection.execute(
+        `INSERT INTO academy_audit_log (agentId, courseId, enrollmentId, actorId, action, summary, metadata)
+         VALUES (?, ?, ?, ?, 'migration_training_stage_selected_update', ?, ?)`,
+        [
+          agent.id,
+          course.id,
+          enrollment?.id ?? null,
+          params.actorId,
+          `Set Academy migration stage to ${params.trainingStage}${params.trainingStage === "Training" ? "; course progress remains manual" : "; recorded original-training course completion"}`,
+          JSON.stringify({
+            source: "academy_migration_stage_queue_selected",
+            previousStage,
+            trainingStage: params.trainingStage,
+            completedLessonIds: params.trainingStage === "Training" ? [] : lessonIds,
+            recordedAt: now.toISOString(),
+          }),
+        ],
+      );
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+
+  if (params.trainingStage === "Agent Accelerator") {
+    for (const agent of selectedAgents) {
+      const profile = profileByAgentId.get(agent.id);
+      if (!profile?.academyAcceleratorStartedAt) {
+        await enrolAgentInAcceleratorJourneys({ agentId: agent.id, actorId: params.actorId, startedAt: now, notify: false });
+        await assignAcceleratorEntryActions(agent.id, params.actorId);
+        summary.acceleratorJourneysStarted++;
+      }
+    }
+  }
+  return { course: { id: course.id, title: course.title }, trainingStage: params.trainingStage, ...summary };
 }
 
 async function applyBulkAcademyMigration(params: { courseId: number; actorId: number }) {
@@ -2574,7 +2744,7 @@ export const academyRouter = router({
 
     classifyMigrationTrainingStage: adminProcedure.input(z.object({
       agentId: z.number().int().positive(),
-      trainingStage: z.enum(academyMigrationStageOptions),
+      trainingStage: z.literal("Training"),
     })).mutation(async ({ ctx, input }) => {
       return classifyAcademyMigrationTrainingStage({ ...input, actorId: ctx.user.id });
     }),
@@ -2587,6 +2757,20 @@ export const academyRouter = router({
       return bulkClassifyAcademyMigrationTrainingStage({
         courseId: input.courseId,
         sourceCategory: input.sourceCategory,
+        actorId: ctx.user.id,
+      });
+    }),
+
+    bulkUpdateMigrationTrainingStages: adminProcedure.input(z.object({
+      courseId: z.number().int().positive(),
+      agentIds: z.array(z.number().int().positive()).min(1).max(100),
+      trainingStage: z.enum(academyMigrationStageOptions),
+      confirmation: z.literal("UPDATE SELECTED STAGES"),
+    })).mutation(async ({ ctx, input }) => {
+      return bulkUpdateAcademyMigrationStages({
+        courseId: input.courseId,
+        agentIds: input.agentIds,
+        trainingStage: input.trainingStage,
         actorId: ctx.user.id,
       });
     }),
