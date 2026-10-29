@@ -16,10 +16,10 @@ import {
   createBooking,
   updateBookingAdminFields,
   getBookingById,
-  getOrbitFinancialSnapshotByBooking,
-  createOrbitFinancialSnapshot,
-  updateOrbitFinancialSnapshot,
+  getCommissionClaimByBooking,
+  applyOrbitFinancialSnapshot,
 } from "./db";
+import { decideOrbitFinancialSync } from "./orbit-financial-sync";
 import { apiKeys, users, ssoTokens, agentCrmProfiles, publicAgentProfiles, publicHolidayShowcaseEvents, publicHolidayShowcases } from "../drizzle/schema";
 import { orbitHolidayShowcaseSchema, slugifyShowcase, toSafePublicValidationIssues } from "./holiday-showcase-logic";
 import {
@@ -302,7 +302,8 @@ router.post("/quote-showcases", async (req: Request, res: Response) => {
  * Update commission fields on an existing booking.
  * Called by Orbit / Tom's CRM.
  *
- * Body: { bookingId?, crmRef?, ptsRef?, topdogRef?, expectedCommission?, orbitMarginPct?, newCrmRef?, agentEmail? }
+ * Full versioned Orbit financial snapshots are preferred. The legacy body is
+ * still accepted for pre-claim commission/margin compatibility only.
  * At least one of bookingId, crmRef, ptsRef, or topdogRef must be provided to identify the booking.
  * expectedCommission is optional — Orbit may call this just to set crmRef on a matched booking.
  */
@@ -325,7 +326,6 @@ router.post("/update-commission", async (req: Request, res: Response) => {
         });
       }
       const snapshot = parsedSnapshot.data;
-      const snapshotAt = new Date(snapshot.financialSnapshotAt);
       const db = await getDb();
       if (!db) return res.status(503).json({ error: "Database unavailable" });
 
@@ -348,56 +348,14 @@ router.post("/update-commission", async (req: Request, res: Response) => {
         return res.status(409).json({ error: "The supplied Orbit booking reference does not match this Portal booking." });
       }
 
-      const existingSnapshot = await getOrbitFinancialSnapshotByBooking(booking.id);
-      const incomingRevision = snapshot.financialRevision.toLowerCase();
-      if (existingSnapshot?.financialRevision === incomingRevision) {
-        return res.status(200).json({
-          success: true,
-          idempotent: true,
-          bookingId: booking.id,
-          financialRevision: existingSnapshot.financialRevision,
-        });
-      }
-      if (existingSnapshot && snapshotAt.getTime() < new Date(existingSnapshot.financialSnapshotAt).getTime()) {
-        return res.status(200).json({
-          success: true,
-          stale: true,
-          bookingId: booking.id,
-          financialRevision: existingSnapshot.financialRevision,
-        });
-      }
-
-      const snapshotValues = {
+      const syncResult = await applyOrbitFinancialSnapshot({
         bookingId: booking.id,
-        crmRef: snapshot.crmRef,
-        currency: snapshot.currency,
-        grossBookingValue: snapshot.grossBookingValue === null ? null : String(snapshot.grossBookingValue),
-        totalNetCost: snapshot.totalNetCost === null ? null : String(snapshot.totalNetCost),
-        netCostSubtotal: snapshot.netCostSubtotal === null ? null : String(snapshot.netCostSubtotal),
-        netCostStatus: snapshot.netCostStatus,
-        missingNetCostProducts: snapshot.missingNetCostProducts,
-        grossMargin: snapshot.grossMargin === null ? null : String(snapshot.grossMargin),
-        marginPct: snapshot.marginPct === null ? null : String(snapshot.marginPct),
-        expectedCommission: snapshot.expectedCommission === null ? null : String(snapshot.expectedCommission),
-        financialRevision: incomingRevision,
-        financialSnapshotAt: snapshotAt,
-        receivedAt: new Date(),
-      } as const;
-
-      if (existingSnapshot) {
-        await updateOrbitFinancialSnapshot(existingSnapshot.id, snapshotValues);
-      } else {
-        await createOrbitFinancialSnapshot(snapshotValues);
-      }
-      // A direct Portal booking ID may be supplied before the legacy booking has
-      // been linked to Orbit. Record the stable reference once, but never replace
-      // a different existing reference.
-      if (!booking.crmRef) await updateBookingAdminFields(booking.id, { crmRef: snapshot.crmRef });
+        snapshot,
+      });
 
       return res.status(200).json({
         success: true,
-        bookingId: booking.id,
-        financialRevision: snapshotValues.financialRevision,
+        ...syncResult,
       });
     }
 
@@ -488,6 +446,22 @@ router.post("/update-commission", async (req: Request, res: Response) => {
     // Allow Orbit to write back the crmRef once it has matched the booking by ptsRef
     if (newCrmRef) {
       updateFields.crmRef = String(newCrmRef).trim();
+    }
+
+    const hasLegacyFinancialUpdate = updateFields.expectedCommission !== undefined
+      || updateFields.orbitMarginPct !== undefined;
+    if (hasLegacyFinancialUpdate) {
+      const claim = await getCommissionClaimByBooking(booking.id);
+      const decision = decideOrbitFinancialSync({
+        currentStage: booking.currentStage,
+        hasCommissionClaim: Boolean(claim),
+      });
+      if (decision.outcome === "held_for_claim_review") {
+        return res.status(409).json({
+          error: "This booking has entered the protected commission lifecycle. Send the full versioned Orbit financial snapshot so the update can be retained for staff review without changing claim or payment history.",
+          outcome: decision.outcome,
+        });
+      }
     }
 
     await updateBookingAdminFields(booking.id, updateFields);

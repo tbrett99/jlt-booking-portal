@@ -18,10 +18,9 @@ const mocks = vi.hoisted(() => {
       update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => undefined) })) })),
     },
     getBookingById: vi.fn(),
+    getCommissionClaimByBooking: vi.fn(),
     updateBookingAdminFields: vi.fn(),
-    getOrbitFinancialSnapshotByBooking: vi.fn(),
-    createOrbitFinancialSnapshot: vi.fn(),
-    updateOrbitFinancialSnapshot: vi.fn(),
+    applyOrbitFinancialSnapshot: vi.fn(),
   };
 });
 
@@ -30,9 +29,8 @@ vi.mock("./db", () => ({
   createBooking: vi.fn(),
   updateBookingAdminFields: mocks.updateBookingAdminFields,
   getBookingById: mocks.getBookingById,
-  getOrbitFinancialSnapshotByBooking: mocks.getOrbitFinancialSnapshotByBooking,
-  createOrbitFinancialSnapshot: mocks.createOrbitFinancialSnapshot,
-  updateOrbitFinancialSnapshot: mocks.updateOrbitFinancialSnapshot,
+  getCommissionClaimByBooking: mocks.getCommissionClaimByBooking,
+  applyOrbitFinancialSnapshot: mocks.applyOrbitFinancialSnapshot,
 }));
 
 import { externalApiRouter } from "./external-api";
@@ -71,47 +69,99 @@ describe("POST /api/external/update-commission financial snapshots", () => {
     mocks.selectResults.splice(0, mocks.selectResults.length);
     vi.clearAllMocks();
     mocks.selectResults.push([{ id: 4, keyHash: "hash", isActive: true }]);
-    mocks.getBookingById.mockResolvedValue({ id: 702, crmRef: "JLT-1234" });
+    mocks.getBookingById.mockResolvedValue({ id: 702, crmRef: "JLT-1234", currentStage: "Added to PTS" });
+    mocks.getCommissionClaimByBooking.mockResolvedValue(undefined);
+    mocks.applyOrbitFinancialSnapshot.mockResolvedValue({
+      bookingId: 702,
+      financialRevision: snapshot.financialRevision,
+      idempotent: false,
+      stale: false,
+      outcome: "applied",
+      reason: null,
+      valuesChanged: true,
+    });
   });
 
   it("stores a complete snapshot containing a valid £0.00 total net cost", async () => {
-    mocks.getOrbitFinancialSnapshotByBooking.mockResolvedValue(undefined);
     const res = response();
     await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: { ...snapshot, totalNetCost: 0, netCostSubtotal: 0, grossMargin: 1500, marginPct: 100, expectedCommission: 1200 } }, res);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, bookingId: 702, financialRevision: snapshot.financialRevision });
-    expect(mocks.createOrbitFinancialSnapshot).toHaveBeenCalledWith(expect.objectContaining({ totalNetCost: "0", netCostStatus: "complete", missingNetCostProducts: 0 }));
+    expect(res.body).toEqual(expect.objectContaining({ success: true, bookingId: 702, outcome: "applied", valuesChanged: true }));
+    expect(mocks.applyOrbitFinancialSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 702,
+      snapshot: expect.objectContaining({ totalNetCost: 0, netCostStatus: "complete", missingNetCostProducts: 0 }),
+    }));
   });
 
   it("treats a repeated revision as idempotent without storing another history record", async () => {
-    mocks.getOrbitFinancialSnapshotByBooking.mockResolvedValue({ id: 91, financialRevision: snapshot.financialRevision, financialSnapshotAt: new Date(snapshot.financialSnapshotAt) });
+    mocks.applyOrbitFinancialSnapshot.mockResolvedValue({
+      bookingId: 702,
+      financialRevision: snapshot.financialRevision,
+      idempotent: true,
+      stale: false,
+      outcome: null,
+      valuesChanged: false,
+    });
     const res = response();
     await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: snapshot }, res);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, idempotent: true, bookingId: 702, financialRevision: snapshot.financialRevision });
-    expect(mocks.createOrbitFinancialSnapshot).not.toHaveBeenCalled();
-    expect(mocks.updateOrbitFinancialSnapshot).not.toHaveBeenCalled();
+    expect(res.body).toEqual(expect.objectContaining({ success: true, idempotent: true, bookingId: 702, valuesChanged: false }));
   });
 
   it("replaces a stored snapshot only when Orbit sends a newer revision", async () => {
-    mocks.getOrbitFinancialSnapshotByBooking.mockResolvedValue({ id: 91, financialRevision: "b".repeat(64), financialSnapshotAt: new Date("2026-09-17T10:00:00.000Z") });
+    mocks.applyOrbitFinancialSnapshot.mockResolvedValue({
+      bookingId: 702,
+      financialRevision: snapshot.financialRevision,
+      idempotent: false,
+      stale: false,
+      outcome: "applied",
+      reason: null,
+      valuesChanged: true,
+    });
     const res = response();
     await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: snapshot }, res);
 
     expect(res.statusCode).toBe(200);
-    expect(mocks.updateOrbitFinancialSnapshot).toHaveBeenCalledWith(91, expect.objectContaining({ financialRevision: snapshot.financialRevision, totalNetCost: "1240" }));
+    expect(mocks.applyOrbitFinancialSnapshot).toHaveBeenCalledWith({ bookingId: 702, snapshot });
   });
 
   it("does not roll the displayed values backwards when an older snapshot arrives", async () => {
-    mocks.getOrbitFinancialSnapshotByBooking.mockResolvedValue({ id: 91, financialRevision: "b".repeat(64), financialSnapshotAt: new Date("2026-09-17T11:00:00.000Z") });
+    mocks.applyOrbitFinancialSnapshot.mockResolvedValue({
+      bookingId: 702,
+      financialRevision: "b".repeat(64),
+      idempotent: false,
+      stale: true,
+      outcome: null,
+      valuesChanged: false,
+    });
     const res = response();
     await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: snapshot }, res);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, stale: true, bookingId: 702, financialRevision: "b".repeat(64) });
-    expect(mocks.updateOrbitFinancialSnapshot).not.toHaveBeenCalled();
+    expect(res.body).toEqual(expect.objectContaining({ success: true, stale: true, bookingId: 702, valuesChanged: false }));
+  });
+
+  it("reports a protected claim lifecycle as a held staff-review exception", async () => {
+    mocks.applyOrbitFinancialSnapshot.mockResolvedValue({
+      bookingId: 702,
+      financialRevision: snapshot.financialRevision,
+      idempotent: false,
+      stale: false,
+      outcome: "held_for_claim_review",
+      reason: "A commission claim already exists for this booking.",
+      valuesChanged: false,
+    });
+    const res = response();
+    await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: snapshot }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual(expect.objectContaining({
+      success: true,
+      outcome: "held_for_claim_review",
+      valuesChanged: false,
+    }));
   });
 
   it("preserves the legacy commission update shape during the staged rollout", async () => {
@@ -120,5 +170,15 @@ describe("POST /api/external/update-commission financial snapshots", () => {
 
     expect(res.statusCode).toBe(200);
     expect(mocks.updateBookingAdminFields).toHaveBeenCalledWith(702, { expectedCommission: 178.45, orbitMarginPct: 17.33 });
+  });
+
+  it("does not let the legacy commission-only payload rewrite a claimed booking", async () => {
+    mocks.getCommissionClaimByBooking.mockResolvedValue({ id: 99, status: "awaiting_payment" });
+    const res = response();
+    await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: { bookingId: 702, expectedCommission: 178.45 } }, res);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual(expect.objectContaining({ outcome: "held_for_claim_review" }));
+    expect(mocks.updateBookingAdminFields).not.toHaveBeenCalled();
   });
 });

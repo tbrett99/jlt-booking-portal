@@ -1145,6 +1145,10 @@ export default function AdminBookingDetail() {
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
+  const { data: orbitFinancialSync } = trpc.bookings.orbitFinancialSyncStatus.useQuery(
+    { bookingId },
+    { enabled: !!bookingId && isAdmin },
+  );
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
   const { data: bookingTasks = [] } = trpc.tasks.byBooking.useQuery({ bookingId }, { enabled: !!bookingId && isAdmin });
   const { data: bookingDocs = [] } = trpc.bookingDocs.list.useQuery({ bookingId }, { enabled: !!bookingId, staleTime: 0 });
@@ -2104,7 +2108,7 @@ export default function AdminBookingDetail() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs flex items-center gap-1">
-                    Gross Cost (£)
+                    Gross booking price (£)
                     {(booking as any).grossCostLockedAt && (
                       <span className="text-[9px] font-normal text-amber-600 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">
                         Agent-locked — admin override
@@ -2129,6 +2133,44 @@ export default function AdminBookingDetail() {
                   })()}
                 </div>
               </div>
+              {isAdmin && orbitFinancialSync?.snapshot && (() => {
+                const latestEvent = orbitFinancialSync.events?.[0] ?? null;
+                const isHeld = latestEvent?.outcome === "held_for_claim_review";
+                const snapshot = orbitFinancialSync.snapshot;
+                return (
+                  <div className={`rounded-lg border p-3 text-sm ${
+                    isHeld
+                      ? "border-amber-300 bg-amber-50 text-amber-950"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-950"
+                  }`}>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="flex items-center gap-1.5 font-semibold">
+                          {isHeld ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                          Orbit financial sync
+                        </p>
+                        <p className="mt-1 text-xs opacity-85">
+                          Snapshot received {format(new Date(snapshot.financialSnapshotAt), "dd MMM yyyy, HH:mm")}
+                          {latestEvent?.receivedAt ? ` · portal recorded ${format(new Date(latestEvent.receivedAt), "dd MMM yyyy, HH:mm")}` : ""}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className={isHeld ? "border-amber-400 bg-white/70 text-amber-900" : "border-emerald-400 bg-white/70 text-emerald-900"}>
+                        {isHeld ? "Review required" : latestEvent?.outcome === "applied" ? "Live values updated" : "Latest snapshot"}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 grid gap-1 text-xs sm:grid-cols-3">
+                      <span>Gross: {snapshot.grossBookingValue === null ? "—" : `£${Number(snapshot.grossBookingValue).toFixed(2)}`}</span>
+                      <span>Margin: {snapshot.marginPct === null ? "Unavailable" : `${Number(snapshot.marginPct).toFixed(1)}%`}</span>
+                      <span>Expected commission: {snapshot.expectedCommission === null ? "Unavailable" : `£${Number(snapshot.expectedCommission).toFixed(2)}`}</span>
+                    </div>
+                    {isHeld && (
+                      <p className="mt-2 text-xs font-medium">
+                        {latestEvent?.reason ?? "This revision is retained for comparison and has not changed the booking because its financial workflow is protected."}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
               <Button onClick={handleSaveDetails} disabled={isSavingDetails} size="sm"
                 style={{ background: '#70FFE8', color: '#414141' }} className="gap-2">
                 {isSavingDetails ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}

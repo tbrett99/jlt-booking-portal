@@ -54,6 +54,7 @@ import {
   markCommissionPaid,
   recordHistoricalCommissionPaid,
   getCommissionClaimByBooking,
+  getOrbitFinancialSyncStatus,
   deleteCommissionClaim,
   updateCommissionVat,
   getNotificationTemplates,
@@ -998,6 +999,13 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         }
         return booking;
+      }),
+    orbitFinancialSyncStatus: adminProcedure
+      .input(z.object({ bookingId: z.number() }))
+      .query(async ({ input }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        return getOrbitFinancialSyncStatus(input.bookingId);
       }),
     create: protectedProcedure
       .input(

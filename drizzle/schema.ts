@@ -355,6 +355,31 @@ export const orbitFinancialSnapshots = mysqlTable(
 export type OrbitFinancialSnapshot = typeof orbitFinancialSnapshots.$inferSelect;
 export type InsertOrbitFinancialSnapshot = typeof orbitFinancialSnapshots.$inferInsert;
 
+// ─── Orbit Financial Sync Events ────────────────────────────────────────────
+// Every newer Orbit financial revision receives one immutable receipt. This
+// makes it clear whether the current live values were mirrored to the booking
+// or deliberately held because a claim/payment lifecycle had already started.
+export const orbitFinancialSyncEvents = mysqlTable(
+  "orbit_financial_sync_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    bookingId: int("bookingId").notNull(),
+    financialRevision: varchar("financialRevision", { length: 64 }).notNull(),
+    outcome: mysqlEnum("outcome", ["applied", "held_for_claim_review"]).notNull(),
+    reason: varchar("reason", { length: 500 }),
+    grossBookingValue: decimal("grossBookingValue", { precision: 12, scale: 2 }),
+    marginPct: decimal("marginPct", { precision: 7, scale: 3 }),
+    expectedCommission: decimal("expectedCommission", { precision: 12, scale: 2 }),
+    snapshotAt: timestamp("snapshotAt").notNull(),
+    receivedAt: timestamp("receivedAt").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("orbit_financial_sync_event_revision_unique").on(table.bookingId, table.financialRevision),
+    index("orbit_financial_sync_event_booking_received_idx").on(table.bookingId, table.receivedAt),
+  ]
+);
+export type OrbitFinancialSyncEvent = typeof orbitFinancialSyncEvents.$inferSelect;
+export type InsertOrbitFinancialSyncEvent = typeof orbitFinancialSyncEvents.$inferInsert;
 // ─── Password Reset Tokens ─────────────────────────────────────────────────────────────────────────────────
 export const passwordResetTokens = mysqlTable("password_reset_tokens", {
   id: int("id").autoincrement().primaryKey(),

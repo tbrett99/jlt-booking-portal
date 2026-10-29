@@ -14,6 +14,7 @@ import {
   notificationTemplates,
   notes,
   orbitFinancialSnapshots,
+  orbitFinancialSyncEvents,
   passwordResetTokens,
   pipelineHistory,
   refundSuppliers,
@@ -29,6 +30,12 @@ import {
 import { ENV } from "./_core/env";
 import { isBookingReadyForCommissionReview } from "./commission-workflow-utils";
 import { canReconcileHistoricalCommissionClaim } from "./historical-commission-utils";
+import type { OrbitFinancialSnapshotPayload } from "./orbit-financial-snapshot";
+import {
+  buildOrbitBookingFinancialFields,
+  decideOrbitFinancialSync,
+  hasOrbitBookingFinancialChange,
+} from "./orbit-financial-sync";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _db: any | null = null;
@@ -1586,6 +1593,154 @@ export async function updateOrbitFinancialSnapshot(
   await db.update(orbitFinancialSnapshots).set(data).where(eq(orbitFinancialSnapshots.id, snapshotId));
   const stored = await db.select().from(orbitFinancialSnapshots).where(eq(orbitFinancialSnapshots.id, snapshotId)).limit(1);
   return stored[0];
+}
+
+/**
+ * Accept one newer, complete Orbit financial snapshot. The Portal mirrors
+ * Orbit's live gross price, margin percentage and expected commission only
+ * before the financial claim lifecycle begins. A later update is retained as a
+ * snapshot and logged as a review exception rather than silently changing a
+ * claim, remittance or agent payment record.
+ */
+export async function applyOrbitFinancialSnapshot(data: {
+  bookingId: number;
+  snapshot: OrbitFinancialSnapshotPayload;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+
+  const snapshotAt = new Date(data.snapshot.financialSnapshotAt);
+  const incomingRevision = data.snapshot.financialRevision.toLowerCase();
+  const snapshotValues = {
+    bookingId: data.bookingId,
+    crmRef: data.snapshot.crmRef,
+    currency: data.snapshot.currency,
+    grossBookingValue: data.snapshot.grossBookingValue === null ? null : String(data.snapshot.grossBookingValue),
+    totalNetCost: data.snapshot.totalNetCost === null ? null : String(data.snapshot.totalNetCost),
+    netCostSubtotal: data.snapshot.netCostSubtotal === null ? null : String(data.snapshot.netCostSubtotal),
+    netCostStatus: data.snapshot.netCostStatus,
+    missingNetCostProducts: data.snapshot.missingNetCostProducts,
+    grossMargin: data.snapshot.grossMargin === null ? null : String(data.snapshot.grossMargin),
+    marginPct: data.snapshot.marginPct === null ? null : String(data.snapshot.marginPct),
+    expectedCommission: data.snapshot.expectedCommission === null ? null : String(data.snapshot.expectedCommission),
+    financialRevision: incomingRevision,
+    financialSnapshotAt: snapshotAt,
+    receivedAt: new Date(),
+  } as const;
+
+  return db.transaction(async (tx) => {
+    const bookingRows = await tx
+      .select()
+      .from(bookings)
+      .where(eq(bookings.id, data.bookingId))
+      .limit(1);
+    const booking = bookingRows[0];
+    if (!booking) throw new Error("Booking not found");
+
+    const existingSnapshots = await tx
+      .select()
+      .from(orbitFinancialSnapshots)
+      .where(eq(orbitFinancialSnapshots.bookingId, data.bookingId))
+      .limit(1);
+    const existingSnapshot = existingSnapshots[0];
+    if (existingSnapshot?.financialRevision === incomingRevision) {
+      return {
+        bookingId: data.bookingId,
+        financialRevision: incomingRevision,
+        idempotent: true as const,
+        stale: false as const,
+        outcome: null,
+        valuesChanged: false,
+      };
+    }
+    if (existingSnapshot && snapshotAt.getTime() < new Date(existingSnapshot.financialSnapshotAt).getTime()) {
+      return {
+        bookingId: data.bookingId,
+        financialRevision: existingSnapshot.financialRevision,
+        idempotent: false as const,
+        stale: true as const,
+        outcome: null,
+        valuesChanged: false,
+      };
+    }
+
+    if (existingSnapshot) {
+      await tx
+        .update(orbitFinancialSnapshots)
+        .set(snapshotValues)
+        .where(eq(orbitFinancialSnapshots.id, existingSnapshot.id));
+    } else {
+      await tx.insert(orbitFinancialSnapshots).values(snapshotValues);
+    }
+
+    const claims = await tx
+      .select({ id: commissionClaims.id })
+      .from(commissionClaims)
+      .where(eq(commissionClaims.bookingId, data.bookingId))
+      .limit(1);
+    const decision = decideOrbitFinancialSync({
+      currentStage: booking.currentStage,
+      hasCommissionClaim: Boolean(claims[0]),
+    });
+    const nextBookingFields = buildOrbitBookingFinancialFields(data.snapshot);
+    const valuesChanged = decision.outcome === "applied"
+      && hasOrbitBookingFinancialChange(booking, nextBookingFields);
+
+    if (valuesChanged) {
+      await tx
+        .update(bookings)
+        .set(nextBookingFields)
+        .where(eq(bookings.id, data.bookingId));
+    }
+    if (!booking.crmRef) {
+      await tx
+        .update(bookings)
+        .set({ crmRef: data.snapshot.crmRef })
+        .where(eq(bookings.id, data.bookingId));
+    }
+
+    await tx.insert(orbitFinancialSyncEvents).values({
+      bookingId: data.bookingId,
+      financialRevision: incomingRevision,
+      outcome: decision.outcome,
+      reason: decision.reason,
+      grossBookingValue: snapshotValues.grossBookingValue,
+      marginPct: snapshotValues.marginPct,
+      expectedCommission: snapshotValues.expectedCommission,
+      snapshotAt,
+    });
+
+    return {
+      bookingId: data.bookingId,
+      financialRevision: incomingRevision,
+      idempotent: false as const,
+      stale: false as const,
+      outcome: decision.outcome,
+      reason: decision.reason,
+      valuesChanged,
+    };
+  });
+}
+
+export async function getOrbitFinancialSyncStatus(bookingId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const [snapshotRows, eventRows, claimRows] = await Promise.all([
+    db.select().from(orbitFinancialSnapshots).where(eq(orbitFinancialSnapshots.bookingId, bookingId)).limit(1),
+    db.select().from(orbitFinancialSyncEvents)
+      .where(eq(orbitFinancialSyncEvents.bookingId, bookingId))
+      .orderBy(desc(orbitFinancialSyncEvents.receivedAt))
+      .limit(8),
+    db.select({ id: commissionClaims.id, status: commissionClaims.status })
+      .from(commissionClaims)
+      .where(eq(commissionClaims.bookingId, bookingId))
+      .limit(1),
+  ]);
+  return {
+    snapshot: snapshotRows[0] ?? null,
+    events: eventRows,
+    commissionClaim: claimRows[0] ?? null,
+  };
 }
 
 // ─── Password Reset Tokens ────────────────────────────────────────────────────
