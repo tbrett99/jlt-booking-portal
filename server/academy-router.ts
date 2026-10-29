@@ -2915,21 +2915,37 @@ export const academyRouter = router({
       const migrationCompletionAudit = await db.select().from(academyAuditLog)
         .where(and(
           eq(academyAuditLog.enrollmentId, row.enrollment.id),
-          eq(academyAuditLog.action, "migration_completion_recorded"),
+          inArray(academyAuditLog.action, [
+            "migration_completion_recorded",
+            "bulk_original_training_completion",
+            "migration_training_stage_selected_update",
+            "migration_completion_reset",
+          ]),
         ))
         .orderBy(desc(academyAuditLog.createdAt), desc(academyAuditLog.id));
       // A migration completion uses the same progress record needed by the
       // learner path, but its immutable audit record remains the authority for
-      // the staff-recorded badge. Genuine learner attempts are never changed.
+      // the staff-recorded badge. A later reset audit event deliberately wins,
+      // while genuine learner attempts are never changed.
       const staffRecordedCompletionByLessonId = new Map<number, { recordedAt: Date; reason: string }>();
+      const resolvedStaffRecordedLessonIds = new Set<number>();
       for (const event of migrationCompletionAudit) {
         if (!event.metadata || typeof event.metadata !== "object") continue;
-        const metadata = event.metadata as { completedLessonIds?: unknown; reason?: unknown };
-        if (!Array.isArray(metadata.completedLessonIds)) continue;
+        const metadata = event.metadata as {
+          completedLessonIds?: unknown;
+          resetLessonIds?: unknown;
+          reason?: unknown;
+        };
+        const lessonIds = event.action === "migration_completion_reset"
+          ? metadata.resetLessonIds
+          : metadata.completedLessonIds;
+        if (!Array.isArray(lessonIds)) continue;
         const reason = typeof metadata.reason === "string" ? metadata.reason : "Original training completed";
-        for (const value of metadata.completedLessonIds) {
+        for (const value of lessonIds) {
           const lessonId = Number(value);
-          if (Number.isSafeInteger(lessonId) && lessonId > 0 && !staffRecordedCompletionByLessonId.has(lessonId)) {
+          if (!Number.isSafeInteger(lessonId) || lessonId <= 0 || resolvedStaffRecordedLessonIds.has(lessonId)) continue;
+          resolvedStaffRecordedLessonIds.add(lessonId);
+          if (event.action !== "migration_completion_reset") {
             staffRecordedCompletionByLessonId.set(lessonId, { recordedAt: event.createdAt, reason });
           }
         }
@@ -3088,6 +3104,139 @@ export const academyRouter = router({
         recordedLessonIds: lessonIdsToRecord,
         courseCompleted: completion?.status === "completed",
         courseTitle: course?.title ?? "Academy course",
+      };
+    }),
+
+    resetModuleOriginalTrainingCompletion: adminProcedure.input(z.object({
+      enrollmentId: z.number().int().positive(),
+      moduleId: z.number().int().positive(),
+      reason: z.string().trim().min(3).max(10_000),
+    })).mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const pool = await getRawDbPool();
+      if (!db || !pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [enrollment] = await db.select().from(academyEnrollments).where(eq(academyEnrollments.id, input.enrollmentId)).limit(1);
+      if (!enrollment) throw new TRPCError({ code: "NOT_FOUND", message: "Academy enrolment not found" });
+      if (enrollment.status === "waived") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Reopen a waived course before resetting individual modules" });
+      }
+
+      const structure = await courseStructure(enrollment.courseId);
+      const module = structure.modules.find((item) => item.id === input.moduleId);
+      if (!module) throw new TRPCError({ code: "FORBIDDEN", message: "This module does not belong to the selected Academy course" });
+      const moduleLessonIds = module.lessons.map((lesson) => lesson.id);
+      if (!moduleLessonIds.length) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This module has no lessons to reset" });
+      }
+
+      const [progress, attempts, migrationAudit] = await Promise.all([
+        db.select().from(academyLessonProgress).where(and(
+          eq(academyLessonProgress.enrollmentId, enrollment.id),
+          inArray(academyLessonProgress.lessonId, moduleLessonIds),
+        )),
+        db.select({ lessonId: academyAssessmentAttempts.lessonId }).from(academyAssessmentAttempts).where(and(
+          eq(academyAssessmentAttempts.enrollmentId, enrollment.id),
+          inArray(academyAssessmentAttempts.lessonId, moduleLessonIds),
+        )),
+        db.select().from(academyAuditLog).where(and(
+          eq(academyAuditLog.enrollmentId, enrollment.id),
+          inArray(academyAuditLog.action, [
+            "migration_completion_recorded",
+            "bulk_original_training_completion",
+            "migration_training_stage_selected_update",
+            "migration_completion_reset",
+          ]),
+        )).orderBy(desc(academyAuditLog.createdAt), desc(academyAuditLog.id)),
+      ]);
+
+      const staffRecordedLessonIds = new Set<number>();
+      const resolvedStaffRecordedLessonIds = new Set<number>();
+      for (const event of migrationAudit) {
+        if (!event.metadata || typeof event.metadata !== "object") continue;
+        const metadata = event.metadata as { completedLessonIds?: unknown; resetLessonIds?: unknown };
+        const lessonIds = event.action === "migration_completion_reset"
+          ? metadata.resetLessonIds
+          : metadata.completedLessonIds;
+        if (!Array.isArray(lessonIds)) continue;
+        for (const value of lessonIds) {
+          const lessonId = Number(value);
+          if (!moduleLessonIds.includes(lessonId) || resolvedStaffRecordedLessonIds.has(lessonId)) continue;
+          resolvedStaffRecordedLessonIds.add(lessonId);
+          if (event.action !== "migration_completion_reset") staffRecordedLessonIds.add(lessonId);
+        }
+      }
+
+      const attemptedLessonIds = new Set(attempts.map((attempt) => attempt.lessonId));
+      const progressByLessonId = new Map(progress.map((item) => [item.lessonId, item]));
+      const resetLessonIds = moduleLessonIds.filter((lessonId) => (
+        staffRecordedLessonIds.has(lessonId)
+        && !!progressByLessonId.get(lessonId)?.completedAt
+        && !attemptedLessonIds.has(lessonId)
+      ));
+      const skippedLessonIdsWithAssessmentHistory = moduleLessonIds.filter((lessonId) => (
+        staffRecordedLessonIds.has(lessonId) && attemptedLessonIds.has(lessonId)
+      ));
+      if (!resetLessonIds.length) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: skippedLessonIdsWithAssessmentHistory.length
+            ? "This module only has original-training completions with genuine assessment history, so it cannot be reset automatically"
+            : "This module has no active original-training completions to reset",
+        });
+      }
+
+      const now = new Date();
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        const placeholders = resetLessonIds.map(() => "?").join(", ");
+        await connection.execute(
+          `UPDATE academy_lesson_progress
+           SET completedAt = NULL
+           WHERE enrollmentId = ? AND lessonId IN (${placeholders}) AND completedAt IS NOT NULL`,
+          [enrollment.id, ...resetLessonIds],
+        );
+        if (enrollment.status === "completed") {
+          await connection.execute(
+            `UPDATE academy_enrollments
+             SET status = 'in_progress', completedAt = NULL, completionOutcomeAppliedAt = NULL
+             WHERE id = ?`,
+            [enrollment.id],
+          );
+        }
+        await connection.execute(
+          `INSERT INTO academy_audit_log (agentId, courseId, enrollmentId, actorId, action, summary, metadata)
+           VALUES (?, ?, ?, ?, 'migration_completion_reset', ?, ?)`,
+          [
+            enrollment.agentId,
+            enrollment.courseId,
+            enrollment.id,
+            ctx.user.id,
+            `Reset ${resetLessonIds.length} original-training completion${resetLessonIds.length === 1 ? "" : "s"} in module: ${module.title}`,
+            JSON.stringify({
+              source: "original_training_migration_reset",
+              moduleId: module.id,
+              resetLessonIds,
+              skippedLessonIdsWithAssessmentHistory,
+              reason: input.reason,
+              resetAt: now.toISOString(),
+            }),
+          ],
+        );
+        await connection.commit();
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+
+      return {
+        success: true,
+        resetLessonIds,
+        skippedLessonIdsWithAssessmentHistory,
+        courseReopened: enrollment.status === "completed",
       };
     }),
 

@@ -2488,6 +2488,7 @@ export function LearnerManager({
   onAccredit,
   onOverride,
   onRecordMigrationCompletion,
+  onResetModuleOriginalTrainingCompletion,
   reviewEnrollmentId,
   setReviewEnrollmentId,
 }: any) {
@@ -2711,6 +2712,21 @@ export function LearnerManager({
                             <CheckCircle2 className="mr-1" size={13} />
                             Record module complete
                           </Button>
+                          {module.lessons.some((lesson: any) => lesson.staffRecordedCompletion) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="self-start text-xs text-rose-700 hover:text-rose-800 sm:self-auto"
+                              onClick={() => onResetModuleOriginalTrainingCompletion({
+                                enrollmentId: review.enrollment.id,
+                                moduleId: module.id,
+                                label: module.title,
+                              })}
+                            >
+                              <RefreshCw className="mr-1" size={13} />
+                              Reset module completion
+                            </Button>
+                          )}
                         </div>
                         {expanded && (
                         <div id={`academy-module-${module.id}`} className="divide-y">

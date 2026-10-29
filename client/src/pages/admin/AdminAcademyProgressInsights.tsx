@@ -275,6 +275,17 @@ export default function AdminAcademyProgressInsights() {
     },
     onError: error => toast.error(error.message),
   });
+  const resetModuleOriginalTrainingCompletion =
+    trpc.academy.admin.resetModuleOriginalTrainingCompletion.useMutation({
+      onSuccess: result => {
+        const skipped = result.skippedLessonIdsWithAssessmentHistory.length;
+        toast.success(
+          `${result.resetLessonIds.length} original-training completion${result.resetLessonIds.length === 1 ? "" : "s"} reset${result.courseReopened ? "; course reopened" : ""}${skipped ? `. ${skipped} lesson${skipped === 1 ? "" : "s"} with genuine assessment history retained` : ""}`
+        );
+        invalidate();
+      },
+      onError: error => toast.error(error.message),
+    });
   const approveAccreditation =
     trpc.academy.admin.approveAccreditation.useMutation({
       onSuccess: () => {
@@ -414,6 +425,22 @@ export default function AdminAcademyProgressInsights() {
         moduleId: input.moduleId,
         reason,
       });
+  }
+  function resetOriginalTrainingModuleCompletion(input: {
+    enrollmentId: number;
+    moduleId: number;
+    label: string;
+  }) {
+    const reason = window.prompt(
+      `Reset staff-recorded original-training completion in ${input.label}? This reopens only lessons completed by staff migration, preserves genuine learner attempts and answers, and is kept in the Academy audit history.\n\nWhy is this module being reset?`
+    );
+    if (reason?.trim()) {
+      resetModuleOriginalTrainingCompletion.mutate({
+        enrollmentId: input.enrollmentId,
+        moduleId: input.moduleId,
+        reason,
+      });
+    }
   }
   function accredit(agentId: number) {
     const reason = window.prompt(
@@ -1413,6 +1440,7 @@ export default function AdminAcademyProgressInsights() {
             onAccredit={accredit}
             onOverride={override}
             onRecordMigrationCompletion={recordOriginalTrainingCompletion}
+            onResetModuleOriginalTrainingCompletion={resetOriginalTrainingModuleCompletion}
             reviewEnrollmentId={reviewEnrollmentId}
             setReviewEnrollmentId={setReviewEnrollmentId}
           />

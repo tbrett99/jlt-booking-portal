@@ -42,6 +42,19 @@ describe("Academy original-training completion recording", () => {
     expect(insightsSource).toContain("This will be kept in the Academy audit history.");
   });
 
+  it("allows staff to reverse only original-training module completion without deleting genuine learner assessment history", () => {
+    expect(routerSource).toContain("resetModuleOriginalTrainingCompletion: adminProcedure");
+    expect(routerSource).toContain("migration_completion_reset");
+    expect(routerSource).toContain("SET completedAt = NULL");
+    expect(routerSource).toContain("academyAssessmentAttempts");
+    expect(routerSource).toContain("skippedLessonIdsWithAssessmentHistory");
+    expect(routerSource).not.toContain("DELETE FROM academy_assessment_attempts");
+    expect(routerSource).not.toContain("DELETE FROM academy_assessment_responses");
+    expect(learnerManagerSource).toContain("Reset module completion");
+    expect(insightsSource).toContain("resetModuleOriginalTrainingCompletion.useMutation");
+    expect(insightsSource).toContain("preserves genuine learner attempts and answers");
+  });
+
   it("keeps learner reviews inside Academy with collapsed modules and searchable lesson history", () => {
     expect(learnerManagerSource).not.toContain("/crm/agents?agent=");
     expect(learnerManagerSource).toContain("Learner review");
