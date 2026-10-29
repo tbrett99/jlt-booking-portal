@@ -37,9 +37,8 @@ describe("Academy enrolment journey", () => {
   });
 
   it("keeps course-specific progress management below the dedicated enrolment action", () => {
-    expect(manager).toContain(
-      "Use the visible Academy enrolment panel above to assign agents."
-    );
+    expect(insights).toContain("Academy work queue");
+    expect(insights).toContain("Search, filter and open an agent’s Academy record here.");
     expect(manager).not.toContain(
       "mt-5 grid gap-2 rounded-xl border bg-muted/15 p-4 md:grid-cols-[1fr_180px_auto]"
     );

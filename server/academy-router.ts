@@ -28,6 +28,7 @@ import { MAX_ACADEMY_ASSESSMENT_QUESTIONS, parseMultipleChoiceQuizCsv, QuizCsvIm
 import { buildAcademyLearningPath } from "../shared/academy-learning-path";
 import { assignAcceleratorEntryActions, releaseAvailableJourneyActions } from "./agent-development-router";
 import { ACCELERATOR_JOURNEY_WEEKS, acceleratorWeekReleaseLabel, isAcceleratorWeekAvailable } from "./academy-journey";
+import { getBulkAcademyMigrationDisposition } from "./academy-bulk-migration";
 import {
   ACADEMY_ALERT_EVENTS,
   academyAlertAllowsModuleScope,
@@ -547,6 +548,237 @@ export async function grantAcademyAccess(params: { agentId: number; actorId: num
   return { enrolled: enrolments.filter((item) => item.created).length };
 }
 
+type BulkAcademyCandidate = {
+  id: number;
+  name: string | null;
+  email: string | null;
+  portalStatus: "onboarding" | "active" | "paused" | "suspended" | "in_notice" | "cancelled";
+  agentStatus: string | null;
+  trainingStage: string | null;
+};
+
+async function getBulkAcademyMigrationCandidates() {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const agentRows = await db.select({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+    portalStatus: users.portalStatus,
+    agentStatus: agentCrmProfiles.agentStatus,
+    trainingStage: agentCrmProfiles.trainingStage,
+  }).from(users)
+    .leftJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, users.id))
+    .where(eq(users.role, "agent"));
+
+  // The CRM status is authoritative for membership. An in-notice agent retains
+  // portal access, so users.portalStatus alone would incorrectly enrol them.
+  const isInNotice = (agent: typeof agentRows[number]) => agent.agentStatus === "in_notice" || agent.portalStatus === "in_notice";
+  const isCancelled = (agent: typeof agentRows[number]) => agent.agentStatus === "cancelled" || agent.portalStatus === "cancelled";
+  const excluded = agentRows.filter((agent) => isInNotice(agent) || isCancelled(agent));
+  const candidates = agentRows.filter((agent) => !isInNotice(agent) && !isCancelled(agent)) as BulkAcademyCandidate[];
+  return { candidates, excluded };
+}
+
+async function getBulkAcademyMigrationPreview(courseId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, courseId)).limit(1);
+  if (!course) throw new TRPCError({ code: "NOT_FOUND", message: "Academy course not found" });
+  if (course.status !== "published") throw new TRPCError({ code: "BAD_REQUEST", message: "Publish the course before using bulk enrolment" });
+
+  const { candidates, excluded } = await getBulkAcademyMigrationCandidates();
+  const existing = candidates.length
+    ? await db.select({ agentId: academyEnrollments.agentId, status: academyEnrollments.status })
+      .from(academyEnrollments)
+      .where(and(eq(academyEnrollments.courseId, courseId), inArray(academyEnrollments.agentId, candidates.map((agent) => agent.id))))
+    : [];
+  const existingByAgentId = new Map(existing.map((enrollment) => [enrollment.agentId, enrollment]));
+  const automaticallyCompleted = candidates.filter((agent) => getBulkAcademyMigrationDisposition(agent.trainingStage) === "complete");
+  const manualProgress = candidates.filter((agent) => getBulkAcademyMigrationDisposition(agent.trainingStage) === "manual_progress");
+
+  return {
+    course: { id: course.id, title: course.title },
+    eligibleAgents: candidates.length,
+    excluded: {
+      inNotice: excluded.filter((agent) => agent.agentStatus === "in_notice" || agent.portalStatus === "in_notice").length,
+      cancelled: excluded.filter((agent) => agent.agentStatus !== "in_notice" && agent.portalStatus !== "in_notice" && (agent.agentStatus === "cancelled" || agent.portalStatus === "cancelled")).length,
+    },
+    enrolment: {
+      new: candidates.filter((agent) => !existingByAgentId.has(agent.id)).length,
+      existing: existingByAgentId.size,
+      existingCompleted: existing.filter((enrollment) => enrollment.status === "completed").length,
+      existingWaived: existing.filter((enrollment) => enrollment.status === "waived").length,
+    },
+    progress: {
+      automaticallyComplete: automaticallyCompleted.length,
+      manualProgress: manualProgress.length,
+      noTrainingStageRecorded: manualProgress.filter((agent) => !agent.trainingStage?.trim()).length,
+    },
+  };
+}
+
+async function applyBulkAcademyMigration(params: { courseId: number; actorId: number }) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, params.courseId)).limit(1);
+  if (!course) throw new TRPCError({ code: "NOT_FOUND", message: "Academy course not found" });
+  if (course.status !== "published") throw new TRPCError({ code: "BAD_REQUEST", message: "Publish the course before using bulk enrolment" });
+
+  const { candidates, excluded } = await getBulkAcademyMigrationCandidates();
+  const structure = await courseStructure(course.id);
+  const lessonIds = structure.lessons.map((lesson) => lesson.id);
+  const candidateIds = candidates.map((agent) => agent.id);
+  const existingEnrollments = candidateIds.length
+    ? await db.select().from(academyEnrollments)
+      .where(and(eq(academyEnrollments.courseId, course.id), inArray(academyEnrollments.agentId, candidateIds)))
+    : [];
+  const enrollmentByAgentId = new Map(existingEnrollments.map((enrollment) => [enrollment.agentId, enrollment]));
+  const existingAccess = candidateIds.length
+    ? await db.select().from(academyAccess).where(inArray(academyAccess.agentId, candidateIds))
+    : [];
+  const accessByAgentId = new Map(existingAccess.map((access) => [access.agentId, access]));
+  const existingChecklists = candidateIds.length
+    ? await db.select({ id: adminOnboardingChecklist.id, userId: adminOnboardingChecklist.userId })
+      .from(adminOnboardingChecklist).where(inArray(adminOnboardingChecklist.userId, candidateIds))
+    : [];
+  const checklistByAgentId = new Map(existingChecklists.map((checklist) => [checklist.userId, checklist]));
+  const now = new Date();
+  const pool = await getRawDbPool();
+  const connection = await pool.getConnection();
+  const summary = {
+    enrolled: 0,
+    alreadyEnrolled: 0,
+    accessGranted: 0,
+    accessRestored: 0,
+    automaticallyCompleted: 0,
+    manualProgress: 0,
+    waivedPreserved: 0,
+    excludedInNotice: excluded.filter((agent) => agent.agentStatus === "in_notice" || agent.portalStatus === "in_notice").length,
+    excludedCancelled: excluded.filter((agent) => agent.agentStatus !== "in_notice" && agent.portalStatus !== "in_notice" && (agent.agentStatus === "cancelled" || agent.portalStatus === "cancelled")).length,
+  };
+
+  try {
+    await connection.beginTransaction();
+    for (const agent of candidates) {
+      const priorAccess = accessByAgentId.get(agent.id);
+      if (!priorAccess) summary.accessGranted++;
+      else if (priorAccess.status === "revoked") summary.accessRestored++;
+      await connection.execute(
+        `INSERT INTO academy_access (agentId, status, grantedById, grantedAt, revokedById, revokedAt, note)
+         VALUES (?, 'active', ?, ?, NULL, NULL, ?)
+         ON DUPLICATE KEY UPDATE
+           grantedById = IF(status = 'revoked', VALUES(grantedById), grantedById),
+           grantedAt = IF(status = 'revoked', VALUES(grantedAt), grantedAt),
+           note = IF(status = 'revoked', VALUES(note), note),
+           status = 'active',
+           revokedById = NULL,
+           revokedAt = NULL`,
+        [agent.id, params.actorId, now, "Bulk Academy migration"],
+      );
+      const checklist = checklistByAgentId.get(agent.id);
+      if (checklist) {
+        await connection.execute(
+          "UPDATE admin_onboarding_checklist SET academyAccessApproved = 1, updatedById = ? WHERE id = ?",
+          [params.actorId, checklist.id],
+        );
+      } else {
+        await connection.execute(
+          "INSERT INTO admin_onboarding_checklist (userId, academyAccessApproved, updatedById) VALUES (?, 1, ?)",
+          [agent.id, params.actorId],
+        );
+      }
+
+      let enrollment = enrollmentByAgentId.get(agent.id);
+      if (!enrollment) {
+        const [result] = await connection.execute(
+          "INSERT INTO academy_enrollments (agentId, courseId, enrolledById) VALUES (?, ?, ?)",
+          [agent.id, course.id, params.actorId],
+        );
+        const enrollmentId = Number((result as { insertId?: number }).insertId);
+        if (!Number.isSafeInteger(enrollmentId) || enrollmentId < 1) {
+          throw new Error("Bulk Academy enrolment insert did not return an ID");
+        }
+        enrollment = { id: enrollmentId, status: "assigned" } as typeof academyEnrollments.$inferSelect;
+        summary.enrolled++;
+      } else {
+        summary.alreadyEnrolled++;
+      }
+
+      const disposition = getBulkAcademyMigrationDisposition(agent.trainingStage);
+      if (disposition === "manual_progress") {
+        summary.manualProgress++;
+        await connection.execute(
+          `INSERT INTO academy_audit_log (agentId, courseId, enrollmentId, actorId, action, summary, metadata)
+           VALUES (?, ?, ?, ?, 'bulk_enrolled_for_manual_progress', ?, ?)`,
+          [
+            agent.id,
+            course.id,
+            enrollment.id,
+            params.actorId,
+            `Bulk-enrolled in ${course.title}; progress remains for staff to record manually`,
+            JSON.stringify({ source: "original_training_migration", trainingStage: agent.trainingStage ?? null, recordedAt: now.toISOString() }),
+          ],
+        );
+        continue;
+      }
+
+      if (lessonIds.length) {
+        const placeholders = lessonIds.map(() => "(?, ?, ?, ?, ?)").join(", ");
+        const values = lessonIds.flatMap((lessonId) => [enrollment!.id, lessonId, now, now, now]);
+        await connection.execute(
+          `INSERT INTO academy_lesson_progress (enrollmentId, lessonId, startedAt, lastViewedAt, completedAt)
+           VALUES ${placeholders}
+           ON DUPLICATE KEY UPDATE
+             startedAt = COALESCE(startedAt, VALUES(startedAt)),
+             lastViewedAt = COALESCE(lastViewedAt, VALUES(lastViewedAt)),
+             completedAt = COALESCE(completedAt, VALUES(completedAt))`,
+          values,
+        );
+      }
+      if (enrollment.status === "waived") {
+        summary.waivedPreserved++;
+      } else {
+        await connection.execute(
+          `UPDATE academy_enrollments
+           SET status = 'completed',
+               completedAt = COALESCE(completedAt, ?),
+               completionOutcomeAppliedAt = COALESCE(completionOutcomeAppliedAt, ?)
+           WHERE id = ?`,
+          [now, now, enrollment.id],
+        );
+      }
+      await connection.execute(
+        `INSERT INTO academy_audit_log (agentId, courseId, enrollmentId, actorId, action, summary, metadata)
+         VALUES (?, ?, ?, ?, 'bulk_original_training_completion', ?, ?)`,
+        [
+          agent.id,
+          course.id,
+          enrollment.id,
+          params.actorId,
+          `Recorded all ${lessonIds.length} Academy lesson${lessonIds.length === 1 ? "" : "s"} as completed from original training${enrollment.status === "waived" ? "; retained existing waived status" : ""}`,
+          JSON.stringify({
+            source: "original_training_migration",
+            trainingStage: agent.trainingStage ?? null,
+            completedLessonIds: lessonIds,
+            reason: "Bulk migration: established Agent Accelerator or Accredited agent",
+            recordedAt: now.toISOString(),
+          }),
+        ],
+      );
+      summary.automaticallyCompleted++;
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+
+  return { course: { id: course.id, title: course.title }, eligibleAgents: candidates.length, ...summary };
+}
+
 async function resolveEnrollmentForAgent(enrollmentId: number, agentId: number) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -638,7 +870,13 @@ async function recalculateCompletion(enrollmentId: number, actorId: number) {
   await db.update(academyEnrollments).set({ status: "completed", completedAt: now, completionOutcomeAppliedAt: now })
     .where(eq(academyEnrollments.id, enrollmentId));
   const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
-  if (course?.isCoreAcademy) {
+  const [profile] = await db.select({ trainingStage: agentCrmProfiles.trainingStage, academyAcceleratorStartedAt: agentCrmProfiles.academyAcceleratorStartedAt })
+    .from(agentCrmProfiles).where(eq(agentCrmProfiles.userId, enrollment.agentId)).limit(1);
+  // Only a Training (or legacy unset) profile crosses into Accelerator on core
+  // completion. A staff-migrated or returning Accredited/Accelerator agent must
+  // retain their stage and existing personalised journey start date.
+  const entersAccelerator = course?.isCoreAcademy && (!profile?.trainingStage || profile.trainingStage === "Training");
+  if (entersAccelerator) {
     await db.update(agentCrmProfiles).set({ trainingStage: "Agent Accelerator", academyAcceleratorStartedAt: now })
       .where(eq(agentCrmProfiles.userId, enrollment.agentId));
     await enrolAgentInAcceleratorJourneys({ agentId: enrollment.agentId, actorId, startedAt: now });
@@ -648,7 +886,7 @@ async function recalculateCompletion(enrollmentId: number, actorId: number) {
   }
   await createInAppNotification({
     userId: enrollment.agentId,
-    message: course?.isCoreAcademy
+    message: entersAccelerator
       ? "You have completed JLT Academy and have moved to Agent Accelerator."
       : `You have completed ${course?.title ?? "your Academy course"}.`,
     linkUrl: "/academy",
@@ -660,7 +898,7 @@ async function recalculateCompletion(enrollmentId: number, actorId: number) {
     enrollmentId,
     actorId,
     action: "completed",
-    summary: course?.isCoreAcademy ? "Completed JLT Academy and moved to Agent Accelerator" : `Completed ${course?.title ?? "Academy course"}`,
+    summary: entersAccelerator ? "Completed JLT Academy and moved to Agent Accelerator" : `Completed ${course?.title ?? "Academy course"}`,
   });
   const [agent] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, enrollment.agentId)).limit(1);
   if (course) void dispatchAcademyEmailAlerts({
@@ -2128,6 +2366,17 @@ export const academyRouter = router({
       // access where the agent has not yet been approved through onboarding.
       await grantAcademyAccess({ agentId: input.agentId, actorId: ctx.user.id });
       return enrolAgentInCourse({ agentId: input.agentId, courseId: input.courseId, enrolledById: ctx.user.id, dueDate: input.dueDate ?? null });
+    }),
+
+    bulkMigrationPreview: adminProcedure.input(z.object({ courseId: z.number().int().positive() })).query(async ({ input }) => {
+      return getBulkAcademyMigrationPreview(input.courseId);
+    }),
+
+    bulkMigrateOriginalTraining: adminProcedure.input(z.object({
+      courseId: z.number().int().positive(),
+      confirmation: z.literal("BULK ENROL"),
+    })).mutation(async ({ ctx, input }) => {
+      return applyBulkAcademyMigration({ courseId: input.courseId, actorId: ctx.user.id });
     }),
 
     progress: adminProcedure.input(z.object({ courseId: z.number().int().positive().optional(), agentId: z.number().int().positive().optional() }).optional()).query(async ({ input }) => {

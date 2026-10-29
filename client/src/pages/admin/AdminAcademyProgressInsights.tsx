@@ -163,6 +163,10 @@ export default function AdminAcademyProgressInsights() {
     trpc.academy.admin.supportQueue.useQuery();
   const { data: agents = [] } = trpc.users.listAgents.useQuery();
   const selectedCourse = courses.find(course => course.id === courseId) ?? null;
+  const bulkMigrationPreview = trpc.academy.admin.bulkMigrationPreview.useQuery(
+    { courseId: selectedCourse?.id ?? 0 },
+    { enabled: !!selectedCourse }
+  );
   const metrics = insights.data?.metrics;
 
   const invalidate = () => {
@@ -171,6 +175,7 @@ export default function AdminAcademyProgressInsights() {
     utils.academy.admin.supportQueue.invalidate();
     utils.academy.admin.learnerReview.invalidate();
     utils.academy.admin.courses.invalidate();
+    utils.academy.admin.bulkMigrationPreview.invalidate();
   };
   const enroll = trpc.academy.admin.enroll.useMutation({
     onSuccess: result => {
@@ -181,6 +186,16 @@ export default function AdminAcademyProgressInsights() {
     },
     onError: error => toast.error(error.message),
   });
+  const bulkMigrateOriginalTraining =
+    trpc.academy.admin.bulkMigrateOriginalTraining.useMutation({
+      onSuccess: result => {
+        toast.success(
+          `${result.eligibleAgents} agent${result.eligibleAgents === 1 ? "" : "s"} processed: ${result.automaticallyCompleted} completed from original training and ${result.manualProgress} left for manual progress updates.`
+        );
+        invalidate();
+      },
+      onError: error => toast.error(error.message),
+    });
   const overrideCompletion = trpc.academy.admin.overrideCompletion.useMutation({
     onSuccess: () => {
       toast.success("Completion record updated");
@@ -340,6 +355,24 @@ export default function AdminAcademyProgressInsights() {
       "Why is this agent ready to become Accredited?"
     );
     if (reason?.trim()) approveAccreditation.mutate({ agentId, reason });
+  }
+  function confirmBulkMigration() {
+    if (!selectedCourse || !bulkMigrationPreview.data) return;
+    const preview = bulkMigrationPreview.data;
+    const confirmation = window.prompt(
+      `Bulk enrol ${preview.eligibleAgents} eligible agent${preview.eligibleAgents === 1 ? "" : "s"} into ${preview.course.title}?\n\n` +
+        `${preview.progress.automaticallyComplete} Agent Accelerator / Accredited agent${preview.progress.automaticallyComplete === 1 ? "" : "s"} will have every lesson recorded as complete from original training.\n` +
+        `${preview.progress.manualProgress} Training agent${preview.progress.manualProgress === 1 ? "" : "s"} will be enrolled with progress left untouched for staff to update manually.\n\n` +
+        `${preview.excluded.inNotice} in notice and ${preview.excluded.cancelled} cancelled agent${preview.excluded.inNotice + preview.excluded.cancelled === 1 ? " is" : "s are"} excluded. Existing learner history is preserved; no agent emails are sent.\n\nType BULK ENROL to continue.`
+    );
+    if (confirmation === "BULK ENROL") {
+      bulkMigrateOriginalTraining.mutate({
+        courseId: selectedCourse.id,
+        confirmation: "BULK ENROL",
+      });
+    } else if (confirmation !== null) {
+      toast.error('No changes made. Type "BULK ENROL" exactly to confirm.');
+    }
   }
   function resetQuestion(item: any) {
     const reason = window.prompt(
@@ -769,13 +802,81 @@ export default function AdminAcademyProgressInsights() {
             )}
             {selectedCourse && (
               <p className="mt-3 text-xs text-muted-foreground">
-                Selected:{" "}
+                Selected: {" "}
                 <span className="font-semibold text-foreground">
                   {selectedCourse.title}
                 </span>
                 . The due date is a completion target only; it does not prevent
                 agents from continuing to learn after that date.
               </p>
+            )}
+            {selectedCourse && (
+              <article className="mt-5 rounded-2xl border border-violet-200 bg-violet-50/55 p-4 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-violet-900">
+                      <UsersRound size={18} /> Original-training migration
+                    </div>
+                    <h3 className="mt-1 text-lg font-bold text-violet-950">
+                      Enrol all eligible agents safely
+                    </h3>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-violet-950/75">
+                      This is a one-time migration for this selected course. Agent
+                      Accelerator and Accredited agents have every lesson recorded
+                      as completed from original training. Training agents are
+                      enrolled, but their progress is left for staff to update
+                      individually. In Notice and cancelled agents are excluded.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="border-violet-300 bg-white text-violet-950 hover:bg-violet-100"
+                    disabled={
+                      bulkMigrationPreview.isLoading ||
+                      !bulkMigrationPreview.data ||
+                      bulkMigrateOriginalTraining.isPending
+                    }
+                    onClick={confirmBulkMigration}
+                  >
+                    <UsersRound className="mr-1.5" size={16} />
+                    {bulkMigrateOriginalTraining.isPending
+                      ? "Migrating…"
+                      : "Review and enrol all"}
+                  </Button>
+                </div>
+                {bulkMigrationPreview.isLoading && (
+                  <p className="mt-4 text-sm text-violet-900/75">
+                    Preparing a current eligibility preview…
+                  </p>
+                )}
+                {bulkMigrationPreview.data && (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-xl border border-violet-200 bg-white/85 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-violet-900/70">Eligible</p>
+                      <p className="mt-1 text-2xl font-bold text-violet-950">{bulkMigrationPreview.data.eligibleAgents}</p>
+                      <p className="mt-1 text-xs text-violet-900/70">{bulkMigrationPreview.data.enrolment.new} new · {bulkMigrationPreview.data.enrolment.existing} already enrolled</p>
+                    </div>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Auto-complete</p>
+                      <p className="mt-1 text-2xl font-bold text-emerald-950">{bulkMigrationPreview.data.progress.automaticallyComplete}</p>
+                      <p className="mt-1 text-xs text-emerald-800/75">Accelerator / Accredited</p>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Manual progress</p>
+                      <p className="mt-1 text-2xl font-bold text-amber-950">{bulkMigrationPreview.data.progress.manualProgress}</p>
+                      <p className="mt-1 text-xs text-amber-800/75">Training or no stage recorded</p>
+                    </div>
+                    <div className="rounded-xl border border-rose-200 bg-rose-50/80 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-rose-800">Excluded</p>
+                      <p className="mt-1 text-2xl font-bold text-rose-950">{bulkMigrationPreview.data.excluded.inNotice + bulkMigrationPreview.data.excluded.cancelled}</p>
+                      <p className="mt-1 text-xs text-rose-800/75">{bulkMigrationPreview.data.excluded.inNotice} In Notice · {bulkMigrationPreview.data.excluded.cancelled} cancelled</p>
+                    </div>
+                  </div>
+                )}
+                <p className="mt-4 text-xs leading-5 text-violet-950/70">
+                  Existing lesson completion, assessment attempts, feedback and waivers are retained. This bulk operation creates no assessment attempts, sends no agent emails and does not change an agent’s CRM training stage.
+                </p>
+              </article>
             )}
           </section>
 
