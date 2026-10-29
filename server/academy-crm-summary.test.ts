@@ -25,13 +25,22 @@ describe("Academy learner operations and CRM summary", () => {
     expect(progressInsightsSource).toContain("onClick={() => openLearner(item)}");
   });
 
+  it("prioritises active incomplete learning ahead of historic completions in the default work queue", () => {
+    expect(progressInsightsSource).toContain("function learnerWorkQueuePriority");
+    expect(progressInsightsSource).toContain('item.enrollment.status === "in_progress" && incomplete');
+    expect(progressInsightsSource).toContain('if (riskFilter !== "all") return matchingLearners');
+    expect(progressInsightsSource).toContain("active, incomplete learning first");
+    expect(progressInsightsSource).toContain("All records — active learning first");
+  });
+
   it("exposes an admin-only compact Academy summary for one CRM agent", () => {
     expect(academyRouterSource).toContain("agentSummary: adminProcedure");
     expect(academyRouterSource).toContain("academyAuditLog.agentId");
     expect(academyRouterSource).toContain("recentActivity");
     expect(academyRouterSource).toContain("awaitingMarking");
-    expect(agentCrmSource).toContain('TabsContent value="academy"');
-    expect(agentCrmSource).toContain('TabsTrigger value="academy"');
+    expect(agentCrmSource).toContain("CRM_AGENT_RECORD_SECTIONS");
+    expect(agentCrmSource).toContain('id: "academy"');
+    expect(agentCrmSource).toContain('activeSection === "academy"');
     expect(agentCrmSource).toContain("agentSummary.useQuery");
     expect(agentCrmSource).toContain("Academy overview");
     expect(agentCrmSource).toContain("Recent Academy activity");

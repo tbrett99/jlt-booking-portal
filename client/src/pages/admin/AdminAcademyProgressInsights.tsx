@@ -57,6 +57,36 @@ const formatDuration = (value: number | null | undefined) => {
 
 type Tab = "overview" | "learners" | "assessments" | "curriculum";
 
+type LearnerQueueItem = {
+  enrollment: { status: string };
+  completion: { percentage: number };
+  lastActivityAt: Date | string | null;
+  inactiveDays: number | null;
+  learner: { name: string | null };
+};
+
+/**
+ * The default Academy work queue is an operational view, rather than a
+ * historical register. Keep people visibly working through incomplete
+ * learning at the top, then retain every completed or waived record below.
+ */
+function learnerWorkQueuePriority(item: LearnerQueueItem) {
+  const incomplete = item.completion.percentage < 100;
+  if (item.enrollment.status === "in_progress" && incomplete) {
+    return item.inactiveDays !== null && item.inactiveDays < 7 ? 0 : 1;
+  }
+  if (item.enrollment.status === "assigned" && incomplete) return 2;
+  if (item.enrollment.status === "completed") return 3;
+  if (item.enrollment.status === "waived") return 4;
+  return 5;
+}
+
+function learnerActivityTimestamp(value: Date | string | null) {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 function MetricCard({
   label,
   value,
@@ -333,8 +363,8 @@ export default function AdminAcademyProgressInsights() {
   });
 
   const learners = useMemo(
-    () =>
-      (insights.data?.learners ?? []).filter(item => {
+    () => {
+      const matchingLearners = (insights.data?.learners ?? []).filter(item => {
         const query = learnerSearch.trim().toLowerCase();
         const matchingQuery =
           !query ||
@@ -358,7 +388,32 @@ export default function AdminAcademyProgressInsights() {
               item.assessment.feedbackPending > 0 ||
               item.assessment.supportLocks > 0));
         return matchingQuery && matchingRisk;
-      }),
+      });
+
+      // Other focused views already narrow the list to a staff concern. The
+      // default all-records view should start with people genuinely learning,
+      // not hundreds of historic 100% migration completions.
+      if (riskFilter !== "all") return matchingLearners;
+
+      return [...matchingLearners].sort((left, right) => {
+        const priorityDifference =
+          learnerWorkQueuePriority(left) - learnerWorkQueuePriority(right);
+        if (priorityDifference) return priorityDifference;
+
+        const activityDifference =
+          learnerActivityTimestamp(right.lastActivityAt) -
+          learnerActivityTimestamp(left.lastActivityAt);
+        if (activityDifference) return activityDifference;
+
+        const progressDifference =
+          right.completion.percentage - left.completion.percentage;
+        if (progressDifference) return progressDifference;
+
+        return (left.learner.name ?? "").localeCompare(
+          right.learner.name ?? ""
+        );
+      });
+    },
     [insights.data?.learners, learnerSearch, riskFilter]
   );
   const learnersPerPage = 25;
@@ -1240,6 +1295,10 @@ export default function AdminAcademyProgressInsights() {
                   full learning history stays inside Academy; CRM has a separate
                   Academy summary for wider relationship management.
                 </p>
+                <p className="mt-2 text-xs font-medium text-[#087f70]">
+                  Default order: active, incomplete learning first; completed
+                  records remain available below.
+                </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <div className="relative">
@@ -1261,7 +1320,7 @@ export default function AdminAcademyProgressInsights() {
                     setRiskFilter(event.target.value as typeof riskFilter)
                   }
                 >
-                  <option value="all">All learner records</option>
+                  <option value="all">All records — active learning first</option>
                   <option value="attention">Needs attention</option>
                   <option value="overdue">Overdue only</option>
                   <option value="inactive">Inactive / no activity</option>
