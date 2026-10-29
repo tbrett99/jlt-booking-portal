@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  getAcademyMigrationStageReviewCategory,
   getBulkAcademyMigrationDisposition,
   isBulkAcademyCompletionStage,
 } from "./academy-bulk-migration";
@@ -22,6 +23,15 @@ describe("Academy bulk original-training migration", () => {
     expect(isBulkAcademyCompletionStage("Training")).toBe(false);
     expect(getBulkAcademyMigrationDisposition(null)).toBe("manual_progress");
     expect(getBulkAcademyMigrationDisposition("Legacy stage")).toBe("manual_progress");
+  });
+
+  it("separates deliberate Training progress from missing and legacy stage tags", () => {
+    expect(getAcademyMigrationStageReviewCategory("Training")).toBe("training");
+    expect(getAcademyMigrationStageReviewCategory(null)).toBe("missing");
+    expect(getAcademyMigrationStageReviewCategory("  ")).toBe("missing");
+    expect(getAcademyMigrationStageReviewCategory("Previous pathway")).toBe("legacy");
+    expect(getAcademyMigrationStageReviewCategory("Agent Accelerator")).toBe("automatic");
+    expect(getAcademyMigrationStageReviewCategory("Accredited")).toBe("automatic");
   });
 
   it("uses the CRM membership status as the authoritative exclusion guard", () => {
@@ -78,5 +88,30 @@ describe("Academy bulk original-training migration", () => {
     expect(insights).toContain("bulkMigrateOriginalTraining.useMutation");
     expect(insights).toContain("In Notice and cancelled agents are excluded.");
     expect(insights).toContain("no agent emails are sent");
+  });
+
+  it("provides a paginated stage-review queue without including established completed stages", () => {
+    const helper = router.slice(
+      router.indexOf("async function getAcademyMigrationStageReviewQueue"),
+      router.indexOf("async function classifyAcademyMigrationTrainingStage")
+    );
+    expect(helper).toContain('item.reviewCategory !== "automatic"');
+    expect(helper).toContain("pageSize");
+    expect(helper).toContain("reviewCategory");
+    expect(router).toContain("migrationStageReviewQueue: adminProcedure");
+    expect(insights).toContain("Stage review queue");
+    expect(insights).toContain("Search name, email or recorded stage");
+    expect(insights).toContain("Missing tag");
+  });
+
+  it("only bulk-classifies missing or legacy tags as Training with a typed confirmation and audit trail", () => {
+    expect(router).toContain("bulkClassifyMigrationTrainingStage: adminProcedure");
+    expect(router).toContain('confirmation: z.literal("CLASSIFY AS TRAINING")');
+    expect(router).toContain("migration_training_stage_bulk_classified");
+    expect(router).toContain("academy_migration_stage_queue_bulk");
+    expect(router).toContain("Only current agents can be classified here");
+    expect(router).toContain("academyAcceleratorStartedAt");
+    expect(insights).toContain("CLASSIFY AS TRAINING");
+    expect(insights).toContain("Move to Accelerator");
   });
 });

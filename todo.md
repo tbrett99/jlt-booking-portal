@@ -18,7 +18,8 @@
   - [x] Establish and document a true live baseline (28 Oct 2026: Brotli is active; initial entry transferred 231 KB, CSS transferred 36 KB; static assets have one-year immutable caching)
   - [x] Remove development-only JSX location metadata from production bundles (initial client bundle reduced by 120,748 bytes / 13.3% before compression)
   - [ ] Re-measure the live post-deployment HTML and initial-entry response timings, transfer sizes and compression; keep the task open until this evidence is recorded
-- [ ] Release the controlled Academy bulk-enrolment migration: exclude In Notice/cancelled agents, complete every lesson for Agent Accelerator/Accredited agents, retain manual progress for Training agents, and preserve existing audit history
+- [x] Release the controlled Academy bulk-enrolment migration: exclude In Notice/cancelled agents, complete every lesson for Agent Accelerator/Accredited agents, retain manual progress for Training agents, and preserve existing audit history
+- [ ] Release a searchable and paginated Academy stage-review queue so staff can find Training, missing-stage and legacy-stage records, classify current agents with an audit trail, and start an Accelerator journey deliberately
 - [x] Repair Knowledge Base articles containing RichEmailEditor Loom thumbnails so recognised Loom recordings play in the Portal instead of showing a broken email-only image card
 - [x] Add a create-only, all-or-nothing Knowledge Base article CSV import with an editable template, HTML preservation, recognised Loom in-Portal players, and labelled HTTPS online-SOP links; imports intentionally send no bulk agent notifications
 - [x] Scope an Airwallex virtual single-use card request, approval, evidence, and reimbursement-recovery workflow before implementation

@@ -28,7 +28,11 @@ import { MAX_ACADEMY_ASSESSMENT_QUESTIONS, parseMultipleChoiceQuizCsv, QuizCsvIm
 import { buildAcademyLearningPath } from "../shared/academy-learning-path";
 import { assignAcceleratorEntryActions, releaseAvailableJourneyActions } from "./agent-development-router";
 import { ACCELERATOR_JOURNEY_WEEKS, acceleratorWeekReleaseLabel, isAcceleratorWeekAvailable } from "./academy-journey";
-import { getBulkAcademyMigrationDisposition } from "./academy-bulk-migration";
+import {
+  getAcademyMigrationStageReviewCategory,
+  getBulkAcademyMigrationDisposition,
+  normaliseAcademyTrainingStage,
+} from "./academy-bulk-migration";
 import {
   ACADEMY_ALERT_EVENTS,
   academyAlertAllowsModuleScope,
@@ -494,7 +498,7 @@ async function enrolAgentInCourse(params: {
  * Starts every published Agent Accelerator journey for one agent. The unique
  * enrolment key makes stage-save retries and repeated CRM edits harmless.
  */
-export async function enrolAgentInAcceleratorJourneys(params: { agentId: number; actorId: number; startedAt?: Date }) {
+export async function enrolAgentInAcceleratorJourneys(params: { agentId: number; actorId: number; startedAt?: Date; notify?: boolean }) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
   const startedAt = params.startedAt ?? new Date();
@@ -509,6 +513,7 @@ export async function enrolAgentInAcceleratorJourneys(params: { agentId: number;
       courseId: course.id,
       enrolledById: params.actorId,
       journeyStartedAt: startedAt,
+      notify: params.notify,
     });
     if (result.created) enrolled++;
   }
@@ -616,6 +621,191 @@ async function getBulkAcademyMigrationPreview(courseId: number) {
       noTrainingStageRecorded: manualProgress.filter((agent) => !agent.trainingStage?.trim()).length,
     },
   };
+}
+
+const academyMigrationStageOptions = [
+  "Training",
+  "Agent Accelerator",
+] as const;
+
+async function getAcademyMigrationStageReviewQueue(params: {
+  courseId: number;
+  query?: string;
+  filter: "all" | "training" | "missing" | "legacy";
+  page: number;
+  pageSize: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [course] = await db.select({ id: academyCourses.id, title: academyCourses.title })
+    .from(academyCourses).where(eq(academyCourses.id, params.courseId)).limit(1);
+  if (!course) throw new TRPCError({ code: "NOT_FOUND", message: "Academy course not found" });
+
+  const { candidates } = await getBulkAcademyMigrationCandidates();
+  const existingEnrollments = candidates.length
+    ? await db.select({
+      id: academyEnrollments.id,
+      agentId: academyEnrollments.agentId,
+      status: academyEnrollments.status,
+    }).from(academyEnrollments).where(and(
+      eq(academyEnrollments.courseId, course.id),
+      inArray(academyEnrollments.agentId, candidates.map((agent) => agent.id)),
+    ))
+    : [];
+  const enrollmentByAgentId = new Map(existingEnrollments.map((enrollment) => [enrollment.agentId, enrollment]));
+  const query = params.query?.trim().toLocaleLowerCase() ?? "";
+  const queue = candidates.map((agent) => {
+    const trainingStage = normaliseAcademyTrainingStage(agent.trainingStage);
+    const reviewCategory = getAcademyMigrationStageReviewCategory(trainingStage);
+    const enrollment = enrollmentByAgentId.get(agent.id) ?? null;
+    return {
+      agent: { id: agent.id, name: agent.name, email: agent.email },
+      trainingStage,
+      reviewCategory,
+      autoCompletionEligible: getBulkAcademyMigrationDisposition(trainingStage) === "complete",
+      enrollment,
+    };
+  }).filter((item) => item.reviewCategory !== "automatic").filter((item) => {
+    const matchesQuery = !query || `${item.agent.name ?? ""} ${item.agent.email ?? ""} ${item.trainingStage ?? ""}`
+      .toLocaleLowerCase().includes(query);
+    return matchesQuery && (params.filter === "all" || item.reviewCategory === params.filter);
+  }).sort((left, right) => (left.agent.name ?? left.agent.email ?? "").localeCompare(right.agent.name ?? right.agent.email ?? ""));
+  const counts = {
+    training: candidates.filter((agent) => getAcademyMigrationStageReviewCategory(agent.trainingStage) === "training").length,
+    missing: candidates.filter((agent) => getAcademyMigrationStageReviewCategory(agent.trainingStage) === "missing").length,
+    legacy: candidates.filter((agent) => getAcademyMigrationStageReviewCategory(agent.trainingStage) === "legacy").length,
+  };
+  const total = queue.length;
+  const pageCount = Math.max(1, Math.ceil(total / params.pageSize));
+  const page = Math.min(params.page, pageCount);
+  return {
+    course,
+    total,
+    counts,
+    page,
+    pageCount,
+    items: queue.slice((page - 1) * params.pageSize, page * params.pageSize),
+  };
+}
+
+async function classifyAcademyMigrationTrainingStage(params: {
+  agentId: number;
+  trainingStage: (typeof academyMigrationStageOptions)[number];
+  actorId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const { candidates } = await getBulkAcademyMigrationCandidates();
+  const agent = candidates.find((candidate) => candidate.id === params.agentId);
+  if (!agent) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Only current agents can be classified here. In Notice and cancelled agents are deliberately excluded.",
+    });
+  }
+  const previousStage = normaliseAcademyTrainingStage(agent.trainingStage);
+  if (previousStage === params.trainingStage) {
+    return { changed: false, previousStage, trainingStage: params.trainingStage, journeyStarted: false };
+  }
+
+  const now = new Date();
+  const existingProfile = await db.select({
+    id: agentCrmProfiles.id,
+    academyAcceleratorStartedAt: agentCrmProfiles.academyAcceleratorStartedAt,
+  })
+    .from(agentCrmProfiles).where(eq(agentCrmProfiles.userId, params.agentId)).limit(1);
+  if (existingProfile[0]) {
+    await db.update(agentCrmProfiles).set({
+      trainingStage: params.trainingStage,
+      ...(params.trainingStage === "Agent Accelerator" && !existingProfile[0].academyAcceleratorStartedAt
+        ? { academyAcceleratorStartedAt: now }
+        : {}),
+    })
+      .where(eq(agentCrmProfiles.userId, params.agentId));
+  } else {
+    await db.insert(agentCrmProfiles).values({
+      userId: params.agentId,
+      trainingStage: params.trainingStage,
+      ...(params.trainingStage === "Agent Accelerator" ? { academyAcceleratorStartedAt: now } : {}),
+    });
+  }
+
+  let journeyStarted = false;
+  if (params.trainingStage === "Agent Accelerator") {
+    await enrolAgentInAcceleratorJourneys({ agentId: params.agentId, actorId: params.actorId, startedAt: now, notify: false });
+    await assignAcceleratorEntryActions(params.agentId, params.actorId);
+    journeyStarted = true;
+  }
+  await addAudit({
+    agentId: params.agentId,
+    actorId: params.actorId,
+    action: "migration_training_stage_classified",
+    summary: `Classified Academy migration stage as ${params.trainingStage}`,
+    metadata: {
+      source: "academy_migration_stage_queue",
+      previousStage,
+      trainingStage: params.trainingStage,
+      journeyStarted,
+    },
+  });
+  return { changed: true, previousStage, trainingStage: params.trainingStage, journeyStarted };
+}
+
+async function bulkClassifyAcademyMigrationTrainingStage(params: {
+  courseId: number;
+  sourceCategory: "missing" | "legacy";
+  actorId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [course] = await db.select({ id: academyCourses.id, title: academyCourses.title })
+    .from(academyCourses).where(eq(academyCourses.id, params.courseId)).limit(1);
+  if (!course) throw new TRPCError({ code: "NOT_FOUND", message: "Academy course not found" });
+  const { candidates } = await getBulkAcademyMigrationCandidates();
+  const toClassify = candidates.filter((agent) =>
+    getAcademyMigrationStageReviewCategory(agent.trainingStage) === params.sourceCategory
+  );
+  if (!toClassify.length) return { classified: 0, sourceCategory: params.sourceCategory };
+
+  const pool = await getRawDbPool();
+  const connection = await pool.getConnection();
+  const now = new Date();
+  try {
+    await connection.beginTransaction();
+    for (const agent of toClassify) {
+      const previousStage = normaliseAcademyTrainingStage(agent.trainingStage);
+      await connection.execute(
+        `INSERT INTO agent_crm_profiles (userId, trainingStage)
+         VALUES (?, 'Training')
+         ON DUPLICATE KEY UPDATE trainingStage = 'Training'`,
+        [agent.id],
+      );
+      await connection.execute(
+        `INSERT INTO academy_audit_log (agentId, courseId, actorId, action, summary, metadata)
+         VALUES (?, ?, ?, 'migration_training_stage_bulk_classified', ?, ?)`,
+        [
+          agent.id,
+          course.id,
+          params.actorId,
+          "Classified Academy migration stage as Training",
+          JSON.stringify({
+            source: "academy_migration_stage_queue_bulk",
+            previousStage,
+            trainingStage: "Training",
+            sourceCategory: params.sourceCategory,
+            recordedAt: now.toISOString(),
+          }),
+        ],
+      );
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+  return { classified: toClassify.length, sourceCategory: params.sourceCategory };
 }
 
 async function applyBulkAcademyMigration(params: { courseId: number; actorId: number }) {
@@ -2370,6 +2560,35 @@ export const academyRouter = router({
 
     bulkMigrationPreview: adminProcedure.input(z.object({ courseId: z.number().int().positive() })).query(async ({ input }) => {
       return getBulkAcademyMigrationPreview(input.courseId);
+    }),
+
+    migrationStageReviewQueue: adminProcedure.input(z.object({
+      courseId: z.number().int().positive(),
+      query: z.string().trim().max(320).optional(),
+      filter: z.enum(["all", "training", "missing", "legacy"]).default("all"),
+      page: z.number().int().min(1).default(1),
+      pageSize: z.number().int().min(1).max(50).default(25),
+    })).query(async ({ input }) => {
+      return getAcademyMigrationStageReviewQueue(input);
+    }),
+
+    classifyMigrationTrainingStage: adminProcedure.input(z.object({
+      agentId: z.number().int().positive(),
+      trainingStage: z.enum(academyMigrationStageOptions),
+    })).mutation(async ({ ctx, input }) => {
+      return classifyAcademyMigrationTrainingStage({ ...input, actorId: ctx.user.id });
+    }),
+
+    bulkClassifyMigrationTrainingStage: adminProcedure.input(z.object({
+      courseId: z.number().int().positive(),
+      sourceCategory: z.enum(["missing", "legacy"]),
+      confirmation: z.literal("CLASSIFY AS TRAINING"),
+    })).mutation(async ({ ctx, input }) => {
+      return bulkClassifyAcademyMigrationTrainingStage({
+        courseId: input.courseId,
+        sourceCategory: input.sourceCategory,
+        actorId: ctx.user.id,
+      });
     }),
 
     bulkMigrateOriginalTraining: adminProcedure.input(z.object({

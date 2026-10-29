@@ -152,6 +152,13 @@ export default function AdminAcademyProgressInsights() {
   const [aiReviewingAttemptId, setAiReviewingAttemptId] = useState<
     number | null
   >(null);
+  const [migrationStageSearch, setMigrationStageSearch] = useState("");
+  const [migrationStageFilter, setMigrationStageFilter] = useState<
+    "all" | "training" | "missing" | "legacy"
+  >("all");
+  const [migrationStagePage, setMigrationStagePage] = useState(1);
+  const [classifyingMigrationAgentId, setClassifyingMigrationAgentId] =
+    useState<number | null>(null);
 
   const { data: courses = [] } = trpc.academy.admin.courses.useQuery();
   const insights = trpc.academy.admin.insights.useQuery(
@@ -167,6 +174,17 @@ export default function AdminAcademyProgressInsights() {
     { courseId: selectedCourse?.id ?? 0 },
     { enabled: !!selectedCourse }
   );
+  const migrationStageReview =
+    trpc.academy.admin.migrationStageReviewQueue.useQuery(
+      {
+        courseId: selectedCourse?.id ?? 0,
+        query: migrationStageSearch || undefined,
+        filter: migrationStageFilter,
+        page: migrationStagePage,
+        pageSize: 25,
+      },
+      { enabled: !!selectedCourse }
+    );
   const metrics = insights.data?.metrics;
 
   const invalidate = () => {
@@ -176,6 +194,7 @@ export default function AdminAcademyProgressInsights() {
     utils.academy.admin.learnerReview.invalidate();
     utils.academy.admin.courses.invalidate();
     utils.academy.admin.bulkMigrationPreview.invalidate();
+    utils.academy.admin.migrationStageReviewQueue.invalidate();
   };
   const enroll = trpc.academy.admin.enroll.useMutation({
     onSuccess: result => {
@@ -191,6 +210,30 @@ export default function AdminAcademyProgressInsights() {
       onSuccess: result => {
         toast.success(
           `${result.eligibleAgents} agent${result.eligibleAgents === 1 ? "" : "s"} processed: ${result.automaticallyCompleted} completed from original training and ${result.manualProgress} left for manual progress updates.`
+        );
+        invalidate();
+      },
+      onError: error => toast.error(error.message),
+    });
+  const classifyMigrationTrainingStage =
+    trpc.academy.admin.classifyMigrationTrainingStage.useMutation({
+      onMutate: variables => setClassifyingMigrationAgentId(variables.agentId),
+      onSuccess: result => {
+        toast.success(
+          result.changed
+            ? `${result.trainingStage} recorded in the Academy migration audit`
+            : "This agent already has that training stage"
+        );
+        invalidate();
+      },
+      onError: error => toast.error(error.message),
+      onSettled: () => setClassifyingMigrationAgentId(null),
+    });
+  const bulkClassifyMigrationTrainingStage =
+    trpc.academy.admin.bulkClassifyMigrationTrainingStage.useMutation({
+      onSuccess: result => {
+        toast.success(
+          `${result.classified} agent${result.classified === 1 ? "" : "s"} classified as Training`
         );
         invalidate();
       },
@@ -307,6 +350,9 @@ export default function AdminAcademyProgressInsights() {
   useEffect(() => {
     setLearnerPage(1);
   }, [courseId, learnerSearch, riskFilter]);
+  useEffect(() => {
+    setMigrationStagePage(1);
+  }, [courseId, migrationStageSearch, migrationStageFilter]);
   const agentOptions = useMemo(
     () =>
       agents
@@ -372,6 +418,39 @@ export default function AdminAcademyProgressInsights() {
       });
     } else if (confirmation !== null) {
       toast.error('No changes made. Type "BULK ENROL" exactly to confirm.');
+    }
+  }
+  function classifyMigrationAgent(
+    agent: { id: number; name: string | null; email: string | null },
+    trainingStage: "Training" | "Agent Accelerator"
+  ) {
+    const label = agent.name || agent.email || "this agent";
+    if (
+      trainingStage === "Agent Accelerator" &&
+      !window.confirm(
+        `Move ${label} to Agent Accelerator? This starts their Accelerator journey and may assign the normal entry Action. It cannot mark their Academy lessons complete.`
+      )
+    ) {
+      return;
+    }
+    classifyMigrationTrainingStage.mutate({ agentId: agent.id, trainingStage });
+  }
+  function confirmBulkTrainingClassification(sourceCategory: "missing" | "legacy") {
+    if (!selectedCourse || !migrationStageReview.data) return;
+    const count = migrationStageReview.data.counts[sourceCategory];
+    if (!count) return;
+    const description = sourceCategory === "missing" ? "missing" : "legacy/unrecognised";
+    const confirmation = window.prompt(
+      `Classify all ${count} current agent${count === 1 ? "" : "s"} with a ${description} Academy stage as Training?\n\nThis does not enrol anyone, mark lessons complete, create assessment attempts or send emails. Every change is recorded in the Academy audit history.\n\nType CLASSIFY AS TRAINING to continue.`
+    );
+    if (confirmation === "CLASSIFY AS TRAINING") {
+      bulkClassifyMigrationTrainingStage.mutate({
+        courseId: selectedCourse.id,
+        sourceCategory,
+        confirmation: "CLASSIFY AS TRAINING",
+      });
+    } else if (confirmation !== null) {
+      toast.error('No changes made. Type "CLASSIFY AS TRAINING" exactly to continue.');
     }
   }
   function resetQuestion(item: any) {
@@ -873,6 +952,143 @@ export default function AdminAcademyProgressInsights() {
                     </div>
                   </div>
                 )}
+                <div className="mt-5 rounded-xl border border-violet-200 bg-white/80 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[.13em] text-violet-900/70">
+                        Stage review queue
+                      </p>
+                      <h4 className="mt-1 font-bold text-violet-950">
+                        Find Training agents and fix missing tags before migration
+                      </h4>
+                      <p className="mt-1 max-w-3xl text-xs leading-5 text-violet-950/75">
+                        This is a separate classification step. Marking an agent as Training never changes Academy progress. Moving an agent to Accelerator starts their normal journey, but never completes their Academy lessons.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {migrationStageReview.data?.counts.missing ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100"
+                          disabled={bulkClassifyMigrationTrainingStage.isPending}
+                          onClick={() => confirmBulkTrainingClassification("missing")}
+                        >
+                          Set {migrationStageReview.data.counts.missing} missing to Training
+                        </Button>
+                      ) : null}
+                      {migrationStageReview.data?.counts.legacy ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100"
+                          disabled={bulkClassifyMigrationTrainingStage.isPending}
+                          onClick={() => confirmBulkTrainingClassification("legacy")}
+                        >
+                          Set {migrationStageReview.data.counts.legacy} legacy to Training
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="relative w-full lg:max-w-md">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+                      <Input
+                        className="pl-9"
+                        value={migrationStageSearch}
+                        onChange={event => setMigrationStageSearch(event.target.value)}
+                        placeholder="Search name, email or recorded stage…"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {([
+                        ["all", "All manual-progress"],
+                        ["training", "Training"],
+                        ["missing", "Missing tag"],
+                        ["legacy", "Legacy tag"],
+                      ] as const).map(([value, label]) => (
+                        <Button
+                          key={value}
+                          type="button"
+                          size="sm"
+                          variant={migrationStageFilter === value ? "default" : "outline"}
+                          onClick={() => setMigrationStageFilter(value)}
+                        >
+                          {label}
+                          {value !== "all" && migrationStageReview.data ? ` · ${migrationStageReview.data.counts[value]}` : ""}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  {migrationStageReview.isLoading ? (
+                    <p className="mt-4 text-sm text-violet-950/70">Loading the current stage review queue…</p>
+                  ) : migrationStageReview.data?.items.length ? (
+                    <>
+                      <div className="mt-4 overflow-hidden rounded-lg border border-violet-100">
+                        {migrationStageReview.data.items.map(item => {
+                          const isBusy = classifyingMigrationAgentId === item.agent.id;
+                          const enrollment = item.enrollment;
+                          const stageLabel = item.reviewCategory === "missing"
+                            ? "Missing stage"
+                            : item.reviewCategory === "legacy"
+                              ? `Legacy: ${item.trainingStage}`
+                              : "Training — manual progress";
+                          return (
+                            <div key={item.agent.id} className="flex flex-col gap-3 border-b border-violet-100 p-3 last:border-b-0 xl:flex-row xl:items-center xl:justify-between">
+                              <div className="min-w-0">
+                                <p className="font-semibold text-violet-950">{item.agent.name || "Unnamed agent"}</p>
+                                <p className="truncate text-xs text-muted-foreground">{item.agent.email || "No login email recorded"}</p>
+                              </div>
+                              <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
+                                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${item.reviewCategory === "training" ? "bg-sky-100 text-sky-900" : "bg-amber-100 text-amber-950"}`}>
+                                  {stageLabel}
+                                </span>
+                                {enrollment ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setReviewEnrollmentId(enrollment.id);
+                                      setTab("learners");
+                                    }}
+                                  >
+                                    Open Academy record
+                                  </Button>
+                                ) : null}
+                                {item.reviewCategory !== "training" ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={isBusy}
+                                    onClick={() => classifyMigrationAgent(item.agent, "Training")}
+                                  >
+                                    Set Training
+                                  </Button>
+                                ) : null}
+                                <Button
+                                  size="sm"
+                                  disabled={isBusy}
+                                  onClick={() => classifyMigrationAgent(item.agent, "Agent Accelerator")}
+                                >
+                                  {isBusy ? "Updating…" : "Move to Accelerator"}
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-violet-950/75">
+                        <span>{migrationStageReview.data.total} matching agent{migrationStageReview.data.total === 1 ? "" : "s"} · page {migrationStageReview.data.page} of {migrationStageReview.data.pageCount}</span>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" disabled={migrationStageReview.data.page <= 1} onClick={() => setMigrationStagePage(page => Math.max(1, page - 1))}>Previous</Button>
+                          <Button size="sm" variant="outline" disabled={migrationStageReview.data.page >= migrationStageReview.data.pageCount} onClick={() => setMigrationStagePage(page => page + 1)}>Next</Button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900">No current agents match this stage-review filter.</p>
+                  )}
+                </div>
                 <p className="mt-4 text-xs leading-5 text-violet-950/70">
                   Existing lesson completion, assessment attempts, feedback and waivers are retained. This bulk operation creates no assessment attempts, sends no agent emails and does not change an agent’s CRM training stage.
                 </p>
