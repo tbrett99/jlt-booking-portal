@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
-import { agentSupportRouter } from "./agent-support-router";
+import { agentSupportRouter, assistantSystemPrompt, isAssistantUnavailableAnswer } from "./agent-support-router";
 import {
   buildSupplierAgentSupportText,
   retrieveAgentSupportChunks,
@@ -57,6 +57,19 @@ describe("Agent Support Assistant safety helpers", () => {
       shortDescription: "Luxury tailor-made holidays.",
     })).toBe(true);
     expect(sensitiveSupplierFieldsAreExcluded({ name: "Example Travel", generalNotes: "PRIVATE-SECRET" })).toBe(false);
+  });
+
+  it("permits sourced generic booking and cancellation procedures while still blocking individual records", () => {
+    const prompt = assistantSystemPrompt();
+    expect(prompt).toContain("How do I cancel a booking in Orbit?");
+    expect(prompt).toContain("Do not refuse merely because the topic contains words such as booking, cancellation, refund or payment.");
+    expect(prompt).toContain("specific booking, client, payment, commission claim");
+  });
+
+  it("recognises a stock unavailable reply so relevant evidence gets one recovery pass", () => {
+    expect(isAssistantUnavailableAnswer("I can’t confirm that from the approved agent-facing Portal content. Please check support.")).toBe(true);
+    expect(isAssistantUnavailableAnswer("I can't confirm that from the approved agent-facing Portal content. Please check support.")).toBe(true);
+    expect(isAssistantUnavailableAnswer("Open the booking in Orbit and follow the cancellation process [S1].")).toBe(false);
   });
 });
 
