@@ -4,7 +4,8 @@ export type AgentSupportSourceKind =
   | "academy"
   | "supplier"
   | "community"
-  | "policy";
+  | "policy"
+  | "portal_procedure";
 
 export type AgentSupportSource = {
   key: string;
@@ -147,6 +148,7 @@ export function sourceCitationLabel(source: Pick<AgentSupportSource, "kind" | "t
     supplier: "Supplier Directory",
     community: "Community update",
     policy: "Terms & Policies",
+    portal_procedure: "Portal procedure",
   }[source.kind];
   return `${kind}: ${source.title}${source.timestampLabel ? ` (${source.timestampLabel})` : ""}`;
 }

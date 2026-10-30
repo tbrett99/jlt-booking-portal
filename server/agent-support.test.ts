@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
 import { agentSupportRouter, assistantSystemPrompt, isAssistantUnavailableAnswer } from "./agent-support-router";
+import { AGENT_PORTAL_PROCEDURE_SOURCES } from "./agent-support-portal-procedures";
 import {
   buildSupplierAgentSupportText,
   retrieveAgentSupportChunks,
@@ -70,6 +71,16 @@ describe("Agent Support Assistant safety helpers", () => {
     expect(isAssistantUnavailableAnswer("I can’t confirm that from the approved agent-facing Portal content. Please check support.")).toBe(true);
     expect(isAssistantUnavailableAnswer("I can't confirm that from the approved agent-facing Portal content. Please check support.")).toBe(true);
     expect(isAssistantUnavailableAnswer("Open the booking in Orbit and follow the cancellation process [S1].")).toBe(false);
+  });
+
+  it("retrieves the curated, non-record reimbursement procedure for both claim and setup questions", () => {
+    const claimChunks = retrieveAgentSupportChunks(AGENT_PORTAL_PROCEDURE_SOURCES, "How do I claim a reimbursement?");
+    const setupChunks = retrieveAgentSupportChunks(AGENT_PORTAL_PROCEDURE_SOURCES, "How do I set up a reimbursement?");
+
+    expect(claimChunks).toEqual([expect.objectContaining({ key: "portal-procedure:reimbursement-request-v1", kind: "portal_procedure" })]);
+    expect(setupChunks).toEqual([expect.objectContaining({ key: "portal-procedure:reimbursement-request-v1", kind: "portal_procedure" })]);
+    expect(AGENT_PORTAL_PROCEDURE_SOURCES[0]?.text).not.toContain("bookingId");
+    expect(AGENT_PORTAL_PROCEDURE_SOURCES[0]?.text).not.toContain("clientName");
   });
 });
 

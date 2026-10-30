@@ -19,6 +19,7 @@ import {
 } from "../drizzle/schema";
 import { FULL_TERMS_SECTIONS, CODE_OF_CONDUCT_SECTIONS, APPENDIX_SECTIONS } from "../client/src/pages/policyData";
 import { PRIVACY_SECTIONS } from "../client/src/pages/TermsAndPolicies";
+import { AGENT_PORTAL_PROCEDURE_SOURCES } from "./agent-support-portal-procedures";
 import {
   buildAcademyAgentSupportText,
   buildAgentSupportModelPrompt,
@@ -260,6 +261,7 @@ export async function loadAdminPilotSupportSources(): Promise<AgentSupportSource
     ...supplierSources,
     ...communitySources,
     ...policySources(),
+    ...AGENT_PORTAL_PROCEDURE_SOURCES,
   ].filter((source) => source.text.trim().length > 0);
 }
 

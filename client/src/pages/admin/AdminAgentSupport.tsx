@@ -38,6 +38,7 @@ function labelForSourceKind(kind: string) {
     supplier: "Supplier Directory",
     community: "Community update",
     policy: "Terms & Policies",
+    portal_procedure: "Portal procedure",
   }[kind] ?? kind;
 }
 
