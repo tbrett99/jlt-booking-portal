@@ -124,6 +124,7 @@ const AcademyActions = lazy(() => import("./pages/academy/AcademyActions"));
 const AdminAcademyActions = lazy(() => import("./pages/admin/AdminAcademyActions"));
 const AdminMomentum = lazy(() => import("./pages/admin/AdminMomentum"));
 const AdminAgentEngagement = lazy(() => import("./pages/admin/AdminAgentEngagement"));
+const AdminAgentSupport = lazy(() => import("./pages/admin/AdminAgentSupport"));
 const KnowledgeBase = lazy(() => import("./pages/library/KnowledgeBase"));
 const WebinarLibrary = lazy(() => import("./pages/library/WebinarLibrary"));
 const AdminLibrary = lazy(() => import("./pages/admin/AdminLibrary"));
@@ -502,6 +503,7 @@ function AuthRouter() {
         <Route path="/admin/academy/insights" component={AdminAcademyProgressInsights} />
         <Route path="/admin/academy/actions" component={AdminAcademyActions} />
         <Route path="/admin/library" component={AdminLibrary} />
+        <Route path="/admin/ai-support" component={AdminAgentSupport} />
         <Route path="/admin/agent-engagement" component={AdminAgentEngagement} />
         <Route path="/knowledge-base" component={KnowledgeBase} />
         <Route path="/webinars" component={WebinarLibrary} />

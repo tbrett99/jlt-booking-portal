@@ -39,6 +39,7 @@ type Draft = {
   notifyAgents: boolean;
   videoUrl: string;
   privateTranscript: string;
+  approveTranscriptForAssistant: boolean;
   durationMinutes: string;
   recordedAt: string;
   linkedEventId: string;
@@ -55,6 +56,7 @@ const blankArticle = (): Draft => ({
   notifyAgents: false,
   videoUrl: "",
   privateTranscript: "",
+  approveTranscriptForAssistant: false,
   durationMinutes: "",
   recordedAt: "",
   linkedEventId: "",
@@ -159,6 +161,7 @@ export default function AdminLibrary() {
       notifyAgents: false,
       videoUrl: "",
       privateTranscript: "",
+      approveTranscriptForAssistant: false,
       durationMinutes: "",
       recordedAt: "",
       linkedEventId: "",
@@ -178,6 +181,7 @@ export default function AdminLibrary() {
       notifyAgents: false,
       videoUrl: webinar.videoUrl ?? "",
       privateTranscript: webinar.privateTranscript ?? "",
+      approveTranscriptForAssistant: !!webinar.assistantTranscriptApprovedAt,
       durationMinutes: webinar.durationMinutes ? String(webinar.durationMinutes) : "",
       recordedAt: dateInputValue(webinar.recordedAt),
       linkedEventId: webinar.linkedEventId ? String(webinar.linkedEventId) : "",
@@ -204,6 +208,7 @@ export default function AdminLibrary() {
       ...core,
       videoUrl: draft.videoUrl || null,
       privateTranscript: draft.privateTranscript || null,
+      approveTranscriptForAssistant: draft.approveTranscriptForAssistant,
       durationMinutes: draft.durationMinutes ? Number(draft.durationMinutes) : null,
       recordedAt: draft.recordedAt ? new Date(`${draft.recordedAt}T12:00:00.000Z`) : null,
       linkedEventId: draft.linkedEventId ? Number(draft.linkedEventId) : null,
@@ -311,7 +316,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 function WebinarFields({ draft, setDraft, events }: { draft: Draft; setDraft: React.Dispatch<React.SetStateAction<Draft>>; events: any[] }) {
-  return <section className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50/40 p-4"><div><h2 className="flex items-center gap-2 font-bold"><Video className="text-rose-700" size={18} /> Recording details</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Only approved HTTPS recordings are accepted. Loom links will play inside the Portal; other approved links open in a new tab.</p></div><Field label="Recording link"><Input type="url" value={draft.videoUrl} onChange={(event) => setDraft((current) => ({ ...current, videoUrl: event.target.value }))} placeholder="https://www.loom.com/share/..." /></Field><div className="grid gap-4 md:grid-cols-3"><Field label="Duration (minutes)"><Input type="number" min={1} max={1440} value={draft.durationMinutes} onChange={(event) => setDraft((current) => ({ ...current, durationMinutes: event.target.value }))} placeholder="45" /></Field><Field label="Recorded date"><Input type="date" value={draft.recordedAt} onChange={(event) => setDraft((current) => ({ ...current, recordedAt: event.target.value }))} /></Field><Field label="Related live event"><select value={draft.linkedEventId} onChange={(event) => setDraft((current) => ({ ...current, linkedEventId: event.target.value }))} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">No linked event</option>{events.map((event) => <option key={event.id} value={event.id}>{event.title} · {new Date(event.startDate).toLocaleDateString("en-GB")}</option>)}</select></Field></div><Field label="Private staff transcript" hint="Never visible to agents. Stored for the future JLT AI assistant."><textarea value={draft.privateTranscript} maxLength={1_000_000} onChange={(event) => setDraft((current) => ({ ...current, privateTranscript: event.target.value }))} className="min-h-40 w-full rounded-md border bg-background px-3 py-2 font-mono text-xs leading-5 outline-none focus:ring-2 focus:ring-ring" placeholder="Paste the full Loom transcript, including timestamps if useful…" /></Field></section>;
+  return <section className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50/40 p-4"><div><h2 className="flex items-center gap-2 font-bold"><Video className="text-rose-700" size={18} /> Recording details</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Only approved HTTPS recordings are accepted. Loom links will play inside the Portal; other approved links open in a new tab.</p></div><Field label="Recording link"><Input type="url" value={draft.videoUrl} onChange={(event) => setDraft((current) => ({ ...current, videoUrl: event.target.value }))} placeholder="https://www.loom.com/share/..." /></Field><div className="grid gap-4 md:grid-cols-3"><Field label="Duration (minutes)"><Input type="number" min={1} max={1440} value={draft.durationMinutes} onChange={(event) => setDraft((current) => ({ ...current, durationMinutes: event.target.value }))} placeholder="45" /></Field><Field label="Recorded date"><Input type="date" value={draft.recordedAt} onChange={(event) => setDraft((current) => ({ ...current, recordedAt: event.target.value }))} /></Field><Field label="Related live event"><select value={draft.linkedEventId} onChange={(event) => setDraft((current) => ({ ...current, linkedEventId: event.target.value }))} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">No linked event</option>{events.map((event) => <option key={event.id} value={event.id}>{event.title} · {new Date(event.startDate).toLocaleDateString("en-GB")}</option>)}</select></Field></div><Field label="Private staff transcript" hint="Never visible in the Portal library."><textarea value={draft.privateTranscript} maxLength={1_000_000} onChange={(event) => setDraft((current) => ({ ...current, privateTranscript: event.target.value, approveTranscriptForAssistant: false }))} className="min-h-40 w-full rounded-md border bg-background px-3 py-2 font-mono text-xs leading-5 outline-none focus:ring-2 focus:ring-ring" placeholder="Paste the full Loom transcript, including timestamps if useful…" /></Field><label className="flex cursor-pointer items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><input type="checkbox" checked={draft.approveTranscriptForAssistant} disabled={!draft.privateTranscript.trim()} onChange={(event) => setDraft((current) => ({ ...current, approveTranscriptForAssistant: event.target.checked }))} className="mt-0.5 h-4 w-4" /><span><strong className="text-amber-950">Approved for AI support answers</strong><span className="mt-1 block text-xs leading-5 text-amber-900">I have reviewed this transcript. The assistant may use it only to answer from this published webinar and direct an agent to the recording or timecode. Editing the transcript removes approval until it is reviewed again.</span></span></label></section>;
 }
 
 function ResourcesPanel({ draft, kind, record, uploading, onUpload, removeResource, removingId }: { draft: Draft; kind: "article" | "webinar"; record: any; uploading: boolean; onUpload: (event: ChangeEvent<HTMLInputElement>) => void; removeResource: (id: number) => void; removingId: number | null | undefined }) {

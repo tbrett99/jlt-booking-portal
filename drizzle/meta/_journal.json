@@ -1170,6 +1170,13 @@
       "when": 1793295663618,
       "tag": "0166_striped_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "5",
+      "when": 1793366468027,
+      "tag": "0167_agent-support-pilot",
+      "breakpoints": true
     }
   ]
 }

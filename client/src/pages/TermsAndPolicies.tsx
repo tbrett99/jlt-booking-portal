@@ -9,7 +9,9 @@ import {
 import { FULL_TERMS_SECTIONS, CODE_OF_CONDUCT_SECTIONS, APPENDIX_SECTIONS } from "./policyData";
 
 // ─── Privacy Policy content (drafted for JLT Group) ──────────────────────────
-const PRIVACY_SECTIONS = [
+// Exported so the server-only support assistant can reference the exact policy
+// text rendered on this page, without maintaining a divergent copy.
+export const PRIVACY_SECTIONS = [
   {
     title: "1. Who We Are",
     content: `<p>The JLT Group is incorporated in England and Wales with company number 12178075, whose registered office is at 20-22 Wenlock Road, London, UK ("we", "us", "our").</p>

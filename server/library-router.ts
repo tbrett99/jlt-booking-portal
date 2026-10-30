@@ -36,6 +36,7 @@ const adminContentInput = z.object({
 const adminWebinarInput = adminContentInput.extend({
   videoUrl: z.string().trim().max(1200).nullable().optional(),
   privateTranscript: z.string().max(1_000_000).nullable().optional(),
+  approveTranscriptForAssistant: z.boolean().default(false),
   durationMinutes: z.number().int().min(1).max(1_440).nullable().optional(),
   recordedAt: z.coerce.date().nullable().optional(),
   linkedEventId: z.number().int().positive().nullable().optional(),
@@ -250,7 +251,12 @@ async function listPublishedContent(ctxUserId: number, input?: { search?: string
     .map((item) => decorate("article", item));
   const visibleWebinars = webinars
     .filter((item) => (!category || item.category === category) && matchesLibrarySearch(item, search))
-    .map((item) => decorate("webinar", item));
+    .map((item) => {
+      // Browse is agent-accessible. Private transcripts remain server-side source
+      // material and must never travel in its list response.
+      const { privateTranscript: _privateTranscript, ...safeWebinar } = item;
+      return decorate("webinar", safeWebinar);
+    });
   const categories = Array.from(new Set([...articles, ...webinars].map((item) => item.category))).sort((a, b) => a.localeCompare(b));
   return { articles: visibleArticles, webinars: visibleWebinars, categories };
 }
@@ -468,9 +474,13 @@ export const libraryRouter = router({
 
     saveWebinar: adminProcedure.input(adminWebinarInput).mutation(async ({ ctx, input }) => {
       const videoUrl = optionalText(input.videoUrl);
+      const privateTranscript = optionalText(input.privateTranscript);
       if (videoUrl && !isSafeHttpsUrl(videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Webinar recording links must use HTTPS." });
       const publishIssue = input.status === "published" ? canPublishLibraryContent({ ...input, videoUrl }, "webinar") : null;
       if (publishIssue) throw new TRPCError({ code: "BAD_REQUEST", message: publishIssue });
+      if (input.approveTranscriptForAssistant && !privateTranscript) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Add a transcript before approving it for the AI support assistant." });
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const now = new Date();
@@ -481,7 +491,7 @@ export const libraryRouter = router({
         category: input.category.trim(),
         tags: normaliseTags(input.tags),
         videoUrl,
-        privateTranscript: optionalText(input.privateTranscript),
+        privateTranscript,
         durationMinutes: input.durationMinutes ?? null,
         recordedAt: input.recordedAt ?? null,
         linkedEventId: input.linkedEventId ?? null,
@@ -495,14 +505,20 @@ export const libraryRouter = router({
         const [existing] = await db.select().from(webinarLibraryItems).where(eq(webinarLibraryItems.id, id)).limit(1);
         if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Webinar not found" });
         wasPublished = existing.status === "published";
+        const transcriptChanged = (existing.privateTranscript ?? null) !== privateTranscript;
+        const transcriptApproved = !transcriptChanged && input.approveTranscriptForAssistant && !!privateTranscript;
         await db.update(webinarLibraryItems).set({
           ...values,
+          assistantTranscriptApprovedAt: transcriptApproved ? (existing.assistantTranscriptApprovedAt ?? now) : null,
+          assistantTranscriptApprovedById: transcriptApproved ? (existing.assistantTranscriptApprovedById ?? ctx.user.id) : null,
           publishedAt: input.status === "published" && !wasPublished ? now : existing.publishedAt,
           publishedById: input.status === "published" && !wasPublished ? ctx.user.id : existing.publishedById,
         }).where(eq(webinarLibraryItems.id, id));
       } else {
         const result = await db.insert(webinarLibraryItems).values({
           ...values,
+          assistantTranscriptApprovedAt: input.approveTranscriptForAssistant && privateTranscript ? now : null,
+          assistantTranscriptApprovedById: input.approveTranscriptForAssistant && privateTranscript ? ctx.user.id : null,
           createdById: ctx.user.id,
           publishedAt: input.status === "published" ? now : null,
           publishedById: input.status === "published" ? ctx.user.id : null,
@@ -510,7 +526,7 @@ export const libraryRouter = router({
         id = Number(result[0]?.id);
         if (!Number.isSafeInteger(id) || id < 1) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Webinar was saved but did not return an ID" });
       }
-      await addAudit({ entityType: "webinar", entityId: id, actorId: ctx.user.id, action: input.id ? "updated" : "created", summary: `${input.id ? "Updated" : "Created"} webinar: ${input.title}`, metadata: { status: input.status, category: input.category, tags: normaliseTags(input.tags), hasPrivateTranscript: !!optionalText(input.privateTranscript) } });
+      await addAudit({ entityType: "webinar", entityId: id, actorId: ctx.user.id, action: input.id ? "updated" : "created", summary: `${input.id ? "Updated" : "Created"} webinar: ${input.title}`, metadata: { status: input.status, category: input.category, tags: normaliseTags(input.tags), hasPrivateTranscript: !!privateTranscript, transcriptApprovedForAssistant: input.approveTranscriptForAssistant && !!privateTranscript } });
       let announcement = { notified: 0, emailed: 0 };
       if (input.status === "published" && input.notifyAgents) announcement = await announceToActiveAgents({ type: "webinar", id, title: input.title, actorId: ctx.user.id });
       return { id, announcement };

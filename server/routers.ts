@@ -171,6 +171,7 @@ import { consumerSiteRouter } from "./consumer-site-router";
 import { academyRouter } from "./academy-router";
 import { agentDevelopmentRouter } from "./agent-development-router";
 import { libraryRouter } from "./library-router";
+import { agentSupportRouter } from "./agent-support-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -489,6 +490,7 @@ export const appRouter = router({
   system: systemRouter,
   agentDevelopment: agentDevelopmentRouter,
   library: libraryRouter,
+  agentSupport: agentSupportRouter,
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   auth: router({

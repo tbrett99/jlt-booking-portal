@@ -2609,6 +2609,11 @@ export const webinarLibraryItems = mysqlTable("webinar_library_items", {
   // Staff-only source for the future JLT assistant. It is never sent in agent
   // list/detail payloads without a later explicit product decision.
   privateTranscript: longtext("privateTranscript"),
+  // A transcript is eligible for the assistant only after a staff member has
+  // deliberately reviewed and approved this exact saved version. Saving changed
+  // transcript text automatically withdraws that approval.
+  assistantTranscriptApprovedAt: timestamp("assistantTranscriptApprovedAt"),
+  assistantTranscriptApprovedById: int("assistantTranscriptApprovedById"),
   durationMinutes: int("durationMinutes"),
   recordedAt: timestamp("recordedAt"),
   linkedEventId: int("linkedEventId"),
@@ -2674,6 +2679,56 @@ export const libraryAuditLog = mysqlTable("library_audit_log", {
   index("library_audit_entity_idx").on(table.entityType, table.entityId, table.createdAt),
 ]);
 export type LibraryAuditLogEntry = typeof libraryAuditLog.$inferSelect;
+
+// ─── Agent Support Assistant ────────────────────────────────────────────────
+// This stores the minimum auditable question/answer history for quality review.
+// It never stores raw retrieved content, booking/customer data, Academy attempts
+// or source documents. Source references identify the approved public record used.
+export const agentSupportConversations = mysqlTable("agent_support_conversations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  pilotScope: mysqlEnum("pilotScope", ["admin_only", "agent"]).default("admin_only").notNull(),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+}, (table) => [
+  index("agent_support_conversations_user_updated_idx").on(table.userId, table.updatedAt),
+  index("agent_support_conversations_expiry_idx").on(table.expiresAt),
+]);
+export type AgentSupportConversation = typeof agentSupportConversations.$inferSelect;
+
+export const agentSupportMessages = mysqlTable("agent_support_messages", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  role: mysqlEnum("role", ["user", "assistant"]).notNull(),
+  content: longtext("content").notNull(),
+  responseStatus: mysqlEnum("responseStatus", ["answered", "insufficient_sources", "failed"]).notNull().default("answered"),
+  sourceRefs: json("sourceRefs"), // [{ key, kind, title, href, updatedAt, timestampLabel }]
+  model: varchar("model", { length: 100 }),
+  promptTokens: int("promptTokens"),
+  completionTokens: int("completionTokens"),
+  contextSourceCount: int("contextSourceCount").notNull().default(0),
+  unresolvedReason: varchar("unresolvedReason", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("agent_support_messages_conversation_created_idx").on(table.conversationId, table.createdAt),
+  index("agent_support_messages_status_created_idx").on(table.responseStatus, table.createdAt),
+]);
+export type AgentSupportMessage = typeof agentSupportMessages.$inferSelect;
+
+export const agentSupportFeedback = mysqlTable("agent_support_feedback", {
+  id: int("id").autoincrement().primaryKey(),
+  messageId: int("messageId").notNull(),
+  userId: int("userId").notNull(),
+  rating: mysqlEnum("rating", ["helpful", "not_helpful"]).notNull(),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("agent_support_feedback_message_user_unique").on(table.messageId, table.userId),
+  index("agent_support_feedback_rating_created_idx").on(table.rating, table.createdAt),
+]);
+export type AgentSupportFeedback = typeof agentSupportFeedback.$inferSelect;
 
 // ─── Community: Weekly Digests ────────────────────────────────────────────────
 export const communityDigests = mysqlTable("community_digests", {

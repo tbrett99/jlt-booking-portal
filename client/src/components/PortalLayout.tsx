@@ -7,7 +7,7 @@ import {
   Bell, BookOpen, Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronDown,
   FileText, Home, LayoutDashboard, LogOut, Menu, Users, X,
   ArrowLeftRight, Clock, AlertCircle, XCircle, PenLine, Banknote, Upload, UserCircle,
-  MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList,
+  MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList, Bot,
   RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper, Activity, Rocket, Trophy, Globe2, GraduationCap, ClipboardCheck, PlayCircle
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
@@ -538,6 +538,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         { label: "Academy Progress & Insights", href: "/admin/academy/insights", icon: <BarChart2 size={16} /> },
         { label: "Academy Actions", href: "/admin/academy/actions", icon: <ClipboardCheck size={16} /> },
         { label: "Knowledge & Webinars", href: "/admin/library", icon: <BookOpen size={16} /> },
+        { label: "AI Support Pilot", href: "/admin/ai-support", icon: <Bot size={16} /> },
       ],
     },
     {
