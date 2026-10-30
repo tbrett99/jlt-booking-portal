@@ -883,22 +883,38 @@ export async function getAllAmendments() {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.select().from(amendments).orderBy(desc(amendments.createdAt));
-  // Enrich with booking info and assignee name
+  // Enrich with booking context and assignee name in bounded batches. The
+  // amendment pipeline needs the booking owner and departure date visible so
+  // staff can prioritise work without opening each booking.
   const bookingIds = Array.from(new Set(rows.map((a) => a.bookingId)));
   const assigneeIds = Array.from(new Set(rows.map((a) => a.assignedToId).filter(Boolean) as number[]));
   const bookingRows = bookingIds.length > 0
-    ? await db.select({ id: bookings.id, clientName: bookings.clientName, ptsRef: bookings.ptsRef, topdogRef: bookings.topdogRef }).from(bookings).where(inArray(bookings.id, bookingIds))
+    ? await db.select({
+        id: bookings.id,
+        agentId: bookings.agentId,
+        clientName: bookings.clientName,
+        ptsRef: bookings.ptsRef,
+        topdogRef: bookings.topdogRef,
+        departureDate: bookings.departureDate,
+      }).from(bookings).where(inArray(bookings.id, bookingIds))
     : [];
+  const bookingAgentIds = Array.from(new Set(bookingRows.map((booking) => booking.agentId)));
   const assigneeRows = assigneeIds.length > 0
     ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, assigneeIds))
     : [];
+  const bookingAgentRows = bookingAgentIds.length > 0
+    ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, bookingAgentIds))
+    : [];
   const bookingMap = new Map(bookingRows.map((b) => [b.id, b]));
   const assigneeMap = new Map(assigneeRows.map((u) => [u.id, u.name]));
+  const bookingAgentMap = new Map(bookingAgentRows.map((user) => [user.id, user.name]));
   return rows.map((a) => ({
     ...a,
     clientName: bookingMap.get(a.bookingId)?.clientName ?? null,
     ptsRef: bookingMap.get(a.bookingId)?.ptsRef ?? null,
     topdogRef: bookingMap.get(a.bookingId)?.topdogRef ?? null,
+    agentName: bookingAgentMap.get(bookingMap.get(a.bookingId)?.agentId ?? 0) ?? null,
+    departureDate: bookingMap.get(a.bookingId)?.departureDate ?? null,
     assignedToName: a.assignedToId ? (assigneeMap.get(a.assignedToId) ?? null) : null,
   }));
 }

@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 import { User, Calendar, ArrowRight, FileText, Clock, XCircle, Loader2, EyeOff, Eye } from "lucide-react";
 import { useState } from "react";
-import { differenceInDays } from "date-fns";
+import { differenceInDays, format } from "date-fns";
 import AmendmentMessageThread from "@/components/AmendmentMessageThread";
 
 function AgeBadge({ createdAt }: { createdAt: string | Date }) {
@@ -132,6 +132,41 @@ const LINE_ITEM_LABELS: Record<string, { label: string; prefix: string; color: s
   other:           { label: "Other",       prefix: "•", color: "#ede9fe", textColor: "#5b21b6" },
 };
 
+/**
+ * Deliberately labelled booking context so the pipeline can be triaged without
+ * opening each booking simply to identify the agent, travel date or request age.
+ */
+export function AmendmentBookingContext({ amendment }: { amendment: any }) {
+  const submittedAt = amendment.createdAt ? new Date(amendment.createdAt) : null;
+  const departureDate = amendment.departureDate ? new Date(amendment.departureDate) : null;
+
+  return (
+    <div className="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-3">
+      <div className="min-w-0">
+        <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">Agent</span>
+        <span className="flex items-center gap-1 font-medium text-foreground truncate" title={amendment.agentName ?? "Agent unavailable"}>
+          <User className="h-3 w-3 shrink-0 text-[#02BFAE]" />
+          {amendment.agentName ?? "Agent unavailable"}
+        </span>
+      </div>
+      <div>
+        <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">Departure</span>
+        <span className="flex items-center gap-1 font-medium text-foreground">
+          <Calendar className="h-3 w-3 shrink-0 text-[#02BFAE]" />
+          {departureDate ? format(departureDate, "dd MMM yyyy") : "Not recorded"}
+        </span>
+      </div>
+      <div>
+        <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">Submitted</span>
+        <span className="flex items-center gap-1 font-medium text-foreground" title="Displayed in your local time">
+          <Clock className="h-3 w-3 shrink-0 text-[#02BFAE]" />
+          {submittedAt ? format(submittedAt, "dd MMM yyyy, HH:mm") : "Not recorded"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function RejectedAmendmentCard({ amendment }: { amendment: any }) {
   return (
     <Card className="shadow-sm border-l-4 border-l-red-400 opacity-80">
@@ -143,19 +178,19 @@ function RejectedAmendmentCard({ amendment }: { amendment: any }) {
                 {amendment.clientName ?? `Booking #${amendment.bookingId}`}
               </span>
             </Link>
-            <span className="text-xs text-muted-foreground">
-              {new Date(amendment.createdAt).toLocaleDateString("en-GB")}
-            </span>
           </div>
           <Badge className="text-xs bg-red-100 text-red-800 border-red-300 shrink-0">Rejected</Badge>
         </div>
       </CardHeader>
-      {amendment.rejectionReason && (
-        <CardContent className="px-4 pb-3">
+      <CardContent className="px-4 pb-3 space-y-3">
+        <AmendmentBookingContext amendment={amendment} />
+        {amendment.rejectionReason && (
+          <div>
           <p className="text-xs text-muted-foreground font-medium mb-0.5">Rejection reason:</p>
           <p className="text-xs text-red-800 bg-red-50 rounded p-2">{amendment.rejectionReason}</p>
-        </CardContent>
-      )}
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }
@@ -292,10 +327,6 @@ function AmendmentCard({
                 {amendment.topdogRef && (
                   <span className="text-xs text-muted-foreground">TD: {amendment.topdogRef}</span>
                 )}
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  {new Date(amendment.createdAt).toLocaleDateString("en-GB")}
-                </span>
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
@@ -305,6 +336,7 @@ function AmendmentCard({
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-3 space-y-3">
+          <AmendmentBookingContext amendment={amendment} />
           {isReimb ? (
             <div className="flex items-center gap-2 p-2 rounded" style={{ background: '#fff7ed' }}>
               <FileText size={14} style={{ color: '#92400e' }} className="flex-shrink-0" />
