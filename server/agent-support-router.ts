@@ -199,7 +199,7 @@ export async function loadAdminPilotSupportSources(): Promise<AgentSupportSource
     kind: "supplier",
     title: supplier.name,
     text: buildSupplierAgentSupportText(supplier),
-    href: `/suppliers?supplier=${supplier.id}`,
+    href: `/suppliers?supplierId=${supplier.id}`,
     category: supplier.categories,
     updatedAt: supplier.updatedAt,
   }));
@@ -209,7 +209,7 @@ export async function loadAdminPilotSupportSources(): Promise<AgentSupportSource
     kind: "community",
     title: post.title,
     text: stripAgentSupportHtml(post.bodyHtml),
-    href: `/community?post=${post.id}`,
+    href: `/community?postId=${post.id}`,
     category: post.category,
     updatedAt: post.updatedAt ?? post.createdAt,
   }));

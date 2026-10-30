@@ -987,7 +987,13 @@ export default function SupplierDirectory() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  // Assistant citations can open a specific agent-visible supplier directly.
+  // Invalid values safely fall back to the normal directory view.
+  const [selectedId, setSelectedId] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    const value = Number(new URLSearchParams(window.location.search).get("supplierId"));
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  });
 
   // AI search state
   const [aiQuery, setAiQuery] = useState("");
