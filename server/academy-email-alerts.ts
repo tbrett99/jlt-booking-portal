@@ -15,6 +15,7 @@ export const ACADEMY_ALERT_EVENTS = [
   "course_completed",
   "written_assessment_ready",
   "three_attempt_lock",
+  "knowledge_check_passed",
 ] as const;
 
 export type AcademyAlertEvent = (typeof ACADEMY_ALERT_EVENTS)[number];
@@ -42,6 +43,8 @@ type AlertContext = {
   courseTitle: string;
   moduleId?: number | null;
   moduleTitle?: string | null;
+  lessonId?: number | null;
+  lessonTitle?: string | null;
   agentId: number;
   agentName: string | null;
   agentEmail: string | null;
@@ -71,6 +74,7 @@ function eventLabel(eventType: AcademyAlertEvent) {
     course_completed: "course completed",
     written_assessment_ready: "written assessment ready to mark",
     three_attempt_lock: "three-attempt support lock",
+    knowledge_check_passed: "knowledge check passed",
   } satisfies Record<AcademyAlertEvent, string>)[eventType];
 }
 
@@ -81,6 +85,7 @@ function renderTemplate(template: string, context: AlertContext) {
     agent_email: escapeHtml(context.agentEmail || "No email recorded"),
     course_title: escapeHtml(context.courseTitle),
     module_title: escapeHtml(context.moduleTitle || "Course-wide"),
+    lesson_title: escapeHtml(context.lessonTitle || "—"),
     event_label: escapeHtml(eventLabel(context.eventType)),
     action_title: escapeHtml(context.actionTitle || "—"),
     due_date: context.dueDate
@@ -130,6 +135,9 @@ export async function hasActiveAcademySupportAlert(params: {
 export async function dispatchAcademyEmailAlerts(context: AlertContext) {
   const db = await getDb();
   if (!db) return { sent: 0, skipped: 0, failed: 0 };
+  if (context.eventType === "knowledge_check_passed" && !context.lessonId) {
+    throw new Error("A knowledge-check pass alert requires a lesson target");
+  }
   const scope = context.moduleId
     ? or(eq(academyEmailAlerts.moduleId, context.moduleId), isNull(academyEmailAlerts.moduleId))
     : isNull(academyEmailAlerts.moduleId);
@@ -137,7 +145,9 @@ export async function dispatchAcademyEmailAlerts(context: AlertContext) {
     eq(academyEmailAlerts.courseId, context.courseId),
     eq(academyEmailAlerts.eventType, context.eventType),
     eq(academyEmailAlerts.isActive, true),
-    scope,
+    context.eventType === "knowledge_check_passed"
+      ? eq(academyEmailAlerts.lessonId, context.lessonId!)
+      : and(scope, isNull(academyEmailAlerts.lessonId)),
   ));
 
   let sent = 0;
@@ -187,5 +197,5 @@ export async function dispatchAcademyEmailAlerts(context: AlertContext) {
 }
 
 export function academyAlertTemplateHint() {
-  return "Use {{agent_name}}, {{agent_email}}, {{course_title}}, {{module_title}}, {{event_label}}, {{action_title}}, {{due_date}}, {{course_url}} or {{portal_url}}.";
+  return "Use {{agent_name}}, {{agent_email}}, {{course_title}}, {{module_title}}, {{lesson_title}}, {{event_label}}, {{action_title}}, {{due_date}}, {{course_url}} or {{portal_url}}.";
 }

@@ -1,0 +1,3 @@
+ALTER TABLE `academy_email_alerts` MODIFY COLUMN `eventType` enum('week_released','module_started','module_completed','action_submitted_for_review','action_overdue','course_completed','written_assessment_ready','three_attempt_lock','knowledge_check_passed') NOT NULL;--> statement-breakpoint
+ALTER TABLE `academy_email_alerts` ADD `lessonId` int;--> statement-breakpoint
+CREATE INDEX `academy_email_alerts_lesson_event_active_idx` ON `academy_email_alerts` (`lessonId`,`eventType`,`isActive`);

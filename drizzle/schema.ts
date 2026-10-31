@@ -1917,7 +1917,10 @@ export const academyEmailAlerts = mysqlTable("academy_email_alerts", {
   id: int("id").autoincrement().primaryKey(),
   courseId: int("courseId").notNull(),
   moduleId: int("moduleId"),
-  eventType: mysqlEnum("eventType", ["week_released", "module_started", "module_completed", "action_submitted_for_review", "action_overdue", "course_completed", "written_assessment_ready", "three_attempt_lock"]).notNull(),
+  // Only the knowledge-check pass event requires a lesson target. All other
+  // established milestones remain course- or module-scoped.
+  lessonId: int("lessonId"),
+  eventType: mysqlEnum("eventType", ["week_released", "module_started", "module_completed", "action_submitted_for_review", "action_overdue", "course_completed", "written_assessment_ready", "three_attempt_lock", "knowledge_check_passed"]).notNull(),
   recipientType: mysqlEnum("recipientType", ["support", "custom"]).default("support").notNull(),
   recipientEmail: varchar("recipientEmail", { length: 320 }),
   recipientName: varchar("recipientName", { length: 255 }),
@@ -1931,6 +1934,7 @@ export const academyEmailAlerts = mysqlTable("academy_email_alerts", {
 }, (table) => [
   index("academy_email_alerts_course_event_active_idx").on(table.courseId, table.eventType, table.isActive),
   index("academy_email_alerts_module_event_active_idx").on(table.moduleId, table.eventType, table.isActive),
+  index("academy_email_alerts_lesson_event_active_idx").on(table.lessonId, table.eventType, table.isActive),
 ]);
 export type AcademyEmailAlert = typeof academyEmailAlerts.$inferSelect;
 

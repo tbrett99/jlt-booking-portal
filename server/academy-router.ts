@@ -1906,6 +1906,26 @@ export const academyRouter = router({
           return { attemptId, status: "awaiting_marking" as const, passMark: lesson.assessmentPassMark, correct, total: outstandingQuestions.length };
         }
         await addAudit({ agentId: ctx.user.id, courseId: enrollment.courseId, enrollmentId: enrollment.id, actorId: ctx.user.id, action: assessmentPassed ? "assessment_passed" : "assessment_resit_required", summary: `${assessmentPassed ? "Completed" : "Submitted"} ${outstandingQuestions.length === 1 ? "an outstanding question" : `${outstandingQuestions.length} outstanding questions`} for ${lesson.title}`, metadata: { lessonId: lesson.id, score, passed: assessmentPassed, outstandingQuestionIds: allQuestionStates.filter((state) => !state.passed).map((state) => state.questionId) } });
+        if (assessmentPassed) {
+          const [course] = await db.select({ title: academyCourses.title }).from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
+          const [module] = await db.select({ id: academyModules.id, title: academyModules.title }).from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
+          if (course && module) {
+            void dispatchAcademyEmailAlerts({
+              eventType: "knowledge_check_passed",
+              eventKey: `knowledge-check-passed-${lesson.id}-${attemptId}`,
+              enrollmentId: enrollment.id,
+              courseId: enrollment.courseId,
+              courseTitle: course.title,
+              moduleId: module.id,
+              moduleTitle: module.title,
+              lessonId: lesson.id,
+              lessonTitle: lesson.title,
+              agentId: ctx.user.id,
+              agentName: ctx.user.name,
+              agentEmail: ctx.user.email,
+            }).catch((error) => console.error("[Academy] Knowledge-check pass alert dispatch failed:", error));
+          }
+        }
         if (newlyEscalatedQuestions.length) {
           const [course] = await db.select({ title: academyCourses.title }).from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
           const [agent] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
@@ -1997,6 +2017,7 @@ export const academyRouter = router({
       id: z.number().int().positive().optional(),
       courseId: z.number().int().positive(),
       moduleId: z.number().int().positive().nullable().optional(),
+      lessonId: z.number().int().positive().nullable().optional(),
       eventType: z.enum(ACADEMY_ALERT_EVENTS),
       recipientType: z.enum(["support", "custom"]),
       recipientEmail: z.string().trim().email().max(320).nullable().optional(),
@@ -2008,6 +2029,13 @@ export const academyRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       if (input.recipientType === "custom" && !input.recipientEmail) throw new TRPCError({ code: "BAD_REQUEST", message: "Enter the custom recipient email address" });
+      const isKnowledgeCheckPassAlert = input.eventType === "knowledge_check_passed";
+      if (isKnowledgeCheckPassAlert && !input.lessonId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Choose the specific knowledge-check lesson that must be passed" });
+      }
+      if (!isKnowledgeCheckPassAlert && input.lessonId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Only a knowledge-check pass alert can be limited to an individual lesson" });
+      }
       if (input.moduleId && !academyAlertAllowsModuleScope(input.eventType)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -2018,9 +2046,18 @@ export const academyRouter = router({
         const [module] = await db.select().from(academyModules).where(and(eq(academyModules.id, input.moduleId), eq(academyModules.courseId, input.courseId))).limit(1);
         if (!module) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a module in this course" });
       }
+      if (input.lessonId) {
+        const [lesson] = await db.select({ lesson: academyLessons, module: academyModules }).from(academyLessons)
+          .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+          .where(and(eq(academyLessons.id, input.lessonId), eq(academyModules.courseId, input.courseId))).limit(1);
+        if (!lesson?.lesson.requiresAssessment || lesson.lesson.assessmentMode !== "quiz") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a quiz/knowledge-check lesson in this course" });
+        }
+      }
       const payload = {
         courseId: input.courseId,
-        moduleId: input.moduleId ?? null,
+        moduleId: isKnowledgeCheckPassAlert ? null : input.moduleId ?? null,
+        lessonId: isKnowledgeCheckPassAlert ? input.lessonId! : null,
         eventType: input.eventType,
         recipientType: input.recipientType,
         recipientEmail: input.recipientType === "custom" ? input.recipientEmail ?? null : null,

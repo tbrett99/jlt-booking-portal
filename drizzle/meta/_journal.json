@@ -1184,6 +1184,13 @@
       "when": 1793453605715,
       "tag": "0168_academy-document-assessments",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "5",
+      "when": 1793454585255,
+      "tag": "0169_academy-knowledge-check-pass-alert",
+      "breakpoints": true
     }
   ]
 }

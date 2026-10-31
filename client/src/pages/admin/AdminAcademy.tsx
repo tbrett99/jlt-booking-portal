@@ -259,7 +259,8 @@ export default function AdminAcademy() {
   const [originalQuestionSignature, setOriginalQuestionSignature] = useState("");
   const [alertDraft, setAlertDraft] = useState({
     moduleId: "",
-    eventType: "week_released" as "week_released" | "module_started" | "module_completed" | "action_submitted_for_review" | "action_overdue" | "course_completed" | "written_assessment_ready" | "three_attempt_lock",
+    eventType: "week_released" as "week_released" | "module_started" | "module_completed" | "action_submitted_for_review" | "action_overdue" | "course_completed" | "written_assessment_ready" | "three_attempt_lock" | "knowledge_check_passed",
+    lessonId: "",
     recipientType: "support" as "support" | "custom",
     recipientEmail: "",
     recipientName: "",
@@ -404,6 +405,7 @@ export default function AdminAcademy() {
 
   const selectedCourse = courses.find(course => course.id === courseId) ?? null;
   const alertAllowsModuleScope = ["week_released", "module_started", "module_completed", "written_assessment_ready", "three_attempt_lock"].includes(alertDraft.eventType);
+  const alertRequiresKnowledgeCheckScope = alertDraft.eventType === "knowledge_check_passed";
   const courseHasUnsavedChanges = !!editor && (
     courseDraft.title !== editor.course.title ||
     courseDraft.summary !== (editor.course.summary ?? "") ||
@@ -811,7 +813,8 @@ export default function AdminAcademy() {
                     <select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm" value={alertDraft.eventType} onChange={event => {
                       const eventType = event.target.value as typeof alertDraft.eventType;
                       const moduleScoped = ["week_released", "module_started", "module_completed", "written_assessment_ready", "three_attempt_lock"].includes(eventType);
-                      setAlertDraft(current => ({ ...current, eventType, moduleId: moduleScoped ? current.moduleId : "" }));
+                      const lessonScoped = eventType === "knowledge_check_passed";
+                      setAlertDraft(current => ({ ...current, eventType, moduleId: moduleScoped ? current.moduleId : "", lessonId: lessonScoped ? current.lessonId : "" }));
                     }}>
                       <option value="week_released">A weekly section is released</option>
                       <option value="module_started">A module is started</option>
@@ -821,15 +824,19 @@ export default function AdminAcademy() {
                       <option value="course_completed">The course is completed</option>
                       <option value="written_assessment_ready">Written assessment is ready to mark</option>
                       <option value="three_attempt_lock">A learner reaches the three-attempt support lock</option>
+                      <option value="knowledge_check_passed">A specific knowledge check is passed</option>
                     </select>
                   </div>
                   <div>
-                    <Label>Scope</Label>
-                    <select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60" value={alertAllowsModuleScope ? alertDraft.moduleId : ""} disabled={!alertAllowsModuleScope} onChange={event => setAlertDraft(current => ({ ...current, moduleId: event.target.value }))}>
+                    <Label>{alertRequiresKnowledgeCheckScope ? "Specific knowledge check" : "Scope"}</Label>
+                    {alertRequiresKnowledgeCheckScope ? <select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm" value={alertDraft.lessonId} onChange={event => setAlertDraft(current => ({ ...current, lessonId: event.target.value }))}>
+                      <option value="">Choose a knowledge check…</option>
+                      {editor.modules.flatMap(module => module.lessons.filter(lesson => lesson.requiresAssessment && (lesson.assessmentMode ?? "quiz") === "quiz").map(lesson => <option key={lesson.id} value={lesson.id}>{module.title} — {lesson.title}</option>))}
+                    </select> : <select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60" value={alertAllowsModuleScope ? alertDraft.moduleId : ""} disabled={!alertAllowsModuleScope} onChange={event => setAlertDraft(current => ({ ...current, moduleId: event.target.value }))}>
                       <option value="">Whole course</option>
                       {editor.modules.map(module => <option key={module.id} value={module.id}>{module.title}</option>)}
-                    </select>
-                    <p className="mt-1 text-xs text-muted-foreground">{alertAllowsModuleScope ? "Choose a module only when the milestone needs a narrower alert." : "This milestone is course-wide, so module scope is not available."}</p>
+                    </select>}
+                    <p className="mt-1 text-xs text-muted-foreground">{alertRequiresKnowledgeCheckScope ? "This rule sends only after every question in the selected automatic knowledge check is passed." : alertAllowsModuleScope ? "Choose a module only when the milestone needs a narrower alert." : "This milestone is course-wide, so module scope is not available."}</p>
                   </div>
                   <div>
                     <Label>Recipient</Label>
@@ -853,7 +860,7 @@ export default function AdminAcademy() {
                   <p className="mt-2 text-xs text-muted-foreground">Use the Academy merge fields in the template guidance for the learner, course, milestone and direct course link.</p>
                 </div>
                 <div className="mt-4 flex justify-end">
-                  <Button disabled={saveEmailAlert.isPending || !alertDraft.subjectTemplate.trim() || !alertDraft.bodyHtmlTemplate.trim() || (alertDraft.recipientType === "custom" && !alertDraft.recipientEmail.trim())} onClick={() => saveEmailAlert.mutate({ courseId: editor.course.id, moduleId: alertAllowsModuleScope && alertDraft.moduleId ? Number(alertDraft.moduleId) : null, eventType: alertDraft.eventType, recipientType: alertDraft.recipientType, recipientEmail: alertDraft.recipientType === "custom" ? alertDraft.recipientEmail || null : null, recipientName: alertDraft.recipientType === "custom" ? alertDraft.recipientName || null : null, subjectTemplate: alertDraft.subjectTemplate, bodyHtmlTemplate: alertDraft.bodyHtmlTemplate, isActive: true })}>
+                  <Button disabled={saveEmailAlert.isPending || !alertDraft.subjectTemplate.trim() || !alertDraft.bodyHtmlTemplate.trim() || (alertRequiresKnowledgeCheckScope && !alertDraft.lessonId) || (alertDraft.recipientType === "custom" && !alertDraft.recipientEmail.trim())} onClick={() => saveEmailAlert.mutate({ courseId: editor.course.id, moduleId: alertAllowsModuleScope && alertDraft.moduleId ? Number(alertDraft.moduleId) : null, lessonId: alertRequiresKnowledgeCheckScope && alertDraft.lessonId ? Number(alertDraft.lessonId) : null, eventType: alertDraft.eventType, recipientType: alertDraft.recipientType, recipientEmail: alertDraft.recipientType === "custom" ? alertDraft.recipientEmail || null : null, recipientName: alertDraft.recipientType === "custom" ? alertDraft.recipientName || null : null, subjectTemplate: alertDraft.subjectTemplate, bodyHtmlTemplate: alertDraft.bodyHtmlTemplate, isActive: true })}>
                     {saveEmailAlert.isPending ? "Saving…" : "Add email alert"}
                   </Button>
                 </div>
@@ -861,7 +868,7 @@ export default function AdminAcademy() {
                   {emailAlerts.map(alert => <div key={alert.id} className="flex flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="font-semibold">{alert.eventType.replaceAll("_", " ")} · {alert.recipientType === "support" ? "JLT Support" : alert.recipientEmail}</p>
-                      <p className="text-xs text-muted-foreground">{alert.moduleId ? `Module #${alert.moduleId}` : "Whole course"} · {alert.isActive ? "Active" : "Switched off"}</p>
+                      <p className="text-xs text-muted-foreground">{alert.lessonId ? `Knowledge check #${alert.lessonId}` : alert.moduleId ? `Module #${alert.moduleId}` : "Whole course"} · {alert.isActive ? "Active" : "Switched off"}</p>
                     </div>
                     {alert.isActive && <Button size="sm" variant="outline" className="text-destructive" onClick={() => archiveEmailAlert.mutate({ id: alert.id })}>Switch off</Button>}
                   </div>)}
