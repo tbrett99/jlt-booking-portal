@@ -22,9 +22,12 @@ describe("Orbit financial sync audit and staff visibility", () => {
 
   it("exposes a staff-only sync history and clear booking-level status", () => {
     expect(router).toContain("orbitFinancialSyncStatus: adminProcedure");
-    expect(bookingDetail).toContain("Orbit financial sync");
+    expect(bookingDetail).toContain('if (!isHeld)');
+    expect(bookingDetail).toContain("Last synced from Orbit:");
+    expect(bookingDetail).toContain("Orbit financial update requires review");
     expect(bookingDetail).toContain("Review required");
     expect(bookingDetail).toContain("Gross booking price (£)");
+    expect(bookingDetail).not.toContain(': "Latest snapshot"');
   });
 
   it("does not let legacy commission-only sync bypass a protected claim lifecycle", () => {

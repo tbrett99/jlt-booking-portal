@@ -2137,25 +2137,29 @@ export default function AdminBookingDetail() {
                 const latestEvent = orbitFinancialSync.events?.[0] ?? null;
                 const isHeld = latestEvent?.outcome === "held_for_claim_review";
                 const snapshot = orbitFinancialSync.snapshot;
+                if (!isHeld) {
+                  return (
+                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                      Last synced from Orbit: {format(new Date(snapshot.financialSnapshotAt), "dd MMM yyyy, HH:mm")}
+                    </p>
+                  );
+                }
                 return (
-                  <div className={`rounded-lg border p-3 text-sm ${
-                    isHeld
-                      ? "border-amber-300 bg-amber-50 text-amber-950"
-                      : "border-emerald-200 bg-emerald-50 text-emerald-950"
-                  }`}>
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
                         <p className="flex items-center gap-1.5 font-semibold">
-                          {isHeld ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-                          Orbit financial sync
+                          <AlertTriangle className="h-4 w-4" />
+                          Orbit financial update requires review
                         </p>
                         <p className="mt-1 text-xs opacity-85">
                           Snapshot received {format(new Date(snapshot.financialSnapshotAt), "dd MMM yyyy, HH:mm")}
                           {latestEvent?.receivedAt ? ` · portal recorded ${format(new Date(latestEvent.receivedAt), "dd MMM yyyy, HH:mm")}` : ""}
                         </p>
                       </div>
-                      <Badge variant="outline" className={isHeld ? "border-amber-400 bg-white/70 text-amber-900" : "border-emerald-400 bg-white/70 text-emerald-900"}>
-                        {isHeld ? "Review required" : latestEvent?.outcome === "applied" ? "Live values updated" : "Latest snapshot"}
+                      <Badge variant="outline" className="border-amber-400 bg-white/70 text-amber-900">
+                        Review required
                       </Badge>
                     </div>
                     <div className="mt-2 grid gap-1 text-xs sm:grid-cols-3">
@@ -2163,11 +2167,9 @@ export default function AdminBookingDetail() {
                       <span>Margin: {snapshot.marginPct === null ? "Unavailable" : `${Number(snapshot.marginPct).toFixed(1)}%`}</span>
                       <span>Expected commission: {snapshot.expectedCommission === null ? "Unavailable" : `£${Number(snapshot.expectedCommission).toFixed(2)}`}</span>
                     </div>
-                    {isHeld && (
-                      <p className="mt-2 text-xs font-medium">
-                        {latestEvent?.reason ?? "This revision is retained for comparison and has not changed the booking because its financial workflow is protected."}
-                      </p>
-                    )}
+                    <p className="mt-2 text-xs font-medium">
+                      {latestEvent?.reason ?? "This revision is retained for comparison and has not changed the booking because its financial workflow is protected."}
+                    </p>
                   </div>
                 );
               })()}
