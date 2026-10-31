@@ -7,6 +7,7 @@ import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
+import { registerAcademyDocumentDownloadRoutes } from "../academy-document-download-routes";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -247,6 +248,9 @@ async function startServer() {
   }
   // Storage proxy for /manus-storage/* paths
   registerStorageProxy(app);
+  // Encrypted Academy assessment templates and learner submissions must pass
+  // through a role- and ownership-checked download route.
+  registerAcademyDocumentDownloadRoutes(app);
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
 

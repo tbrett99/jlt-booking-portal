@@ -67,6 +67,19 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
     }
     toast.error(error.message);
   } });
+  const getDocumentAssessmentTemplate = trpc.academy.agent.getDocumentAssessmentTemplate.useMutation({
+    onSuccess: result => { window.location.assign(result.url); },
+    onError: error => toast.error(error.message),
+  });
+  const submitDocumentAssessment = trpc.academy.agent.submitDocumentAssessment.useMutation({
+    onSuccess: () => {
+      toast.success("Document assessment submitted. A JLT team member will mark it and send feedback.");
+      setDocumentFile(null);
+      utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId });
+      utils.academy.agent.home.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
   const acknowledgeAssessmentFeedback = trpc.academy.agent.acknowledgeAssessmentFeedback.useMutation({ onSuccess: (result) => {
     toast.success(result.passed ? "Feedback acknowledged — this lesson is now complete." : "Feedback acknowledged. Please update your response and submit again when you are ready.");
     utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId });
@@ -75,6 +88,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   const [selectedLessonId, setSelectedLessonId] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [writtenAnswers, setWrittenAnswers] = useState<Record<number, string>>({});
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [expandedModuleId, setExpandedModuleId] = useState<number | null>(null);
   const [isWorkingOnKnowledgeCheck, setIsWorkingOnKnowledgeCheck] = useState(false);
   const scrollToTopAfterNextLesson = useRef(false);
@@ -104,6 +118,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
     setFailedKnowledgeCheck(null);
     setAnswers({});
     setWrittenAnswers({});
+    setDocumentFile(null);
     setIsWorkingOnKnowledgeCheck(false);
     const containingModule = data?.modules.find((module) => module.lessons.some((lesson) => lesson.id === selectedLesson.id));
     if (containingModule) setExpandedModuleId((current) => current === containingModule.id ? current : containingModule.id);
@@ -168,6 +183,42 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
     setSelectedLessonId(lessonId);
   };
 
+  const chooseDocumentFile = (file?: File) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Assessment documents must be under 10 MB");
+      return;
+    }
+    const permitted = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ];
+    if (!permitted.includes(file.type)) {
+      toast.error("Choose a PDF, Word document or Excel workbook");
+      return;
+    }
+    setDocumentFile(file);
+    setIsWorkingOnKnowledgeCheck(true);
+  };
+
+  const submitSelectedDocument = async () => {
+    if (!selectedLesson || !documentFile) return;
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+      reader.onerror = reject;
+      reader.readAsDataURL(documentFile);
+    });
+    submitDocumentAssessment.mutate({
+      enrollmentId: numericEnrollmentId,
+      lessonId: selectedLesson.id,
+      fileName: documentFile.name,
+      fileBase64: base64,
+      mimeType: documentFile.type as "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+  };
+
   if (isLoading) return <div className="mx-auto max-w-7xl space-y-4 animate-pulse"><div className="h-10 w-32 rounded bg-muted" /><div className="h-24 rounded-2xl bg-muted" /><div className="h-[480px] rounded-2xl bg-muted" /></div>;
   if (error || !data) return <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6"><h1 className="font-semibold">Course could not be loaded</h1><p className="mt-1 text-sm text-muted-foreground">Return to Academy and try again.</p><Link href="/academy" className="mt-4 inline-flex text-sm font-semibold text-primary hover:underline">Back to Academy</Link></div>;
   if (!selectedLesson) return <div className="rounded-2xl border bg-card p-8 text-center"><LockKeyhole className="mx-auto text-muted-foreground" /><h1 className="mt-4 text-xl font-bold">This course is being prepared</h1><p className="mt-2 text-sm text-muted-foreground">Your JLT team will add lessons shortly.</p></div>;
@@ -221,7 +272,12 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
 
           {selectedLesson.requiresAcknowledgement && !selectedLesson.progress?.completedAt && <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50/70 p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">Confirm you have read and understood this lesson</p><p className="mt-1 text-sm leading-6 text-muted-foreground">This is saved to your Academy learning record and must be completed before the lesson can be marked complete.</p></div>{selectedLesson.progress?.acknowledgedAt ? <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800"><CheckCircle2 size={15} /> Acknowledged</span> : <Button className="shrink-0" disabled={isPreview || acknowledgeLesson.isPending} onClick={() => { if (isPreview) { toast.info("Preview only — no acknowledgement was recorded."); return; } acknowledgeLesson.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id }); }}><ShieldCheck className="mr-2" size={17} />{acknowledgeLesson.isPending ? "Recording..." : "I acknowledge this lesson"}</Button>}</div></div>}
 
-          {selectedLesson.requiresAssessment && !selectedLesson.progress?.completedAt && <section className="mt-8 rounded-xl border bg-muted/20 p-4 md:p-5">
+          {selectedLesson.requiresAssessment && selectedLesson.assessmentMode === "document_upload" && !selectedLesson.progress?.completedAt && <section className="mt-8 rounded-xl border bg-muted/20 p-4 md:p-5">
+            <div className="flex items-center gap-2"><ClipboardCheck className="text-primary" size={20} /><div><h3 className="font-bold">Document assessment</h3><p className="text-sm text-muted-foreground">Download the template, complete it offline and upload your finished document for a JLT team member to mark. The pass mark is {selectedLesson.assessmentPassMark}%.</p></div></div>
+            {pendingFeedback ? <div className="mt-5 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-950"><p className="font-bold">Your feedback needs acknowledgement</p><p className="mt-1 text-sm leading-6">Read the feedback below. You must acknowledge it before you can continue.</p><div className="mt-4 rounded-lg border border-amber-200 bg-background p-3"><p className="text-sm font-semibold">Assessment outcome: {pendingFeedback.score}% — {pendingFeedback.passed ? `passed the ${selectedLesson.assessmentPassMark}% standard` : `below the ${selectedLesson.assessmentPassMark}% standard`}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{pendingFeedback.graderFeedback}</p></div><Button className="mt-5" disabled={acknowledgeAssessmentFeedback.isPending} onClick={() => acknowledgeAssessmentFeedback.mutate({ attemptId: pendingFeedback.id })}>{acknowledgeAssessmentFeedback.isPending ? "Recording acknowledgement..." : "I have read and acknowledge this feedback"}</Button></div> : awaitingMarking ? <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-950"><p className="font-bold">Document submitted for marking</p><p className="mt-1 text-sm leading-6">A JLT team member will review your document and send feedback here. You cannot continue to the next lesson until you have read and acknowledged that feedback.</p></div> : <div className="mt-5 rounded-xl border bg-background p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">1. Download the template</p><p className="mt-1 text-sm text-muted-foreground">{selectedLesson.assessmentTemplateName || "Assessment template"}</p></div><Button type="button" variant="outline" disabled={isPreview || getDocumentAssessmentTemplate.isPending} onClick={() => { if (isPreview) { toast.info("Preview only — no template download was recorded."); return; } getDocumentAssessmentTemplate.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id, origin: window.location.origin }); }}><Download className="mr-2" size={16} />{getDocumentAssessmentTemplate.isPending ? "Preparing..." : "Download template"}</Button></div><div className="mt-5 border-t pt-5"><p className="font-semibold">2. Upload your completed document</p><p className="mt-1 text-sm text-muted-foreground">PDF, Word or Excel · maximum 10 MB. Submit one completed version for staff marking.</p><label className="mt-3 flex cursor-pointer items-center justify-between rounded-xl border border-dashed p-4 text-sm transition hover:bg-muted/50"><span className="min-w-0 truncate">{documentFile?.name || "Choose your completed document"}</span><span className="ml-4 inline-flex shrink-0 items-center gap-1 font-semibold text-primary"><FileText size={15} /> Choose file</span><input className="hidden" type="file" accept=".pdf,.docx,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={event => chooseDocumentFile(event.target.files?.[0])} /></label><div className="mt-4 flex justify-end"><Button disabled={!documentFile || isPreview || submitDocumentAssessment.isPending} onClick={() => { if (isPreview) { toast.info("Preview only — no assessment document was submitted."); return; } void submitSelectedDocument(); }}><ClipboardCheck className="mr-2" size={16} />{submitDocumentAssessment.isPending ? "Submitting..." : "Submit document for marking"}</Button></div></div></div>}
+          </section>}
+
+          {selectedLesson.requiresAssessment && selectedLesson.assessmentMode !== "document_upload" && !selectedLesson.progress?.completedAt && <section className="mt-8 rounded-xl border bg-muted/20 p-4 md:p-5">
             <div className="flex items-center gap-2"><ClipboardCheck className="text-primary" size={20} /><div><h3 className="font-bold">Knowledge check</h3><p className="text-sm text-muted-foreground">{selectedLesson.questions.some((question) => question.questionType === "free_text") ? `Written assessments pass at ${selectedLesson.assessmentPassMark}% overall. Multiple-choice answers remain 100% mastery checks.` : "100% is required before you can move to the next lesson. Multiple-choice answers are checked immediately."}</p></div></div>
 
             {pendingFeedback ? <div className="mt-5 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-950"><p className="font-bold">Your feedback needs acknowledgement</p><p className="mt-1 text-sm leading-6">Read the feedback below. You must acknowledge it before you can move on in this course.</p><div className="mt-4 rounded-lg border border-amber-200 bg-background p-3"><p className="text-sm font-semibold">Assessment outcome: {pendingFeedback.score}% — {pendingFeedback.passed ? `passed the ${selectedLesson.assessmentPassMark}% overall standard` : `below the ${selectedLesson.assessmentPassMark}% overall standard`}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{pendingFeedback.graderFeedback}</p></div><div className="mt-4 space-y-3">{selectedLesson.questions.filter((question) => question.questionType === "free_text").map((question, index) => { const response = pendingFeedback.responses.find((item) => item.questionId === question.id); const needsResit = !pendingFeedback.passed && (response?.score ?? 0) < selectedLesson.assessmentPassMark; return <div key={question.id} className={`rounded-lg border p-3 ${needsResit ? "border-amber-300 bg-amber-50/45" : "border-emerald-200 bg-emerald-50/35"}`}><div><p className="font-semibold">Written question {index + 1}</p><AcademyStructuredQuestion text={question.prompt} className="mt-2 text-sm" /></div><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">Your answer: {response?.responseText || "—"}</p><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">Score: {response?.score ?? 0}%</p><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${needsResit ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-800"}`}>{needsResit ? "Needs attention — resubmit this answer" : "Passed — no resubmission"}</span></div><p className="mt-1 whitespace-pre-wrap text-sm leading-6">{response?.feedback || "No question-level feedback was recorded."}</p></div>; })}</div><Button className="mt-5" disabled={acknowledgeAssessmentFeedback.isPending} onClick={() => acknowledgeAssessmentFeedback.mutate({ attemptId: pendingFeedback.id })}>{acknowledgeAssessmentFeedback.isPending ? "Recording acknowledgement..." : "I have read and acknowledge this feedback"}</Button></div> : awaitingMarking ? <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-950"><p className="font-bold">Written response submitted for marking</p><p className="mt-1 text-sm leading-6">A JLT team member will review your response and send feedback here. You cannot continue to the next lesson until you have read and acknowledged that feedback.</p></div> : failedCurrentKnowledgeCheck ? <div className="mt-5 rounded-xl border-2 border-amber-300 bg-amber-50 p-5 text-amber-950"><p className="font-bold">Knowledge check not passed yet</p><p className="mt-2 text-sm leading-6">You scored <strong>{failedCurrentKnowledgeCheck.score}%</strong> ({failedCurrentKnowledgeCheck.correct} of {failedCurrentKnowledgeCheck.total} correct). Every outstanding answer must be correct: <strong>100% is required</strong> before this lesson and the next section unlock.</p><p className="mt-2 text-sm leading-6">Please review the lesson material above, then retry when you are ready.</p><Button className="mt-5" onClick={() => { setFailedKnowledgeCheck(null); setAnswers({}); setWrittenAnswers({}); }}>Retry knowledge check</Button></div> : supportRequired ? <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-950"><p className="font-bold">JLT team support required</p><p className="mt-1 text-sm leading-6">You have used the three available attempts for an outstanding question. A JLT team member will review your progress and reopen the question after support.</p></div> : <>

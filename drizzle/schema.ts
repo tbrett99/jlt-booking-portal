@@ -1647,6 +1647,14 @@ export const academyLessons = mysqlTable("academy_lessons", {
   isRequired: boolean("isRequired").default(true).notNull(),
   requiresAcknowledgement: boolean("requiresAcknowledgement").default(false).notNull(),
   requiresAssessment: boolean("requiresAssessment").default(false).notNull(),
+  // Quiz assessments retain their existing question/answer workflow. Document
+  // assessments instead give the learner a staff-provided template to complete
+  // and return for a human marking decision.
+  assessmentMode: mysqlEnum("assessmentMode", ["quiz", "document_upload"]).default("quiz").notNull(),
+  assessmentTemplateKey: varchar("assessmentTemplateKey", { length: 600 }),
+  assessmentTemplateName: varchar("assessmentTemplateName", { length: 255 }),
+  assessmentTemplateMimeType: varchar("assessmentTemplateMimeType", { length: 120 }),
+  assessmentTemplateSize: int("assessmentTemplateSize"),
   assessmentPassMark: int("assessmentPassMark").default(80).notNull(),
   sortOrder: int("sortOrder").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1752,6 +1760,16 @@ export const academyAssessmentAttempts = mysqlTable("academy_assessment_attempts
   gradedById: int("gradedById"),
   gradedAt: timestamp("gradedAt"),
   feedbackAcknowledgedAt: timestamp("feedbackAcknowledgedAt"),
+  // Document assessment attempts retain an immutable copy of both the template
+  // version and the learner submission that staff actually marked. The object
+  // keys refer to encrypted storage objects and are never returned to agents.
+  assessmentTemplateKey: varchar("assessmentTemplateKey", { length: 600 }),
+  assessmentTemplateName: varchar("assessmentTemplateName", { length: 255 }),
+  assessmentTemplateMimeType: varchar("assessmentTemplateMimeType", { length: 120 }),
+  submissionFileKey: varchar("submissionFileKey", { length: 600 }),
+  submissionFileName: varchar("submissionFileName", { length: 255 }),
+  submissionMimeType: varchar("submissionMimeType", { length: 120 }),
+  submissionFileSize: int("submissionFileSize"),
   takenAt: timestamp("takenAt").defaultNow().notNull(),
 }, (table) => [
   index("academy_attempts_enrollment_lesson_idx").on(table.enrollmentId, table.lessonId),

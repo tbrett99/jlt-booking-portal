@@ -4,7 +4,13 @@ import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
 import { getDb, getRawDbPool, createInAppNotification, getUpcomingAgentEvents } from "./db";
 import { sendDirectEmail, sendSupportEmail } from "./email";
-import { storagePut } from "./storage";
+import { storagePut, storagePutEncrypted } from "./storage";
+import {
+  academyDocumentObjectKey,
+  academyDocumentMimeTypes,
+  validateAcademyDocument,
+} from "./academy-document-assessment";
+import { createAcademyDocumentDownloadUrl } from "./academy-document-download-routes";
 import {
   academyAccess,
   academyAssessmentAttempts,
@@ -88,6 +94,11 @@ const lessonInput = z.object({
   isRequired: z.boolean().default(true),
   requiresAcknowledgement: z.boolean().default(false),
   requiresAssessment: z.boolean().default(false),
+  assessmentMode: z.enum(["quiz", "document_upload"]).default("quiz"),
+  assessmentTemplateKey: z.string().trim().max(600).nullable().optional(),
+  assessmentTemplateName: z.string().trim().max(255).nullable().optional(),
+  assessmentTemplateMimeType: z.enum(academyDocumentMimeTypes).nullable().optional(),
+  assessmentTemplateSize: z.number().int().positive().max(10 * 1024 * 1024).nullable().optional(),
   // Written assessments use this overall pass mark. Automatic multiple-choice
   // checks deliberately remain 100% mastery-based.
   assessmentPassMark: z.number().int().min(1).max(100).default(DEFAULT_WRITTEN_ASSESSMENT_PASS_MARK),
@@ -171,6 +182,23 @@ export function isMissingAcademyTranscriptColumn(error: unknown) {
   return sawMissingColumn && sawTranscript;
 }
 
+function isMissingAcademyDocumentAssessmentColumn(error: unknown) {
+  const pending: unknown[] = [error];
+  const visited = new Set<unknown>();
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current || typeof current !== "object" || visited.has(current)) continue;
+    visited.add(current);
+    const candidate = current as { code?: string; message?: string; cause?: unknown; errors?: unknown[] };
+    const detail = `${candidate.code ?? ""}\n${candidate.message ?? ""}`;
+    if ((candidate.code === "ER_BAD_FIELD_ERROR" || candidate.code === "ER_NO_SUCH_COLUMN" || /unknown column/i.test(detail))
+      && /assessmentMode|assessmentTemplate|submissionFile|submissionMimeType/i.test(detail)) return true;
+    if (candidate.cause) pending.push(candidate.cause);
+    if (Array.isArray(candidate.errors)) pending.push(...candidate.errors);
+  }
+  return false;
+}
+
 const legacyAcademyLessonColumns = {
   id: academyLessons.id,
   moduleId: academyLessons.moduleId,
@@ -201,13 +229,21 @@ async function getAcademyLessonsForModules(moduleIds: number[]): Promise<Academy
     return await db.select().from(academyLessons).where(inArray(academyLessons.moduleId, moduleIds))
       .orderBy(asc(academyLessons.sortOrder), asc(academyLessons.id));
   } catch (error) {
-    if (!isMissingAcademyTranscriptColumn(error)) throw error;
+    if (!isMissingAcademyTranscriptColumn(error) && !isMissingAcademyDocumentAssessmentColumn(error)) throw error;
     const legacyLessons = await db.select(legacyAcademyLessonColumns).from(academyLessons)
       .where(inArray(academyLessons.moduleId, moduleIds))
       .orderBy(asc(academyLessons.sortOrder), asc(academyLessons.id));
     // Preserve every pre-existing lesson field. Only the optional private
     // transcript is absent while the additive Railway migration catches up.
-    return legacyLessons.map((lesson) => ({ ...lesson, videoTranscript: null } as AcademyLesson));
+    return legacyLessons.map((lesson) => ({
+      ...lesson,
+      videoTranscript: null,
+      assessmentMode: "quiz",
+      assessmentTemplateKey: null,
+      assessmentTemplateName: null,
+      assessmentTemplateMimeType: null,
+      assessmentTemplateSize: null,
+    } as AcademyLesson));
   }
 }
 
@@ -1404,7 +1440,11 @@ export const academyRouter = router({
           lessons: module.lessons.map((lesson) => {
             // The transcript is private staff source material. Do not leak it
             // to agent browsers before chatbot knowledge controls are added.
-            const { videoTranscript: _videoTranscript, ...agentLesson } = lesson;
+            const {
+              videoTranscript: _videoTranscript,
+              assessmentTemplateKey: _assessmentTemplateKey,
+              ...agentLesson
+            } = lesson;
             const locked = releaseLocked || learningPath.lockedLessonIds.has(lesson.id);
             return {
               ...agentLesson,
@@ -1414,6 +1454,9 @@ export const academyRouter = router({
               attachmentUrl: locked ? null : agentLesson.attachmentUrl,
               attachmentKey: locked ? null : agentLesson.attachmentKey,
               attachmentName: locked ? null : agentLesson.attachmentName,
+              assessmentTemplateName: locked ? null : agentLesson.assessmentTemplateName,
+              assessmentTemplateMimeType: locked ? null : agentLesson.assessmentTemplateMimeType,
+              assessmentTemplateSize: locked ? null : agentLesson.assessmentTemplateSize,
               locked,
               lockedReason: releaseLocked ? `Available ${releaseLabel}` : "Complete the current lesson to unlock this section",
               // Correct answer keys and staff-only question explanation stay server-side.
@@ -1463,8 +1506,14 @@ export const academyRouter = router({
           ...module,
           releaseLocked: false,
           releaseLabel: null,
-          lessons: module.lessons.map((lesson) => ({
-            ...lesson,
+          lessons: module.lessons.map((lesson) => {
+            const {
+              videoTranscript: _videoTranscript,
+              assessmentTemplateKey: _assessmentTemplateKey,
+              ...previewLesson
+            } = lesson;
+            return {
+            ...previewLesson,
             locked: false,
             lockedReason: "",
             // Keep the preview safe: answer keys and private marking guides are never sent to the browser.
@@ -1479,7 +1528,8 @@ export const academyRouter = router({
             })),
             progress: null,
             attempts: [],
-          })),
+          };
+          }),
         })),
       };
     }),
@@ -1591,6 +1641,123 @@ export const academyRouter = router({
         return { success: true };
       }),
 
+    getDocumentAssessmentTemplate: protectedProcedure.input(z.object({
+      enrollmentId: z.number().int().positive(),
+      lessonId: z.number().int().positive(),
+      origin: z.string().url().max(2_000),
+    })).mutation(async ({ ctx, input }) => {
+      const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
+      const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+      await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
+      if (!lesson.requiresAssessment || lesson.assessmentMode !== "document_upload" || !lesson.assessmentTemplateKey) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "This lesson does not have a document assessment template" });
+      }
+      const origin = new URL(input.origin).origin;
+      return {
+        url: createAcademyDocumentDownloadUrl({
+          kind: "template",
+          scope: "agent",
+          userId: ctx.user.id,
+          enrollmentId: enrollment.id,
+          lessonId: lesson.id,
+        }, origin),
+        name: lesson.assessmentTemplateName ?? "assessment-template",
+      };
+    }),
+
+    submitDocumentAssessment: protectedProcedure.input(z.object({
+      enrollmentId: z.number().int().positive(),
+      lessonId: z.number().int().positive(),
+      fileName: z.string().trim().min(1).max(255),
+      fileBase64: z.string().min(1).max(20_000_000),
+      mimeType: z.enum(academyDocumentMimeTypes),
+    })).mutation(async ({ ctx, input }) => {
+      const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+      await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
+      if (!lesson.requiresAssessment || lesson.assessmentMode !== "document_upload" || !lesson.assessmentTemplateKey || !lesson.assessmentTemplateName || !lesson.assessmentTemplateMimeType) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This lesson is not ready for a document assessment submission" });
+      }
+      if (lesson.requiresAcknowledgement) {
+        const [lessonProgress] = await db.select().from(academyLessonProgress)
+          .where(and(eq(academyLessonProgress.enrollmentId, enrollment.id), eq(academyLessonProgress.lessonId, lesson.id))).limit(1);
+        if (!lessonProgress?.acknowledgedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Please acknowledge this lesson before submitting the assessment document" });
+      }
+      const [pendingAttempt] = await db.select({ id: academyAssessmentAttempts.id }).from(academyAssessmentAttempts)
+        .where(and(
+          eq(academyAssessmentAttempts.enrollmentId, enrollment.id),
+          eq(academyAssessmentAttempts.lessonId, lesson.id),
+          inArray(academyAssessmentAttempts.status, ["awaiting_marking", "feedback_pending"]),
+        )).limit(1);
+      if (pendingAttempt) throw new TRPCError({ code: "BAD_REQUEST", message: "Wait for the current document assessment feedback before submitting another version" });
+      const bytes = Buffer.from(input.fileBase64, "base64");
+      let document;
+      try {
+        document = validateAcademyDocument({ fileName: input.fileName, mimeType: input.mimeType, bytes });
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "This assessment document could not be validated" });
+      }
+      const stored = await storagePutEncrypted(
+        academyDocumentObjectKey("submissions", [enrollment.id, lesson.id], document.name),
+        bytes,
+      );
+      const now = new Date();
+      const pool = await getRawDbPool();
+      if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [attemptInsert] = await pool.execute(
+        `INSERT INTO academy_assessment_attempts
+          (enrollmentId, lessonId, status, score, passed, answers, assessmentTemplateKey, assessmentTemplateName, assessmentTemplateMimeType, submissionFileKey, submissionFileName, submissionMimeType, submissionFileSize, takenAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          enrollment.id,
+          lesson.id,
+          "awaiting_marking",
+          null,
+          null,
+          JSON.stringify([{ documentSubmission: true }]),
+          lesson.assessmentTemplateKey,
+          lesson.assessmentTemplateName,
+          lesson.assessmentTemplateMimeType,
+          stored.key,
+          document.name,
+          document.mimeType,
+          document.size,
+          now,
+        ],
+      );
+      const attemptId = Number((attemptInsert as any).insertId);
+      if (!Number.isSafeInteger(attemptId) || attemptId < 1) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Academy document assessment submission was not assigned an ID" });
+      }
+      const [course] = await db.select({ title: academyCourses.title }).from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
+      const [agent] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+      const [module] = await db.select({ id: academyModules.id, title: academyModules.title }).from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
+      await addAudit({
+        agentId: ctx.user.id,
+        courseId: enrollment.courseId,
+        enrollmentId: enrollment.id,
+        actorId: ctx.user.id,
+        action: "document_assessment_submitted_for_marking",
+        summary: `Submitted a document assessment for ${lesson.title}`,
+        metadata: { lessonId: lesson.id, attemptId, submittedFileName: document.name, submittedFileSize: document.size, templateName: lesson.assessmentTemplateName },
+      });
+      const configuredSupportAlert = await hasActiveAcademySupportAlert({ courseId: enrollment.courseId, eventType: "written_assessment_ready", moduleId: module?.id });
+      if (!configuredSupportAlert) {
+        await sendAcademySupportAlert({
+          subject: `Academy document assessment ready to mark — ${agent?.name ?? "agent"}`,
+          agentName: agent?.name ?? null,
+          agentEmail: agent?.email ?? null,
+          courseTitle: course?.title ?? "JLT Academy",
+          lessonTitle: lesson.title,
+          detail: `A completed ${document.name} document assessment has been submitted and is waiting in Academy Progress & Insights.`,
+        });
+      }
+      void dispatchAcademyEmailAlerts({ eventType: "written_assessment_ready", eventKey: `document-assessment-${attemptId}`, enrollmentId: enrollment.id, courseId: enrollment.courseId, courseTitle: course?.title ?? "JLT Academy", moduleId: module?.id, moduleTitle: module?.title, agentId: ctx.user.id, agentName: agent?.name ?? null, agentEmail: agent?.email ?? null }).catch((error) => console.error("[Academy] Document-assessment alert dispatch failed:", error));
+      return { attemptId, status: "awaiting_marking" as const };
+    }),
+
     submitAssessment: protectedProcedure.input(z.object({
       enrollmentId: z.number().int().positive(),
       lessonId: z.number().int().positive(),
@@ -1606,6 +1773,7 @@ export const academyRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
         const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
         if (!lesson.requiresAssessment) throw new TRPCError({ code: "BAD_REQUEST", message: "This lesson does not have an assessment" });
+        if (lesson.assessmentMode === "document_upload") throw new TRPCError({ code: "BAD_REQUEST", message: "Upload the completed document for this assessment instead" });
         await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
         if (lesson.requiresAcknowledgement) {
           const [lessonProgress] = await db.select().from(academyLessonProgress)
@@ -2129,6 +2297,39 @@ export const academyRouter = router({
       }));
     }),
 
+    documentMarkingQueue: adminProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const rows = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: users })
+        .from(academyAssessmentAttempts)
+        .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
+        .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
+        .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+        .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
+        .innerJoin(users, eq(users.id, academyEnrollments.agentId))
+        .where(and(eq(academyAssessmentAttempts.status, "awaiting_marking"), eq(academyLessons.assessmentMode, "document_upload")))
+        .orderBy(asc(academyAssessmentAttempts.takenAt));
+      return rows.filter((row) => !!row.attempt.submissionFileKey).map((row) => ({
+        attempt: {
+          id: row.attempt.id,
+          takenAt: row.attempt.takenAt,
+          submissionFileName: row.attempt.submissionFileName,
+          submissionMimeType: row.attempt.submissionMimeType,
+          submissionFileSize: row.attempt.submissionFileSize,
+          assessmentTemplateName: row.attempt.assessmentTemplateName,
+          assessmentTemplateMimeType: row.attempt.assessmentTemplateMimeType,
+        },
+        enrollment: { id: row.enrollment.id, agentId: row.enrollment.agentId, courseId: row.enrollment.courseId },
+        course: { id: row.course.id, title: row.course.title },
+        lesson: { id: row.lesson.id, title: row.lesson.title, assessmentPassMark: row.lesson.assessmentPassMark },
+        agent: { id: row.agent.id, name: row.agent.name, email: row.agent.email },
+        submissionDownloadUrl: createAcademyDocumentDownloadUrl({ kind: "submission", scope: "staff", userId: ctx.user.id, enrollmentId: row.enrollment.id, lessonId: row.lesson.id, attemptId: row.attempt.id }, ACADEMY_PORTAL_URL),
+        templateDownloadUrl: row.attempt.assessmentTemplateKey
+          ? createAcademyDocumentDownloadUrl({ kind: "template", scope: "staff", userId: ctx.user.id, enrollmentId: row.enrollment.id, lessonId: row.lesson.id, attemptId: row.attempt.id }, ACADEMY_PORTAL_URL)
+          : null,
+      }));
+    }),
+
     generateAiMarkingReview: adminProcedure.input(z.object({
       attemptId: z.number().int().positive(),
     })).mutation(async ({ ctx, input }) => {
@@ -2292,6 +2493,63 @@ export const academyRouter = router({
       return { score, passed, passMark: row.lesson.assessmentPassMark };
     }),
 
+    markDocumentAssessment: adminProcedure.input(z.object({
+      attemptId: z.number().int().positive(),
+      score: z.number().int().min(0).max(100),
+      feedback: z.string().trim().min(3).max(10_000),
+    })).mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [row] = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: users })
+        .from(academyAssessmentAttempts)
+        .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
+        .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
+        .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+        .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
+        .innerJoin(users, eq(users.id, academyEnrollments.agentId))
+        .where(eq(academyAssessmentAttempts.id, input.attemptId)).limit(1);
+      if (!row || row.lesson.assessmentMode !== "document_upload" || !row.attempt.submissionFileKey) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Document assessment submission not found" });
+      }
+      if (row.attempt.status !== "awaiting_marking") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This document assessment has already been marked" });
+      }
+      const now = new Date();
+      const passed = input.score >= row.lesson.assessmentPassMark;
+      await db.update(academyAssessmentAttempts).set({
+        status: "feedback_pending",
+        score: input.score,
+        passed,
+        graderFeedback: input.feedback,
+        gradedById: ctx.user.id,
+        gradedAt: now,
+      }).where(eq(academyAssessmentAttempts.id, row.attempt.id));
+      await createInAppNotification({
+        userId: row.agent.id,
+        message: `Your ${row.course.title} document assessment feedback is ready. Please read and acknowledge it before continuing.`,
+        linkUrl: `/academy/course/${row.enrollment.id}`,
+        isUrgent: true,
+      });
+      await sendAcademyAgentEmail({
+        userId: row.agent.id,
+        email: row.agent.email,
+        name: row.agent.name,
+        subject: `Your JLT Academy feedback is ready — ${row.lesson.title}`,
+        triggerKey: "academy_document_assessment_feedback_ready",
+        html: `<p>Hi ${escapeAcademyEmailHtml((row.agent.name ?? "there").split(" ")[0])},</p><p>Your document assessment feedback for <strong>${escapeAcademyEmailHtml(row.lesson.title)}</strong> is ready in the JLT Academy.</p><p>${passed ? `You achieved the required ${row.lesson.assessmentPassMark}% standard. Please read and acknowledge the feedback to record this lesson as complete.` : "Please read the feedback, acknowledge it, then update and upload a new document version when you are ready."}</p><p><a href="${ACADEMY_PORTAL_URL}/academy/course/${row.enrollment.id}">Open your Academy feedback</a></p>`,
+      });
+      await addAudit({
+        agentId: row.agent.id,
+        courseId: row.course.id,
+        enrollmentId: row.enrollment.id,
+        actorId: ctx.user.id,
+        action: "document_assessment_marked",
+        summary: `Marked document assessment for ${row.lesson.title} (${input.score}% — ${passed ? "passed" : "resubmission needed"})`,
+        metadata: { attemptId: row.attempt.id, score: input.score, passed, passMark: row.lesson.assessmentPassMark, submittedFileName: row.attempt.submissionFileName },
+      });
+      return { score: input.score, passed, passMark: row.lesson.assessmentPassMark };
+    }),
+
     supportQueue: adminProcedure.query(async () => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -2426,11 +2684,19 @@ export const academyRouter = router({
         const structure = await courseStructure(course.id);
         if (!structure.lessons.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one lesson before publishing a course" });
         const incompleteKnowledgeChecks = structure.modules.flatMap((module) => module.lessons)
-          .filter((lesson) => lesson.requiresAssessment && lesson.questions.length === 0);
+          .filter((lesson) => lesson.requiresAssessment && lesson.assessmentMode !== "document_upload" && lesson.questions.length === 0);
         if (incompleteKnowledgeChecks.length) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: `Add at least one question before publishing: ${incompleteKnowledgeChecks.map((lesson) => lesson.title).join(", ")}`,
+          });
+        }
+        const missingDocumentTemplates = structure.modules.flatMap((module) => module.lessons)
+          .filter((lesson) => lesson.requiresAssessment && lesson.assessmentMode === "document_upload" && !lesson.assessmentTemplateKey);
+        if (missingDocumentTemplates.length) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Upload the assessment template before publishing: ${missingDocumentTemplates.map((lesson) => lesson.title).join(", ")}`,
           });
         }
         if (course.isCoreAcademy) await db.update(academyCourses).set({ isCoreAcademy: false }).where(and(eq(academyCourses.isCoreAcademy, true), eq(academyCourses.status, "published"), ne(academyCourses.id, input.courseId)));
@@ -2486,18 +2752,56 @@ export const academyRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [module] = await db.select().from(academyModules).where(eq(academyModules.id, input.moduleId)).limit(1);
       if (!module) throw new TRPCError({ code: "NOT_FOUND", message: "Module not found" });
+      if (input.assessmentMode === "document_upload" && !input.requiresAssessment) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Turn on the assessment for a document-upload lesson" });
+      }
+      if (input.assessmentMode === "document_upload" && (!input.assessmentTemplateKey || !input.assessmentTemplateName || !input.assessmentTemplateMimeType || !input.assessmentTemplateSize)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Upload the assessment template before saving this document assessment" });
+      }
       const videoUrl = normaliseOptionalText(input.videoUrl);
       if (videoUrl && !safeHttpsUrl(videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Video links must use HTTPS" });
       const attachmentUrl = normaliseOptionalText(input.attachmentUrl);
-      const payload = { title: input.title, summary: normaliseOptionalText(input.summary), contentHtml: sanitiseLessonHtml(input.contentHtml), videoUrl, videoTranscript: preserveOptionalTranscript(input.videoTranscript), attachmentUrl, attachmentKey: normaliseOptionalText(input.attachmentKey), attachmentName: normaliseOptionalText(input.attachmentName), estimatedMinutes: input.estimatedMinutes, isRequired: input.isRequired, requiresAcknowledgement: input.requiresAcknowledgement, requiresAssessment: input.requiresAssessment, assessmentPassMark: input.requiresAssessment ? input.assessmentPassMark : AUTOMATIC_ASSESSMENT_PASS_MARK };
+      const payload = {
+        title: input.title,
+        summary: normaliseOptionalText(input.summary),
+        contentHtml: sanitiseLessonHtml(input.contentHtml),
+        videoUrl,
+        videoTranscript: preserveOptionalTranscript(input.videoTranscript),
+        attachmentUrl,
+        attachmentKey: normaliseOptionalText(input.attachmentKey),
+        attachmentName: normaliseOptionalText(input.attachmentName),
+        estimatedMinutes: input.estimatedMinutes,
+        isRequired: input.isRequired,
+        requiresAcknowledgement: input.requiresAcknowledgement,
+        requiresAssessment: input.requiresAssessment,
+        assessmentMode: input.requiresAssessment ? input.assessmentMode : "quiz" as const,
+        assessmentTemplateKey: input.assessmentMode === "document_upload" ? normaliseOptionalText(input.assessmentTemplateKey) : null,
+        assessmentTemplateName: input.assessmentMode === "document_upload" ? normaliseOptionalText(input.assessmentTemplateName) : null,
+        assessmentTemplateMimeType: input.assessmentMode === "document_upload" ? input.assessmentTemplateMimeType : null,
+        assessmentTemplateSize: input.assessmentMode === "document_upload" ? input.assessmentTemplateSize : null,
+        assessmentPassMark: input.requiresAssessment ? input.assessmentPassMark : AUTOMATIC_ASSESSMENT_PASS_MARK,
+      };
       const { videoTranscript, ...legacyPayload } = payload;
       if (input.id) {
-        const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);
+        const [lesson] = await db.select().from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);
         if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
         const hasLearnerEvidence = await hasAcademyLearnerEvidence([lesson.id]);
+        const documentAssessmentChanged = lesson.assessmentMode !== payload.assessmentMode
+          || lesson.assessmentTemplateKey !== payload.assessmentTemplateKey
+          || lesson.assessmentTemplateName !== payload.assessmentTemplateName
+          || lesson.assessmentTemplateMimeType !== payload.assessmentTemplateMimeType;
+        if (hasLearnerEvidence && documentAssessmentChanged) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "This lesson has learner activity. Its document assessment template and assessment type are preserved for an accurate Academy record; create a replacement lesson for a revised template.",
+          });
+        }
         try {
           await db.update(academyLessons).set(payload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
         } catch (error) {
+          if (isMissingAcademyDocumentAssessmentColumn(error)) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Document assessment storage is not ready on Railway yet. Apply the Academy document-assessment database update, then save this lesson." });
+          }
           if (!isMissingAcademyTranscriptColumn(error)) throw error;
           if (videoTranscript) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Loom transcript storage is not ready on Railway yet. Apply the Academy transcript database update, then save this transcript." });
           await db.update(academyLessons).set(legacyPayload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
@@ -2531,6 +2835,11 @@ export const academyRouter = router({
         payload.isRequired,
         payload.requiresAcknowledgement,
         payload.requiresAssessment,
+        payload.assessmentMode,
+        payload.assessmentTemplateKey,
+        payload.assessmentTemplateName,
+        payload.assessmentTemplateMimeType,
+        payload.assessmentTemplateSize,
         payload.assessmentPassMark,
         (existing[0]?.sortOrder ?? -1) + 1,
       ];
@@ -2538,11 +2847,14 @@ export const academyRouter = router({
       try {
         [result] = await pool.execute(
           `INSERT INTO academy_lessons
-            (moduleId, title, summary, contentHtml, videoUrl, videoTranscript, attachmentUrl, attachmentKey, attachmentName, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentPassMark, sortOrder)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (moduleId, title, summary, contentHtml, videoUrl, videoTranscript, attachmentUrl, attachmentKey, attachmentName, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentMode, assessmentTemplateKey, assessmentTemplateName, assessmentTemplateMimeType, assessmentTemplateSize, assessmentPassMark, sortOrder)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           insertValues,
         );
       } catch (error) {
+        if (isMissingAcademyDocumentAssessmentColumn(error)) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Document assessment storage is not ready on Railway yet. Apply the Academy document-assessment database update, then save this lesson." });
+        }
         if (!isMissingAcademyTranscriptColumn(error)) throw error;
         if (videoTranscript) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Loom transcript storage is not ready on Railway yet. Apply the Academy transcript database update, then save this transcript." });
         const legacyInsertValues = insertValues.filter((_, index) => index !== 5);
@@ -2615,6 +2927,10 @@ export const academyRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
       if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+      const [assessmentLesson] = await db.select({ assessmentMode: academyLessons.assessmentMode }).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
+      if (assessmentLesson?.assessmentMode === "document_upload") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Document assessments use an uploaded template and do not have quiz questions" });
+      }
       if (input.questions.some((question) => question.questionType === "multiple_choice" && (question.answerOptions.length < 2 || question.answerOptions.some((option) => !option.trim()) || question.correctAnswerIndex >= question.answerOptions.length))) throw new TRPCError({ code: "BAD_REQUEST", message: "Each multiple-choice question needs at least two completed answers and one correct answer" });
       const existingQuestions = await db.select().from(academyQuestions).where(eq(academyQuestions.lessonId, lesson.id)).orderBy(asc(academyQuestions.sortOrder), asc(academyQuestions.id));
       const hasLearnerEvidence = await hasAcademyLearnerEvidence([lesson.id]);
@@ -2707,6 +3023,25 @@ export const academyRouter = router({
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "academy-resource";
       const stored = await storagePut(`academy/${ctx.user.id}/${Date.now()}-${safeName}`, bytes, input.mimeType);
       return { url: stored.url, key: stored.key, name: input.fileName };
+    }),
+
+    uploadDocumentAssessmentTemplate: adminProcedure.input(z.object({
+      fileName: z.string().trim().min(1).max(255),
+      fileBase64: z.string().min(1).max(20_000_000),
+      mimeType: z.enum(academyDocumentMimeTypes),
+    })).mutation(async ({ ctx, input }) => {
+      const bytes = Buffer.from(input.fileBase64, "base64");
+      let document;
+      try {
+        document = validateAcademyDocument({ fileName: input.fileName, mimeType: input.mimeType, bytes });
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "This assessment document could not be validated" });
+      }
+      const stored = await storagePutEncrypted(
+        academyDocumentObjectKey("templates", [ctx.user.id], document.name),
+        bytes,
+      );
+      return { key: stored.key, name: document.name, mimeType: document.mimeType, size: document.size };
     }),
 
     setAccess: adminProcedure.input(z.object({ agentId: z.number().int().positive(), enabled: z.boolean(), note: z.string().trim().max(10_000).nullable().optional() })).mutation(async ({ ctx, input }) => {

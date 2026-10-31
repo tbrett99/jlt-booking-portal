@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   AssessmentSupportQueue,
+  DocumentAssessmentQueue,
   LearnerManager,
   WrittenAssessmentQueue,
 } from "./AdminAcademy";
@@ -177,6 +178,9 @@ export default function AdminAcademyProgressInsights() {
       }
     >
   >({});
+  const [documentGradingDrafts, setDocumentGradingDrafts] = useState<
+    Record<number, { score: number; feedback: string }>
+  >({});
   const [reviewEnrollmentId, setReviewEnrollmentId] = useState<number | null>(
     null
   );
@@ -200,6 +204,8 @@ export default function AdminAcademyProgressInsights() {
   );
   const { data: markingQueue = [] } =
     trpc.academy.admin.markingQueue.useQuery();
+  const { data: documentMarkingQueue = [] } =
+    trpc.academy.admin.documentMarkingQueue.useQuery();
   const { data: supportQueue = [] } =
     trpc.academy.admin.supportQueue.useQuery();
   const { data: agents = [] } = trpc.users.listAgents.useQuery();
@@ -224,6 +230,7 @@ export default function AdminAcademyProgressInsights() {
   const invalidate = () => {
     utils.academy.admin.insights.invalidate();
     utils.academy.admin.markingQueue.invalidate();
+    utils.academy.admin.documentMarkingQueue.invalidate();
     utils.academy.admin.supportQueue.invalidate();
     utils.academy.admin.learnerReview.invalidate();
     utils.academy.admin.courses.invalidate();
@@ -328,6 +335,14 @@ export default function AdminAcademyProgressInsights() {
     trpc.academy.admin.markWrittenAssessment.useMutation({
       onSuccess: () => {
         toast.success("Assessment marked and feedback sent to the agent");
+        invalidate();
+      },
+      onError: error => toast.error(error.message),
+    });
+  const markDocumentAssessment =
+    trpc.academy.admin.markDocumentAssessment.useMutation({
+      onSuccess: () => {
+        toast.success("Document assessment marked and feedback sent to the agent");
         invalidate();
       },
       onError: error => toast.error(error.message),
@@ -631,6 +646,9 @@ export default function AdminAcademyProgressInsights() {
   const courseMarking = courseId
     ? markingQueue.filter(item => item.course.id === courseId)
     : markingQueue;
+  const courseDocumentMarking = courseId
+    ? documentMarkingQueue.filter(item => item.course.id === courseId)
+    : documentMarkingQueue;
   const courseSupport = courseId
     ? supportQueue.filter(item => item.course.id === courseId)
     : supportQueue;
@@ -1510,9 +1528,9 @@ export default function AdminAcademyProgressInsights() {
         <div className="space-y-6">
           <section className="grid gap-4 md:grid-cols-3">
             <MetricCard
-              label="Written marking"
+              label="Marking queue"
               value={metrics.assessments.awaitingMarking}
-              detail="Submissions waiting for staff grading"
+              detail="Written and document submissions waiting for staff grading"
               tone={metrics.assessments.awaitingMarking ? "amber" : "default"}
               icon={<MailCheck size={20} />}
             />
@@ -1551,6 +1569,15 @@ export default function AdminAcademyProgressInsights() {
               generateAiMarkingReview.mutate({ attemptId })
             }
             aiReviewingAttemptId={aiReviewingAttemptId}
+          />
+          <DocumentAssessmentQueue
+            submissions={courseDocumentMarking}
+            drafts={documentGradingDrafts}
+            setDrafts={setDocumentGradingDrafts}
+            onMark={(attemptId: number, score: number, feedback: string) =>
+              markDocumentAssessment.mutate({ attemptId, score, feedback })
+            }
+            marking={markDocumentAssessment.isPending}
           />
           <AssessmentSupportQueue
             items={courseSupport}

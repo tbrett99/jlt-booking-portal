@@ -79,6 +79,11 @@ const emptyLesson = {
   isRequired: true,
   requiresAcknowledgement: false,
   requiresAssessment: false,
+  assessmentMode: "quiz" as "quiz" | "document_upload",
+  assessmentTemplateKey: "",
+  assessmentTemplateName: "",
+  assessmentTemplateMimeType: "" as "" | "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  assessmentTemplateSize: 0,
   assessmentPassMark: 90,
   questions: [] as DraftQuestion[],
 };
@@ -315,7 +320,7 @@ export default function AdminAcademy() {
         );
         return;
       }
-      const shouldReplaceQuestions = lessonDraft.requiresAssessment && (
+      const shouldReplaceQuestions = lessonDraft.requiresAssessment && lessonDraft.assessmentMode === "quiz" && (
         editingLessonId === null
         || originalQuestionSignature !== academyQuestionDraftSignature(lessonDraft.questions)
       );
@@ -363,6 +368,10 @@ export default function AdminAcademy() {
   const uploadAttachment = trpc.academy.admin.uploadAttachment.useMutation({
     onError: e => toast.error(e.message),
   });
+  const uploadDocumentAssessmentTemplate =
+    trpc.academy.admin.uploadDocumentAssessmentTemplate.useMutation({
+      onError: e => toast.error(e.message),
+    });
   const reorderModules = trpc.academy.admin.reorderModules.useMutation({
     onSuccess: invalidateAcademy,
     onError: e => toast.error(e.message),
@@ -496,6 +505,11 @@ export default function AdminAcademy() {
       isRequired: lesson.isRequired,
       requiresAcknowledgement: lesson.requiresAcknowledgement,
       requiresAssessment: lesson.requiresAssessment,
+      assessmentMode: lesson.assessmentMode ?? "quiz",
+      assessmentTemplateKey: lesson.assessmentTemplateKey ?? "",
+      assessmentTemplateName: lesson.assessmentTemplateName ?? "",
+      assessmentTemplateMimeType: lesson.assessmentTemplateMimeType ?? "",
+      assessmentTemplateSize: lesson.assessmentTemplateSize ?? 0,
       assessmentPassMark: lesson.assessmentPassMark ?? 90,
       questions,
     });
@@ -514,6 +528,10 @@ export default function AdminAcademy() {
       attachmentUrl: lessonDraft.attachmentUrl || null,
       attachmentKey: lessonDraft.attachmentKey || null,
       attachmentName: lessonDraft.attachmentName || null,
+      assessmentTemplateKey: lessonDraft.assessmentTemplateKey || null,
+      assessmentTemplateName: lessonDraft.assessmentTemplateName || null,
+      assessmentTemplateMimeType: lessonDraft.assessmentTemplateMimeType || null,
+      assessmentTemplateSize: lessonDraft.assessmentTemplateSize || null,
     });
   }
   async function handleAttachment(file: File | undefined) {
@@ -540,6 +558,41 @@ export default function AdminAcademy() {
       attachmentName: stored.name,
     }));
     toast.success("Resource uploaded");
+  }
+  async function handleDocumentAssessmentTemplate(file: File | undefined) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Assessment templates must be under 10 MB");
+      return;
+    }
+    const allowed = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ];
+    if (!allowed.includes(file.type)) {
+      toast.error("Assessment templates must be a PDF, Word document or Excel workbook");
+      return;
+    }
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const stored = await uploadDocumentAssessmentTemplate.mutateAsync({
+      fileName: file.name,
+      fileBase64: base64,
+      mimeType: file.type as "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    setLessonDraft(current => ({
+      ...current,
+      assessmentTemplateKey: stored.key,
+      assessmentTemplateName: stored.name,
+      assessmentTemplateMimeType: stored.mimeType,
+      assessmentTemplateSize: stored.size,
+    }));
+    toast.success("Private assessment template uploaded");
   }
   async function handleQuizCsvImport(file: File | undefined) {
     if (!file || !editingLessonId) return;
@@ -1166,6 +1219,8 @@ export default function AdminAcademy() {
                   isSaving={saveLesson.isPending || replaceQuestions.isPending}
                   onUpload={handleAttachment}
                   uploading={uploadAttachment.isPending}
+                  onUploadAssessmentTemplate={handleDocumentAssessmentTemplate}
+                  uploadingAssessmentTemplate={uploadDocumentAssessmentTemplate.isPending}
                   onImportQuizCsv={handleQuizCsvImport}
                   importingQuizCsv={importMultipleChoiceQuestions.isPending}
                 />
@@ -1324,6 +1379,8 @@ function LessonEditor({
   isSaving,
   onUpload,
   uploading,
+  onUploadAssessmentTemplate,
+  uploadingAssessmentTemplate,
   onImportQuizCsv,
   importingQuizCsv,
 }: {
@@ -1337,6 +1394,8 @@ function LessonEditor({
   isSaving: boolean;
   onUpload: (file: File | undefined) => void;
   uploading: boolean;
+  onUploadAssessmentTemplate: (file: File | undefined) => void;
+  uploadingAssessmentTemplate: boolean;
   onImportQuizCsv: (file: File | undefined) => void;
   importingQuizCsv: boolean;
 }) {
@@ -1603,12 +1662,57 @@ function LessonEditor({
               }
             />
             <span>
-              <b>Add a knowledge check</b>
+              <b>Add an assessment</b>
               <span className="mt-0.5 block text-xs text-muted-foreground">
-                The agent must pass the quiz before completion.
+                The agent must pass the assessment before completion.
               </span>
             </span>
           </label>
+          {draft.requiresAssessment && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2">
+              <Label htmlFor="academy-assessment-mode">Assessment format</Label>
+              <select
+                id="academy-assessment-mode"
+                className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={draft.assessmentMode}
+                onChange={event => setDraft({
+                  ...draft,
+                  assessmentMode: event.target.value as "quiz" | "document_upload",
+                })}
+              >
+                <option value="quiz">Portal quiz or written responses</option>
+                <option value="document_upload">Download, complete and upload a document</option>
+              </select>
+              <p className="mt-2 text-xs leading-5 text-emerald-800">
+                {draft.assessmentMode === "document_upload"
+                  ? "Agents download your private template, complete it offline and upload one completed version for staff marking."
+                  : "Use multiple-choice and/or written questions inside the Portal."}
+              </p>
+              {draft.assessmentMode === "document_upload" && (
+                <div className="mt-3 rounded-lg border border-emerald-300 bg-background/80 p-3">
+                  <Label>Private assessment template</Label>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    PDF, Word or Excel · maximum 10 MB. The stored template and each learner submission are encrypted, and only authorised Portal users can download them.
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <Input value={draft.assessmentTemplateName} readOnly placeholder="No template uploaded" />
+                    <label className="inline-flex shrink-0 cursor-pointer items-center rounded-md border px-3 text-sm font-medium hover:bg-muted">
+                      <Upload className="mr-1" size={15} />
+                      {uploadingAssessmentTemplate ? "Uploading" : "Upload"}
+                      <input
+                        className="hidden"
+                        type="file"
+                        accept=".pdf,.docx,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        onChange={(event: ChangeEvent<HTMLInputElement>) => onUploadAssessmentTemplate(event.target.files?.[0])}
+                      />
+                    </label>
+                  </div>
+                  {draft.assessmentTemplateName && <p className="mt-2 text-xs font-medium text-emerald-800">Template ready: {draft.assessmentTemplateName} · {Math.max(1, Math.round(draft.assessmentTemplateSize / 1024)).toLocaleString()} KB</p>}
+                  {editing && <p className="mt-2 text-xs text-amber-800">Once a learner opens or submits this assessment, the template cannot be replaced. Create a replacement lesson for a revised template.</p>}
+                </div>
+              )}
+            </div>
+          )}
           {draft.requiresAssessment && (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2">
               <Label htmlFor="academy-written-pass-mark">Written assessment overall pass mark</Label>
@@ -1633,7 +1737,7 @@ function LessonEditor({
             </div>
           )}
         </div>
-        {draft.requiresAssessment && (
+        {draft.requiresAssessment && draft.assessmentMode === "quiz" && (
           <div className="rounded-xl border p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -1923,6 +2027,10 @@ function LessonEditor({
               !draft.title.trim() ||
               isSaving ||
               (draft.requiresAssessment &&
+                draft.assessmentMode === "document_upload" &&
+                !draft.assessmentTemplateKey) ||
+              (draft.requiresAssessment &&
+                draft.assessmentMode === "quiz" &&
                 draft.questions.some(
                   question =>
                     !question.prompt.trim() ||
@@ -2394,6 +2502,56 @@ export function WrittenAssessmentQueue({
       )}
     </section>
   );
+}
+
+export function DocumentAssessmentQueue({
+  submissions,
+  drafts,
+  setDrafts,
+  onMark,
+  marking,
+}: {
+  submissions: Array<any>;
+  drafts: Record<number, { score: number; feedback: string }>;
+  setDrafts: React.Dispatch<React.SetStateAction<Record<number, { score: number; feedback: string }>>>;
+  onMark: (attemptId: number, score: number, feedback: string) => void;
+  marking: boolean;
+}) {
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  const draftFor = (submission: any) => drafts[submission.attempt.id] ?? { score: -1, feedback: "" };
+  const updateDraft = (attemptId: number, patch: Partial<{ score: number; feedback: string }>) => setDrafts(current => ({
+    ...current,
+    [attemptId]: { ...(current[attemptId] ?? { score: -1, feedback: "" }), ...patch },
+  }));
+  return <section className="rounded-2xl border bg-card p-5 shadow-sm">
+    <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">Staff marking queue</p>
+        <h2 className="mt-1 text-xl font-bold">Document assessment reviews</h2>
+        <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Open the submitted work and its original template, then record one staff score and practical feedback. The agent must acknowledge feedback before moving on.</p>
+      </div>
+      <div className="rounded-full bg-sky-100 px-3 py-1.5 text-sm font-bold text-sky-800">{submissions.length} awaiting review</div>
+    </div>
+    {submissions.length ? <div className="mt-5 space-y-3">{submissions.map((submission: any) => {
+      const open = expanded.has(submission.attempt.id);
+      const draft = draftFor(submission);
+      const scoreValid = Number.isInteger(draft.score) && draft.score >= 0 && draft.score <= 100;
+      const ready = scoreValid && draft.feedback.trim().length >= 3;
+      const passed = scoreValid && draft.score >= submission.lesson.assessmentPassMark;
+      return <article key={submission.attempt.id} className={`overflow-hidden rounded-xl border ${open ? "border-sky-300 bg-sky-50/30" : "bg-card hover:border-sky-200"}`}>
+        <button type="button" className="flex w-full items-start gap-3 p-4 text-left" aria-expanded={open} onClick={() => setExpanded(current => { const next = new Set(current); next.has(submission.attempt.id) ? next.delete(submission.attempt.id) : next.add(submission.attempt.id); return next; })}>
+          <span className="mt-0.5 rounded-md bg-sky-100 p-1.5 text-sky-900">{open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</span>
+          <span className="min-w-0 flex-1"><span className="font-bold">{submission.agent.name || submission.agent.email}</span><span className="mt-1 block text-sm text-muted-foreground">{submission.course.title} · {submission.lesson.title}</span><span className="mt-1 block text-xs text-muted-foreground">{submission.attempt.submissionFileName || "Submitted document"} · Submitted {formatDate(submission.attempt.takenAt)} · Pass mark {submission.lesson.assessmentPassMark}%</span></span>
+          <span className="shrink-0 text-xs font-semibold text-sky-800">{open ? "Collapse" : "Review"}</span>
+        </button>
+        {open && <div className="border-t border-sky-200/80 p-4">
+          <div className="grid gap-3 sm:grid-cols-2"><a className="flex items-center justify-between gap-3 rounded-xl border bg-background p-3 text-sm font-semibold text-primary hover:bg-muted" href={submission.submissionDownloadUrl} target="_blank" rel="noreferrer"><span className="flex min-w-0 items-center gap-2"><FileText size={17} /><span className="truncate">Open submitted document</span></span><Download size={16} /></a>{submission.templateDownloadUrl ? <a className="flex items-center justify-between gap-3 rounded-xl border bg-background p-3 text-sm font-semibold text-primary hover:bg-muted" href={submission.templateDownloadUrl} target="_blank" rel="noreferrer"><span className="flex min-w-0 items-center gap-2"><FileText size={17} /><span className="truncate">Open original template</span></span><Download size={16} /></a> : <div className="rounded-xl border border-dashed p-3 text-sm text-muted-foreground">Original template was not available.</div>}</div>
+          <div className="mt-4 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)]"><div><Label>Score (%) · pass mark {submission.lesson.assessmentPassMark}%</Label><Input className="mt-1.5" type="number" min="0" max="100" value={draft.score < 0 ? "" : draft.score} onChange={event => updateDraft(submission.attempt.id, { score: event.target.value === "" ? -1 : Math.max(0, Math.min(100, Number(event.target.value))) })} />{scoreValid && <p className={`mt-2 text-xs ${passed ? "text-emerald-800" : "text-amber-900"}`}>{passed ? "This score passes the document assessment." : "This score returns the assessment for an updated document submission."}</p>}</div><div><Label>Feedback for the agent</Label><Textarea className="mt-1.5" rows={4} value={draft.feedback} placeholder="Explain what was done well and what the agent should improve." onChange={event => updateDraft(submission.attempt.id, { feedback: event.target.value })} /></div></div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Feedback is sent to the agent and must be acknowledged before progression.</p><Button disabled={!ready || marking} onClick={() => onMark(submission.attempt.id, draft.score, draft.feedback)}>{marking ? "Saving feedback..." : "Save grade and send feedback"}</Button></div>
+        </div>}
+      </article>;
+    })}</div> : <div className="mt-5 rounded-xl border border-dashed bg-muted/15 p-6 text-center text-sm text-muted-foreground">No document assessments are waiting for review.</div>}
+  </section>;
 }
 
 export function AssessmentSupportQueue({
