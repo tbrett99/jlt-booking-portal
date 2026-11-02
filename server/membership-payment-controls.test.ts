@@ -25,6 +25,21 @@ describe("membership payment control boundaries", () => {
     await expect(caller("super_admin").setAutomation({ enabled: true, confirmation: "yes" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
+  it.each(["never_completed", "pending", "failed"] as const)("blocks first activation for %s recovery even after a successful batch", async kind => {
+    const state = { id: 1, enabled: false, activatedAt: null, lastEventSyncAt: new Date(), lastSuccessAt: kind === "never_completed" ? null : new Date(), lastError: null };
+    const results = [[state], [{ count: kind === "pending" ? 12 : 0 }], [{ count: kind === "failed" ? 1 : 0 }]];
+    const update = vi.fn();
+    const tx = {
+      select: () => ({ from: () => ({ where: () => {
+        const result = results.shift()!;
+        return { for: async () => result, then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve(result).then(resolve) };
+      } }) }),
+      update,
+    };
+    mocks.getDb.mockResolvedValue({ transaction: async (work: (value: typeof tx) => unknown) => work(tx) });
+    await expect(caller("super_admin").setAutomation({ enabled: true, confirmation: "ENABLE FUTURE PAYMENT RULES" })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(update).not.toHaveBeenCalled();
+  });
   it("does not permit an ordinary admin to approve a fee amount", async () => {
     await expect(caller("admin").approveFeePolicy({ amountPence: 2500, confirmation: "APPROVE ADMIN FEE POLICY" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(mocks.getDb).not.toHaveBeenCalled();

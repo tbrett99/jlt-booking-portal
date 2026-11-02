@@ -14,6 +14,7 @@ import {
   membershipPaymentFees as fees,
   membershipPaymentOutbox as outbox,
   membershipPaymentControl as control,
+  membershipPaymentInbox as inbox,
 } from "../drizzle/schema";
 
 const SCHEMA_ERROR =
@@ -303,6 +304,14 @@ export const membershipPaymentsRouter = router({
       COALESCE(SUM(pendingFeePence), 0) AS pendingFeePence,
       COALESCE(SUM(mailAcceptedCount), 0) AS mailAcceptedCount FROM (${issueBase()}) issue_rows`
       );
+      const [queue] = await readRows<{ pendingEvents: number; failedEvents: number }>(
+        db,
+        sql`SELECT
+          COALESCE(SUM(CASE WHEN ${inbox.status} = 'pending' THEN 1 ELSE 0 END), 0) AS pendingEvents,
+          COALESCE(SUM(CASE WHEN ${inbox.status} = 'failed' THEN 1 ELSE 0 END), 0) AS failedEvents
+          FROM ${inbox} WHERE ${inbox.status} IN ('pending', 'failed')`
+      );
+      const pendingEvents = Number(queue?.pendingEvents ?? 0), failedEvents = Number(queue?.failedEvents ?? 0);
       const lastSuccessAt = state?.lastSuccessAt ?? null;
       return {
         counts: Object.fromEntries(
@@ -320,8 +329,13 @@ export const membershipPaymentsRouter = router({
           lastSuccessAt,
           lastError: state?.lastError ?? null,
           updatedAt: state?.updatedAt ?? null,
+          pendingEvents,
+          failedEvents,
+          recoveryState: failedEvents || state?.lastError ? "review_required" as const
+            : pendingEvents ? "in_progress" as const
+            : lastSuccessAt ? "complete" as const : "waiting" as const,
           stale:
-            !lastSuccessAt ||
+            pendingEvents > 0 || failedEvents > 0 || Boolean(state?.lastError) || !lastSuccessAt ||
             Date.now() - new Date(lastSuccessAt).getTime() >
               15 * 60 * 1000,
           feePolicyApproved: Boolean(Number(state?.feePolicyApproved ?? 0)),

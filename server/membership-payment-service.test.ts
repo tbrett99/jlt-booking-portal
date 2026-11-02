@@ -721,6 +721,42 @@ describe("durable membership account processing", () => {
 });
 
 describe("leased membership notification outbox", () => {
+  it("initial recovery remains email-free before and after first activation, including historic confirmations", async () => {
+    const h = harness();
+    h.state.control!.enabled = false;
+    h.state.control!.activatedAt = null;
+    for (let n = 1; n <= 3; n++) await h.record(`HISTORY-${n}`, -10 + n, { source: "reconciliation" });
+    await h.record("HISTORY-CONFIRMED", -5, { action: "confirmed", source: "reconciliation" });
+    await h.api.processMembershipPaymentAccount(7);
+    await h.api.processMembershipPaymentOutbox();
+    expect(h.state.outbox).toHaveLength(0);
+    expect(h.state.events.every(e => e.status === "processed")).toBe(true);
+    h.state.control!.enabled = true;
+    h.state.control!.activatedAt = new Date("2026-11-01T11:00:00Z");
+    await h.api.processMembershipPaymentAccount(7);
+    await h.api.processMembershipPaymentOutbox();
+    expect(h.sendAgent).not.toHaveBeenCalled();
+    expect(h.sendSupport).not.toHaveBeenCalled();
+    expect(h.state.outbox).toHaveLength(0);
+    expect(h.state.user!.portalStatus).toBe("active");
+  });
+
+  it.each(["pre_activation", "bulk_history", "excluded"] as const)(
+    "holds an accidentally seeded %s email intent even when automation is enabled",
+    async kind => {
+      const h = harness();
+      await h.record("SEED-FAILURE", 1);
+      await h.api.processMembershipPaymentAccount(7);
+      if (kind === "pre_activation") h.state.control!.activatedAt = new Date("2026-11-01T11:00:00Z");
+      if (kind === "bulk_history") h.state.events[0].source = "backfill";
+      if (kind === "excluded") h.state.events[0].status = "ignored";
+      await h.api.processMembershipPaymentOutbox();
+      expect(h.sendAgent).not.toHaveBeenCalled();
+      expect(h.sendSupport).not.toHaveBeenCalled();
+      expect(h.state.outbox.every(o => o.status === "review" && o.firstAttemptAt === null)).toBe(true);
+    }
+  );
+
   it("renders every failure's frozen count using current suspension, not stale first/second threats", async () => {
     const h = harness();
     for (let n = 1; n <= 4; n++) await h.record(`EV-${n}`, n);

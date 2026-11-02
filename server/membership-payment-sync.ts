@@ -24,13 +24,24 @@ export async function membershipProviderGet<T>(path: string): Promise<T> {
 
 /** Persist first. Mapping, counters and notifications are resumable work, not receipt. */
 export async function receiveMembershipProviderEvent(event: MembershipProviderEvent, source: "webhook" | "reconciliation") {
+  await receiveMembershipProviderEvents([event], source);
+}
+
+/** One durable insert per provider page; exact replays never reopen excluded or processed events. */
+export async function receiveMembershipProviderEvents(events: MembershipProviderEvent[], source: "webhook" | "reconciliation") {
+  if (!events.length) return;
+  if (events.length > 500) throw new Error("Provider receipt page exceeds the supported batch size");
+  const values = events.map(event => {
   if (!event.id || !event.created_at || !Number.isFinite(new Date(event.created_at).getTime())) throw new Error("Provider event ID and timestamp are required");
+    return {
+      eventId: event.id, paymentId: event.links?.payment ?? null, mandateId: event.links?.mandate ?? null,
+      subscriptionId: event.links?.subscription ?? null, action: event.resource_type === "payments" ? event.action : `${event.resource_type}_${event.action}`,
+      occurredAt: new Date(event.created_at), source, rawPayload: JSON.stringify(event), status: "pending",
+    };
+  });
   const db = await getDb(); if (!db) throw new Error("Payment database unavailable");
-  await db.insert(membershipPaymentInbox).values({
-    eventId: event.id, paymentId: event.links?.payment ?? null, mandateId: event.links?.mandate ?? null,
-    subscriptionId: event.links?.subscription ?? null, action: event.resource_type === "payments" ? event.action : `${event.resource_type}_${event.action}`,
-    occurredAt: new Date(event.created_at), source, rawPayload: JSON.stringify(event), status: "pending",
-  }).onDuplicateKeyUpdate({ set: { eventId: sql`${membershipPaymentInbox.eventId}` } });
+  await db.insert(membershipPaymentInbox).values(values)
+    .onDuplicateKeyUpdate({ set: { eventId: sql`${membershipPaymentInbox.eventId}` } });
 }
 
 export async function enrichMembershipProviderEvent(event: MembershipProviderEvent, source: "webhook" | "reconciliation") {
@@ -124,8 +135,25 @@ export async function recoverPendingMembershipEvents(limit = 100, deadline = Dat
       await db.update(membershipPaymentInbox).set({ status: "failed", processingAttempts: row.processingAttempts + 1, nextProcessingAt: new Date(Date.now() + Math.min(3600000, 60000 * 2 ** Math.min(row.processingAttempts, 6))), lastError: String((error as Error).message).slice(0, 2000) }).where(eq(membershipPaymentInbox.id, row.id));
     }
   }
-  const [backlog] = await db.select({ count: sql<number>`COUNT(*)` }).from(membershipPaymentInbox).where(or(eq(membershipPaymentInbox.status, "pending"), eq(membershipPaymentInbox.status, "failed")));
-  return { completed, errors, backlog: Number(backlog?.count ?? 0) };
+  const counts = await membershipRecoveryQueueCounts();
+  return { completed, errors, ...counts };
+}
+
+export async function membershipRecoveryQueueCounts() {
+  const db = await getDb(); if (!db) throw new Error("Payment database unavailable");
+  const [counts] = await db.select({
+    pending: sql<number>`COALESCE(SUM(CASE WHEN ${membershipPaymentInbox.status} = 'pending' THEN 1 ELSE 0 END), 0)`,
+    failed: sql<number>`COALESCE(SUM(CASE WHEN ${membershipPaymentInbox.status} = 'failed' THEN 1 ELSE 0 END), 0)`,
+  }).from(membershipPaymentInbox).where(or(eq(membershipPaymentInbox.status, "pending"), eq(membershipPaymentInbox.status, "failed")));
+  const pending = Number(counts?.pending ?? 0), failed = Number(counts?.failed ?? 0);
+  return { pending, failed, backlog: pending + failed };
+}
+
+export class MembershipRecoveryReviewError extends Error {
+  constructor(public readonly progress: { completed: number; errors: number; pending: number; failed: number; backlog: number }) {
+    super(`${progress.failed} payment events require recovery or mapping review; ${progress.pending} pending events remain. Initial recovery is not complete.`);
+    this.name = "MembershipRecoveryReviewError";
+  }
 }
 
 /** External HTTP cron owns the schedule; no in-process timer or detached worker. */
@@ -148,10 +176,8 @@ export async function reconcileMembershipPayments() {
       const page = await membershipProviderGet<{ events: MembershipProviderEvent[]; meta?: { cursors?: { after?: string | null } } }>(`/events?${params}`);
       if (!Array.isArray(page.events)) throw new Error("Invalid provider event-list response");
       // Store each page before any network enrichment. A failed later page never advances the cursor.
-      for (const event of page.events) {
-        if (!["payments", "mandates", "subscriptions"].includes(event.resource_type)) continue;
-        await receiveMembershipProviderEvent(event, "reconciliation"); eventCount++;
-      }
+      const relevant = page.events.filter(event => ["payments", "mandates", "subscriptions"].includes(event.resource_type));
+      await receiveMembershipProviderEvents(relevant, "reconciliation"); eventCount += relevant.length;
       cursor = page.meta?.cursors?.after ?? null; pages++;
       if (cursor && (cursors.has(cursor) || pages >= 100)) throw new Error("Incomplete event pagination; recovery cursor not advanced");
       if (cursor) cursors.add(cursor);
@@ -159,9 +185,16 @@ export async function reconcileMembershipPayments() {
     await db.update(membershipPaymentControl).set({ lastEventSyncAt: started }).where(and(eq(membershipPaymentControl.id, 1), eq(membershipPaymentControl.syncLockToken, lockToken)));
     const recovered = await recoverPendingMembershipEvents(250, started.getTime() + 85000);
     const notifications = await processMembershipPaymentOutbox(50);
-    if (recovered.errors || recovered.backlog) throw new Error(`${recovered.backlog} payment events await recovery or mapping review; no healthy status reported`);
+    if (recovered.errors || recovered.failed) throw new MembershipRecoveryReviewError(recovered);
+    if (recovered.pending) {
+      // A successful bounded batch is not a completed/healthy ledger. The activation
+      // gate still checks both lastSuccessAt and the actual pending/failed counts.
+      await db.update(membershipPaymentControl).set({ lastError: null })
+        .where(and(eq(membershipPaymentControl.id, 1), eq(membershipPaymentControl.syncLockToken, lockToken)));
+      return { status: "in_progress" as const, eventCount, pages, recovered, notifications, automationEnabled: control.enabled };
+    }
     await db.update(membershipPaymentControl).set({ lastSuccessAt: new Date(), lastError: null }).where(and(eq(membershipPaymentControl.id, 1), eq(membershipPaymentControl.syncLockToken, lockToken)));
-    return { eventCount, pages, recovered, notifications, automationEnabled: control.enabled };
+    return { status: "complete" as const, eventCount, pages, recovered, notifications, automationEnabled: control.enabled };
   } catch (error) {
     await db.update(membershipPaymentControl).set({ lastError: String((error as Error).message).slice(0, 2000) }).where(and(eq(membershipPaymentControl.id, 1), eq(membershipPaymentControl.syncLockToken, lockToken)));
     throw error;

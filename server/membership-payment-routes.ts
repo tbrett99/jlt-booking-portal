@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { timingSafeEqual } from "node:crypto";
 import { sdk } from "./_core/sdk";
-import { reconcileMembershipPayments } from "./membership-payment-sync";
+import { reconcileMembershipPayments, MembershipRecoveryReviewError } from "./membership-payment-sync";
 import { getDb } from "./db";
 import { membershipPaymentControl } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -30,7 +30,12 @@ export async function membershipPaymentRecoveryHandler(req: Request, res: Respon
     return res.json({ ok: true, result, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error("[MembershipPaymentRecovery] Failed", (error as Error).message);
-    return res.status(503).json({ ok: false, error: "Membership payment recovery did not complete. Check Memberships → Payment & Direct Debit Issues and Railway logs.", timestamp: new Date().toISOString() });
+    return res.status(503).json({
+      ok: false,
+      error: "Membership payment recovery did not complete. Check Memberships → Payment & Direct Debit Issues and Railway logs.",
+      ...(error instanceof MembershipRecoveryReviewError ? { status: "review_required", progress: error.progress } : {}),
+      timestamp: new Date().toISOString(),
+    });
   }
 }
 export function registerMembershipPaymentRoutes(app: Express) {

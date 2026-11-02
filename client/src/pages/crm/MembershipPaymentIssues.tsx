@@ -122,6 +122,7 @@ export function automationConfirmation(enabled: boolean) {
 }
 
 type ReconciliationOutcome = {
+  status?: "in_progress" | "complete";
   skipped?: string;
   eventCount?: number;
   recovered?: { completed: number; errors: number; backlog: number };
@@ -132,9 +133,37 @@ export function reconciliationMessage(result: ReconciliationOutcome): string {
     return `Reconciliation not run: ${result.skipped}. No new successful sync is implied.`;
   const recovered = result.recovered;
   const details = `${result.eventCount ?? 0} provider event(s) read; ${recovered?.completed ?? 0} recovered; ${recovered?.errors ?? 0} recovery error(s); ${recovered?.backlog ?? 0} awaiting recovery.`;
+  if (
+    result.status === "in_progress" ||
+    (recovered && recovered.errors === 0 && recovered.backlog > 0)
+  )
+    return `Provider reconciliation in progress. ${details} No complete ledger scan or healthy status is implied; payment rules remain unchanged.`;
   if (!recovered || recovered.errors > 0 || recovered.backlog > 0)
     return `Reconciliation needs review. ${details} No healthy status is implied.`;
   return `Provider reconciliation completed. ${details} Mail failures: ${result.notifications?.failed ?? 0}; uncertain acceptance: ${result.notifications?.ambiguous ?? 0}. Review stored health below; this is not proof of collection or email delivery.`;
+}
+
+type RecoveryHealth = {
+  pendingEvents?: number;
+  failedEvents?: number;
+  recoveryState?: "waiting" | "in_progress" | "review_required" | "complete";
+  lastSuccessAt?: Date | string | null;
+  lastError?: string | null;
+};
+function recoveryLabel(health: RecoveryHealth): string {
+  if (
+    health.recoveryState === "review_required" ||
+    (health.failedEvents ?? 0) > 0 ||
+    health.lastError
+  )
+    return "Review required";
+  if (health.recoveryState === "waiting")
+    return "Waiting for first reconciliation";
+  if (health.recoveryState === "in_progress" || (health.pendingEvents ?? 0) > 0)
+    return "Recovery in progress";
+  return health.recoveryState === "complete" || health.lastSuccessAt
+    ? "Complete"
+    : "Waiting for first reconciliation";
 }
 
 function usePaymentRefresh() {
@@ -901,6 +930,7 @@ export default function MembershipPaymentIssues() {
     enabled: isStaff,
   });
   const health = overview.data?.health;
+  const recoveryHealth: RecoveryHealth | undefined = health;
   const counts = overview.data?.counts;
   const error = overview.error ?? issues.error;
   const schemaRequired =
@@ -973,9 +1003,43 @@ export default function MembershipPaymentIssues() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {recoveryHealth && !error && !overview.isLoading && (
+            <section
+              aria-label="Provider event recovery"
+              className="rounded-lg border bg-muted/30 p-3 text-xs space-y-3"
+            >
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h3 className="font-semibold">Provider event recovery</h3>
+                <Badge variant="outline">{recoveryLabel(recoveryHealth)}</Badge>
+              </div>
+              <dl className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <dt className="text-muted-foreground">Pending events</dt>
+                  <dd className="font-medium mt-1">
+                    {recoveryHealth.pendingEvents ?? "Not recorded"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">
+                    Events requiring review
+                  </dt>
+                  <dd className="font-medium mt-1">
+                    {recoveryHealth.failedEvents ?? "Not recorded"}
+                  </dd>
+                </div>
+              </dl>
+              <p className="text-muted-foreground">
+                Pending events are awaiting recovery, not a failed
+                reconciliation. Partial progress is not a healthy, complete
+                ledger scan and does not enable payment rules.
+              </p>
+            </section>
+          )}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-xs">
             <div>
-              <p className="text-muted-foreground">Last successful sync</p>
+              <p className="text-muted-foreground">
+                Last completed ledger reconciliation
+              </p>
               <p className="font-medium mt-1">{stamp(health?.lastSuccessAt)}</p>
             </div>
             <div>
@@ -1003,8 +1067,9 @@ export default function MembershipPaymentIssues() {
           </div>
           {health?.stale && (
             <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
-              <Clock className="h-3.5 w-3.5" /> Provider data is stale (over 15
-              minutes) or has never successfully synced. This is not a live
+              <Clock className="h-3.5 w-3.5" /> The last completed ledger
+              reconciliation is over 15 minutes old or has not completed yet.
+              Provider event sync may still be progressing. This is not a live
               balance.
             </p>
           )}
@@ -1020,6 +1085,9 @@ export default function MembershipPaymentIssues() {
             </p>
           )}
           <p className="text-xs text-muted-foreground">
+            Last provider event sync records provider reads, not completion of
+            ledger recovery. Last completed ledger reconciliation records a
+            complete successful scan, not proof of collection or email delivery.
             View last read is only a stored-record read timestamp, not provider
             last success. Refresh view does not sync the provider or collect
             payments. Manual suspensions remain unchanged.

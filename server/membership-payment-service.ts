@@ -872,6 +872,20 @@ export function createMembershipPaymentService(
           )
             return null;
           const payload = JSON.parse(row.payload) as Intent;
+          const sourceEvent = snapshot.events.find(event => event.eventId === row.eventId);
+          // Defence in depth: even an accidentally seeded historical outbox row
+          // must never become a retrospective email after rules are enabled.
+          if (!sourceEvent || sourceEvent.status === "ignored" ||
+            !future(sourceEvent, snapshot.control) || bulkHistory(sourceEvent) ||
+            !Number.isFinite(new Date(payload.occurredAt).getTime()) ||
+            new Date(payload.occurredAt).getTime() !== sourceEvent.occurredAt.getTime()) {
+            await tx.updateOutbox(row.id, {
+              status: "review", lockedUntil: null, lockToken: null,
+              lastError: "Historical, excluded or unverified payment email held for review; no retrospective delivery authorised.",
+            }, row.lockToken);
+            result.skipped++;
+            return null;
+          }
           if (
             row.firstAttemptAt &&
             at.getTime() - row.firstAttemptAt.getTime() >= SAFE_DEDUPE_MS

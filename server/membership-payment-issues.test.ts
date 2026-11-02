@@ -250,7 +250,8 @@ describe("membershipPayments read-only API", () => {
     results(
       [],
       [],
-      [{ agents: 1, issueAgents: 1, historicalReviewRequiredAgents: 1 }]
+      [{ agents: 1, issueAgents: 1, historicalReviewRequiredAgents: 1 }],
+      [{ pendingEvents: 0, failedEvents: 0 }]
     );
     const data = await caller().overview({});
     expect(data.health).toMatchObject({
@@ -259,6 +260,7 @@ describe("membershipPayments read-only API", () => {
       stale: true,
       lastSuccessAt: null,
       historicalReviewComplete: false,
+      recoveryState: "waiting",
     });
   });
 
@@ -280,16 +282,30 @@ describe("membershipPayments read-only API", () => {
           historicalReviewRequiredAgents: "2",
           mailAcceptedCount: "4",
         },
-      ]
+      ],
+      [{ pendingEvents: "0", failedEvents: "0" }]
     );
     const data = await caller().overview({});
     expect(data.counts).toMatchObject({ issueAgents: 3, mailAcceptedCount: 4 });
     expect(data.health).toMatchObject({
       enabled: false,
-      stale: false,
+      stale: true,
       lastError: "Provider rate limited",
       historicalReviewComplete: false,
+      recoveryState: "review_required",
     });
+  });
+
+  it.each(["pending", "failed", "complete"] as const)("reports %s queue state independently of provider-read timestamps", async kind => {
+    const now = new Date();
+    results([], [{ enabled: 0, lastEventSyncAt: now, lastSuccessAt: now, lastError: null }], [{}],
+      [{ pendingEvents: kind === "pending" ? "12" : "0", failedEvents: kind === "failed" ? "3" : "0" }]);
+    const data = await caller().overview({});
+    expect(data.health.recoveryState).toBe(kind === "pending" ? "in_progress" : kind === "failed" ? "review_required" : "complete");
+    expect(data.health.stale).toBe(kind !== "complete");
+    expect(data.health.pendingEvents).toBe(kind === "pending" ? 12 : 0);
+    expect(data.health.failedEvents).toBe(kind === "failed" ? 3 : 0);
+    expect(queryAt(3).sql).toContain("membership_payment_inbox");
   });
 
   it("bounds payment, fee and mail review references to 20 with explicit truncation", async () => {
@@ -342,7 +358,7 @@ describe("payment issues UI safety source", () => {
     for (const text of [
       "Automation paused",
       "Schema update required",
-      "Last successful sync",
+      "Last completed ledger reconciliation",
       "Reviewed historical issues",
       "Onboarding — DD setup needed",
       "Do not interpret unavailable",

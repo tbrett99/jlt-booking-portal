@@ -18,7 +18,7 @@ function fakeDb(subscriptions: unknown[] = [{ userId: 42 }]) {
       const data = table === membershipPaymentFees ? [] : table === gcSubscriptions ? subscriptions : [];
       return { limit: async () => data, then: (resolve: (value: unknown[]) => unknown) => Promise.resolve(data).then(resolve) };
     } }) }),
-    insert: () => ({ values: (data: unknown) => { inserted.push(data); return { onDuplicateKeyUpdate: async () => [{}] }; } }),
+    insert: () => ({ values: (data: unknown) => { inserted.push(...(Array.isArray(data) ? data : [data])); return { onDuplicateKeyUpdate: async () => [{}] }; } }),
     update: () => ({ set: () => ({ where: async () => [{}] }) }),
   };
 }

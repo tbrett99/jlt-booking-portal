@@ -20,6 +20,16 @@ const mocks = vi.hoisted(() => ({
     feeCollectionMode: "staff_approval",
     stale: true,
     lastError: null,
+    pendingEvents: undefined as number | undefined,
+    failedEvents: undefined as number | undefined,
+    recoveryState: undefined as
+      | "waiting"
+      | "in_progress"
+      | "review_required"
+      | "complete"
+      | undefined,
+    lastSuccessAt: null as Date | null,
+    lastEventSyncAt: null as Date | null,
   },
 }));
 vi.mock("./db", () => ({ getDb: mocks.getDb }));
@@ -126,6 +136,11 @@ beforeEach(() => {
   vi.stubGlobal("React", React);
   mocks.role = "admin";
   mocks.health.lastError = null;
+  mocks.health.pendingEvents = undefined;
+  mocks.health.failedEvents = undefined;
+  mocks.health.recoveryState = undefined;
+  mocks.health.lastSuccessAt = null;
+  mocks.health.lastEventSyncAt = null;
   mocks.reads = [];
   const db = {
     select: vi.fn(() => ({
@@ -273,6 +288,85 @@ describe("payment controls UI safety", () => {
     expect(agent).not.toContain("Run provider reconciliation");
   });
 
+  it.each([
+    ["waiting", 12, 0, "Waiting for first reconciliation"],
+    ["in_progress", 12, 0, "Recovery in progress"],
+    ["review_required", 12, 2, "Review required"],
+    ["complete", 0, 0, "Complete"],
+  ] as const)(
+    "renders %s recovery with pending and review counters, without enabling automation",
+    (state, pending, failed, expected) => {
+      mocks.role = "super_admin";
+      mocks.health.recoveryState = state;
+      mocks.health.pendingEvents = pending;
+      mocks.health.failedEvents = failed;
+      const markup = renderToStaticMarkup(
+        React.createElement(MembershipPaymentIssues)
+      );
+      expect(markup).toContain('aria-label="Provider event recovery"');
+      expect(markup).toContain(`>${expected}</span>`);
+      expect(markup).toMatch(
+        new RegExp(`Pending events</dt><dd[^>]*>${pending}</dd>`)
+      );
+      expect(markup).toMatch(
+        new RegExp(`Events requiring review</dt><dd[^>]*>${failed}</dd>`)
+      );
+      expect(markup).toContain("Automation paused");
+      expect(markup).toContain("Enable future payment rules");
+      expect(markup).not.toContain("Pause payment rules");
+      expect(markup).toContain("does not enable payment rules");
+      expect(markup).not.toContain("cron failed");
+    }
+  );
+
+  it("does not report completion when counters contradict a complete recovery state", () => {
+    mocks.health.recoveryState = "complete";
+    mocks.health.pendingEvents = 4;
+    let markup = renderToStaticMarkup(
+      React.createElement(MembershipPaymentIssues)
+    );
+    expect(markup).toContain(">Recovery in progress</span>");
+    expect(markup).not.toContain(">Complete</span>");
+    mocks.health.failedEvents = 1;
+    markup = renderToStaticMarkup(React.createElement(MembershipPaymentIssues));
+    expect(markup).toContain(">Review required</span>");
+  });
+
+  it("keeps missing recovery fields unknown and separates provider reads from completed ledger success", () => {
+    let markup = renderToStaticMarkup(
+      React.createElement(MembershipPaymentIssues)
+    );
+    expect(markup).toContain(">Waiting for first reconciliation</span>");
+    expect(markup).toMatch(/Pending events<\/dt><dd[^>]*>Not recorded<\/dd>/);
+    expect(markup).toMatch(
+      /Events requiring review<\/dt><dd[^>]*>Not recorded<\/dd>/
+    );
+    mocks.health.lastSuccessAt = new Date("2026-09-01T10:00:00Z");
+    mocks.health.lastEventSyncAt = new Date("2026-10-01T11:00:00Z");
+    mocks.health.recoveryState = "in_progress";
+    markup = renderToStaticMarkup(React.createElement(MembershipPaymentIssues));
+    expect(markup).toContain(">Recovery in progress</span>");
+    expect(markup).toContain("Last completed ledger reconciliation");
+    expect(markup).toContain("Last provider event sync");
+    for (const date of [
+      mocks.health.lastSuccessAt,
+      mocks.health.lastEventSyncAt,
+    ])
+      expect(markup).toContain(
+        date.toLocaleString("en-GB", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })
+      );
+    expect(markup).not.toContain("Last successful sync");
+    expect(markup).toContain(
+      "records provider reads, not completion of ledger recovery"
+    );
+    expect(markup).toContain(
+      "Partial progress is not a healthy, complete ledger scan"
+    );
+  });
+
   it("requires typed confirmations and displays exact automation payload without silent enable", () => {
     expect(automationConfirmation(true)).toBe("ENABLE FUTURE PAYMENT RULES");
     expect(automationConfirmation(false)).toBe("PAUSE PAYMENT RULES");
@@ -336,17 +430,46 @@ describe("payment controls UI safety", () => {
       { completed: 2, errors: 0, backlog: 3 },
     ]) {
       const message = reconciliationMessage({ eventCount: 5, recovered });
-      expect(message).toContain("No healthy status is implied");
+      expect(message).toContain("healthy status is implied");
       expect(message).not.toContain("reconciliation completed");
+      expect(message).toContain(
+        recovered.errors > 0 ? "needs review" : "in progress"
+      );
     }
     const message = reconciliationMessage({
+      status: "complete",
       eventCount: 5,
       recovered: { completed: 5, errors: 0, backlog: 0 },
       notifications: { failed: 2, ambiguous: 1 },
     });
+    expect(message).toContain("Provider reconciliation completed");
     expect(message).toContain("Mail failures: 2");
     expect(message).toContain("uncertain acceptance: 1");
     expect(message).toContain("not proof of collection or email delivery");
+  });
+
+  it("uses reconciliation onSuccess to report in-progress results rather than completion", () => {
+    expect(source).toContain(
+      "onSuccess: async result => { setOutcome(reconciliationMessage(result)); await refresh(); }"
+    );
+    for (const recovered of [
+      undefined,
+      { completed: 2, errors: 0, backlog: 3 },
+      { completed: 5, errors: 0, backlog: 0 },
+    ]) {
+      const message = reconciliationMessage({
+        status: "in_progress",
+        eventCount: 5,
+        recovered,
+      });
+      expect(message).toContain("Provider reconciliation in progress");
+      expect(message).not.toContain("reconciliation completed");
+      expect(message).not.toContain("needs review");
+      expect(message).toContain(
+        "No complete ledger scan or healthy status is implied"
+      );
+      expect(message).toContain("payment rules remain unchanged");
+    }
   });
 });
 
