@@ -21,7 +21,6 @@ import { eq, desc } from "drizzle-orm";
 import { format } from "date-fns";
 import { importInbox, decryptPassword } from "./imap";
 import { notifyOwner } from "./_core/notification";
-import { reconcilePaymentFailureSuspensions } from "./payment-failure-reconciliation";
 import { sendOutstandingTopUpReminders } from "./commission-topup-reminders";
 import { queueDueBookingsForCommissionReview } from "./commission-review-queue";
 
@@ -538,17 +537,8 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  // Membership payment safety net: rebuild each active agent's current failure
-  // streak from GoCardless hourly. This catches any webhook that a deployment or
-  // provider retry might otherwise acknowledge without completing locally.
-  cron.schedule("17 * * * *", async () => {
-    try {
-      const result = await reconcilePaymentFailureSuspensions();
-      console.log(`[PaymentFailureReconciliation] Scanned ${result.scannedSubscriptions} subscriptions, updated ${result.updatedFailureCounters} counters, suspended ${result.suspendedAgentCodes.length} agents`);
-    } catch (err: any) {
-      console.error("[PaymentFailureReconciliation] Error:", err?.message);
-    }
-  }, { timezone: "UTC" });
+  // Membership event recovery is externally scheduled through the authenticated
+  // /api/scheduled/membership-payments endpoint. No in-process payment timer.
 
   // Commission Due review queue: pick up dates imported or changed outside the
   // booking editor as well as ordinary date updates. A £0 personal-booking
@@ -710,7 +700,7 @@ export function startScheduler() {
     }
   }, { timezone: "UTC" });
 
-  console.log("[Scheduler] Cron jobs registered: task reminders (hourly), payment failure reconciliation (hourly), Commission Due review queue (every 15 min), Academy action publishing (Monday 08:05 Europe/London), Top-Up Required reminders (Monday 09:00 Europe/London), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — nightly export DISABLED, inbox auto-import DISABLED");
+  console.log("[Scheduler] Cron jobs registered: task reminders (hourly), membership payment recovery (external HTTP cron), Commission Due review queue (every 15 min), Academy action publishing (Monday 08:05 Europe/London), Top-Up Required reminders (Monday 09:00 Europe/London), recruitment follow-up (09:00 UTC), workflow emails (every 15 min), drip emails (every 15 min), campaign queue (every 15 min), confirmation reminders (08:00 UTC), agent event reminders (07:00 UTC), weekly calendar summary (Friday 08:00 UTC) — nightly export DISABLED, inbox auto-import DISABLED");
 }
 
 // ─── Recruitment follow-up nurture emails ─────────────────────────────────────

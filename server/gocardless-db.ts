@@ -1,6 +1,6 @@
 import { getDb } from "./db";
 import { gcMandates, gcMandateReplacements, gcSubscriptions, gcPaymentEvents } from "../drizzle/schema";
-import { and, eq, desc, inArray } from "drizzle-orm";
+import { and, eq, desc, inArray, sql } from "drizzle-orm";
 
 /**
  * Migration 0152 adds GoCardless' immutable event ID. Older production
@@ -49,10 +49,10 @@ export function dedupePaymentEventHistory<T extends {
   const seen = new Set<string>();
 
   return events.filter((event) => {
-    const key = event.paymentId
-      ? `payment:${event.paymentId}:${event.eventType}`
-      : event.gocardlessEventId
-        ? `event:${event.gocardlessEventId}`
+    const key = event.gocardlessEventId
+      ? `event:${event.gocardlessEventId}`
+      : event.paymentId
+        ? `payment:${event.paymentId}:${event.eventType}`
         : `row:${event.id}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -89,7 +89,7 @@ export async function getGcMandateByUserId(userId: number) {
     .select()
     .from(gcMandates)
     .where(eq(gcMandates.userId, userId))
-    .orderBy(gcMandates.createdAt)
+    .orderBy(desc(gcMandates.createdAt), desc(gcMandates.id))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -316,19 +316,11 @@ export async function createPaymentEvent(data: {
           .limit(1);
         if (existing.length) return { created: false };
       }
-      await db.insert(gcPaymentEvents).values({
-        userId: data.userId ?? null,
-        mandateId: data.mandateId ?? null,
-        paymentId: data.paymentId ?? null,
-        eventType: data.eventType,
-        status: data.status ?? null,
-        amount: data.amount ?? null,
-        currency: data.currency ?? "GBP",
-        failureReason: data.failureReason ?? null,
-        failureDescription: data.failureDescription ?? null,
-        occurredAt: data.occurredAt,
-        rawPayload: data.rawPayload ?? null,
-      } as any);
+      // Drizzle expands omitted schema fields into DEFAULT on insert. A plain
+      // values({...}) fallback would still name the missing gocardlessEventId.
+      await db.execute(sql`INSERT INTO gc_payment_events
+        (userId, mandateId, paymentId, eventType, status, amount, currency, failureReason, failureDescription, occurredAt, rawPayload)
+        VALUES (${data.userId ?? null}, ${data.mandateId ?? null}, ${data.paymentId ?? null}, ${data.eventType}, ${data.status ?? null}, ${data.amount ?? null}, ${data.currency ?? "GBP"}, ${data.failureReason ?? null}, ${data.failureDescription ?? null}, ${data.occurredAt}, ${data.rawPayload ?? null})`);
       console.warn("[GoCardless] Using legacy payment-event storage until migration 0152 is available.");
       return { created: true };
     }

@@ -172,6 +172,7 @@ import { academyRouter } from "./academy-router";
 import { agentDevelopmentRouter } from "./agent-development-router";
 import { libraryRouter } from "./library-router";
 import { agentSupportRouter } from "./agent-support-router";
+import { membershipPaymentsRouter } from "./membership-payment-issues-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -491,6 +492,7 @@ export const appRouter = router({
   agentDevelopment: agentDevelopmentRouter,
   library: libraryRouter,
   agentSupport: agentSupportRouter,
+  membershipPayments: membershipPaymentsRouter,
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   auth: router({
@@ -5523,6 +5525,11 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
      */
     adminGetRecentFailedPayments: adminProcedure.query(async () => {
       return getRecentFailedPayments(50);
+    }),
+
+    adminGetCurrentPaymentIssues: adminProcedure.query(async () => {
+      const { getCurrentMembershipPaymentIssues } = await import("./membership-payment-health");
+      return getCurrentMembershipPaymentIssues();
     }),
 
     /**

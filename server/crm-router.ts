@@ -1253,6 +1253,8 @@ export const crmRouter = router({
         const mandate = mandateRows[0] ?? null;
         const subscription = subscriptionRows[0] ?? null;
         const failureRun = failureRows[0] ?? null;
+        const { readMembershipPaymentState } = await import("./membership-payment-health");
+        const paymentState = await readMembershipPaymentState(input.userId);
         return {
           contact: {
             correspondenceEmail: correspondenceEmail,
@@ -1273,7 +1275,7 @@ export const crmRouter = router({
             inContract: profile?.inContract ?? false,
             dateJoined: profile?.dateJoined ?? null,
           },
-          directDebit: { mandate, subscription, latestPaymentEvent: paymentEventRows[0] ?? null, failureRun },
+          directDebit: { mandate, subscription, latestPaymentEvent: paymentEventRows[0] ?? null, failureRun, paymentState },
           latestNote: noteRows[0] ?? null,
           engagement: activeCase ? { activeCase, latestInteraction: latestInteraction ?? null } : null,
           team,
@@ -2238,24 +2240,13 @@ export const crmRouter = router({
         const newPortalStatus = portalStatusMap[input.newStatus] ?? 'active';
         // isActive must be false for cancelled/suspended/paused agents so they are excluded from all email sends
         const newIsActive = (input.newStatus === 'cancelled' || input.newStatus === 'suspended' || input.newStatus === 'paused') ? false : true;
-        await db.update(users).set({ portalStatus: newPortalStatus as any, isActive: newIsActive }).where(eq(users.id, input.userId));
+        await db.update(users).set({ portalStatus: newPortalStatus as any, isActive: newIsActive,
+          ...(input.newStatus === "active" ? { suspendedAt: null, suspensionReason: null } : {}),
+        }).where(eq(users.id, input.userId));
 
-        // A staff reinstatement after a manually resolved payment starts a new
-        // failure run. Without this reset, an old strike could cause the next
-        // unrelated failed collection to immediately suspend the agent again.
-        if (input.newStatus === "active" && fromStatus === "suspended") {
-          const { gcPaymentFailures } = await import("../drizzle/schema");
-          await db.update(gcPaymentFailures).set({
-            consecutiveFailures: 0,
-            notifiedFailureCount: 0,
-            lastFailureNoticeAt: null,
-            failureRunResetAt: new Date(),
-            lastFailedAt: null,
-            lastFailedPaymentId: null,
-            autoSuspendedAt: null,
-          }).where(eq(gcPaymentFailures.userId, input.userId));
-        }
-
+        // Reinstatement is an access decision, not proof of payment. Only a
+        // matching provider success or recorded whole-payment settlement clears
+        // arrears/counters in the canonical membership payment ledger.
         // Consumer profiles must be removed immediately whenever the agent is no
         // longer Active. Reactivation deliberately returns the profile to staff
         // review rather than publishing it automatically.

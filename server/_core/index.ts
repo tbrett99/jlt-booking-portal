@@ -8,6 +8,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { registerAcademyDocumentDownloadRoutes } from "../academy-document-download-routes";
+import { registerMembershipPaymentRoutes } from "../membership-payment-routes";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -45,7 +46,6 @@ import { generateUniqueAgentIdForUser } from "../agent-crm-db";
 import { getMonthlyAmount } from "../../shared/membership";
 import bcrypt from "bcryptjs";
 import { completesJoinFlow } from "../join-payment-utils";
-import { buildPaymentFailureNotice } from "../payment-failure-notices";
 
 // HTML escape helper to prevent XSS in server-rendered payment page
 function escHtml(str: string): string {
@@ -251,6 +251,7 @@ async function startServer() {
   // Encrypted Academy assessment templates and learner submissions must pass
   // through a role- and ownership-checked download route.
   registerAcademyDocumentDownloadRoutes(app);
+  registerMembershipPaymentRoutes(app);
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
 
@@ -1098,14 +1099,15 @@ async function startServer() {
           console.warn("[GC Webhook] Missing Webhook-Signature header — request rejected");
           return res.status(498).send("Missing signature");
         }
-        const { createHmac } = await import("crypto");
+        const { createHmac, timingSafeEqual } = await import("crypto");
         const expected = createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
-        if (expected !== incomingSig) {
+        if (!/^[a-f0-9]{64}$/i.test(incomingSig) || !timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(incomingSig, "hex"))) {
           console.warn("[GC Webhook] Invalid signature — request rejected");
           return res.status(498).send("Invalid signature");
         }
       } else {
-        console.warn("[GC Webhook] GOCARDLESS_WEBHOOK_SECRET not set — skipping signature check");
+        console.error("[GC Webhook] Webhook secret missing — no events processed");
+        return res.status(503).json({ error: "Webhook verification is not configured" });
       }
       // Parse the raw buffer to JSON
       const payload = JSON.parse(rawBody.toString());
@@ -1698,282 +1700,21 @@ async function startServer() {
           }
         }
 
-        // Payment failed or charged back
-        if (
-          event.resource_type === "payments" &&
-          ["confirmed", "paid_out", "failed", "charged_back", "cancelled"].includes(event.action)
-        ) {
-          const paymentId = event.links.payment;
-          let mandateId: string | undefined = event.links.mandate;
-          const subscriptionId = event.links.subscription;
-          const meta = (event as any).details ?? {};
-          // Resolve amount from the payment resource if available
-          // Also resolve mandateId from the payment API if not in webhook links
-          // (GoCardless confirmed/paid_out events often omit links.mandate)
-          let amount: number | undefined;
-          let currency: string | undefined;
+        // Durable membership event receipt. Never use the legacy audit insert
+        // as an effects checkpoint: a replay must resume unfinished work.
+        if (event.resource_type === "payments") {
+          const { receiveMembershipProviderEvent, enrichMembershipProviderEvent } = await import("../membership-payment-sync");
+          const canonicalEvent = event as unknown as import("../membership-payment-sync").MembershipProviderEvent;
+          await receiveMembershipProviderEvent(canonicalEvent, "webhook");
           try {
-            const { fetchPayment } = await import("../gocardless");
-            if (paymentId) {
-              const gcPayment = await fetchPayment(paymentId);
-              amount = gcPayment?.amount;
-              currency = gcPayment?.currency;
-              if (!mandateId && gcPayment?.links?.mandate) {
-                mandateId = gcPayment.links.mandate;
-                console.log(`[GC Webhook] Resolved mandateId ${mandateId} from payment API for ${paymentId}`);
-              }
-            }
-          } catch { /* non-critical */ }
-          // Resolve user from mandate
-          let userId: number | undefined;
-          if (mandateId) {
-            const db = await getDb();
-            if (db) {
-              const { gcMandates } = await import("../../drizzle/schema");
-              const { eq: eqOp } = await import("drizzle-orm");
-              const rows = await db.select().from(gcMandates).where(eqOp(gcMandates.mandateId, mandateId)).limit(1);
-              if (rows[0]) userId = rows[0].userId ?? undefined;
-            }
+            await enrichMembershipProviderEvent(canonicalEvent, "webhook");
+            const { processMembershipPaymentOutbox } = await import("../membership-payment-service");
+            await processMembershipPaymentOutbox(10);
+          } catch (processingError) {
+            // Safe to acknowledge only because the immutable event is already
+            // durable. The external recovery endpoint retries this pending work.
+            console.error("[MembershipPayments] Received event needs recovery", event.id, (processingError as Error).message);
           }
-          const recordedPaymentEvent = await createPaymentEvent({
-            gocardlessEventId: event.id,
-            userId,
-            mandateId,
-            paymentId,
-            eventType: `payments_${event.action}`,
-            status: event.action,
-            amount,
-            currency,
-            failureReason: meta.cause ?? meta.reason_code ?? undefined,
-            failureDescription: meta.description ?? undefined,
-            occurredAt: new Date(),
-            rawPayload: JSON.stringify(event),
-          });
-          if (!recordedPaymentEvent.created) {
-            console.log(`[GC Webhook] Ignoring replayed GoCardless event ${event.id}`);
-            continue;
-          }
-          // For failures and chargebacks, notify support
-          if (["failed", "charged_back"].includes(event.action)) {
-            try {
-              // Resolve agent name + email for the support notification
-              let supportAgentName: string | null = null;
-              let supportAgentEmail: string | null = null;
-              if (userId) {
-                const dbForSupport = await getDb();
-                if (dbForSupport) {
-                  const { users: usersT } = await import("../../drizzle/schema");
-                  const { eq: eqOp } = await import("drizzle-orm");
-                  const [agentRow] = await dbForSupport.select().from(usersT).where(eqOp(usersT.id, userId)).limit(1);
-                  supportAgentName = agentRow?.name ?? null;
-                  supportAgentEmail = agentRow?.email ?? null;
-                }
-              }
-              const crmProfileUrl = userId ? `https://portal.thejltgroup.co.uk/crm/${userId}` : null;
-              await sendSupportEmail({
-                subject: `DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}${supportAgentName ? ` — ${supportAgentName}` : userId ? ` — Agent ID ${userId}` : ""}`,
-                html: `
-                  <div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#FFF6ED;padding:32px;border-radius:16px;">
-                    <h2 style="color:#414141;margin:0 0 16px;">DD Payment ${event.action === "charged_back" ? "Charged Back" : "Failed"}</h2>
-                    <table style="width:100%;border-collapse:collapse;">
-                      ${supportAgentName ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent Name</td><td style="padding:6px 0;color:#414141;font-weight:600;">${supportAgentName}</td></tr>` : ""}
-                      ${supportAgentEmail ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent Email</td><td style="padding:6px 0;color:#414141;">${supportAgentEmail}</td></tr>` : ""}
-                      ${userId ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Agent ID</td><td style="padding:6px 0;color:#414141;">${userId}</td></tr>` : ""}
-                      <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Payment ID</td><td style="padding:6px 0;color:#414141;">${paymentId ?? "—"}</td></tr>
-                      <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Event</td><td style="padding:6px 0;color:#dc2626;font-weight:600;">${event.action}</td></tr>
-                      ${meta.description ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Reason</td><td style="padding:6px 0;color:#414141;">${meta.description}</td></tr>` : ""}
-                      <tr><td style="padding:6px 0;color:#6b7280;font-size:.9rem;">Time</td><td style="padding:6px 0;color:#414141;">${new Date().toUTCString()}</td></tr>
-                    </table>
-                    ${crmProfileUrl ? `<p style="margin:20px 0 8px;"><a href="${crmProfileUrl}" style="display:inline-block;background:#02E6D2;color:#1a1a1a;font-weight:600;padding:10px 24px;border-radius:8px;text-decoration:none;font-family:'Poppins',Arial,sans-serif;font-size:14px;">View Agent in CRM →</a></p>` : ""}
-                    <p style="margin:12px 0 0;color:#414141;">Please check the agent's account in the CRM and contact them if necessary.</p>
-                    <p style="margin:8px 0 0;color:#9ca3af;font-size:.8rem;">JLT Group Booking Portal — automated notification</p>
-                  </div>
-                `,
-              });
-            } catch (supportEmailErr) {
-              console.error("[GC Webhook] Failed to send support payment failed email:", supportEmailErr);
-            }
-          }
-          // ── Send receipt email to agent on confirmed only ──────────────
-          // paid_out fires separately when funds settle — sending on both caused duplicate receipts
-          // Deduplication: GoCardless retries webhooks on slow responses, which can fire confirmed multiple times.
-          // Guard against this by checking if a receipt was already sent for this exact GC payment ID.
-          // Skip receipt for in_notice / cancelled agents — their DD may still collect during notice period
-          // but we should not send membership receipt emails to agents who are leaving.
-          if (event.action === "confirmed" && userId) {
-            // Pre-check agent status — skip receipt if in_notice or cancelled
-            let agentStatusForReceipt: string | null = null;
-            try {
-              const dbStatus = await getDb();
-              if (dbStatus) {
-                const { users: usersForStatus } = await import("../../drizzle/schema");
-                const { eq: eqStatus } = await import("drizzle-orm");
-                const [statusRow] = await dbStatus.select({ agentStatus: (usersForStatus as any).agentStatus, portalStatus: (usersForStatus as any).portalStatus }).from(usersForStatus).where(eqStatus(usersForStatus.id, userId)).limit(1);
-                agentStatusForReceipt = statusRow?.agentStatus ?? statusRow?.portalStatus ?? null;
-              }
-            } catch { /* non-critical */ }
-            if (agentStatusForReceipt === "cancelled") {
-              console.log(`[GC Webhook] Skipping receipt email for agent ${userId} — status: ${agentStatusForReceipt} (cancelled agents do not receive receipts)`);
-            } else {
-            try {
-              const db2 = await getDb();
-              // Check for existing receipt for this paymentId before sending
-              // Use a payment-specific triggerKey so dedup works even when the subject doesn't contain the payment ID
-              const receiptTriggerKey = paymentId ? `gc_receipt_${paymentId}` : "gc_receipt";
-              let alreadySentReceipt = false;
-              if (db2 && paymentId && userId) {
-                const { agentEmails: agentEmailsT } = await import("../../drizzle/schema");
-                const { and: andOp, eq: eqOp2 } = await import("drizzle-orm");
-                const existing = await db2.select({ id: agentEmailsT.id })
-                  .from(agentEmailsT)
-                  .where(andOp(
-                    eqOp2(agentEmailsT.triggerKey, receiptTriggerKey),
-                    eqOp2(agentEmailsT.userId, userId)
-                  ))
-                  .limit(1);
-                if (existing.length > 0) {
-                  alreadySentReceipt = true;
-                  console.log(`[GC Webhook] Receipt already sent for payment ${paymentId} — skipping duplicate (webhook retry)`);
-                }
-              }
-              if (!alreadySentReceipt) {
-              let agentEmail: string | null = null;
-              let agentName: string | null = null;
-              let membershipTier: string | null = null;
-              if (db2) {
-                const { users: usersT } = await import("../../drizzle/schema");
-                const { eq: eqOp } = await import("drizzle-orm");
-                const [agentRow] = await db2.select().from(usersT).where(eqOp(usersT.id, userId)).limit(1);
-                agentEmail = agentRow?.email ?? null;
-                agentName = agentRow?.name ?? null;
-                membershipTier = (agentRow as any)?.membershipTier ?? null;
-              }
-              if (agentEmail) {
-                const amountFormatted = amount ? `\u00a3${(amount / 100).toFixed(2)}` : "\u2014";
-                const tierLabel = membershipTier === "first_class" ? "First Class" : membershipTier === "charter" ? "Charter" : "Business Class";
-                const vatNet2 = amount ? Math.round(amount / 1.2) : 0;
-                const vatAmt2 = amount ? amount - vatNet2 : 0;
-                const netFmt2 = `£${(vatNet2 / 100).toFixed(2)}`;
-                const vatFmt2 = `£${(vatAmt2 / 100).toFixed(2)}`;
-                const receiptHtml = `<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);"><div style="background:#70FFE8;padding:28px 32px;"><h1 style="margin:0;font-size:22px;font-weight:700;color:#1a1a2e;">JLT Group</h1><p style="margin:4px 0 0;font-size:13px;color:#1a1a2e;opacity:0.7;">Membership Payment Receipt</p></div><div style="padding:32px;"><p style="color:#414141;margin:0 0 20px;">Hi ${agentName ?? "there"},</p><p style="color:#414141;margin:0 0 20px;">Your JLT Group membership payment has been successfully collected.</p><table style="width:100%;border-collapse:collapse;margin:0 0 24px;"><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Net Amount (excl. VAT)</td><td style="padding:10px 0;color:#414141;text-align:right;">${netFmt2}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">VAT (20%)</td><td style="padding:10px 0;color:#414141;text-align:right;">${vatFmt2}</td></tr><tr style="border-bottom:1px solid #f0f0f0;background:#f8fffe;"><td style="padding:10px 0;color:#414141;font-weight:700;font-size:15px;">Total</td><td style="padding:10px 0;color:#414141;font-weight:700;font-size:16px;text-align:right;">${amountFormatted}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Membership</td><td style="padding:10px 0;color:#414141;font-weight:600;text-align:right;">${tierLabel}</td></tr><tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:10px 0;color:#6b7280;font-size:14px;">Date</td><td style="padding:10px 0;color:#414141;text-align:right;">${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</td></tr><tr><td style="padding:10px 0;color:#6b7280;font-size:14px;">Reference</td><td style="padding:10px 0;color:#414141;font-family:monospace;text-align:right;">${paymentId ?? "\u2014"}</td></tr></table><p style="color:#6b7280;font-size:13px;margin:0 0 8px;">VAT Registration Number: <strong>341303939</strong></p><p style="color:#6b7280;font-size:13px;margin:0;">For queries contact <a href="mailto:memberships@thejltgroup.co.uk" style="color:#02E6D2;">memberships@thejltgroup.co.uk</a>.</p></div><div style="background:#f9fafb;padding:20px 32px;border-top:1px solid #f0f0f0;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">JLT Group &bull; <a href="https://portal.thejltgroup.co.uk" style="color:#02E6D2;">portal.thejltgroup.co.uk</a></p></div></div>`;
-                await sendDirectEmail({ toEmail: agentEmail, toName: agentName ?? "Agent", subject: `Membership Payment Receipt \u2014 ${amountFormatted}`, html: receiptHtml, ...(({ triggerKey: receiptTriggerKey, userId } as any)) });
-              }
-              } // end if (!alreadySentReceipt)
-              // Reset consecutive failure counter on successful payment
-              if (db2) {
-                const { gcPaymentFailures: gcPF } = await import("../../drizzle/schema");
-                const { eq: eqOp } = await import("drizzle-orm");
-                await db2.update(gcPF).set({
-                  consecutiveFailures: 0,
-                  notifiedFailureCount: 0,
-                  lastFailureNoticeAt: null,
-                  failureRunResetAt: new Date(),
-                  lastFailedAt: null,
-                  lastFailedPaymentId: null,
-                }).where(eqOp(gcPF.userId, userId));
-              }
-            } catch (receiptErr) {
-              console.error("[GC Webhook] Failed to send receipt email:", receiptErr);
-            }
-            } // end else (not in_notice/cancelled)
-          }
-          // ── Send failure email to agent + auto-suspend after 3 failures ──
-          if (["failed", "charged_back"].includes(event.action) && userId) {
-            try {
-              const db2 = await getDb();
-              let agentEmail: string | null = null;
-              let agentName: string | null = null;
-              let agentPortalStatus: string | null = null;
-              let newConsecutive = 1;
-              if (db2) {
-                const { users: usersT, gcPaymentFailures: gcPF } = await import("../../drizzle/schema");
-                const { eq: eqOp } = await import("drizzle-orm");
-                const [agentRow] = await db2.select().from(usersT).where(eqOp(usersT.id, userId)).limit(1);
-                agentEmail = agentRow?.email ?? null;
-                agentName = agentRow?.name ?? null;
-                agentPortalStatus = agentRow?.portalStatus ?? null;
-                const [existing] = await db2.select().from(gcPF).where(eqOp(gcPF.userId, userId)).limit(1);
-                // This event has already passed the durable GoCardless event-ID
-                // replay guard above. Distinct failure events must each count as
-                // a strike even where GoCardless reuses the payment resource ID.
-                if (existing) {
-                  newConsecutive = (existing.consecutiveFailures ?? 0) + 1;
-                  await db2.update(gcPF).set({ consecutiveFailures: newConsecutive, lastFailedAt: new Date(), lastFailedPaymentId: paymentId ?? null }).where(eqOp(gcPF.userId, userId));
-                } else {
-                  await db2.insert(gcPF).values({ userId, consecutiveFailures: 1, lastFailedAt: new Date(), lastFailedPaymentId: paymentId ?? null });
-                }
-                if (newConsecutive >= 3 && agentRow && agentRow.portalStatus !== "suspended") {
-                  await db2.update(usersT).set({ portalStatus: "suspended", isActive: false, suspendedAt: new Date(), suspensionReason: "non_payment" }).where(eqOp(usersT.id, userId));
-                  // Also update the CRM profile so the suspension is visible in the Memberships view
-                  const { agentCrmProfiles: agentCrmProfilesT } = await import("../../drizzle/schema");
-                  await db2.update(agentCrmProfilesT).set({ agentStatus: "suspended", suspendedAt: new Date(), suspensionReason: "non_payment" }).where(eqOp(agentCrmProfilesT.userId, userId));
-                  await db2.update(gcPF).set({ autoSuspendedAt: new Date() }).where(eqOp(gcPF.userId, userId));
-                  // Fetch CRM profile for membership tier
-                  const [crmRow] = await db2.select({ membershipTier: agentCrmProfilesT.membershipTier }).from(agentCrmProfilesT).where(eqOp(agentCrmProfilesT.userId, userId)).limit(1);
-                  const membershipTierLabel = crmRow?.membershipTier ?? "Unknown";
-                  const suspendedAt = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
-                  const crmLink = `https://portal.thejltgroup.co.uk/admin/crm/${userId}`;
-                  const suspensionEmailHtml = `
-<div style="font-family:'Poppins',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-  <div style="background:#dc2626;padding:28px 32px;">
-    <h1 style="margin:0;font-size:20px;font-weight:700;color:#ffffff;">⚠️ Agent Auto-Suspended</h1>
-    <p style="margin:6px 0 0;font-size:13px;color:#fecaca;">Non-Payment — Action Required</p>
-  </div>
-  <div style="padding:32px;">
-    <p style="color:#414141;margin:0 0 20px;font-size:15px;">An agent has been <strong>automatically suspended</strong> due to <strong>3 consecutive failed Direct Debit payments</strong>. Please contact them directly to resolve the outstanding payment and reinstate their access.</p>
-    <table style="width:100%;border-collapse:collapse;margin:0 0 24px;background:#f9fafb;border-radius:8px;overflow:hidden;">
-      <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:10px 16px;color:#6b7280;font-size:14px;width:40%;">Agent Name</td><td style="padding:10px 16px;color:#414141;font-weight:600;font-size:14px;">${agentName ?? "—"}</td></tr>
-      <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:10px 16px;color:#6b7280;font-size:14px;">Email Address</td><td style="padding:10px 16px;color:#414141;font-size:14px;"><a href="mailto:${agentEmail ?? ""}" style="color:#02E6D2;">${agentEmail ?? "—"}</a></td></tr>
-      <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:10px 16px;color:#6b7280;font-size:14px;">Membership Tier</td><td style="padding:10px 16px;color:#414141;font-size:14px;">${membershipTierLabel}</td></tr>
-      <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:10px 16px;color:#6b7280;font-size:14px;">Failed Payments</td><td style="padding:10px 16px;color:#dc2626;font-weight:700;font-size:14px;">3 consecutive failures</td></tr>
-      <tr><td style="padding:10px 16px;color:#6b7280;font-size:14px;">Suspended At</td><td style="padding:10px 16px;color:#414141;font-size:14px;">${suspendedAt}</td></tr>
-    </table>
-    <div style="background:#fef2f2;border-left:4px solid #dc2626;padding:16px;border-radius:4px;margin:0 0 24px;">
-      <p style="margin:0;color:#991b1b;font-weight:600;font-size:14px;">Next Steps</p>
-      <ol style="margin:8px 0 0;padding-left:20px;color:#991b1b;font-size:14px;line-height:1.8;">
-        <li>Contact <strong>${agentName ?? "the agent"}</strong> at <a href="mailto:${agentEmail ?? ""}" style="color:#dc2626;">${agentEmail ?? "their email"}</a> to discuss the failed payments</li>
-        <li>Once payment is resolved, reinstate their portal access via the CRM</li>
-        <li>Consider updating their Direct Debit mandate if needed</li>
-      </ol>
-    </div>
-    <a href="${crmLink}" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">View Agent in CRM →</a>
-  </div>
-  <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #f0f0f0;">
-    <p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">JLT Group Booking Portal — automated suspension alert</p>
-  </div>
-</div>`;
-                  await sendSupportEmail({ subject: `⚠️ Agent Auto-Suspended: ${agentName ?? `ID ${userId}`} — 3 Consecutive DD Failures`, html: suspensionEmailHtml });
-                  console.log(`[GC Webhook] Agent ${userId} auto-suspended after 3 consecutive payment failures`);
-                }
-              }
-              if (agentEmail && agentPortalStatus !== "suspended") {
-                const notice = buildPaymentFailureNotice({
-                  failureCount: newConsecutive,
-                  agentName: agentName ?? "there",
-                  action: event.action as "failed" | "charged_back",
-                  reason: meta.description ?? meta.cause ?? null,
-                });
-                const sent = await sendDirectEmail({
-                  toEmail: agentEmail,
-                  toName: agentName ?? "Agent",
-                  subject: notice.subject,
-                  html: notice.html,
-                  ...(({ triggerKey: `gc_payment_failed_strike_${notice.failureCount}`, userId } as any)),
-                });
-                if (sent.success) {
-                  const { gcPaymentFailures: gcPF } = await import("../../drizzle/schema");
-                  const { eq: eqOp } = await import("drizzle-orm");
-                  await db2?.update(gcPF).set({
-                    notifiedFailureCount: notice.failureCount,
-                    lastFailureNoticeAt: new Date(),
-                  }).where(eqOp(gcPF.userId, userId));
-                }
-              } // end if (agentEmail && not already suspended)
-            } catch (failureEmailErr) {
-              console.error("[GC Webhook] Failed to send payment failure email to agent:", failureEmailErr);
-            }
-          }
-          console.log(`[GC Webhook] Payment ${paymentId} ${event.action} for user ${userId ?? "unknown"} amount=${amount ?? "?"} pence`);
         }
       }
       res.status(200).json({ success: true });

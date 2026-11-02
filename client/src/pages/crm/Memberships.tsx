@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
+import MembershipPaymentIssues from "./MembershipPaymentIssues";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -363,6 +364,10 @@ export default function Memberships() {
       {/* Status Panels */}
       <Tabs defaultValue={newSignUps.length > 0 ? "new_signups" : "in_notice"} className="space-y-4">
         <TabsList className="flex-wrap h-auto gap-1">
+          <TabsTrigger value="payment_issues" className="gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Payment &amp; Direct Debit Issues
+          </TabsTrigger>
           <TabsTrigger value="new_signups" className="gap-1.5">
             <UserPlus className="h-3.5 w-3.5" />
             New Sign-Ups
@@ -409,6 +414,10 @@ export default function Memberships() {
             )}
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="payment_issues">
+          <MembershipPaymentIssues />
+        </TabsContent>
 
         {/* New Sign-Ups Panel */}
         <TabsContent value="new_signups">

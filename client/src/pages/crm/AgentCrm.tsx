@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { resolveDocUrl } from "@/lib/docUrl";
 import { Input } from "@/components/ui/input";
@@ -145,6 +146,7 @@ const LEGACY_CRM_TAB_SECTION: Record<string, CrmAgentRecordSection> = {
   team: "relationship",
   tags: "relationship",
   dd: "membership-payments",
+  "direct-debit": "membership-payments",
   bank: "membership-payments",
   fnf: "membership-payments",
   academy: "academy",
@@ -217,6 +219,10 @@ function SyncGcButton({ onSynced }: { onSynced: () => void }) {
 }
 
 export default function AgentCrm() {
+  const routeSearch = useSearch();
+  const routeParams = new URLSearchParams(routeSearch);
+  const requestedAgentId = Number(routeParams.get("agent"));
+  const requestedSection = resolveCrmAgentRecordSection(routeParams.get("tab"));
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [tierFilter, setTierFilter] = useState("all");
@@ -224,8 +230,14 @@ export default function AgentCrm() {
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const { data: agents = [], refetch, isLoading: agentsLoading, isError: agentsError, isFetching: agentsFetching } = trpc.crm.agentCrm.list.useQuery();
-  const { data: recentFailedPayments = [] } = trpc.gocardless.adminGetRecentFailedPayments.useQuery();
-  const failedPaymentUserIds = new Set((recentFailedPayments as any[]).map((e: any) => e.userId));
+  const { data: currentPaymentIssues = [] } = trpc.gocardless.adminGetCurrentPaymentIssues.useQuery();
+  const failedPaymentUserIds = new Set(currentPaymentIssues.map((e) => e.userId));
+
+  useEffect(() => {
+    if (!Number.isSafeInteger(requestedAgentId) || requestedAgentId <= 0) return;
+    const requested = (agents as AgentRow[]).find((a) => a.id === requestedAgentId);
+    if (requested) { setSelectedAgent(requested); setSheetOpen(true); }
+  }, [requestedAgentId, agents]);
 
   const filtered = (agents as AgentRow[]).filter((a) => {
     const q = search.toLowerCase();
@@ -390,7 +402,7 @@ export default function AgentCrm() {
                         <span className="font-medium">{agent.name ?? "—"}</span>
                         {failedPaymentUserIds.has(agent.id) && (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700">
-                            <CreditCard size={9} /> Payment Failed
+                            <CreditCard size={9} /> Payment Outstanding
                           </span>
                         )}
                       </div>
@@ -437,6 +449,7 @@ export default function AgentCrm() {
         <AgentCrmSheet
           agent={selectedAgent}
           open={sheetOpen}
+          initialSection={selectedAgent.id === requestedAgentId ? requestedSection : "overview"}
           onClose={() => setSheetOpen(false)}
           onRefresh={() => refetch()}
         />
@@ -549,7 +562,8 @@ function AgentOverviewTab({ agent, profile, onNavigate }: { agent: AgentRow; pro
   );
 
   const paymentEvent = data.directDebit.latestPaymentEvent;
-  const failureCount = Number(data.directDebit.failureRun?.consecutiveFailures ?? 0);
+  const paymentState = data.directDebit.paymentState;
+  const failureCount = Number(paymentState.account?.failedAttempts ?? 0);
   const currentCourse = data.academy.latestEnrollment;
   const courseOverdue = !!currentCourse?.dueDate && !["completed", "waived"].includes(currentCourse.status) && new Date(currentCourse.dueDate) < new Date();
   const correspondenceLabel = data.contact.correspondenceKind
@@ -558,7 +572,8 @@ function AgentOverviewTab({ agent, profile, onNavigate }: { agent: AgentRow; pro
   const correspondenceEmail = data.contact.correspondenceEmail ?? agent.email ?? "No correspondence email recorded";
   const attentionItems = [
     data.membership.paymentExempt ? { key: "exempt", label: "Payment exempt", tone: "warning" as const } : null,
-    failureCount > 0 ? { key: "failure", label: `${failureCount} current failed collection${failureCount === 1 ? "" : "s"}`, tone: "danger" as const } : null,
+    (paymentState.account?.outstandingCount ?? 0) > 0 ? { key: "failure", label: `${paymentState.account!.outstandingCount} unpaid membership payment(s) · ${failureCount} failed attempts`, tone: "danger" as const } : null,
+    !paymentState.verified ? { key: "sync", label: "Payment reconciliation needs checking", tone: "warning" as const } : null,
     !data.directDebit.mandate && !data.membership.paymentExempt ? { key: "mandate", label: "No Direct Debit mandate", tone: "danger" as const } : null,
     data.membership.inContract ? { key: "contract", label: "In Contract — commission hold", tone: "danger" as const } : null,
     data.engagement ? { key: "engagement", label: "Open engagement case", tone: "warning" as const } : null,
@@ -603,7 +618,9 @@ function AgentOverviewTab({ agent, profile, onNavigate }: { agent: AgentRow; pro
             <OverviewMetric label="Subscription" value={data.directDebit.subscription ? `${formatCrmCurrency(Number(data.directDebit.subscription.amount) / 100)} / month` : "No active or paused subscription"} detail={data.directDebit.subscription ? `${data.directDebit.subscription.status} · recorded next charge: ${data.directDebit.subscription.nextChargeDate ?? "not available"}` : "Open Direct Debit to review history"} tone={data.directDebit.subscription?.status === "active" ? "success" : "default"} />
             <OverviewMetric label="Latest provider event" value={paymentEvent ? `${paymentEvent.eventType.replaceAll("_", " ")}` : "No event recorded"} detail={paymentEvent ? `${formatCrmDate(paymentEvent.occurredAt, true)}${paymentEvent.amount ? ` · ${formatCrmCurrency(Number(paymentEvent.amount) / 100)}` : ""}${paymentEvent.failureDescription ? ` · ${paymentEvent.failureDescription}` : ""}` : "Payment history is available in Direct Debit"} tone={failureCount > 0 ? "danger" : "default"} />
           </div>
-          {failureCount > 0 && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800">Current failed-collection run: {failureCount}. This is separate from mandate and subscription status; the Direct Debit detail holds the provider event history.</p>}
+          <p className={`mt-3 rounded-lg px-3 py-2 text-xs ${(paymentState.account?.outstandingCount ?? 0) > 0 ? "bg-rose-50 text-rose-800" : "bg-muted text-muted-foreground"}`}>
+            {!paymentState.verified ? paymentState.syncError ?? "Current payment health has not yet been verified by a complete provider reconciliation." : (paymentState.account?.outstandingCount ?? 0) > 0 ? `Current unpaid payments: ${paymentState.account!.outstandingCount}. Failed attempts: ${failureCount}.` : "No unpaid membership instalments remain in the reconciled ledger. Historical failure events are preserved below; account access is managed separately."}
+          </p>
         </OverviewSection>
 
         <OverviewSection title="Relationship context" description="Latest CRM note and any open engagement case; the two records are not artificially deduplicated." action={<Button size="sm" variant="ghost" onClick={() => onNavigate("relationship")}>Open relationship</Button>}>
@@ -631,8 +648,8 @@ function AgentOverviewTab({ agent, profile, onNavigate }: { agent: AgentRow; pro
   );
 }
 
-export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
-  agent: AgentRow; open: boolean; onClose: () => void; onRefresh: () => void;
+export function AgentCrmSheet({ agent, open, onClose, onRefresh, initialSection = "overview" }: {
+  agent: AgentRow; open: boolean; onClose: () => void; onRefresh: () => void; initialSection?: CrmAgentRecordSection;
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
@@ -669,8 +686,8 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh }: {
     if (!open) setOrbitChecked(null);
   }, [open]);
   useEffect(() => {
-    if (open) setActiveSection("overview");
-  }, [agent.id, open]);
+    if (open) setActiveSection(initialSection);
+  }, [agent.id, open, initialSection]);
 
   const toggleOrbitAccess = trpc.crm.agentCrm.toggleOrbitAccess.useMutation({
     onSuccess: (data) => {

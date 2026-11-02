@@ -2,8 +2,9 @@
  * email.ts — all portal email sending via Resend API.
  * Nodemailer/SMTP is no longer used. Every send is logged to agent_emails
  * with status "sent" or "failed" so failures are visible in the admin email log.
+ * For the senders below, "sent" means accepted by Resend, not confirmed delivery.
  */
-import { Resend } from "resend";
+import { Resend, type CreateEmailResponse } from "resend";
 import { ENV } from "./_core/env";
 import { getNotificationTemplate, areNotificationsPaused } from "./db";
 import { getDb } from "./db";
@@ -17,6 +18,33 @@ function getResend(): Resend {
     _resend = new Resend(key);
   }
   return _resend;
+}
+
+export type EmailSendResult = {
+  /** Success means provider acceptance only; delivery requires provider events. */
+  success: boolean;
+  error?: string;
+  providerMessageId?: string;
+};
+
+function emailFailureMessage(error: unknown): string {
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object" && "message" in error &&
+      typeof error.message === "string" && error.message.trim()) {
+    return error.message;
+  }
+  return "Email provider request failed";
+}
+
+function requireAcceptedEmail(result: CreateEmailResponse): string {
+  // Resend can resolve (rather than throw) on rejection. An ID alone is not
+  // enough when an error is also present, nor does an ID confirm delivery.
+  if (result?.error) throw new Error(emailFailureMessage(result.error));
+  const id = result?.data?.id;
+  if (typeof id !== "string" || !id.trim()) {
+    throw new Error("Email provider did not return a message ID");
+  }
+  return id;
 }
 
 // Verified sending address (must match a verified domain in Resend)
@@ -62,6 +90,8 @@ async function logAgentEmail(params: {
   triggerKey?: string;
   bodyHtml?: string;
   status: "sent" | "failed";
+  // agent_emails has no failureReason/providerMessageId columns. Reasons are
+  // returned to callers and logged by each sender; do not invent DB fields.
   failureReason?: string;
 }) {
   try {
@@ -198,20 +228,40 @@ function portalReplyFooter(bookingId?: number): string {
 export async function sendSupportEmail(params: {
   subject: string;
   html: string;
-}): Promise<{ success: boolean; error?: string }> {
+  idempotencyKey?: string;
+  /** Audit linkage only; recipient stays frozen. */
+  auditUserId?: number;
+}): Promise<EmailSendResult> {
+  const audit = {
+    userId: params.auditUserId ?? null,
+    toEmail: "support@thejltgroup.co.uk",
+    subject: params.subject,
+    triggerKey: "support",
+    bodyHtml: params.html,
+  };
+  if (await areNotificationsPaused()) {
+    const error = "Notifications are currently paused";
+    console.log("[Notifications] Paused — skipping support email");
+    await logAgentEmail({ ...audit, status: "failed", failureReason: error });
+    return { success: false, error };
+  }
   try {
     const resend = getResend();
-    await resend.emails.send({
+    const response = await resend.emails.send({
       from: FROM_AGENT,
       replyTo: REPLY_TO_AGENT,
       to: "support@thejltgroup.co.uk",
       subject: params.subject,
       html: params.html,
-    });
-    return { success: true };
-  } catch (err: any) {
-    console.error("[Email] Failed to send support notification:", err?.message);
-    return { success: false, error: err?.message };
+    }, params.idempotencyKey === undefined ? undefined : { idempotencyKey: params.idempotencyKey });
+    const providerMessageId = requireAcceptedEmail(response);
+    await logAgentEmail({ ...audit, status: "sent" });
+    return { success: true, providerMessageId };
+  } catch (err: unknown) {
+    const error = emailFailureMessage(err);
+    console.error("[Email] Failed to send support notification:", error);
+    await logAgentEmail({ ...audit, status: "failed", failureReason: error });
+    return { success: false, error };
   }
 }
 
@@ -226,7 +276,12 @@ export async function sendDirectEmail(params: {
   bookingId?: number;
   userId?: number | null;
   triggerKey?: string;
-}): Promise<{ success: boolean; error?: string }> {
+  idempotencyKey?: string;
+  /** Audit linkage only; recipient stays frozen. */
+  auditUserId?: number;
+  /** Server-only outbox payload has already been rendered and frozen. */
+  preRenderedHtml?: boolean;
+}): Promise<EmailSendResult> {
   const recipient = params.userId
     ? await import("./agent-correspondence").then(({ resolveAgentCorrespondence }) => resolveAgentCorrespondence({
       userId: params.userId!,
@@ -236,23 +291,34 @@ export async function sendDirectEmail(params: {
     : { email: params.toEmail, name: params.toName };
   if (await areNotificationsPaused()) {
     console.log(`[Notifications] Paused — skipping direct email to ${recipient.email}`);
+    await logAgentEmail({
+      userId: params.auditUserId ?? params.userId ?? null,
+      toEmail: recipient.email,
+      toName: recipient.name,
+      subject: params.subject,
+      triggerKey: params.triggerKey ?? "direct",
+      bodyHtml: params.html,
+      status: "failed",
+      failureReason: "Notifications are currently paused",
+    });
     return { success: false, error: "Notifications are currently paused" };
   }
 
   const footer = params.injectPortalFooter ? portalReplyFooter(params.bookingId) : undefined;
-  const html = wrapEmailHtml(params.html, footer);
+  const html = params.preRenderedHtml ? params.html : wrapEmailHtml(params.html, footer);
 
   try {
     const resend = getResend();
-    await resend.emails.send({
+    const response = await resend.emails.send({
       from: FROM_AGENT,
       replyTo: REPLY_TO_AGENT,
       to: `${recipient.name} <${recipient.email}>`,
       subject: params.subject,
       html,
-    });
+    }, params.idempotencyKey === undefined ? undefined : { idempotencyKey: params.idempotencyKey });
+    const providerMessageId = requireAcceptedEmail(response);
     await logAgentEmail({
-      userId: params.userId ?? null,
+      userId: params.auditUserId ?? params.userId ?? null,
       toEmail: recipient.email,
       toName: recipient.name,
       subject: params.subject,
@@ -260,20 +326,21 @@ export async function sendDirectEmail(params: {
       bodyHtml: html,
       status: "sent",
     });
-    return { success: true };
-  } catch (err: any) {
-    console.error("[Email] Failed to send direct email:", err?.message);
+    return { success: true, providerMessageId };
+  } catch (err: unknown) {
+    const error = emailFailureMessage(err);
+    console.error("[Email] Failed to send direct email:", error);
     await logAgentEmail({
-      userId: params.userId ?? null,
+      userId: params.auditUserId ?? params.userId ?? null,
       toEmail: recipient.email,
       toName: recipient.name,
       subject: params.subject,
       triggerKey: params.triggerKey ?? "direct",
       bodyHtml: html,
       status: "failed",
-      failureReason: err?.message,
+      failureReason: error,
     });
-    return { success: false, error: err?.message };
+    return { success: false, error };
   }
 }
 
@@ -287,7 +354,7 @@ export async function sendNotificationEmail(params: {
   overrideSubject?: string;
   overrideBody?: string;
   userId?: number | null;
-}): Promise<{ success: boolean; error?: string }> {
+}): Promise<EmailSendResult> {
   const recipient = params.userId
     ? await import("./agent-correspondence").then(({ resolveAgentCorrespondence }) => resolveAgentCorrespondence({
       userId: params.userId!,
@@ -297,6 +364,16 @@ export async function sendNotificationEmail(params: {
     : { email: params.toEmail, name: params.toName };
   if (await areNotificationsPaused()) {
     console.log(`[Notifications] Paused — skipping email (${params.triggerKey}) to ${recipient.email}`);
+    await logAgentEmail({
+      userId: params.userId ?? null,
+      toEmail: recipient.email,
+      toName: recipient.name,
+      subject: params.overrideSubject ?? `[Paused] ${params.triggerKey}`,
+      triggerKey: params.triggerKey,
+      bodyHtml: params.overrideBody,
+      status: "failed",
+      failureReason: "Notifications are currently paused",
+    });
     return { success: false, error: "Notifications are currently paused" };
   }
   const template = await getNotificationTemplate(params.triggerKey);
@@ -334,13 +411,14 @@ export async function sendNotificationEmail(params: {
 
   try {
     const resend = getResend();
-    await resend.emails.send({
+    const response = await resend.emails.send({
       from: FROM_AGENT,
       replyTo: REPLY_TO_AGENT,
       to: `${recipient.name} <${recipient.email}>`,
       subject,
       html,
     });
+    const providerMessageId = requireAcceptedEmail(response);
     await logAgentEmail({
       userId: params.userId ?? null,
       toEmail: recipient.email,
@@ -350,9 +428,10 @@ export async function sendNotificationEmail(params: {
       bodyHtml: html,
       status: "sent",
     });
-    return { success: true };
-  } catch (err: any) {
-    console.error("[Email] Failed to send notification email:", err?.message);
+    return { success: true, providerMessageId };
+  } catch (err: unknown) {
+    const error = emailFailureMessage(err);
+    console.error("[Email] Failed to send notification email:", error);
     await logAgentEmail({
       userId: params.userId ?? null,
       toEmail: recipient.email,
@@ -361,9 +440,9 @@ export async function sendNotificationEmail(params: {
       triggerKey: params.triggerKey,
       bodyHtml: html,
       status: "failed",
-      failureReason: err?.message,
+      failureReason: error,
     });
-    return { success: false, error: err?.message };
+    return { success: false, error };
   }
 }
 

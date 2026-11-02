@@ -1191,6 +1191,20 @@
       "when": 1793454585255,
       "tag": "0169_academy-knowledge-check-pass-alert",
       "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "5",
+      "when": 1793651353553,
+      "tag": "0170_membership-payment-reliability",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "5",
+      "when": 1793651688455,
+      "tag": "0171_membership-event-time-precision",
+      "breakpoints": true
     }
   ]
 }
