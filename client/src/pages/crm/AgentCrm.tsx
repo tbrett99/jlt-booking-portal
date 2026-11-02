@@ -573,7 +573,7 @@ function AgentOverviewTab({ agent, profile, onNavigate }: { agent: AgentRow; pro
   const attentionItems = [
     data.membership.paymentExempt ? { key: "exempt", label: "Payment exempt", tone: "warning" as const } : null,
     (paymentState.account?.outstandingCount ?? 0) > 0 ? { key: "failure", label: `${paymentState.account!.outstandingCount} unpaid membership payment(s) · ${failureCount} failed attempts`, tone: "danger" as const } : null,
-    !paymentState.verified ? { key: "sync", label: "Payment reconciliation needs checking", tone: "warning" as const } : null,
+    !paymentState.verified ? { key: "sync", label: "Payment health unverified — reconciliation needs checking", tone: "warning" as const } : null,
     !data.directDebit.mandate && !data.membership.paymentExempt ? { key: "mandate", label: "No Direct Debit mandate", tone: "danger" as const } : null,
     data.membership.inContract ? { key: "contract", label: "In Contract — commission hold", tone: "danger" as const } : null,
     data.engagement ? { key: "engagement", label: "Open engagement case", tone: "warning" as const } : null,

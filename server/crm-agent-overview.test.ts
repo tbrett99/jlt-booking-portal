@@ -21,7 +21,10 @@ describe("CRM agent-record overview", () => {
     expect(routerSource).toContain("retry dates must never");
     expect(pageSource).toContain("Mandate, subscription and payment events are deliberately shown as different things.");
     expect(pageSource).toContain("A mandate is bank authority, not proof of payment");
-    expect(pageSource).toContain("Current failed-collection run");
+    expect(pageSource).toContain("paymentState.account?.outstandingCount");
+    expect(pageSource).toContain("!paymentState.verified");
+    expect(pageSource).toContain("Current unpaid payments:");
+    expect(pageSource).toContain("No unpaid membership instalments remain in the reconciled ledger.");
     expect(pageSource).toContain("recorded next charge");
     expect(pageSource).toContain("explicit live collection schedule");
   });

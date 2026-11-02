@@ -497,6 +497,141 @@ describe("durable membership account processing", () => {
     expect(h.state.account.historyReviewRequired).toBe(true);
   });
 
+  it("assesses the processed second attempt when a live earlier failure arrives, without replay duplicates", async () => {
+    const h = harness();
+    await h.record("T2", 2);
+    await h.api.processMembershipPaymentAccount(7);
+    const runKey = h.state.account.runKey;
+    expect(h.state.account.failedAttempts).toBe(1);
+    expect(h.state.fees).toHaveLength(0);
+    expect(h.state.events[0].status).toBe("processed");
+
+    await h.record("T1", 1);
+    await h.api.processMembershipPaymentAccount(7);
+    expect(h.state.account.failedAttempts).toBe(2);
+    expect(h.state.account.runKey).toBe(runKey);
+    expect(h.state.fees).toHaveLength(1);
+    expect(h.state.fees[0]).toMatchObject({
+      runKey,
+      triggerEventId: "T2",
+      amountPence: 2500,
+      status: "assessed",
+    });
+    expect(h.state.outbox.filter(o => o.kind === "failure")).toHaveLength(2);
+    expect(
+      h.state.outbox.filter(o => o.kind === "failure_support")
+    ).toHaveLength(2);
+    expect(h.state.user!.portalStatus).toBe("active");
+    const fee = structuredClone(h.state.fees[0]);
+    const outbox = structuredClone(h.state.outbox);
+
+    await h.record("T1", 1);
+    await h.record("T2", 2);
+    await h.api.processMembershipPaymentAccount(7);
+    // Recovered/retried pending work must also keep the existing effect identities.
+    h.state.events.forEach(e => {
+      e.status = "failed";
+    });
+    await h.api.processMembershipPaymentAccount(7);
+    expect(h.state.fees).toEqual([fee]);
+    expect(h.state.outbox).toEqual(outbox);
+    expect(h.sendAgent).not.toHaveBeenCalled();
+    expect(h.sendSupport).not.toHaveBeenCalled();
+  });
+
+  it.each(["pre_activation", "backfill"] as const)(
+    "does not assess a processed live second attempt from only newly recovered %s work",
+    async source => {
+      const h = harness();
+      await h.record("T2", 2);
+      await h.api.processMembershipPaymentAccount(7);
+      await h.record("T1", source === "pre_activation" ? -1 : 1, {
+        source: source === "backfill" ? "backfill" : "reconciliation",
+      });
+      await h.api.processMembershipPaymentAccount(7);
+      expect(h.state.account.failedAttempts).toBe(2);
+      expect(h.state.account.historyReviewRequired).toBe(true);
+      expect(h.state.fees).toHaveLength(0);
+      expect(h.state.outbox).toHaveLength(2);
+      expect(h.state.events.every(e => e.status === "processed")).toBe(true);
+    }
+  );
+
+  it.each(["failed", "confirmed"] as const)(
+    "does not use an unrelated live %s event to assess another run's missing fee",
+    async action => {
+      const h = harness();
+      await h.record("OLD-T2", 2);
+      await h.api.processMembershipPaymentAccount(7);
+      if (action === "failed") {
+        await h.record("OLD-RECOVERY", 3, { action: "confirmed" });
+        await h.api.processMembershipPaymentAccount(7);
+      }
+      await h.record("OLD-T1", 1, { source: "backfill" });
+      await h.record("NEW-EVENT", 4, { paymentId: "PM-new", action });
+      await h.api.processMembershipPaymentAccount(7);
+      expect(h.state.fees).toHaveLength(0);
+      expect(h.state.user!.portalStatus).toBe("active");
+      expect(h.state.outbox.some(o => o.eventId === "OLD-T1")).toBe(false);
+    }
+  );
+
+  it("keeps a historical second-attempt source review-only even with a live pending failure in its run", async () => {
+    const h = harness();
+    await h.record("H-T2", 2, { source: "backfill" });
+    await h.api.processMembershipPaymentAccount(7);
+    await h.record("LIVE-T1", 1);
+    await h.api.processMembershipPaymentAccount(7);
+    expect(h.state.account.failedAttempts).toBe(2);
+    expect(h.state.fees).toHaveLength(1);
+    expect(h.state.fees[0]).toMatchObject({
+      triggerEventId: "H-T2",
+      status: "review",
+    });
+    await h.record("LIVE-T3", 3);
+    await h.api.processMembershipPaymentAccount(7);
+    expect(h.state.fees).toHaveLength(1);
+    expect(h.state.fees[0].status).toBe("review");
+  });
+
+  it.each(["exempt", "cancelled"] as const)(
+    "requires correspondence eligibility for the late-arriving fee when %s",
+    async status => {
+      const h = harness();
+      await h.record("T2", 2);
+      await h.api.processMembershipPaymentAccount(7);
+      if (status === "exempt") h.state.profile!.paymentExempt = true;
+      else h.state.user!.portalStatus = "cancelled";
+      await h.record("T1", 1);
+      await h.api.processMembershipPaymentAccount(7);
+      expect(h.state.account.failedAttempts).toBe(2);
+      expect(h.state.fees).toHaveLength(0);
+      expect(h.state.outbox).toHaveLength(2);
+    }
+  );
+
+  it("keeps a late-arrival fee unapproved and never retroactively promotes it", async () => {
+    const h = harness();
+    h.state.control!.feePolicyApproved = false;
+    await h.record("T2", 2);
+    await h.api.processMembershipPaymentAccount(7);
+    await h.record("T1", 1);
+    await h.api.processMembershipPaymentAccount(7);
+    expect(h.state.fees).toHaveLength(1);
+    expect(h.state.fees[0]).toMatchObject({
+      triggerEventId: "T2",
+      status: "review",
+    });
+    const fee = structuredClone(h.state.fees[0]);
+    h.state.control!.feePolicyApproved = true;
+    await h.api.processMembershipPaymentAccount(7);
+    await h.record("T3", 3);
+    await h.api.processMembershipPaymentAccount(7);
+    expect(h.state.fees).toEqual([fee]);
+    expect(h.sendAgent).not.toHaveBeenCalled();
+    expect(h.sendSupport).not.toHaveBeenCalled();
+  });
+
   it("deduplicates fees when an earlier late failure changes the reducer run key", async () => {
     const h = harness();
     await twoFailures(h);

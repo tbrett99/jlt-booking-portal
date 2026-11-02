@@ -619,7 +619,11 @@ export function createMembershipPaymentService(
       if (existingFee) continue;
       const historical = !future(event, snapshot.control) || bulkHistory(event);
       const actionable =
-        livePending.some(e => e.eventId === event.eventId) &&
+        // A late first attempt may make an already-processed event the second.
+        // Require new live failure work in this run, never unrelated/history-only work.
+        livePending.some(
+          e => failureById.get(e.eventId)?.runKey === failure.runKey
+        ) &&
         canCorrespond(snapshot);
       if (!historical && !actionable) continue;
       const feeAmount = snapshot.control?.feeAmountPence ?? 2500;
