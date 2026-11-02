@@ -1452,9 +1452,29 @@ export const crmRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const { userId, ...data } = input;
+        // Older open tabs may still submit agentStatus with every profile save.
+        // Accept an unchanged value but never let this bypass the audited
+        // status workflow or overwrite a suspension from a stale form.
+        const { userId, agentStatus, ...data } = input;
+        const existing = await getAgentCrmProfile(userId);
+        if (agentStatus != null && agentStatus !== (existing?.agentStatus ?? "active")) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Change membership status using the Agent Status control, then refresh before saving profile details." });
+        }
+        const enteringAccelerator = data.trainingStage === "Agent Accelerator"
+          && existing?.trainingStage !== "Agent Accelerator";
+        if (enteringAccelerator) {
+          const db = await import("./db").then(({ getDb }) => getDb());
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+          const { users } = await import("../drizzle/schema");
+          const { eq } = await import("drizzle-orm");
+          const [agent] = await db.select({ role: users.role, isActive: users.isActive, portalStatus: users.portalStatus })
+            .from(users).where(eq(users.id, userId)).limit(1);
+          if (!agent || agent.role !== "agent" || !agent.isActive || !["onboarding", "active"].includes(agent.portalStatus)
+            || (existing?.agentStatus && existing.agentStatus !== "active")) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Only current active agents can start Agent Accelerator. Restore the account's active status before changing its training stage." });
+          }
+        }
         if (data.correspondenceEmailKind) {
-          const existing = await getAgentCrmProfile(userId);
           const selectedEmail = data.correspondenceEmailKind === "jlt"
             ? data.jltEmail ?? existing?.jltEmail
             : data.correspondenceEmailKind === "personal"
@@ -1468,7 +1488,7 @@ export const crmRouter = router({
           }
         }
         await upsertAgentCrmProfile(userId, data as any);
-        if (data.trainingStage === "Agent Accelerator") {
+        if (enteringAccelerator) {
           await enrolAgentInAcceleratorJourneys({ agentId: userId, actorId: ctx.user.id });
         }
         if (data.inContract === true) {

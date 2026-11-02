@@ -948,7 +948,6 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
     city: profile?.city ?? "",
     postcode: profile?.postcode ?? "",
     ukRegion: profile?.ukRegion ?? "",
-    agentStatus: profile?.agentStatus ?? "active",
     membershipTier: profile?.membershipTier ?? "",
     businessName: profile?.businessName ?? "",
     retailerCode: profile?.retailerCode ?? "",
@@ -1037,7 +1036,6 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
       city: profile?.city ?? "",
       postcode: profile?.postcode ?? "",
       ukRegion: profile?.ukRegion ?? "",
-      agentStatus: profile?.agentStatus ?? "active",
       membershipTier: profile?.membershipTier ?? "",
       businessName: profile?.businessName ?? "",
       retailerCode: profile?.retailerCode ?? "",
@@ -1405,12 +1403,13 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Agent Status</Label>
-              <Select value={form.agentStatus} onValueChange={(v) => { setForm({ ...form, agentStatus: v }); handleStatusChange(v); }}>
+              <Select value={profile?.agentStatus ?? "active"} onValueChange={handleStatusChange} disabled={updateAgentStatus.isPending || updateProfile.isPending}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {AGENT_STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <p className="mt-1.5 text-xs text-muted-foreground">Status changes are saved separately from profile details.</p>
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Membership Tier</Label>
@@ -1550,7 +1549,6 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
             city: form.city || null,
             postcode: form.postcode || null,
             ukRegion: form.ukRegion || null,
-            agentStatus: form.agentStatus || "active",
             membershipTier: form.membershipTier || null,
             businessName: form.businessName || null,
             retailerCode: form.retailerCode || null,
@@ -1559,7 +1557,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
             monthlySub: form.monthlySub || null,
             internalNotes: form.internalNotes || null,
             trainingStage: form.trainingStage || null,
-          })} disabled={updateProfile.isPending}>
+          })} disabled={updateProfile.isPending || updateAgentStatus.isPending || statusDialog !== null}>
             {updateProfile.isPending ? "Saving..." : "Save Changes"}
           </Button>
         </div>
