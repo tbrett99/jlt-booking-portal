@@ -168,10 +168,10 @@ function issueBase(): SQL {
     (SELECT COUNT(*) FROM ${outbox} WHERE ${outbox.userId} = ${users.id}
       AND ${outbox.status} = 'accepted') AS mailAcceptedCount,
     (${currentMember} AND (${gcMandates.id} IS NULL OR ${gcMandates.mandateId} IS NULL
-      OR ${gcMandates.status} IN ('cancelled', 'failed', 'expired'))) AS ddIssue,
+      OR ${gcMandates.status} IN ('cancelled', 'failed', 'expired', 'consumed', 'blocked', 'suspended_by_payer'))) AS ddIssue,
     (COALESCE(${agentCrmProfiles.paymentExempt}, 0) = 0 AND ${users.portalStatus} = 'onboarding'
       AND (${gcMandates.id} IS NULL OR ${gcMandates.mandateId} IS NULL
-      OR ${gcMandates.status} IN ('cancelled', 'failed', 'expired'))) AS onboardingDd,
+      OR ${gcMandates.status} IN ('cancelled', 'failed', 'expired', 'consumed', 'blocked', 'suspended_by_payer'))) AS onboardingDd,
     (COALESCE(${accounts.historyReviewRequired}, 0) = 1 OR ${accounts.lastError} IS NOT NULL
       OR (${currentMember} AND (${accounts.userId} IS NULL OR ${accounts.lastSyncedAt} IS NULL))) AS reviewIssue
     FROM ${users}

@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { DEPARTURE_REASON_OPTIONS, type DepartureReasonKey } from "@shared/departure-reasons";
+import { canLinkGoCardlessMandate } from "@shared/gocardless-mandate-status";
 
 const UK_REGIONS = [
   "North West", "North East", "Yorkshire and the Humber", "East Midlands",
@@ -2987,13 +2988,14 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
       mandates_cancelled: "Mandate Cancelled",
       mandates_failed: "Mandate Failed",
       mandates_expired: "Mandate Expired",
+      mandates_consumed: "Mandate Consumed",
     };
     return map[type] ?? type;
   };
 
   const eventBadgeColor = (type: string) => {
     if (type.includes("failed") || type.includes("charged_back")) return "bg-red-100 text-red-700";
-    if (type.includes("cancelled") || type.includes("expired")) return "bg-orange-100 text-orange-700";
+    if (type.includes("cancelled") || type.includes("expired") || type.includes("consumed")) return "bg-orange-100 text-orange-700";
     return "bg-gray-100 text-gray-700";
   };
 
@@ -3013,9 +3015,13 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
                 mandate.status === "active" ? "bg-teal-100 text-teal-800" :
                 mandate.status === "pending" ? "bg-blue-100 text-blue-800" :
                 mandate.status === "cancelled" ? "bg-red-100 text-red-800" :
+                mandate.status === "consumed" ? "bg-orange-100 text-orange-800" :
                 "bg-gray-100 text-gray-700"
               }`}>{mandate.status}</span>
             </div>
+            {mandate.status === "consumed" && (
+              <p className="text-amber-800">Consumed mandate — cannot be reused.</p>
+            )}
             {mandate.mandateId && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Mandate ID</span>
@@ -3102,8 +3108,8 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
             )}
           </div>
         )}
-        {/* Manual subscription creation — shown when mandate exists (any non-cancelled/expired status) OR no mandate at all */}
-        {(!mandate || (!subscription && mandate?.status !== "cancelled" && mandate?.status !== "expired")) && (
+        {/* Manual subscription creation — only reusable mandate states, or a provider-verified manual ID. */}
+        {(!mandate || (!subscription && canLinkGoCardlessMandate(mandate.status))) && (
           <div className="mt-3">
             {!showCreateSub ? (
               <button
@@ -3699,6 +3705,10 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, paymentExe
             cancelled: "text-red-600 bg-red-50",
             failed: "text-red-600 bg-red-50",
             expired: "text-gray-600 bg-gray-50",
+            consumed: "text-orange-700 bg-orange-50",
+            blocked: "text-red-600 bg-red-50",
+            suspended_by_payer: "text-orange-700 bg-orange-50",
+            pending_customer_approval: "text-amber-600 bg-amber-50",
           } as Record<string, string>;
           return (
             <div
@@ -3756,6 +3766,9 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, paymentExe
                       ) : (
                         <p className="text-xs text-amber-600">No mandate found — agent has not completed DD setup.</p>
                       )}
+                      {mandate?.status === "consumed" && (
+                        <p className="text-xs text-amber-800">Consumed mandate — cannot be reused.</p>
+                      )}
 
                       {/* Subscription already exists */}
                       {subscription ? (
@@ -3763,7 +3776,7 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, paymentExe
                           <CheckCircle2 size={13} className="text-emerald-500" />
                           <span className="text-xs text-emerald-700 font-medium">Subscription active — £{(subscription.amount / 100).toFixed(2)}/mo, {subscription.dayOfMonth === 1 ? "1st" : subscription.dayOfMonth === 15 ? "15th" : "28th"} of month</span>
                         </div>
-                      ) : mandate && !showSubForm ? (
+                      ) : mandate && canLinkGoCardlessMandate(mandate.status) && !showSubForm ? (
                         <Button
                           size="sm"
                           variant="outline"
@@ -3775,7 +3788,7 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, paymentExe
                         >
                           <Plus size={12} /> Create Subscription
                         </Button>
-                      ) : showSubForm ? (
+                      ) : mandate && canLinkGoCardlessMandate(mandate.status) && showSubForm ? (
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs text-muted-foreground">Payment day:</span>
                           <Select value={subPaymentDay} onValueChange={setSubPaymentDay}>

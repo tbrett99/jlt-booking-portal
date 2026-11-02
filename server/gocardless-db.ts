@@ -122,7 +122,7 @@ export async function updateGcMandate(
     mandateId: string | null;
     billingRequestId: string | null;
     billingRequestFlowId: string | null;
-    status: "pending" | "pending_submission" | "submitted" | "active" | "cancelled" | "failed" | "expired";
+    status: typeof gcMandates.$inferSelect["status"];
     userId: number;
     joiningFeePaidAt: Date;
     preferredPaymentDay: number;

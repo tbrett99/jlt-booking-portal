@@ -4,6 +4,7 @@ import { getDb } from "./db";
 import { gcMandates, gcSubscriptions, membershipPaymentInbox, membershipPaymentControl, membershipPaymentFees } from "../drizzle/schema";
 import { recordMembershipPaymentEvent, processMembershipPaymentAccount, processMembershipPaymentOutbox } from "./membership-payment-service";
 import { createPaymentEvent } from "./gocardless-db";
+import { parseGoCardlessMandateStatus } from "../shared/gocardless-mandate-status";
 
 export type MembershipProviderEvent = {
   id: string; action: string; resource_type: string; created_at: string;
@@ -60,9 +61,10 @@ export async function enrichMembershipProviderEvent(event: MembershipProviderEve
     const rows = await db.select().from(gcMandates).where(eq(gcMandates.mandateId, event.links.mandate));
     if (rows.length) {
       const live = await membershipProviderGet<{ mandates: { status: string } }>(`/mandates/${encodeURIComponent(event.links.mandate)}`);
-      await db.update(gcMandates).set({ status: live.mandates.status as any }).where(eq(gcMandates.mandateId, event.links.mandate));
+      const status = parseGoCardlessMandateStatus(live.mandates.status);
+      await db.update(gcMandates).set({ status }).where(eq(gcMandates.mandateId, event.links.mandate));
     }
-    await db.update(membershipPaymentInbox).set({ status: "ignored", processedAt: new Date(), lastError: null }).where(eq(membershipPaymentInbox.eventId, event.id));
+    await db.update(membershipPaymentInbox).set({ status: "ignored", processedAt: new Date(), nextProcessingAt: null, lastError: null }).where(eq(membershipPaymentInbox.eventId, event.id));
     return null;
   }
   if (event.resource_type !== "payments" || !event.links?.payment || !paymentActions.has(event.action)) {

@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { normaliseTaskIdentityEmail } from "@shared/task-identity";
 import { nextRecurringTaskDate, TASK_RECURRENCE_RULES } from "@shared/task-recurrence";
+import { canLinkGoCardlessMandate, parseGoCardlessMandateStatus } from "@shared/gocardless-mandate-status";
 import { pushClaimStatusToOrbit } from "./orbit-sync";
 import { canReconcileHistoricalCommissionClaim } from "./historical-commission-utils";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -5632,7 +5633,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         const agent = await getUserById(input.userId);
         if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found." });
         const gcMandate = await getGcMandate(input.mandateId.trim());
-        if (gcMandate.status === "cancelled" || gcMandate.status === "failed" || gcMandate.status === "expired") {
+        if (!canLinkGoCardlessMandate(gcMandate.status)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `This GoCardless mandate is ${gcMandate.status} and cannot be linked.` });
         }
         const currentMandate = await getGcMandateByUserId(input.userId);
@@ -5640,7 +5641,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         if (currentMandate.mandateId === gcMandate.id) throw new TRPCError({ code: "CONFLICT", message: "This mandate is already linked to the agent." });
         await updateGcMandate(currentMandate.id, {
           mandateId: gcMandate.id,
-          status: gcMandate.status === "active" ? "active" : "pending",
+          status: parseGoCardlessMandateStatus(gcMandate.status),
           preferredPaymentDay: input.preferredPaymentDay,
         });
         await createGcMandateReplacement({
@@ -5770,8 +5771,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         // Allow proceeding if admin provides a mandate ID directly (no DB row required)
         const effectiveMandateId = input.mandateId ?? mandate?.mandateId;
         if (!effectiveMandateId) throw new TRPCError({ code: "NOT_FOUND", message: "No mandate found — please enter the GoCardless Mandate ID from the GC dashboard" });
-        // Allow subscription creation for any non-cancelled/expired mandate status
-        if (mandate && (mandate.status === "cancelled" || mandate.status === "expired") && !input.mandateId) throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot create subscription: mandate is ${mandate.status}.` });
+        // A terminal or unavailable mandate is not reusable collection authority.
+        if (mandate && !canLinkGoCardlessMandate(mandate.status) && !input.mandateId) throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot create subscription: mandate is ${mandate.status}.` });
         const existingSub = await getGcSubscriptionByUserId(input.userId);
         if (existingSub) throw new TRPCError({ code: "CONFLICT", message: "Agent already has an active subscription" });
 
@@ -5797,11 +5798,12 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         );
 
         // Fetch mandate scheme — Faster Payments mandates do not support day_of_month on subscriptions
-        let isFasterPayments = false;
-        try {
-          const gcMandateInfo = await getGcMandate(effectiveMandateId);
-          isFasterPayments = gcMandateInfo.scheme === "faster_payments";
-        } catch (_) { /* fallback: assume bacs */ }
+        // Verify the effective provider ID even for manual overrides; fail closed if the live read fails.
+        const gcMandateInfo = await getGcMandate(effectiveMandateId);
+        if (!canLinkGoCardlessMandate(gcMandateInfo.status)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot create subscription: mandate is ${gcMandateInfo.status}.` });
+        }
+        const isFasterPayments = gcMandateInfo.scheme === "faster_payments";
 
         const sub = await createSubscription({
           mandateId: effectiveMandateId,
@@ -5910,11 +5912,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           throw new TRPCError({ code: "NOT_FOUND", message: "No GoCardless mandate ID found. The billing request may not have been fulfilled yet." });
         }
         const gcMandate = await getMandate(resolvedMandateId);
-        const validStatuses = ["pending", "pending_submission", "submitted", "active", "cancelled", "failed", "expired"] as const;
-        type MandateStatus = typeof validStatuses[number];
-        const newStatus: MandateStatus = validStatuses.includes(gcMandate.status as MandateStatus)
-          ? (gcMandate.status as MandateStatus)
-          : "pending";
+        const newStatus = parseGoCardlessMandateStatus(gcMandate.status);
         await dbInst
           .update(gcMandatesTable)
           .set({ status: newStatus, mandateId: resolvedMandateId, updatedAt: new Date() })
@@ -5965,8 +5963,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
                 ?? customerMandates[0];
               if (bestMandate) {
                 // Update the portal mandate row with the best mandate's ID and status
-                const mandateValidStatuses = ['pending','pending_submission','submitted','active','cancelled','failed','expired'] as const;
-                const bestMandateStatus = mandateValidStatuses.includes(bestMandate.status) ? bestMandate.status : 'pending';
+                const bestMandateStatus = parseGoCardlessMandateStatus(bestMandate.status);
                 await dbInst.update(gcMandatesTable)
                   .set({ mandateId: bestMandate.id, status: bestMandateStatus, updatedAt: new Date() })
                   .where(eqFn(gcMandatesTable.id, mandate.id));
@@ -6103,12 +6100,10 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       }
 
       // Update mandate statuses
-      const validMandStatuses = ['pending', 'pending_submission', 'submitted', 'active', 'cancelled', 'failed', 'expired'] as const;
-      type MandStatus = typeof validMandStatuses[number];
       for (const gcM of gcMandatesList) {
         const portalMandate = mandateByGcId[gcM.id];
         if (!portalMandate) continue;
-        const newStatus: MandStatus = validMandStatuses.includes(gcM.status) ? gcM.status : 'pending';
+        const newStatus = parseGoCardlessMandateStatus(gcM.status);
         if (portalMandate.status !== newStatus) {
           await dbInst.update(gcMandatesTable)
             .set({ status: newStatus, updatedAt: new Date() })
