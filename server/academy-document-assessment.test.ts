@@ -62,4 +62,10 @@ describe("Academy document assessment workflow", () => {
     expect(insights).toContain("DocumentAssessmentQueue");
     expect(insights).toContain("markDocumentAssessment");
   });
+
+  it("keeps document uploads out of written-answer and AI review workflows", () => {
+    expect(router).toContain('eq(academyLessons.assessmentMode, "quiz")');
+    expect(router).toContain("Document uploads must be reviewed in the document assessment queue");
+    expect(router).toContain('eq(academyLessons.assessmentMode, "document_upload")');
+  });
 });

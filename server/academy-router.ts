@@ -2287,7 +2287,13 @@ export const academyRouter = router({
         .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
         .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
         .innerJoin(users, eq(users.id, academyEnrollments.agentId))
-        .where(eq(academyAssessmentAttempts.status, "awaiting_marking"))
+        // Document-upload assessments have their own secure review queue below.
+        // They have no in-Portal question responses and must never be sent to
+        // the written-marking or AI-review workflow.
+        .where(and(
+          eq(academyAssessmentAttempts.status, "awaiting_marking"),
+          eq(academyLessons.assessmentMode, "quiz"),
+        ))
         .orderBy(asc(academyAssessmentAttempts.takenAt));
       const attemptIds = rows.map((row) => row.attempt.id);
       const lessonIds = Array.from(new Set(rows.map((row) => row.lesson.id)));
@@ -2381,6 +2387,9 @@ export const academyRouter = router({
         .innerJoin(users, eq(users.id, academyEnrollments.agentId))
         .where(eq(academyAssessmentAttempts.id, input.attemptId)).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment submission not found" });
+      if (row.lesson.assessmentMode !== "quiz") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Document uploads must be reviewed in the document assessment queue" });
+      }
       if (row.attempt.status !== "awaiting_marking") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "AI review is available only while this written assessment awaits staff marking" });
       }
@@ -2479,6 +2488,9 @@ export const academyRouter = router({
         .innerJoin(users, eq(users.id, academyEnrollments.agentId))
         .where(eq(academyAssessmentAttempts.id, input.attemptId)).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment submission not found" });
+      if (row.lesson.assessmentMode !== "quiz") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Document uploads must be reviewed in the document assessment queue" });
+      }
       if (row.attempt.status !== "awaiting_marking") throw new TRPCError({ code: "BAD_REQUEST", message: "This written assessment has already been marked" });
       const questions = await db.select().from(academyQuestions).where(eq(academyQuestions.lessonId, row.lesson.id)).orderBy(asc(academyQuestions.sortOrder));
       const currentResponses = await db.select().from(academyAssessmentResponses).where(eq(academyAssessmentResponses.attemptId, row.attempt.id));
