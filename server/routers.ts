@@ -6123,7 +6123,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
      * Finds active agents with no gc_subscription row, looks them up in GoCardless
      * by email, and auto-links any active subscription found.
      */
-    reconcileUnlinked: adminProcedure.mutation(async () => {
+    reconcileUnlinked: adminProcedure.mutation(async ({ ctx }) => {
       const gcToken = process.env.GOCARDLESS_ACCESS_TOKEN;
       if (!gcToken) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'GoCardless token not configured' });
       const gcEnv = (process.env.GOCARDLESS_ENVIRONMENT || 'live').toUpperCase();
@@ -6134,20 +6134,16 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         'Accept': 'application/json',
       });
 
-      // Bulk fetch all pages from GC
-      async function gcGetAll(resource: string) {
-        const all: any[] = [];
-        let after: string | null = null;
-        while (true) {
-          const qs = after ? `?after=${after}&limit=500` : '?limit=500';
-          const res = await fetch(`${gcBase}/${resource}${qs}`, { headers: gcHeaders() });
-          if (!res.ok) throw new Error(`GC API error ${res.status} for /${resource}`);
-          const data = await res.json() as any;
-          all.push(...(data[resource] ?? []));
-          if (data.meta?.cursors?.after) after = data.meta.cursors.after;
-          else break;
-        }
-        return all;
+      const { listGoCardlessEmailLinkResources } = await import('./gocardless-email-link');
+      const readDeadline = Date.now() + 90_000;
+      async function gcGetAll(resource: 'customers' | 'mandates' | 'subscriptions') {
+        return listGoCardlessEmailLinkResources(resource, async path => {
+          if (Date.now() >= readDeadline) throw new Error('GoCardless bulk lookup was incomplete; no links have been changed.');
+          const res = await fetch(`${gcBase}${path}`, { method: 'GET', headers: gcHeaders(),
+            signal: AbortSignal.timeout(Math.min(25_000, Math.max(1, readDeadline - Date.now()))) });
+          if (!res.ok) throw new Error(`GoCardless lookup failed (HTTP ${res.status}); no links have been changed.`);
+          return res.json();
+        });
       }
 
       const { getDb } = await import('./db');
@@ -6161,9 +6157,10 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       // Include all portal users regardless of agentStatus so agents not yet
       // marked 'active' but with an existing GC subscription still get linked
       const allAgents = await dbInst
-        .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email })
+        .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, role: usersTable.role })
         .from(usersTable)
-        .innerJoin(agentCrmProfiles, eqFn(agentCrmProfiles.userId, usersTable.id));
+        .innerJoin(agentCrmProfiles, eqFn(agentCrmProfiles.userId, usersTable.id))
+        .where(eqFn(usersTable.role, 'agent'));
 
       const agentsWithActiveSub = await dbInst
         .select({ userId: gcSubsTable.userId })
@@ -6184,81 +6181,28 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         gcGetAll('subscriptions'),
       ]);
 
-      // Build lookup maps
-      const customerByEmail: Record<string, any> = {};
-      for (const c of gcCustomers) {
-        if (c.email) customerByEmail[c.email.toLowerCase()] = c;
-      }
-      const mandatesByCustomer: Record<string, any[]> = {};
-      for (const m of gcMandatesList) {
-        const cid = m.links?.customer;
-        if (cid) { if (!mandatesByCustomer[cid]) mandatesByCustomer[cid] = []; mandatesByCustomer[cid].push(m); }
-      }
-      const subsByMandate: Record<string, any[]> = {};
-      for (const s of gcSubsList) {
-        const mid = s.links?.mandate;
-        if (mid) { if (!subsByMandate[mid]) subsByMandate[mid] = []; subsByMandate[mid].push(s); }
-      }
-
+      const { selectGoCardlessEmailLink } = await import('./gocardless-email-link');
+      const { mirrorGoCardlessEmailLink } = await import('./gocardless-email-link-store');
       const results: Array<{ name: string; email: string; status: 'linked' | 'not_found' | 'error'; subscriptionId?: string; error?: string }> = [];
-
       for (const agent of unlinkedAgents) {
         try {
-          const email = (agent.email ?? '').toLowerCase();
-          const gcCustomer = customerByEmail[email];
-          if (!gcCustomer) {
+          const email = (agent.email ?? '').toLowerCase().trim();
+          const matchingCustomers = gcCustomers.filter((customer: any) => (customer.email ?? '').toLowerCase().trim() === email);
+          if (!email || !matchingCustomers.length) {
             results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'not_found' });
             continue;
           }
-
-          const mandates = (mandatesByCustomer[gcCustomer.id] ?? []).filter((m: any) =>
-            ['active', 'pending_submission', 'submitted', 'pending'].includes(m.status)
-          );
-
-          let linked = false;
-          for (const mandate of mandates) {
-            const activeSubs = (subsByMandate[mandate.id] ?? []).filter((s: any) => s.status === 'active');
-            if (activeSubs.length === 0) continue;
-            const sub = activeSubs[0];
-
-            // Upsert mandate
-            const existingMandates = await dbInst.select().from(gcMandatesTable).where(eqFn(gcMandatesTable.mandateId, mandate.id));
-            if (existingMandates.length === 0) {
-              await dbInst.insert(gcMandatesTable).values({
-                userId: agent.id,
-                mandateId: mandate.id,
-                status: mandate.status,
-              });
-            } else if (existingMandates[0].userId !== agent.id) {
-              await dbInst.update(gcMandatesTable)
-                .set({ userId: agent.id, status: mandate.status, updatedAt: new Date() })
-                .where(eqFn(gcMandatesTable.id, existingMandates[0].id));
-            }
-
-            // Upsert subscription
-            const existingSubs = await dbInst.select().from(gcSubsTable).where(eqFn(gcSubsTable.subscriptionId, sub.id));
-            if (existingSubs.length === 0) {
-              await dbInst.insert(gcSubsTable).values({
-                userId: agent.id,
-                mandateId: mandate.id,
-                subscriptionId: sub.id,
-                status: 'active',
-                amount: sub.amount,
-                currency: sub.currency ?? 'GBP',
-                startDate: sub.start_date ?? new Date().toISOString().slice(0, 10),
-                dayOfMonth: sub.day_of_month ?? null,
-                nextChargeDate: sub.upcoming_payments?.[0]?.charge_date ?? null,
-              });
-            }
-
-            results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'linked', subscriptionId: sub.id });
-            linked = true;
-            break;
-          }
-
-          if (!linked) {
+          const customerIds = new Set(matchingCustomers.map((customer: any) => customer.id));
+          const matchingMandates = gcMandatesList.filter((mandate: any) => customerIds.has(mandate.links?.customer));
+          const mandateIds = new Set(matchingMandates.map((mandate: any) => mandate.id));
+          const matchingSubscriptions = gcSubsList.filter((subscription: any) => mandateIds.has(subscription.links?.mandate));
+          const selection = selectGoCardlessEmailLink(email, matchingCustomers, matchingMandates, matchingSubscriptions);
+          if (!selection.subscription) {
             results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'not_found' });
+            continue;
           }
+          await mirrorGoCardlessEmailLink(agent, selection, { id: ctx.user.id, name: ctx.user.name ?? null });
+          results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'linked', subscriptionId: selection.subscription.id });
         } catch (err: any) {
           results.push({ name: agent.name ?? '', email: agent.email ?? '', status: 'error', error: err.message });
         }
@@ -6279,132 +6223,43 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
      * and inserts the rows into gc_mandates and gc_subscriptions.
      */
     linkByEmail: adminProcedure
-      .input(z.object({ userId: z.number().int(), overrideEmail: z.string().email().optional() }))
-      .mutation(async ({ input }) => {
+      .input(z.object({ userId: z.number().int().positive(), overrideEmail: z.string().trim().email().optional() }))
+      .mutation(async ({ input, ctx }) => {
         const gcToken = process.env.GOCARDLESS_ACCESS_TOKEN;
         if (!gcToken) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'GoCardless token not configured' });
         const gcEnv = (process.env.GOCARDLESS_ENVIRONMENT || 'live').toUpperCase();
         const gcBase = gcEnv === 'LIVE' ? 'https://api.gocardless.com' : 'https://api-sandbox.gocardless.com';
-        const gcHeaders = () => ({
-          'Authorization': `Bearer ${gcToken}`,
-          'GoCardless-Version': '2015-07-06',
-          'Accept': 'application/json',
-        });
-
-        async function gcGetAll(resource: string) {
-          const all: any[] = [];
-          let after: string | null = null;
-          while (true) {
-            const qs = after ? `?after=${after}&limit=500` : '?limit=500';
-            const res = await fetch(`${gcBase}/${resource}${qs}`, { headers: gcHeaders() });
-            if (!res.ok) throw new Error(`GC API error ${res.status} for /${resource}`);
-            const data = await res.json() as any;
-            all.push(...(data[resource] ?? []));
-            if (data.meta?.cursors?.after) after = data.meta.cursors.after;
-            else break;
-          }
-          return all;
-        }
-
         const { getDb } = await import('./db');
         const dbInst = await getDb();
         if (!dbInst) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-
-        const { users: usersTable, gcMandates: gcMandatesTable, gcSubscriptions: gcSubsTable } = await import('../drizzle/schema');
+        const { users: usersTable } = await import('../drizzle/schema');
         const { eq: eqFn } = await import('drizzle-orm');
-
-        const [agent] = await dbInst.select({ id: usersTable.id, email: usersTable.email, name: usersTable.name })
-          .from(usersTable)
-          .where(eqFn(usersTable.id, input.userId));
-        if (!agent) throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' });
-        if (!agent.email) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Agent has no email address' });
-
-        // Use overrideEmail if provided (agent used different email in GC), otherwise use portal email
-        const email = (input.overrideEmail ?? agent.email).toLowerCase().trim();
-
-        const [gcCustomers, gcMandatesList, gcSubsList] = await Promise.all([
-          gcGetAll('customers'),
-          gcGetAll('mandates'),
-          gcGetAll('subscriptions'),
-        ]);
-
-        const gcCustomer = gcCustomers.find((c: any) => c.email?.toLowerCase().trim() === email);
-        if (!gcCustomer) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: `No GoCardless customer found with email ${agent.email}. Check the email matches exactly in GoCardless.`,
-          });
-        }
-
-        const mandatesByCustomer: Record<string, any[]> = {};
-        for (const m of gcMandatesList) {
-          const cid = m.links?.customer;
-          if (cid) { if (!mandatesByCustomer[cid]) mandatesByCustomer[cid] = []; mandatesByCustomer[cid].push(m); }
-        }
-        const subsByMandate: Record<string, any[]> = {};
-        for (const s of gcSubsList) {
-          const mid = s.links?.mandate;
-          if (mid) { if (!subsByMandate[mid]) subsByMandate[mid] = []; subsByMandate[mid].push(s); }
-        }
-
-        const mandates = (mandatesByCustomer[gcCustomer.id] ?? []).filter((m: any) =>
-          ['active', 'pending_submission', 'submitted', 'pending'].includes(m.status)
-        );
-
-        if (mandates.length === 0) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: `GoCardless customer found (${gcCustomer.id}) but no active/pending mandates exist for this customer.`,
-          });
-        }
-
-        let linkedSubscriptionId: string | null = null;
-
-        for (const mandate of mandates) {
-          const existingMandates = await dbInst.select().from(gcMandatesTable).where(eqFn(gcMandatesTable.mandateId, mandate.id));
-          if (existingMandates.length === 0) {
-            await dbInst.insert(gcMandatesTable).values({
-              userId: input.userId,
-              mandateId: mandate.id,
-              status: mandate.status,
+        const [agent] = await dbInst.select({ id: usersTable.id, email: usersTable.email, name: usersTable.name, role: usersTable.role })
+          .from(usersTable).where(eqFn(usersTable.id, input.userId));
+        if (!agent || agent.role !== 'agent') throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent account not found' });
+        const email = (input.overrideEmail ?? agent.email ?? '').toLowerCase().trim();
+        if (!email) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Enter the exact email used by this agent in GoCardless.' });
+        const { lookupGoCardlessEmailLink } = await import('./gocardless-email-link');
+        const { mirrorGoCardlessEmailLink } = await import('./gocardless-email-link-store');
+        const deadline = Date.now() + 90_000;
+        let selection;
+        try {
+          selection = await lookupGoCardlessEmailLink(email, async (path) => {
+            if (Date.now() >= deadline) throw new Error('GoCardless email lookup timed out before it was complete. No records have been linked; try again.');
+            const response = await fetch(`${gcBase}${path}`, {
+              method: 'GET',
+              headers: { 'Authorization': `Bearer ${gcToken}`, 'GoCardless-Version': '2015-07-06', 'Accept': 'application/json' },
+              signal: AbortSignal.timeout(Math.min(25_000, Math.max(1, deadline - Date.now()))),
             });
-          } else if (existingMandates[0].userId !== input.userId) {
-            await dbInst.update(gcMandatesTable)
-              .set({ userId: input.userId, status: mandate.status, updatedAt: new Date() })
-              .where(eqFn(gcMandatesTable.id, existingMandates[0].id));
-          }
-
-          const activeSubs = (subsByMandate[mandate.id] ?? []).filter((s: any) => s.status === 'active');
-          if (activeSubs.length > 0) {
-            const sub = activeSubs[0];
-            const existingSubs = await dbInst.select().from(gcSubsTable).where(eqFn(gcSubsTable.subscriptionId, sub.id));
-            if (existingSubs.length === 0) {
-              await dbInst.insert(gcSubsTable).values({
-                userId: input.userId,
-                mandateId: mandate.id,
-                subscriptionId: sub.id,
-                status: 'active',
-                amount: sub.amount,
-                currency: sub.currency ?? 'GBP',
-                startDate: sub.start_date ?? new Date().toISOString().slice(0, 10),
-                dayOfMonth: sub.day_of_month ?? null,
-                nextChargeDate: sub.upcoming_payments?.[0]?.charge_date ?? null,
-              });
-            }
-            linkedSubscriptionId = sub.id;
-            break;
-          }
+            if (!response.ok) throw new Error(`GoCardless lookup failed (HTTP ${response.status}). No records have been linked; try again.`);
+            return response.json();
+          });
+        } catch (error) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: error instanceof Error ? error.message : 'GoCardless lookup was incomplete. No records have been linked.' });
         }
-
-        return {
-          success: true,
-          gcCustomerId: gcCustomer.id,
-          mandatesFound: mandates.length,
-          subscriptionId: linkedSubscriptionId,
-          message: linkedSubscriptionId
-            ? `Successfully linked subscription ${linkedSubscriptionId} for ${agent.name ?? agent.email}`
-            : `Mandate linked for ${agent.name ?? agent.email} but no active subscription found — mandate only.`,
-        };
+        const result = await mirrorGoCardlessEmailLink(agent, selection, { id: ctx.user.id, name: ctx.user.name ?? null },
+          { usesLoginEmail: input.overrideEmail === undefined });
+        return { ...result, matchingCustomerCount: selection.matchingCustomerCount };
       }),
 
     /**

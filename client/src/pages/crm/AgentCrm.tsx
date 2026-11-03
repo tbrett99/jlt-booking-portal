@@ -2985,6 +2985,7 @@ function DirectDebitTabForAgent({ userId, paymentExempt: initialPaymentExempt, p
       setGcOverrideEmail("");
       setShowGcEmailOverride(false);
       refetchDdStatus();
+      refetchPaymentSchedule();
       utils.gocardless.adminListMandates.invalidate();
     },
     onError: (err) => toast.error(err.message),
@@ -3122,6 +3123,7 @@ function DirectDebitTabForAgent({ userId, paymentExempt: initialPaymentExempt, p
             >
               {linkByEmailMutation.isPending ? "Searching GoCardless..." : "🔗 Link GC Subscription by Email"}
             </button>
+            <p className="text-xs text-muted-foreground">Checks all exact-email GoCardless customer records. Links existing references only; never creates a payment or transfers another agent’s mandate.</p>
             {!showGcEmailOverride ? (
               <button
                 onClick={() => setShowGcEmailOverride(true)}
@@ -3275,7 +3277,7 @@ function DirectDebitTabForAgent({ userId, paymentExempt: initialPaymentExempt, p
           <div className="rounded-lg border p-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Amount</span>
-              <span>£{(subscription.amount / 100).toFixed(2)} / month</span>
+              <span>{new Intl.NumberFormat("en-GB", { style: "currency", currency: subscription.currency || "GBP" }).format(subscription.amount / 100)} / month</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Start Date</span>
