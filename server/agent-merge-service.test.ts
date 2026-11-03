@@ -3,6 +3,7 @@ import { MERGE_OWNERS, identifiersValid, makeMergeToken, mergeDigest, uniqueColl
 import * as service from "./agent-merge-service";
 import { agentMergeRouter } from "./agent-merge-router";
 import type { TrpcContext } from "./_core/context";
+import { encrypt } from "./encryption";
 
 const guards = vi.hoisted(() => ({
   pool: vi.fn(() => { throw new Error("Real database access forbidden"); }),
@@ -176,9 +177,9 @@ function mergeInput(loaded: Loaded): service.MergeExecution {
     samePersonConfirmed: true, primaryChoicesConfirmed: true, archivedLearningConfirmed: true };
 }
 const actor = { id: ACTOR, name: "Offline Super Admin" };
-async function scopedInput(loaded: Loaded): Promise<service.MergeExecution> {
+async function scopedInput(loaded: Loaded, keepBanksAsIs = false): Promise<service.MergeExecution> {
   const scoped = await service.loadMergeScope(connectionFor(loaded), SOURCE, PRIMARY);
-  return { ...mergeInput(loaded), previewToken: service.buildMergePlan(scoped, ACTOR).preview.token };
+  return { ...mergeInput(loaded), keepBanksAsIs, previewToken: service.buildMergePlan(scoped, ACTOR, keepBanksAsIs).preview.token };
 }
 const writes = (connection: ReturnType<typeof connectionFor>) => connection.query.mock.calls.filter(([sql]) => /^(UPDATE|INSERT|DELETE)\b/.test(sql));
 const evidence = (record: Row, owner: string) => { const { [owner]: _owner, ...protectedFields } = record; return protectedFields; };
@@ -394,6 +395,72 @@ describe("signed preview freshness and transaction safety", () => {
     expect(connection.commit).toHaveBeenCalledOnce();
   });
 
+  it.each([null, "", " \t ", "\u00a0"])("merges two no-destination bank records containing %j, preserving both original profiles", async blank => {
+    const loaded = executionFixture();
+    const profiles = loaded.rows.get("agent_crm_profiles")!;
+    profiles[0].bankAccountName = "Original Surname";
+    profiles[1].bankAccountName = "Current Surname";
+    profiles[0].bankSortCode = blank;
+    profiles[0].bankAccountNumber = blank;
+    profiles[1].bankSortCode = null;
+    profiles[1].bankAccountNumber = "";
+    const before = copy(profiles);
+    const plan = service.buildMergePlan(loaded, ACTOR);
+    expect(plan.preview.canMerge).toBe(true);
+    expect(plan.preview.source.payoutBankStatus).toBe("not_recorded");
+    expect(plan.preview.primary.payoutBankStatus).toBe("not_recorded");
+    expect(plan.preview.warnings.join(" ")).toContain("account-holder name only");
+    expect(plan.preview.source).not.toHaveProperty("bankAccountNumber");
+    const connection = connectionFor(loaded);
+    await service.executeAgentMerge(await scopedInput(loaded), actor, { connection });
+    expect(connection.records("agent_crm_profiles")).toEqual(before);
+    const manifest = JSON.parse(connection.records("agent_record_merges")[0].manifestJson);
+    expect(manifest.sourceProfile).toEqual(JSON.parse(JSON.stringify(before[0])));
+    expect(manifest.primaryProfile).toEqual(JSON.parse(JSON.stringify(before[1])));
+    expect(writes(connection).some(([sql]) => sql.includes("UPDATE `agent_crm_profiles`"))).toBe(false);
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it("accepts independently encrypted matching banks while preserving original ciphertext", async () => {
+    const loaded = executionFixture(), profiles = loaded.rows.get("agent_crm_profiles")!;
+    for (const profile of profiles) { profile.bankSortCode = encrypt("00-01-02"); profile.bankAccountNumber = encrypt("00123456"); }
+    const before = copy(profiles);
+    expect(before[0].bankAccountNumber).not.toBe(before[1].bankAccountNumber);
+    expect(service.buildMergePlan(loaded, ACTOR).preview.canMerge).toBe(true);
+    const connection = connectionFor(loaded);
+    await service.executeAgentMerge(await scopedInput(loaded), actor, { connection });
+    expect(connection.records("agent_crm_profiles")).toEqual(before);
+    expect(JSON.parse(connection.records("agent_record_merges")[0].manifestJson).sourceProfile).toEqual(JSON.parse(JSON.stringify(before[0])));
+  });
+
+  it.each(["00123456", "unreadable:encrypted:value"])("preserves mismatched or unreadable bank values %j only with an explicit signed as-is choice", async value => {
+    const loaded = executionFixture(), profiles = loaded.rows.get("agent_crm_profiles")!;
+    profiles[0].bankAccountNumber = value;
+    expect(service.buildMergePlan(loaded, ACTOR).preview.canMerge).toBe(false);
+    const plan = service.buildMergePlan(loaded, ACTOR, true);
+    expect(plan.preview.canMerge).toBe(true);
+    const before = copy(profiles), connection = connectionFor(loaded);
+    await service.executeAgentMerge(await scopedInput(loaded, true), actor, { connection });
+    const manifest = JSON.parse(connection.records("agent_record_merges")[0].manifestJson);
+    expect(manifest.bankPolicy.keepBanksAsIs).toBe(true);
+    expect(manifest.sourceProfile).toEqual(JSON.parse(JSON.stringify(before[0])));expect(manifest.primaryProfile).toEqual(JSON.parse(JSON.stringify(before[1])));
+    expect(connection.records("agent_crm_profiles")).toEqual(before);
+    expect(writes(connection).some(([sql]) => sql.includes("UPDATE `agent_crm_profiles`"))).toBe(false);
+  });
+
+  it("rejects changing the as-is choice between preview and execution before any writes", async () => {
+    const loaded = executionFixture(), plan = service.buildMergePlan(loaded, ACTOR);
+    const connection = connectionFor(loaded);
+    await expect(service.executeAgentMerge({ ...await scopedInput(loaded), keepBanksAsIs: true }, actor, { connection })).rejects.toThrow();
+    expect(writes(connection)).toEqual([]);expect(connection.rollback).toHaveBeenCalledOnce();
+  });
+
+  it("does not let the bank-only choice bypass commission-rate or financial-policy blockers", () => {
+    const loaded = fixture(); loaded.source.commissionRatePct = "65.00";
+    expect(service.buildMergePlan(loaded, ACTOR, true).preview.canMerge).toBe(false);
+    expect(service.buildMergePlan(loaded, ACTOR, true).preview.blockers.join(" ")).toContain("different commission rates");
+  });
+
   it("rejects a fresh but financially blocked plan before any history or ownership writes", async () => {
     const loaded = executionFixture();
     addTable(loaded, "membership_payment_fees", [{ id: 501, userId: SOURCE, amountPence: 2500 }]);
@@ -467,7 +534,11 @@ describe("server merge authorization with mocked service functions", () => {
     const execute = vi.spyOn(service, "executeAgentMerge").mockResolvedValue({ success: true, alreadyMerged: false, primaryUserId: PRIMARY });
     await expect(caller("super_admin").preview({ sourceUserId: SOURCE, primaryUserId: PRIMARY })).resolves.toEqual(expected);
     await expect(caller("super_admin").execute(input)).resolves.toEqual({ success: true, alreadyMerged: false, primaryUserId: PRIMARY });
-    expect(preview).toHaveBeenCalledWith(SOURCE, PRIMARY, ACTOR);
+    expect(preview).toHaveBeenCalledWith(SOURCE, PRIMARY, ACTOR, false);
     expect(execute).toHaveBeenCalledWith(input, actor);
+    await caller("super_admin").preview({ sourceUserId: SOURCE, primaryUserId: PRIMARY, keepBanksAsIs: true });
+    expect(preview).toHaveBeenLastCalledWith(SOURCE, PRIMARY, ACTOR, true);
+    await caller("super_admin").execute({ ...input, keepBanksAsIs: true });
+    expect(execute).toHaveBeenLastCalledWith({ ...input, keepBanksAsIs: true }, actor);
   });
 });

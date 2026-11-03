@@ -4,6 +4,7 @@ import { getRawDbPool } from "./db";
 import { MERGE_OWNERS, identifiersValid, makeMergeToken, mergeDigest, stable, uniqueCollision, verifyMergeToken, type OwnerPolicy, type Row } from "./agent-merge-policy";
 import { reduceMembershipPaymentEvents } from "./membership-payment-policy";
 import type { MergeAccount, MergeHistoryEntry, MergePreview } from "./agent-merge-contract";
+import { compareMergePayoutBanks, mergePayoutBankStatus } from "./agent-merge-bank-policy";
 
 type Queryable = { query: (query: string, values?: any[]) => Promise<any> };
 type Loaded = { tables: Map<string, Set<string>>; rows: Map<string, Row[]>; uniqueKeys: Map<string, string[][]>; aliases: Row[]; source: Row; primary: Row; control: Row | null };
@@ -64,10 +65,10 @@ export async function loadMergeScope(db: Queryable, sourceId: number, primaryId:
 function account(loaded: Loaded, id: number): MergeAccount {
   const user = id === Number(loaded.source.id) ? loaded.source : loaded.primary;
   const profile = recordSet(loaded, "agent_crm_profiles", "userId", id)[0];
-  return { id, name: user.name, email: user.email, jltId: profile?.uniqueAgentId ?? null, status: profile?.agentStatus ?? user.portalStatus, lastSignedIn: dateIso(user.lastSignedIn), bookings: recordSet(loaded, "bookings", "agentId", id).length, courses: recordSet(loaded, "academy_enrollments", "agentId", id).length, mandates: recordSet(loaded, "gc_mandates", "userId", id).map(r => ({ id: r.mandateId ?? null, status: r.status })), subscriptions: recordSet(loaded, "gc_subscriptions", "userId", id).map(r => ({ id: r.subscriptionId ?? null, status: r.status })) };
+  return { id, name: user.name, email: user.email, jltId: profile?.uniqueAgentId ?? null, status: profile?.agentStatus ?? user.portalStatus, lastSignedIn: dateIso(user.lastSignedIn), bookings: recordSet(loaded, "bookings", "agentId", id).length, courses: recordSet(loaded, "academy_enrollments", "agentId", id).length, payoutBankStatus: mergePayoutBankStatus(profile), mandates: recordSet(loaded, "gc_mandates", "userId", id).map(r => ({ id: r.mandateId ?? null, status: r.status })), subscriptions: recordSet(loaded, "gc_subscriptions", "userId", id).map(r => ({ id: r.subscriptionId ?? null, status: r.status })) };
 }
 
-export function buildMergePlan(loaded: Loaded, actor: number): Plan {
+export function buildMergePlan(loaded: Loaded, actor: number, keepBanksAsIs = false): Plan {
   const sourceId = Number(loaded.source.id), primaryId = Number(loaded.primary.id);
   identifiersValid(sourceId, primaryId);
   const blockers: string[] = [], warnings: string[] = [];
@@ -78,7 +79,12 @@ export function buildMergePlan(loaded: Loaded, actor: number): Plan {
   if (!pp) blockers.push("The selected primary needs a CRM profile and JLT ID first. Choose the established CRM record as primary.");
   if (sp?.teamId && pp?.teamId && sp.teamId !== pp.teamId) blockers.push("These accounts belong to different teams. Resolve their team ownership before merging.");
   if (Number(loaded.source.commissionRatePct) !== Number(loaded.primary.commissionRatePct)) blockers.push("The accounts have different commission rates. Review and align the intended rate before merging; no financial setting is inferred.");
-  for (const key of ["bankAccountName", "bankSortCode", "bankAccountNumber"]) if (sp?.[key] && (!pp?.[key] || stable(sp[key]) !== stable(pp[key]))) blockers.push("The source has payout bank details not identical to the primary. Staff must verify/align payout details before ownership can move.");
+  const payoutBanks = compareMergePayoutBanks(sp, pp);
+  if (payoutBanks.conflict && !keepBanksAsIs) blockers.push(payoutBanks.unreadable
+    ? "Stored payout bank details could not be verified. Review them, or explicitly choose Keep bank fields as-is to retain both original profiles without changing the primary payout settings."
+    : "The source has payout bank details not identical to the primary. Review them, or explicitly choose Keep bank fields as-is to retain both original profiles without changing the primary payout settings.");
+  warnings.push(...payoutBanks.warnings);
+  if (keepBanksAsIs) warnings.push("Keep bank fields as-is was explicitly selected: bank differences or unreadable values do not block this merge. Neither account's bank fields are edited, copied or cleared. The primary remains the payout-settings record; source banking stays in archived history. This choice does not verify bank ownership or authorise any payout.");
   if (sp?.paymentExempt !== undefined && pp?.paymentExempt !== undefined && Boolean(sp.paymentExempt) !== Boolean(pp.paymentExempt)) blockers.push("Payment-exemption settings differ. Resolve the membership billing policy before merging.");
   if ((recordSet(loaded, "agent_engagement_cases", "agentId", sourceId).filter(r => r.status !== "closed").length + recordSet(loaded, "agent_engagement_cases", "agentId", primaryId).filter(r => r.status !== "closed").length) > 1) blockers.push("Both records have open engagement cases. Close or review the duplicate case first; conversations are never discarded.");
   if ((loaded.rows.get("team_invites") ?? []).length) blockers.push("The source has an open team invitation. Resolve it before merging; identity tokens are not transferred.");
@@ -138,15 +144,15 @@ export function buildMergePlan(loaded: Loaded, actor: number): Plan {
   warnings.push("The selected primary keeps its login email/password, JLT ID, contact/correspondence settings, membership/access status, team and payout bank details. Source profile documents and internal notes remain preserved in read-only history.");
   warnings.push("The duplicate's existing login and sessions are disabled. Old login credentials will never log in as the primary. No emails, payments, GoCardless creations/cancellations or course outcomes are triggered by the merge.");
   if (!loaded.tables.has("gc_mandate_replacements")) warnings.push("Mandate replacement-history schema is absent on this database. Merge will not create replacement history or enable replacement controls.");
-  const digest = mergeDigest({ source: redactedUser(loaded.source), primary: redactedUser(loaded.primary), rows: Array.from(loaded.rows.entries()), aliases: loaded.aliases, schema: Array.from(loaded.uniqueKeys.entries()), moves, retained, blockers: Array.from(new Set(blockers)), policyVersion: 1 });
+  const digest = mergeDigest({ source: redactedUser(loaded.source), primary: redactedUser(loaded.primary), rows: Array.from(loaded.rows.entries()), aliases: loaded.aliases, schema: Array.from(loaded.uniqueKeys.entries()), moves, retained, blockers: Array.from(new Set(blockers)), keepBanksAsIs, policyVersion: 3 });
   const expiry = Date.now() + 10 * 60 * 1000;
-  const preview: MergePreview = { source: account(loaded, sourceId), primary: account(loaded, primaryId), token: makeMergeToken({ source: sourceId, primary: primaryId, actor, digest, expiry }, secret()), expiresAt: new Date(expiry).toISOString(), moves, retained, warnings: Array.from(new Set(warnings)), blockers: Array.from(new Set(blockers)), canMerge: blockers.length === 0 };
+  const preview: MergePreview = { source: account(loaded, sourceId), primary: account(loaded, primaryId), keepBanksAsIs, token: makeMergeToken({ source: sourceId, primary: primaryId, actor, digest, expiry }, secret()), expiresAt: new Date(expiry).toISOString(), moves, retained, warnings: Array.from(new Set(warnings)), blockers: Array.from(new Set(blockers)), canMerge: blockers.length === 0 };
   return { preview, digest, loaded, changes };
 }
 
-export async function previewAgentMerge(source: number, primary: number, actor: number) {
+export async function previewAgentMerge(source: number, primary: number, actor: number, keepBanksAsIs = false) {
   const pool = await getRawDbPool(); const connection = await pool.getConnection();
-  try { await connection.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"); await connection.beginTransaction(); const plan = buildMergePlan(await loadMergeScope(connection, source, primary), actor); await connection.rollback(); return plan.preview; }
+  try { await connection.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"); await connection.beginTransaction(); const plan = buildMergePlan(await loadMergeScope(connection, source, primary), actor, keepBanksAsIs); await connection.rollback(); return plan.preview; }
   catch (e) { await connection.rollback(); throw e; } finally { connection.release(); }
 }
 
@@ -164,7 +170,7 @@ async function rebuildPaymentCache(db: Queryable, plan: Plan, primary: number) {
   await db.query("INSERT INTO membership_payment_accounts (userId,failedAttempts,outstandingPence,outstandingCount,runKey,lastFailedAt,lastSyncedAt,historyReviewRequired,lastError) VALUES (?,?,?,?,?,?,NULL,1,?) ON DUPLICATE KEY UPDATE failedAttempts=VALUES(failedAttempts),outstandingPence=VALUES(outstandingPence),outstandingCount=VALUES(outstandingCount),runKey=VALUES(runKey),lastFailedAt=VALUES(lastFailedAt),lastSyncedAt=NULL,historyReviewRequired=1,lastError=VALUES(lastError)", [primary, result.failureCount, outstanding, result.outstandingPaymentCount, result.currentRunKey ? `membership:${primary}:${result.currentRunKey}` : null, result.lastFailedAt ? new Date(result.lastFailedAt) : null, "Agent records merged: normal provider reconciliation and historical review still required. Merge did not send notices, charge fees or change access."]);
 }
 
-export type MergeExecution = { sourceUserId: number; primaryUserId: number; previewToken: string; reason: string; confirmation: string; samePersonConfirmed: boolean; primaryChoicesConfirmed: boolean; archivedLearningConfirmed: boolean };
+export type MergeExecution = { sourceUserId: number; primaryUserId: number; previewToken: string; reason: string; confirmation: string; samePersonConfirmed: boolean; primaryChoicesConfirmed: boolean; archivedLearningConfirmed: boolean; keepBanksAsIs?: boolean };
 export async function executeAgentMerge(input: MergeExecution, actor: { id: number; name: string | null }, dependencies?: { connection: any }) {
   identifiersValid(input.sourceUserId, input.primaryUserId);
   if (!input.samePersonConfirmed || !input.primaryChoicesConfirmed || !input.archivedLearningConfirmed || input.confirmation !== `MERGE ${input.sourceUserId} INTO ${input.primaryUserId}` || input.reason.trim().length < 10) error("Review both identities, primary settings and retained learning history, add a reason, and type the exact merge confirmation.", "BAD_REQUEST");
@@ -182,12 +188,12 @@ export async function executeAgentMerge(input: MergeExecution, actor: { id: numb
       await connection.rollback(); return { success: true, alreadyMerged: true, primaryUserId: input.primaryUserId };
     }
     const loaded = await loadMergeScope(connection, input.sourceUserId, input.primaryUserId, true);
-    const plan = buildMergePlan(loaded, actor.id);
+    const plan = buildMergePlan(loaded, actor.id, input.keepBanksAsIs === true);
     verifyMergeToken(input.previewToken, { source: input.sourceUserId, primary: input.primaryUserId, actor: actor.id, digest: plan.digest }, secret());
     if (plan.preview.blockers.length) error(plan.preview.blockers.join("\n"), "PRECONDITION_FAILED");
     // Preserve original profile and credential identity. This is duplicate archival,
     // not the cancellation workflow; no cancellation/status-email helpers are called.
-    const manifest = { version: 1, sourceIdentity: redactedUser(loaded.source), primaryIdentity: redactedUser(loaded.primary), sourceProfile: recordSet(loaded,"agent_crm_profiles","userId",input.sourceUserId)[0] ?? null, primaryProfile: recordSet(loaded,"agent_crm_profiles","userId",input.primaryUserId)[0] ?? null, moves: plan.preview.moves, retained: plan.preview.retained, changes: plan.changes.map(c => ({ table: c.policy.table, column: c.policy.owner, originalOwner: input.sourceUserId, canonicalOwner: input.primaryUserId, rows: c.preserved })), preservedHashes: Array.from(loaded.rows.entries()).filter(([t])=>!t.endsWith(":owners")).map(([table, rs]) => ({ table, rows: rs.map(r => ({ id: r.id ?? r.userId, hash: mergeDigest(r) })) })), warnings: plan.preview.warnings };
+    const manifest = { version: 1, bankPolicy: { keepBanksAsIs: input.keepBanksAsIs === true, sourceStatus: plan.preview.source.payoutBankStatus, primaryStatus: plan.preview.primary.payoutBankStatus }, sourceIdentity: redactedUser(loaded.source), primaryIdentity: redactedUser(loaded.primary), sourceProfile: recordSet(loaded,"agent_crm_profiles","userId",input.sourceUserId)[0] ?? null, primaryProfile: recordSet(loaded,"agent_crm_profiles","userId",input.primaryUserId)[0] ?? null, moves: plan.preview.moves, retained: plan.preview.retained, changes: plan.changes.map(c => ({ table: c.policy.table, column: c.policy.owner, originalOwner: input.sourceUserId, canonicalOwner: input.primaryUserId, rows: c.preserved })), preservedHashes: Array.from(loaded.rows.entries()).filter(([t])=>!t.endsWith(":owners")).map(([table, rs]) => ({ table, rows: rs.map(r => ({ id: r.id ?? r.userId, hash: mergeDigest(r) })) })), warnings: plan.preview.warnings };
     const sourceProfile = recordSet(loaded,"agent_crm_profiles","userId",input.sourceUserId)[0];
     await connection.query("INSERT INTO agent_record_merges (sourceUserId,primaryUserId,sourceName,sourceEmail,sourceJltId,actorId,actorName,reason,previewDigest,manifestJson,mergedAt) VALUES (?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(3))", [input.sourceUserId,input.primaryUserId,loaded.source.name,loaded.source.email,sourceProfile?.uniqueAgentId ?? null,actor.id,actor.name,input.reason.trim(),plan.digest,JSON.stringify(manifest)]);
     await connection.query("UPDATE users SET isActive=0, crmAccess=0, portalStatus='cancelled', suspensionReason=? WHERE id=? AND role='agent'", [`merged_into:${input.primaryUserId}`,input.sourceUserId]);

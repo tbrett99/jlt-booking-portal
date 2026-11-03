@@ -237,6 +237,9 @@ describe("agent merge confirmation safeguards", () => {
     expect(canExecuteAgentMerge(preview, 34, 12, review)).toBe(false);
     expect(canExecuteAgentMerge(preview, 12, 12, review)).toBe(false);
     expect(canExecuteAgentMerge(undefined, 12, 34, review)).toBe(false);
+    expect(canExecuteAgentMerge(preview, 12, 34, { ...review, keepBanksAsIs: true })).toBe(false);
+    expect(canExecuteAgentMerge({ ...preview, keepBanksAsIs: true }, 12, 34, review)).toBe(false);
+    expect(canExecuteAgentMerge({ ...preview, keepBanksAsIs: true }, 12, 34, { ...review, keepBanksAsIs: true })).toBe(true);
   });
   it("rejects missing, expired or invalid tokens, server refusal and blockers", () => {
     for (const patch of [
@@ -316,6 +319,21 @@ describe("mocked merge UI renders", () => {
   });
   it("enables submission only after all confirmations", () => {
     expect(submitButton(renderDialog(true))).not.toContain(' disabled=""');
+  });
+  it("shows empty-bank status as nonblocking and explains as-is preservation without exposing bank numbers", () => {
+    mocks.preview.mockReturnValue({
+      data: { ...preview,
+        source: { ...source, payoutBankStatus: "not_recorded" },
+        primary: { ...primary, payoutBankStatus: "not_recorded" },
+      },
+      isError: false, isFetching: false, isFetchedAfterMount: true, refetch: vi.fn(),
+    });
+    const html = renderDialog(true);
+    expect(html).toContain("Blank bank fields do not block merging.");
+    expect(html.match(/No bank identifiers recorded/g)).toHaveLength(2);
+    expect(html).toContain("Original bank fields are preserved as-is");
+    expect(submitButton(html)).not.toContain(' disabled=""');
+    expect(html).not.toContain("bankAccountNumber");
   });
   it.each([
     { isFetchedAfterMount: false },

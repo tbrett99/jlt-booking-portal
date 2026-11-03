@@ -35,6 +35,7 @@ export type MergeConfirmation = {
   samePersonConfirmed: boolean;
   primaryChoicesConfirmed: boolean;
   archivedLearningConfirmed: boolean;
+  keepBanksAsIs?: boolean;
 };
 
 /** Recheck all safeguards at submission time, not only when enabling the button. */
@@ -59,6 +60,7 @@ export function canExecuteAgentMerge(
       review.samePersonConfirmed &&
       review.primaryChoicesConfirmed &&
       review.archivedLearningConfirmed &&
+      Boolean(preview.keepBanksAsIs) === Boolean(review.keepBanksAsIs) &&
       review.confirmation === `MERGE ${sourceUserId} INTO ${primaryUserId}`
   );
 }
@@ -260,6 +262,17 @@ function AccountSummary({
       <p>
         {account.bookings} bookings · {account.courses} courses
       </p>
+      <p className="text-xs text-muted-foreground">
+        Payout bank: {account.payoutBankStatus === "not_recorded"
+          ? "No bank identifiers recorded"
+          : account.payoutBankStatus === "partial"
+            ? "Partial bank identifiers recorded"
+            : account.payoutBankStatus === "recorded"
+              ? "Bank identifiers recorded"
+              : account.payoutBankStatus === "unverified"
+                ? "Stored bank identifiers could not be verified"
+                : "Check CRM record"}
+      </p>
       <div>
         <p className="font-medium">Direct Debit mandates</p>
         {account.mandates.length ? (
@@ -319,8 +332,9 @@ function SelectedMergePreview({
   const [needsRefresh, setNeedsRefresh] = useState(false);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [keepBanksAsIs, setKeepBanksAsIs] = useState(false);
   const previewQuery = trpc.agentMerge.preview.useQuery(
-    { sourceUserId, primaryUserId: primary.id },
+    { sourceUserId, primaryUserId: primary.id, keepBanksAsIs },
     {
       retry: false,
       staleTime: 0,
@@ -347,7 +361,7 @@ function SelectedMergePreview({
   // A refreshed token must be reviewed again; never carry approval across preview changes.
   useEffect(() => {
     resetReview();
-  }, [preview?.token]);
+  }, [preview?.token, keepBanksAsIs]);
 
   const execute = trpc.agentMerge.execute.useMutation({
     onSuccess: async () => {
@@ -393,6 +407,7 @@ function SelectedMergePreview({
     samePersonConfirmed,
     primaryChoicesConfirmed,
     archivedLearningConfirmed,
+    keepBanksAsIs,
   };
   const fresh =
     previewQuery.isFetchedAfterMount &&
@@ -424,6 +439,19 @@ function SelectedMergePreview({
         >
           {previewQuery.isFetching ? "Loading preview…" : "Refresh preview"}
         </Button>
+      </div>
+      <div className="rounded-lg border p-3 text-sm">
+        <div className="flex items-start gap-2">
+          <Checkbox id="agent-merge-bank-as-is" checked={keepBanksAsIs}
+            disabled={execute.isPending || previewQuery.isFetching}
+            onCheckedChange={checked => { resetReview(); setKeepBanksAsIs(checked === true); }} />
+          <Label htmlFor="agent-merge-bank-as-is" className="text-sm leading-5">
+            Keep bank fields as-is — retain the primary's payout settings and preserve the duplicate's original bank fields in archived history, even if values differ or cannot be read.
+          </Label>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          No bank fields are edited, copied or cleared. This choice only removes bank-comparison blockers; other merge safeguards still apply. It does not verify a bank account or authorise a payment. Changing it loads a new preview and requires all confirmations again.
+        </p>
       </div>
       {executionError && (
         <div
@@ -480,6 +508,11 @@ function SelectedMergePreview({
               complete or unlock overlapping primary learning. Review the
               primary membership, payout and contact details in its CRM record
               before confirming.
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Blank bank fields do not block merging. An account-holder name alone
+              is not a bank destination. Original bank fields are preserved as-is;
+              the primary's fields are never overwritten by the merge.
             </p>
             <a
               className="mt-2 inline-block font-medium text-primary underline"
@@ -705,6 +738,7 @@ function SelectedMergePreview({
               samePersonConfirmed: true,
               primaryChoicesConfirmed: true,
               archivedLearningConfirmed: true,
+              keepBanksAsIs,
             });
           }}
         >
