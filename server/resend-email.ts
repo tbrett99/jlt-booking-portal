@@ -20,6 +20,7 @@ import {
 import { normaliseMarketingEmailHtml } from "@shared/marketing-email-html";
 import { nanoid } from "nanoid";
 import { resolveAgentCorrespondence } from "./agent-correspondence";
+import { getAgentMergeTarget } from "./agent-merge-identity";
 
 /**
  * Log a campaign email sent to an agent into the agent_emails audit table.
@@ -455,6 +456,11 @@ export async function sendMarketingEmail(opts: {
   baseUrl: string;
   mergeValues?: MarketingMergeValues;
 }): Promise<{ sendId: number; success: boolean; error?: string }> {
+  if ((opts.audienceType === "agent" || opts.recipientType === "agent") && opts.recipientId != null
+    && await getAgentMergeTarget(opts.recipientId) !== null) {
+    // No provider call, queued row or agent audit side effect for archives.
+    return { sendId: 0, success: false, error: "Recipient is a merged agent archive" };
+  }
   // Agent campaigns and drip emails use the CRM correspondence selection at the
   // instant of delivery. Prospect sends are intentionally unchanged.
   const recipient = opts.audienceType === "agent" && opts.recipientId
@@ -684,6 +690,13 @@ export async function processCampaignQueue(
     }
 
     const audienceType = campaign.audienceType as "prospect" | "agent";
+    if ((audienceType === "agent" || row.recipientType === "agent") && row.recipientId != null
+      && await getAgentMergeTarget(row.recipientId) !== null) {
+      // Includes exact historical retry IDs. Preserve original status/provider
+      // evidence: a skipped archive must not rewrite a previously sent row.
+      skipped++;
+      continue;
+    }
     const recipient = audienceType === "agent" && row.recipientId
       ? await resolveAgentCorrespondence({
         userId: row.recipientId,

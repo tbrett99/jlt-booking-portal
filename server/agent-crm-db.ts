@@ -14,6 +14,7 @@ import {
   type AgentSupplierLogin,
 } from "../drizzle/schema";
 import { encrypt, decrypt } from "./encryption";
+import { assertAgentNotMerged, getArchivedAgentMergeIds } from "./agent-merge-identity";
 
 // ─── Profile helpers ──────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ export async function upsertAgentCrmProfile(
   userId: number,
   data: Partial<Omit<AgentCrmProfile, "id" | "userId" | "createdAt" | "updatedAt">>
 ): Promise<void> {
+  await assertAgentNotMerged(userId);
   const db = await getDb();
   if (!db) return;
   // Encrypt bank fields if provided
@@ -170,6 +172,7 @@ export function decryptSupplierPassword(login: AgentSupplierLogin): string | nul
 export async function listAgentsWithCrm() {
   const db = await getDb();
   if (!db) return [];
+  const archived = new Set(await getArchivedAgentMergeIds());
   // Get all agent users
   const agentUsers = await db
     .select()
@@ -189,7 +192,7 @@ export async function listAgentsWithCrm() {
     tagMap.get(t.userId)!.push(t.tag);
   }
 
-  return agentUsers.map((u) => ({
+  return agentUsers.filter((u) => !archived.has(u.id)).map((u) => ({
     ...u,
     crmProfile: profileMap.get(u.id) ?? null,
     tags: tagMap.get(u.id) ?? [],

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+vi.mock("./agent-merge-identity", () => ({ assertAgentNotMerged: vi.fn(async () => undefined), getAgentMergeTarget: vi.fn(async () => null) }));
 
 const mocks = vi.hoisted(() => ({
   profile: vi.fn(),

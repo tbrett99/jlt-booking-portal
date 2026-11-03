@@ -1,12 +1,14 @@
 /**
  * CRM tRPC router — prospects, pipeline, AR forms, contracts, campaigns, remittances, payment config
  */
+import { writableAgentUser } from "./agent-merge-user-write";
 import { router, protectedProcedure, publicProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { isOnboardingEligible } from "./onboarding-eligibility";
 import { DEPARTURE_REASON_KEYS } from "../shared/departure-reasons";
+import { assertAgentNotMerged, getAgentMergeTarget } from "./agent-merge-identity";
 import {
   createRecruitmentProspect,
   getRecruitmentProspectByEmail,
@@ -1458,6 +1460,7 @@ export const crmRouter = router({
         // Accept an unchanged value but never let this bypass the audited
         // status workflow or overwrite a suspension from a stale form.
         const { userId, agentStatus, ...data } = input;
+        await assertAgentNotMerged(userId);
         const existing = await getAgentCrmProfile(userId);
         if (agentStatus != null && agentStatus !== (existing?.agentStatus ?? "active")) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Change membership status using the Agent Status control, then refresh before saving profile details." });
@@ -1641,6 +1644,7 @@ export const crmRouter = router({
         const now = new Date();
         for (const login of pending) {
           const agent = agentMap.get(login.userId);
+          if (await getAgentMergeTarget(login.userId) !== null) { skipped++; continue; }
           if (!agent?.email) { skipped++; continue; }
           const instructionsHtml = (input.instructions ?? "").replace(/\n/g, "<br>");
           try {
@@ -1966,6 +1970,7 @@ export const crmRouter = router({
         // Fetch the request
         const [req] = await db.select().from(agentChangeRequests).where(eq(agentChangeRequests.id, input.id));
         if (!req) throw new TRPCError({ code: "NOT_FOUND", message: "Change request not found" });
+        await assertAgentNotMerged(req.userId);
 
         const newStatus = input.action === "approve" ? "approved" : "rejected";
         await db.update(agentChangeRequests)
@@ -2032,6 +2037,7 @@ export const crmRouter = router({
         ukRegion: z.string().max(100).optional().nullable(),
       }))
       .mutation(async ({ input, ctx }) => {
+        await assertAgentNotMerged(ctx.user.id);
         const { getDb } = await import("./db");
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
@@ -2170,6 +2176,7 @@ export const crmRouter = router({
         inContract: z.boolean().optional(),                  // hold commission during notice until final client travel concludes
       }))
       .mutation(async ({ input, ctx }) => {
+        await assertAgentNotMerged(input.userId);
         const { getDb } = await import("./db");
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
@@ -2242,7 +2249,7 @@ export const crmRouter = router({
         const newIsActive = (input.newStatus === 'cancelled' || input.newStatus === 'suspended' || input.newStatus === 'paused') ? false : true;
         await db.update(users).set({ portalStatus: newPortalStatus as any, isActive: newIsActive,
           ...(input.newStatus === "active" ? { suspendedAt: null, suspensionReason: null } : {}),
-        }).where(eq(users.id, input.userId));
+        }).where(writableAgentUser(input.userId));
 
         // Reinstatement is an access decision, not proof of payment. Only a
         // matching provider success or recorded whole-payment settlement clears
@@ -3020,6 +3027,7 @@ export const crmRouter = router({
     deleteNewSignUp: adminProcedure
       .input(z.object({ userId: z.number().int() }))
       .mutation(async ({ input, ctx }) => {
+        await assertAgentNotMerged(input.userId);
         const { getDb } = await import("./db");
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -3533,6 +3541,9 @@ export const crmRouter = router({
         if (!send) throw new TRPCError({ code: "NOT_FOUND", message: "Send record not found" });
         const campaign = await getCampaignById(send.campaignId!);
         if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
+        if ((campaign.audienceType === "agent" || send.recipientType === "agent") && send.recipientId != null) {
+          await assertAgentNotMerged(send.recipientId);
+        }
         const { sendMarketingEmail } = await import("./resend-email");
         const baseUrl = process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk";
         const mergeValues = await getCampaignRecipientMergeValues({
@@ -3576,6 +3587,9 @@ export const crmRouter = router({
         for (let i = 0; i < unopened.length; i++) {
           const s = unopened[i];
           try {
+            if ((campaign.audienceType === "agent" || s.recipientType === "agent") && s.recipientId != null) {
+              await assertAgentNotMerged(s.recipientId);
+            }
             const baseUrl = process.env.VITE_OAUTH_PORTAL_URL ?? "https://portal.thejltgroup.co.uk";
             const mergeValues = await getCampaignRecipientMergeValues({
               audienceType: campaign.audienceType as "prospect" | "agent",

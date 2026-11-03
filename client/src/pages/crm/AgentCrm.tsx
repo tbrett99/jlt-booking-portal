@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useSearch } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { resolveDocUrl } from "@/lib/docUrl";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,8 @@ import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { DEPARTURE_REASON_OPTIONS, type DepartureReasonKey } from "@shared/departure-reasons";
 import { canLinkGoCardlessMandate } from "@shared/gocardless-mandate-status";
+import { AgentMergeDialog } from "@/components/AgentMergeDialog";
+import { AgentMergeHistory } from "@/components/AgentMergeHistory";
 
 const UK_REGIONS = [
   "North West", "North East", "Yorkshire and the Humber", "East Midlands",
@@ -223,6 +225,7 @@ function SyncGcButton({ onSynced }: { onSynced: () => void }) {
 
 export default function AgentCrm() {
   const routeSearch = useSearch();
+  const [, setLocation] = useLocation();
   const routeParams = new URLSearchParams(routeSearch);
   const requestedAgentId = Number(routeParams.get("agent"));
   const requestedSection = resolveCrmAgentRecordSection(routeParams.get("tab"));
@@ -455,6 +458,12 @@ export default function AgentCrm() {
           initialSection={selectedAgent.id === requestedAgentId ? requestedSection : "overview"}
           onClose={() => setSheetOpen(false)}
           onRefresh={() => refetch()}
+          onMerged={(primaryId) => {
+            setSheetOpen(false);
+            setSelectedAgent(null);
+            // The merge dialog refreshed the list; the existing deep-link effect opens the primary.
+            setLocation(`/crm/agents?agent=${primaryId}`, { replace: true });
+          }}
         />
       )}
     </div>
@@ -651,11 +660,13 @@ function AgentOverviewTab({ agent, profile, onNavigate }: { agent: AgentRow; pro
   );
 }
 
-export function AgentCrmSheet({ agent, open, onClose, onRefresh, initialSection = "overview" }: {
-  agent: AgentRow; open: boolean; onClose: () => void; onRefresh: () => void; initialSection?: CrmAgentRecordSection;
+export function AgentCrmSheet({ agent, open, onClose, onRefresh, onMerged, initialSection = "overview" }: {
+  agent: AgentRow; open: boolean; onClose: () => void; onRefresh: () => void; onMerged?: (primaryId: number) => void; initialSection?: CrmAgentRecordSection;
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const isSuperAdmin = user?.role === "super_admin";
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [activeSection, setActiveSection] = useState<CrmAgentRecordSection>("overview");
   const { data: crmData, refetch: refetchCrm, isLoading: crmLoading, isError: crmError } = trpc.crm.agentCrm.get.useQuery(
@@ -717,7 +728,7 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh, initialSection 
 
   return (
     <>
-    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+    <Sheet open={open} onOpenChange={(v) => !v && !mergeOpen && onClose()}>
       <SheetContent side="right" className="w-full sm:max-w-6xl overflow-y-auto p-0">
         {/* Header */}
         <div className="sticky top-0 z-10 bg-background border-b px-6 py-4">
@@ -811,6 +822,12 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh, initialSection 
             </div>
             {/* Delete record — admin only */}
             {isAdmin && (
+              <div className="flex flex-wrap items-center gap-2">
+              {isSuperAdmin && (
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setMergeOpen(true)}>
+                  Merge duplicate
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -820,6 +837,7 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh, initialSection 
                 <Trash2 size={12} />
                 Delete CRM Record
               </Button>
+              </div>
             )}
           </div>
           <div className="mt-4 grid gap-5 pb-8 lg:grid-cols-[12rem_minmax(0,1fr)]">
@@ -855,6 +873,7 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh, initialSection 
                   <RecordDetailPanel value="activity" label="Bookings & operational activity" description="Bookings, commissions, refunds and reimbursements."><ActivityTab userId={agent.id} /></RecordDetailPanel>
                   <RecordDetailPanel value="documents" label="Documents & contract evidence" description="Uploaded identity documents and contract signing evidence."><DocsTab userId={agent.id} profile={profile} contractData={crmData?.contractData ?? null} onRefresh={refresh} /></RecordDetailPanel>
                   <RecordDetailPanel value="status-history" label="Status history" description="Agent-status changes and recorded reasons."><StatusHistoryTab userId={agent.id} /></RecordDetailPanel>
+                  {isAdmin && <RecordDetailPanel value="merge-history" label="Merged duplicates" description="Immutable merge audit and original read-only CRM, Academy and Actions history."><AgentMergeHistory userId={agent.id} /></RecordDetailPanel>}
                 </RecordDetailGroup>
               )}
             </div>
@@ -862,6 +881,18 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh, initialSection 
         </div>
       </SheetContent>
     </Sheet>
+
+    {isSuperAdmin && <AgentMergeDialog
+      open={mergeOpen && open}
+      onOpenChange={setMergeOpen}
+      sourceUserId={agent.id}
+      sourceName={agent.name ?? "Unnamed agent"}
+      onMerged={(primaryId) => {
+        setMergeOpen(false);
+        if (onMerged) onMerged(primaryId);
+        else { onClose(); onRefresh(); }
+      }}
+    />}
 
     {/* Delete confirmation dialog */}
     <Dialog open={confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(false)}>

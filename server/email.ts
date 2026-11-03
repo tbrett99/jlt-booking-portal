@@ -8,6 +8,7 @@ import { Resend, type CreateEmailResponse } from "resend";
 import { ENV } from "./_core/env";
 import { getNotificationTemplate, areNotificationsPaused } from "./db";
 import { getDb } from "./db";
+import { getAgentMergeTarget } from "./agent-merge-identity";
 
 // ─── Resend client ────────────────────────────────────────────────────────────
 let _resend: Resend | null = null;
@@ -26,6 +27,15 @@ export type EmailSendResult = {
   error?: string;
   providerMessageId?: string;
 };
+
+async function archivedRecipientFailure(userId?: number | null): Promise<EmailSendResult | null> {
+  // auditUserId is never recipient authority. In particular support/outbox
+  // staff mail must not be suppressed merely because its audit references an archive.
+  if (userId != null && await getAgentMergeTarget(userId) !== null) {
+    return { success: false, error: "Recipient is a merged agent archive" };
+  }
+  return null;
+}
 
 function emailFailureMessage(error: unknown): string {
   if (typeof error === "string" && error.trim()) return error;
@@ -282,6 +292,8 @@ export async function sendDirectEmail(params: {
   /** Server-only outbox payload has already been rendered and frozen. */
   preRenderedHtml?: boolean;
 }): Promise<EmailSendResult> {
+  const archived = await archivedRecipientFailure(params.userId);
+  if (archived) return archived;
   const recipient = params.userId
     ? await import("./agent-correspondence").then(({ resolveAgentCorrespondence }) => resolveAgentCorrespondence({
       userId: params.userId!,
@@ -355,6 +367,8 @@ export async function sendNotificationEmail(params: {
   overrideBody?: string;
   userId?: number | null;
 }): Promise<EmailSendResult> {
+  const archived = await archivedRecipientFailure(params.userId);
+  if (archived) return archived;
   const recipient = params.userId
     ? await import("./agent-correspondence").then(({ resolveAgentCorrespondence }) => resolveAgentCorrespondence({
       userId: params.userId!,
@@ -451,7 +465,10 @@ export async function sendPasswordResetEmail(params: {
   toEmail: string;
   toName: string;
   resetUrl: string;
+  userId?: number | null;
 }): Promise<{ success: boolean; error?: string }> {
+  const archived = await archivedRecipientFailure(params.userId);
+  if (archived) return archived;
   const html = wrapEmailHtml(`
     <p>Hi ${params.toName},</p>
     <p>We received a request to reset your password. Click the button below to set a new password. This link expires in 1 hour.</p>
@@ -484,6 +501,8 @@ export async function sendCredentialsEmail(params: {
   tempPassword: string;
   userId?: number | null;
 }): Promise<{ success: boolean; error?: string }> {
+  const archived = await archivedRecipientFailure(params.userId);
+  if (archived) return archived;
   const html = wrapEmailHtml(`
     <p>Hi ${params.toName},</p>
     <p>Your account has been created on the JLT Group Booking Portal. Please use the credentials below to log in.</p>

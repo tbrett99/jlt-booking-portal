@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { agentCrmProfiles, users } from "../drizzle/schema";
 import { getDb } from "./db";
+import { assertAgentNotMerged } from "./agent-merge-identity";
 
 export const CORRESPONDENCE_EMAIL_KINDS = ["jlt", "personal", "business"] as const;
 export type CorrespondenceEmailKind = (typeof CORRESPONDENCE_EMAIL_KINDS)[number];
@@ -54,6 +55,8 @@ export async function resolveAgentCorrespondence(params: {
   fallbackEmail: string;
   fallbackName?: string | null;
 }): Promise<{ email: string; name: string; source: CorrespondenceEmailSource }> {
+  // Archive rejection (and identity-store failures) must never fall back to send.
+  await assertAgentNotMerged(params.userId);
   try {
     const db = await getDb();
     if (!db) {

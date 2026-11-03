@@ -22,6 +22,7 @@ import {
 import { decideOrbitFinancialSync } from "./orbit-financial-sync";
 import { apiKeys, users, ssoTokens, agentCrmProfiles, publicAgentProfiles, publicHolidayShowcaseEvents, publicHolidayShowcases } from "../drizzle/schema";
 import { orbitHolidayShowcaseSchema, slugifyShowcase, toSafePublicValidationIssues } from "./holiday-showcase-logic";
+import { getAgentMergeTarget, getArchivedAgentMergeIds } from "./agent-merge-identity";
 import {
   isOrbitFinancialSnapshotPayload,
   orbitFinancialSnapshotSchema,
@@ -106,21 +107,28 @@ router.post("/register-booking", async (req: Request, res: Response) => {
     if (!db) return res.status(503).json({ error: "Database unavailable" });
 
     const normalizedEmail = agentEmail.toLowerCase().trim();
+    const archived = new Set(await getArchivedAgentMergeIds());
     // First try matching by primary portal email, then fall back to crmEmail alias
     const agentResults = await db
       .select()
       .from(users)
-      .where(eq(users.email, normalizedEmail))
-      .limit(1);
-    let agent = agentResults[0];
+      .where(eq(users.email, normalizedEmail));
+    const candidates = agentResults.filter((user) => !archived.has(user.id));
+    if (candidates.length > 1 || (agentResults.length > 0 && candidates.length === 0)) {
+      return res.status(409).json({ error: "Agent email is archived or ambiguous. Use the current account's email." });
+    }
+    let agent = candidates[0];
     if (!agent) {
       // Try CRM email alias
       const aliasResults = await db
         .select()
         .from(users)
-        .where(eq(users.crmEmail, normalizedEmail))
-        .limit(1);
-      agent = aliasResults[0];
+        .where(eq(users.crmEmail, normalizedEmail));
+      const aliasCandidates = aliasResults.filter((user) => !archived.has(user.id));
+      if (aliasCandidates.length > 1 || (aliasResults.length > 0 && aliasCandidates.length === 0)) {
+        return res.status(409).json({ error: "Agent alias is archived or ambiguous. Use the current account's email." });
+      }
+      agent = aliasCandidates[0];
     }
     if (!agent) {
       return res.status(404).json({
@@ -241,6 +249,9 @@ router.post("/quote-showcases", async (req: Request, res: Response) => {
         return res.status(409).json({ error: "This agent is not currently eligible to publish a public holiday showcase." });
       }
       recipientUserId = agent.userId;
+    }
+    if (await getAgentMergeTarget(recipientUserId) !== null) {
+      return res.status(409).json({ error: "This agent record is a merged archive." });
     }
     const [profile] = await db.select({ id: publicAgentProfiles.id, publicSlug: publicAgentProfiles.publicSlug, isPublished: publicAgentProfiles.isPublished })
       .from(publicAgentProfiles).where(eq(publicAgentProfiles.userId, recipientUserId)).limit(1);
@@ -507,6 +518,9 @@ router.get("/sso/verify", async (req: Request, res: Response) => {
     if (!record) return res.status(404).json({ valid: false, error: "Token not found" });
     if (record.usedAt) return res.status(410).json({ valid: false, error: "Token already used" });
     if (new Date() > record.expiresAt) return res.status(410).json({ valid: false, error: "Token expired" });
+    if (await getAgentMergeTarget(record.userId) !== null) {
+      return res.status(403).json({ valid: false, error: "Agent account is archived" });
+    }
 
     // Mark as used
     await db.update(ssoTokens).set({ usedAt: new Date() }).where(eq(ssoTokens.id, record.id));

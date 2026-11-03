@@ -3040,3 +3040,19 @@ export const membershipPaymentSettlements = mysqlTable("membership_payment_settl
   notes: text("notes").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => [index("membership_settlement_user_idx").on(t.userId, t.settledAt)]);
+
+// Permanent historical identity: never delete or repoint this mapping in routine CRM edits.
+export const agentRecordMerges = mysqlTable("agent_record_merges", {
+  id: int("id").autoincrement().primaryKey(),
+  sourceUserId: int("sourceUserId").notNull().unique(),
+  primaryUserId: int("primaryUserId").notNull(),
+  sourceName: text("sourceName"),
+  sourceEmail: varchar("sourceEmail", { length: 320 }),
+  sourceJltId: varchar("sourceJltId", { length: 20 }),
+  actorId: int("actorId").notNull(),
+  actorName: text("actorName"),
+  reason: text("reason").notNull(),
+  previewDigest: varchar("previewDigest", { length: 64 }).notNull(),
+  manifestJson: longtext("manifestJson").notNull(),
+  mergedAt: timestamp("mergedAt", { fsp: 3 }).defaultNow().notNull(),
+}, (t) => [index("agent_merge_primary_idx").on(t.primaryUserId, t.mergedAt)]);

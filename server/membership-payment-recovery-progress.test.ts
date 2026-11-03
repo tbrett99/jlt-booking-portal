@@ -2,6 +2,8 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { Request, Response } from "express";
 const mocks = vi.hoisted(() => ({ getDb: vi.fn(), outbox: vi.fn(), record: vi.fn(), process: vi.fn(), authenticate: vi.fn() }));
 vi.mock("./db", () => ({ getDb: mocks.getDb }));
+vi.mock("./gocardless-email-link-lock", () => ({ withGoCardlessEmailLinkLock: (work: (db: any) => Promise<unknown>) => work({}) }));
+vi.mock("./agent-merge-identity", () => ({ assertAgentNotMerged: vi.fn(async () => undefined) }));
 vi.mock("./membership-payment-service", () => ({ recordMembershipPaymentEvent: mocks.record, processMembershipPaymentAccount: mocks.process, processMembershipPaymentOutbox: mocks.outbox }));
 vi.mock("./gocardless-db", () => ({ createPaymentEvent: vi.fn() }));
 vi.mock("./_core/sdk", () => ({ sdk: { authenticateRequest: mocks.authenticate } }));

@@ -1,3 +1,4 @@
+import { writableAgentUser } from "./agent-merge-user-write";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { normaliseTaskIdentityEmail } from "@shared/task-identity";
@@ -7,6 +8,7 @@ import { pushClaimStatusToOrbit } from "./orbit-sync";
 import { canReconcileHistoricalCommissionClaim } from "./historical-commission-utils";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
+import { assertAgentNotMerged } from "./agent-merge-identity";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -15,6 +17,7 @@ import { sdk } from "./_core/sdk";
 import {
   getAllUsers,
   getUserByEmail,
+  getUserForLoginByEmail,
   getUserById,
   createAgentUser,
   updateUserRole,
@@ -174,6 +177,7 @@ import { agentDevelopmentRouter } from "./agent-development-router";
 import { libraryRouter } from "./library-router";
 import { agentSupportRouter } from "./agent-support-router";
 import { membershipPaymentsRouter } from "./membership-payment-issues-router";
+import { agentMergeRouter } from "./agent-merge-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -494,6 +498,7 @@ export const appRouter = router({
   library: libraryRouter,
   agentSupport: agentSupportRouter,
   membershipPayments: membershipPaymentsRouter,
+  agentMerge: agentMergeRouter,
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   auth: router({
@@ -531,7 +536,7 @@ export const appRouter = router({
     loginWithPassword: publicProcedure
       .input(z.object({ email: z.string().email(), password: z.string() }))
       .mutation(async ({ input, ctx }) => {
-        const user = await getUserByEmail(input.email);
+        const user = await getUserForLoginByEmail(input.email);
         const blockedStatuses = ['cancelled', 'paused', 'suspended'];
         if (!user || !user.tempPassword || !user.isActive || blockedStatuses.includes((user as any).portalStatus)) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid credentials" });
@@ -564,7 +569,7 @@ export const appRouter = router({
       .input(z.object({ email: z.string().email(), origin: z.string().url() }))
       .mutation(async ({ input }) => {
         // Always return success to avoid user enumeration
-        const user = await getUserByEmail(input.email);
+        const user = await getUserForLoginByEmail(input.email);
         if (!user || !user.isActive || user.loginMethod !== "password") {
           return { success: true };
         }
@@ -576,6 +581,7 @@ export const appRouter = router({
           toEmail: user.email!,
           toName: user.name ?? user.email!,
           resetUrl,
+          userId: user.id,
         });
         return { success: true };
       }),
@@ -693,6 +699,7 @@ export const appRouter = router({
           toEmail: input.email,
           toName: input.name,
           tempPassword,
+          userId: user?.id,
         });
         return { success: true, userId: user?.id };
       }),
@@ -727,21 +734,23 @@ export const appRouter = router({
     toggleCrmAccess: adminProcedure
       .input(z.object({ userId: z.number(), crmAccess: z.boolean() }))
       .mutation(async ({ input }) => {
+        await assertAgentNotMerged(input.userId);
         const db = await import("./db").then((m) => m.getDb());
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
         const { users: usersTable } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
-        await db.update(usersTable).set({ crmAccess: input.crmAccess } as any).where(eq(usersTable.id, input.userId));
+        await db.update(usersTable).set({ crmAccess: input.crmAccess } as any).where(writableAgentUser(input.userId));
         return { success: true };
       }),
     setPortalStatus: adminProcedure
       .input(z.object({ userId: z.number(), status: z.enum(['onboarding', 'active', 'cancelled']) }))
       .mutation(async ({ input }) => {
+        await assertAgentNotMerged(input.userId);
         const db = await import('./db').then((m) => m.getDb());
         if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
         const { users: usersTable } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
-        await db.update(usersTable).set({ portalStatus: input.status } as any).where(eq(usersTable.id, input.userId));
+        await db.update(usersTable).set({ portalStatus: input.status } as any).where(writableAgentUser(input.userId));
         return { success: true };
       }),
 
@@ -752,6 +761,7 @@ export const appRouter = router({
         if (input.userId === ctx.user.id) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot delete your own account" });
         }
+        await assertAgentNotMerged(input.userId);
         // Look up the target user before deleting to log and guard
         const db = await import('./db').then((m) => m.getDb());
         if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
@@ -815,7 +825,7 @@ export const appRouter = router({
         const hashed = await bcrypt.hash(tempPassword, 12);
         // updateUserPassword sets mustChangePassword=false, so we set it back manually
         await updateUserPassword(user.id, hashed);
-        await sendCredentialsEmail({ toEmail: user.email, toName: user.name ?? user.email, tempPassword });
+        await sendCredentialsEmail({ toEmail: user.email, toName: user.name ?? user.email, tempPassword, userId: user.id });
         await markCredentialsSent(user.id);
         return { success: true };
       }),
@@ -845,7 +855,7 @@ export const appRouter = router({
                 // bcrypt cost 8: ~60ms per hash (vs 400ms at cost 12) — still secure for temp passwords
                 const hashed = await bcrypt.hash(tempPassword, 8);
                 await updateUserPassword(user.id, hashed);
-                await sendCredentialsEmail({ toEmail: user.email, toName: user.name ?? user.email, tempPassword });
+                await sendCredentialsEmail({ toEmail: user.email, toName: user.name ?? user.email, tempPassword, userId: user.id });
                 await markCredentialsSent(user.id);
                 return { userId, success: true };
               } catch (err: any) {
@@ -6987,6 +6997,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
   sso: router({
     // Generate a short-lived magic link token for the current user to SSO into Tom's CRM
     generateToken: protectedProcedure.mutation(async ({ ctx }) => {
+      await assertAgentNotMerged(ctx.user.id);
       const { ssoTokens } = await import('../drizzle/schema');
       const { getDb } = await import('./db');
       const crypto = await import('node:crypto');

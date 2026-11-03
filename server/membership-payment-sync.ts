@@ -5,6 +5,8 @@ import { gcMandates, gcSubscriptions, membershipPaymentInbox, membershipPaymentC
 import { recordMembershipPaymentEvent, processMembershipPaymentAccount, processMembershipPaymentOutbox } from "./membership-payment-service";
 import { createPaymentEvent } from "./gocardless-db";
 import { parseGoCardlessMandateStatus } from "../shared/gocardless-mandate-status";
+import { withGoCardlessEmailLinkLock } from "./gocardless-email-link-lock";
+import { assertAgentNotMerged } from "./agent-merge-identity";
 
 export type MembershipProviderEvent = {
   id: string; action: string; resource_type: string; created_at: string;
@@ -46,6 +48,11 @@ export async function receiveMembershipProviderEvents(events: MembershipProvider
 }
 
 export async function enrichMembershipProviderEvent(event: MembershipProviderEvent, source: "webhook" | "reconciliation") {
+  return withGoCardlessEmailLinkLock(() => enrichMembershipProviderEventLocked(event, source));
+}
+// Durable receipt is independent; only ownership mapping and processing share
+// the staff link/merge lock so a stale owner cannot be persisted during a merge.
+async function enrichMembershipProviderEventLocked(event: MembershipProviderEvent, source: "webhook" | "reconciliation") {
   const db = await getDb(); if (!db) throw new Error("Payment database unavailable");
   if (event.resource_type === "subscriptions" && event.links?.subscription) {
     const rows = await db.select().from(gcSubscriptions).where(eq(gcSubscriptions.subscriptionId, event.links.subscription));
@@ -94,6 +101,7 @@ export async function enrichMembershipProviderEvent(event: MembershipProviderEve
   const owners = new Set(subscriptions.map(s => s.userId));
   if (owners.size !== 1 || !subscriptions[0]?.userId) throw new Error("Membership subscription owner is missing or ambiguous; held for mapping review");
   const userId = subscriptions[0].userId;
+  await assertAgentNotMerged(userId);
   if (["failed", "charged_back"].includes(event.action) && ["confirmed", "paid_out"].includes(payment.status)) {
     // A delayed failure cannot suspend somebody whose same instalment has
     // already succeeded. Import actual provider evidence, never invent a

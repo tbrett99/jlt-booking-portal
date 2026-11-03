@@ -3,6 +3,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
+import { getArchivedAgentMergeIds } from "./agent-merge-identity";
 import { membershipPaymentControlProcedures } from "./membership-payment-control-procedures";
 import {
   DIRECT_DEBIT_CONCERN_MEMBERSHIP_STATUSES,
@@ -137,7 +138,9 @@ async function readOnly<T>(work: (db: Db) => Promise<T>): Promise<T> {
 // One row per agent: user/profile/account are unique, and current DD records are
 // selected by latest createdAt then id; audit refreshes cannot promote an old mandate. Fee/mail scalar aggregates cannot fan out.
 // Historical failed events never determine today's arrears or resolved state.
-function issueBase(): SQL {
+async function issueBase(): Promise<SQL> {
+  const archivedIds = await getArchivedAgentMergeIds();
+  const visibleIdentity = archivedIds.length ? sql`${users.id} NOT IN (${sql.join(archivedIds.map(id => sql`${id}`), sql`, `)})` : sql`1 = 1`;
   // CRM membership is authoritative; disabled Portal access does not remove a
   // suspended/paused member from DD concerns. Cancellation never forgives debt.
   const membershipStatus = sql`LOWER(TRIM(COALESCE(NULLIF(TRIM(${agentCrmProfiles.agentStatus}), ''), ${users.portalStatus})))`;
@@ -195,7 +198,7 @@ function issueBase(): SQL {
       SELECT latest_s.id FROM ${gcSubscriptions} latest_s WHERE latest_s.userId = ${users.id}
       AND latest_s.mandateId = ${gcMandates.mandateId}
       ORDER BY latest_s.createdAt DESC, latest_s.id DESC LIMIT 1)
-    WHERE ${users.role} = 'agent' OR ${agentCrmProfiles.userId} IS NOT NULL OR ${accounts.userId} IS NOT NULL`;
+    WHERE (${users.role} = 'agent' OR ${agentCrmProfiles.userId} IS NOT NULL OR ${accounts.userId} IS NOT NULL) AND ${visibleIdentity}`;
 }
 
 const anyIssue = sql`(outstandingCount > 0 OR ddIssue = 1 OR onboardingDd = 1 OR deliveryIssueCount > 0 OR mailPendingCount > 0 OR reviewIssue = 1 OR pendingFeeCount > 0)`;
@@ -260,14 +263,14 @@ export const membershipPaymentsRouter = router({
       const where = sql`${issueFilter(input.filter)} AND ${searchFilter(input.search)}`;
       const [count] = await readRows<{ total: number }>(
         db,
-        sql`SELECT COUNT(*) AS total FROM (${issueBase()}) issue_rows WHERE ${where}`
+        sql`SELECT COUNT(*) AS total FROM (${await issueBase()}) issue_rows WHERE ${where}`
       );
       const total = Number(count?.total ?? 0);
       const totalPages = Math.max(1, Math.ceil(total / input.pageSize));
       const page = Math.min(input.page, totalPages);
       const rows = await readRows<IssueRow>(
         db,
-        sql`SELECT * FROM (${issueBase()}) issue_rows WHERE ${where}
+        sql`SELECT * FROM (${await issueBase()}) issue_rows WHERE ${where}
       ORDER BY outstandingCount DESC, reviewIssue DESC, ddIssue DESC, userId ASC
       LIMIT ${input.pageSize} OFFSET ${(page - 1) * input.pageSize}`
       );
@@ -316,7 +319,7 @@ export const membershipPaymentsRouter = router({
       COALESCE(SUM(historyReviewRequired = 1), 0) AS historicalReviewRequiredAgents,
       COALESCE(SUM(pendingFeeCount), 0) AS pendingFeeCount,
       COALESCE(SUM(pendingFeePence), 0) AS pendingFeePence,
-      COALESCE(SUM(mailAcceptedCount), 0) AS mailAcceptedCount FROM (${issueBase()}) issue_rows`
+      COALESCE(SUM(mailAcceptedCount), 0) AS mailAcceptedCount FROM (${await issueBase()}) issue_rows`
       );
       const [queue] = await readRows<{ pendingEvents: number; failedEvents: number }>(
         db,
@@ -369,7 +372,7 @@ export const membershipPaymentsRouter = router({
       readOnly(async db => {
         const [row] = await readRows<IssueRow>(
           db,
-          sql`SELECT * FROM (${issueBase()}) issue_rows WHERE userId = ${input.userId} LIMIT 1`
+          sql`SELECT * FROM (${await issueBase()}) issue_rows WHERE userId = ${input.userId} LIMIT 1`
         );
         if (!row)
           throw new TRPCError({

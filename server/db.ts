@@ -30,6 +30,8 @@ import {
 import { ENV } from "./_core/env";
 import { isBookingReadyForCommissionReview } from "./commission-workflow-utils";
 import { canReconcileHistoricalCommissionClaim } from "./historical-commission-utils";
+import { assertAgentNotMerged, getArchivedAgentMergeIds } from "./agent-merge-identity";
+import { writableAgentUser } from "./agent-merge-user-write";
 import type { OrbitFinancialSnapshotPayload } from "./orbit-financial-snapshot";
 import {
   buildOrbitBookingFinancialFields,
@@ -78,6 +80,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
   if (!db) return;
+  const existing = await getUserByOpenId(user.openId);
+  if (existing) await assertAgentNotMerged(existing.id);
 
   const values: InsertUser = { openId: user.openId };
   const updateSet: Record<string, unknown> = {};
@@ -126,7 +130,9 @@ export async function getUserById(id: number) {
 export async function getAllUsers() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(users).orderBy(desc(users.createdAt));
+  const archived = new Set(await getArchivedAgentMergeIds());
+  const rows = await db.select().from(users).orderBy(desc(users.createdAt));
+  return rows.filter((user) => !archived.has(user.id));
 }
 
 export async function createAgentUser(data: {
@@ -194,33 +200,38 @@ export async function bulkCreateAgentUsers(agents: Array<{
 }
 
 export async function markCredentialsSent(userId: number) {
+  await assertAgentNotMerged(userId);
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(users).set({ credentialsSentAt: new Date() } as any).where(eq(users.id, userId));
+  await db.update(users).set({ credentialsSentAt: new Date() } as any).where(writableAgentUser(userId));
 }
 
 export async function updateUserRole(userId: number, role: "super_admin" | "admin" | "agent") {
+  await assertAgentNotMerged(userId);
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(users).set({ role }).where(eq(users.id, userId));
+  await db.update(users).set({ role }).where(writableAgentUser(userId));
 }
 
 export async function toggleUserActive(userId: number, isActive: boolean) {
+  await assertAgentNotMerged(userId);
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(users).set({ isActive }).where(eq(users.id, userId));
+  await db.update(users).set({ isActive }).where(writableAgentUser(userId));
 }
 
 export async function deleteUser(userId: number) {
+  await assertAgentNotMerged(userId);
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.delete(users).where(eq(users.id, userId));
+  await db.delete(users).where(writableAgentUser(userId));
 }
 
 export async function activatePortalAccess(userId: number) {
+  await assertAgentNotMerged(userId);
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(users).set({ portalStatus: "active" }).where(eq(users.id, userId));
+  await db.update(users).set({ portalStatus: "active" }).where(writableAgentUser(userId));
   // Mark all existing business update posts as seen so the new agent isn't
   // bombarded with historical updates that predate their joining.
   try {
@@ -271,13 +282,26 @@ export async function getUserByEmail(email: string) {
   return result[0];
 }
 
+/** Auth only: archives must not shadow a same-email primary, nor grant alias login. */
+export async function getUserForLoginByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const archived = new Set(await getArchivedAgentMergeIds());
+  const rows = await db.select().from(users).where(eq(users.email, email));
+  const candidates = rows.filter((user) => !archived.has(user.id));
+  // Ambiguous non-archive identities are not safe to authenticate, even if only
+  // one has a matching password. Registration keeps getUserByEmail semantics.
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
 export async function updateUserPassword(userId: number, hashedPassword: string) {
+  await assertAgentNotMerged(userId);
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db
     .update(users)
     .set({ tempPassword: hashedPassword, mustChangePassword: false })
-    .where(eq(users.id, userId));
+    .where(writableAgentUser(userId));
 }
 
 // ─── Bookings ─────────────────────────────────────────────────────────────────
@@ -1760,8 +1784,8 @@ export async function getOrbitFinancialSyncStatus(bookingId: number) {
 }
 
 // ─── Password Reset Tokens ────────────────────────────────────────────────────
-
 export async function createPasswordResetToken(userId: number, token: string, expiresAt: Date) {
+  await assertAgentNotMerged(userId);
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   // Invalidate any existing unused tokens for this user
@@ -1797,6 +1821,7 @@ export async function updateUserProfile(
   userId: number,
   data: { name?: string; email?: string; phone?: string; crmEmail?: string | null }
 ) {
+  await assertAgentNotMerged(userId);
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const updateSet: Record<string, unknown> = {};
@@ -1805,7 +1830,7 @@ export async function updateUserProfile(
   if (data.phone !== undefined) updateSet.phone = data.phone;
   if (data.crmEmail !== undefined) updateSet.crmEmail = data.crmEmail || null;
   if (Object.keys(updateSet).length === 0) return;
-  await db.update(users).set(updateSet as any).where(eq(users.id, userId));
+  await db.update(users).set(updateSet as any).where(writableAgentUser(userId));
 }
 
 export async function getPtsMissingPaymentDate() {

@@ -16,6 +16,7 @@ import { eq, and, isNull, desc, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
+import { assertAgentNotMerged } from "./agent-merge-identity";
 import {
   joinSessions,
   teamInvites,
@@ -65,6 +66,7 @@ async function getSessionByToken(token: string) {
     .from(joinSessions)
     .where(eq(joinSessions.sessionToken, token))
     .limit(1);
+  if (rows[0]?.userId) await assertAgentNotMerged(rows[0].userId);
   return rows[0] ?? null;
 }
 
@@ -97,6 +99,7 @@ export const joinRouter = router({
         .orderBy(joinSessions.createdAt)
         .limit(1);
 
+      if (existing[0]?.userId) await assertAgentNotMerged(existing[0].userId);
       // If an active (non-expired, non-complete) session exists, return it
       if (existing[0] && existing[0].step !== "complete" && existing[0].expiresAt > new Date()) {
         // If the session is stuck at "payment" (billing request was never fulfilled),
@@ -826,6 +829,7 @@ export const joinRouter = router({
       if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
+      await assertAgentNotMerged(input.userId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       await db
@@ -850,6 +854,7 @@ export const joinRouter = router({
       if (!session.userId) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Account not yet created — please wait a moment and try again." });
       }
+      await assertAgentNotMerged(session.userId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       // Hash and save the chosen password, clear mustChangePassword flag

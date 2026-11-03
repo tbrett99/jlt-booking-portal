@@ -3,6 +3,8 @@ import type { Request, Response } from "express";
 import { GO_CARDLESS_MANDATE_STATUSES, parseGoCardlessMandateStatus, canLinkGoCardlessMandate } from "../shared/gocardless-mandate-status";
 const mocks = vi.hoisted(() => ({ getDb: vi.fn(), record: vi.fn(), process: vi.fn(), audit: vi.fn(), outbox: vi.fn(), authenticate: vi.fn() }));
 vi.mock("./db", () => ({ getDb: mocks.getDb }));
+vi.mock("./gocardless-email-link-lock", () => ({ withGoCardlessEmailLinkLock: (work: (db: any) => Promise<unknown>) => work({}) }));
+vi.mock("./agent-merge-identity", () => ({ assertAgentNotMerged: vi.fn(async () => undefined) }));
 vi.mock("./membership-payment-service", () => ({ recordMembershipPaymentEvent: mocks.record, processMembershipPaymentAccount: mocks.process, processMembershipPaymentOutbox: mocks.outbox }));
 vi.mock("./gocardless-db", () => ({ createPaymentEvent: mocks.audit }));
 vi.mock("./_core/sdk", () => ({ sdk: { authenticateRequest: mocks.authenticate } }));

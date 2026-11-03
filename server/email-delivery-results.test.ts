@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   paused: vi.fn(),
   template: vi.fn(),
   resolveRecipient: vi.fn(),
+  mergeTarget: vi.fn(),
   agentEmails: { mockTable: "agent_emails" },
 }));
 
@@ -29,6 +30,7 @@ vi.mock("../drizzle/schema", () => ({ agentEmails: mocks.agentEmails }));
 vi.mock("./agent-correspondence", () => ({
   resolveAgentCorrespondence: mocks.resolveRecipient,
 }));
+vi.mock("./agent-merge-identity", () => ({ getAgentMergeTarget: mocks.mergeTarget }));
 
 let email: typeof import("./email");
 const directParams = {
@@ -56,6 +58,7 @@ beforeEach(async () => {
   });
   mocks.send.mockResolvedValue({ data: { id: "provider-id-123" }, error: null });
   mocks.paused.mockResolvedValue(false);
+  mocks.mergeTarget.mockResolvedValue(null);
   mocks.template.mockResolvedValue({
     isActive: true,
     subject: "Hello {{agentName}}",
@@ -256,5 +259,50 @@ describe("recipient and template compatibility", () => {
       html: expect.stringContaining("Booking 99"),
     });
     expect(mocks.send.mock.calls[0][0].html).toContain("https://portal.thejltgroup.co.uk/bookings/99");
+  });
+});
+
+describe("merged archive recipient safety (mocked, offline)", () => {
+  const agentSenders = [
+    ["direct", () => email.sendDirectEmail({ ...directParams, userId: 20 })],
+    ["notification", () => email.sendNotificationEmail({ ...notificationParams, userId: 20 })],
+    ["credentials", () => email.sendCredentialsEmail({ toEmail: directParams.toEmail, toName: directParams.toName, tempPassword: "mock-only", userId: 20 })],
+    ["password reset", () => email.sendPasswordResetEmail({ toEmail: directParams.toEmail, toName: directParams.toName, resetUrl: "https://example.test/reset", userId: 20 })],
+  ] as const;
+  it.each(agentSenders)("blocks %s before any provider, resolver, template or audit write", async (_name, send) => {
+    mocks.mergeTarget.mockResolvedValue(10);
+    expect(await send()).toEqual({ success: false, error: "Recipient is a merged agent archive" });
+    expect(mocks.mergeTarget).toHaveBeenCalledWith(20);
+    expect(mocks.resend).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(mocks.resolveRecipient).not.toHaveBeenCalled();
+    expect(mocks.template).not.toHaveBeenCalled();
+    expect(mocks.insert).not.toHaveBeenCalled();
+  });
+  it("does not suppress support recipient based on audit-only archived userId", async () => {
+    mocks.mergeTarget.mockResolvedValue(10);
+    expect(await email.sendSupportEmail({ subject: "Support", html: "<p>Staff mail</p>", auditUserId: 20 })).toMatchObject({ success: true });
+    expect(mocks.mergeTarget).not.toHaveBeenCalled();
+    expect(mocks.send.mock.calls[0][0].to).toBe("support@thejltgroup.co.uk");
+    expect(mocks.values.mock.calls[0][0].userId).toBe(20);
+  });
+  it("does not suppress frozen direct staff mail based on audit-only archived userId", async () => {
+    mocks.mergeTarget.mockResolvedValue(10);
+    expect(await email.sendDirectEmail({ ...directParams, toEmail: "support@example.test", auditUserId: 20, preRenderedHtml: true })).toMatchObject({ success: true });
+    expect(mocks.mergeTarget).not.toHaveBeenCalled();
+    expect(mocks.send.mock.calls[0][0].to).toContain("support@example.test");
+    expect(mocks.values.mock.calls[0][0].userId).toBe(20);
+  });
+  it("does not infer archive identity from recipient email alone", async () => {
+    mocks.mergeTarget.mockResolvedValue(10);
+    expect(await email.sendDirectEmail(directParams)).toMatchObject({ success: true });
+    expect(mocks.mergeTarget).not.toHaveBeenCalled();
+    expect(mocks.send).toHaveBeenCalledOnce();
+  });
+  it("identity-store failure fails closed before provider calls", async () => {
+    mocks.mergeTarget.mockRejectedValue(new Error("Mock permission failure"));
+    await expect(email.sendDirectEmail({ ...directParams, userId: 20 })).rejects.toThrow("Mock permission failure");
+    expect(mocks.resend).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
   });
 });

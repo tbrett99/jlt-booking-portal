@@ -7,6 +7,7 @@ import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
+import { assertAgentNotMerged } from "../agent-merge-identity";
 import type {
   ExchangeTokenRequest,
   ExchangeTokenResponse,
@@ -191,6 +192,8 @@ class SDKServer {
     openId: string,
     options: { expiresInMs?: number; name?: string } = {}
   ): Promise<string> {
+    const user = await db.getUserByOpenId(openId);
+    if (user) await assertAgentNotMerged(user.id);
     return this.signSession(
       {
         openId,
@@ -320,6 +323,7 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
+    await assertAgentNotMerged(user.id);
     await db.upsertUser({
       openId: user.openId,
       lastSignedIn: signedInAt,

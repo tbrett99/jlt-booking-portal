@@ -6,6 +6,7 @@ import type { TrpcContext } from "./_core/context";
 
 const mocks = vi.hoisted(() => ({ getDb: vi.fn(), execute: vi.fn() }));
 vi.mock("./db", () => ({ getDb: mocks.getDb }));
+vi.mock("./agent-merge-identity", () => ({ getArchivedAgentMergeIds: vi.fn(async () => [] as number[]) }));
 vi.mock("./membership-payment-control-procedures", () => ({ membershipPaymentControlProcedures: {} }));
 import {
   membershipPaymentsRouter,
