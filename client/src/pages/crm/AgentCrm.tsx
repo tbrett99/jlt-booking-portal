@@ -193,6 +193,7 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
 }
 
 function SyncGcButton({ onSynced }: { onSynced: () => void }) {
+  const utils = trpc.useUtils();
   const syncMutation = trpc.gocardless.syncSubscriptions.useMutation({
     onSuccess: (result) => {
       toast.success(
@@ -202,6 +203,7 @@ function SyncGcButton({ onSynced }: { onSynced: () => void }) {
         (result.mandatesUpdated > 0 ? `, ${result.mandatesUpdated} mandates refreshed` : '')
       );
       onSynced();
+      void utils.membershipPayments.invalidate();
     },
     onError: (e) => toast.error(`Sync failed: ${e.message}`),
   });
@@ -2934,12 +2936,18 @@ function DirectDebitTabForAgent({ userId, paymentExempt: initialPaymentExempt, p
       setShowCreateSub(false);
       refetchDdStatus();
       utils.gocardless.adminListMandates.invalidate();
+      void utils.membershipPayments.invalidate();
+      void utils.crm.agentCrm.getOverview.invalidate({ userId });
+      void utils.gocardless.adminGetCurrentPaymentIssues.invalidate();
     },
   });
   const refreshMutation = trpc.gocardless.adminRefreshMandateStatus.useMutation({
     onSuccess: (data) => {
       refetchDdStatus();
       toast.success(`Mandate status updated: ${data.status}`);
+      void utils.membershipPayments.invalidate();
+      void utils.crm.agentCrm.getOverview.invalidate({ userId });
+      void utils.gocardless.adminGetCurrentPaymentIssues.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -2949,6 +2957,9 @@ function DirectDebitTabForAgent({ userId, paymentExempt: initialPaymentExempt, p
       setShowReplaceMandate(false);
       setReplacementConfirmed(false);
       refetchDdStatus();
+      void utils.membershipPayments.invalidate();
+      void utils.crm.agentCrm.getOverview.invalidate({ userId });
+      void utils.gocardless.adminGetCurrentPaymentIssues.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -2960,6 +2971,9 @@ function DirectDebitTabForAgent({ userId, paymentExempt: initialPaymentExempt, p
       setReplacementConfirmed(false);
       refetchDdStatus();
       utils.gocardless.adminListMandates.invalidate();
+      void utils.membershipPayments.invalidate();
+      void utils.crm.agentCrm.getOverview.invalidate({ userId });
+      void utils.gocardless.adminGetCurrentPaymentIssues.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -2987,6 +3001,9 @@ function DirectDebitTabForAgent({ userId, paymentExempt: initialPaymentExempt, p
       refetchDdStatus();
       refetchPaymentSchedule();
       utils.gocardless.adminListMandates.invalidate();
+      void utils.membershipPayments.invalidate();
+      void utils.crm.agentCrm.getOverview.invalidate({ userId });
+      void utils.gocardless.adminGetCurrentPaymentIssues.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -2995,7 +3012,10 @@ function DirectDebitTabForAgent({ userId, paymentExempt: initialPaymentExempt, p
   const [paymentExemptChecked, setPaymentExemptChecked] = useState<boolean>(initialPaymentExempt ?? false);
   const [paymentExemptReasonText, setPaymentExemptReasonText] = useState<string>(initialPaymentExemptReason ?? "");
   const updateProfileMutation = trpc.crm.agentCrm.updateProfile.useMutation({
-    onSuccess: () => toast.success("Payment exemption updated"),
+    onSuccess: () => {
+      toast.success("Payment exemption updated");
+      void utils.membershipPayments.invalidate();
+    },
     onError: (err) => toast.error(err.message),
   });
   const savePaymentExempt = (exempt: boolean, reason: string) => {
@@ -3582,6 +3602,7 @@ function AdminOnboardingChecklistTab({ userId, agentName, agentEmail, paymentExe
       // Auto-tick the checklist step
       handleToggle("ddSubscriptionCreated", true);
       setShowSubForm(false);
+      void utils.membershipPayments.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });

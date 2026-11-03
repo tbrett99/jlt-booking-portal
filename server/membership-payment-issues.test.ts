@@ -208,6 +208,33 @@ describe("membershipPayments read-only API", () => {
     expect(query).toContain("AS onboardingDd");
   });
 
+  it("correlates the same numeric mandate owner in counts, rows, overview and detail, never by name or email", async () => {
+    const assertCurrentMandate = (index: number) => {
+      const query = queryAt(index).sql;
+      expect(query).toContain("latest_m.userId = `users`.`id`");
+      expect(query).toContain("ORDER BY latest_m.createdAt DESC, latest_m.id DESC LIMIT 1");
+      expect(query).toContain("latest_s.userId = `users`.`id`");
+      expect(query).toContain("latest_s.mandateId = `gc_mandates`.`mandateId`");
+      expect(query).not.toContain("latest_m.userId = latest_m.id");
+    };
+    results([], [{ total: 1 }], [row()]);
+    await caller().listIssues({});
+    assertCurrentMandate(1); assertCurrentMandate(2);
+    mocks.execute.mockReset();
+    results([], [{}], [{}], [{ pendingEvents: 0, failedEvents: 0 }]);
+    await caller().overview({});
+    assertCurrentMandate(2);
+    mocks.execute.mockReset();
+    results([], [row()], [], [], []);
+    await caller().accountDetail({ userId: 42 });
+    assertCurrentMandate(1);
+    const helper = readFileSync(new URL("./gocardless-db.ts", import.meta.url), "utf8");
+    const currentRead = helper.slice(helper.indexOf("export async function getGcMandateByUserId"), helper.indexOf("export async function getGcMandateByBillingRequestId"));
+    expect(currentRead).toContain("eq(gcMandates.userId, userId)");
+    expect(currentRead).toContain("desc(gcMandates.createdAt), desc(gcMandates.id)");
+    expect(currentRead).not.toContain("desc(gcMandates.updatedAt)");
+  });
+
   it("shows unknown outstanding amounts explicitly and preserves manual suspension", () => {
     const account = normalizePaymentIssue(
       row({

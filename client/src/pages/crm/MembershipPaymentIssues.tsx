@@ -57,6 +57,14 @@ const FILTERS: { value: IssueFilter; label: string }[] = [
   { value: "resolved", label: "Resolved / clear accounts" },
 ];
 const QUERY_OPTIONS = { retry: false, refetchOnWindowFocus: false } as const;
+// These are stored-record reads, never provider reconciliation or collections.
+// A CRM edit in another tab has a different QueryClient, so refocus must re-read.
+const CURRENT_PAYMENT_QUERY_OPTIONS = {
+  ...QUERY_OPTIONS,
+  staleTime: 0,
+  refetchOnMount: "always",
+  refetchOnWindowFocus: "always",
+} as const;
 
 function stamp(value: Date | string | null | undefined): string {
   if (!value) return "Not recorded";
@@ -977,11 +985,11 @@ export default function MembershipPaymentIssues() {
   );
   const overviewInput = useMemo(() => ({}), []);
   const overview = trpc.membershipPayments.overview.useQuery(overviewInput, {
-    ...QUERY_OPTIONS,
+    ...CURRENT_PAYMENT_QUERY_OPTIONS,
     enabled: isStaff,
   });
   const issues = trpc.membershipPayments.listIssues.useQuery(input, {
-    ...QUERY_OPTIONS,
+    ...CURRENT_PAYMENT_QUERY_OPTIONS,
     enabled: isStaff,
   });
   const health = overview.data?.health;
@@ -1149,7 +1157,7 @@ export default function MembershipPaymentIssues() {
           </p>
           <PaymentControls
             health={health}
-            unavailable={Boolean(error) || overview.isLoading}
+            unavailable={Boolean(error) || overview.isLoading || overview.isFetching}
           />
         </CardContent>
       </Card>
@@ -1172,7 +1180,7 @@ export default function MembershipPaymentIssues() {
         </Alert>
       )}
 
-      {!error && counts && (
+      {!error && !refreshing && counts && (
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
           {[
             {
@@ -1265,12 +1273,17 @@ export default function MembershipPaymentIssues() {
             issues or historical review. Onboarding setup is not arrears.
             Historical failed events alone do not create an outstanding balance.
           </p>
+          <p className="text-xs text-muted-foreground">
+            Mandate warnings refresh when you return to this page. Refreshing
+            re-reads stored CRM records only; it does not collect payments or run
+            provider reconciliation.
+          </p>
         </CardHeader>
         <CardContent className="p-0">
-          {(issues.isLoading || overview.isLoading) && !error ? (
-            <div className="flex items-center justify-center gap-2 p-12 text-muted-foreground text-sm">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading current
-              accounts…
+          {(issues.isLoading || overview.isLoading || refreshing) && !error ? (
+            <div role="status" className="flex items-center justify-center gap-2 p-12 text-muted-foreground text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" /> Checking current
+              mandate and payment records…
             </div>
           ) : error ? (
             <p className="p-6 text-sm text-muted-foreground">

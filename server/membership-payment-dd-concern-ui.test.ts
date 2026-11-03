@@ -61,13 +61,14 @@ const baseAccount = {
   crmHref: "/crm/agents/42",
 };
 
-function loadUi(accounts = [baseAccount]) {
+function loadUi(accounts = [baseAccount], fetching = false) {
   const mutate = vi.fn();
   const refetch = vi.fn();
+  const queryOptions: any[] = [];
   const query = (data: unknown) => ({
     data,
     isLoading: false,
-    isFetching: false,
+    isFetching: fetching,
     error: null,
     refetch,
   });
@@ -99,15 +100,17 @@ function loadUi(accounts = [baseAccount]) {
     trpc: {
       useUtils: () => ({}),
       membershipPayments: {
-        overview: { useQuery: () => query({}) },
+        overview: { useQuery: (_input: unknown, options: unknown) => { queryOptions.push(options); return query({}); } },
         listIssues: {
-          useQuery: () =>
-            query({
+          useQuery: (_input: unknown, options: unknown) => {
+            queryOptions.push(options);
+            return query({
               items: accounts,
               total: accounts.length,
               page: 1,
               totalPages: 1,
-            }),
+            });
+          },
         },
         refreshFromProvider: { useMutation },
         setAutomation: { useMutation },
@@ -163,7 +166,7 @@ function loadUi(accounts = [baseAccount]) {
     ...Object.keys(symbols),
     `${compiledUi}\nreturn exports;`
   )(...Object.values(symbols));
-  return { ui, mutate, refetch };
+  return { ui, mutate, refetch, queryOptions };
 }
 
 function renderCell(overrides: Partial<typeof baseAccount> = {}) {
@@ -191,6 +194,36 @@ const expectedCancellation =
   "Mandate cancelled — expected for a cancelled membership";
 
 describe("membership payment Direct Debit concern presentation", () => {
+  it("opts both current-state queries into a fresh read on page entry and window return", () => {
+    const { ui, queryOptions, mutate } = loadUi();
+    renderToStaticMarkup(React.createElement(ui.default));
+    expect(queryOptions).toHaveLength(2);
+    for (const options of queryOptions) expect(options).toMatchObject({
+      staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: "always", retry: false, enabled: true,
+    });
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("does not render cached missing-mandate accusations while current records are being re-read", () => {
+    const { ui, mutate } = loadUi([{ ...baseAccount, name: "Thom fixture", agentStatus: "active", mandateId: null as any,
+      mandateStatus: null as any, ddIssue: true, subscriptionId: null as any, subscriptionStatus: null as any }], true);
+    const html = renderToStaticMarkup(React.createElement(ui.default));
+    expect(html).toContain("Checking current mandate and payment records");
+    expect(html).not.toContain("Current DD issue: missing");
+    expect(html).not.toContain("Thom fixture");
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("renders an active mandate neutrally even when an independent reconciliation review remains", () => {
+    const { ui } = loadUi([{ ...baseAccount, name: "Thom fixture", agentStatus: "active", mandateStatus: "active", mandateId: "MD_ACTIVE",
+      ddIssue: false, subscriptionStatus: "active", subscriptionId: "SB_ACTIVE", accountPresent: false,
+      outstandingCount: 0, outstandingPence: 0, failedAttempts: 0, pendingFeeCount: 0,
+      deliveryIssueCount: 0, mailPendingCount: 0, historyReviewRequired: false, reviewIssue: true }]);
+    const html = renderToStaticMarkup(React.createElement(ui.default));
+    expect(html).toContain("Mandate: active"); expect(html).toContain("MD_ACTIVE");
+    expect(html).toContain("Reconciliation review needed"); expect(html).not.toContain("Current DD issue");
+  });
+
   it("renders a cancelled membership with arrears neutrally without hiding its other obligations", () => {
     const { ui, mutate, refetch } = loadUi();
     const html = renderToStaticMarkup(React.createElement(ui.default));
