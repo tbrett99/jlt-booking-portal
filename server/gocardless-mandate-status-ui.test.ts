@@ -81,7 +81,10 @@ describe("unusable mandate presentation and DD issue flags", () => {
   });
 
   it("hides both CRM subscription creation entry points and an already-open onboarding form for unusable mandates", () => {
-    expect(crmSource).toContain("!subscription && canLinkGoCardlessMandate(mandate.status)");
+    expect(crmSource).toContain("const canCreateSubscription = isDdStatusReadable && !subscription");
+    expect(crmSource).toContain("mandate ? canLinkGoCardlessMandate(mandate.status)");
+    expect(crmSource).toContain("{canCreateSubscription && (");
+    expect(crmSource).toContain("disabled={!canCreateSubscription || createSubMutation.isPending");
     expect(crmSource).toContain("mandate && canLinkGoCardlessMandate(mandate.status) && !showSubForm");
     expect(crmSource).toContain("mandate && canLinkGoCardlessMandate(mandate.status) && showSubForm");
     expect(crmSource).not.toContain('mandate?.status !== "cancelled" && mandate?.status !== "expired"');

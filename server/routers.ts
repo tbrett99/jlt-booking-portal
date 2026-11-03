@@ -192,7 +192,7 @@ import {
   getPaymentEventsByUserId,
   getRecentFailedPayments,
   createGcMandateReplacement,
-  getGcMandateReplacementHistoryByUserId,
+  getGcMandateReplacementHistoryStateByUserId,
   getOpenGcMandateReplacementByUserId,
   updateGcMandate,
 } from "./gocardless-db";
@@ -5541,16 +5541,13 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       .query(async ({ input }) => {
         const mandate = await getGcMandateByUserId(input.userId);
         const subscription = await getGcSubscriptionByUserId(input.userId);
-        const replacements = await getGcMandateReplacementHistoryByUserId(input.userId);
+        const { replacements, replacementHistoryAvailable } = await getGcMandateReplacementHistoryStateByUserId(input.userId);
         // Also fetch preferredPaymentDay from CRM profile as the authoritative source
         const { getAgentCrmProfile } = await import("./agent-crm-db");
         const crmProfile = await getAgentCrmProfile(input.userId);
         const preferredPaymentDay = mandate?.preferredPaymentDay ?? crmProfile?.preferredPaymentDay ?? null;
-        // If mandate row has stale preferredPaymentDay (hardcoded 1), sync it from CRM profile
-        if (mandate && crmProfile?.preferredPaymentDay && mandate.preferredPaymentDay !== crmProfile.preferredPaymentDay) {
-          const { updateGcMandate: updateMandate } = await import("./gocardless-db");
-          await updateMandate(mandate.id, { preferredPaymentDay: crmProfile.preferredPaymentDay });
-        }
+        // A status read must not rewrite settings or ownership. Explicit edits
+        // continue to use their existing audited mutation workflows.
         // Fetch scheme from GoCardless if mandate exists (needed to handle Faster Payments UI)
         let mandateScheme: string | null = null;
         if (mandate?.mandateId) {
@@ -5559,7 +5556,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             mandateScheme = gcMandateInfo.scheme ?? null;
           } catch (_) { /* non-fatal */ }
         }
-        return { mandate: mandate ? { ...mandate, preferredPaymentDay, scheme: mandateScheme } : null, subscription, replacements };
+        return { mandate: mandate ? { ...mandate, preferredPaymentDay, scheme: mandateScheme } : null, subscription, replacements, replacementHistoryAvailable };
       }),
 
     /**

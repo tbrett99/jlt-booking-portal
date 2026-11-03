@@ -2878,16 +2878,29 @@ function StatusHistoryTab({ userId }: { userId: number }) {
 
 // ─── Direct Debit Tab ─────────────────────────────────────────────────────────
 
-function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initialPaymentExempt, paymentExemptReason: initialPaymentExemptReason }: { userId: number; mandate: any; paymentExempt?: boolean; paymentExemptReason?: string | null }) {
+function DirectDebitTab(props: { userId: number; mandate: any; paymentExempt?: boolean; paymentExemptReason?: string | null }) {
+  // Remount forms and mutation state when the selected agent changes.
+  return <DirectDebitTabForAgent key={props.userId} {...props} />;
+}
+
+function DirectDebitTabForAgent({ userId, paymentExempt: initialPaymentExempt, paymentExemptReason: initialPaymentExemptReason }: { userId: number; mandate: any; paymentExempt?: boolean; paymentExemptReason?: string | null }) {
   const utils = trpc.useUtils();
-  const [localMandate, setLocalMandate] = useState<any>(initialMandate);
-  const mandate = localMandate;
   const { data: paymentEvents, isLoading } = trpc.gocardless.adminGetPaymentEvents.useQuery(
     { userId },
     { enabled: true }
   );
-  const { data: ddStatus, refetch: refetchDdStatus } = trpc.gocardless.adminGetDdStatus.useQuery({ userId });
-  const subscription = ddStatus?.subscription;
+  const {
+    data: ddStatus,
+    isLoading: isDdStatusLoading,
+    isFetching: isDdStatusFetching,
+    isError: isDdStatusError,
+    error: ddStatusError,
+    refetch: refetchDdStatus,
+  } = trpc.gocardless.adminGetDdStatus.useQuery({ userId });
+  const isDdStatusReadable = !isDdStatusLoading && !isDdStatusFetching && !isDdStatusError && !!ddStatus;
+  // A successful null is authoritative: never fall back to an older mandate prop.
+  const mandate = ddStatus?.mandate ?? null;
+  const subscription = isDdStatusReadable ? ddStatus?.subscription : undefined;
   const {
     data: paymentSchedule,
     isLoading: isPaymentScheduleLoading,
@@ -2896,10 +2909,13 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
     refetch: refetchPaymentSchedule,
   } = trpc.gocardless.adminGetPaymentSchedule.useQuery({ userId });
 
-  useEffect(() => {
-    if (ddStatus?.mandate) setLocalMandate(ddStatus.mandate);
-  }, [ddStatus?.mandate]);
-
+  const hasLivePaymentSchedule = (paymentSchedule?.items?.length ?? 0) > 0;
+  const canCreateSubscription = isDdStatusReadable && !subscription && (
+    mandate ? canLinkGoCardlessMandate(mandate.status) : (
+      !!paymentSchedule && !isPaymentScheduleLoading && !isPaymentScheduleFetching && !paymentScheduleError && !hasLivePaymentSchedule
+    )
+  );
+  const canReplaceMandate = isDdStatusReadable && ddStatus?.replacementHistoryAvailable === true;
   const [showCreateSub, setShowCreateSub] = useState(false);
   const [createSubDay, setCreateSubDay] = useState<number>(mandate?.preferredPaymentDay ?? 1);
   const [manualMandateId, setManualMandateId] = useState<string>(mandate?.mandateId ?? "");
@@ -2908,6 +2924,11 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
   const [replacementMandateId, setReplacementMandateId] = useState("");
   const [replacementPaymentDay, setReplacementPaymentDay] = useState<number>(mandate?.preferredPaymentDay ?? 1);
   const [replacementConfirmed, setReplacementConfirmed] = useState(false);
+  useEffect(() => {
+    setCreateSubDay(mandate?.preferredPaymentDay ?? 1);
+    setManualMandateId(mandate?.mandateId ?? "");
+    setReplacementPaymentDay(mandate?.preferredPaymentDay ?? 1);
+  }, [mandate?.mandateId, mandate?.preferredPaymentDay]);
   const createSubMutation = trpc.gocardless.adminCreateSubscription.useMutation({
     onSuccess: () => {
       setShowCreateSub(false);
@@ -2917,7 +2938,6 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
   });
   const refreshMutation = trpc.gocardless.adminRefreshMandateStatus.useMutation({
     onSuccess: (data) => {
-      setLocalMandate((prev: any) => prev ? { ...prev, status: data.status } : { mandateId: data.mandateId, status: data.status });
       refetchDdStatus();
       toast.success(`Mandate status updated: ${data.status}`);
     },
@@ -3007,7 +3027,18 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
           <CreditCard size={14} />
           Mandate Status
         </h3>
-        {mandate ? (
+        {isDdStatusError ? (
+          <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-medium">The Portal Direct Debit status could not be loaded.</p>
+            <p className="mt-1">{ddStatusError?.message ?? "Direct Debit status is currently unreadable."}</p>
+            <p className="mt-1">This does not mean there is no mandate in GoCardless. Do not set up another Direct Debit while the status is unreadable.</p>
+            <Button size="sm" variant="outline" className="mt-2" onClick={() => void refetchDdStatus()} disabled={isDdStatusFetching}>
+              {isDdStatusFetching ? "Retrying…" : "Retry Direct Debit status"}
+            </Button>
+          </div>
+        ) : !isDdStatusReadable ? (
+          <div role="status" className="rounded-lg border p-4 text-sm text-muted-foreground">Loading Portal Direct Debit status…</div>
+        ) : mandate ? (
           <div className="rounded-lg border p-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Status</span>
@@ -3043,12 +3074,14 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
           </div>
         ) : (
           <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No Direct Debit mandate set up yet.
+            {hasLivePaymentSchedule
+              ? "A GoCardless collection schedule is available, but the mandate is not linked in the Portal. Do not set up another Direct Debit."
+              : "No Direct Debit mandate is linked in the Portal."}
           </div>
         )}
 
         {/* Refresh status button — shown whenever a mandate exists */}
-        {mandate && (
+        {isDdStatusReadable && mandate && (
           <div className="mt-2">
             <button
               onClick={() => refreshMutation.mutate({ userId })}
@@ -3065,23 +3098,26 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
               <p className="text-sm font-medium text-amber-950">Agent has changed the bank account for Direct Debit?</p>
               <p className="mt-0.5 text-xs text-amber-900/80">Request a new GoCardless authorisation, or link one they have already completed. Historic mandate and payment records stay intact.</p>
             </div>
-            <Button size="sm" variant="outline" className="border-amber-300 bg-white" onClick={() => setShowReplaceMandate(true)}>
+            <Button size="sm" variant="outline" className="border-amber-300 bg-white" onClick={() => setShowReplaceMandate(true)} disabled={!canReplaceMandate}>
               Replace mandate
             </Button>
           </div>
         </div>
-        {ddStatus?.replacements?.[0] && (
+        {isDdStatusReadable && ddStatus?.replacementHistoryAvailable === false && (
+          <p className="mt-2 text-xs text-amber-900">Replacement history is temporarily unavailable in the Portal. Mandate replacement is disabled until the replacement-history database schema is restored; the mandate, subscription and live collection schedule remain available.</p>
+        )}
+        {isDdStatusReadable && ddStatus?.replacements?.[0] && (
           <p className="mt-2 text-xs text-muted-foreground">
             Latest replacement: <span className="font-medium">{ddStatus.replacements[0].status}</span>
             {ddStatus.replacements[0].replacementMandateId ? ` · ${ddStatus.replacements[0].replacementMandateId}` : " · awaiting authorisation"}
           </p>
         )}
         {/* Link GC subscription by email — shown when no mandate exists */}
-        {!mandate && (
+        {isDdStatusReadable && !mandate && (
           <div className="mt-2 space-y-2">
             <button
               onClick={() => linkByEmailMutation.mutate({ userId, overrideEmail: gcOverrideEmail.trim() || undefined })}
-              disabled={linkByEmailMutation.isPending}
+              disabled={!isDdStatusReadable || linkByEmailMutation.isPending}
               className="w-full text-sm border border-dashed rounded-lg px-4 py-2 text-blue-700 hover:bg-blue-50 transition-colors disabled:opacity-50"
             >
               {linkByEmailMutation.isPending ? "Searching GoCardless..." : "🔗 Link GC Subscription by Email"}
@@ -3109,7 +3145,7 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
           </div>
         )}
         {/* Manual subscription creation — only reusable mandate states, or a provider-verified manual ID. */}
-        {(!mandate || (!subscription && canLinkGoCardlessMandate(mandate.status))) && (
+        {canCreateSubscription && (
           <div className="mt-3">
             {!showCreateSub ? (
               <button
@@ -3158,7 +3194,7 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
                 <div className="flex gap-2">
                   <button
                     onClick={() => createSubMutation.mutate({ userId, dayOfMonth: createSubDay, mandateId: mandate ? undefined : (manualMandateId || undefined) })}
-                    disabled={createSubMutation.isPending || (!mandate && !manualMandateId.trim())}
+                    disabled={!canCreateSubscription || createSubMutation.isPending || (!mandate && !manualMandateId.trim())}
                     className="px-3 py-1.5 rounded bg-teal-600 text-white text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
                   >
                     {createSubMutation.isPending ? "Creating..." : "Confirm & Create"}
@@ -3174,7 +3210,7 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
             )}
           </div>
         )}
-        <Dialog open={showReplaceMandate} onOpenChange={(open) => {
+        <Dialog open={showReplaceMandate && canReplaceMandate} onOpenChange={(open) => {
           setShowReplaceMandate(open);
           if (!open) setReplacementConfirmed(false);
         }}>
@@ -3217,7 +3253,7 @@ function DirectDebitTab({ userId, mandate: initialMandate, paymentExempt: initia
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowReplaceMandate(false)}>Cancel</Button>
               <Button
-                disabled={!replacementConfirmed || requestReplacementMutation.isPending || linkReplacementMutation.isPending || (replacementMode === "link_existing" && !replacementMandateId.trim())}
+                disabled={!canReplaceMandate || !replacementConfirmed || requestReplacementMutation.isPending || linkReplacementMutation.isPending || (replacementMode === "link_existing" && !replacementMandateId.trim())}
                 onClick={() => replacementMode === "send_link"
                   ? requestReplacementMutation.mutate({ userId, preferredPaymentDay: replacementPaymentDay })
                   : linkReplacementMutation.mutate({ userId, mandateId: replacementMandateId.trim(), preferredPaymentDay: replacementPaymentDay })}

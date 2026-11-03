@@ -38,12 +38,14 @@ describe("payment failure notices", () => {
     const core = fs.readFileSync(path.resolve(import.meta.dirname, "_core/index.ts"), "utf8");
     const persistence = fs.readFileSync(path.resolve(import.meta.dirname, "gocardless-db.ts"), "utf8");
     const reconciliation = fs.readFileSync(path.resolve(import.meta.dirname, "payment-failure-reconciliation.ts"), "utf8");
+    const inbox = fs.readFileSync(path.resolve(import.meta.dirname, "membership-payment-sync.ts"), "utf8");
 
-    expect(core).toContain("gocardlessEventId: event.id");
-    expect(core).toContain("Ignoring replayed GoCardless event");
+    expect(core).toContain("receiveMembershipProviderEvent");
+    expect(inbox).toContain("eventId: event.id");
+    expect(inbox).toContain("onDuplicateKeyUpdate({ set: { eventId: sql`${membershipPaymentInbox.eventId}` } })");
+    expect(inbox).toContain("gocardlessEventId: event.id");
     expect(core).not.toContain("alreadyCountedThisPayment");
     expect(persistence).toContain("gcPaymentEvents.gocardlessEventId");
-    expect(reconciliation).toContain("failureRunResetAt");
-    expect(reconciliation).toContain("failureNoticesSent");
+    expect(reconciliation).toContain("return reconcileMembershipPayments()");
   });
 });

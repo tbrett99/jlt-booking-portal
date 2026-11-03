@@ -199,6 +199,33 @@ export async function getGcMandateReplacementHistoryByUserId(userId: number) {
     .orderBy(desc(gcMandateReplacements.createdAt));
 }
 
+/** Only the optional replacement-history table can degrade to unavailable. */
+export function isMissingGoCardlessReplacementHistoryTable(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current && typeof current === "object"; depth++) {
+    const candidate = current as { code?: string; errno?: number; message?: string; cause?: unknown };
+    const message = candidate.message ?? "";
+    if (
+      (candidate.code === "ER_NO_SUCH_TABLE" || candidate.errno === 1146 || /table.+doesn't exist/i.test(message)) &&
+      /(?:^|[.`'\s])gc_mandate_replacements(?:$|[`'\s])/i.test(message)
+    ) return true;
+    current = candidate.cause;
+  }
+  return false;
+}
+
+/** Read-only compatibility: missing history must not hide an existing mandate. */
+export async function getGcMandateReplacementHistoryStateByUserId(userId: number) {
+  try {
+    const replacements = await getGcMandateReplacementHistoryByUserId(userId);
+    return { replacements, replacementHistoryAvailable: true };
+  } catch (error) {
+    if (!isMissingGoCardlessReplacementHistoryTable(error)) throw error;
+    console.warn("[GoCardless] Replacement history schema is unavailable; base Direct Debit status remains readable. Replacement actions require the schema update.");
+    return { replacements: [], replacementHistoryAvailable: false };
+  }
+}
+
 export async function updateGcMandateReplacement(
   id: number,
   data: Partial<{
