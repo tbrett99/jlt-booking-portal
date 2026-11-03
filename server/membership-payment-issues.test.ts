@@ -11,6 +11,10 @@ import {
   membershipPaymentsRouter,
   normalizePaymentIssue,
 } from "./membership-payment-issues-router";
+import {
+  isDirectDebitConcernMembership,
+  resolveMembershipConcernStatus,
+} from "./membership-payment-concern-policy";
 
 const dialect = new MySqlDialect();
 const uiSource = readFileSync(
@@ -338,6 +342,83 @@ describe("membershipPayments read-only API", () => {
     expect(routerSource).not.toMatch(
       /from ["']\.\/(gocardless|email|membership-payment-processor)/
     );
+  });
+});
+
+describe("CRM membership controls Direct Debit concerns, not financial history", () => {
+  it.each(["active", "suspended", "paused"])("flags %s even with stale or disabled Portal status", status => {
+    for (const portalStatus of ["active", "cancelled", "paused", "suspended", "onboarding"]) {
+      expect(isDirectDebitConcernMembership(status, portalStatus)).toBe(true);
+      const account = normalizePaymentIssue(row({ agentStatus: status, portalStatus, isActive: 0, mandateStatus: "cancelled", ddIssue: 1 }));
+      expect(account.ddIssue).toBe(true);
+      expect(account.agentStatus).toBe(status);
+      expect(account.isActive).toBe(false);
+    }
+  });
+
+  it.each(["cancelled", "departed", "left", "in_notice", "onboarding", "unknown"])("does not flag %s solely for mandate cancellation", status => {
+    for (const portalStatus of ["active", "onboarding", "suspended"]) {
+      expect(isDirectDebitConcernMembership(status, portalStatus)).toBe(false);
+      expect(normalizePaymentIssue(row({ agentStatus: status, portalStatus, isActive: 1, mandateStatus: "cancelled", ddIssue: 1 })).ddIssue).toBe(false);
+    }
+  });
+
+  it.each(["active", "onboarding", "suspended"])("CRM cancellation also suppresses stale onboarding concern against Portal %s", portalStatus => {
+    const account = normalizePaymentIssue(row({ agentStatus: " Cancelled ", portalStatus, ddIssue: 1, onboardingDd: 1 }));
+    expect(account).toMatchObject({ agentStatus: "cancelled", ddIssue: false, onboardingDd: false });
+  });
+
+  it("falls back only when CRM status is missing or blank and normalises legacy case/whitespace", () => {
+    for (const absent of [null, undefined, "", "  "]) {
+      expect(isDirectDebitConcernMembership(absent, "paused")).toBe(true);
+      expect(isDirectDebitConcernMembership(absent, "cancelled")).toBe(false);
+    }
+    expect(resolveMembershipConcernStatus(" ACTIVE ", "cancelled")).toBe("active");
+    expect(resolveMembershipConcernStatus(" Cancelled ", "active")).toBe("cancelled");
+  });
+
+  it("does not flag payment-exempt agents but retains actual arrears", () => {
+    expect(normalizePaymentIssue(row({ agentStatus: "active", paymentExempt: 1, ddIssue: 1, onboardingDd: 1, outstandingCount: 1, outstandingPence: 8700 })))
+      .toMatchObject({ ddIssue: false, onboardingDd: false, outstandingCount: 1, outstandingPence: 8700 });
+  });
+
+  it.each([
+    { outstandingCount: 2, outstandingPence: 17400 },
+    { pendingFeeCount: 1, pendingFeePence: 2500, feeReviewCount: 1 },
+    { deliveryIssueCount: 1, mailPendingCount: 1 },
+    { reviewIssue: 1, historyReviewRequired: 1, lastError: "Mapping needs review" },
+  ])("retains cancelled agents' independent payment, fee, mail or review evidence: %j", issue => {
+    const account = normalizePaymentIssue(row({ agentStatus: "cancelled", portalStatus: "active", mandateStatus: "cancelled", ddIssue: 1, onboardingDd: 1, ...issue }));
+    const retained = Object.fromEntries(Object.entries(issue).map(([key, value]) =>
+      [key, key === "reviewIssue" || key === "historyReviewRequired" ? Boolean(value) : value]));
+    expect(account).toMatchObject({ ...retained, ddIssue: false, onboardingDd: false, mandateStatus: "cancelled" });
+  });
+
+  it("uses the exact same canonical DD eligibility in page counts, rows and overview counters", async () => {
+    results([], [{ total: 0 }], []);
+    await caller().listIssues({ filter: "dd" });
+    const pageCount = queryAt(1), pageRows = queryAt(2);
+    const ddPredicate = (query: { sql: string }) => query.sql.match(/AS mailAcceptedCount,([\s\S]*?) AS ddIssue,/)?.[1];
+    const predicate = ddPredicate(pageRows);
+    expect(predicate).toBeTruthy();
+    expect(predicate).toContain("LOWER(TRIM(COALESCE(NULLIF(TRIM(`agent_crm_profiles`.`agentStatus`), ''), `users`.`portalStatus`))) IN (?, ?, ?)");
+    expect(predicate).not.toContain("`users`.`isActive`");
+    expect(predicate).not.toContain("`users`.`portalStatus` NOT IN");
+    expect(pageRows.params.slice(0, 3)).toEqual(["active", "suspended", "paused"]);
+    expect(ddPredicate(pageCount)).toBe(predicate);
+    expect(pageCount.sql).toContain("WHERE (ddIssue = 1 OR onboardingDd = 1)");
+    expect(pageRows.sql).toContain("NOT IN ('cancelled', 'departed', 'left')");
+
+    mocks.execute.mockReset();
+    results([], [{}], [{}], [{ pendingEvents: 0, failedEvents: 0 }]);
+    await caller().overview({});
+    const counts = queryAt(2);
+    expect(ddPredicate(counts)).toBe(predicate);
+    expect(counts.params.slice(0, 3)).toEqual(["active", "suspended", "paused"]);
+    expect(counts.sql).toContain("SUM(ddIssue = 1)");
+    // No global cancelled-member exclusion: debt and reviewed history survive.
+    expect(routerSource).toContain("outstandingCount > 0 OR ddIssue = 1");
+    expect(routerSource).toContain("OR deliveryIssueCount > 0 OR mailPendingCount > 0 OR reviewIssue = 1 OR pendingFeeCount > 0");
   });
 });
 

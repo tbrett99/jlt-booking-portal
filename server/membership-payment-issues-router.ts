@@ -5,6 +5,11 @@ import { adminProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
 import { membershipPaymentControlProcedures } from "./membership-payment-control-procedures";
 import {
+  DIRECT_DEBIT_CONCERN_MEMBERSHIP_STATUSES,
+  isDirectDebitConcernMembership,
+  resolveMembershipConcernStatus,
+} from "./membership-payment-concern-policy";
+import {
   users,
   agentCrmProfiles,
   gcMandates,
@@ -133,6 +138,11 @@ async function readOnly<T>(work: (db: Db) => Promise<T>): Promise<T> {
 // selected by latest createdAt then id; audit refreshes cannot promote an old mandate. Fee/mail scalar aggregates cannot fan out.
 // Historical failed events never determine today's arrears or resolved state.
 function issueBase(): SQL {
+  // CRM membership is authoritative; disabled Portal access does not remove a
+  // suspended/paused member from DD concerns. Cancellation never forgives debt.
+  const membershipStatus = sql`LOWER(TRIM(COALESCE(NULLIF(TRIM(${agentCrmProfiles.agentStatus}), ''), ${users.portalStatus})))`;
+  const ddConcernMember = sql`COALESCE(${agentCrmProfiles.paymentExempt}, 0) = 0
+    AND ${membershipStatus} IN (${sql.join(DIRECT_DEBIT_CONCERN_MEMBERSHIP_STATUSES.map(status => sql`${status}`), sql`, `)})`;
   const currentMember = sql`COALESCE(${agentCrmProfiles.paymentExempt}, 0) = 0
     AND ${users.portalStatus} <> 'onboarding'
     AND ${users.portalStatus} NOT IN ('cancelled', 'paused')
@@ -141,7 +151,7 @@ function issueBase(): SQL {
   return sql`SELECT
     ${users.id} AS userId, ${users.name} AS name, ${users.email} AS email,
     ${agentCrmProfiles.uniqueAgentId} AS uniqueAgentId,
-    COALESCE(${agentCrmProfiles.agentStatus}, ${users.portalStatus}) AS agentStatus,
+    ${membershipStatus} AS agentStatus,
     ${users.portalStatus} AS portalStatus, ${users.isActive} AS isActive,
     COALESCE(${agentCrmProfiles.paymentExempt}, 0) AS paymentExempt,
     COALESCE(${agentCrmProfiles.suspensionReason}, ${users.suspensionReason}) AS suspensionReason,
@@ -167,9 +177,10 @@ function issueBase(): SQL {
       AND ${outbox.status} IN ('pending', 'sending')) AS mailPendingCount,
     (SELECT COUNT(*) FROM ${outbox} WHERE ${outbox.userId} = ${users.id}
       AND ${outbox.status} = 'accepted') AS mailAcceptedCount,
-    (${currentMember} AND (${gcMandates.id} IS NULL OR ${gcMandates.mandateId} IS NULL
+    (${ddConcernMember} AND (${gcMandates.id} IS NULL OR ${gcMandates.mandateId} IS NULL
       OR ${gcMandates.status} IN ('cancelled', 'failed', 'expired', 'consumed', 'blocked', 'suspended_by_payer'))) AS ddIssue,
     (COALESCE(${agentCrmProfiles.paymentExempt}, 0) = 0 AND ${users.portalStatus} = 'onboarding'
+      AND ${membershipStatus} NOT IN ('cancelled', 'departed', 'left')
       AND (${gcMandates.id} IS NULL OR ${gcMandates.mandateId} IS NULL
       OR ${gcMandates.status} IN ('cancelled', 'failed', 'expired', 'consumed', 'blocked', 'suspended_by_payer'))) AS onboardingDd,
     (COALESCE(${accounts.historyReviewRequired}, 0) = 1 OR ${accounts.lastError} IS NOT NULL
@@ -214,8 +225,11 @@ function searchFilter(search: string): SQL {
 
 export function normalizePaymentIssue(row: IssueRow) {
   const arrears = Number(row.outstandingCount) > 0;
+  const agentStatus = resolveMembershipConcernStatus(row.agentStatus, row.portalStatus);
+  const departed = ["cancelled", "departed", "left"].includes(agentStatus);
   return {
     ...row,
+    agentStatus,
     isActive: Boolean(Number(row.isActive)),
     paymentExempt: Boolean(Number(row.paymentExempt)),
     accountPresent: Boolean(Number(row.accountPresent)),
@@ -225,8 +239,8 @@ export function normalizePaymentIssue(row: IssueRow) {
     outstandingPence:
       row.outstandingPence == null ? null : Number(row.outstandingPence),
     amountUnknown: arrears && row.outstandingPence == null,
-    ddIssue: Boolean(Number(row.ddIssue)),
-    onboardingDd: Boolean(Number(row.onboardingDd)),
+    ddIssue: Boolean(Number(row.ddIssue)) && !Number(row.paymentExempt) && isDirectDebitConcernMembership(agentStatus, row.portalStatus),
+    onboardingDd: Boolean(Number(row.onboardingDd)) && !Number(row.paymentExempt) && !departed,
     reviewIssue: Boolean(Number(row.reviewIssue)),
     pendingFeeCount: Number(row.pendingFeeCount),
     pendingFeePence: Number(row.pendingFeePence),

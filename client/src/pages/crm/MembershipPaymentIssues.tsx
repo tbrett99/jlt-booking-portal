@@ -907,6 +907,61 @@ function AccountReview({
   );
 }
 
+type MembershipPaymentDirectDebitAccount = {
+  agentStatus: string;
+  mandateStatus: string | null;
+  mandateId: string | null;
+  subscriptionStatus: string | null;
+  subscriptionId: string | null;
+  ddIssue: boolean;
+  onboardingDd: boolean;
+  paymentExempt: boolean;
+};
+
+export function MembershipPaymentDirectDebitCell({
+  account,
+}: {
+  account: MembershipPaymentDirectDebitAccount;
+}) {
+  const expectedCancellation =
+    account.agentStatus === "cancelled" &&
+    account.mandateStatus === "cancelled" &&
+    !account.ddIssue &&
+    !account.onboardingDd;
+  return (
+    <TableCell className="align-top text-xs">
+      <p
+        className={
+          account.ddIssue ? "text-destructive font-medium" : "font-medium"
+        }
+      >
+        {account.paymentExempt
+          ? "Payment exempt"
+          : account.onboardingDd
+            ? "Onboarding — DD setup needed"
+            : account.ddIssue
+              ? `Current DD issue: ${account.mandateStatus ?? "missing"}`
+              : expectedCancellation
+                ? "Mandate cancelled — expected for a cancelled membership"
+                : `Mandate: ${account.mandateStatus ?? "not recorded"}`}
+      </p>
+      {account.mandateId && (
+        <p className="font-mono text-muted-foreground mt-1">
+          {account.mandateId}
+        </p>
+      )}
+      <p className="text-muted-foreground mt-1">
+        Subscription: {account.subscriptionStatus ?? "not recorded"}
+      </p>
+      {account.subscriptionId && (
+        <p className="font-mono text-muted-foreground">
+          {account.subscriptionId}
+        </p>
+      )}
+    </TableCell>
+  );
+}
+
 export default function MembershipPaymentIssues() {
   const { user } = useAuth();
   const isStaff = user?.role === "admin" || user?.role === "super_admin";
@@ -1203,10 +1258,12 @@ export default function MembershipPaymentIssues() {
             </Select>
           </div>
           <p className="text-xs text-muted-foreground">
-            Cancelled/departed and intentionally paused memberships are not
-            flagged simply for a cancelled mandate. Onboarding setup is not
-            arrears. Historical failed events alone do not create an outstanding
-            balance.
+            Cancelled CRM memberships are excluded from Direct Debit concerns.
+            Active, suspended and paused CRM memberships with cancelled mandates
+            remain Direct Debit concerns unless payment exempt. Cancelled
+            memberships can still appear for outstanding payments, fees, mail
+            issues or historical review. Onboarding setup is not arrears.
+            Historical failed events alone do not create an outstanding balance.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -1294,37 +1351,7 @@ export default function MembershipPaymentIssues() {
                           Current failed attempts: {account.failedAttempts}
                         </p>
                       </TableCell>
-                      <TableCell className="align-top text-xs">
-                        <p
-                          className={
-                            account.ddIssue
-                              ? "text-destructive font-medium"
-                              : "font-medium"
-                          }
-                        >
-                          {account.paymentExempt
-                            ? "Payment exempt"
-                            : account.onboardingDd
-                              ? "Onboarding — DD setup needed"
-                              : account.ddIssue
-                                ? `Current DD issue: ${account.mandateStatus ?? "missing"}`
-                                : `Mandate: ${account.mandateStatus ?? "not recorded"}`}
-                        </p>
-                        {account.mandateId && (
-                          <p className="font-mono text-muted-foreground mt-1">
-                            {account.mandateId}
-                          </p>
-                        )}
-                        <p className="text-muted-foreground mt-1">
-                          Subscription:{" "}
-                          {account.subscriptionStatus ?? "not recorded"}
-                        </p>
-                        {account.subscriptionId && (
-                          <p className="font-mono text-muted-foreground">
-                            {account.subscriptionId}
-                          </p>
-                        )}
-                      </TableCell>
+                      <MembershipPaymentDirectDebitCell account={account} />
                       <TableCell className="align-top text-xs space-y-1">
                         <p>{account.pendingFeeCount} fee(s) pending / review</p>
                         <p
@@ -1362,8 +1389,7 @@ export default function MembershipPaymentIssues() {
                             {account.lastError}
                           </p>
                         )}
-                        {(account.agentStatus === "suspended" ||
-                          account.portalStatus === "suspended") && (
+                        {account.agentStatus === "suspended" && (
                           <p className="text-muted-foreground">
                             Suspended:{" "}
                             {account.suspensionReason ?? "reason not recorded"}.
