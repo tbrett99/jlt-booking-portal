@@ -59,6 +59,8 @@ function parseCsvLine(line) {
 }
 
 async function main() {
+  // Retired: legacy raw SQL bypasses the Portal reference lock and duplicate checks.
+  throw new Error("This historical PTS repair script is retired. Use the guarded Portal booking editor/importer; do not run raw reference rewrites.");
   const conn = await mysql.createConnection(process.env.DATABASE_URL);
   console.log("Connected to database.");
 

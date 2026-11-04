@@ -840,6 +840,7 @@ export default function AgentBookingDetail() {
           ) : (
             <span className="italic text-muted-foreground text-sm">Not set</span>
           )}
+          <p className="mt-1 text-[10px] text-muted-foreground">Do not reuse a reference from another booking.</p>
         </div>
 
         <div className={`rounded-xl p-3 border col-span-2 sm:col-span-1 ${booking.ptsRef ? 'border-[#70FFE8]' : booking.currentStage === 'Creating own PTS file' ? 'border-amber-300' : ''}`} style={{ background: booking.ptsRef ? '#ecfdf5' : booking.currentStage === 'Creating own PTS file' ? '#fffbeb' : '#f9fafb' }}>
@@ -894,6 +895,7 @@ export default function AgentBookingDetail() {
               )}
             </>
           )}
+          <p className="mt-1 text-[10px] text-muted-foreground">Do not reuse a reference from another booking.</p>
         </div>
 
         {(booking as any).destination && (

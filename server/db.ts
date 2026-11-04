@@ -33,6 +33,7 @@ import { canReconcileHistoricalCommissionClaim } from "./historical-commission-u
 import { assertAgentNotMerged, getArchivedAgentMergeIds } from "./agent-merge-identity";
 import { writableAgentUser } from "./agent-merge-user-write";
 import type { OrbitFinancialSnapshotPayload } from "./orbit-financial-snapshot";
+import { assertBookingReferencesAvailable, normaliseBookingReference, withBookingReferenceLock } from "./booking-reference-guard";
 import {
   buildOrbitBookingFinancialFields,
   decideOrbitFinancialSync,
@@ -312,6 +313,7 @@ export async function createBooking(data: {
   departureDate: Date;
   bookedDate?: Date;
   topdogRef?: string;
+  ptsRef?: string;
   reimbursementsRequired: boolean;
   reimbursementDocUrl?: string;
   expectedCommission?: number;
@@ -327,7 +329,9 @@ export async function createBooking(data: {
   if (!db) throw new Error("DB unavailable");
   // Personal bookings: payment date = departure date automatically
   const finalSupplierPaymentDate = data.isPersonalBooking ? data.departureDate : undefined;
-  const result = await db.insert(bookings).values({
+  const insert = async (writer: any) => {
+    const references = await assertBookingReferencesAvailable(writer, data);
+    const result = await writer.insert(bookings).values({
     agentId: data.agentId,
     clientName: data.clientName,
     departureDate: data.departureDate,
@@ -342,12 +346,17 @@ export async function createBooking(data: {
     passengers: data.passengers,
     numberOfNights: data.numberOfNights,
     isPersonalBooking: data.isPersonalBooking ?? false,
-    crmRef: data.crmRef ?? null,
+    ...references,
     orbitMarginPct: data.orbitMarginPct != null ? String(data.orbitMarginPct) : null,
     finalSupplierPaymentDate,
     currentStage: "New Booking",
   } as any);
-  const id = (result as any)[0]?.insertId ?? (result as any).insertId;
+    return (result as any)[0]?.insertId ?? (result as any).insertId;
+  };
+  const hasReference = data.crmRef !== undefined || data.ptsRef !== undefined;
+  const id = hasReference
+    ? await withBookingReferenceLock((locked) => locked.transaction(insert))
+    : await insert(db);
   return getBookingById(id);
 }
 
@@ -471,6 +480,7 @@ export async function updateBookingAdminFields(
     finalSupplierPaymentDate?: Date | null;
     expectedCommission?: number;
     grossCost?: number;
+    grossCostLockedAt?: Date;
     passengers?: number;
     numberOfNights?: number;
     clientName?: string;
@@ -491,7 +501,18 @@ export async function updateBookingAdminFields(
     if (value !== undefined) safeData[key] = value;
   }
   if (Object.keys(safeData).length === 0) return getBookingById(bookingId);
-  await db.update(bookings).set(safeData as any).where(eq(bookings.id, bookingId));
+  const hasReference = safeData.ptsRef !== undefined || safeData.crmRef !== undefined;
+  if (hasReference) {
+    await withBookingReferenceLock((locked) => locked.transaction(async (tx: any) => {
+      const [current] = await tx.select({ id: bookings.id, ptsRef: bookings.ptsRef, crmRef: bookings.crmRef })
+        .from(bookings).where(eq(bookings.id, bookingId)).limit(1).for("update");
+      if (!current) throw new Error("Booking not found");
+      const references = await assertBookingReferencesAvailable(tx, data, current);
+      await tx.update(bookings).set({ ...safeData, ...references }).where(eq(bookings.id, bookingId));
+    }));
+  } else {
+    await db.update(bookings).set(safeData as any).where(eq(bookings.id, bookingId));
+  }
   return getBookingById(bookingId);
 }
 
@@ -1668,14 +1689,17 @@ export async function applyOrbitFinancialSnapshot(data: {
     receivedAt: new Date(),
   } as const;
 
-  return db.transaction(async (tx) => {
+  const apply = async (tx: any) => {
     const bookingRows = await tx
       .select()
       .from(bookings)
       .where(eq(bookings.id, data.bookingId))
-      .limit(1);
+      .limit(1).for("update");
     const booking = bookingRows[0];
     if (!booking) throw new Error("Booking not found");
+    if (normaliseBookingReference(booking.crmRef) && normaliseBookingReference(booking.crmRef) !== normaliseBookingReference(data.snapshot.crmRef)) {
+      throw new Error("The supplied Orbit booking reference does not match this Portal booking.");
+    }
 
     const existingSnapshots = await tx
       .select()
@@ -1704,6 +1728,8 @@ export async function applyOrbitFinancialSnapshot(data: {
       };
     }
 
+    const references = await assertBookingReferencesAvailable(tx, { crmRef: data.snapshot.crmRef }, booking);
+
     if (existingSnapshot) {
       await tx
         .update(orbitFinancialSnapshots)
@@ -1722,6 +1748,7 @@ export async function applyOrbitFinancialSnapshot(data: {
       currentStage: booking.currentStage,
       hasCommissionClaim: Boolean(claims[0]),
     });
+
     const nextBookingFields = buildOrbitBookingFinancialFields(data.snapshot);
     const valuesChanged = decision.outcome === "applied"
       && hasOrbitBookingFinancialChange(booking, nextBookingFields);
@@ -1732,10 +1759,10 @@ export async function applyOrbitFinancialSnapshot(data: {
         .set(nextBookingFields)
         .where(eq(bookings.id, data.bookingId));
     }
-    if (!booking.crmRef) {
+    if (!normaliseBookingReference(booking.crmRef)) {
       await tx
         .update(bookings)
-        .set({ crmRef: data.snapshot.crmRef })
+        .set({ crmRef: references.crmRef })
         .where(eq(bookings.id, data.bookingId));
     }
 
@@ -1759,7 +1786,8 @@ export async function applyOrbitFinancialSnapshot(data: {
       reason: decision.reason,
       valuesChanged,
     };
-  });
+  };
+  return withBookingReferenceLock<Awaited<ReturnType<typeof apply>>>((locked) => locked.transaction(apply));
 }
 
 export async function getOrbitFinancialSyncStatus(bookingId: number) {

@@ -1,3 +1,5 @@
+import { TRPCError } from "@trpc/server";
+import { BookingReferenceConflictError, findBookingByUniqueReference, normaliseBookingReference } from "./booking-reference-guard";
 /**
  * External API — CRM Integration
  *
@@ -198,6 +200,12 @@ router.post("/register-booking", async (req: Request, res: Response) => {
       message: `Booking registered successfully. View at ${portalUrl}`,
     });
   } catch (err: any) {
+    if (err instanceof TRPCError && (err.code === "CONFLICT" || err.code === "BAD_REQUEST")) {
+      return res.status(err.code === "CONFLICT" ? 409 : 400).json({
+        error: err.message,
+        ...(err instanceof BookingReferenceConflictError ? { field: err.field, conflictingBookingId: err.conflictingBookingId } : {}),
+      });
+    }
     console.error("[external-api] register-booking error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
@@ -345,17 +353,12 @@ router.post("/update-commission", async (req: Request, res: Response) => {
       if (snapshot.bookingId !== undefined) {
         booking = await getBookingById(snapshot.bookingId);
       } else {
-        const matches = await db
-          .select()
-          .from(bookingsTable)
-          .where(eq(bookingsTable.crmRef, snapshot.crmRef))
-          .limit(1);
-        booking = matches[0];
+        booking = await findBookingByUniqueReference(db, "crmRef", snapshot.crmRef);
       }
       if (!booking) {
         return res.status(404).json({ error: "No booking found for the supplied Portal booking ID or Orbit booking reference." });
       }
-      if (booking.crmRef && booking.crmRef !== snapshot.crmRef) {
+      if (booking.crmRef && normaliseBookingReference(booking.crmRef) !== normaliseBookingReference(snapshot.crmRef)) {
         return res.status(409).json({ error: "The supplied Orbit booking reference does not match this Portal booking." });
       }
 
@@ -411,11 +414,9 @@ router.post("/update-commission", async (req: Request, res: Response) => {
     if (bookingId != null) {
       booking = await getBookingById(Number(bookingId));
     } else if (crmRef) {
-      const results = await db.select().from(bookingsTable).where(eq(bookingsTable.crmRef, String(crmRef).trim())).limit(1);
-      booking = results[0];
+      booking = await findBookingByUniqueReference(db, "crmRef", String(crmRef));
     } else if (ptsRef) {
-      const results = await db.select().from(bookingsTable).where(eq(bookingsTable.ptsRef, String(ptsRef).trim())).limit(1);
-      booking = results[0];
+      booking = await findBookingByUniqueReference(db, "ptsRef", String(ptsRef));
     } else if (topdogRef) {
       const results = await db.select().from(bookingsTable).where(eq(bookingsTable.topdogRef, String(topdogRef).trim())).limit(1);
       booking = results[0];
@@ -486,6 +487,12 @@ router.post("/update-commission", async (req: Request, res: Response) => {
       orbitMarginPct: updateFields.orbitMarginPct ?? null,
     });
   } catch (err: any) {
+    if (err instanceof TRPCError && (err.code === "CONFLICT" || err.code === "BAD_REQUEST")) {
+      return res.status(err.code === "CONFLICT" ? 409 : 400).json({
+        error: err.message,
+        ...(err instanceof BookingReferenceConflictError ? { field: err.field, conflictingBookingId: err.conflictingBookingId } : {}),
+      });
+    }
     console.error("[external-api] update-commission error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }

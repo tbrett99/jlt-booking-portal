@@ -2073,6 +2073,7 @@ export default function AdminBookingDetail() {
                   </div>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground">PTS and Orbit references must be unique across bookings.</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs flex items-center gap-1">

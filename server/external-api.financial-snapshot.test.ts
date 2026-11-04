@@ -20,19 +20,22 @@ const mocks = vi.hoisted(() => {
     getBookingById: vi.fn(),
     getCommissionClaimByBooking: vi.fn(),
     updateBookingAdminFields: vi.fn(),
+    createBooking: vi.fn(),
     applyOrbitFinancialSnapshot: vi.fn(),
   };
 });
 
 vi.mock("./db", () => ({
   getDb: vi.fn(async () => mocks.db),
-  createBooking: vi.fn(),
+  createBooking: mocks.createBooking,
   updateBookingAdminFields: mocks.updateBookingAdminFields,
   getBookingById: mocks.getBookingById,
   getCommissionClaimByBooking: mocks.getCommissionClaimByBooking,
   applyOrbitFinancialSnapshot: mocks.applyOrbitFinancialSnapshot,
 }));
 
+vi.mock("./agent-merge-identity", () => ({ getArchivedAgentMergeIds: vi.fn(async () => []) }));
+import { BookingReferenceConflictError } from "./booking-reference-guard";
 import { externalApiRouter } from "./external-api";
 
 const snapshot = {
@@ -71,6 +74,8 @@ describe("POST /api/external/update-commission financial snapshots", () => {
     mocks.selectResults.push([{ id: 4, keyHash: "hash", isActive: true }]);
     mocks.getBookingById.mockResolvedValue({ id: 702, crmRef: "JLT-1234", currentStage: "Added to PTS" });
     mocks.getCommissionClaimByBooking.mockResolvedValue(undefined);
+    mocks.updateBookingAdminFields.mockResolvedValue(undefined);
+    mocks.createBooking.mockResolvedValue({ id: 702, clientName: "Synthetic client" });
     mocks.applyOrbitFinancialSnapshot.mockResolvedValue({
       bookingId: 702,
       financialRevision: snapshot.financialRevision,
@@ -180,5 +185,45 @@ describe("POST /api/external/update-commission financial snapshots", () => {
     expect(res.statusCode).toBe(409);
     expect(res.body).toEqual(expect.objectContaining({ outcome: "held_for_claim_review" }));
     expect(mocks.updateBookingAdminFields).not.toHaveBeenCalled();
+  });
+
+  it("returns a deliberate 409 when Orbit tries to assign an occupied reference", async () => {
+    mocks.applyOrbitFinancialSnapshot.mockRejectedValue(new BookingReferenceConflictError("crmRef", "JLT-1234", 88));
+    const res = response();
+    await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: snapshot }, res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ field: "crmRef", conflictingBookingId: 88 });
+    expect(mocks.updateBookingAdminFields).not.toHaveBeenCalled();
+  });
+
+  it.each(["crmRef", "ptsRef"])("rejects ambiguous historical %s matching rather than updating the first row", async (field) => {
+    mocks.selectResults.push([{ id: 88 }, { id: 99 }]);
+    const res = response();
+    await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: { [field]: "DUPLICATE", expectedCommission: 50 } }, res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toContain("multiple bookings");
+    expect(mocks.updateBookingAdminFields).not.toHaveBeenCalled();
+    expect(mocks.applyOrbitFinancialSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 for a conflicting legacy newCrmRef assignment", async () => {
+    mocks.updateBookingAdminFields.mockRejectedValue(new BookingReferenceConflictError("crmRef", "JLT-NEW", 88));
+    const res = response();
+    await intakeHandler()({ headers: { "x-api-key": "valid-key" }, body: { bookingId: 702, newCrmRef: "JLT-NEW", expectedCommission: 50 } }, res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ field: "crmRef", conflictingBookingId: 88 });
+  });
+
+  it("returns 409 rather than 500 when registering a duplicate Orbit reference", async () => {
+    mocks.selectResults.push([{ id: 3, role: "agent", email: "synthetic@example.test" }]);
+    mocks.createBooking.mockRejectedValue(new BookingReferenceConflictError("crmRef", "JLT-1234", 88));
+    const handler = (externalApiRouter as any).stack.find((item: any) => item.route?.path === "/register-booking").route.stack[0].handle;
+    const res = response();
+    await handler({ headers: { "x-api-key": "valid-key" }, body: {
+      agentEmail: "synthetic@example.test", clientName: "Synthetic client", departureDate: "2026-12-01",
+      destination: "Synthetic destination", passengers: 2, numberOfNights: 3, grossCost: 1500, crmRef: "JLT-1234",
+    } }, res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ field: "crmRef", conflictingBookingId: 88 });
   });
 });

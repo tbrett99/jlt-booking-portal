@@ -1,3 +1,4 @@
+import { normaliseBookingReference, staffBookingReferenceError } from "./booking-reference-guard";
 import { bookingOrbitReference, orbitReferenceEmailParagraph, normaliseBookingReferenceTemplate } from "../shared/booking-email-reference";
 import { writableAgentUser } from "./agent-merge-user-write";
 import { TRPCError } from "@trpc/server";
@@ -1539,14 +1540,15 @@ export const appRouter = router({
         if (input.grossCost !== undefined) {
           const existingBooking = await getBookingById(bookingId);
           if (existingBooking && existingBooking.grossCostLockedAt == null) {
-            const { getDb } = await import('./db');
-            const { bookings: bookingsTable } = await import('../drizzle/schema');
-            const { eq } = await import('drizzle-orm');
-            const db = await getDb();
-            if (db) await db.update(bookingsTable).set({ grossCostLockedAt: new Date() }).where(eq(bookingsTable.id, bookingId));
+            (data as any).grossCostLockedAt = new Date();
           }
         }
-        let result = await updateBookingAdminFields(bookingId, data as any);
+        let result;
+        try {
+          result = await updateBookingAdminFields(bookingId, data as any);
+        } catch (error) {
+          staffBookingReferenceError(error);
+        }
         const booking = await getBookingById(bookingId);
         if (booking) {
           // Auto-move from "Creating own PTS file" to "Added to PTS" when ptsRef is set
@@ -1556,6 +1558,7 @@ export const appRouter = router({
           const changes: string[] = [];
           if (input.ptsRef !== undefined) changes.push(`PTS Ref set to "${input.ptsRef}"`);
           if (input.topdogRef !== undefined) changes.push(`Topdog Ref set to "${input.topdogRef}"`);
+          if (input.crmRef !== undefined) changes.push(`Orbit Ref set to "${input.crmRef}"`);
           if (input.finalSupplierPaymentDate !== undefined) {
             const dateStr = input.finalSupplierPaymentDate
               ? input.finalSupplierPaymentDate.toLocaleDateString('en-GB')
@@ -1617,10 +1620,15 @@ export const appRouter = router({
         if (booking.currentStage !== 'Creating own PTS file' && !ptsRefMissing) {
           throw new TRPCError({ code: 'FORBIDDEN', message: 'PTS details can only be edited when the booking is in "Creating own PTS file" stage.' });
         }
-        await updateBookingAdminFields(input.bookingId, {
-          ...(input.ptsRef !== undefined ? { ptsRef: input.ptsRef } : {}),
-          ...(input.finalSupplierPaymentDate !== undefined ? { finalSupplierPaymentDate: input.finalSupplierPaymentDate } : {}),
-        });
+        try {
+          await updateBookingAdminFields(input.bookingId, {
+            ...(input.ptsRef !== undefined ? { ptsRef: input.ptsRef } : {}),
+            ...(input.finalSupplierPaymentDate !== undefined ? { finalSupplierPaymentDate: input.finalSupplierPaymentDate } : {}),
+          });
+        } catch (error) {
+          if (ctx.user.role !== "agent") staffBookingReferenceError(error);
+          throw error;
+        }
         // Auto-move from "Creating own PTS file" to "Added to PTS" when ptsRef is provided
         if (input.ptsRef && booking.currentStage === 'Creating own PTS file') {
           await updateBookingStage(input.bookingId, 'Added to PTS', ctx.user.id);
@@ -1681,7 +1689,12 @@ export const appRouter = router({
         if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
           throw new TRPCError({ code: 'FORBIDDEN' });
         }
-        await updateBookingAdminFields(input.bookingId, { crmRef: input.crmRef });
+        try {
+          await updateBookingAdminFields(input.bookingId, { crmRef: input.crmRef });
+        } catch (error) {
+          if (ctx.user.role !== "agent") staffBookingReferenceError(error);
+          throw error;
+        }
         await createNote({
           bookingId: input.bookingId,
           authorId: ctx.user.id,
@@ -1714,7 +1727,7 @@ export const appRouter = router({
         // Load all existing bookings once for deduplication
         const existingBookings = await getAllBookings({});
         const existingTopdogRefs = new Set(existingBookings.map((b) => b.topdogRef).filter(Boolean));
-        const existingPtsRefs = new Set(existingBookings.map((b) => b.ptsRef).filter(Boolean));
+        const existingPtsRefs = new Set(existingBookings.map((b) => normaliseBookingReference(b.ptsRef)).filter(Boolean));
         for (const row of input) {
           try {
             // Deduplication: skip if topdogRef or ptsRef already exists
@@ -1722,7 +1735,7 @@ export const appRouter = router({
               results.push({ clientName: row.clientName, success: true, skipped: true, error: `duplicate_topdog_ref:${row.topdogRef}` });
               continue;
             }
-            if (row.ptsRef && existingPtsRefs.has(row.ptsRef)) {
+            if (row.ptsRef && existingPtsRefs.has(normaliseBookingReference(row.ptsRef))) {
               results.push({ clientName: row.clientName, success: true, skipped: true, error: `duplicate_pts_ref:${row.ptsRef}` });
               continue;
             }
@@ -1737,15 +1750,16 @@ export const appRouter = router({
               clientName: row.clientName,
               departureDate: row.departureDate,
               topdogRef: row.topdogRef,
+              ptsRef: row.ptsRef,
               reimbursementsRequired: row.reimbursementsRequired,
             });
             if (!booking?.id) throw new Error("Insert failed");
             // Track new refs for within-batch deduplication
             if (row.topdogRef) existingTopdogRefs.add(row.topdogRef);
-            if (row.ptsRef) existingPtsRefs.add(row.ptsRef);
+            if (row.ptsRef) existingPtsRefs.add(normaliseBookingReference(row.ptsRef));
             // Apply extra fields (stage, ptsRef, commission, gross cost, payment date)
             const adminUpdates: Record<string, unknown> = {};
-            if (row.ptsRef) adminUpdates.ptsRef = row.ptsRef;
+            // PTS reference is validated and inserted atomically by createBooking.
             if (row.expectedCommission !== undefined) adminUpdates.expectedCommission = row.expectedCommission;
             if (row.grossCost !== undefined) adminUpdates.grossCost = row.grossCost;
             if (row.finalSupplierPaymentDate) adminUpdates.finalSupplierPaymentDate = row.finalSupplierPaymentDate;
