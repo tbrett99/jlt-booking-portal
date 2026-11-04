@@ -1,3 +1,5 @@
+import { buildRemittanceBookingList, readRemittanceOrbitReferences } from "./remittance-email-reference";
+import { escapeBookingEmailText } from "../shared/booking-email-reference";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
@@ -849,6 +851,7 @@ export const remittanceRouter = router({
         agentGroups[line.agentId].push(line);
       }
 
+      const orbitReferences = await readRemittanceOrbitReferences(db, lines);
       let pushedCount = 0;
       for (const [agentIdStr, agentLines] of Object.entries(agentGroups)) {
         const agentId = parseInt(agentIdStr);
@@ -859,9 +862,7 @@ export const remittanceRouter = router({
         const agentName = agentLines[0].agentName ?? "Agent";
         const agentEmail = agentLines[0].agentEmail ?? "";
 
-        const bookingList = agentLines
-          .map((l) => `• ${l.clientName} (${l.ptsRef}) — £${parseFloat(l.remit80 ?? "0").toFixed(2)}`)
-          .join("\n");
+        const bookingList = buildRemittanceBookingList(agentLines, orbitReferences);
 
         const notifContent = `Your commission remittance for ${batch?.name ?? "this week"} has been processed.\n\nTotal: £${totalRemit80.toFixed(2)}\n\n${bookingList}\n\nThis will be included in your next payment run.`;
 
@@ -878,7 +879,7 @@ export const remittanceRouter = router({
               toEmail: agentEmail,
               toName: agentName,
               subject: `JLT Group — Commission Remittance ${batch?.name ?? ""}`,
-              html: `<p>Hi ${agentName},</p><p>${notifContent.replace(/\n/g, "<br>")}</p><p>If you have any questions, please contact <a href="mailto:memberships@thejltgroup.co.uk">memberships@thejltgroup.co.uk</a></p><p>The JLT Group Team</p>`,
+              html: `<p>Hi ${escapeBookingEmailText(agentName)},</p><p>${escapeBookingEmailText(notifContent).replace(/\n/g, "<br>")}</p><p>If you have any questions, please contact <a href="mailto:memberships@thejltgroup.co.uk">memberships@thejltgroup.co.uk</a></p><p>The JLT Group Team</p>`,
             });
           } catch (_) {}
         }
@@ -1009,14 +1010,13 @@ export const remittanceRouter = router({
         agentGroups[line.agentId].push(line);
       }
 
+      const orbitReferences = await readRemittanceOrbitReferences(db, unpushedLines);
       for (const [agentIdStr, agentLines] of Object.entries(agentGroups)) {
         const agentId = parseInt(agentIdStr);
         const totalRemit80 = agentLines.reduce((sum, l) => sum + parseFloat(l.remit80 ?? '0'), 0);
         const agentName = agentLines[0].agentName ?? 'Agent';
         const agentEmail = agentLines[0].agentEmail ?? '';
-        const bookingList = agentLines
-          .map((l) => `• ${l.clientName} (${l.ptsRef}) — £${parseFloat(l.remit80 ?? '0').toFixed(2)}`)
-          .join('\n');
+        const bookingList = buildRemittanceBookingList(agentLines, orbitReferences);
         const notifContent = `Your commission payment for ${batch?.name ?? 'this week'} has been processed and is on its way to your account.\n\nTotal: £${totalRemit80.toFixed(2)}\n\n${bookingList}\n\nOnce the money has arrived, please open My Commissions in the Portal and select “Confirm payment received” for each booking. Please contact memberships@thejltgroup.co.uk if you have any questions.`;
         try {
           await createInAppNotification({ userId: agentId, message: notifContent });
@@ -1027,7 +1027,7 @@ export const remittanceRouter = router({
               toEmail: agentEmail,
               toName: agentName,
               subject: `JLT Group — Commission Payment ${batch?.name ?? ''}`,
-              html: `<p>Hi ${agentName},</p><p>${notifContent.replace(/\n/g, '<br>')}</p><p>The JLT Group Team</p>`,
+              html: `<p>Hi ${escapeBookingEmailText(agentName)},</p><p>${escapeBookingEmailText(notifContent).replace(/\n/g, '<br>')}</p><p>The JLT Group Team</p>`,
             });
           } catch (_) {}
         }

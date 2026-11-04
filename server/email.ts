@@ -6,10 +6,10 @@
  */
 import { Resend, type CreateEmailResponse } from "resend";
 import { ENV } from "./_core/env";
-import { getNotificationTemplate, areNotificationsPaused } from "./db";
+import { getNotificationTemplate, areNotificationsPaused, getBookingById } from "./db";
 import { getDb } from "./db";
 import { getAgentMergeTarget } from "./agent-merge-identity";
-
+import { bookingOrbitReference, escapeBookingEmailText, normaliseBookingReferenceTemplate, usesOrbitBookingEmailReference } from "../shared/booking-email-reference";
 // ─── Resend client ────────────────────────────────────────────────────────────
 let _resend: Resend | null = null;
 function getResend(): Resend {
@@ -395,8 +395,13 @@ export async function sendNotificationEmail(params: {
     return { success: false, error: "Template not found or inactive" };
   }
 
-  let subject = params.overrideSubject ?? template.subject;
-  let body = params.overrideBody ?? template.bodyHtml;
+  const effectiveTemplate = normaliseBookingReferenceTemplate({
+    triggerKey: params.triggerKey,
+    subject: params.overrideSubject ?? template.subject,
+    bodyHtml: params.overrideBody ?? template.bodyHtml,
+  });
+  let subject = effectiveTemplate.subject;
+  let body = effectiveTemplate.bodyHtml;
 
   const vars: Record<string, string> = {
     agentName: recipient.name,
@@ -404,6 +409,17 @@ export async function sendNotificationEmail(params: {
     bookingId: String(params.bookingId ?? ""),
     ...params.variables,
   };
+  const orbitPolicy = usesOrbitBookingEmailReference(params.triggerKey);
+  if (orbitPolicy) {
+    // Never relabel ptsRef/topdogRef as Orbit, and never trust a stale caller's
+    // reference. The booking's existing crmRef field is the source of truth.
+    const booking = params.bookingId ? await getBookingById(params.bookingId) : null;
+    const orbitRef = booking ? bookingOrbitReference(booking) : null;
+    vars.orbitRef = orbitRef ?? "";
+    vars.orbitRefDisplay = orbitRef ?? "Not recorded — please check the booking in the Portal";
+    vars.orbitRefMissing = orbitRef ? "" : "yes";
+    if (params.triggerKey === "added_to_pts") vars.ptsRef = booking?.ptsRef?.trim() ?? "";
+  }
 
   // Process {{#if key}}...{{/if}} conditional blocks
   body = body.replace(/\{\{#if (\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_match, key, inner) => {
@@ -416,8 +432,8 @@ export async function sendNotificationEmail(params: {
   });
 
   for (const [key, value] of Object.entries(vars)) {
-    subject = subject.replace(new RegExp(`{{${key}}}`, "g"), value);
-    body = body.replace(new RegExp(`{{${key}}}`, "g"), value);
+    subject = subject.replace(new RegExp(`{{${key}}}`, "g"), () => value);
+    body = body.replace(new RegExp(`{{${key}}}`, "g"), () => orbitPolicy ? escapeBookingEmailText(value) : value);
   }
 
   const footer = portalReplyFooter(params.bookingId);

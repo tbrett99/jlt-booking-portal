@@ -20,9 +20,9 @@ describe("commission top-up reminders", () => {
         { id: 3, agentId: 20, bookingId: 103, topUpAmountPence: 500 },
       ],
       bookings: [
-        { id: 101, clientName: "Alex Smith", ptsRef: "PTS-101" },
-        { id: 102, clientName: "Sam Jones", topdogRef: "TD-102" },
-        { id: 103, clientName: "Morgan Lee", ptsRef: "PTS-103" },
+        { id: 101, clientName: "Alex Smith", crmRef: "  ORBIT-101  ", ptsRef: "PTS-101", topdogRef: "TD-101" },
+        { id: 102, clientName: "Sam Jones", crmRef: "ORBIT-102", ptsRef: "PTS-102", topdogRef: "TD-102" },
+        { id: 103, clientName: "Morgan Lee", crmRef: "ORBIT-103", ptsRef: "PTS-103", topdogRef: "TD-103" },
       ],
       users: [
         { id: 10, name: "Agent One", email: "agent.one@example.com" },
@@ -32,12 +32,56 @@ describe("commission top-up reminders", () => {
 
     expect(recipients).toHaveLength(2);
     expect(recipients.find((recipient) => recipient.agentId === 10)?.claims).toHaveLength(2);
+    expect(recipients[0].claims.map((claim) => claim.reference)).toEqual(["ORBIT-101", "ORBIT-102"]);
 
     const groupedEmail = buildTopUpReminderEmail(recipients[0], "weekly");
     expect(groupedEmail.subject).toContain("Weekly reminder");
     expect(groupedEmail.html).toContain("Alex Smith");
     expect(groupedEmail.html).toContain("Sam Jones");
+    expect(groupedEmail.html).toContain("Orbit reference: ORBIT-101");
+    expect(groupedEmail.html).toContain("Orbit reference: ORBIT-102");
+    expect(groupedEmail.html).not.toMatch(/PTS-|TD-/);
+    expect(groupedEmail.html).not.toContain("Orbit reference not recorded");
+    expect(groupedEmail.html).toContain("£12.50");
+    expect(groupedEmail.html).toContain("£27.50");
     expect(groupedEmail.html).toContain("£40.00");
+  });
+
+  it.each([undefined, null, "", "   ", "\t\n"])("does not fall back to PTS, TopDog or booking ID when crmRef is %j", (crmRef) => {
+    const recipients = buildTopUpReminderRecipients({
+      claims: [{ id: 1, agentId: 10, bookingId: 101, topUpAmountPence: 1250 }],
+      bookings: [{ id: 101, clientName: "Alex Smith", crmRef, ptsRef: "PTS-101", topdogRef: "TD-101" }],
+      users: [{ id: 10, name: "Agent One", email: "agent.one@example.com" }],
+    });
+
+    expect(recipients[0].claims[0].reference).toBeNull();
+    for (const mode of ["manual", "weekly"] as const) {
+      const email = buildTopUpReminderEmail(recipients[0], mode);
+      expect(email.html).toContain("Orbit reference not recorded");
+      expect(email.html).not.toContain("PTS-101");
+      expect(email.html).not.toContain("TD-101");
+      expect(email.html).not.toContain("Booking #101");
+      expect(email.html).toContain("Alex Smith");
+      expect(email.html).toContain("£12.50");
+    }
+  });
+
+  it("escapes the Orbit reference and client name in manual and weekly reminders", () => {
+    const crmRef = `ORBIT-<ref>&"'`;
+    const recipients = buildTopUpReminderRecipients({
+      claims: [{ id: 1, agentId: 10, bookingId: 101, topUpAmountPence: 1250 }],
+      bookings: [{ id: 101, clientName: "Alex <Smith>", crmRef: `  ${crmRef}  `, ptsRef: "PTS-101", topdogRef: "TD-101" }],
+      users: [{ id: 10, name: "Agent One", email: "agent.one@example.com" }],
+    });
+
+    expect(recipients[0].claims[0].reference).toBe(crmRef);
+    for (const mode of ["manual", "weekly"] as const) {
+      const email = buildTopUpReminderEmail(recipients[0], mode);
+      expect(email.html).toContain("Orbit reference: ORBIT-&lt;ref&gt;&amp;&quot;&#039;");
+      expect(email.html).not.toContain(crmRef);
+      expect(email.html).not.toMatch(/PTS-|TD-/);
+      expect(email.html).toContain("Alex &lt;Smith&gt;");
+    }
   });
 
   it("keeps files with no agent email out of the send queue", () => {

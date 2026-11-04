@@ -20,6 +20,7 @@ type AgentReadyBookingSource = {
   id: number;
   agentId: number;
   clientName: string;
+  crmRef?: string | null;
   ptsRef?: string | null;
   topdogRef?: string | null;
   expectedCommission?: number | string | null;
@@ -79,6 +80,7 @@ export function buildAgentReadyCommissionReminderRecipients(input: {
     id: number;
     agentId: number;
     clientName: string;
+    crmRef?: string | null;
     ptsRef?: string | null;
     topdogRef?: string | null;
     expectedCommission?: number | string | null;
@@ -106,7 +108,7 @@ export function buildAgentReadyCommissionReminderRecipients(input: {
     recipient.bookings.push({
       bookingId: booking.id,
       clientName: booking.clientName,
-      reference: booking.ptsRef || booking.topdogRef || null,
+      reference: booking.crmRef?.trim() || null,
       expectedCommission: Number.isFinite(Number(booking.expectedCommission))
         ? Number(booking.expectedCommission)
         : null,
@@ -126,7 +128,7 @@ export function buildAgentReadyCommissionReminderEmail(recipient: AgentReadyComm
   const bookingLabel = recipient.bookings.length === 1 ? "booking" : "bookings";
   const rows = recipient.bookings.map((booking) => `
     <tr>
-      <td style="padding:12px 14px;border-bottom:1px solid #e8e8e8;color:#1f2937;font-weight:600;">${escapeHtml(booking.reference ?? `Booking #${booking.bookingId}`)}</td>
+      <td style="padding:12px 14px;border-bottom:1px solid #e8e8e8;color:#1f2937;font-weight:600;">${escapeHtml(booking.reference ?? "Orbit reference not recorded")}</td>
       <td style="padding:12px 14px;border-bottom:1px solid #e8e8e8;color:#1f2937;">${escapeHtml(booking.clientName)}</td>
       <td align="right" style="padding:12px 14px;border-bottom:1px solid #e8e8e8;color:#1f2937;font-weight:700;">${formatGbp(booking.expectedCommission)}</td>
     </tr>`).join("\n");
@@ -136,7 +138,7 @@ export function buildAgentReadyCommissionReminderEmail(recipient: AgentReadyComm
     html: `<p>Hi ${escapeHtml(recipient.firstName)},</p>
 <p>This is a reminder that our records show we have previously confirmed the following ${bookingLabel} ${recipient.bookings.length === 1 ? "is" : "are"} <strong>ready for you to submit a commission claim</strong>, but we have not yet received a claim through the JLT Booking Portal:</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dce7e5;border-radius:8px;border-collapse:separate;overflow:hidden;margin:18px 0;">
-  <thead><tr style="background:#f0fffe;"><th align="left" style="padding:10px 14px;color:#24403c;font-size:13px;">Booking reference</th><th align="left" style="padding:10px 14px;color:#24403c;font-size:13px;">Client</th><th align="right" style="padding:10px 14px;color:#24403c;font-size:13px;">Expected commission</th></tr></thead>
+  <thead><tr style="background:#f0fffe;"><th align="left" style="padding:10px 14px;color:#24403c;font-size:13px;">Orbit reference</th><th align="left" style="padding:10px 14px;color:#24403c;font-size:13px;">Client</th><th align="right" style="padding:10px 14px;color:#24403c;font-size:13px;">Expected commission</th></tr></thead>
   <tbody>${rows}</tbody>
 </table>
 <p>Please log in to the JLT Booking Portal and submit your commission claim${recipient.bookings.length === 1 ? "" : "s"} when you are ready.</p>

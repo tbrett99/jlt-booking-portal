@@ -1102,14 +1102,15 @@ export default function AgentBookingDetail() {
       {/* Payment Links Card — agents can generate and view links for their own bookings */}
       <AgentPaymentsCard bookingId={bookingId} booking={booking} />
 
-      {/* PTS Ref bank transfer guidance banner */}
-      {booking.ptsRef && (
+      {/* Bank transfers use Orbit; PPS card links retain their PTS reference. */}
+      {(booking.crmRef || booking.ptsRef) && (
         <div className="rounded-xl border-l-4 p-4 flex items-start gap-3" style={{ borderLeftColor: '#70FFE8', background: '#f0fdf4' }}>
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#02E6D2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
           <div>
-            <p className="font-semibold text-sm" style={{ color: '#065f46' }}>Use your PTS Ref for client payments</p>
+            <p className="font-semibold text-sm" style={{ color: '#065f46' }}>Use your Orbit reference for bank transfers</p>
             <p className="text-xs mt-0.5" style={{ color: '#065f46', opacity: 0.85 }}>
-              Ask your client to use <strong>{booking.ptsRef}</strong> as the payment reference for bank transfers, and as the order description on manual PPS card links.
+              {booking.crmRef?.trim() ? <>Ask your client to use <strong>{booking.crmRef.trim()}</strong> as the bank-transfer payment reference.</> : <>Orbit reference not recorded. Please check with JLT before making a bank transfer; do not use the PTS reference instead.</>}
+              {booking.ptsRef && <> For manual PPS card links, continue to use the PTS reference <strong>{booking.ptsRef}</strong> as the Order Description.</>}
             </p>
           </div>
         </div>

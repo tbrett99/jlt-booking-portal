@@ -48,6 +48,7 @@ export function buildTopUpReminderRecipients(input: {
   bookings: Array<{
     id: number;
     clientName: string;
+    crmRef?: string | null;
     ptsRef?: string | null;
     topdogRef?: string | null;
   }>;
@@ -72,7 +73,7 @@ export function buildTopUpReminderRecipients(input: {
       claimId: claim.id,
       bookingId: claim.bookingId,
       clientName: booking.clientName,
-      reference: booking.ptsRef || booking.topdogRef || null,
+      reference: booking.crmRef?.trim() || null,
       amountPence: Number(claim.topUpAmountPence ?? 0),
     });
     grouped.set(claim.agentId, existing);
@@ -86,7 +87,7 @@ export function buildTopUpReminderEmail(recipient: TopUpReminderRecipient, mode:
   const subjectPrefix = mode === "weekly" ? "Weekly reminder" : "Reminder";
   const rows = recipient.claims
     .map((claim) => {
-      const reference = claim.reference ? ` <span style="color:#687076;">(${escapeHtml(claim.reference)})</span>` : "";
+      const reference = ` <span style="color:#687076;">(${claim.reference ? `Orbit reference: ${escapeHtml(claim.reference)}` : "Orbit reference not recorded"})</span>`;
       return `<tr>
   <td style="padding:12px 14px;border-bottom:1px solid #e8e8e8;color:#1f2937;font-weight:600;">${escapeHtml(claim.clientName)}${reference}</td>
   <td style="padding:12px 14px;border-bottom:1px solid #e8e8e8;color:#b42318;font-weight:700;text-align:right;">${formatGbpFromPence(claim.amountPence)}</td>
@@ -105,6 +106,7 @@ export function buildTopUpReminderEmail(recipient: TopUpReminderRecipient, mode:
   <tfoot><tr style="background:#fff5f5;"><td style="padding:12px 14px;color:#7f1d1d;font-weight:700;">Total</td><td align="right" style="padding:12px 14px;color:#b42318;font-weight:800;">${formatGbpFromPence(total)}</td></tr></tfoot>
 </table>
 <p>Please top up your account and confirm this in the Portal as soon as possible so JLT can review the files.</p>
+<p>For bank transfers, use the <strong>Orbit reference shown for the relevant booking</strong> as the payment reference. If an Orbit reference is not recorded, please check with JLT before transferring funds; do not use a PTS reference instead.</p>
 <p style="margin-top:20px;padding:14px 18px;background:#f0fffe;border-top:3px solid #02E6D2;border-radius:6px;"><a href="https://portal.thejltgroup.co.uk/my-files-in-minus" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:700;">View My Files in Minus &rarr;</a></p>`,
   };
 }

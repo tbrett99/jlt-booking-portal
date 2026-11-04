@@ -5,6 +5,7 @@ import { createInAppNotification, getDb, getSystemSetting } from "./db";
 import { sendDirectEmail } from "./email";
 import { sdk } from "./_core/sdk";
 import { commissionReadinessTargetWindow } from "./commission-readiness-utils";
+import { orbitReferenceEmailParagraph } from "../shared/booking-email-reference";
 
 const PORTAL_URL = "https://portal.thejltgroup.co.uk";
 const REMINDER_SCHEDULE_KEY = "commission_readiness_reminder_schedule_task_uid";
@@ -17,11 +18,12 @@ function formatDepartureDate(value: Date) {
   return value.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
-function buildReminderHtml(input: { agentName: string; clientName: string; departureDate: Date; bookingId: number }) {
+export function buildReminderHtml(input: { agentName: string; clientName: string; departureDate: Date; bookingId: number; crmRef?: string | null }) {
   const bookingUrl = `${PORTAL_URL}/bookings/${input.bookingId}`;
   return `
     <p>Hi ${input.agentName.split(" ")[0] || input.agentName},</p>
     <p>Your client <strong>${input.clientName}</strong> is due to travel on <strong>${formatDepartureDate(input.departureDate)}</strong>. Their commission will be due soon.</p>
+    ${orbitReferenceEmailParagraph(input)}
     <p>Please be proactive now and speak with your client about any final extras they may need, including seats, baggage, airport parking, transfers or other additions. Make sure everything is organised before you claim commission.</p>
     <p><strong>Important:</strong> amendments made after commission has been claimed will be subject to additional PTS and JLT amendment fees.</p>
     <p style="margin:24px 0;"><a href="${bookingUrl}" style="display:inline-block;background:#414141;color:#70FFE8;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:700;">Review this booking</a></p>
@@ -52,6 +54,7 @@ export async function commissionReadinessReminderHandler(req: Request, res: Resp
         bookingId: bookings.id,
         agentId: bookings.agentId,
         clientName: bookings.clientName,
+        crmRef: bookings.crmRef,
         departureDate: bookings.departureDate,
         currentStage: bookings.currentStage,
         isPersonalBooking: bookings.isPersonalBooking,
@@ -93,6 +96,7 @@ export async function commissionReadinessReminderHandler(req: Request, res: Resp
           clientName: booking.clientName,
           departureDate: booking.departureDate,
           bookingId: booking.bookingId,
+          crmRef: booking.crmRef,
         }),
         bookingId: booking.bookingId,
         userId: booking.agentId,

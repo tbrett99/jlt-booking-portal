@@ -1,3 +1,4 @@
+import { bookingOrbitReference, orbitReferenceEmailParagraph, normaliseBookingReferenceTemplate } from "../shared/booking-email-reference";
 import { writableAgentUser } from "./agent-merge-user-write";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
@@ -341,8 +342,8 @@ const DEFAULT_TEMPLATES = [
   {
     triggerKey: "added_to_pts",
     label: "Added to PTS",
-    subject: "Booking Added to PTS — Reference: {{ptsRef}}",
-    bodyHtml: `<p>Hi {{agentName}},</p><p>Great news — your booking for <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has been added to PTS.</p><p><strong>Your PTS Reference is: {{ptsRef}}</strong></p><p>Please keep this reference to hand, as you will need it in two important situations:</p><ul><li><strong>Bank transfer payments:</strong> If your client is paying by bank transfer, they should use <strong>{{ptsRef}}</strong> as the payment reference so the funds are matched correctly.</li><li><strong>PPS payment links:</strong> If you are generating a payment link via PPS, please enter <strong>{{ptsRef}}</strong> in the <em>Order Description</em> field when creating the link.</li></ul><p>If you have any questions, please don't hesitate to get in touch.</p><p>The JLT Group Team</p>`,
+    subject: "Booking Added to PTS — Orbit reference: {{orbitRef}}",
+    bodyHtml: `<p>Hi {{agentName}},</p><p>Great news — your booking for <strong>{{clientName}}</strong> (Booking ID: {{bookingId}}) has been added to PTS.</p><p><strong>Your Orbit reference is: {{orbitRef}}</strong></p><p>Please use the correct reference for each payment method:</p><ul><li><strong>Bank transfer payments:</strong> If your client is paying by bank transfer, they should use <strong>{{orbitRef}}</strong> as the payment reference so the funds are matched correctly.</li><li><strong>PPS payment links:</strong> If you are generating a payment link via PPS, please enter <strong>{{ptsRef}}</strong> in the <em>Order Description</em> field when creating the link.</li></ul><p>If you have any questions, please don't hesitate to get in touch.</p><p>The JLT Group Team</p>`,
     recipientType: "agent" as const,
   },
   {
@@ -3378,10 +3379,11 @@ export const appRouter = router({
           const emailResult = await sendDirectEmail({
             toEmail: agent.email,
             toName: agent.name ?? 'Agent',
-            subject: `Action Required — File in Minus: ${booking.clientName} (#${booking.id})`,
+            subject: `Action Required — File in Minus: ${booking.clientName} (Orbit ref: ${bookingOrbitReference(booking) ?? "not recorded"}; Booking #${booking.id})`,
             html: `<p>Hi ${agent.name ?? 'there'},</p>
 <p>Your commission file for booking <strong>${booking.clientName} (#${booking.id})</strong> is currently in minus.</p>
 <p>Please top up your account by <strong>${amountFormatted}</strong> and then notify us via your portal dashboard once done.</p>
+${orbitReferenceEmailParagraph(booking, true)}
 ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '<br/>')}</p>` : ''}
 <p style="margin-top:20px;padding:14px 18px;background:#f0fffe;border-top:3px solid #02E6D2;border-radius:6px;"><a href="https://portal.thejltgroup.co.uk/my-files-in-minus" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:700;">View My Files in Minus &rarr;</a></p>`,
             userId: agent.id,
@@ -3448,7 +3450,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       return { success: true };
     }),
     templates: router({
-      list: adminProcedure.query(async () => getNotificationTemplates()),
+      list: adminProcedure.query(async () => (await getNotificationTemplates()).map(normaliseBookingReferenceTemplate)),
       update: superAdminProcedure
         .input(
           z.object({
@@ -3460,7 +3462,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           })
         )
         .mutation(async ({ input, ctx }) => {
-          await upsertNotificationTemplate({ ...input, updatedById: ctx.user.id });
+          await upsertNotificationTemplate({ ...normaliseBookingReferenceTemplate(input), updatedById: ctx.user.id });
           return { success: true };
         }),
     }),
@@ -4115,10 +4117,11 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           const emailResult = await sendDirectEmail({
             toEmail: agent.email,
             toName: agent.name ?? 'Agent',
-            subject: `Action Required — File in Minus: ${booking.clientName} (#${booking.id})`,
+            subject: `Action Required — File in Minus: ${booking.clientName} (Orbit ref: ${bookingOrbitReference(booking) ?? "not recorded"}; Booking #${booking.id})`,
             html: `<p>Hi ${agent.name ?? 'there'},</p>
 <p>Your commission file for booking <strong>${booking.clientName} (#${booking.id})</strong> is currently in minus.</p>
 <p>Please top up your account by <strong>${amountFormatted}</strong> and then notify us via your portal dashboard once done.</p>
+${orbitReferenceEmailParagraph(booking, true)}
 ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '<br/>')}</p>` : ''}
 <p style="margin-top:20px;padding:14px 18px;background:#f0fffe;border-top:3px solid #02E6D2;border-radius:6px;"><a href="https://portal.thejltgroup.co.uk/my-files-in-minus" style="display:inline-block;background:#02E6D2;color:#1a1a2e;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:700;">View My Files in Minus &rarr;</a></p>`,
             userId: agent.id,

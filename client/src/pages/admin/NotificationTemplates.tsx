@@ -222,7 +222,7 @@ export default function NotificationTemplates() {
             {/* Variable hint */}
             <div className="p-3 rounded-lg text-xs" style={{ background: '#FFF6ED', color: '#92400e' }}>
               You can use these placeholders in your text — they'll be replaced automatically when the email is sent:{" "}
-              <strong>{"{{agentName}}"}</strong>, <strong>{"{{clientName}}"}</strong>, <strong>{"{{bookingId}}"}</strong>
+              <strong>{"{{agentName}}"}</strong>, <strong>{"{{clientName}}"}</strong>, <strong>{"{{bookingId}}"}</strong>, <strong>{"{{orbitRef}}"}</strong> (Orbit reference), <strong>{"{{ptsRef}}"}</strong> (PTS reference for PPS card links only)
             </div>
 
             {/* Subject */}

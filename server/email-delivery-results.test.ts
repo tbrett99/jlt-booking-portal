@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   values: vi.fn(),
   paused: vi.fn(),
   template: vi.fn(),
+  booking: vi.fn(),
   resolveRecipient: vi.fn(),
   mergeTarget: vi.fn(),
   agentEmails: { mockTable: "agent_emails" },
@@ -25,6 +26,7 @@ vi.mock("./db", () => ({
   getDb: mocks.getDb,
   areNotificationsPaused: mocks.paused,
   getNotificationTemplate: mocks.template,
+  getBookingById: mocks.booking,
 }));
 vi.mock("../drizzle/schema", () => ({ agentEmails: mocks.agentEmails }));
 vi.mock("./agent-correspondence", () => ({
@@ -64,6 +66,7 @@ beforeEach(async () => {
     subject: "Hello {{agentName}}",
     bodyHtml: "<p>Booking {{bookingId}}</p>",
   });
+  mocks.booking.mockResolvedValue({ id: 99, crmRef: "ORBIT-99", ptsRef: "PTS-OLD", topdogRef: "TD-OTHER" });
   mocks.getDb.mockResolvedValue({ insert: mocks.insert });
   mocks.insert.mockReturnValue({ values: mocks.values });
   mocks.values.mockResolvedValue(undefined);
@@ -304,5 +307,64 @@ describe("merged archive recipient safety (mocked, offline)", () => {
     await expect(email.sendDirectEmail({ ...directParams, userId: 20 })).rejects.toThrow("Mock permission failure");
     expect(mocks.resend).not.toHaveBeenCalled();
     expect(mocks.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("approved Orbit reference emails (mocked, offline)", () => {
+  const savedLegacy = {
+    isActive: true,
+    subject: "Booking Added to PTS — Reference: {{ptsRef}}",
+    bodyHtml: '<p>Hi {{agentName}}</p><p>Custom sign-off.</p><p>Your PTS Reference is: {{ptsRef}}</p><ul><li>Bank transfer payments: Use {{ptsRef}} as the payment reference.</li><li>PPS payment links: Use {{ptsRef}} in the Order Description.</li></ul>',
+  };
+  it("reads the actual booking crmRef instead of a stale caller reference, and retains PPS ptsRef", async () => {
+    mocks.template.mockResolvedValue(savedLegacy);
+    await email.sendNotificationEmail({ ...notificationParams, triggerKey: "added_to_pts", bookingId: 99, variables: { orbitRef: "STALE-CALLER", ptsRef: "STALE-PTS" } });
+    expect(mocks.booking).toHaveBeenCalledWith(99);
+    const payload = mocks.send.mock.calls[0][0];
+    expect(payload.subject).toContain("ORBIT-99");
+    expect(payload.subject).not.toContain("PTS-OLD");
+    expect(payload.html).toContain("Bank transfer payments: Use ORBIT-99 as the payment reference");
+    expect(payload.html).toContain("PPS payment links: Use PTS-OLD in the Order Description");
+    expect(payload.html).toContain("Custom sign-off.");
+    expect(payload.html).not.toContain("STALE-CALLER");
+    expect(payload.html).not.toContain("STALE-PTS");
+    expect(mocks.values.mock.calls[0][0].bodyHtml).toBe(payload.html);
+  });
+  it("does not give a PTS transfer reference when Orbit is missing", async () => {
+    mocks.template.mockResolvedValue(savedLegacy);
+    mocks.booking.mockResolvedValue({ id: 99, crmRef: "   ", ptsRef: "PTS-OLD", topdogRef: "TD-OTHER" });
+    await email.sendNotificationEmail({ ...notificationParams, triggerKey: "added_to_pts", bookingId: 99 });
+    const payload = mocks.send.mock.calls[0][0];
+    expect(payload.subject).toContain("Not recorded");
+    expect(payload.html).not.toContain("Bank transfer payments: Use");
+    expect(payload.html).toContain("Do not use the PTS reference instead");
+    expect(payload.html).toContain("PPS payment links: Use PTS-OLD");
+    expect(payload.html).not.toContain("TD-OTHER");
+  });
+  it.each(["commission_claimable", "commission_claimed", "commission_due_for_payment", "commission_paid"])("adds the actual Orbit reference to existing %s templates", async triggerKey => {
+    mocks.template.mockResolvedValue({ isActive: true, subject: "Commission", bodyHtml: "<p>Custom body retained</p>" });
+    await email.sendNotificationEmail({ ...notificationParams, triggerKey, bookingId: 99 });
+    const html = mocks.send.mock.calls[0][0].html;
+    expect(html).toContain("Custom body retained");
+    expect(html).toContain("Orbit reference:</strong> ORBIT-99");
+    expect(html).not.toContain("PTS-OLD");
+    expect(html).not.toContain("TD-OTHER");
+  });
+  it("upgrades explicit overrides as well as stored defaults", async () => {
+    await email.sendNotificationEmail({ ...notificationParams, triggerKey: "commission_paid", bookingId: 99, overrideSubject: "Paid {{ptsRef}}", overrideBody: "<p>PTS Ref: {{ptsRef}}</p>" });
+    expect(mocks.send.mock.calls[0][0].subject).toBe("Paid ORBIT-99");
+    expect(mocks.send.mock.calls[0][0].html).toContain("Orbit reference: ORBIT-99");
+  });
+  it("preserves literal dollar sequences and escapes reference HTML", async () => {
+    mocks.booking.mockResolvedValue({ id: 99, crmRef: 'ORBIT-$&-<test>', ptsRef: "PTS-OLD" });
+    await email.sendNotificationEmail({ ...notificationParams, triggerKey: "commission_paid", bookingId: 99, overrideSubject: "Paid {{ptsRef}}", overrideBody: "<p>{{ptsRef}}</p>" });
+    expect(mocks.send.mock.calls[0][0].subject).toBe('Paid ORBIT-$&-<test>');
+    expect(mocks.send.mock.calls[0][0].html).toContain('ORBIT-$&amp;-&lt;test&gt;');
+  });
+  it("leaves payment receipt references unchanged and does not read a booking for that trigger", async () => {
+    mocks.template.mockResolvedValue({ isActive: true, subject: "Receipt {{ptsRef}}", bodyHtml: "<p>PTS Ref: {{ptsRef}}</p>" });
+    await email.sendNotificationEmail({ ...notificationParams, triggerKey: "payment_received", bookingId: 99, variables: { ptsRef: "PTS-OLD" } });
+    expect(mocks.booking).not.toHaveBeenCalled();
+    expect(mocks.send.mock.calls[0][0].subject).toBe("Receipt PTS-OLD");
   });
 });

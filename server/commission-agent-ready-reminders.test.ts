@@ -19,9 +19,9 @@ describe("agent-ready commission reminders", () => {
   it("groups all currently unclaimed bookings into one email per agent", () => {
     const recipients = buildAgentReadyCommissionReminderRecipients({
       bookings: [
-        { id: 101, agentId: 10, clientName: "Avery Smith", ptsRef: "PTS-101", expectedCommission: 125.5 },
-        { id: 102, agentId: 10, clientName: "Morgan Jones", topdogRef: "TD-102", expectedCommission: 80 },
-        { id: 103, agentId: 20, clientName: "Riley Green", ptsRef: "PTS-103", expectedCommission: 45 },
+        { id: 101, agentId: 10, clientName: "Avery Smith", crmRef: "  ORBIT-101  ", ptsRef: "PTS-101", topdogRef: "TD-101", expectedCommission: 125.5 },
+        { id: 102, agentId: 10, clientName: "Morgan Jones", crmRef: "ORBIT-102", ptsRef: "PTS-102", topdogRef: "TD-102", expectedCommission: 80 },
+        { id: 103, agentId: 20, clientName: "Riley Green", crmRef: "ORBIT-103", ptsRef: "PTS-103", topdogRef: "TD-103", expectedCommission: 45 },
       ],
       users: [
         { id: 10, name: "Alex Agent", email: "alex@example.com", role: "agent", isActive: true, portalStatus: "active" },
@@ -32,14 +32,48 @@ describe("agent-ready commission reminders", () => {
     expect(recipients).toHaveLength(2);
     const alex = recipients.find((recipient) => recipient.agentId === 10);
     expect(alex?.bookings).toHaveLength(2);
+    expect(alex?.bookings.map((booking) => booking.reference)).toEqual(["ORBIT-101", "ORBIT-102"]);
 
     const email = buildAgentReadyCommissionReminderEmail(alex!);
     expect(email.subject).toBe("Reminder: commission ready to claim");
     expect(email.html).toContain("Hi Alex");
-    expect(email.html).toContain("PTS-101");
-    expect(email.html).toContain("TD-102");
+    expect(email.html).toContain("Orbit reference");
+    expect(email.html).toContain("ORBIT-101");
+    expect(email.html).toContain("ORBIT-102");
+    expect(email.html).not.toMatch(/PTS-|TD-/);
+    expect(email.html).not.toContain("Orbit reference not recorded");
     expect(email.html).toContain("£125.50");
     expect(email.html).toContain("£80.00");
+  });
+
+  it.each([undefined, null, "", "   ", "\t\n"])("does not fall back to PTS, TopDog or booking ID when crmRef is %j", (crmRef) => {
+    const recipients = buildAgentReadyCommissionReminderRecipients({
+      bookings: [{ id: 101, agentId: 10, clientName: "Avery Smith", crmRef, ptsRef: "PTS-101", topdogRef: "TD-101", expectedCommission: 125 }],
+      users: [{ id: 10, name: "Alex Agent", email: "alex@example.com", role: "agent", isActive: true, portalStatus: "active" }],
+    });
+
+    expect(recipients[0].bookings[0].reference).toBeNull();
+    const email = buildAgentReadyCommissionReminderEmail(recipients[0]);
+    expect(email.html).toContain("Orbit reference not recorded");
+    expect(email.html).not.toContain("PTS-101");
+    expect(email.html).not.toContain("TD-101");
+    expect(email.html).not.toContain("Booking #101");
+    expect(email.html).toContain("Avery Smith");
+    expect(email.html).toContain("£125.00");
+  });
+
+  it("escapes the Orbit reference rather than rendering it as HTML", () => {
+    const crmRef = `ORBIT-<ref>&"'`;
+    const recipients = buildAgentReadyCommissionReminderRecipients({
+      bookings: [{ id: 101, agentId: 10, clientName: "Avery Smith", crmRef: `  ${crmRef}  `, ptsRef: "PTS-101", topdogRef: "TD-101", expectedCommission: 125 }],
+      users: [{ id: 10, name: "Alex Agent", email: "alex@example.com", role: "agent", isActive: true, portalStatus: "active" }],
+    });
+
+    expect(recipients[0].bookings[0].reference).toBe(crmRef);
+    const email = buildAgentReadyCommissionReminderEmail(recipients[0]);
+    expect(email.html).toContain("ORBIT-&lt;ref&gt;&amp;&quot;&#039;");
+    expect(email.html).not.toContain(crmRef);
+    expect(email.html).not.toMatch(/PTS-|TD-/);
   });
 
   it("does not add an agent with no email address to the send queue", () => {
