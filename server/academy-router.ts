@@ -1460,6 +1460,7 @@ export const academyRouter = router({
               assessmentTemplateName: locked ? null : agentLesson.assessmentTemplateName,
               assessmentTemplateMimeType: locked ? null : agentLesson.assessmentTemplateMimeType,
               assessmentTemplateSize: locked ? null : agentLesson.assessmentTemplateSize,
+              hasAssessmentTemplate: !locked && !!lesson.assessmentTemplateKey,
               locked,
               lockedReason: releaseLocked ? `Available ${releaseLabel}` : "Complete the current lesson to unlock this section",
               // Correct answer keys and staff-only question explanation stay server-side.
@@ -1517,6 +1518,7 @@ export const academyRouter = router({
             } = lesson;
             return {
             ...previewLesson,
+            hasAssessmentTemplate: !!lesson.assessmentTemplateKey,
             locked: false,
             lockedReason: "",
             // Keep the preview safe: answer keys and private marking guides are never sent to the browser.

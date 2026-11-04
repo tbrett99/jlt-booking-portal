@@ -10,6 +10,7 @@ import { formatAcademyQuestionPrompt, splitAcademyQuestionInlineFormatting } fro
 import { normaliseAcademyLessonContent } from "@shared/academy-lesson-content";
 import { loomEmbedUrl } from "@shared/loom-embed";
 import { isActionableAcademyFeedback } from "@shared/academy-feedback-state";
+import { AcademyCompletedAssessment } from "@/components/AcademyCompletedAssessment";
 
 function countWords(value: string) {
   return value.trim() ? value.trim().split(/\s+/).length : 0;
@@ -270,6 +271,18 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
             {selectedLesson.videoUrl && (embeddedLoomUrl ? <section className="overflow-hidden rounded-2xl border border-[#70FFE8]/60 bg-[#70FFE8]/10"><div className="flex items-center justify-between gap-3 px-4 py-3"><span className="flex items-center gap-2 font-semibold"><span className="flex size-8 items-center justify-center rounded-lg bg-[#414141] text-[#70FFE8]"><PlayCircle size={17} /></span> Watch within the Portal</span><a href={selectedLesson.videoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-primary hover:underline">Open in Loom <ExternalLink className="ml-1 inline" size={13} /></a></div><div className="aspect-video bg-black"><iframe className="h-full w-full" title={`Loom video: ${selectedLesson.title}`} src={embeddedLoomUrl} allowFullScreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" /></div></section> : <a href={selectedLesson.videoUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-4 rounded-xl border border-[#70FFE8]/60 bg-[#70FFE8]/10 p-4 transition hover:bg-[#70FFE8]/20"><span className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-lg bg-[#414141] text-[#70FFE8]"><PlayCircle size={20} /></span><span><span className="block font-semibold">Watch the lesson video</span><span className="mt-0.5 block text-xs text-muted-foreground">Opens the approved video in a new tab</span></span></span><ExternalLink size={18} className="shrink-0" /></a>)}
             {selectedLesson.attachmentUrl && <a href={selectedLesson.attachmentUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-4 rounded-xl border bg-muted/30 p-4 transition hover:bg-muted"><span className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-lg bg-card text-primary shadow-sm"><FileText size={20} /></span><span><span className="block font-semibold">{selectedLesson.attachmentName || "Download lesson resource"}</span><span className="mt-0.5 block text-xs text-muted-foreground">Open or save your copy</span></span></span><Download size={18} className="shrink-0" /></a>}
           </div>}
+
+          {selectedLesson.requiresAssessment && selectedLesson.progress?.completedAt && <AcademyCompletedAssessment
+            mode={selectedLesson.assessmentMode}
+            questions={selectedLesson.questions}
+            attempts={selectedLesson.attempts}
+            templateName={selectedLesson.assessmentTemplateName}
+            templateAvailable={selectedLesson.hasAssessmentTemplate}
+            downloadPending={getDocumentAssessmentTemplate.isPending}
+            downloadDisabled={isPreview}
+            onDownload={() => getDocumentAssessmentTemplate.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id, origin: window.location.origin })}
+            renderQuestion={prompt => <AcademyStructuredQuestion text={prompt} className="text-sm font-medium" />}
+          />}
 
           {selectedLesson.requiresAcknowledgement && !selectedLesson.progress?.completedAt && <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50/70 p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">Confirm you have read and understood this lesson</p><p className="mt-1 text-sm leading-6 text-muted-foreground">This is saved to your Academy learning record and must be completed before the lesson can be marked complete.</p></div>{selectedLesson.progress?.acknowledgedAt ? <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800"><CheckCircle2 size={15} /> Acknowledged</span> : <Button className="shrink-0" disabled={isPreview || acknowledgeLesson.isPending} onClick={() => { if (isPreview) { toast.info("Preview only — no acknowledgement was recorded."); return; } acknowledgeLesson.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id }); }}><ShieldCheck className="mr-2" size={17} />{acknowledgeLesson.isPending ? "Recording..." : "I acknowledge this lesson"}</Button>}</div></div>}
 
