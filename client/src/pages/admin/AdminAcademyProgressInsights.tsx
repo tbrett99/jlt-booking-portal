@@ -1537,7 +1537,7 @@ export default function AdminAcademyProgressInsights() {
             <MetricCard
               label="Feedback acknowledgement"
               value={metrics.assessments.feedbackPending}
-              detail="Agents cannot progress until feedback is read"
+              detail="Feedback due on incomplete lessons only; completed lesson history is preserved"
               tone={metrics.assessments.feedbackPending ? "amber" : "default"}
               icon={<CheckCircle2 size={20} />}
             />

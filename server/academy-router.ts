@@ -32,6 +32,7 @@ import {
 import { getAccreditationEligibility, safeHttpsUrl, summariseAcademyProgress } from "../shared/academy-utils";
 import { MAX_ACADEMY_ASSESSMENT_QUESTIONS, parseMultipleChoiceQuizCsv, QuizCsvImportError } from "../shared/academy-quiz-csv";
 import { buildAcademyLearningPath } from "../shared/academy-learning-path";
+import { getActionableAcademyFeedbackAttempts } from "../shared/academy-feedback-state";
 import { assignAcceleratorEntryActions, releaseAvailableJourneyActions } from "./agent-development-router";
 import { ACCELERATOR_JOURNEY_WEEKS, acceleratorWeekReleaseLabel, isAcceleratorWeekAvailable } from "./academy-journey";
 import {
@@ -1204,7 +1205,9 @@ async function ensureFeedbackAcknowledgedBeforeLesson(enrollment: { id: number; 
       eq(academyAssessmentAttempts.status, "feedback_pending"),
       inArray(academyAssessmentAttempts.lessonId, earlierLessonIds),
     ));
-  if (attempts.length) {
+  const progress = await db.select({ enrollmentId: academyLessonProgress.enrollmentId, lessonId: academyLessonProgress.lessonId, completedAt: academyLessonProgress.completedAt })
+    .from(academyLessonProgress).where(eq(academyLessonProgress.enrollmentId, enrollment.id));
+  if (getActionableAcademyFeedbackAttempts({ attempts, lessons, progress }).length) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: "Read and acknowledge your assessment feedback before moving on to the next lesson",
@@ -2122,6 +2125,9 @@ export const academyRouter = router({
       const terminal = new Set(["completed", "waived"]);
       const dueSoonAt = new Date(asOf.getTime() + dueSoonDays * 24 * 60 * 60 * 1000);
       const assessmentSupportLocks: Array<{ enrollmentId: number; lessonId: number; questionId: number }> = [];
+      // Completed lessons retain their original feedback/grade history, but
+      // their learner assessment panel is closed and no acknowledgement is due.
+      const actionableFeedback = getActionableAcademyFeedbackAttempts({ attempts, lessons, progress });
 
       for (const row of rows) {
         const courseLessonIds = new Set(lessons.filter((lesson) => modules.some((module) => module.id === lesson.moduleId && module.courseId === row.course.id)).map((lesson) => lesson.id));
@@ -2170,7 +2176,7 @@ export const academyRouter = router({
           currentRequiredLesson: currentRequiredLesson ? { id: currentRequiredLesson.id, title: currentRequiredLesson.title } : null,
           assessment: {
             awaitingMarking: enrollmentAttempts.filter((attempt) => attempt.status === "awaiting_marking").length,
-            feedbackPending: enrollmentAttempts.filter((attempt) => attempt.status === "feedback_pending").length,
+            feedbackPending: actionableFeedback.filter((attempt) => attempt.enrollmentId === row.enrollment.id && courseLessonIds.has(attempt.lessonId)).length,
             supportLocks: assessmentSupportLocks.filter((item) => item.enrollmentId === row.enrollment.id).length,
           },
           accreditation: getAccreditationEligibility(row.profile?.academyAcceleratorStartedAt, asOf),
@@ -2198,7 +2204,7 @@ export const academyRouter = router({
         },
         assessments: {
           awaitingMarking: attempts.filter((attempt) => attempt.status === "awaiting_marking").length,
-          feedbackPending: attempts.filter((attempt) => attempt.status === "feedback_pending").length,
+          feedbackPending: actionableFeedback.length,
           feedbackAcknowledged: attempts.filter((attempt) => attempt.status === "feedback_acknowledged").length,
           supportLocks: assessmentSupportLocks.length,
         },
@@ -2235,7 +2241,7 @@ export const academyRouter = router({
           averageActiveSeconds: activeRecords.length ? Math.round(activeRecords.reduce((total, item) => total + Number(item.lessonActiveSeconds ?? 0), 0) / activeRecords.length) : 0,
           averageAssessmentSeconds: activeRecords.length ? Math.round(activeRecords.reduce((total, item) => total + Number(item.assessmentActiveSeconds ?? 0), 0) / activeRecords.length) : 0,
           awaitingMarking: relevantAttempts.filter((attempt) => attempt.status === "awaiting_marking").length,
-          feedbackPending: relevantAttempts.filter((attempt) => attempt.status === "feedback_pending").length,
+          feedbackPending: actionableFeedback.filter((attempt) => attempt.lessonId === lesson.id && courseLearners.some((learner) => learner.enrollment.id === attempt.enrollmentId)).length,
           supportLocks: assessmentSupportLocks.filter((item) => item.lessonId === lesson.id).length,
         };
       });
@@ -3263,7 +3269,7 @@ export const academyRouter = router({
             activeTimeSeconds,
             assessment: {
               awaitingMarking: enrollmentAttempts.filter((item) => item.status === "awaiting_marking").length,
-              feedbackPending: enrollmentAttempts.filter((item) => item.status === "feedback_pending").length,
+              feedbackPending: getActionableAcademyFeedbackAttempts({ attempts: enrollmentAttempts, lessons: courseLessons, progress: enrollmentProgress }).length,
             },
           };
         }),

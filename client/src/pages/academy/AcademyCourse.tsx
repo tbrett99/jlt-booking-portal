@@ -9,6 +9,7 @@ import { useViewMode } from "@/contexts/ViewModeContext";
 import { formatAcademyQuestionPrompt, splitAcademyQuestionInlineFormatting } from "@shared/academy-question-format";
 import { normaliseAcademyLessonContent } from "@shared/academy-lesson-content";
 import { loomEmbedUrl } from "@shared/loom-embed";
+import { isActionableAcademyFeedback } from "@shared/academy-feedback-state";
 
 function countWords(value: string) {
   return value.trim() ? value.trim().split(/\s+/).length : 0;
@@ -95,8 +96,8 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
 
   const lessons = useMemo(() => data?.modules.flatMap((module) => module.lessons) ?? [], [data]);
   const selectedLesson = lessons.find((lesson) => lesson.id === selectedLessonId) ?? lessons.find((lesson) => !lesson.locked) ?? null;
-  const feedbackBlockingLessonIndex = lessons.findIndex((lesson) => lesson.attempts.some((attempt) => attempt.status === "feedback_pending"));
-  const pendingFeedback = selectedLesson?.attempts.find((attempt) => attempt.status === "feedback_pending") ?? null;
+  const feedbackBlockingLessonIndex = lessons.findIndex((lesson) => lesson.attempts.some((attempt) => isActionableAcademyFeedback(attempt, { requiresAssessment: lesson.requiresAssessment, completedAt: lesson.progress?.completedAt })));
+  const pendingFeedback = selectedLesson?.attempts.find((attempt) => isActionableAcademyFeedback(attempt, { requiresAssessment: selectedLesson.requiresAssessment, completedAt: selectedLesson.progress?.completedAt })) ?? null;
   const awaitingMarking = selectedLesson?.attempts.find((attempt) => attempt.status === "awaiting_marking") ?? null;
   const outstandingQuestions = selectedLesson?.questions.filter((question) => !question.resit.passed) ?? [];
   const passedQuestionCount = selectedLesson ? selectedLesson.questions.length - outstandingQuestions.length : 0;

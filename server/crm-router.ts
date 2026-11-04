@@ -1303,7 +1303,7 @@ export const crmRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
         const {
           academyActionAssignments, academyActionPlans, academyAssessmentAttempts,
-          academyCourses, academyEnrollments, academyLessons, agentCrmNotes,
+          academyCourses, academyEnrollments, academyLessons, academyLessonProgress, academyModules, agentCrmNotes,
           agentEngagementCases, agentEngagementInteractions,
         } = await import("../drizzle/schema");
         const { and, desc, eq, inArray, ne, sql } = await import("drizzle-orm");
@@ -1320,9 +1320,24 @@ export const crmRouter = router({
             .innerJoin(academyCourses, eq(academyCourses.id, academyEnrollments.courseId))
             .where(eq(academyEnrollments.agentId, input.userId))
             .orderBy(desc(academyEnrollments.updatedAt)),
-          db.select({ status: academyAssessmentAttempts.status, total: sql<number>`COUNT(*)` })
+          // Mirror the Academy actionable-feedback policy, retaining all other
+          // historical status totals without fabricating acknowledgement.
+          db.select({ status: academyAssessmentAttempts.status, total: sql<number>`SUM(CASE
+            WHEN ${academyAssessmentAttempts.status} = 'feedback_pending' THEN
+              CASE WHEN ${academyLessonProgress.completedAt} IS NULL
+                AND ${academyAssessmentAttempts.feedbackAcknowledgedAt} IS NULL
+                AND ${academyLessons.requiresAssessment} = 1
+                AND ${academyModules.courseId} = ${academyEnrollments.courseId}
+                THEN 1 ELSE 0 END
+            ELSE 1 END)` })
             .from(academyAssessmentAttempts)
             .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
+            .leftJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
+            .leftJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+            .leftJoin(academyLessonProgress, and(
+              eq(academyLessonProgress.enrollmentId, academyAssessmentAttempts.enrollmentId),
+              eq(academyLessonProgress.lessonId, academyAssessmentAttempts.lessonId),
+            ))
             .where(eq(academyEnrollments.agentId, input.userId))
             .groupBy(academyAssessmentAttempts.status),
           db.select({ status: academyActionAssignments.status, total: sql<number>`COUNT(*)` })
