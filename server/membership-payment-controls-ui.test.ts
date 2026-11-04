@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   reconcile: vi.fn(),
   settle: vi.fn(),
+  ignore: vi.fn(),
   update: vi.fn(),
   role: "admin" as string | undefined,
   reads: [] as unknown[][],
@@ -38,6 +39,7 @@ vi.mock("./membership-payment-sync", () => ({
 }));
 vi.mock("./membership-payment-service", () => ({
   recordManualMembershipSettlement: mocks.settle,
+  ignoreMembershipPayment: mocks.ignore,
 }));
 vi.mock("@/_core/hooks/useAuth", () => ({
   useAuth: () => ({ user: mocks.role ? { role: mocks.role } : null }),
@@ -83,6 +85,7 @@ import { router } from "./_core/trpc";
 import { membershipPaymentControlProcedures } from "./membership-payment-control-procedures";
 import MembershipPaymentIssues, {
   automationConfirmation,
+  canIgnoreOutstandingPayment,
   canRecordFeeSettlement,
   canRecordPaymentSettlement,
   feePolicyAmountPence,
@@ -130,9 +133,16 @@ const feeReceipt = {
   notes: "Verified fee transfer",
   confirmation: "RECORD FEE RECEIVED" as const,
 };
+const ignorePayment = {
+  userId: 42,
+  paymentId: "PM_EXACT",
+  amountPence: 12345,
+  reason: "Approved exception for this exact outstanding payment",
+  confirmation: "IGNORE OUTSTANDING PAYMENT" as const,
+};
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   vi.stubGlobal("React", React);
   mocks.role = "admin";
   mocks.health.lastError = null;
@@ -167,6 +177,10 @@ beforeEach(() => {
     settlement: { id: 1 },
     account: { outstandingCount: 0 },
   });
+  mocks.ignore.mockResolvedValue({
+    ignored: true,
+    account: { outstandingCount: 0 },
+  });
 });
 
 describe("payment controls UI safety", () => {
@@ -184,6 +198,7 @@ describe("payment controls UI safety", () => {
         "paid",
         "pending",
         "settled",
+        "ignored",
         "failed",
         "review",
         "cancelled",
@@ -224,6 +239,13 @@ describe("payment controls UI safety", () => {
           currency: "GBP",
         })
       ).toBe(false);
+      expect(
+        canIgnoreOutstandingPayment(role, {
+          status: "outstanding",
+          amountPence: 100,
+          currency: "GBP",
+        })
+      ).toBe(false);
       expect(canRecordFeeSettlement(role, "assessed")).toBe(false);
     }
   );
@@ -242,7 +264,52 @@ describe("payment controls UI safety", () => {
       expect(canRecordFeeSettlement("admin", status)).toBe(false);
     expect(source).toContain("canRecordFeeSettlement(user?.role, fee.status)");
     expect(source).toContain("canRecordPaymentSettlement(user?.role, payment)");
+    expect(source).toMatch(
+      /canIgnoreOutstandingPayment\(\s*user\?\.role,\s*payment\s*\)/
+    );
   });
+
+  it.each(["admin", "super_admin"])(
+    "allows %s to ignore only known whole outstanding payments, including non-GBP obligations",
+    role => {
+      const payment = {
+        status: "outstanding",
+        amountPence: 12345,
+        currency: "GBP",
+      };
+      for (const currency of ["GBP", "EUR", "USD"])
+        expect(
+          canIgnoreOutstandingPayment(role, { ...payment, currency })
+        ).toBe(true);
+      for (const status of [
+        "paid",
+        "pending",
+        "settled",
+        "ignored",
+        "failed",
+        "review",
+        "cancelled",
+      ])
+        expect(canIgnoreOutstandingPayment(role, { ...payment, status })).toBe(
+          false
+        );
+      for (const amountPence of [
+        null,
+        0,
+        -1,
+        1.5,
+        Number.NaN,
+        Number.MAX_SAFE_INTEGER + 1,
+      ])
+        expect(
+          canIgnoreOutstandingPayment(role, { ...payment, amountPence })
+        ).toBe(false);
+      for (const currency of [null, "", "gbp", "UNKNOWN"])
+        expect(
+          canIgnoreOutstandingPayment(role, { ...payment, currency })
+        ).toBe(false);
+    }
+  );
 
   it.each([
     ["", null],
@@ -492,11 +559,13 @@ describe("membership payment control server boundaries (isolated adapters)", () 
           }),
         () => api.recordSettlement(receipt),
         () => api.recordFeeSettlement(feeReceipt),
+        () => api.ignorePayment(ignorePayment),
       ])
         await expect(work()).rejects.toMatchObject({ code: "FORBIDDEN" });
       expect(mocks.getDb).not.toHaveBeenCalled();
       expect(mocks.reconcile).not.toHaveBeenCalled();
       expect(mocks.settle).not.toHaveBeenCalled();
+      expect(mocks.ignore).not.toHaveBeenCalled();
     }
   );
 
@@ -669,6 +738,61 @@ describe("membership payment control server boundaries (isolated adapters)", () 
       code: "BAD_REQUEST",
       message: expect.stringContaining("full outstanding"),
     });
+  });
+
+  it.each(["admin", "super_admin"])(
+    "forwards %s ignore audit with the logged-in actor and no receipt/provider action",
+    async role => {
+      await expect(
+        caller(role).ignorePayment(ignorePayment)
+      ).resolves.toMatchObject({ ignored: true });
+      expect(mocks.ignore).toHaveBeenCalledTimes(1);
+      expect(mocks.ignore).toHaveBeenCalledWith({
+        ...ignorePayment,
+        actorId: 7,
+      });
+      expect(mocks.settle).not.toHaveBeenCalled();
+      expect(mocks.reconcile).not.toHaveBeenCalled();
+      expect(mocks.getDb).not.toHaveBeenCalled();
+      expect(mocks.update).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ["missing reason", { reason: undefined }],
+    ["blank reason", { reason: " \n " }],
+    ["short reason", { reason: " ab " }],
+    ["long reason", { reason: "r".repeat(3001) }],
+    ["missing confirmation", { confirmation: undefined }],
+    ["incorrect confirmation", { confirmation: "yes" }],
+    ["receipt confirmation", { confirmation: "RECORD PAYMENT RECEIVED" }],
+  ] as const)(
+    "rejects ignore with %s before any mutation",
+    async (_label, overrides) => {
+      await expect(
+        caller().ignorePayment({ ...ignorePayment, ...overrides } as never)
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(mocks.ignore).not.toHaveBeenCalled();
+      expect(mocks.settle).not.toHaveBeenCalled();
+      expect(mocks.reconcile).not.toHaveBeenCalled();
+      expect(mocks.getDb).not.toHaveBeenCalled();
+      expect(mocks.update).not.toHaveBeenCalled();
+    }
+  );
+
+  it("surfaces a rejected ignore without falling back to recording payment received", async () => {
+    mocks.ignore.mockRejectedValueOnce(
+      new Error("Payment is no longer outstanding")
+    );
+    await expect(caller().ignorePayment(ignorePayment)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Payment is no longer outstanding",
+    });
+    expect(mocks.ignore).toHaveBeenCalledTimes(1);
+    expect(mocks.settle).not.toHaveBeenCalled();
+    expect(mocks.reconcile).not.toHaveBeenCalled();
+    expect(mocks.getDb).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it.each(["review", "failed", "collection_pending", "paid"])(

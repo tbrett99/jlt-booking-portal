@@ -5,7 +5,7 @@ import { adminProcedure } from "./_core/trpc";
 import { getDb } from "./db";
 import { membershipPaymentControl as control, membershipPaymentFees as fees, membershipPaymentInbox as inbox } from "../drizzle/schema";
 import { reconcileMembershipPayments } from "./membership-payment-sync";
-import { recordManualMembershipSettlement } from "./membership-payment-service";
+import { recordManualMembershipSettlement, ignoreMembershipPayment } from "./membership-payment-service";
 
 export const membershipPaymentControlProcedures = {
   refreshFromProvider: adminProcedure.input(z.object({})).mutation(async () => reconcileMembershipPayments()),
@@ -33,6 +33,10 @@ export const membershipPaymentControlProcedures = {
   }),
   recordSettlement: adminProcedure.input(z.object({ userId: z.number().int().positive(), paymentId: z.string().min(1).max(100), amountPence: z.number().int().positive(), reference: z.string().trim().min(1).max(255), notes: z.string().trim().min(1).max(3000), settledAt: z.string().datetime(), confirmation: z.literal("RECORD PAYMENT RECEIVED") })).mutation(async ({ ctx, input }) => {
     try { return await recordManualMembershipSettlement({ ...input, actorId: ctx.user.id }); }
+    catch (error) { throw new TRPCError({ code: "BAD_REQUEST", message: (error as Error).message }); }
+  }),
+  ignorePayment: adminProcedure.input(z.object({ userId: z.number().int().positive(), paymentId: z.string().trim().min(1).max(100), amountPence: z.number().int().positive(), reason: z.string().trim().min(3).max(3000), confirmation: z.literal("IGNORE OUTSTANDING PAYMENT") })).mutation(async ({ ctx, input }) => {
+    try { return await ignoreMembershipPayment({ ...input, actorId: ctx.user.id }); }
     catch (error) { throw new TRPCError({ code: "BAD_REQUEST", message: (error as Error).message }); }
   }),
   recordFeeSettlement: adminProcedure.input(z.object({ feeId: z.number().int().positive(), reference: z.string().trim().min(1).max(255), notes: z.string().trim().min(1).max(3000), confirmation: z.literal("RECORD FEE RECEIVED") })).mutation(async ({ ctx, input }) => {

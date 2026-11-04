@@ -3037,6 +3037,8 @@ export const membershipPaymentSettlements = mysqlTable("membership_payment_settl
   settledAt: timestamp("settledAt", { fsp: 3 }).notNull(),
   recordedById: int("recordedById").notNull(),
   reference: varchar("reference", { length: 255 }).notNull(),
+  resolutionKind: varchar("resolutionKind", { length: 20 }).default("received").notNull(),
+  decisionAt: timestamp("decisionAt", { fsp: 3 }),
   notes: text("notes").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => [index("membership_settlement_user_idx").on(t.userId, t.settledAt)]);

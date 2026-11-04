@@ -1,0 +1,1 @@
+ALTER TABLE `membership_payment_settlements` ADD `decisionAt` timestamp(3);

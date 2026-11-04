@@ -52,6 +52,14 @@ export type ManualMembershipSettlementInput = {
   amountPence?: number;
 };
 
+export type IgnoreMembershipPaymentInput = {
+  userId: number;
+  paymentId: string;
+  amountPence: number;
+  reason: string;
+  actorId: number;
+};
+
 type Control = typeof controlTable.$inferSelect;
 type Account = typeof accountTable.$inferSelect;
 type Inbox = typeof inboxTable.$inferSelect;
@@ -232,7 +240,9 @@ function policy(
       manualSettlements: snapshot.settlements.map(s => ({
         settlementId: `settlement:${s.id}`,
         paymentId: s.paymentId,
-        occurredAt: s.settledAt,
+        occurredAt: s.decisionAt ?? s.settledAt,
+        resolutionKind: s.resolutionKind === "ignored" ? "ignored" : "received",
+        terminal: !!s.decisionAt,
       })),
     }
   );
@@ -485,7 +495,8 @@ export function createMembershipPaymentService(
 
   async function recompute(
     tx: MembershipPaymentTransaction,
-    snapshot: MembershipAccountSnapshot
+    snapshot: MembershipAccountSnapshot,
+    processEffects = true
   ): Promise<MembershipAccountProcessingResult> {
     const result = policy(snapshot);
     const at = now();
@@ -541,7 +552,8 @@ export function createMembershipPaymentService(
           }
         : failure;
     };
-    const livePending = pending.filter(e => liveEffect(e, snapshot.control));
+    const resolvedIds = new Set(snapshot.settlements.filter(s => s.decisionAt || s.resolutionKind === "ignored").map(s => s.paymentId));
+    const livePending = processEffects ? pending.filter(e => liveEffect(e, snapshot.control) && !resolvedIds.has(e.paymentId!)) : [];
     // Only presently outstanding historical debt needs historical review.
     const historyReviewRequired = result.outstandingPayments.some(p =>
       snapshot.events.some(
@@ -576,8 +588,9 @@ export function createMembershipPaymentService(
         .at(-1);
       const latestSettlement = snapshot.settlements
         .filter(s => s.paymentId === paymentId)
-        .sort((a, b) => a.settledAt.getTime() - b.settledAt.getTime())
+        .sort((a, b) => (a.decisionAt ?? a.settledAt).getTime() - (b.decisionAt ?? b.settledAt).getTime())
         .at(-1);
+      const decisionTime = latestSettlement ? latestSettlement.decisionAt ?? latestSettlement.settledAt : null;
       const lastFailed = group
         .filter(e => ["failed", "charged_back"].includes(e.action))
         .at(-1);
@@ -594,22 +607,25 @@ export function createMembershipPaymentService(
           null,
         status: debt
           ? "outstanding"
+          : latestSettlement?.resolutionKind === "ignored"
+            ? "ignored"
           : recovery?.action === "manual_settlement"
             ? "settled"
             : recovery
               ? "paid"
               : "pending",
         lastEventAt:
-          latestSettlement && latestSettlement.settledAt > last.occurredAt
-            ? latestSettlement.settledAt
+          decisionTime && decisionTime > last.occurredAt
+            ? decisionTime
             : last.occurredAt,
         lastFailureAt: lastFailed?.occurredAt ?? null,
       });
     }
 
     // Fee ledger is unique per run and immutable on replay. Historical hints remain review only.
-    for (const failure of result.failures.filter(f => f.shouldApplyAdminFee)) {
+    for (const failure of processEffects ? result.failures.filter(f => f.shouldApplyAdminFee) : []) {
       const event = snapshot.events.find(e => e.eventId === failure.eventId)!;
+      if (resolvedIds.has(event.paymentId!)) continue;
       const run =
         stableRunKeys.get(failure.runKey) ??
         feeKey(snapshot.account.userId, failure.runKey);
@@ -718,12 +734,12 @@ export function createMembershipPaymentService(
     await tx.mirrorLegacy(result, suspended ? at : null);
     // Paused post-activation work stays pending, so resuming can finish its intents.
     // Pre-activation/bulk history is always audit-only and can safely be checkpointed.
-    const completed = pending.filter(
+    const completed = processEffects ? pending.filter(
       e =>
         !future(e, snapshot.control) ||
         bulkHistory(e) ||
         snapshot.control?.enabled
-    );
+    ) : [];
     await tx.markProcessed(
       completed.map(e => e.id),
       at
@@ -767,7 +783,7 @@ export function createMembershipPaymentService(
     id(input.paymentId, "payment ID");
     const reference = input.reference?.trim();
     const notes = input.notes?.trim();
-    if (!reference || reference.length > 255 || !notes)
+    if (!reference || reference.length > 255 || !notes || notes.length > 3000)
       throw new Error(
         "A settlement reference and explanatory notes are required"
       );
@@ -781,7 +797,7 @@ export function createMembershipPaymentService(
         p => p.paymentId === input.paymentId
       );
       const persisted = await tx.getObligation(input.paymentId);
-      if (!persisted || persisted.status !== "outstanding")
+      if (!snapshot.user || snapshot.user.role !== "agent" || !persisted || persisted.userId !== input.userId || persisted.status !== "outstanding")
         throw new Error(
           "A persisted outstanding obligation is required for manual settlement"
         );
@@ -794,26 +810,67 @@ export function createMembershipPaymentService(
           "A known, currently outstanding GBP obligation is required for full manual settlement"
         );
       if (
+        persisted.amountPence !== obligation.amount || persisted.currency !== obligation.currency ||
         input.amountPence !== undefined &&
         input.amountPence !== obligation.amount
       )
         throw new Error(
           "Manual settlement must equal the full outstanding payment amount"
         );
-      if (settledAt < date(obligation.lastFailedAt))
-        throw new Error("Settlement cannot predate the latest failed attempt");
+      const decisionAt = now();
+      if (decisionAt < date(obligation.lastFailedAt))
+        throw new Error("The provider failure is dated in the future; review it before recording this receipt.");
       const settlement = await tx.insertSettlement({
         userId: input.userId,
         paymentId: input.paymentId,
         settledAt,
+        decisionAt,
         recordedById: input.actorId,
         reference,
+        resolutionKind: "received",
         // Schema has no amount column: freeze the exact whole-payment amount/currency in immutable audit notes.
         notes: `Full settlement: ${obligation.amount} ${obligation.currency} minor units.\n${notes}`,
       });
+      if (!settlement || settlement.userId !== input.userId || settlement.paymentId !== input.paymentId || settlement.resolutionKind !== "received" || settlement.decisionAt?.getTime() !== decisionAt.getTime() || settlement.settledAt?.getTime() !== settledAt.getTime())
+        throw new Error("Receipt could not be verified in storage; no settlement was committed.");
       snapshot.settlements.push(settlement);
-      const account = await recompute(tx, snapshot);
+      const account = await recompute(tx, snapshot, false);
+      const updated = await tx.getObligation(input.paymentId);
+      if (!updated || updated.status !== "settled")
+        throw new Error("Receipt did not clear this outstanding payment; transaction rolled back.");
       return { settlement, account };
+    });
+  }
+
+  async function ignoreMembershipPayment(input: IgnoreMembershipPaymentInput) {
+    userId(input.userId); userId(input.actorId); id(input.paymentId, "payment ID");
+    amount(input.amountPence);
+    const reason = input.reason?.trim();
+    if (!reason || reason.length < 3 || reason.length > 3000 || input.amountPence <= 0)
+      throw new Error("A reason and the exact full outstanding amount are required.");
+    return deps.store.transaction(input.userId, async tx => {
+      const snapshot = await tx.load();
+      const state = policy(snapshot);
+      const obligation = state.outstandingPayments.find(p => p.paymentId === input.paymentId);
+      const persisted = await tx.getObligation(input.paymentId);
+      if (!snapshot.user || snapshot.user.role !== "agent" || !persisted || persisted.userId !== input.userId || persisted.status !== "outstanding" || !obligation || obligation.amount === null || !obligation.currency)
+        throw new Error("Only this agent's known current outstanding payment can be ignored. Refresh the account.");
+      if (obligation.amount !== input.amountPence || persisted.amountPence !== input.amountPence || persisted.currency !== obligation.currency)
+        throw new Error("The payment amount changed. Refresh and confirm the current outstanding amount.");
+      const at = now();
+      if (at < date(obligation.lastFailedAt)) throw new Error("The provider failure is in the future; review this payment before ignoring it.");
+      const resolution = await tx.insertSettlement({
+        userId: input.userId, paymentId: input.paymentId, settledAt: at, decisionAt: at,
+        recordedById: input.actorId, resolutionKind: "ignored", reference: `IGNORED:${input.paymentId}`,
+        notes: `Payment written off — no money received. Full amount: ${obligation.amount} ${obligation.currency} minor units.\nReason: ${reason}\nNo provider collection was cancelled; fees and membership access unchanged.`,
+      });
+      if (!resolution || resolution.userId !== input.userId || resolution.paymentId !== input.paymentId || resolution.resolutionKind !== "ignored" || resolution.decisionAt?.getTime() !== at.getTime())
+        throw new Error("Ignore decision could not be verified in storage; no change was committed.");
+      snapshot.settlements.push(resolution);
+      const account = await recompute(tx, snapshot, false);
+      const updated = await tx.getObligation(input.paymentId);
+      if (!updated || updated.status !== "ignored") throw new Error("Payment was not removed from arrears; transaction rolled back.");
+      return { ignored: true as const, resolution, account };
     });
   }
 
@@ -877,6 +934,11 @@ export function createMembershipPaymentService(
             return null;
           const payload = JSON.parse(row.payload) as Intent;
           const sourceEvent = snapshot.events.find(event => event.eventId === row.eventId);
+          if (row.kind !== "receipt" && snapshot.settlements.some(s => s.paymentId === payload.paymentId && (s.resolutionKind === "ignored" || s.decisionAt))) {
+            await tx.updateOutbox(row.id, { status: row.firstAttemptAt ? "review" : "cancelled", lockedUntil: null, lockToken: null, lastError: row.firstAttemptAt ? "Payment resolved by staff; no resend authorised. A prior delivery attempt may have been accepted; review preserved evidence." : "Payment resolved by staff; unsent arrears notice suppressed. History retained." }, row.lockToken);
+            result.skipped++;
+            return null;
+          }
           // Defence in depth: even an accidentally seeded historical outbox row
           // must never become a retrospective email after rules are enabled.
           if (!sourceEvent || sourceEvent.status === "ignored" ||
@@ -999,6 +1061,10 @@ export function createMembershipPaymentService(
             row.lockedUntil <= now()
           )
             return false;
+          if (row.kind !== "receipt" && snapshot.settlements.some(s => s.paymentId === claimed.payload.paymentId && (s.resolutionKind === "ignored" || s.decisionAt))) {
+            await tx.updateOutbox(row.id, { status: row.firstAttemptAt ? "review" : "cancelled", lockedUntil: null, lockToken: null, lastError: "Payment resolved before send; no new arrears notice authorised. Any prior delivery attempt remains subject to review." }, lockToken);
+            return false;
+          }
           return tx.updateOutbox(
             candidate.id,
             {
@@ -1088,6 +1154,7 @@ export function createMembershipPaymentService(
     recordMembershipPaymentEvent,
     processMembershipPaymentAccount,
     recordManualMembershipSettlement,
+    ignoreMembershipPayment,
     processPendingMembershipAccounts,
     processMembershipPaymentOutbox,
   };
@@ -1345,10 +1412,14 @@ const productionStore: MembershipPaymentStore = {
             .insert(settlementTable)
             .values(value)
             .$returningId();
+          const insertedId = inserted[0]?.id;
+          if (!Number.isSafeInteger(insertedId) || insertedId <= 0)
+            throw new Error("Payment resolution was not assigned an ID; transaction rolled back.");
           const [settlement] = await tx
             .select()
             .from(settlementTable)
-            .where(eq(settlementTable.id, inserted[0].id));
+            .where(and(eq(settlementTable.id, insertedId), eq(settlementTable.userId, memberId), eq(settlementTable.paymentId, value.paymentId)));
+          if (!settlement) throw new Error("Saved payment resolution could not be read back; transaction rolled back.");
           return settlement;
         },
         async getOutbox(outboxId) {
@@ -1442,6 +1513,7 @@ export const processMembershipPaymentAccount =
   defaultService.processMembershipPaymentAccount;
 export const recordManualMembershipSettlement =
   defaultService.recordManualMembershipSettlement;
+export const ignoreMembershipPayment = defaultService.ignoreMembershipPayment;
 export const processPendingMembershipAccounts =
   defaultService.processPendingMembershipAccounts;
 export const processMembershipPaymentOutbox =

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -109,6 +109,24 @@ export function canRecordPaymentSettlement(
   );
 }
 
+export function canIgnoreOutstandingPayment(
+  role: string | undefined,
+  payment: {
+    status: string;
+    amountPence: number | null;
+    currency: string | null;
+  }
+): boolean {
+  return (
+    (role === "admin" || role === "super_admin") &&
+    payment.status === "outstanding" &&
+    typeof payment.currency === "string" &&
+    /^[A-Z]{3}$/.test(payment.currency) &&
+    Number.isSafeInteger(payment.amountPence) &&
+    (payment.amountPence ?? 0) > 0
+  );
+}
+
 export function canRecordFeeSettlement(
   role: string | undefined,
   status: string
@@ -184,6 +202,39 @@ function usePaymentRefresh() {
       utils.gocardless.adminGetPaymentEvents.invalidate(),
       utils.gocardless.adminGetDdStatus.invalidate(),
       utils.gocardless.adminGetPaymentSchedule.invalidate(),
+    ]);
+  };
+}
+
+// Query invalidation normally swallows refetch errors. Resolution dialogs must
+// not claim that balances reloaded unless the active stored-record reads succeed.
+function useVerifiedPaymentRefresh() {
+  const utils = trpc.useUtils();
+  return async () => {
+    const options = { throwOnError: true };
+    await Promise.all([
+      utils.membershipPayments.invalidate(undefined, undefined, options),
+      utils.crm.agentCrm.invalidate(undefined, undefined, options),
+      utils.gocardless.adminGetCurrentPaymentIssues.invalidate(
+        undefined,
+        undefined,
+        options
+      ),
+      utils.gocardless.adminGetPaymentEvents.invalidate(
+        undefined,
+        undefined,
+        options
+      ),
+      utils.gocardless.adminGetDdStatus.invalidate(
+        undefined,
+        undefined,
+        options
+      ),
+      utils.gocardless.adminGetPaymentSchedule.invalidate(
+        undefined,
+        undefined,
+        options
+      ),
     ]);
   };
 }
@@ -456,9 +507,62 @@ type ReceiptTarget =
       userId: number;
       paymentId: string;
       amountPence: number;
-      lastFailureAt: Date | string | null;
     }
   | { kind: "fee"; feeId: number; amountPence: number; currency: string };
+function useStoredPaymentResolution({
+  onRecorded,
+  onClose,
+  savedMessage,
+}: {
+  onRecorded: (message: string) => void;
+  onClose: () => void;
+  savedMessage: string;
+}) {
+  const refresh = useVerifiedPaymentRefresh();
+  const submitting = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (work: () => Promise<unknown>) => {
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      if (!saved) {
+        try {
+          await work();
+          setSaved(true);
+        } catch (cause) {
+          setError(
+            `${cause instanceof Error ? cause.message : "Request failed"}. The change was not confirmed. Refresh the account before retrying.`
+          );
+          return;
+        }
+      }
+      try {
+        await refresh();
+      } catch {
+        onRecorded(
+          `${savedMessage} Balance refresh failed; displayed balances may be stale. No membership access or suspension change is implied.`
+        );
+        setError(
+          "The change was recorded, but balances could not be reloaded. Displayed balances may be stale. Retry balance refresh; do not submit the change again."
+        );
+        return;
+      }
+      onRecorded(
+        `${savedMessage} Balances reloaded; membership access and manual suspensions remain unchanged.`
+      );
+      onClose();
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  };
+  return { busy, saved, error, submit };
+}
+
 function ReceiptDialog({
   target,
   onClose,
@@ -470,45 +574,41 @@ function ReceiptDialog({
 }) {
   const { user } = useAuth();
   const isStaff = user?.role === "admin" || user?.role === "super_admin";
-  const refresh = usePaymentRefresh();
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [settledAt, setSettledAt] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const receivedDate = settledAt ? new Date(settledAt) : null;
-  const validDate =
-    receivedDate &&
-    Number.isFinite(receivedDate.getTime()) &&
-    receivedDate.getTime() <= Date.now() &&
-    (target.kind !== "payment" ||
-      !target.lastFailureAt ||
-      receivedDate.getTime() >= new Date(target.lastFailureAt).getTime());
-  const completed = async () => {
-    await refresh();
-    onRecorded(
-      "Receipt recorded. Balances reloaded; membership access and manual suspensions remain unchanged."
-    );
-    onClose();
-  };
-  const settlement = trpc.membershipPayments.recordSettlement.useMutation({
-    onSuccess: completed,
+  const resolution = useStoredPaymentResolution({
+    onRecorded,
+    onClose,
+    savedMessage: "Receipt recorded.",
   });
-  const feeSettlement = trpc.membershipPayments.recordFeeSettlement.useMutation(
-    { onSuccess: completed }
-  );
-  const pending = settlement.isPending || feeSettlement.isPending;
+  const settlement = trpc.membershipPayments.recordSettlement.useMutation();
+  const feeSettlement =
+    trpc.membershipPayments.recordFeeSettlement.useMutation();
+  const pending =
+    resolution.busy || settlement.isPending || feeSettlement.isPending;
+  const locked = pending || resolution.saved;
   const expected =
     target.kind === "payment"
       ? "RECORD PAYMENT RECEIVED"
       : "RECORD FEE RECEIVED";
-  const ready =
-    isStaff &&
-    !pending &&
-    reference.trim().length > 0 &&
-    notes.trim().length > 0 &&
-    confirmation === expected &&
-    (target.kind === "fee" || validDate);
-  const mutationError = settlement.error ?? feeSettlement.error;
+  const receivedDate = settledAt ? new Date(settledAt) : null;
+  const validDate = receivedDate && Number.isFinite(receivedDate.getTime());
+  const validation: string[] = [];
+  if (!reference.trim())
+    validation.push("Enter the verified bank transfer reference.");
+  if (!notes.trim()) validation.push("Enter receipt verification notes.");
+  if (target.kind === "payment") {
+    if (!validDate)
+      validation.push(
+        "Enter a valid received date and time, including seconds."
+      );
+    else if (!(receivedDate.getTime() <= Date.now()))
+      validation.push("Received time must not be in the future.");
+  }
+  if (confirmation.trim() !== expected)
+    validation.push(`Type ${expected} exactly to confirm.`);
   if (!isStaff) return null;
   return (
     <Dialog
@@ -517,7 +617,16 @@ function ReceiptDialog({
         if (!open && !pending) onClose();
       }}
     >
-      <DialogContent className="max-w-lg">
+      <DialogContent
+        className="max-w-lg max-h-[85dvh] overflow-y-auto"
+        showCloseButton={!pending}
+        onEscapeKeyDown={event => {
+          if (pending) event.preventDefault();
+        }}
+        onPointerDownOutside={event => {
+          if (pending) event.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             Record {target.kind === "payment" ? "payment" : "fee"} received
@@ -525,8 +634,8 @@ function ReceiptDialog({
           <DialogDescription>
             Record only a bank transfer already received and verified in the
             bank. This does not initiate a payment, retry or collect a Direct
-            Debit, or automatically reinstate membership. Do not record a
-            promised payment.
+            Debit, or automatically reinstate membership. It does not cancel
+            GoCardless retries or collections. Do not record a promised payment.
           </DialogDescription>
         </DialogHeader>
         <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 space-y-1">
@@ -554,26 +663,34 @@ function ReceiptDialog({
         </div>
         <form
           className="space-y-3"
+          noValidate
+          aria-busy={pending}
           onSubmit={event => {
             event.preventDefault();
-            if (!ready) return;
-            if (target.kind === "payment" && receivedDate)
-              settlement.mutate({
-                userId: target.userId,
-                paymentId: target.paymentId,
-                amountPence: target.amountPence,
-                reference: reference.trim(),
-                notes: notes.trim(),
-                settledAt: receivedDate.toISOString(),
-                confirmation: "RECORD PAYMENT RECEIVED",
-              });
-            else if (target.kind === "fee")
-              feeSettlement.mutate({
-                feeId: target.feeId,
-                reference: reference.trim(),
-                notes: notes.trim(),
-                confirmation: "RECORD FEE RECEIVED",
-              });
+            if (pending) return;
+            if (!resolution.saved && validation.length > 0) return;
+            void resolution.submit(() => {
+              if (target.kind === "payment" && receivedDate)
+                return settlement.mutateAsync({
+                  userId: target.userId,
+                  paymentId: target.paymentId,
+                  amountPence: target.amountPence,
+                  reference: reference.trim(),
+                  notes: notes.trim(),
+                  settledAt: receivedDate.toISOString(),
+                  confirmation: "RECORD PAYMENT RECEIVED",
+                });
+              if (target.kind === "fee")
+                return feeSettlement.mutateAsync({
+                  feeId: target.feeId,
+                  reference: reference.trim(),
+                  notes: notes.trim(),
+                  confirmation: "RECORD FEE RECEIVED",
+                });
+              return Promise.reject(
+                new Error("A valid receipt time is required")
+              );
+            });
           }}
         >
           <label className="block text-sm space-y-1">
@@ -581,7 +698,8 @@ function ReceiptDialog({
             <Input
               value={reference}
               maxLength={255}
-              disabled={pending}
+              disabled={locked}
+              required
               onChange={event => setReference(event.target.value)}
             />
           </label>
@@ -590,7 +708,8 @@ function ReceiptDialog({
             <Input
               value={notes}
               maxLength={3000}
-              disabled={pending}
+              disabled={locked}
+              required
               onChange={event => setNotes(event.target.value)}
             />
           </label>
@@ -599,13 +718,16 @@ function ReceiptDialog({
               Received at (your local time)
               <Input
                 type="datetime-local"
+                step={1}
                 value={settledAt}
-                disabled={pending}
+                disabled={locked}
+                required
                 onChange={event => setSettledAt(event.target.value)}
               />
               <span className="block text-xs text-muted-foreground">
-                Sent as UTC. Must not be in the future or before the latest
-                failed attempt ({stamp(target.lastFailureAt)}).
+                Actual bank receipt date; later failed GoCardless retries do not
+                invalidate this receipt. Include seconds. Sent as UTC without
+                adjusting your entered time. Must not be in the future.
               </span>
             </label>
           )}
@@ -614,27 +736,212 @@ function ReceiptDialog({
             <Input
               value={confirmation}
               autoComplete="off"
-              disabled={pending}
+              disabled={locked}
+              required
               onChange={event => setConfirmation(event.target.value)}
             />
           </label>
-          {mutationError && (
-            <p role="alert" className="text-sm text-destructive">
-              {mutationError.message} No receipt recorded. Refresh the account
-              before trying again.
+          {!resolution.saved && validation.length > 0 && (
+            <div role="alert" className="text-sm text-destructive">
+              <p className="font-medium">Before recording the receipt:</p>
+              <ul className="list-disc pl-5">
+                {validation.map(message => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {resolution.saved && (
+            <p role="status" className="text-sm">
+              Receipt recorded.{" "}
+              {pending
+                ? "Reloading stored balances…"
+                : "A balance refresh is still required."}
             </p>
           )}
-          <div className="flex justify-end gap-2">
+          {resolution.error && (
+            <p role="alert" className="text-sm text-destructive">
+              {resolution.error}
+            </p>
+          )}
+          <div className="flex flex-wrap justify-end gap-2">
             <Button
               type="button"
               variant="outline"
               disabled={pending}
               onClick={onClose}
             >
-              Cancel
+              {resolution.saved ? "Close" : "Cancel"}
             </Button>
-            <Button type="submit" disabled={!ready}>
-              {pending ? "Recording…" : "Record verified receipt"}
+            <Button type="submit" disabled={pending}>
+              {pending
+                ? resolution.saved
+                  ? "Reloading balances…"
+                  : "Recording…"
+                : resolution.saved
+                  ? "Retry balance refresh"
+                  : "Record verified receipt"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type IgnoreTarget = {
+  userId: number;
+  paymentId: string;
+  amountPence: number;
+  currency: string;
+};
+function IgnorePaymentDialog({
+  target,
+  onClose,
+  onRecorded,
+}: {
+  target: IgnoreTarget;
+  onClose: () => void;
+  onRecorded: (message: string) => void;
+}) {
+  const { user } = useAuth();
+  const [reason, setReason] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const resolution = useStoredPaymentResolution({
+    onRecorded,
+    onClose,
+    savedMessage:
+      "This outstanding payment was ignored. No money was received or collected.",
+  });
+  const ignore = trpc.membershipPayments.ignorePayment.useMutation();
+  const pending = resolution.busy || ignore.isPending;
+  const locked = pending || resolution.saved;
+  const expected = "IGNORE OUTSTANDING PAYMENT";
+  const validation: string[] = [];
+  if (reason.trim().length < 3 || reason.trim().length > 3000)
+    validation.push("Enter an explicit reason (3–3,000 characters).");
+  if (confirmation.trim() !== expected)
+    validation.push(`Type ${expected} exactly to confirm.`);
+  if (user?.role !== "admin" && user?.role !== "super_admin") return null;
+  return (
+    <Dialog
+      open
+      onOpenChange={open => {
+        if (!open && !pending) onClose();
+      }}
+    >
+      <DialogContent
+        className="max-w-lg max-h-[85dvh] overflow-y-auto"
+        showCloseButton={!pending}
+        onEscapeKeyDown={event => {
+          if (pending) event.preventDefault();
+        }}
+        onPointerDownOutside={event => {
+          if (pending) event.preventDefault();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>Ignore outstanding payment</DialogTitle>
+          <DialogDescription>
+            Permanent decision for this exact payment only, not a receipt or an
+            account-wide write-off.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 space-y-1">
+          <p className="font-semibold">
+            No money received. This is not proof of payment.
+          </p>
+          <p className="font-mono break-all">
+            Agent {target.userId} · Payment {target.paymentId}
+          </p>
+          <p>
+            Exact outstanding amount:{" "}
+            <strong>{money(target.amountPence, target.currency)}</strong>.
+          </p>
+          <p>
+            Ignoring does not cancel GoCardless Direct Debit, provider retries
+            or collections. It does not waive fees, reinstate membership or
+            change access or manual suspensions. Other outstanding payments
+            remain separate.
+          </p>
+        </div>
+        <form
+          className="space-y-3"
+          noValidate
+          aria-busy={pending}
+          onSubmit={event => {
+            event.preventDefault();
+            if (pending || (!resolution.saved && validation.length > 0)) return;
+            void resolution.submit(() =>
+              ignore.mutateAsync({
+                userId: target.userId,
+                paymentId: target.paymentId,
+                amountPence: target.amountPence,
+                reason: reason.trim(),
+                confirmation: "IGNORE OUTSTANDING PAYMENT",
+              })
+            );
+          }}
+        >
+          <label className="block text-sm space-y-1">
+            Reason for ignoring this payment
+            <Input
+              value={reason}
+              maxLength={3000}
+              disabled={locked}
+              required
+              onChange={event => setReason(event.target.value)}
+            />
+          </label>
+          <label className="block text-sm space-y-1">
+            Type <strong>{expected}</strong>
+            <Input
+              value={confirmation}
+              autoComplete="off"
+              disabled={locked}
+              required
+              onChange={event => setConfirmation(event.target.value)}
+            />
+          </label>
+          {!resolution.saved && validation.length > 0 && (
+            <div role="alert" className="text-sm text-destructive">
+              <ul className="list-disc pl-5">
+                {validation.map(message => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {resolution.saved && (
+            <p role="status" className="text-sm">
+              Payment ignored; no money received.{" "}
+              {pending
+                ? "Reloading stored balances…"
+                : "A balance refresh is still required."}
+            </p>
+          )}
+          {resolution.error && (
+            <p role="alert" className="text-sm text-destructive">
+              {resolution.error}
+            </p>
+          )}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={onClose}
+            >
+              {resolution.saved ? "Close" : "Cancel"}
+            </Button>
+            <Button type="submit" variant="destructive" disabled={pending}>
+              {pending
+                ? resolution.saved
+                  ? "Reloading balances…"
+                  : "Ignoring…"
+                : resolution.saved
+                  ? "Retry balance refresh"
+                  : "Confirm ignore payment"}
             </Button>
           </div>
         </form>
@@ -652,258 +959,330 @@ function AccountReview({
 }) {
   const { user } = useAuth();
   const [receipt, setReceipt] = useState<ReceiptTarget | null>(null);
+  const [ignoreTarget, setIgnoreTarget] = useState<IgnoreTarget | null>(null);
   const [receiptOutcome, setReceiptOutcome] = useState("");
   const input = useMemo(() => ({ userId }), [userId]);
   const query = trpc.membershipPayments.accountDetail.useQuery(
     input,
-    QUERY_OPTIONS
+    CURRENT_PAYMENT_QUERY_OPTIONS
   );
   const data = query.data;
   return (
-    <Dialog
-      open
-      onOpenChange={open => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            Payment account review
-            {data ? ` — ${data.account.name ?? `Agent ${userId}`}` : ""}
-          </DialogTitle>
-          <DialogDescription>
-            Latest 20 payment, fee and mail references. Record verified bank
-            transfer receipts only against eligible current obligations.
-            Provider acceptance is not confirmed email delivery.
-          </DialogDescription>
-        </DialogHeader>
-        {query.isLoading && (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading review…
-          </p>
-        )}
-        {query.error && (
-          <Alert variant="destructive">
-            <AlertTriangle />
-            <AlertTitle>Review unavailable</AlertTitle>
-            <AlertDescription>{query.error.message}</AlertDescription>
-          </Alert>
-        )}
-        {data && !query.error && (
-          <div className="space-y-5">
-            {receiptOutcome && (
-              <p role="status" className="text-sm">
-                {receiptOutcome}
-              </p>
-            )}
-            <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-1">
-              <p>
-                Current outstanding:{" "}
-                <strong>{data.account.outstandingCount} payment(s)</strong> ·{" "}
-                {data.account.outstandingCount > 0
-                  ? money(data.account.outstandingPence)
-                  : "No current outstanding payments"}
-              </p>
-              <p>
-                Current failed attempts: {data.account.failedAttempts} · Last
-                failed: {stamp(data.account.lastFailedAt)}
-              </p>
-              <p>
-                Account ledger updated: {stamp(data.account.lastSyncedAt)} (not
-                a live provider balance)
-              </p>
-              {data.account.lastError && (
-                <p className="text-destructive break-words">
-                  Sync error: {data.account.lastError}
+    <>
+      <Dialog
+        open={!receipt && !ignoreTarget}
+        onOpenChange={open => {
+          if (!open) onClose();
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Payment account review
+              {data ? ` — ${data.account.name ?? `Agent ${userId}`}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              Latest 20 payment, fee and mail references. Record verified bank
+              transfer receipts only against eligible current obligations.
+              Provider acceptance is not confirmed email delivery.
+            </DialogDescription>
+          </DialogHeader>
+          {query.isLoading && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading review…
+            </p>
+          )}
+          {query.error && (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>Review unavailable</AlertTitle>
+              <AlertDescription>{query.error.message}</AlertDescription>
+            </Alert>
+          )}
+          {data && !query.error && (
+            <div className="space-y-5">
+              {receiptOutcome && (
+                <p role="status" className="text-sm">
+                  {receiptOutcome}
                 </p>
               )}
-              <p className="text-muted-foreground">
-                Suspension reason:{" "}
-                {data.account.suspensionReason ?? "Not recorded"}. Payment
-                resolution does not authorise changing manual suspension or
-                portal access.
-              </p>
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-1">
+                <p>
+                  Current outstanding:{" "}
+                  <strong>{data.account.outstandingCount} payment(s)</strong> ·{" "}
+                  {data.account.outstandingCount > 0
+                    ? money(data.account.outstandingPence)
+                    : "No current outstanding payments"}
+                </p>
+                <p>
+                  Current failed attempts: {data.account.failedAttempts} · Last
+                  failed: {stamp(data.account.lastFailedAt)}
+                </p>
+                <p>
+                  Account ledger updated: {stamp(data.account.lastSyncedAt)}{" "}
+                  (not a live provider balance)
+                </p>
+                {data.account.lastError && (
+                  <p className="text-destructive break-words">
+                    Sync error: {data.account.lastError}
+                  </p>
+                )}
+                <p className="text-muted-foreground">
+                  Suspension reason:{" "}
+                  {data.account.suspensionReason ?? "Not recorded"}. Payment
+                  resolution does not authorise changing manual suspension or
+                  portal access.
+                </p>
+              </div>
+              <section aria-label="Payment references" className="space-y-2">
+                <h3 className="font-semibold text-sm">Payment references</h3>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Payment ID</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Last event</TableHead>
+                      <TableHead className="text-right">
+                        Payment actions
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.payments.map(payment => (
+                      <TableRow key={payment.id}>
+                        <TableCell className="font-mono text-xs">
+                          {payment.paymentId}
+                        </TableCell>
+                        <TableCell>
+                          {money(payment.amountPence, payment.currency)}
+                        </TableCell>
+                        <TableCell>
+                          {label(payment.status)}
+                          {(payment.status === "settled" ||
+                            payment.status === "ignored") && (
+                            <details className="mt-1 max-w-xs text-xs">
+                              <summary className="cursor-pointer text-muted-foreground">
+                                Resolution evidence
+                              </summary>
+                              <div className="mt-1 space-y-1 break-words">
+                                <p>
+                                  {payment.resolutionKind === "ignored" ||
+                                  payment.status === "ignored"
+                                    ? "Ignored payment — no money received."
+                                    : "Verified bank transfer receipt."}
+                                </p>
+                                <p>
+                                  Decision recorded: {stamp(payment.decisionAt)}
+                                </p>
+                                {payment.resolutionKind !== "ignored" &&
+                                  payment.status !== "ignored" && (
+                                    <p>
+                                      Actual bank receipt:{" "}
+                                      {stamp(payment.receiptDate)}
+                                    </p>
+                                  )}
+                                <p>
+                                  Recorded by staff ID:{" "}
+                                  {payment.recordedById ?? "Not recorded"}
+                                </p>
+                                <p>
+                                  Reference:{" "}
+                                  {payment.resolutionReference ??
+                                    "Not recorded"}
+                                </p>
+                                <p className="whitespace-pre-wrap">
+                                  Notes / reason:{" "}
+                                  {payment.resolutionNotes ?? "Not recorded"}
+                                </p>
+                              </div>
+                            </details>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {stamp(payment.lastEventAt)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            {canRecordPaymentSettlement(user?.role, payment) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={query.isFetching}
+                                onClick={() => {
+                                  setReceiptOutcome("");
+                                  setReceipt({
+                                    kind: "payment",
+                                    userId,
+                                    paymentId: payment.paymentId,
+                                    amountPence: payment.amountPence!,
+                                  });
+                                }}
+                              >
+                                Record payment received
+                              </Button>
+                            )}
+                            {canIgnoreOutstandingPayment(
+                              user?.role,
+                              payment
+                            ) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={query.isFetching}
+                                onClick={() => {
+                                  setReceiptOutcome("");
+                                  setIgnoreTarget({
+                                    userId,
+                                    paymentId: payment.paymentId,
+                                    amountPence: payment.amountPence!,
+                                    currency: payment.currency!,
+                                  });
+                                }}
+                              >
+                                Ignore outstanding payment
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {data.payments.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No recorded payment references; this is not proof of
+                    payment.
+                  </p>
+                )}
+                {data.truncated.payments && (
+                  <p className="text-xs text-muted-foreground">
+                    More payment records exist. Showing only the latest 20.
+                  </p>
+                )}
+              </section>
+              <section aria-label="Fee references" className="space-y-2">
+                <h3 className="font-semibold text-sm">Fee references</h3>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Run / trigger event</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Collection reference</TableHead>
+                      <TableHead className="text-right">Receipt</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.fees.map(fee => (
+                      <TableRow key={fee.id}>
+                        <TableCell className="font-mono text-xs break-all">
+                          {fee.runKey}
+                          <div className="text-muted-foreground">
+                            {fee.triggerEventId}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {money(fee.amountPence, fee.currency)}
+                        </TableCell>
+                        <TableCell>{label(fee.status)}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {fee.paymentId ?? "No collection reference"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {canRecordFeeSettlement(user?.role, fee.status) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={query.isFetching}
+                              onClick={() => {
+                                setReceiptOutcome("");
+                                setReceipt({
+                                  kind: "fee",
+                                  feeId: fee.id,
+                                  amountPence: fee.amountPence,
+                                  currency: fee.currency,
+                                });
+                              }}
+                            >
+                              Record fee received
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {data.fees.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No fee records.
+                  </p>
+                )}
+                {data.truncated.fees && (
+                  <p className="text-xs text-muted-foreground">
+                    More fee records exist. Showing only the latest 20.
+                  </p>
+                )}
+              </section>
+              <section aria-label="Mail references" className="space-y-2">
+                <h3 className="font-semibold text-sm">Mail references</h3>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Kind / event</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Provider reference</TableHead>
+                      <TableHead>Attempts / error</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.mail.map(mail => (
+                      <TableRow key={mail.id}>
+                        <TableCell className="text-xs">
+                          {label(mail.kind)}
+                          <div className="font-mono text-muted-foreground break-all">
+                            {mail.eventId ?? "No event reference"}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {mail.status === "accepted"
+                            ? "Accepted — not delivery confirmed"
+                            : label(mail.status)}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs break-all">
+                          {mail.providerMessageId ?? "Not recorded"}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {mail.attempts}
+                          <div className="text-destructive break-words">
+                            {mail.lastError}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {data.mail.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No mail records.
+                  </p>
+                )}
+                {data.truncated.mail && (
+                  <p className="text-xs text-muted-foreground">
+                    More mail records exist. Showing only the latest 20.
+                  </p>
+                )}
+              </section>
+              <Button variant="outline" asChild>
+                <Link href={data.account.crmHref}>
+                  Open Direct Debit record{" "}
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
             </div>
-            <section aria-label="Payment references" className="space-y-2">
-              <h3 className="font-semibold text-sm">Payment references</h3>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Payment ID</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last event</TableHead>
-                    <TableHead className="text-right">Receipt</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.payments.map(payment => (
-                    <TableRow key={payment.id}>
-                      <TableCell className="font-mono text-xs">
-                        {payment.paymentId}
-                      </TableCell>
-                      <TableCell>
-                        {money(payment.amountPence, payment.currency)}
-                      </TableCell>
-                      <TableCell>{label(payment.status)}</TableCell>
-                      <TableCell className="text-xs">
-                        {stamp(payment.lastEventAt)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {canRecordPaymentSettlement(user?.role, payment) && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={query.isFetching}
-                            onClick={() => {
-                              setReceiptOutcome("");
-                              setReceipt({
-                                kind: "payment",
-                                userId,
-                                paymentId: payment.paymentId,
-                                amountPence: payment.amountPence!,
-                                lastFailureAt: payment.lastFailureAt,
-                              });
-                            }}
-                          >
-                            Record payment received
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {data.payments.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  No recorded payment references; this is not proof of payment.
-                </p>
-              )}
-              {data.truncated.payments && (
-                <p className="text-xs text-muted-foreground">
-                  More payment records exist. Showing only the latest 20.
-                </p>
-              )}
-            </section>
-            <section aria-label="Fee references" className="space-y-2">
-              <h3 className="font-semibold text-sm">Fee references</h3>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Run / trigger event</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Collection reference</TableHead>
-                    <TableHead className="text-right">Receipt</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.fees.map(fee => (
-                    <TableRow key={fee.id}>
-                      <TableCell className="font-mono text-xs break-all">
-                        {fee.runKey}
-                        <div className="text-muted-foreground">
-                          {fee.triggerEventId}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {money(fee.amountPence, fee.currency)}
-                      </TableCell>
-                      <TableCell>{label(fee.status)}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {fee.paymentId ?? "No collection reference"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {canRecordFeeSettlement(user?.role, fee.status) && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={query.isFetching}
-                            onClick={() => {
-                              setReceiptOutcome("");
-                              setReceipt({
-                                kind: "fee",
-                                feeId: fee.id,
-                                amountPence: fee.amountPence,
-                                currency: fee.currency,
-                              });
-                            }}
-                          >
-                            Record fee received
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {data.fees.length === 0 && (
-                <p className="text-xs text-muted-foreground">No fee records.</p>
-              )}
-              {data.truncated.fees && (
-                <p className="text-xs text-muted-foreground">
-                  More fee records exist. Showing only the latest 20.
-                </p>
-              )}
-            </section>
-            <section aria-label="Mail references" className="space-y-2">
-              <h3 className="font-semibold text-sm">Mail references</h3>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Kind / event</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Provider reference</TableHead>
-                    <TableHead>Attempts / error</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.mail.map(mail => (
-                    <TableRow key={mail.id}>
-                      <TableCell className="text-xs">
-                        {label(mail.kind)}
-                        <div className="font-mono text-muted-foreground break-all">
-                          {mail.eventId ?? "No event reference"}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {mail.status === "accepted"
-                          ? "Accepted — not delivery confirmed"
-                          : label(mail.status)}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs break-all">
-                        {mail.providerMessageId ?? "Not recorded"}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {mail.attempts}
-                        <div className="text-destructive break-words">
-                          {mail.lastError}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {data.mail.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  No mail records.
-                </p>
-              )}
-              {data.truncated.mail && (
-                <p className="text-xs text-muted-foreground">
-                  More mail records exist. Showing only the latest 20.
-                </p>
-              )}
-            </section>
-            <Button variant="outline" asChild>
-              <Link href={data.account.crmHref}>
-                Open Direct Debit record <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-          </div>
-        )}
-      </DialogContent>
+          )}
+        </DialogContent>
+      </Dialog>
       {receipt && (
         <ReceiptDialog
           target={receipt}
@@ -911,7 +1290,14 @@ function AccountReview({
           onRecorded={setReceiptOutcome}
         />
       )}
-    </Dialog>
+      {ignoreTarget && (
+        <IgnorePaymentDialog
+          target={ignoreTarget}
+          onClose={() => setIgnoreTarget(null)}
+          onRecorded={setReceiptOutcome}
+        />
+      )}
+    </>
   );
 }
 

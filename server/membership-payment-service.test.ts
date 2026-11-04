@@ -770,7 +770,7 @@ describe("durable membership account processing", () => {
     ).rejects.toThrow("outstanding");
   });
 
-  it("rejects unknown, partial, future, pre-failure and unaudited manual settlements", async () => {
+  it("rejects unknown, partial, future and unaudited manual settlements", async () => {
     const h = harness();
     await h.record("EV-1", 1);
     await h.api.processMembershipPaymentAccount(7);
@@ -788,7 +788,7 @@ describe("durable membership account processing", () => {
       { notes: " " },
       { reference: " " },
       { settledAt: "2027-01-01T00:00:00Z" },
-      { settledAt: "2026-09-01T00:00:00Z" },
+      { settledAt: "invalid-date" },
     ]) {
       await expect(
         h.api.recordManualMembershipSettlement({ ...valid, ...change })
@@ -796,6 +796,100 @@ describe("durable membership account processing", () => {
     }
     expect(h.state.settlements).toHaveLength(0);
     expect(h.state.account.outstandingPence).toBe(8700);
+  });
+
+  it("keeps the real earlier bank date but resolves retries at the locked staff decision, including later recovery", async () => {
+    const h = harness();
+    await h.record("EARLY", 1);
+    await h.record("RETRY", 2, { occurredAt: "2026-10-15T12:00:00.123Z" });
+    await h.api.processMembershipPaymentAccount(7);
+    const result = await h.api.recordManualMembershipSettlement({ userId: 7, actorId: 11, paymentId: "PM-old", amountPence: 8700, reference: "BANK-REAL", notes: "Full cleared transfer verified", settledAt: "2026-10-02T10:30:00.123Z" });
+    expect(result.settlement.settledAt).toEqual(new Date("2026-10-02T10:30:00.123Z"));
+    expect(result.settlement.decisionAt).toEqual(new Date("2026-11-01T12:00:00Z"));
+    expect(result.account.outstandingCount).toBe(0);
+    const intents = h.state.outbox.length;
+    await h.record("LATE-DELIVERY", 3, { occurredAt: "2026-10-28T12:00:00Z" });
+    await h.record("LATER-RETRY", 4, { occurredAt: "2026-11-01T12:01:00Z" });
+    h.tick(120_000);
+    await h.api.processMembershipPaymentAccount(7);
+    expect(h.state.account.outstandingCount).toBe(0);
+    expect(h.state.obligations[0].status).toBe("settled");
+    expect(h.state.outbox).toHaveLength(intents);
+    await h.api.processMembershipPaymentOutbox();
+    expect(h.sends).toHaveLength(0);
+    expect(h.state.events).toHaveLength(4);
+  });
+
+  it("writes off only the selected full instalment, retains reason/actor, and blocks replayed chasers without forgery", async () => {
+    const h = harness();
+    await h.record("OLD", 1);
+    await h.record("OTHER", 2, { paymentId: "PM-second" });
+    await h.api.processMembershipPaymentAccount(7);
+    const feeHistory = structuredClone(h.state.fees);
+    const access = structuredClone(h.state.user);
+    const beforeEvents = h.state.events.length;
+    const result = await h.api.ignoreMembershipPayment({ userId: 7, actorId: 11, paymentId: "PM-old", amountPence: 8700, reason: "Owner agrees not to pursue this instalment" });
+    expect(result.resolution).toMatchObject({ resolutionKind: "ignored", recordedById: 11, paymentId: "PM-old" });
+    expect(result.resolution.notes).toContain("no money received");
+    expect(result.resolution.notes).toContain("Owner agrees not to pursue");
+    expect(result.account.outstandingCount).toBe(1);
+    expect(h.state.obligations.find(p => p.paymentId === "PM-old")!.status).toBe("ignored");
+    expect(h.state.obligations.find(p => p.paymentId === "PM-second")!.status).toBe("outstanding");
+    expect(h.state.events).toHaveLength(beforeEvents);
+    expect(h.state.user).toEqual(access);
+    expect(h.state.fees).toEqual(feeHistory);
+    await h.record("REPLAY-RETRY", 3, { occurredAt: "2026-11-01T12:01:00Z" });
+    h.tick(120_000);
+    await h.api.processMembershipPaymentAccount(7);
+    expect(h.state.obligations.find(p => p.paymentId === "PM-old")!.status).toBe("ignored");
+    expect(h.state.account.outstandingCount).toBe(1);
+    await h.api.processMembershipPaymentOutbox();
+    expect(h.state.outbox.filter(o => o.eventId === "OLD").every(o => o.status === "cancelled")).toBe(true);
+    expect(h.sends.some(m => m.html.includes("OLD</"))).toBe(false);
+    await expect(h.api.ignoreMembershipPayment({ userId: 7, actorId: 11, paymentId: "PM-old", amountPence: 8700, reason: "Duplicate" })).rejects.toThrow("outstanding");
+  });
+
+  it("rejects stale, partial, unknown and reasonless ignores and rolls back a failed commit", async () => {
+    const h = harness();
+    await h.record("FAILED", 1);
+    await h.api.processMembershipPaymentAccount(7);
+    const input = { userId: 7, actorId: 11, paymentId: "PM-old", amountPence: 8700, reason: "Approved write-off" };
+    for (const change of [{ amountPence: 8600 }, { paymentId: "PM-wrong" }, { reason: " " }, { amountPence: 0 }])
+      await expect(h.api.ignoreMembershipPayment({ ...input, ...change })).rejects.toThrow();
+    h.crashCommit();
+    await expect(h.api.ignoreMembershipPayment(input)).rejects.toThrow("crash");
+    expect(h.state.settlements).toHaveLength(0);
+    expect(h.state.account.outstandingPence).toBe(8700);
+    expect(h.state.obligations[0].status).toBe("outstanding");
+  });
+
+  it("does not consume unrelated pending failure notifications during a manual write-off", async () => {
+    const h = harness();
+    await h.record("OLD", 1);
+    await h.api.processMembershipPaymentAccount(7);
+    await h.record("NEW-MONTH", 2, { paymentId: "PM-second" });
+    await h.api.ignoreMembershipPayment({ userId: 7, actorId: 11, paymentId: "PM-old", amountPence: 8700, reason: "Approved local write-off" });
+    expect(h.state.events.find(e => e.eventId === "NEW-MONTH")!.status).toBe("pending");
+    expect(h.state.outbox.some(o => o.eventId === "NEW-MONTH")).toBe(false);
+    await h.api.processMembershipPaymentAccount(7);
+    expect(h.state.events.find(e => e.eventId === "NEW-MONTH")!.status).toBe("processed");
+    expect(h.state.outbox.filter(o => o.eventId === "NEW-MONTH").map(o => o.kind).sort()).toEqual(["failure", "failure_support"]);
+    expect(h.state.obligations.find(p => p.paymentId === "PM-old")!.status).toBe("ignored");
+  });
+
+  it("rolls back an insert that cannot read back the separate staff decision time", async () => {
+    const h = harness();
+    await h.record("FAILED", 1);
+    await h.api.processMembershipPaymentAccount(7);
+    const transaction = h.store.transaction.bind(h.store);
+    h.store.transaction = (memberId, work) => transaction(memberId, tx => work({
+      ...tx,
+      insertSettlement: async value => ({ ...await tx.insertSettlement(value), decisionAt: null }),
+    }));
+    await expect(h.api.recordManualMembershipSettlement({ userId: 7, actorId: 11, paymentId: "PM-old", amountPence: 8700, reference: "BANK", notes: "Verified whole receipt", settledAt: "2026-10-02T12:00:00Z" })).rejects.toThrow("verified in storage");
+    expect(h.state.settlements).toHaveLength(0);
+    expect(h.state.account.outstandingPence).toBe(8700);
+    expect(h.state.obligations[0].status).toBe("outstanding");
   });
 
   it("only clears the explicitly settled payment, never the other outstanding obligation", async () => {

@@ -17,6 +17,9 @@ export type MembershipPaymentSettlement = {
   settlementId: string;
   paymentId: string;
   occurredAt: MembershipPaymentTime;
+  resolutionKind?: "received" | "ignored";
+  /** New staff decisions resolve this whole instalment; legacy receipts retain chronology. */
+  terminal?: boolean;
 };
 
 export type MembershipPaymentPolicyOptions = {
@@ -53,7 +56,7 @@ export type MembershipPaymentRecovery = {
   /** Provider event ID or settlement ID, disambiguated by action. */
   id: string;
   paymentId: string;
-  action: "confirmed" | "paid_out" | "manual_settlement";
+  action: "confirmed" | "paid_out" | "manual_settlement" | "manual_ignore";
   occurredAt: string;
   runKey: string | null;
   closedRun: boolean;
@@ -88,6 +91,7 @@ type Entry = {
   amount?: number;
   currency?: string;
   isMembership: boolean;
+  terminal?: boolean;
 };
 
 function timestamp(value: MembershipPaymentTime): number {
@@ -171,10 +175,11 @@ export function reduceMembershipPaymentEvents(
       kind: "manual",
       id: settlement.settlementId,
       paymentId: settlement.paymentId,
-      action: "manual_settlement",
+      action: settlement.resolutionKind === "ignored" ? "manual_ignore" : "manual_settlement",
       occurredAt: new Date(time).toISOString(),
       time,
       isMembership: true,
+      terminal: settlement.terminal,
     });
   }
   const ordered = Array.from(entries.values()).sort(
@@ -193,6 +198,7 @@ export function reduceMembershipPaymentEvents(
   >();
   const failures: MembershipPaymentFailure[] = [];
   const recoveries: MembershipPaymentRecovery[] = [];
+  const ignoredPayments = new Set<string>();
   let failureCount = 0;
   let currentRunKey: string | null = null;
   let lastFailedAt: string | null = null;
@@ -220,6 +226,10 @@ export function reduceMembershipPaymentEvents(
       const debt = outstanding.get(entry.paymentId);
       if (debt) Object.assign(debt, known);
     }
+    // A staff write-off applies to this exact instalment, not to any future month's
+    // payment. Retried/provider-replayed failures remain evidence but cannot reopen it.
+    if (entry.kind === "provider" && ignoredPayments.has(entry.paymentId)) continue;
+    if (entry.kind === "manual" && (entry.action === "manual_ignore" || entry.terminal)) ignoredPayments.add(entry.paymentId);
     if (entry.action === "failed" || entry.action === "charged_back") {
       hadFailure = true;
       const debt = outstanding.get(entry.paymentId);
@@ -259,7 +269,7 @@ export function reduceMembershipPaymentEvents(
         paymentId: entry.paymentId,
         action:
           entry.kind === "manual"
-            ? "manual_settlement"
+            ? entry.action === "manual_ignore" ? "manual_ignore" : "manual_settlement"
             : (entry.action as "confirmed" | "paid_out"),
         occurredAt: entry.occurredAt,
         runKey: currentRunKey,

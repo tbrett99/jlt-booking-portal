@@ -1,0 +1,1 @@
+ALTER TABLE `membership_payment_settlements` ADD `resolutionKind` varchar(20) DEFAULT 'received' NOT NULL;

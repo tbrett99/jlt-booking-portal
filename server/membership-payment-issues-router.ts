@@ -21,6 +21,7 @@ import {
   membershipPaymentOutbox as outbox,
   membershipPaymentControl as control,
   membershipPaymentInbox as inbox,
+  membershipPaymentSettlements as settlements,
 } from "../drizzle/schema";
 
 const SCHEMA_ERROR =
@@ -387,12 +388,25 @@ export const membershipPaymentsRouter = router({
           status: string;
           lastEventAt: Stamp;
           lastFailureAt: Stamp;
+          resolutionKind: string | null;
+          receiptDate: Stamp;
+          decisionAt: Stamp;
+          resolutionReference: string | null;
+          resolutionNotes: string | null;
+          recordedById: number | null;
         }>(
           db,
           sql`SELECT ${obligations.id} AS id, ${obligations.paymentId} AS paymentId,
       ${obligations.amountPence} AS amountPence, ${obligations.currency} AS currency,
       ${obligations.status} AS status, ${obligations.lastEventAt} AS lastEventAt,
-      ${obligations.lastFailureAt} AS lastFailureAt FROM ${obligations}
+      ${obligations.lastFailureAt} AS lastFailureAt,
+      ${settlements.resolutionKind} AS resolutionKind, ${settlements.settledAt} AS receiptDate,
+      ${settlements.decisionAt} AS decisionAt, ${settlements.reference} AS resolutionReference,
+      ${settlements.notes} AS resolutionNotes, ${settlements.recordedById} AS recordedById
+      FROM ${obligations} LEFT JOIN ${settlements} ON ${settlements.id} = (
+        SELECT resolution.id FROM membership_payment_settlements resolution
+        WHERE resolution.userId = ${obligations.userId} AND resolution.paymentId = ${obligations.paymentId}
+        ORDER BY COALESCE(resolution.decisionAt, resolution.settledAt) DESC, resolution.id DESC LIMIT 1)
       WHERE ${obligations.userId} = ${input.userId} ORDER BY ${obligations.lastEventAt} DESC, ${obligations.id} DESC LIMIT 21`
         );
         const feeRows = await readRows<{
