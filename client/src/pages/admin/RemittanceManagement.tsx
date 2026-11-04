@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
+import { paymentSummaryVat } from "@/lib/remittance-payment-summary";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -451,6 +452,7 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
         "Sort Code": (a as any).bankSortCode ?? "",
         "Account Number": (a as any).bankAccountNumber ?? "",
         "Number of Claims": String(a.lines.length),
+        "VAT (deducted)": paymentSummaryVat(a.lines),
         "Total to Pay (80%)": `£${total.toFixed(2)}`,
       };
     });
@@ -468,6 +470,7 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
       "Sort Code": "",
       "Account Number": "",
       "Number of Claims": String(totalClaims),
+      "VAT (deducted)": paymentSummaryVat(agents.flatMap((a) => a.lines)),
       "Total to Pay (80%)": `£${grandTotal.toFixed(2)}`,
     });
     exportToCsv(`payment-summary${batchName ? `-${batchName}` : ""}.csv`, rows);
@@ -537,7 +540,7 @@ function AgentView({ batchId, batchName }: { batchId?: number; batchName?: strin
               <CheckCircle2 className="h-3 w-3" />All pushed
             </Badge>
           )}
-          <Button size="sm" variant="outline" onClick={exportPaymentSummary} title="One row per agent showing total to pay">
+          <Button size="sm" variant="outline" onClick={exportPaymentSummary} title="One row per agent showing recorded VAT deducted and total to pay">
             <Download className="h-4 w-4 mr-2" />Payment Summary
           </Button>
           <Button size="sm" variant="outline" onClick={exportAgentView}>
