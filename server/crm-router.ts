@@ -9,6 +9,7 @@ import { nanoid } from "nanoid";
 import { isOnboardingEligible } from "./onboarding-eligibility";
 import { DEPARTURE_REASON_KEYS } from "../shared/departure-reasons";
 import { assertAgentNotMerged, getAgentMergeTarget } from "./agent-merge-identity";
+import { OFFBOARDING_SYSTEM_ITEMS, getOffboardingChecklist, readOffboardingChecklist } from "../shared/offboarding-checklist";
 import {
   createRecruitmentProspect,
   getRecruitmentProspectByEmail,
@@ -2248,7 +2249,26 @@ export const crmRouter = router({
           profileUpdate.inContract = false;
         }
 
-        await upsertAgentCrmProfile(input.userId, profileUpdate as any);
+        if (input.newStatus === "cancelled" && input.cancelChecklist) {
+          // Read/merge/write under the same row lock as updateCancelChecklist,
+          // so a concurrent staff save cannot be overwritten by a stale snapshot.
+          await db.transaction(async tx => {
+            const [current] = await tx.select({ cancelChecklist: agentCrmProfiles.cancelChecklist })
+              .from(agentCrmProfiles).where(eq(agentCrmProfiles.userId, input.userId)).for("update");
+            const existingTicks = readOffboardingChecklist(current?.cancelChecklist);
+            const payload = { ...profileUpdate, cancelChecklist: [
+              ...existingTicks,
+              ...input.cancelChecklist!.filter(item => !existingTicks.includes(item)),
+            ] };
+            if (current) {
+              await tx.update(agentCrmProfiles).set(payload).where(eq(agentCrmProfiles.userId, input.userId));
+            } else {
+              await tx.insert(agentCrmProfiles).values({ userId: input.userId, ...payload });
+            }
+          });
+        } else {
+          await upsertAgentCrmProfile(input.userId, profileUpdate as any);
+        }
 
         // Sync portalStatus on the users table so login guards are enforced
         // paused + suspended = blocked from portal; in_notice = still has access; cancelled = blocked; active = access restored
@@ -2612,13 +2632,7 @@ export const crmRouter = router({
         tierCounts[tier] = (tierCounts[tier] ?? 0) + 1;
       }
 
-      const CANCEL_CHECKLIST_ITEMS = [
-        "Topdog login removed",
-        "WhatsApp access removed",
-        "Learnworlds access removed",
-        "JLT email deactivated",
-        "Portal access removed",
-      ];
+      const CANCEL_CHECKLIST_ITEMS = OFFBOARDING_SYSTEM_ITEMS;
 
       // In notice — sorted by soonest final date
       const inNotice = allProfiles
@@ -2649,12 +2663,7 @@ export const crmRouter = router({
 
       // Cancelled — only those with incomplete offboarding checklist
       const cancelledPendingOffboarding = allProfiles
-        .filter(p => {
-          if (p.agentStatus !== "cancelled") return false;
-          const ticked = Array.isArray(p.cancelChecklist) ? (p.cancelChecklist as string[]) : [];
-          // We'll check completeness after we know the full item list (fixed + suppliers)
-          return true;
-        })
+        .filter(p => p.agentStatus === "cancelled")
         .sort((a, b) => {
           if (!a.cancelledAt) return 1;
           if (!b.cancelledAt) return -1;
@@ -2687,11 +2696,7 @@ export const crmRouter = router({
           ...p,
           supplierLogins: suppliersByUser[p.userId] ?? [],
         }))
-        .filter(p => {
-          const ticked = Array.isArray(p.cancelChecklist) ? (p.cancelChecklist as string[]) : [];
-          const totalItems = CANCEL_CHECKLIST_ITEMS.length + p.supplierLogins.length;
-          return ticked.length < totalItems;
-        });
+        .filter(p => !getOffboardingChecklist(p.supplierLogins, p.cancelChecklist).complete);
 
       return {
         stats,
@@ -2708,6 +2713,7 @@ export const crmRouter = router({
       .input(z.object({
         userId: z.number().int(),
         checklist: z.array(z.string()),
+        expectedChecklist: z.array(z.string()).optional(),
       }))
       .mutation(async ({ input }) => {
         const { getDb } = await import("./db");
@@ -2715,10 +2721,17 @@ export const crmRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         const { agentCrmProfiles } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
-        await db.update(agentCrmProfiles)
-          .set({ cancelChecklist: input.checklist })
-          .where(eq(agentCrmProfiles.userId, input.userId));
-        return { success: true };
+        await db.transaction(async tx => {
+          const [profile] = await tx.select({ cancelChecklist: agentCrmProfiles.cancelChecklist })
+            .from(agentCrmProfiles).where(eq(agentCrmProfiles.userId, input.userId)).for("update");
+          if (!profile) throw new TRPCError({ code: "NOT_FOUND", message: "Agent CRM profile not found." });
+          if (input.expectedChecklist && JSON.stringify(readOffboardingChecklist(profile.cancelChecklist)) !== JSON.stringify(input.expectedChecklist)) {
+            throw new TRPCError({ code: "CONFLICT", message: "The checklist changed since it was loaded. Refresh and try again; no steps were overwritten." });
+          }
+          await tx.update(agentCrmProfiles).set({ cancelChecklist: input.checklist })
+            .where(eq(agentCrmProfiles.userId, input.userId));
+        });
+        return { success: true, checklist: input.checklist };
       }),
 
     // ─── Overdue count for sidebar badge ─────────────────────────────────────────────

@@ -31,6 +31,7 @@ import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { DEPARTURE_REASON_OPTIONS, type DepartureReasonKey } from "@shared/departure-reasons";
 import { canLinkGoCardlessMandate } from "@shared/gocardless-mandate-status";
+import { getOffboardingChecklist } from "@shared/offboarding-checklist";
 import { AgentMergeDialog } from "@/components/AgentMergeDialog";
 import { AgentMergeHistory } from "@/components/AgentMergeHistory";
 
@@ -987,6 +988,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
   supplierLogins?: SupplierLoginRow[];
   onRefresh: () => void;
 }) {
+  const utils = trpc.useUtils();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     jltEmail: profile?.jltEmail ?? "",
@@ -1018,14 +1020,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
   const [departureReasons, setDepartureReasons] = useState<DepartureReasonKey[]>([]);
   const [departureDetails, setDepartureDetails] = useState("");
   const [inContractChecked, setInContractChecked] = useState(false);
-  const CANCEL_CHECKLIST_ITEMS = [
-    "Supplier logins revoked",
-    "Topdog login removed",
-    "WhatsApp access removed",
-    "Learnworlds access removed",
-    "JLT email deactivated",
-    "Portal access removed",
-  ];
+  const { items: CANCEL_CHECKLIST_ITEMS, supplierTasks: cancellationSupplierTasks } = getOffboardingChecklist(supplierLogins, []);
   const [cancelChecklist, setCancelChecklist] = useState<string[]>([]);
 
   const updateAgentStatus = trpc.crm.agentCrm.updateAgentStatus.useMutation({
@@ -1034,6 +1029,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
       setStatusDialog(null);
       setEditing(false);
       onRefresh();
+      void utils.crm.agentCrm.getMembershipsOverview.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -1195,7 +1191,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
 
       {/* ── Cancelled Dialog ── */}
       <Dialog open={statusDialog === "cancelled"} onOpenChange={(v) => !v && setStatusDialog(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Cancelled</span>
@@ -1210,6 +1206,7 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block font-medium">Systems to Restrict — tick all that apply</Label>
+              <p className="text-xs text-muted-foreground mb-2">Each supplier confirmation covers every recorded login for that supplier. Unticked tasks remain in Memberships → Offboarding Required.</p>
               <div className="space-y-2 mt-1">
                 {CANCEL_CHECKLIST_ITEMS.map((item) => (
                   <div key={item} className="flex items-center gap-2.5">
@@ -1223,7 +1220,12 @@ function ProfileTab({ userId, profile, supplierLogins = [], onRefresh }: {
                         )
                       }
                     />
-                    <label htmlFor={`cancel-${item}`} className="text-sm cursor-pointer">{item}</label>
+                    <label htmlFor={`cancel-${item}`} className="text-sm cursor-pointer">
+                      {item}
+                      {cancellationSupplierTasks.find(task => task.key === item)?.loginIds.length! > 1 && (
+                        <span className="ml-1 text-xs text-muted-foreground">(all {cancellationSupplierTasks.find(task => task.key === item)!.loginIds.length} recorded logins)</span>
+                      )}
+                    </label>
                   </div>
                 ))}
               </div>

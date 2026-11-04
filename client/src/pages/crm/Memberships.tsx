@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Progress } from "@/components/ui/progress";
+import { OFFBOARDING_SYSTEM_ITEMS, getOffboardingChecklist, readOffboardingChecklist, toggleOffboardingItem } from "@shared/offboarding-checklist";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -99,16 +100,9 @@ function StatCard({
 
 // ── Offboarding Checklist Row ─────────────────────────────────────────────────
 
-// Fixed system items (no generic "Supplier logins revoked" — suppliers are listed individually)
-const CANCEL_CHECKLIST_ITEMS = [
-  "Topdog login removed",
-  "WhatsApp access removed",
-  "Learnworlds access removed",
-  "JLT email deactivated",
-  "Portal access removed",
-];
+const CANCEL_CHECKLIST_ITEMS = OFFBOARDING_SYSTEM_ITEMS;
 
-function OffboardingRow({
+export function OffboardingRow({
   agent,
   onUpdate,
 }: {
@@ -121,32 +115,51 @@ function OffboardingRow({
     uniqueAgentId?: string | null;
     supplierLogins?: { id: number; supplierName: string }[];
   };
-  onUpdate: () => void;
+  onUpdate: () => unknown | Promise<unknown>;
 }) {
   const suppliers = agent.supplierLogins ?? [];
-  // Build the full item list: per-supplier items first, then fixed system items
-  const supplierItems = suppliers.map(s => `Revoke: ${s.supplierName}`);
-  const allItems = [...supplierItems, ...CANCEL_CHECKLIST_ITEMS];
-
-  const ticked = Array.isArray(agent.cancelChecklist) ? (agent.cancelChecklist as string[]) : [];
-  const [localTicked, setLocalTicked] = useState<string[]>(ticked);
+  const [localTicked, setLocalTicked] = useState<string[]>(() => readOffboardingChecklist(agent.cancelChecklist));
   const [expanded, setExpanded] = useState(false);
+  const saving = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const utils = trpc.useUtils();
+  useEffect(() => {
+    setLocalTicked(readOffboardingChecklist(agent.cancelChecklist));
+  }, [agent.userId, agent.cancelChecklist]);
 
-  const updateChecklist = trpc.crm.agentCrm.updateCancelChecklist.useMutation({
-    onSuccess: () => { toast.success("Checklist updated"); onUpdate(); },
-    onError: (e) => toast.error(e.message),
-  });
+  const updateChecklist = trpc.crm.agentCrm.updateCancelChecklist.useMutation();
 
-  function toggle(item: string) {
-    const next = localTicked.includes(item)
-      ? localTicked.filter(i => i !== item)
-      : [...localTicked, item];
+  async function toggle(item: string) {
+    if (saving.current) return;
+    saving.current = true;
+    setIsSaving(true);
+    const next = toggleOffboardingItem(localTicked, item);
+    try {
+      await updateChecklist.mutateAsync({ userId: agent.userId, checklist: next, expectedChecklist: localTicked });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Checklist could not be saved. No completion was changed.");
+      void onUpdate();
+      saving.current = false;
+      setIsSaving(false);
+      return;
+    }
+    // Show a tick only after persistence succeeded; never leave a failed save
+    // looking complete, or tell staff to resubmit an already-saved change.
     setLocalTicked(next);
-    updateChecklist.mutate({ userId: agent.userId, checklist: next });
+    toast.success("Checklist updated");
+    try {
+      const result = await onUpdate();
+      if (result && typeof result === "object" && "isError" in result && result.isError) throw new Error("Refresh failed");
+      await utils.crm.agentCrm.get.invalidate({ userId: agent.userId });
+    } catch {
+      toast.error("Checklist saved, but the list could not refresh. Refresh the page; do not repeat the update.");
+    } finally {
+      saving.current = false;
+      setIsSaving(false);
+    }
   }
 
-  const progress = localTicked.length;
-  const total = allItems.length;
+  const { supplierTasks, completed: progress, total } = getOffboardingChecklist(suppliers, localTicked);
   const pct = total === 0 ? 100 : Math.round((progress / total) * 100);
 
   return (
@@ -164,18 +177,19 @@ function OffboardingRow({
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">{agent.email}</p>
-          {suppliers.length > 0 && (
+          {supplierTasks.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1.5">
-              {suppliers.map(s => (
+              {supplierTasks.map(s => (
                 <span
-                  key={s.id}
+                  key={s.key}
                   className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${
-                    localTicked.includes(`Revoke: ${s.supplierName}`)
+                    localTicked.includes(s.key)
                       ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-400 line-through opacity-60"
                       : "bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-950 dark:border-orange-800 dark:text-orange-400"
                   }`}
                 >
                   {s.supplierName}
+                  {s.loginIds.length > 1 && ` (${s.loginIds.length} records)`}
                 </span>
               ))}
             </div>
@@ -204,24 +218,25 @@ function OffboardingRow({
       {expanded && (
         <div className="border-t bg-muted/20 p-4 space-y-4">
           {/* Per-supplier items */}
-          {supplierItems.length > 0 && (
+          {supplierTasks.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Supplier Logins</p>
+              <p className="text-xs text-muted-foreground mb-3">Tick a supplier only once every recorded login for that supplier has been revoked. Multiple records share one supplier-wide confirmation.</p>
               <div className="grid grid-cols-2 gap-3">
-                {supplierItems.map((item) => (
-                  <div key={item} className="flex items-center gap-2.5">
+                {supplierTasks.map((task) => (
+                  <div key={task.key} className="flex items-center gap-2.5">
                     <Checkbox
-                      id={`${agent.userId}-${item}`}
-                      checked={localTicked.includes(item)}
-                      onCheckedChange={() => toggle(item)}
-                      disabled={updateChecklist.isPending}
+                      id={`${agent.userId}-supplier-${task.loginIds[0]}`}
+                      checked={localTicked.includes(task.key)}
+                      onCheckedChange={() => void toggle(task.key)}
+                      disabled={isSaving}
                     />
                     <label
-                      htmlFor={`${agent.userId}-${item}`}
-                      className={`text-sm cursor-pointer ${localTicked.includes(item) ? "line-through text-muted-foreground" : ""}`}
+                      htmlFor={`${agent.userId}-supplier-${task.loginIds[0]}`}
+                      className={`text-sm cursor-pointer ${localTicked.includes(task.key) ? "line-through text-muted-foreground" : ""}`}
                     >
-                      {/* Show just the supplier name, not the "Revoke: " prefix */}
-                      {item.replace(/^Revoke: /, "")}
+                      {task.supplierName}
+                      {task.loginIds.length > 1 && <span className="block text-xs text-muted-foreground">All {task.loginIds.length} recorded logins</span>}
                     </label>
                   </div>
                 ))}
@@ -231,7 +246,7 @@ function OffboardingRow({
 
           {/* Fixed system items */}
           <div>
-            {supplierItems.length > 0 && (
+            {supplierTasks.length > 0 && (
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Systems &amp; Access</p>
             )}
             <div className="grid grid-cols-2 gap-3">
@@ -240,8 +255,8 @@ function OffboardingRow({
                   <Checkbox
                     id={`${agent.userId}-${item}`}
                     checked={localTicked.includes(item)}
-                    onCheckedChange={() => toggle(item)}
-                    disabled={updateChecklist.isPending}
+                    onCheckedChange={() => void toggle(item)}
+                    disabled={isSaving}
                   />
                   <label
                     htmlFor={`${agent.userId}-${item}`}
@@ -262,7 +277,7 @@ function OffboardingRow({
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function Memberships() {
-  const { data, refetch, isLoading } = trpc.crm.agentCrm.getMembershipsOverview.useQuery();
+  const { data, refetch, isLoading } = trpc.crm.agentCrm.getMembershipsOverview.useQuery(undefined, { refetchOnMount: "always", refetchOnWindowFocus: "always" });
   const { data: newSignUps = [], refetch: refetchSignUps } = trpc.crm.agentCrm.getNewSignUps.useQuery();
   const utils = trpc.useUtils();
 
