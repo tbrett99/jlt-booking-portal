@@ -23,6 +23,20 @@ const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
 });
 
 export const superAdminRouter = router({
+  /** Read-only provider payout history; never invokes financial recovery or account effects. */
+  paidOutIncome: superAdminProcedure
+    .input(z.object({ rangeStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), rangeEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), refreshKey: z.number().int().positive().optional() }))
+    .query(async ({ input }) => {
+      const { getPaidOutIncomeReport } = await import("./gocardless-income-service");
+      try { return await getPaidOutIncomeReport(input); }
+      catch (error) {
+        const raw = error instanceof Error ? error.message : "";
+        const message = /^(GoCardless |Choose |The report cannot |Income report exceeds |Reporting database is unavailable)/.test(raw)
+          ? raw : "Paid-out income could not be verified. No complete totals are shown; please retry.";
+        throw new TRPCError({ code: "BAD_REQUEST", message });
+      }
+    }),
+
   /**
    * Main weekly stats — returns all 7 dashboard sections for a given week.
    * weekStart: ISO date string (Monday of the week, e.g. "2026-05-26")

@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import GoCardlessIncomeReport from "./GoCardlessIncomeReport";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link, useLocation } from "wouter";
 import {
@@ -1476,7 +1477,7 @@ function DiscountCodesTab() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function SuperAdminDashboard() {
   const { user } = useAuth();
-  const [viewMode, setViewMode] = useState<"week" | "month" | "comparison">("week");
+  const [viewMode, setViewMode] = useState<"week" | "month" | "comparison" | "payouts">("week");
   const [currentMonday, setCurrentMonday] = useState(() => getMondayOfWeek(new Date()));
   const [currentMonth, setCurrentMonth] = useState(() => getFirstOfMonth(new Date()));
   const [comparisonYear, setComparisonYear] = useState(() => new Date().getFullYear());
@@ -1592,6 +1593,12 @@ export default function SuperAdminDashboard() {
             >
               <BarChart2 size={13} className="inline mr-1" />Compare
             </button>
+            <button
+              onClick={() => setViewMode("payouts")}
+              className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${viewMode === "payouts" ? "bg-emerald-100 text-emerald-900 shadow-sm" : "text-emerald-700 hover:bg-emerald-50"}`}
+            >
+              <PoundSterling size={13} className="inline mr-1" />GoCardless payouts
+            </button>
           </div>
 
           {/* Period navigator */}
@@ -1611,15 +1618,17 @@ export default function SuperAdminDashboard() {
               </span>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={nextMonth} disabled={isCurrentMonth}><ChevronRight size={16} /></Button>
             </div>
-          ) : (
+          ) : viewMode === "comparison" ? (
             <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={prevComparisonYear}><ChevronLeft size={16} /></Button>
               <span className="text-sm font-medium min-w-[132px] text-center">{comparisonYear} comparison</span>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={nextComparisonYear} disabled={comparisonYear >= new Date().getFullYear()}><ChevronRight size={16} /></Button>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
+
+      {viewMode === "payouts" ? <GoCardlessIncomeReport /> : <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950"><div><p className="font-semibold">Joining fees and membership income already paid out</p><p className="mt-1 text-sm">Use the dedicated GoCardless report for exact payment counts, gross amounts, payers and acquisition sources by payout-event date—not collection or joining date.</p></div><Button variant="outline" onClick={() => setViewMode("payouts")}>View GoCardless payouts <ArrowRight className="ml-2" size={16} /></Button></div>}
 
       {/* Calendar-year comparison */}
       {viewMode === "comparison" && <BusinessPerformanceComparison year={comparisonYear} />}
