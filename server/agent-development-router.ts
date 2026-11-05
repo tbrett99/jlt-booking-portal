@@ -22,12 +22,32 @@ import {
 } from "../drizzle/schema";
 import { acceleratorWeekActionDueAt, acceleratorWeekReleaseAt } from "./academy-journey";
 import { dispatchAcademyEmailAlerts } from "./academy-email-alerts";
+import { requireEngagementStaff, isFullAdmin, assertNotSelfReview, recordStaffOperation } from "./staff-access";
+import { applyEngagementActionPolicy, assertEngagementOwner, currentEngagementAgentFilter, engagementIdentityColumns, engagementIdentityDto, engagementTeachingColumns, engagementTeachingDto, requireCurrentEngagementAgents, staffLearnerColumns } from "./engagement-staff";
+import type { User } from "../drizzle/schema";
+import { academyLessonProgress } from "../drizzle/schema";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
     throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
   }
   return next({ ctx });
+});
+
+// Only explicitly delegated procedures below use this gate. Never rewrite role.
+const engagementProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  await requireEngagementStaff(ctx.user);
+  if (isFullAdmin(ctx.user)) return next({ ctx });
+  try {
+    const result = await next({ ctx });
+    if (!result.ok && result.error.code === "INTERNAL_SERVER_ERROR") {
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The staff operation could not be completed. Please try again or contact an administrator." });
+    }
+    return result;
+  } catch (error) {
+    if (error instanceof TRPCError && error.code !== "INTERNAL_SERVER_ERROR") throw error;
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The staff operation could not be completed. Please try again or contact an administrator." });
+  }
 });
 
 const actionStatus = z.enum(["assigned", "submitted", "review", "completed", "needs_revision"]);
@@ -113,15 +133,18 @@ async function sendAcademyActionEmail(params: {
 async function getEligibleAgentIds(plan: {
   audience: "agent_accelerator" | "selected_agents" | "all_agents";
   assignmentTrigger: "immediate" | "on_accelerator_entry";
-}, explicitAgentIds: number[]) {
+}, explicitAgentIds: number[], staffUser?: User) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-  if (plan.audience === "selected_agents") return Array.from(new Set(explicitAgentIds));
+  if (plan.audience === "selected_agents") {
+    if (staffUser && !isFullAdmin(staffUser)) await requireCurrentEngagementAgents(explicitAgentIds);
+    return Array.from(new Set(explicitAgentIds));
+  }
 
   const rows = await db.select({ id: users.id, trainingStage: agentCrmProfiles.trainingStage })
     .from(users)
     .leftJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, users.id))
-    .where(and(eq(users.role, "agent"), eq(users.isActive, true), eq(users.portalStatus, "active")));
+    .where(staffUser && !isFullAdmin(staffUser) ? await currentEngagementAgentFilter() : and(eq(users.role, "agent"), eq(users.isActive, true), eq(users.portalStatus, "active")));
   if (plan.audience === "all_agents") return rows.map((row) => row.id);
 
   const acceleratorIds = rows.filter((row) => row.trainingStage === "Agent Accelerator").map((row) => row.id);
@@ -179,7 +202,7 @@ async function createAssignments(params: { plan: { id: number; title: string; du
   return { created: targetIds.length };
 }
 
-async function publishPlan(planId: number, actorId: number, options: { publishNow?: boolean } = {}) {
+async function publishPlan(planId: number, actorId: number, options: { publishNow?: boolean; staffUser?: User } = {}) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
   const [plan] = await db.select().from(academyActionPlans).where(eq(academyActionPlans.id, planId)).limit(1);
@@ -196,7 +219,8 @@ async function publishPlan(planId: number, actorId: number, options: { publishNo
   // Course-linked Accelerator actions publish as a reusable week template. They
   // are assigned only by releaseAvailableJourneyActions when each individual
   // learner reaches that week, never to the whole Accelerator audience at once.
-  const agentIds = plan.courseId && plan.courseWeek ? [] : await getEligibleAgentIds(plan as any, explicit.map((row) => row.agentId));
+  const agentIds = plan.courseId && plan.courseWeek ? [] : await getEligibleAgentIds(plan as any, explicit.map((row) => row.agentId), options.staffUser);
+  if (options.staffUser) await recordStaffOperation(options.staffUser, "engagement.action.publish", { planId: plan.id, targetCount: agentIds.length });
   const assignmentResult = await createAssignments({ plan, agentIds, actorId });
   const pool = await getRawDbPool();
   await pool.execute(
@@ -230,8 +254,26 @@ export async function publishScheduledAcademyActionPlans() {
     lte(academyActionPlans.publishAt, now),
   ));
   let assignments = 0;
-  for (const plan of plans) assignments += (await publishPlan(plan.id, plan.createdById)).created;
-  return { published: plans.length, assignments };
+  let published = 0;
+  for (const plan of plans) {
+    // A scheduled staff write must not escape its scope merely because the
+    // scheduler, rather than a staff RPC, performs the later publication.
+    const [author] = await db.select({ id: users.id, role: users.role, name: users.name,
+      isActive: users.isActive, portalStatus: users.portalStatus, mustChangePassword: users.mustChangePassword })
+      .from(users).where(eq(users.id, plan.updatedById ?? plan.createdById)).limit(1);
+    const staffUser = author?.role === "agent" ? author as User : undefined;
+    if (staffUser) {
+      try {
+        await requireEngagementStaff(staffUser);
+      } catch {
+        console.warn(`[Academy Actions] Scheduled staff plan ${plan.id} deferred: engagement grant unavailable`);
+        continue;
+      }
+    }
+    assignments += (await publishPlan(plan.id, staffUser?.id ?? plan.createdById, { staffUser })).created;
+    published += 1;
+  }
+  return { published, assignments };
 }
 
 /**
@@ -426,12 +468,55 @@ export const agentDevelopmentRouter = router({
   }),
 
   admin: router({
-    actionPlans: adminProcedure.query(async () => {
+    // Staff-only workspace picker: no email, account flags, credentials or profile.
+    staffLearners: engagementProcedure.query(async () => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const plans = await db.select().from(academyActionPlans).orderBy(desc(academyActionPlans.createdAt));
+      const rows = await db.select(staffLearnerColumns).from(users).where(await currentEngagementAgentFilter()).orderBy(asc(users.name));
+      return rows.map((row) => ({ id: row.id, name: row.name }));
+    }),
+
+    // Read-only teaching/activity/check-in briefing. Not the CRM call snapshot.
+    staffActivity: engagementProcedure.input(z.object({ agentId: z.number().int().positive() })).query(async ({ input }) => {
+      await requireCurrentEngagementAgents([input.agentId]);
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [agent] = await db.select({ id: users.id, name: users.name, lastSignedIn: users.lastSignedIn })
+        .from(users).where(eq(users.id, input.agentId)).limit(1);
+      const enrollments = await db.select({ id: academyEnrollments.id, courseId: academyCourses.id, courseTitle: academyCourses.title,
+        status: academyEnrollments.status, startedAt: academyEnrollments.startedAt, completedAt: academyEnrollments.completedAt, dueDate: academyEnrollments.dueDate })
+        .from(academyEnrollments).innerJoin(academyCourses, eq(academyCourses.id, academyEnrollments.courseId))
+        .where(eq(academyEnrollments.agentId, input.agentId)).orderBy(desc(academyEnrollments.updatedAt)).limit(30);
+      const [activity] = await db.select({ lastActivityAt: sql<Date | null>`MAX(${academyLessonProgress.lastActivityAt})`,
+        completedLessons: sql<number>`SUM(CASE WHEN ${academyLessonProgress.completedAt} IS NOT NULL THEN 1 ELSE 0 END)`,
+        lessonActiveSeconds: sql<number>`SUM(${academyLessonProgress.lessonActiveSeconds})`,
+        assessmentActiveSeconds: sql<number>`SUM(${academyLessonProgress.assessmentActiveSeconds})` })
+        .from(academyLessonProgress).innerJoin(academyEnrollments, eq(academyEnrollments.id, academyLessonProgress.enrollmentId))
+        .where(eq(academyEnrollments.agentId, input.agentId));
+      const actions = await db.select({ id: academyActionAssignments.id, planId: academyActionPlans.id, title: academyActionPlans.title,
+        status: academyActionAssignments.status, dueAt: academyActionAssignments.dueAt, submittedAt: academyActionAssignments.submittedAt,
+        completedAt: academyActionAssignments.completedAt })
+        .from(academyActionAssignments).innerJoin(academyActionPlans, eq(academyActionPlans.id, academyActionAssignments.planId))
+        .where(and(eq(academyActionAssignments.agentId, input.agentId), ne(academyActionPlans.status, "archived")))
+        .orderBy(desc(academyActionAssignments.updatedAt)).limit(30);
+      const checkIns = await db.select({ id: agentEngagementCases.id, status: agentEngagementCases.status,
+        lastContactAt: agentEngagementCases.lastContactAt, nextFollowUpAt: agentEngagementCases.nextFollowUpAt })
+        .from(agentEngagementCases).where(eq(agentEngagementCases.agentId, input.agentId)).orderBy(desc(agentEngagementCases.updatedAt)).limit(10);
+      return { agent: agent ? { id: agent.id, name: agent.name, lastSignedIn: agent.lastSignedIn } : null, enrollments, actions, checkIns,
+        activity: { lastActivityAt: activity?.lastActivityAt ?? null, completedLessons: Number(activity?.completedLessons ?? 0),
+          lessonActiveSeconds: Number(activity?.lessonActiveSeconds ?? 0), assessmentActiveSeconds: Number(activity?.assessmentActiveSeconds ?? 0) } };
+    }),
+    actionPlans: engagementProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const plans = await db.select().from(academyActionPlans)
+        .where(isFullAdmin(ctx.user) ? undefined : ne(academyActionPlans.status, "archived"))
+        .orderBy(desc(academyActionPlans.createdAt));
       const planIds = plans.map((plan) => plan.id);
-      const targets = planIds.length ? await db.select().from(academyActionPlanTargets).where(inArray(academyActionPlanTargets.planId, planIds)) : [];
+      const agentScope = isFullAdmin(ctx.user) ? undefined : await currentEngagementAgentFilter();
+      const targets = planIds.length ? await db.select({ planId: academyActionPlanTargets.planId, agentId: academyActionPlanTargets.agentId })
+        .from(academyActionPlanTargets).innerJoin(users, eq(users.id, academyActionPlanTargets.agentId))
+        .where(and(inArray(academyActionPlanTargets.planId, planIds), agentScope)) : [];
       const assignmentCounts = planIds.length
         ? await db.select({
           planId: academyActionAssignments.planId,
@@ -440,7 +525,8 @@ export const agentDevelopmentRouter = router({
           awaitingReview: sql<number>`SUM(CASE WHEN ${academyActionAssignments.status} = 'review' THEN 1 ELSE 0 END)`,
         })
           .from(academyActionAssignments)
-          .where(inArray(academyActionAssignments.planId, planIds))
+          .innerJoin(users, eq(users.id, academyActionAssignments.agentId))
+          .where(and(inArray(academyActionAssignments.planId, planIds), agentScope))
           .groupBy(academyActionAssignments.planId)
         : [];
       const countsByPlanId = new Map(assignmentCounts.map((row) => [row.planId, {
@@ -455,7 +541,7 @@ export const agentDevelopmentRouter = router({
       }));
     }),
 
-    actionReviewSummary: adminProcedure.query(async () => {
+    actionReviewSummary: engagementProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [summary] = await db.select({
@@ -465,7 +551,9 @@ export const agentDevelopmentRouter = router({
         livePlans: sql<number>`COUNT(DISTINCT CASE WHEN ${academyActionPlans.status} = 'published' THEN ${academyActionPlans.id} ELSE NULL END)`,
       })
         .from(academyActionAssignments)
-        .innerJoin(academyActionPlans, eq(academyActionPlans.id, academyActionAssignments.planId));
+        .innerJoin(academyActionPlans, eq(academyActionPlans.id, academyActionAssignments.planId))
+        .innerJoin(users, eq(users.id, academyActionAssignments.agentId))
+        .where(isFullAdmin(ctx.user) ? undefined : and(await currentEngagementAgentFilter(), ne(academyActionPlans.status, "archived")));
       return {
         awaitingReview: Number(summary?.awaitingReview ?? 0),
         submitted: Number(summary?.submitted ?? 0),
@@ -474,7 +562,7 @@ export const agentDevelopmentRouter = router({
       };
     }),
 
-    actionReviewQueue: adminProcedure.input(z.object({
+    actionReviewQueue: engagementProcedure.input(z.object({
       query: z.string().trim().max(160).optional().default(""),
       planId: z.number().int().positive().nullable().optional(),
       courseId: z.number().int().positive().nullable().optional(),
@@ -482,7 +570,7 @@ export const agentDevelopmentRouter = router({
       due: z.enum(["all", "overdue", "due_soon"]).optional().default("all"),
       cursor: z.object({ submittedAt: z.date(), id: z.number().int().positive() }).nullable().optional(),
       limit: z.number().int().min(1).max(50).optional().default(25),
-    })).query(async ({ input }) => {
+    })).query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const now = new Date();
@@ -491,6 +579,7 @@ export const agentDevelopmentRouter = router({
         eq(academyActionAssignments.status, "review"),
         isNotNull(academyActionAssignments.submittedAt),
       ];
+      if (!isFullAdmin(ctx.user)) filters.push(await currentEngagementAgentFilter(), ne(academyActionPlans.status, "archived"));
       if (input.planId) filters.push(eq(academyActionAssignments.planId, input.planId));
       if (input.courseId) filters.push(eq(academyActionPlans.courseId, input.courseId));
       if (input.courseWeek) filters.push(eq(academyActionPlans.courseWeek, input.courseWeek));
@@ -500,7 +589,7 @@ export const agentDevelopmentRouter = router({
         const term = `%${escapeLikeTerm(input.query)}%`;
         filters.push(or(
           like(users.name, term),
-          like(users.email, term),
+          ...(isFullAdmin(ctx.user) ? [like(users.email, term)] : []),
           like(academyActionPlans.title, term),
         )!);
       }
@@ -510,7 +599,7 @@ export const agentDevelopmentRouter = router({
           and(eq(academyActionAssignments.submittedAt, input.cursor.submittedAt), lt(academyActionAssignments.id, input.cursor.id)),
         )!);
       }
-      const rows = await db.select({ assignment: academyActionAssignments, plan: academyActionPlans, agent: users, course: academyCourses })
+      const rows = await db.select({ assignment: academyActionAssignments, plan: academyActionPlans, agent: engagementIdentityColumns(ctx.user), course: isFullAdmin(ctx.user) ? academyCourses : { id: academyCourses.id, title: academyCourses.title } as unknown as typeof academyCourses })
         .from(academyActionAssignments)
         .innerJoin(academyActionPlans, eq(academyActionPlans.id, academyActionAssignments.planId))
         .innerJoin(users, eq(users.id, academyActionAssignments.agentId))
@@ -519,7 +608,7 @@ export const agentDevelopmentRouter = router({
         .orderBy(asc(academyActionAssignments.submittedAt), asc(academyActionAssignments.id))
         .limit(input.limit + 1);
       const hasMore = rows.length > input.limit;
-      const items = hasMore ? rows.slice(0, input.limit) : rows;
+      const items = (hasMore ? rows.slice(0, input.limit) : rows).map((row) => ({ ...row, agent: engagementIdentityDto(ctx.user, row.agent) }));
       const last = items.at(-1);
       return {
         items,
@@ -529,7 +618,7 @@ export const agentDevelopmentRouter = router({
       };
     }),
 
-    saveActionPlan: adminProcedure.input(z.object({
+    saveActionPlan: engagementProcedure.input(z.object({
       id: z.number().int().positive().optional(),
       title: z.string().trim().min(3).max(255),
       instructions: z.string().trim().min(3).max(20_000),
@@ -543,14 +632,21 @@ export const agentDevelopmentRouter = router({
       requiresNote: z.boolean().default(true),
       requiresUrl: z.boolean().default(false),
       requiresUpload: z.boolean().default(false),
-      staffReviewRequired: z.boolean().default(false),
-      momentumAwardMode: z.enum(["off", "self_declared_completion", "reviewed_completion"]).default("off"),
-      momentumPoints: z.number().int().min(0).max(1_000).default(0),
+      staffReviewRequired: z.boolean().optional(),
+      momentumAwardMode: z.enum(["off", "self_declared_completion", "reviewed_completion"]).optional(),
+      momentumPoints: z.number().int().min(0).max(1_000).optional(),
       targetAgentIds: z.array(z.number().int().positive()).max(2_000).default([]),
-    })).mutation(async ({ ctx, input }) => {
+    })).mutation(async ({ ctx, input: submittedInput }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [existingPlan] = submittedInput.id ? await db.select().from(academyActionPlans).where(eq(academyActionPlans.id, submittedInput.id)).limit(1) : [];
+      if (submittedInput.id && !existingPlan) throw new TRPCError({ code: "NOT_FOUND", message: "Academy action plan not found" });
+      if (!isFullAdmin(ctx.user) && existingPlan?.status === "archived") throw new TRPCError({ code: "FORBIDDEN", message: "Archived actions are not available in the staff workspace" });
+      const input = isFullAdmin(ctx.user)
+        ? { ...submittedInput, staffReviewRequired: submittedInput.staffReviewRequired ?? false, momentumAwardMode: submittedInput.momentumAwardMode ?? "off" as const, momentumPoints: submittedInput.momentumPoints ?? 0 }
+        : applyEngagementActionPolicy(submittedInput, existingPlan);
       const targetAgentIds = Array.from(new Set(input.targetAgentIds));
+      if (!isFullAdmin(ctx.user)) await requireCurrentEngagementAgents(targetAgentIds);
       if (input.audience === "selected_agents" && !targetAgentIds.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose at least one agent for a selected-agent action" });
       if (input.assignmentTrigger === "on_accelerator_entry" && input.audience !== "agent_accelerator") throw new TRPCError({ code: "BAD_REQUEST", message: "Entry actions can only target Agent Accelerator" });
       const isJourneyAction = !!input.courseId || !!input.courseWeek;
@@ -563,7 +659,7 @@ export const agentDevelopmentRouter = router({
       if (input.actionType === "weekly" && !isJourneyAction && (!input.publishAt || !input.dueAt)) throw new TRPCError({ code: "BAD_REQUEST", message: "Weekly actions need a publish date and deadline, unless they are linked to an Accelerator course week" });
       if (input.publishAt && input.dueAt && input.dueAt < input.publishAt) throw new TRPCError({ code: "BAD_REQUEST", message: "The deadline must be after the publish date" });
       const momentumConfigurationError = validateActionMomentumConfiguration(input);
-      if (momentumConfigurationError) throw new TRPCError({ code: "BAD_REQUEST", message: momentumConfigurationError });
+      if (momentumConfigurationError && (isFullAdmin(ctx.user) || !existingPlan)) throw new TRPCError({ code: "BAD_REQUEST", message: momentumConfigurationError });
       const scheduledStatus = !isJourneyAction && input.publishAt && input.publishAt > new Date() && input.assignmentTrigger !== "on_accelerator_entry" ? "scheduled" : "draft";
       const payload = {
         title: input.title,
@@ -580,10 +676,11 @@ export const agentDevelopmentRouter = router({
         requiresUpload: input.requiresUpload,
         staffReviewRequired: input.staffReviewRequired,
         momentumAwardMode: input.momentumAwardMode,
-        momentumPoints: input.momentumAwardMode === "off" ? 0 : input.momentumPoints,
+        momentumPoints: !isFullAdmin(ctx.user) && existingPlan ? existingPlan.momentumPoints : input.momentumAwardMode === "off" ? 0 : input.momentumPoints,
         status: scheduledStatus,
         updatedById: ctx.user.id,
       };
+      await recordStaffOperation(ctx.user, "engagement.action.save", { planId: input.id ?? null, targetCount: targetAgentIds.length });
       let planId = input.id;
       const pool = await getRawDbPool();
       if (planId) {
@@ -627,7 +724,7 @@ export const agentDevelopmentRouter = router({
       return { id: planId };
     }),
 
-    publishActionPlan: adminProcedure.input(z.object({ planId: z.number().int().positive(), publishNow: z.boolean().optional().default(false) })).mutation(async ({ ctx, input }) => publishPlan(input.planId, ctx.user.id, { publishNow: input.publishNow })),
+    publishActionPlan: engagementProcedure.input(z.object({ planId: z.number().int().positive(), publishNow: z.boolean().optional().default(false) })).mutation(async ({ ctx, input }) => publishPlan(input.planId, ctx.user.id, { publishNow: input.publishNow, staffUser: ctx.user })),
 
     archiveActionPlan: adminProcedure.input(z.object({ planId: z.number().int().positive() })).mutation(async ({ input }) => {
       const db = await getDb();
@@ -637,12 +734,14 @@ export const agentDevelopmentRouter = router({
       return { success: true };
     }),
 
-    actionAssignments: adminProcedure.input(z.object({ planId: z.number().int().positive() })).query(async ({ input }) => {
+    actionAssignments: engagementProcedure.input(z.object({ planId: z.number().int().positive() })).query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      return db.select({ assignment: academyActionAssignments, agent: users })
+      const rows = await db.select({ assignment: academyActionAssignments, agent: engagementIdentityColumns(ctx.user) })
         .from(academyActionAssignments).innerJoin(users, eq(users.id, academyActionAssignments.agentId))
-        .where(eq(academyActionAssignments.planId, input.planId)).orderBy(asc(users.name));
+        .innerJoin(academyActionPlans, eq(academyActionPlans.id, academyActionAssignments.planId))
+        .where(and(eq(academyActionAssignments.planId, input.planId), isFullAdmin(ctx.user) ? undefined : and(await currentEngagementAgentFilter(), ne(academyActionPlans.status, "archived")))).orderBy(asc(users.name));
+      return rows.map((row) => ({ ...row, agent: engagementIdentityDto(ctx.user, row.agent) }));
     }),
 
     remindActionPlanAgents: adminProcedure.input(z.object({ planId: z.number().int().positive() })).mutation(async ({ input }) => {
@@ -670,7 +769,7 @@ export const agentDevelopmentRouter = router({
       return { recipients: outstanding.length, sent };
     }),
 
-    reviewAction: adminProcedure.input(z.object({ assignmentId: z.number().int().positive(), outcome: z.enum(["completed", "needs_revision"]), feedback: z.string().trim().max(10_000).nullable().optional() })).mutation(async ({ ctx, input }) => {
+    reviewAction: engagementProcedure.input(z.object({ assignmentId: z.number().int().positive(), outcome: z.enum(["completed", "needs_revision"]), feedback: z.string().trim().max(10_000).nullable().optional() })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [row] = await db.select({ assignment: academyActionAssignments, plan: academyActionPlans })
@@ -678,13 +777,22 @@ export const agentDevelopmentRouter = router({
         .innerJoin(academyActionPlans, eq(academyActionPlans.id, academyActionAssignments.planId))
         .where(eq(academyActionAssignments.id, input.assignmentId)).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Action assignment not found" });
+      assertNotSelfReview(ctx.user, row.assignment.agentId);
+      if (!isFullAdmin(ctx.user)) {
+        await requireCurrentEngagementAgents([row.assignment.agentId]);
+        if (row.plan.status === "archived") throw new TRPCError({ code: "FORBIDDEN", message: "Archived actions cannot be reviewed in the staff workspace" });
+      }
       if (row.assignment.status !== "review") throw new TRPCError({ code: "BAD_REQUEST", message: "Only an action awaiting review can be approved or returned" });
       const now = new Date();
+      await recordStaffOperation(ctx.user, "engagement.action.review", { assignmentId: row.assignment.id, targetUserId: row.assignment.agentId, outcome: input.outcome });
       const pool = await getRawDbPool();
-      await pool.execute(
-        "UPDATE academy_action_assignments SET status = ?, reviewerFeedback = ?, reviewedAt = ?, reviewedById = ?, completedAt = ? WHERE id = ?",
-        [input.outcome, optionalText(input.feedback), now, ctx.user.id, input.outcome === "completed" ? now : null, row.assignment.id],
+      const [reviewResult] = await pool.execute(
+        "UPDATE academy_action_assignments SET status = ?, reviewerFeedback = ?, reviewedAt = ?, reviewedById = ?, completedAt = ? WHERE id = ? AND status = ?",
+        [input.outcome, optionalText(input.feedback), now, ctx.user.id, input.outcome === "completed" ? now : null, row.assignment.id, "review"],
       );
+      if (Number((reviewResult as { affectedRows: number }).affectedRows) !== 1) {
+        throw new TRPCError({ code: "CONFLICT", message: "This action has already been reviewed. Refresh the review queue." });
+      }
       if (shouldAwardActionMomentum({ assignmentStatus: input.outcome, momentumAwardMode: row.plan.momentumAwardMode, completionPath: "reviewed", momentumPoints: row.plan.momentumPoints })) {
         const masterRule = await getMomentumRule("accountability_action");
         if (masterRule?.enabled) {
@@ -707,21 +815,24 @@ export const agentDevelopmentRouter = router({
       return { success: true };
     }),
 
-    engagementCases: adminProcedure.input(z.object({ status: z.enum(["active", "waiting", "monitoring", "closed", "all"]).default("active") }).optional()).query(async ({ input }) => {
+    engagementCases: engagementProcedure.input(z.object({ status: z.enum(["active", "waiting", "monitoring", "closed", "all"]).default("active") }).optional()).query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const rows = await db.select({ case: agentEngagementCases, agent: users, profile: agentCrmProfiles })
+      const rows = await db.select({ case: agentEngagementCases, agent: engagementIdentityColumns(ctx.user), profile: engagementTeachingColumns(ctx.user) })
         .from(agentEngagementCases)
         .innerJoin(users, eq(users.id, agentEngagementCases.agentId))
         .leftJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, agentEngagementCases.agentId))
+        .where(isFullAdmin(ctx.user) ? undefined : await currentEngagementAgentFilter())
         .orderBy(asc(agentEngagementCases.nextFollowUpAt), desc(agentEngagementCases.updatedAt));
       const filtered = input?.status && input.status !== "all" ? rows.filter((row) => row.case.status === input.status) : rows;
       const caseIds = filtered.map((row) => row.case.id);
       const interactions = caseIds.length ? await db.select().from(agentEngagementInteractions).where(inArray(agentEngagementInteractions.caseId, caseIds)).orderBy(desc(agentEngagementInteractions.occurredAt)) : [];
-      return filtered.map((row) => ({ ...row, latestInteraction: interactions.find((interaction) => interaction.caseId === row.case.id) ?? null }));
+      return filtered.map((row) => ({ ...row, agent: engagementIdentityDto(ctx.user, row.agent), profile: engagementTeachingDto(ctx.user, row.profile), latestInteraction: interactions.find((interaction) => interaction.caseId === row.case.id) ?? null }));
     }),
 
-    createEngagementCase: adminProcedure.input(z.object({ agentId: z.number().int().positive(), riskReason: z.string().trim().min(3).max(10_000), ownerId: z.number().int().positive().nullable().optional(), nextFollowUpAt: z.date().nullable().optional() })).mutation(async ({ ctx, input }) => {
+    createEngagementCase: engagementProcedure.input(z.object({ agentId: z.number().int().positive(), riskReason: z.string().trim().min(3).max(10_000), ownerId: z.number().int().positive().nullable().optional(), nextFollowUpAt: z.date().nullable().optional() })).mutation(async ({ ctx, input }) => {
+      assertEngagementOwner(ctx.user, input.ownerId);
+      if (!isFullAdmin(ctx.user)) await requireCurrentEngagementAgents([input.agentId]);
       const pool = await getRawDbPool();
       const [agentRows] = await pool.execute(
         "SELECT id, role, name FROM users WHERE id = ? LIMIT 1",
@@ -735,37 +846,40 @@ export const agentDevelopmentRouter = router({
       );
       const existing = (existingRows as Array<{ id: number }>)[0];
       if (existing) throw new TRPCError({ code: "CONFLICT", message: "This agent already has an active engagement case" });
+      await recordStaffOperation(ctx.user, "engagement.case.create", { targetUserId: input.agentId });
       const [result] = await pool.execute(
         "INSERT INTO agent_engagement_cases (agentId, riskReason, ownerId, openedById, nextFollowUpAt) VALUES (?, ?, ?, ?, ?)",
         [input.agentId, input.riskReason, input.ownerId ?? ctx.user.id, ctx.user.id, input.nextFollowUpAt ?? null],
       );
       const id = Number((result as any).insertId);
-      await pool.execute(
+      if (isFullAdmin(ctx.user)) await pool.execute(
         "INSERT INTO agent_crm_notes (agentUserId, authorId, authorName, content) VALUES (?, ?, ?, ?)",
         [input.agentId, ctx.user.id, ctx.user.name ?? "Admin", `[Engagement opened] ${input.riskReason}`],
       );
       return { id };
     }),
 
-    getEngagementCase: adminProcedure.input(z.object({ caseId: z.number().int().positive() })).query(async ({ input }) => {
+    getEngagementCase: engagementProcedure.input(z.object({ caseId: z.number().int().positive() })).query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [row] = await db.select({ case: agentEngagementCases, agent: users, profile: agentCrmProfiles })
+      const [row] = await db.select({ case: agentEngagementCases, agent: engagementIdentityColumns(ctx.user), profile: engagementTeachingColumns(ctx.user) })
         .from(agentEngagementCases).innerJoin(users, eq(users.id, agentEngagementCases.agentId)).leftJoin(agentCrmProfiles, eq(agentCrmProfiles.userId, users.id))
-        .where(eq(agentEngagementCases.id, input.caseId)).limit(1);
+        .where(and(eq(agentEngagementCases.id, input.caseId), isFullAdmin(ctx.user) ? undefined : await currentEngagementAgentFilter())).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Engagement case not found" });
-      const interactions = await db.select({ interaction: agentEngagementInteractions, staff: users })
+      const interactions = await db.select({ interaction: agentEngagementInteractions, staff: engagementIdentityColumns(ctx.user) })
         .from(agentEngagementInteractions).leftJoin(users, eq(users.id, agentEngagementInteractions.createdById))
         .where(eq(agentEngagementInteractions.caseId, input.caseId)).orderBy(desc(agentEngagementInteractions.occurredAt));
-      return { ...row, interactions };
+      return { ...row, agent: engagementIdentityDto(ctx.user, row.agent), profile: engagementTeachingDto(ctx.user, row.profile), interactions: interactions.map((item) => ({ ...item, staff: item.staff ? engagementIdentityDto(ctx.user, item.staff) : null })) };
     }),
 
-    logEngagementInteraction: adminProcedure.input(z.object({ caseId: z.number().int().positive(), channel: z.enum(["call", "email", "whatsapp", "meeting", "other"]), summary: z.string().trim().min(3).max(20_000), outcome: z.string().trim().max(10_000).nullable().optional(), nextFollowUpAt: z.date().nullable().optional(), status: z.enum(["active", "waiting", "monitoring", "closed"]) })).mutation(async ({ ctx, input }) => {
+    logEngagementInteraction: engagementProcedure.input(z.object({ caseId: z.number().int().positive(), channel: z.enum(["call", "email", "whatsapp", "meeting", "other"]), summary: z.string().trim().min(3).max(20_000), outcome: z.string().trim().max(10_000).nullable().optional(), nextFollowUpAt: z.date().nullable().optional(), status: z.enum(["active", "waiting", "monitoring", "closed"]) })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [caseRecord] = await db.select().from(agentEngagementCases).where(eq(agentEngagementCases.id, input.caseId)).limit(1);
       if (!caseRecord) throw new TRPCError({ code: "NOT_FOUND", message: "Engagement case not found" });
+      if (!isFullAdmin(ctx.user)) await requireCurrentEngagementAgents([caseRecord.agentId]);
       const now = new Date();
+      await recordStaffOperation(ctx.user, "engagement.interaction.log", { caseId: caseRecord.id, targetUserId: caseRecord.agentId, channel: input.channel, status: input.status });
       const pool = await getRawDbPool();
       await pool.execute(
         `INSERT INTO agent_engagement_interactions
@@ -782,19 +896,22 @@ export const agentDevelopmentRouter = router({
           input.status === "closed" ? now : null, input.status === "closed" ? ctx.user.id : null, caseRecord.id,
         ],
       );
-      await pool.execute(
+      if (isFullAdmin(ctx.user)) await pool.execute(
         "INSERT INTO agent_crm_notes (agentUserId, authorId, authorName, content) VALUES (?, ?, ?, ?)",
         [caseRecord.agentId, ctx.user.id, ctx.user.name ?? "Admin", `[Engagement · ${input.channel}] ${input.summary}${input.outcome ? `\nOutcome: ${input.outcome}` : ""}${input.nextFollowUpAt ? `\nNext follow-up: ${input.nextFollowUpAt.toLocaleDateString("en-GB")}` : ""}`],
       );
       return { success: true };
     }),
 
-    updateEngagementCase: adminProcedure.input(z.object({ caseId: z.number().int().positive(), status: z.enum(["active", "waiting", "monitoring", "closed"]), ownerId: z.number().int().positive().nullable().optional(), nextFollowUpAt: z.date().nullable().optional(), riskReason: z.string().trim().min(3).max(10_000).optional() })).mutation(async ({ ctx, input }) => {
+    updateEngagementCase: engagementProcedure.input(z.object({ caseId: z.number().int().positive(), status: z.enum(["active", "waiting", "monitoring", "closed"]), ownerId: z.number().int().positive().nullable().optional(), nextFollowUpAt: z.date().nullable().optional(), riskReason: z.string().trim().min(3).max(10_000).optional() })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [caseRecord] = await db.select().from(agentEngagementCases).where(eq(agentEngagementCases.id, input.caseId)).limit(1);
       if (!caseRecord) throw new TRPCError({ code: "NOT_FOUND", message: "Engagement case not found" });
+      if (!isFullAdmin(ctx.user)) await requireCurrentEngagementAgents([caseRecord.agentId]);
       const now = new Date();
+      assertEngagementOwner(ctx.user, input.ownerId, caseRecord.ownerId);
+      await recordStaffOperation(ctx.user, "engagement.case.update", { caseId: caseRecord.id, targetUserId: caseRecord.agentId, status: input.status });
       const pool = await getRawDbPool();
       await pool.execute(
         `UPDATE agent_engagement_cases
@@ -809,9 +926,10 @@ export const agentDevelopmentRouter = router({
       return { success: true };
     }),
 
-    engagementForAgent: adminProcedure.input(z.object({ agentId: z.number().int().positive() })).query(async ({ input }) => {
+    engagementForAgent: engagementProcedure.input(z.object({ agentId: z.number().int().positive() })).query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      if (!isFullAdmin(ctx.user)) await requireCurrentEngagementAgents([input.agentId]);
       const cases = await db.select().from(agentEngagementCases).where(eq(agentEngagementCases.agentId, input.agentId)).orderBy(desc(agentEngagementCases.openedAt));
       const ids = cases.map((item) => item.id);
       const interactions = ids.length ? await db.select().from(agentEngagementInteractions).where(inArray(agentEngagementInteractions.caseId, ids)).orderBy(desc(agentEngagementInteractions.occurredAt)) : [];

@@ -20,7 +20,8 @@ describe("JLT Academy written assessment safeguards", () => {
 
   it("queues written answers for staff and applies the saved overall pass mark when graded", () => {
     expect(router).toContain('status: writtenQuestions.length ? "awaiting_marking" : "auto_graded"');
-    expect(router).toContain('markWrittenAssessment: adminProcedure');
+    expect(router).toContain('markWrittenAssessment: instructorProcedure');
+    expect(router).toContain('await requireAcademyAttempt(ctx.user, input.attemptId)');
     expect(router).toContain('Score and feedback are required for every written response');
     expect(router).toContain('const score = Math.round(writtenStates.reduce');
     expect(router).toContain('const writtenStates = states.filter');
@@ -63,7 +64,7 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(router).not.toMatch(/generateAiMarkingReview:[\s\S]*?response_format: \{ type: "json_object" \}/);
     expect(router).toContain('This AI review is for staff guidance only');
     expect(router).toContain('staffApprovedScores: input.responses.map');
-    expect(router).toContain('markWrittenAssessment: adminProcedure');
+    expect(router).toContain('markWrittenAssessment: instructorProcedure');
     expect(manager).toContain('Generate AI review');
     expect(manager).toContain('Use suggestions as editable draft');
     expect(manager).toContain('Nothing is sent to the agent');

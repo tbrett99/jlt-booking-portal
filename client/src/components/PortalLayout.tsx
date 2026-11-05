@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import GlobalSearch from "@/components/GlobalSearch";
 import { TermsSigningBanner } from "@/components/TermsSigningBanner";
+import { useStaffAccess } from "@/pages/staff/StaffWorkspace";
 import { trpc } from "@/lib/trpc";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import {
@@ -309,6 +310,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const isAdminUser = user?.role === "admin" || user?.role === "super_admin";
   const isAgent = user?.role === "agent";
   const isAgentNavigation = isAgent || isAgentView;
+  const { access: staffAccess } = useStaffAccess();
 
   // Orbit beta access — only fetch for agents (admins always see it)
   // No staleTime so the flag is always fresh on page load/navigation
@@ -422,6 +424,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       items: [
         { label: "JLT Academy", href: "/academy", icon: <GraduationCap size={16} /> },
         { label: "My Academy Actions", href: "/academy/actions", icon: <ClipboardCheck size={16} /> },
+        ...(isAgent && (staffAccess.instructor || staffAccess.engagement)
+          ? [{ label: "Staff workspace", href: "/staff", icon: <Shield size={16} /> }]
+          : []),
         { label: "Knowledge Base", href: "/knowledge-base", icon: <BookOpen size={16} /> },
         { label: "Webinar Library", href: "/webinars", icon: <PlayCircle size={16} /> },
       ],
@@ -581,6 +586,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: false,
       items: [
         { label: "Users", href: "/users", icon: <Users size={16} /> },
+        ...(user?.role === "super_admin"
+          ? [{ label: "Staff assignments", href: "/admin/staff-access", icon: <Shield size={16} /> }]
+          : []),
         { label: "Import CSV", href: "/import", icon: <FileUp size={16} /> },
         { label: "Payment Config", href: "/crm/payment-config", icon: <PoundSterling size={16} /> },
         ...(user?.role === "super_admin"

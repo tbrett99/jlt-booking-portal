@@ -43,14 +43,16 @@ describe("Academy document assessment workflow", () => {
   });
 
   it("requires a reviewed template, preserves it after learner activity, and keeps document work out of quiz submission", () => {
-    expect(router).toContain("uploadDocumentAssessmentTemplate: adminProcedure");
+    expect(router).toContain("uploadDocumentAssessmentTemplate: instructorProcedure");
+    expect(router).toContain("await requireAcademyUploadCourse(ctx.user, input.courseId)");
     expect(router).toContain("submitDocumentAssessment: protectedProcedure");
     expect(router).toContain("getDocumentAssessmentTemplate: protectedProcedure");
     expect(router).toContain("documentAssessmentChanged");
     expect(router).toContain("create a replacement lesson for a revised template");
     expect(router).toContain("assessmentMode === \"document_upload\") throw new TRPCError");
-    expect(router).toContain("markDocumentAssessment: adminProcedure");
-    expect(router).toContain("documentMarkingQueue: adminProcedure");
+    expect(router).toContain("markDocumentAssessment: instructorProcedure");
+    expect(router).toContain("documentMarkingQueue: instructorProcedure");
+    expect(router).toContain("await requireAcademyAttempt(ctx.user, input.attemptId)");
   });
 
   it("provides a download-complete-upload agent workflow and a separate staff review queue", () => {

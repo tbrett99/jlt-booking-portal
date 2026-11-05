@@ -39,7 +39,8 @@ describe("Academy workspace and governance overhaul", () => {
     const lessonSaveSection = router.slice(router.indexOf("saveLesson:"), router.indexOf("deleteLesson:"));
     expect(lessonSaveSection).toContain("Updated lesson after learner activity");
     expect(lessonSaveSection).toContain("learnerEvidencePresent: true");
-    expect(lessonSaveSection).not.toContain("if (hasLearnerEvidence &&");
+    expect(lessonSaveSection).toContain("if (hasLearnerEvidence && documentAssessmentChanged)");
+    expect(lessonSaveSection).not.toContain("if (hasLearnerEvidence && substantiveContentChanged)");
   });
 
   it("allows staff to revise assessment question wording after learner activity without altering scoring safeguards", () => {
@@ -58,7 +59,7 @@ describe("Academy workspace and governance overhaul", () => {
 
   it("keeps Accelerator reminders personalised to an assignment deadline and requires an explicit early publish", () => {
     expect(actions).toContain("assignmentDueAt: assignment.dueAt");
-    expect(actions).toContain("options: { publishNow?: boolean }");
+    expect(actions).toMatch(/options:\s*\{\s*publishNow\?:\s*boolean\b/);
     expect(actions).toContain("use the explicit Publish now control");
     expect(actionManager).toContain("Publish now");
     expect(actionManager).toContain("Publish it now and notify eligible agents instead?");

@@ -8,7 +8,7 @@ const router = readFileSync(resolve(process.cwd(), "server/academy-router.ts"), 
 describe("Academy downloadable resource removal", () => {
   it("lets staff clear the attachment references in the lesson draft before saving", () => {
     expect(manager).toContain("Remove resource");
-    expect(manager).toContain('attachmentUrl: "", attachmentKey: "", attachmentName: ""');
+    expect(manager).toMatch(/attachmentUrl:\s*"",\s*attachmentKey:\s*"",\s*attachmentName:\s*""/);
     expect(manager).toContain("Resource removed from this lesson draft. Save the lesson to apply the change.");
   });
 

@@ -3061,3 +3061,39 @@ export const agentRecordMerges = mysqlTable("agent_record_merges", {
   manifestJson: longtext("manifestJson").notNull(),
   mergedAt: timestamp("mergedAt", { fsp: 3 }).defaultNow().notNull(),
 }, (t) => [index("agent_merge_primary_idx").on(t.primaryUserId, t.mergedAt)]);
+
+// Delegated staff rights are additive: users.role remains agent for personal ownership checks.
+export const staffRoleAssignments = mysqlTable("staff_role_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  staffRole: mysqlEnum("staffRole", ["instructor", "agent_engagement"]).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  grantedById: int("grantedById").notNull(),
+  grantedAt: timestamp("grantedAt", { fsp: 3 }).defaultNow().notNull(),
+  revokedById: int("revokedById"),
+  revokedAt: timestamp("revokedAt", { fsp: 3 }),
+}, (t) => [uniqueIndex("staff_user_role_uq").on(t.userId, t.staffRole)]);
+
+export const staffInstructorCourses = mysqlTable("staff_instructor_courses", {
+  id: int("id").autoincrement().primaryKey(),
+  assignmentId: int("assignmentId").notNull(),
+  courseId: int("courseId").notNull(),
+}, (t) => [uniqueIndex("staff_assignment_course_uq").on(t.assignmentId, t.courseId), index("staff_course_idx").on(t.courseId)]);
+
+export const staffAccessAudit = mysqlTable("staff_access_audit", {
+  id: int("id").autoincrement().primaryKey(),
+  actorId: int("actorId").notNull(),
+  targetUserId: int("targetUserId").notNull(),
+  action: varchar("action", { length: 100 }).notNull(),
+  metadata: json("metadata").notNull(),
+  createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
+}, (t) => [index("staff_audit_actor_idx").on(t.actorId, t.createdAt), index("staff_audit_target_idx").on(t.targetUserId, t.createdAt)]);
+
+export const staffAcademyUploads = mysqlTable("staff_academy_uploads", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  courseId: int("courseId").notNull(),
+  objectKey: varchar("objectKey", { length: 600 }).notNull(),
+  kind: mysqlEnum("kind", ["attachment", "document_template", "image"]).notNull(),
+  createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
+}, (t) => [uniqueIndex("staff_upload_key_uq").on(t.objectKey), index("staff_upload_course_idx").on(t.courseId, t.userId)]);

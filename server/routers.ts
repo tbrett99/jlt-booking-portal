@@ -180,6 +180,7 @@ import { libraryRouter } from "./library-router";
 import { agentSupportRouter } from "./agent-support-router";
 import { membershipPaymentsRouter } from "./membership-payment-issues-router";
 import { agentMergeRouter } from "./agent-merge-router";
+import { staffAccessRouter } from "./staff-access-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -501,6 +502,7 @@ export const appRouter = router({
   agentSupport: agentSupportRouter,
   membershipPayments: membershipPaymentsRouter,
   agentMerge: agentMergeRouter,
+  staffAccess: staffAccessRouter,
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   auth: router({

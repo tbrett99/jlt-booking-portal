@@ -128,6 +128,8 @@ const AdminAgentSupport = lazy(() => import("./pages/admin/AdminAgentSupport"));
 const KnowledgeBase = lazy(() => import("./pages/library/KnowledgeBase"));
 const WebinarLibrary = lazy(() => import("./pages/library/WebinarLibrary"));
 const AdminLibrary = lazy(() => import("./pages/admin/AdminLibrary"));
+const StaffWorkspace = lazy(() => import("./pages/staff/StaffWorkspace"));
+const AdminStaffAccess = lazy(() => import("./pages/admin/AdminStaffAccess"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -226,7 +228,7 @@ function SuspendedGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function AuthRouter() {
+export function AuthRouter() {
   const { user, loading } = useAuth();
   const { isAgentView } = useViewMode();
   const [location] = useLocation();
@@ -304,6 +306,11 @@ function AuthRouter() {
 
   // Pure agent — always agent routes
   if (user.role === "agent") {
+    // Staff uses the same identity but never mounts the personal/global portal
+    // shell or an admin view. The capability lookup also enforces active status.
+    if (location === "/staff" || location.startsWith("/staff/")) {
+      return <StaffWorkspace />;
+    }
     return (
       <SuspendedGuard>
       <PortalLayout>
@@ -450,6 +457,7 @@ function AuthRouter() {
         <Route path="/flights" component={AdminFlightsPipeline} />
         <Route path="/cancellations" component={AdminCancellations} />
         <Route path="/super-admin" component={SuperAdminDashboard} />
+        {user.role === "super_admin" && <Route path="/admin/staff-access" component={AdminStaffAccess} />}
         <Route path="/reports" component={AdminReports} />
         <Route path="/commission-margin" component={CommissionMarginReport} />
         <Route path="/agent-performance" component={AdminAgentPerformance} />

@@ -11,13 +11,14 @@ const schema = readFileSync(resolve(process.cwd(), "drizzle/schema.ts"), "utf8")
 
 describe("Academy Action review queue and CRM 1:1 snapshot", () => {
   it("uses a small server-side oldest-first queue rather than loading every assignment into the Action plan list", () => {
-    expect(actionRouter).toContain("actionReviewSummary: adminProcedure");
-    expect(actionRouter).toContain("actionReviewQueue: adminProcedure");
+    expect(actionRouter).toContain("actionReviewSummary: engagementProcedure");
+    expect(actionRouter).toContain("actionReviewQueue: engagementProcedure");
+    expect(actionRouter).toContain("requireEngagementStaff(ctx.user)");
     expect(actionRouter).toContain('eq(academyActionAssignments.status, "review")');
     expect(actionRouter).toContain("orderBy(asc(academyActionAssignments.submittedAt), asc(academyActionAssignments.id))");
     expect(actionRouter).toContain("limit(input.limit + 1)");
     expect(schema).toContain('index("academy_action_assignments_review_submitted_idx").on(table.status, table.submittedAt, table.id)');
-    const actionPlansSection = actionRouter.slice(actionRouter.indexOf("actionPlans: adminProcedure"), actionRouter.indexOf("actionReviewSummary: adminProcedure"));
+    const actionPlansSection = actionRouter.slice(actionRouter.indexOf("actionPlans: engagementProcedure"), actionRouter.indexOf("actionReviewSummary: engagementProcedure"));
     expect(actionPlansSection).toContain("assignmentCounts");
     expect(actionPlansSection).not.toContain("await db.select().from(academyActionAssignments)");
   });

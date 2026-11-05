@@ -5,6 +5,10 @@ import { router, protectedProcedure } from "./_core/trpc";
 import { getDb, getRawDbPool, createInAppNotification, getUpcomingAgentEvents } from "./db";
 import { sendDirectEmail, sendSupportEmail } from "./email";
 import { storagePut, storagePutEncrypted } from "./storage";
+import { randomUUID } from "node:crypto";
+import { assertNotSelfReview, getInstructorCourseIds, isFullAdmin, recordStaffOperation, requireInstructorCourse } from "./staff-access";
+import { academyPrivateAttachmentUrl, assertAcademyImageUrls, assertAcademyLessonFiles, assertInstructorModuleReleaseWeek, rememberAcademyUpload, requireAcademyAttempt, requireAcademyLesson, requireAcademyModule, requireAcademyUploadCourse, teachingAttempt } from "./academy-staff-access";
+import { sanitiseInstructorLessonHtml } from "./academy-staff-html";
 import {
   academyDocumentObjectKey,
   academyDocumentMimeTypes,
@@ -61,6 +65,16 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
     throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
   }
   return next({ ctx });
+});
+
+// Capability checks stay per procedure. This wrapper only prevents unexpected
+// database/provider failures exposing SQL or private parameters to staff.
+const instructorProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  const result = await next({ ctx });
+  if (!isFullAdmin(ctx.user) && !result.ok && result.error.code === "INTERNAL_SERVER_ERROR") {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The Academy operation is temporarily unavailable. Please retry or contact support." });
+  }
+  return result;
 });
 
 const MAX_QUESTION_ATTEMPTS = 3;
@@ -1977,11 +1991,16 @@ export const academyRouter = router({
   }),
 
   admin: router({
-    courses: adminProcedure.query(async () => {
+    courses: instructorProcedure.query(async ({ ctx }) => {
+      const courseIds = await getInstructorCourseIds(ctx.user);
+      if (courseIds?.length === 0) return [];
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const courses = await db.select().from(academyCourses).orderBy(asc(academyCourses.status), asc(academyCourses.title));
-      const enrollments = await db.select().from(academyEnrollments);
+      const courses = await db.select().from(academyCourses)
+        .where(courseIds === null ? undefined : inArray(academyCourses.id, courseIds))
+        .orderBy(asc(academyCourses.status), asc(academyCourses.title));
+      const enrollments = await db.select({ courseId: academyEnrollments.courseId, status: academyEnrollments.status }).from(academyEnrollments)
+        .where(courseIds === null ? undefined : and(inArray(academyEnrollments.courseId, courseIds), ne(academyEnrollments.agentId, ctx.user.id)));
       return courses.map((course) => ({
         ...course,
         enrolmentCount: enrollments.filter((enrollment) => enrollment.courseId === course.id).length,
@@ -2285,14 +2304,16 @@ export const academyRouter = router({
       return { asOf, courses: courseScope.map((course) => ({ id: course.id, title: course.title, status: course.status, estimatedMinutes: course.estimatedMinutes })), metrics, learners, curriculum: { lessons: curriculumLessons, questions: curriculumQuestions } };
     }),
 
-    markingQueue: adminProcedure.query(async () => {
+    markingQueue: instructorProcedure.query(async ({ ctx }) => {
+      const courseIds = await getInstructorCourseIds(ctx.user);
+      if (courseIds?.length === 0) return [];
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const rows = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: users })
+      const rows = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: { id: users.id, name: users.name, email: users.email } })
         .from(academyAssessmentAttempts)
         .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
         .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
-        .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+        .innerJoin(academyModules, and(eq(academyModules.id, academyLessons.moduleId), eq(academyModules.courseId, academyEnrollments.courseId)))
         .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
         .innerJoin(users, eq(users.id, academyEnrollments.agentId))
         // Document-upload assessments have their own secure review queue below.
@@ -2301,6 +2322,8 @@ export const academyRouter = router({
         .where(and(
           eq(academyAssessmentAttempts.status, "awaiting_marking"),
           eq(academyLessons.assessmentMode, "quiz"),
+          courseIds === null ? undefined : inArray(academyEnrollments.courseId, courseIds),
+          courseIds === null ? undefined : ne(academyEnrollments.agentId, ctx.user.id),
         ))
         .orderBy(asc(academyAssessmentAttempts.takenAt));
       const attemptIds = rows.map((row) => row.attempt.id);
@@ -2334,7 +2357,7 @@ export const academyRouter = router({
         });
       }
       return rows.map((row) => ({
-        attempt: row.attempt,
+        attempt: isFullAdmin(ctx.user) ? row.attempt : teachingAttempt(row.attempt),
         enrollment: { id: row.enrollment.id, agentId: row.enrollment.agentId, courseId: row.enrollment.courseId },
         course: { id: row.course.id, title: row.course.title },
         lesson: { id: row.lesson.id, title: row.lesson.title, assessmentPassMark: row.lesson.assessmentPassMark },
@@ -2348,17 +2371,21 @@ export const academyRouter = router({
       }));
     }),
 
-    documentMarkingQueue: adminProcedure.query(async ({ ctx }) => {
+    documentMarkingQueue: instructorProcedure.query(async ({ ctx }) => {
+      const courseIds = await getInstructorCourseIds(ctx.user);
+      if (courseIds?.length === 0) return [];
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const rows = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: users })
+      const rows = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: { id: users.id, name: users.name, email: users.email } })
         .from(academyAssessmentAttempts)
         .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
         .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
-        .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+        .innerJoin(academyModules, and(eq(academyModules.id, academyLessons.moduleId), eq(academyModules.courseId, academyEnrollments.courseId)))
         .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
         .innerJoin(users, eq(users.id, academyEnrollments.agentId))
-        .where(and(eq(academyAssessmentAttempts.status, "awaiting_marking"), eq(academyLessons.assessmentMode, "document_upload")))
+        .where(and(eq(academyAssessmentAttempts.status, "awaiting_marking"), eq(academyLessons.assessmentMode, "document_upload"),
+          courseIds === null ? undefined : inArray(academyEnrollments.courseId, courseIds),
+          courseIds === null ? undefined : ne(academyEnrollments.agentId, ctx.user.id)))
         .orderBy(asc(academyAssessmentAttempts.takenAt));
       return rows.filter((row) => !!row.attempt.submissionFileKey).map((row) => ({
         attempt: {
@@ -2480,21 +2507,22 @@ export const academyRouter = router({
       return { success: true, reviewedResponses: suggestions.length };
     }),
 
-    markWrittenAssessment: adminProcedure.input(z.object({
+    markWrittenAssessment: instructorProcedure.input(z.object({
       attemptId: z.number().int().positive(),
       feedback: z.string().trim().min(3).max(10_000),
       responses: z.array(z.object({ questionId: z.number().int().positive(), score: z.number().int().min(0).max(100), feedback: z.string().trim().min(3).max(10_000) })).min(1).max(MAX_ACADEMY_ASSESSMENT_QUESTIONS),
     })).mutation(async ({ ctx, input }) => {
+      const scope = await requireAcademyAttempt(ctx.user, input.attemptId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [row] = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: users })
+      const [row] = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: { id: users.id, name: users.name, email: users.email } })
         .from(academyAssessmentAttempts)
         .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
         .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
-        .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+        .innerJoin(academyModules, and(eq(academyModules.id, academyLessons.moduleId), eq(academyModules.courseId, academyEnrollments.courseId)))
         .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
         .innerJoin(users, eq(users.id, academyEnrollments.agentId))
-        .where(eq(academyAssessmentAttempts.id, input.attemptId)).limit(1);
+        .where(and(eq(academyAssessmentAttempts.id, input.attemptId), eq(academyEnrollments.id, scope.enrollmentId), eq(academyLessons.id, scope.lessonId), eq(academyEnrollments.courseId, scope.courseId), eq(academyEnrollments.agentId, scope.learnerId))).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment submission not found" });
       if (row.lesson.assessmentMode !== "quiz") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Document uploads must be reviewed in the document assessment queue" });
@@ -2504,9 +2532,11 @@ export const academyRouter = router({
       const currentResponses = await db.select().from(academyAssessmentResponses).where(eq(academyAssessmentResponses.attemptId, row.attempt.id));
       const writtenQuestions = questions.filter((question) => question.questionType === "free_text" && currentResponses.some((response) => response.questionId === question.id));
       const grades = new Map(input.responses.map((response) => [response.questionId, response]));
+      if (grades.size !== input.responses.length || currentResponses.some((response) => !questions.some((question) => question.id === response.questionId))) throw new TRPCError({ code: "BAD_REQUEST", message: "Assessment response question relationships are inconsistent" });
       if (grades.size !== writtenQuestions.length || writtenQuestions.some((question) => !grades.has(question.id))) throw new TRPCError({ code: "BAD_REQUEST", message: "Score and feedback are required for every written response" });
       if (writtenQuestions.some((question) => !currentResponses.some((response) => response.questionId === question.id))) throw new TRPCError({ code: "BAD_REQUEST", message: "One or more written responses could not be found" });
       const now = new Date();
+      await recordStaffOperation(ctx.user, "academy.written_assessment_mark", { courseId: scope.courseId, targetUserId: scope.learnerId, attemptId: input.attemptId, phase: "authorized_write", scores: input.responses.map(({ questionId, score }) => ({ questionId, score })) });
       for (const question of writtenQuestions) {
         const grade = grades.get(question.id)!;
         await db.update(academyAssessmentResponses).set({ score: grade.score, feedback: grade.feedback, gradedById: ctx.user.id, gradedAt: now })
@@ -2537,6 +2567,7 @@ export const academyRouter = router({
         passMark: row.lesson.assessmentPassMark,
       });
       await db.update(academyAssessmentAttempts).set({ status: "feedback_pending", score, passed, graderFeedback: input.feedback, gradedById: ctx.user.id, gradedAt: now }).where(eq(academyAssessmentAttempts.id, currentAttempt.id));
+      await addAudit({ agentId: row.agent.id, courseId: row.course.id, enrollmentId: row.enrollment.id, actorId: ctx.user.id, action: "assessment_marked", summary: `Marked ${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response" : "responses"} for ${row.lesson.title} (${score}% — ${passed ? "passed" : "targeted resit needed"})`, metadata: { attemptId: row.attempt.id, score, passed, passMark: row.lesson.assessmentPassMark, staffApprovedScores: input.responses.map(({ questionId, score: responseScore }) => ({ questionId, score: responseScore })), finalFeedbackReleased: true, outstandingQuestionIds: finalStates.filter((state) => !state.passed).map((state) => state.questionId) } });
       await createInAppNotification({ userId: row.agent.id, message: `Your ${row.course.title} assessment feedback is ready. Please read and acknowledge it before continuing.`, linkUrl: `/academy/course/${row.enrollment.id}`, isUrgent: true });
       await sendAcademyAgentEmail({
         userId: row.agent.id,
@@ -2546,25 +2577,25 @@ export const academyRouter = router({
         triggerKey: "academy_assessment_feedback_ready",
         html: `<p>Hi ${escapeAcademyEmailHtml((row.agent.name ?? "there").split(" ")[0])},</p><p>Your written assessment feedback for <strong>${escapeAcademyEmailHtml(row.lesson.title)}</strong> is ready in the JLT Academy.</p><p>${passed ? `You achieved the required ${row.lesson.assessmentPassMark}% overall standard. Please read and acknowledge the feedback to record this lesson as complete.` : `Please read the feedback, acknowledge it, then revisit only the answers marked for resubmission when you are ready.`}</p><p><a href="${ACADEMY_PORTAL_URL}/academy/course/${row.enrollment.id}">Open your Academy feedback</a></p>`,
       });
-      await addAudit({ agentId: row.agent.id, courseId: row.course.id, enrollmentId: row.enrollment.id, actorId: ctx.user.id, action: "assessment_marked", summary: `Marked ${writtenQuestions.length} written ${writtenQuestions.length === 1 ? "response" : "responses"} for ${row.lesson.title} (${score}% — ${passed ? "passed" : "targeted resit needed"})`, metadata: { attemptId: row.attempt.id, score, passed, passMark: row.lesson.assessmentPassMark, staffApprovedScores: input.responses.map(({ questionId, score: responseScore }) => ({ questionId, score: responseScore })), finalFeedbackReleased: true, outstandingQuestionIds: finalStates.filter((state) => !state.passed).map((state) => state.questionId) } });
       return { score, passed, passMark: row.lesson.assessmentPassMark };
     }),
 
-    markDocumentAssessment: adminProcedure.input(z.object({
+    markDocumentAssessment: instructorProcedure.input(z.object({
       attemptId: z.number().int().positive(),
       score: z.number().int().min(0).max(100),
       feedback: z.string().trim().min(3).max(10_000),
     })).mutation(async ({ ctx, input }) => {
+      const scope = await requireAcademyAttempt(ctx.user, input.attemptId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [row] = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: users })
+      const [row] = await db.select({ attempt: academyAssessmentAttempts, enrollment: academyEnrollments, lesson: academyLessons, course: academyCourses, agent: { id: users.id, name: users.name, email: users.email } })
         .from(academyAssessmentAttempts)
         .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
         .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
-        .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+        .innerJoin(academyModules, and(eq(academyModules.id, academyLessons.moduleId), eq(academyModules.courseId, academyEnrollments.courseId)))
         .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
         .innerJoin(users, eq(users.id, academyEnrollments.agentId))
-        .where(eq(academyAssessmentAttempts.id, input.attemptId)).limit(1);
+        .where(and(eq(academyAssessmentAttempts.id, input.attemptId), eq(academyEnrollments.id, scope.enrollmentId), eq(academyLessons.id, scope.lessonId), eq(academyEnrollments.courseId, scope.courseId), eq(academyEnrollments.agentId, scope.learnerId))).limit(1);
       if (!row || row.lesson.assessmentMode !== "document_upload" || !row.attempt.submissionFileKey) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Document assessment submission not found" });
       }
@@ -2573,6 +2604,7 @@ export const academyRouter = router({
       }
       const now = new Date();
       const passed = input.score >= row.lesson.assessmentPassMark;
+      await recordStaffOperation(ctx.user, "academy.document_assessment_mark", { courseId: scope.courseId, targetUserId: scope.learnerId, attemptId: input.attemptId, score: input.score, passed, phase: "authorized_write" });
       await db.update(academyAssessmentAttempts).set({
         status: "feedback_pending",
         score: input.score,
@@ -2581,6 +2613,15 @@ export const academyRouter = router({
         gradedById: ctx.user.id,
         gradedAt: now,
       }).where(eq(academyAssessmentAttempts.id, row.attempt.id));
+      await addAudit({
+        agentId: row.agent.id,
+        courseId: row.course.id,
+        enrollmentId: row.enrollment.id,
+        actorId: ctx.user.id,
+        action: "document_assessment_marked",
+        summary: `Marked document assessment for ${row.lesson.title} (${input.score}% — ${passed ? "passed" : "resubmission needed"})`,
+        metadata: { attemptId: row.attempt.id, score: input.score, passed, passMark: row.lesson.assessmentPassMark, submittedFileName: row.attempt.submissionFileName },
+      });
       await createInAppNotification({
         userId: row.agent.id,
         message: `Your ${row.course.title} document assessment feedback is ready. Please read and acknowledge it before continuing.`,
@@ -2594,15 +2635,6 @@ export const academyRouter = router({
         subject: `Your JLT Academy feedback is ready — ${row.lesson.title}`,
         triggerKey: "academy_document_assessment_feedback_ready",
         html: `<p>Hi ${escapeAcademyEmailHtml((row.agent.name ?? "there").split(" ")[0])},</p><p>Your document assessment feedback for <strong>${escapeAcademyEmailHtml(row.lesson.title)}</strong> is ready in the JLT Academy.</p><p>${passed ? `You achieved the required ${row.lesson.assessmentPassMark}% standard. Please read and acknowledge the feedback to record this lesson as complete.` : "Please read the feedback, acknowledge it, then update and upload a new document version when you are ready."}</p><p><a href="${ACADEMY_PORTAL_URL}/academy/course/${row.enrollment.id}">Open your Academy feedback</a></p>`,
-      });
-      await addAudit({
-        agentId: row.agent.id,
-        courseId: row.course.id,
-        enrollmentId: row.enrollment.id,
-        actorId: ctx.user.id,
-        action: "document_assessment_marked",
-        summary: `Marked document assessment for ${row.lesson.title} (${input.score}% — ${passed ? "passed" : "resubmission needed"})`,
-        metadata: { attemptId: row.attempt.id, score: input.score, passed, passMark: row.lesson.assessmentPassMark, submittedFileName: row.attempt.submissionFileName },
       });
       return { score: input.score, passed, passMark: row.lesson.assessmentPassMark };
     }),
@@ -2694,7 +2726,8 @@ export const academyRouter = router({
       return { success: true };
     }),
 
-    editor: adminProcedure.input(z.object({ courseId: z.number().int().positive() })).query(async ({ input }) => {
+    editor: instructorProcedure.input(z.object({ courseId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      await requireInstructorCourse(ctx.user, input.courseId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, input.courseId)).limit(1);
@@ -2702,15 +2735,27 @@ export const academyRouter = router({
       return { course, ...(await courseStructure(course.id)) };
     }),
 
-    saveCourse: adminProcedure.input(courseInput).mutation(async ({ ctx, input }) => {
+    saveCourse: instructorProcedure.input(courseInput).mutation(async ({ ctx, input }) => {
+      if (!isFullAdmin(ctx.user) && !input.id) throw new TRPCError({ code: "FORBIDDEN", message: "Instructors can only edit assigned existing courses" });
+      if (input.id) await requireInstructorCourse(ctx.user, input.id);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      if (!isFullAdmin(ctx.user)) {
+        const [existingCourse] = await db.select().from(academyCourses).where(eq(academyCourses.id, input.id!)).limit(1);
+        if (!existingCourse) throw new TRPCError({ code: "NOT_FOUND", message: "Course not found" });
+        if (input.isCoreAcademy !== existingCourse.isCoreAcademy || input.isAcceleratorJourney !== existingCourse.isAcceleratorJourney) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Course-wide Academy and Accelerator flags are administrator-only" });
+        }
+        await assertAcademyImageUrls(ctx.user, input.id!, input.coverImageUrl ? [input.coverImageUrl] : [], existingCourse.coverImageUrl ? [existingCourse.coverImageUrl] : []);
+      }
       const coverImageUrl = normaliseOptionalText(input.coverImageUrl);
       if (coverImageUrl && !safeHttpsUrl(coverImageUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Course cover image must use HTTPS" });
       const payload = { title: input.title, summary: normaliseOptionalText(input.summary), coverImageUrl, isCoreAcademy: input.isCoreAcademy, isAcceleratorJourney: input.isAcceleratorJourney, estimatedMinutes: input.estimatedMinutes, updatedById: ctx.user.id };
       if (input.id) {
-        if (input.isCoreAcademy) await db.update(academyCourses).set({ isCoreAcademy: false }).where(and(eq(academyCourses.isCoreAcademy, true), eq(academyCourses.status, "published")));
-        await db.update(academyCourses).set(payload as any).where(eq(academyCourses.id, input.id));
+        await recordStaffOperation(ctx.user, "academy.course_update", { courseId: input.id, phase: "authorized_write", title: input.title });
+        if (isFullAdmin(ctx.user) && input.isCoreAcademy) await db.update(academyCourses).set({ isCoreAcademy: false }).where(and(eq(academyCourses.isCoreAcademy, true), eq(academyCourses.status, "published")));
+        const { isCoreAcademy, isAcceleratorJourney, ...teachingPayload } = payload;
+        await db.update(academyCourses).set((isFullAdmin(ctx.user) ? payload : teachingPayload) as any).where(eq(academyCourses.id, input.id));
         await addAudit({ courseId: input.id, actorId: ctx.user.id, action: "course_updated", summary: `Updated Academy course: ${input.title}` });
         return { id: input.id };
       }
@@ -2764,7 +2809,9 @@ export const academyRouter = router({
       return { success: true };
     }),
 
-    saveModule: adminProcedure.input(z.object({ id: z.number().int().positive().optional(), courseId: z.number().int().positive(), title: z.string().trim().min(2).max(255), summary: z.string().trim().max(10_000).nullable().optional(), releaseWeek: z.number().int().min(0).max(ACCELERATOR_JOURNEY_WEEKS).default(0) })).mutation(async ({ ctx, input }) => {
+    saveModule: instructorProcedure.input(z.object({ id: z.number().int().positive().optional(), courseId: z.number().int().positive(), title: z.string().trim().min(2).max(255), summary: z.string().trim().max(10_000).nullable().optional(), releaseWeek: z.number().int().min(0).max(ACCELERATOR_JOURNEY_WEEKS).default(0) })).mutation(async ({ ctx, input }) => {
+      await requireInstructorCourse(ctx.user, input.courseId);
+      if (!isFullAdmin(ctx.user) && input.id) await requireAcademyModule(ctx.user, input.id, input.courseId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [course] = await db.select({ isAcceleratorJourney: academyCourses.isAcceleratorJourney }).from(academyCourses).where(eq(academyCourses.id, input.courseId)).limit(1);
@@ -2773,11 +2820,17 @@ export const academyRouter = router({
       if (input.id) {
         const [module] = await db.select().from(academyModules).where(and(eq(academyModules.id, input.id), eq(academyModules.courseId, input.courseId))).limit(1);
         if (!module) throw new TRPCError({ code: "NOT_FOUND", message: "Module not found" });
-        await db.update(academyModules).set({ title: input.title, summary: normaliseOptionalText(input.summary), releaseWeek: input.releaseWeek }).where(and(eq(academyModules.id, input.id), eq(academyModules.courseId, input.courseId)));
+        assertInstructorModuleReleaseWeek(ctx.user, input.releaseWeek, module.releaseWeek);
+        await recordStaffOperation(ctx.user, "academy.module_update", { courseId: input.courseId, moduleId: input.id, phase: "authorized_write" });
+        await db.update(academyModules).set({ title: input.title, summary: normaliseOptionalText(input.summary),
+          ...(isFullAdmin(ctx.user) ? { releaseWeek: input.releaseWeek } : {}),
+        }).where(and(eq(academyModules.id, input.id), eq(academyModules.courseId, input.courseId)));
         await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "module_updated", summary: `Updated module: ${input.title}` });
         return { id: input.id };
       }
+      assertInstructorModuleReleaseWeek(ctx.user, input.releaseWeek);
       const existing = await db.select().from(academyModules).where(eq(academyModules.courseId, input.courseId)).orderBy(desc(academyModules.sortOrder)).limit(1);
+      await recordStaffOperation(ctx.user, "academy.module_create", { courseId: input.courseId, title: input.title, phase: "authorized_write" });
       const result = await db.insert(academyModules).values({ courseId: input.courseId, title: input.title, summary: normaliseOptionalText(input.summary), releaseWeek: input.releaseWeek, sortOrder: (existing[0]?.sortOrder ?? -1) + 1 } as any);
       const id = Number((result as any).insertId);
       await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "module_created", summary: `Added module: ${input.title}` });
@@ -2804,11 +2857,18 @@ export const academyRouter = router({
       return { success: true };
     }),
 
-    saveLesson: adminProcedure.input(lessonInput).mutation(async ({ ctx, input }) => {
+    saveLesson: instructorProcedure.input(lessonInput).mutation(async ({ ctx, input }) => {
+      await requireAcademyModule(ctx.user, input.moduleId);
+      if (!isFullAdmin(ctx.user) && input.id) await requireAcademyLesson(ctx.user, input.id, input.moduleId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [module] = await db.select().from(academyModules).where(eq(academyModules.id, input.moduleId)).limit(1);
       if (!module) throw new TRPCError({ code: "NOT_FOUND", message: "Module not found" });
+      const safeContentHtml = isFullAdmin(ctx.user) ? sanitiseLessonHtml(input.contentHtml) : sanitiseInstructorLessonHtml(input.contentHtml);
+      if (!isFullAdmin(ctx.user)) {
+        const existingLesson = input.id ? (await db.select().from(academyLessons).where(eq(academyLessons.id, input.id)).limit(1))[0] : undefined;
+        await assertAcademyLessonFiles(ctx.user, module.courseId, { ...input, contentHtml: safeContentHtml }, existingLesson);
+      }
       if (input.assessmentMode === "document_upload" && !input.requiresAssessment) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Turn on the assessment for a document-upload lesson" });
       }
@@ -2821,7 +2881,7 @@ export const academyRouter = router({
       const payload = {
         title: input.title,
         summary: normaliseOptionalText(input.summary),
-        contentHtml: sanitiseLessonHtml(input.contentHtml),
+        contentHtml: safeContentHtml,
         videoUrl,
         videoTranscript: preserveOptionalTranscript(input.videoTranscript),
         attachmentUrl,
@@ -2853,6 +2913,7 @@ export const academyRouter = router({
             message: "This lesson has learner activity. Its document assessment template and assessment type are preserved for an accurate Academy record; create a replacement lesson for a revised template.",
           });
         }
+        await recordStaffOperation(ctx.user, "academy.lesson_update", { courseId: module.courseId, lessonId: input.id, phase: "authorized_write" });
         try {
           await db.update(academyLessons).set(payload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
         } catch (error) {
@@ -2901,6 +2962,7 @@ export const academyRouter = router({
         (existing[0]?.sortOrder ?? -1) + 1,
       ];
       let result: unknown;
+      await recordStaffOperation(ctx.user, "academy.lesson_create", { courseId: module.courseId, moduleId: input.moduleId, title: input.title, phase: "authorized_write" });
       try {
         [result] = await pool.execute(
           `INSERT INTO academy_lessons
@@ -2948,25 +3010,31 @@ export const academyRouter = router({
       return { success: true };
     }),
 
-    reorderModules: adminProcedure.input(z.object({ courseId: z.number().int().positive(), moduleIds: z.array(z.number().int().positive()).min(1).max(200) })).mutation(async ({ input }) => {
+    reorderModules: instructorProcedure.input(z.object({ courseId: z.number().int().positive(), moduleIds: z.array(z.number().int().positive()).min(1).max(200) })).mutation(async ({ ctx, input }) => {
+      await requireInstructorCourse(ctx.user, input.courseId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const modules = await db.select({ id: academyModules.id }).from(academyModules).where(eq(academyModules.courseId, input.courseId));
       if (modules.length !== input.moduleIds.length || new Set(input.moduleIds).size !== input.moduleIds.length || modules.some((module) => !input.moduleIds.includes(module.id))) throw new TRPCError({ code: "BAD_REQUEST", message: "Module ordering does not match this course" });
-      await Promise.all(input.moduleIds.map((id, sortOrder) => db.update(academyModules).set({ sortOrder }).where(eq(academyModules.id, id))));
+      await recordStaffOperation(ctx.user, "academy.modules_reorder", { courseId: input.courseId, moduleIds: input.moduleIds, phase: "authorized_write" });
+      await Promise.all(input.moduleIds.map((id, sortOrder) => db.update(academyModules).set({ sortOrder }).where(and(eq(academyModules.id, id), eq(academyModules.courseId, input.courseId)))));
+      if (!isFullAdmin(ctx.user)) await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "modules_reordered", summary: "Reordered assigned course modules", metadata: { moduleIds: input.moduleIds } });
       return { success: true };
     }),
 
-    reorderLessons: adminProcedure.input(z.object({ moduleId: z.number().int().positive(), lessonIds: z.array(z.number().int().positive()).min(1).max(500) })).mutation(async ({ input }) => {
+    reorderLessons: instructorProcedure.input(z.object({ moduleId: z.number().int().positive(), lessonIds: z.array(z.number().int().positive()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
+      const module = await requireAcademyModule(ctx.user, input.moduleId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const lessons = await db.select({ id: academyLessons.id }).from(academyLessons).where(eq(academyLessons.moduleId, input.moduleId));
       if (lessons.length !== input.lessonIds.length || new Set(input.lessonIds).size !== input.lessonIds.length || lessons.some((lesson) => !input.lessonIds.includes(lesson.id))) throw new TRPCError({ code: "BAD_REQUEST", message: "Lesson ordering does not match this module" });
-      await Promise.all(input.lessonIds.map((id, sortOrder) => db.update(academyLessons).set({ sortOrder }).where(eq(academyLessons.id, id))));
+      await recordStaffOperation(ctx.user, "academy.lessons_reorder", { courseId: module.courseId, moduleId: input.moduleId, lessonIds: input.lessonIds, phase: "authorized_write" });
+      await Promise.all(input.lessonIds.map((id, sortOrder) => db.update(academyLessons).set({ sortOrder }).where(and(eq(academyLessons.id, id), eq(academyLessons.moduleId, input.moduleId)))));
+      if (!isFullAdmin(ctx.user)) await addAudit({ courseId: module.courseId, actorId: ctx.user.id, action: "lessons_reordered", summary: "Reordered assigned course lessons", metadata: { moduleId: input.moduleId, lessonIds: input.lessonIds } });
       return { success: true };
     }),
 
-    replaceQuestions: adminProcedure.input(z.object({
+    replaceQuestions: instructorProcedure.input(z.object({
       lessonId: z.number().int().positive(),
       questions: z.array(z.object({
         id: z.number().int().positive().optional(),
@@ -2980,6 +3048,7 @@ export const academyRouter = router({
         explanation: z.string().trim().max(10_000).nullable().optional(),
       })).max(MAX_ACADEMY_ASSESSMENT_QUESTIONS),
     })).mutation(async ({ ctx, input }) => {
+      const scope = await requireAcademyLesson(ctx.user, input.lessonId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
@@ -2990,9 +3059,14 @@ export const academyRouter = router({
       }
       if (input.questions.some((question) => question.questionType === "multiple_choice" && (question.answerOptions.length < 2 || question.answerOptions.some((option) => !option.trim()) || question.correctAnswerIndex >= question.answerOptions.length))) throw new TRPCError({ code: "BAD_REQUEST", message: "Each multiple-choice question needs at least two completed answers and one correct answer" });
       const existingQuestions = await db.select().from(academyQuestions).where(eq(academyQuestions.lessonId, lesson.id)).orderBy(asc(academyQuestions.sortOrder), asc(academyQuestions.id));
+      const submittedIds = input.questions.flatMap((question) => question.id ? [question.id] : []);
+      if (new Set(submittedIds).size !== submittedIds.length || submittedIds.some((id) => !existingQuestions.some((question) => question.id === id))) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Question IDs must belong to this lesson and cannot be repeated" });
+      }
       const hasLearnerEvidence = await hasAcademyLearnerEvidence([lesson.id]);
       if (hasLearnerEvidence) {
         if (isAssessmentQuestionNarrativeRevision(existingQuestions, input.questions)) {
+          await recordStaffOperation(ctx.user, "academy.question_text_update", { courseId: scope.courseId, lessonId: input.lessonId, questionIds: submittedIds, phase: "authorized_write" });
           await Promise.all(existingQuestions.map((question, index) => db.update(academyQuestions).set({
             prompt: input.questions[index].prompt,
             explanation: normaliseOptionalText(input.questions[index].explanation),
@@ -3012,6 +3086,7 @@ export const academyRouter = router({
           message: "This knowledge check has learner evidence. You can revise question wording and private marking guides, but answer options, the correct answer, question type, word limit and question order are protected so completed results remain meaningful.",
         });
       }
+      await recordStaffOperation(ctx.user, "academy.questions_replace", { courseId: scope.courseId, lessonId: input.lessonId, questionCount: input.questions.length, phase: "authorized_write" });
       await db.delete(academyQuestions).where(eq(academyQuestions.lessonId, input.lessonId));
       if (input.questions.length) await db.insert(academyQuestions).values(input.questions.map((question, sortOrder) => ({
         lessonId: input.lessonId,
@@ -3074,19 +3149,31 @@ export const academyRouter = router({
       return { imported: questions.length, questionCount: existing.length + questions.length };
     }),
 
-    uploadAttachment: adminProcedure.input(z.object({ fileName: z.string().trim().min(1).max(255), fileBase64: z.string().min(1).max(20_000_000), mimeType: z.enum(["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain", "text/csv"]) })).mutation(async ({ ctx, input }) => {
+    uploadAttachment: instructorProcedure.input(z.object({ courseId: z.number().int().positive().optional(), fileName: z.string().trim().min(1).max(255), fileBase64: z.string().min(1).max(20_000_000), mimeType: z.enum(["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain", "text/csv"]) })).mutation(async ({ ctx, input }) => {
+      await requireAcademyUploadCourse(ctx.user, input.courseId);
       const bytes = Buffer.from(input.fileBase64, "base64");
       if (!bytes.length || bytes.length > 10 * 1024 * 1024) throw new TRPCError({ code: "BAD_REQUEST", message: "Attachments must be under 10 MB" });
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "academy-resource";
-      const stored = await storagePut(`academy/${ctx.user.id}/${Date.now()}-${safeName}`, bytes, input.mimeType);
+      const objectKey = `academy/${ctx.user.id}/${randomUUID()}-${safeName}`;
+      await recordStaffOperation(ctx.user, "academy.attachment_upload", { courseId: input.courseId, objectKey, kind: "attachment", phase: "authorized_write" });
+      if (!isFullAdmin(ctx.user)) {
+        const stored = await storagePutEncrypted(objectKey, bytes);
+        await rememberAcademyUpload(ctx.user, input.courseId, stored.key, "attachment");
+        await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "attachment_uploaded", summary: "Uploaded a private teaching attachment", metadata: { objectKey: stored.key, name: input.fileName, mimeType: input.mimeType } });
+        return { url: academyPrivateAttachmentUrl(stored.key), key: stored.key, name: input.fileName };
+      }
+      const stored = await storagePut(objectKey, bytes, input.mimeType);
+      await rememberAcademyUpload(ctx.user, input.courseId, stored.key, "attachment");
       return { url: stored.url, key: stored.key, name: input.fileName };
     }),
 
-    uploadDocumentAssessmentTemplate: adminProcedure.input(z.object({
+    uploadDocumentAssessmentTemplate: instructorProcedure.input(z.object({
+      courseId: z.number().int().positive().optional(),
       fileName: z.string().trim().min(1).max(255),
       fileBase64: z.string().min(1).max(20_000_000),
       mimeType: z.enum(academyDocumentMimeTypes),
     })).mutation(async ({ ctx, input }) => {
+      await requireAcademyUploadCourse(ctx.user, input.courseId);
       const bytes = Buffer.from(input.fileBase64, "base64");
       let document;
       try {
@@ -3094,11 +3181,37 @@ export const academyRouter = router({
       } catch (error) {
         throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "This assessment document could not be validated" });
       }
+      const objectKey = academyDocumentObjectKey("templates", [ctx.user.id, ...(input.courseId ? [input.courseId] : [])], document.name);
+      await recordStaffOperation(ctx.user, "academy.document_template_upload", { courseId: input.courseId, objectKey, kind: "document_template", phase: "authorized_write" });
       const stored = await storagePutEncrypted(
-        academyDocumentObjectKey("templates", [ctx.user.id], document.name),
+        objectKey,
         bytes,
       );
+      await rememberAcademyUpload(ctx.user, input.courseId, stored.key, "document_template");
+      if (!isFullAdmin(ctx.user)) await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "document_template_uploaded", summary: "Uploaded a private assessment template", metadata: { objectKey: stored.key, name: document.name } });
       return { key: stored.key, name: document.name, mimeType: document.mimeType, size: document.size };
+    }),
+
+    uploadCourseImage: instructorProcedure.input(z.object({
+      courseId: z.number().int().positive(),
+      fileName: z.string().trim().min(1).max(255),
+      fileBase64: z.string().min(1).max(12_000_000),
+      mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+    })).mutation(async ({ ctx, input }) => {
+      await requireAcademyUploadCourse(ctx.user, input.courseId);
+      const bytes = Buffer.from(input.fileBase64, "base64");
+      if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new TRPCError({ code: "BAD_REQUEST", message: "Course images must be under 8 MB" });
+      const sharp = (await import("sharp")).default;
+      const metadata = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata().catch(() => null);
+      const expectedFormat = { "image/jpeg": "jpeg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" }[input.mimeType];
+      if (!metadata || metadata.format !== expectedFormat) throw new TRPCError({ code: "BAD_REQUEST", message: "Image contents must match the supplied image type" });
+      const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]+/g, "-") || "course-image";
+      const objectKey = `academy/course-images/${input.courseId}/${ctx.user.id}/${randomUUID()}-${safeName}`;
+      await recordStaffOperation(ctx.user, "academy.course_image_upload", { courseId: input.courseId, objectKey, kind: "image", phase: "authorized_write" });
+      const stored = await storagePut(objectKey, bytes, input.mimeType);
+      await rememberAcademyUpload(ctx.user, input.courseId, stored.key, "image");
+      if (!isFullAdmin(ctx.user)) await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "course_image_uploaded", summary: "Uploaded an assigned course image", metadata: { objectKey: stored.key } });
+      return { url: stored.url, key: stored.key, name: input.fileName };
     }),
 
     setAccess: adminProcedure.input(z.object({ agentId: z.number().int().positive(), enabled: z.boolean(), note: z.string().trim().max(10_000).nullable().optional() })).mutation(async ({ ctx, input }) => {
