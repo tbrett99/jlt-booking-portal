@@ -1,7 +1,8 @@
 import { adminProcedure, router } from "./_core/trpc";
 import { sql } from "drizzle-orm";
 import { buildPipelineHealth } from "../shared/dashboard-workboard-utils";
-import { normaliseTaskIdentityEmail } from "../shared/task-identity";
+import { normaliseTaskIdentityEmail, resolveEquivalentTaskOwnerIds } from "../shared/task-identity";
+import { listActiveAdminTaskOwners } from "./admin-task-identity";
 import { calendarDayWindow, expandCalendarOccurrences } from "../shared/calendar-occurrences";
 
 /**
@@ -239,6 +240,9 @@ export const dashboardRouter = router({
     const now = new Date();
     const todayWindow = calendarDayWindow(now);
     const taskOwnerEmail = normaliseTaskIdentityEmail(ctx.user.email);
+    const activeTaskOwners = await listActiveAdminTaskOwners();
+    const taskOwnerIds = resolveEquivalentTaskOwnerIds(ctx.user, activeTaskOwners);
+    const taskOwnerIdsSql = sql.join(taskOwnerIds.map((id) => sql`${id}`), sql`, `);
 
     const [
       myTasksResult,
@@ -264,7 +268,6 @@ export const dashboardRouter = router({
       changeRequestCountResult,
       agentWinsResult,
       unseenAgentWinsCountResult,
-      adminUsersResult,
     ] = await Promise.all([
       db.execute(sql`
         SELECT t.id, t.title, t.status, t.priority, t.dueDate, t.acknowledgedAt,
@@ -279,7 +282,7 @@ export const dashboardRouter = router({
         LEFT JOIN bookings b ON t.linkedType = 'booking' AND b.id = t.linkedId
         WHERE t.status != 'done'
           AND (
-            t.assigneeId = ${ctx.user.id}
+            t.assigneeId IN (${taskOwnerIdsSql})
             OR (t.assigneeId IS NULL AND t.createdById = ${ctx.user.id})
             OR (${taskOwnerEmail} != '' AND LOWER(TRIM(assignee.email)) = ${taskOwnerEmail})
             OR (${taskOwnerEmail} != '' AND t.assigneeId IS NULL AND LOWER(TRIM(creator.email)) = ${taskOwnerEmail})
@@ -307,7 +310,7 @@ export const dashboardRouter = router({
             OR (t.dueDate IS NOT NULL AND t.dueDate <= NOW())
           )
           AND (
-            t.assigneeId = ${ctx.user.id}
+            t.assigneeId IN (${taskOwnerIdsSql})
             OR (t.assigneeId IS NULL AND t.createdById = ${ctx.user.id})
             OR (${taskOwnerEmail} != '' AND LOWER(TRIM(assignee.email)) = ${taskOwnerEmail})
             OR (${taskOwnerEmail} != '' AND t.assigneeId IS NULL AND LOWER(TRIM(creator.email)) = ${taskOwnerEmail})
@@ -526,12 +529,6 @@ export const dashboardRouter = router({
           AND (p.expiresAt IS NULL OR p.expiresAt >= NOW())
           AND v.id IS NULL
       `),
-      db.execute(sql`
-        SELECT id, name, email
-        FROM users
-        WHERE role IN ('admin', 'super_admin')
-        ORDER BY name ASC
-      `),
     ]);
 
     const controls = unwrapOne(controlCountsResult);
@@ -567,14 +564,6 @@ export const dashboardRouter = router({
     const queueActionCount = queueHealth.reduce((total, queue) => total + queue.overTargetCount, 0);
     const membershipAttentionCount = Number(unwrapOne(membershipWatchCountResult).count ?? 0)
       + Number(changeRequests.count ?? 0);
-    const adminUsersByEmail = new Map<string, { id: number; name: string }>();
-    unwrap(adminUsersResult).forEach((user) => {
-      const email = normaliseTaskIdentityEmail(user.email);
-      const key = email || `user:${user.id}`;
-      if (!adminUsersByEmail.has(key) || user.id === ctx.user.id) {
-        adminUsersByEmail.set(key, { id: user.id, name: user.name ?? "" });
-      }
-    });
 
     return {
       generatedAt: now,
@@ -626,7 +615,7 @@ export const dashboardRouter = router({
         latest: unwrap(agentWinsResult),
         unseenCount: Number(unwrapOne(unseenAgentWinsCountResult).count ?? 0),
       },
-      adminUsers: Array.from(adminUsersByEmail.values()),
+      adminUsers: activeTaskOwners,
     };
   }),
 

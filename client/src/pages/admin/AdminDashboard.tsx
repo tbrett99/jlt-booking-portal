@@ -121,6 +121,7 @@ function SectionHeader({
   icon: Icon,
   title,
   count,
+  previewCount = false,
   href,
   actionLabel = "View all",
   accent = "#02E6D2",
@@ -128,6 +129,7 @@ function SectionHeader({
   icon: React.ElementType;
   title: string;
   count?: number;
+  previewCount?: boolean;
   href?: string;
   actionLabel?: string;
   accent?: string;
@@ -140,7 +142,7 @@ function SectionHeader({
       <div className="min-w-0">
         <h2 className="text-sm font-bold leading-tight">{title}</h2>
         {typeof count === "number" && (
-          <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">{count === 1 ? "1 item" : `${count} items`}</p>
+          <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">{previewCount ? `Showing ${count}` : count === 1 ? "1 item" : `${count} items`}</p>
         )}
       </div>
       {href && (
@@ -366,7 +368,8 @@ export default function AdminDashboard() {
       <section id="tasks" className="scroll-mt-24 grid gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2 border-t-4 border-t-[#02E6D2]">
           <CardHeader className="pb-3 pt-4 px-4">
-            <SectionHeader icon={ListChecks} title="My task focus" count={myTasks.length} href="/admin/tasks" accent="#0f766e" />
+            <SectionHeader icon={ListChecks} title="My task focus" count={myTasks.length} previewCount accent="#0f766e" />
+            <p className="text-[11px] text-muted-foreground mt-2">Up to 12 outstanding tasks · <Link href="/admin/tasks" className="font-semibold text-[#0f766e] hover:underline">View all tasks</Link></p>
             <p className="text-[11px] text-muted-foreground mt-2">Overdue and unacknowledged tasks rise to the top. Acknowledged tasks stay here until they are completed.</p>
           </CardHeader>
           <CardContent className="px-4 pb-4">

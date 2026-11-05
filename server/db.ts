@@ -31,6 +31,7 @@ import { ENV } from "./_core/env";
 import { isBookingReadyForCommissionReview } from "./commission-workflow-utils";
 import { canReconcileHistoricalCommissionClaim } from "./historical-commission-utils";
 import { assertAgentNotMerged, getArchivedAgentMergeIds } from "./agent-merge-identity";
+import { assertNewAdminTaskAssignee } from "./admin-task-identity";
 import { writableAgentUser } from "./agent-merge-user-write";
 import type { OrbitFinancialSnapshotPayload } from "./orbit-financial-snapshot";
 import { assertBookingReferencesAvailable, normaliseBookingReference, withBookingReferenceLock } from "./booking-reference-guard";
@@ -2046,6 +2047,7 @@ export async function createAdminTask(data: {
   recurrenceRule?: "none" | "daily" | "weekly" | "fortnightly" | "monthly";
   recurrenceInterval?: number;
 }) {
+  await assertNewAdminTaskAssignee(data.assigneeId);
   const db = await getDb();
   if (!db || !_pool) throw new Error("DB unavailable");
   // The live table accepts this exact prepared statement through mysql2. Do not
@@ -2207,6 +2209,10 @@ export async function updateAdminTask(id: number, data: {
   recurrenceRule?: "none" | "daily" | "weekly" | "fortnightly" | "monthly";
   recurrenceInterval?: number;
 }) {
+  if (data.assigneeId !== undefined && data.assigneeId !== null) {
+    const existing = await getAdminTaskById(id);
+    if (data.assigneeId !== existing?.assigneeId) await assertNewAdminTaskAssignee(data.assigneeId);
+  }
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(adminTasks).set(data as any).where(eq(adminTasks.id, id));

@@ -13,6 +13,7 @@ export const systemRouter = router({
       ok: true,
       manualJoiningFeeReceiptGuard: 1,
       accountRecoverySafetyGuard: 1,
+      adminTaskIdentityConsolidationGuard: 1,
     })),
 
   notifyOwner: adminProcedure

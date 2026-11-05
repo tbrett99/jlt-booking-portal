@@ -1,31 +1,28 @@
 export type TaskIdentityUser = {
   id: number;
   email?: string | null;
-  /** Additional legacy IDs represented by this one visible owner option. */
+  /** Server-verified task history IDs represented by this visible active owner. */
   identityUserIds?: number[];
 };
-
-/**
- * A few legacy staff accounts share one authenticated email. Treat the IDs for
- * that same email as one task owner, so an assignment made to either account is
- * visible to the colleague who is actually signed in.
- */
 export function normaliseTaskIdentityEmail(email?: string | null) {
   return (email ?? "").trim().toLowerCase();
 }
-
+export function isPositiveTaskIdentityId(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+/** Explicit task identity membership works even when an archived user's email is null. */
 export function resolveEquivalentTaskOwnerIds(
   currentUser: TaskIdentityUser | null | undefined,
   users: TaskIdentityUser[],
-) {
-  if (!currentUser) return [];
-
+): number[] {
+  if (!currentUser || !isPositiveTaskIdentityId(currentUser.id)) return [];
   const email = normaliseTaskIdentityEmail(currentUser.email);
-  if (!email) return [currentUser.id];
-
-  const ids = Array.from(new Set(users
-    .filter((user) => normaliseTaskIdentityEmail(user.email) === email)
-    .flatMap((user) => user.identityUserIds ?? [user.id])));
-
-  return ids.includes(currentUser.id) ? ids : [currentUser.id, ...ids];
+  const equivalents = users.filter((user) => isPositiveTaskIdentityId(user.id) && (
+    user.id === currentUser.id
+    || user.identityUserIds?.includes(currentUser.id)
+    || (email !== "" && normaliseTaskIdentityEmail(user.email) === email)
+  ));
+  return Array.from(new Set([currentUser.id, ...equivalents.flatMap((user) =>
+    [user.id, ...(user.identityUserIds ?? [])].filter(isPositiveTaskIdentityId),
+  )]));
 }

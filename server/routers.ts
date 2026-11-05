@@ -3,7 +3,7 @@ import { bookingOrbitReference, orbitReferenceEmailParagraph, normaliseBookingRe
 import { writableAgentUser } from "./agent-merge-user-write";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
-import { normaliseTaskIdentityEmail } from "@shared/task-identity";
+import { assertNewAdminTaskAssignee, getEquivalentAdminTaskOwnerIds, listActiveAdminTaskOwners } from "./admin-task-identity";
 import { nextRecurringTaskDate, TASK_RECURRENCE_RULES } from "@shared/task-recurrence";
 import { canLinkGoCardlessMandate, parseGoCardlessMandateStatus } from "@shared/gocardless-mandate-status";
 import { pushClaimStatusToOrbit } from "./orbit-sync";
@@ -656,30 +656,7 @@ export const appRouter = router({
         .filter((u) => u.role === "agent" || u.role === "admin" || u.role === "super_admin")
         .map((u) => ({ id: u.id, name: u.name ?? "", email: u.email ?? "", role: u.role, phone: (u as any).phone ?? "", credentialsSentAt: (u as any).credentialsSentAt ?? null }));
     }),
-    listAdmins: protectedProcedure.query(async ({ ctx }) => {
-      const all = await getAllUsers();
-      const adminsByEmail = new Map<string, { id: number; name: string; email: string | null; identityUserIds: number[] }>();
-      all
-        .filter((user) => user.role === "admin" || user.role === "super_admin")
-        .forEach((user) => {
-          const email = normaliseTaskIdentityEmail(user.email);
-          const key = email || `user:${user.id}`;
-          const existing = adminsByEmail.get(key);
-          if (existing) {
-            existing.identityUserIds.push(user.id);
-            if (user.id === ctx.user.id) {
-              existing.id = user.id;
-              existing.name = user.name ?? "";
-              existing.email = user.email ?? null;
-            }
-            return;
-          }
-          // Keep one sensible dropdown option for legacy duplicate accounts while
-          // returning every equivalent ID for My Focus filtering.
-          adminsByEmail.set(key, { id: user.id, name: user.name ?? "", email: user.email ?? null, identityUserIds: [user.id] });
-        });
-      return Array.from(adminsByEmail.values()).sort((a, b) => a.name.localeCompare(b.name));
-    }),
+    listAdmins: protectedProcedure.query(() => listActiveAdminTaskOwners()),
     create: adminProcedure
       .input(
         z.object({
@@ -2485,6 +2462,16 @@ export const appRouter = router({
             throw new TRPCError({ code: "BAD_REQUEST", message: "This amendment does not belong to the selected booking" });
           }
         }
+        if (input.isInternal && input.createActionTasks) {
+          // Stale action-task mention selections must fail before the note or any notification is written.
+          const names = Array.from(input.content.matchAll(/@([A-Za-z][A-Za-z0-9 ]*?)(?=\s+[a-z]|\s*$|[^A-Za-z0-9 ])/g)).map((match) => match[1].trim().toLowerCase());
+          const recipientIds = input.mentionUserIds?.length
+            ? input.mentionUserIds
+            : (await listActiveAdminTaskOwners()).filter((owner) => names.includes(owner.name.toLowerCase())).map((owner) => owner.id);
+          for (const recipientId of recipientIds) {
+            if (recipientId !== ctx.user.id) await assertNewAdminTaskAssignee(recipientId);
+          }
+        }
         const createdNote = await createNote({
           bookingId: input.bookingId,
           amendmentId: input.amendmentId,
@@ -2501,7 +2488,11 @@ export const appRouter = router({
           const mentionRegex = /@([A-Za-z][A-Za-z0-9 ]*?)(?=\s+[a-z]|\s*$|[^A-Za-z0-9 ])/g;
           const mentionedNames = Array.from(input.content.matchAll(mentionRegex)).map((m) => m[1].trim());
           const allUsers = await getAllUsers();
-          const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
+          const admins = input.createActionTasks
+            ? input.mentionUserIds?.length
+              ? allUsers.filter((u) => (u.role === "admin" || u.role === "super_admin") && u.isActive)
+              : await listActiveAdminTaskOwners()
+            : allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
           const recipients = (input.mentionUserIds?.length
             ? admins.filter((candidate) => input.mentionUserIds!.includes(candidate.id))
             : admins.filter((candidate) => mentionedNames.some((name) => (candidate.name ?? "").toLowerCase() === name.toLowerCase()))
@@ -4556,6 +4547,10 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         const { id, ...data } = input;
         const existing = await getAdminTaskById(id);
         if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Task not found" });
+        // Before recurrence inserts or notifications; unchanged historical owners remain editable.
+        if (data.assigneeId !== undefined && data.assigneeId !== null && data.assigneeId !== existing.assigneeId) {
+          await assertNewAdminTaskAssignee(data.assigneeId);
+        }
         const effectiveRecurrenceRule = data.recurrenceRule ?? existing.recurrenceRule;
         const effectiveDueDate = data.dueDate === undefined ? existing.dueDate : data.dueDate;
         if (effectiveRecurrenceRule !== "none" && !effectiveDueDate) {
@@ -4662,12 +4657,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     // Count of open tasks assigned to the current user (for sidebar badge)
     myOpenCount: adminProcedure.query(async ({ ctx }) => {
       const tasks = await getAllAdminTasks();
-      const users = await getAllUsers();
-      const email = normaliseTaskIdentityEmail(ctx.user.email);
-      const equivalentIds = new Set(
-        email ? users.filter((user) => normaliseTaskIdentityEmail(user.email) === email).map((user) => user.id) : [ctx.user.id],
-      );
-      equivalentIds.add(ctx.user.id);
+      const equivalentIds = new Set(await getEquivalentAdminTaskOwnerIds(ctx.user));
       return tasks.filter((task) => equivalentIds.has(task.assigneeId ?? -1) && task.status !== "done").length;
     }),
   }),
@@ -5274,8 +5264,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
 
     // Admin: get all admin users for assignee dropdown
     listAdminsForAssign: adminProcedure.query(async () => {
-      const allUsers = await getAllUsers();
-      return allUsers.filter((u) => u.role === "admin" || u.role === "super_admin").map((u) => ({ id: u.id, name: u.name ?? u.email }));
+      const owners = await listActiveAdminTaskOwners();
+      return owners.map((owner) => ({ id: owner.id, name: owner.name || owner.email }));
     }),
 
     // Agent: get bookings that have at least one reimbursement item with no docs

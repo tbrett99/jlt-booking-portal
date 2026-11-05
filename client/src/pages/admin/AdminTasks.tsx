@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import TaskFormDialog from "./TaskFormDialog";
 import { resolveEquivalentTaskOwnerIds } from "@shared/task-identity";
@@ -44,6 +45,71 @@ type LinkedType = "booking" | "amendment" | "refund" | "cancellation" | "none";
 type TaskView = "focus" | "team" | "done";
 type FocusFilter = "all" | "unacknowledged" | "due_today" | "overdue";
 type OwnerFilter = "all" | "mine" | "unassigned" | `user:${number}`;
+type AdminTaskOwner = { id: number; name: string; identityUserIds?: number[] };
+
+// Only identities supplied for this visible option are included. Raw tasks
+// keep their original account IDs; names are not used to infer account links.
+function taskOwnerIds(owner: AdminTaskOwner) {
+  return Array.from(new Set([owner.id, ...(owner.identityUserIds ?? [])]));
+}
+
+function HistoricalTaskEditor({ task, adminUsers, onClose, onSaved }: {
+  task: any;
+  adminUsers: AdminTaskOwner[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [title, setTitle] = useState<string>(task.title);
+  const [description, setDescription] = useState<string>(task.description ?? "");
+  const [priority, setPriority] = useState<TaskPriority>(task.priority);
+  const [changeOwner, setChangeOwner] = useState(false);
+  const [assigneeId, setAssigneeId] = useState<string | null>(null);
+  const updateTask = trpc.tasks.update.useMutation({
+    onSuccess: () => { toast.success("Task updated"); onSaved(); onClose(); },
+    onError: (err) => toast.error(err.message || "Failed to update task"),
+  });
+
+  function save() {
+    if (!title.trim()) return;
+    updateTask.mutate({
+      id: task.id,
+      title: title.trim(),
+      description: description.trim() || undefined,
+      priority,
+      // Opening the picker is not a reassignment. Omission retains the stored
+      // original account, and no creator or lifecycle fields are submitted.
+      ...(changeOwner && assigneeId !== null ? { assigneeId: assigneeId === "unassigned" ? null : Number(assigneeId) } : {}),
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Edit Task</DialogTitle>
+          <DialogDescription>Edit this completed record. Dates, recurrence, links and activity attribution are preserved.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div><label htmlFor={`history-title-${task.id}`} className="mb-1 block text-sm font-medium">Title *</label><Input id={`history-title-${task.id}`} value={title} onChange={(event) => setTitle(event.target.value)} autoFocus /></div>
+          <div><label htmlFor={`history-description-${task.id}`} className="mb-1 block text-sm font-medium">Description</label><Textarea id={`history-description-${task.id}`} value={description} onChange={(event) => setDescription(event.target.value)} rows={3} /></div>
+          <div><label className="mb-1 block text-sm font-medium">Priority</label><Select value={priority} onValueChange={(value) => setPriority(value as TaskPriority)}><SelectTrigger aria-label="Priority"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(PRIORITY_CONFIG).map(([value, config]) => <SelectItem key={value} value={value}>{config.label}</SelectItem>)}</SelectContent></Select></div>
+          <div className="rounded-xl border p-3">
+            <p className="mb-1 text-sm font-medium">Original assignee</p>
+            <p className="text-sm">{task.assigneeName ?? `Account #${task.assigneeId}`} <span className="text-xs text-muted-foreground">(#{task.assigneeId})</span></p>
+            <p className="mt-1 text-xs text-muted-foreground">Original account history · Preserved unless you explicitly choose a new owner.</p>
+            {!changeOwner ? <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setChangeOwner(true)}>Change owner</Button> : (
+              <div className="mt-2 space-y-2">
+                <Select value={assigneeId ?? undefined} onValueChange={setAssigneeId}><SelectTrigger aria-label="New owner"><SelectValue placeholder="Keep original owner until selected" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Unassigned</SelectItem>{adminUsers.map((owner) => <SelectItem key={owner.id} value={String(owner.id)}>{owner.name}</SelectItem>)}</SelectContent></Select>
+                <Button type="button" variant="ghost" size="sm" onClick={() => { setChangeOwner(false); setAssigneeId(null); }}>Keep original owner</Button>
+              </div>
+            )}
+          </div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={onClose} disabled={updateTask.isPending}>Cancel</Button><Button onClick={save} disabled={updateTask.isPending || !title.trim()}>Save changes</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
   open: { label: "Unacknowledged", color: "border-amber-200 bg-amber-50 text-amber-800" },
@@ -153,7 +219,7 @@ function TaskSection({
   description: string;
   tasks: any[];
   emptyMessage: string;
-  adminUsers: { id: number; name: string }[];
+  adminUsers: AdminTaskOwner[];
   currentUserIds: number[];
   onRefresh: () => void;
   openTaskId?: number | null;
@@ -199,7 +265,7 @@ function TaskCard({
   autoExpand = false,
 }: {
   task: any;
-  adminUsers: { id: number; name: string }[];
+  adminUsers: AdminTaskOwner[];
   currentUserIds: number[];
   onRefresh: () => void;
   autoExpand?: boolean;
@@ -239,6 +305,8 @@ function TaskCard({
   const due = dueDateLabel(task.dueDate);
   const status = task.status as TaskStatus;
   const priority = task.priority as TaskPriority;
+  const historicalOwner = status === "done" && adminUsers.find((owner) => owner.id !== task.assigneeId && taskOwnerIds(owner).includes(task.assigneeId));
+  const needsHistoricalEditor = status === "done" && !!task.assigneeId && !adminUsers.some((owner) => owner.id === task.assigneeId);
   const isMine = currentUserIds.includes(task.assigneeId);
   const isAtRisk = isOverdue(task) || priority === "urgent";
   const bookingLabel = task.linkedBookingClientName ?? (task.linkedId ? `Booking #${task.linkedId}` : null);
@@ -268,6 +336,7 @@ function TaskCard({
                   <Badge variant="outline" className={`text-[10px] ${STATUS_CONFIG[status].color}`}>
                     {STATUS_CONFIG[status].label}
                   </Badge>
+                  {historicalOwner && <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[10px] text-slate-700" title={`Original assignee: ${task.assigneeName ?? "Account"} (#${task.assigneeId}). Shown with ${historicalOwner.name}; stored attribution is unchanged.`}>Original account history</Badge>}
                   {task.recurrenceRule && task.recurrenceRule !== "none" && (
                     <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">
                       <RefreshCw size={10} className="mr-1" />Repeats {task.recurrenceRule}
@@ -369,7 +438,9 @@ function TaskCard({
         </CardContent>
       </Card>
 
-      {editOpen && (
+      {editOpen && needsHistoricalEditor ? (
+        <HistoricalTaskEditor task={task} adminUsers={adminUsers} onClose={() => setEditOpen(false)} onSaved={onRefresh} />
+      ) : editOpen && (
         <TaskFormDialog
           open={editOpen}
           onClose={() => setEditOpen(false)}
@@ -441,7 +512,12 @@ export default function AdminTasks() {
     if (view !== "focus") {
       if (ownerFilter === "mine") list = list.filter((task) => currentUserIds.includes(task.assigneeId));
       if (ownerFilter === "unassigned") list = list.filter((task) => !task.assigneeId);
-      if (ownerFilter.startsWith("user:")) list = list.filter((task) => task.assigneeId === Number(ownerFilter.slice(5)));
+      if (ownerFilter.startsWith("user:")) {
+        const ownerId = Number(ownerFilter.slice(5));
+        const owner = adminUsers.find((admin) => admin.id === ownerId);
+        const ownerIds = owner ? taskOwnerIds(owner as AdminTaskOwner) : [ownerId];
+        list = list.filter((task) => ownerIds.includes(task.assigneeId));
+      }
     }
     if (priorityFilter !== "all") list = list.filter((task) => task.priority === priorityFilter);
     if (focusFilter === "unacknowledged") list = list.filter((task) => task.status === "open");
@@ -457,7 +533,7 @@ export default function AdminTasks() {
       );
     }
     return list.sort(taskSort);
-  }, [allTasks, currentUserIds, focusFilter, ownerFilter, priorityFilter, search, view]);
+  }, [allTasks, adminUsers, currentUserIds, focusFilter, ownerFilter, priorityFilter, search, view]);
 
   const immediateTasks = visibleTasks.filter((task) => task.status === "open" || isOverdue(task) || isDueToday(task));
   const plannedTasks = visibleTasks.filter((task) => !immediateTasks.some((immediate) => immediate.id === task.id));
@@ -542,10 +618,10 @@ export default function AdminTasks() {
         <div className="flex flex-wrap gap-2">
           {view !== "focus" && (
             <Select value={ownerFilter} onValueChange={(value) => setOwnerFilter(value as OwnerFilter)}>
-              <SelectTrigger className="h-9 w-36"><User size={13} className="mr-1.5 text-muted-foreground" /><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Filter by assignee" className={`h-9 ${view === "done" ? "w-64" : "w-36"}`}><User size={13} className="mr-1.5 text-muted-foreground" /><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All assignees</SelectItem>
-                <SelectItem value="mine">Assigned to me</SelectItem>
+                <SelectItem value="mine">{view === "done" ? "Mine (including preserved history)" : "Assigned to me"}</SelectItem>
                 <SelectItem value="unassigned">Unassigned</SelectItem>
                 {(adminUsers as { id: number; name: string }[]).map((admin) => (
                   <SelectItem key={admin.id} value={`user:${admin.id}`}>{admin.name}</SelectItem>
@@ -566,6 +642,8 @@ export default function AdminTasks() {
           {isFiltered && <Button size="sm" variant="ghost" className="h-9 text-muted-foreground" onClick={() => { setSearch(""); setPriorityFilter("all"); setOwnerFilter("all"); setFocusFilter("all"); }}>Clear filters</Button>}
         </div>
       </div>
+
+      {view === "done" && <p className="text-xs text-muted-foreground">Audited task-account links let one login include preserved history. Original assignees and activity attribution stay unchanged; this does not merge other account records.</p>}
 
       {isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="animate-spin text-[#168c7a]" size={28} /></div>
