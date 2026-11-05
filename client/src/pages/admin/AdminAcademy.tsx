@@ -1528,9 +1528,10 @@ function LessonEditor({
             <Input
               className="mt-1.5"
               value={draft.videoUrl}
-              placeholder="https://www.loom.com/share/..."
+              placeholder="Paste a Loom or YouTube HTTPS video link"
               onChange={e => setDraft({ ...draft, videoUrl: e.target.value })}
             />
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">Loom and YouTube videos play inside the lesson. Paste a normal YouTube watch or youtu.be share link—no embed code needed. For YouTube, use Public or Unlisted visibility and allow embedding. Unlisted links are shareable, not private to the Portal.</p>
           </div>
           <div>
             <Label>Downloadable resource</Label>

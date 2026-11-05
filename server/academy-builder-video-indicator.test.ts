@@ -6,13 +6,20 @@ const academyBuilder = readFileSync(resolve(process.cwd(), "client/src/pages/adm
 
 describe("Academy Builder video indicators", () => {
   it("shows an accessible video badge beside every lesson with a saved video URL", () => {
-    expect(academyBuilder).toContain('lesson.videoUrl?.trim() && <span');
+    expect(academyBuilder).toMatch(/lesson\.videoUrl\?\.trim\(\)\s*&&\s*\(?\s*<span/);
     expect(academyBuilder).toContain('title="An approved lesson video has been added"');
-    expect(academyBuilder).toContain('<Video size={13} aria-hidden="true" />Video');
+    expect(academyBuilder).toMatch(/<Video\s+size=\{13\}\s+aria-hidden="true"\s*\/>\s*Video/);
   });
 
   it("summarises the number of video lessons while a module is collapsed", () => {
     expect(academyBuilder).toContain('const videoLessonCount = module.lessons.filter');
-    expect(academyBuilder).toContain('{videoLessonCount} video{videoLessonCount === 1 ? "" : "s"}');
+    expect(academyBuilder).toMatch(/\{videoLessonCount\}\s*video\s*\{videoLessonCount === 1 \? "" : "s"\}/);
+  });
+
+  it("explains ordinary YouTube links, embedding requirements and unlisted-link visibility", () => {
+    expect(academyBuilder).toContain("Paste a Loom or YouTube HTTPS video link");
+    expect(academyBuilder).toContain("no embed code needed");
+    expect(academyBuilder).toContain("allow embedding");
+    expect(academyBuilder).toContain("Unlisted links are shareable, not private to the Portal");
   });
 });

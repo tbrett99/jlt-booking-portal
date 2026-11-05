@@ -9,6 +9,7 @@ import { useViewMode } from "@/contexts/ViewModeContext";
 import { formatAcademyQuestionPrompt, splitAcademyQuestionInlineFormatting } from "@shared/academy-question-format";
 import { normaliseAcademyLessonContent } from "@shared/academy-lesson-content";
 import { loomEmbedUrl } from "@shared/loom-embed";
+import { youtubeEmbedUrl } from "@shared/youtube-embed";
 import { isActionableAcademyFeedback } from "@shared/academy-feedback-state";
 import { AcademyCompletedAssessment } from "@/components/AcademyCompletedAssessment";
 
@@ -228,6 +229,9 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   const canComplete = !selectedLesson.progress?.completedAt && (isPreview || !selectedLesson.requiresAcknowledgement || !!selectedLesson.progress?.acknowledgedAt) && !selectedLesson.requiresAssessment;
   const hasAnsweredAll = outstandingQuestions.length > 0 && outstandingQuestions.every((question) => question.questionType === "free_text" ? !!writtenAnswers[question.id]?.trim() : answers[question.id] !== undefined);
   const embeddedLoomUrl = loomEmbedUrl(selectedLesson.videoUrl);
+  const embeddedYouTubeUrl = youtubeEmbedUrl(selectedLesson.videoUrl);
+  const embeddedVideoUrl = embeddedLoomUrl ?? embeddedYouTubeUrl;
+  const videoProvider = embeddedLoomUrl ? "Loom" : "YouTube";
   const selectedLessonIndex = lessons.findIndex((lesson) => lesson.id === selectedLesson.id);
   const nextUnlockedLesson = selectedLessonIndex >= 0 ? lessons.slice(selectedLessonIndex + 1).find((lesson) => !lesson.locked) ?? null : null;
 
@@ -268,7 +272,18 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
 
           {(selectedLesson.contentHtml || selectedLesson.videoUrl || selectedLesson.attachmentUrl) && <div className="mt-7 space-y-6">
             {selectedLesson.contentHtml && <div className="academy-lesson-content max-w-none text-[15px] leading-7 text-foreground" dangerouslySetInnerHTML={{ __html: normaliseAcademyLessonContent(selectedLesson.contentHtml) }} />}
-            {selectedLesson.videoUrl && (embeddedLoomUrl ? <section className="overflow-hidden rounded-2xl border border-[#70FFE8]/60 bg-[#70FFE8]/10"><div className="flex items-center justify-between gap-3 px-4 py-3"><span className="flex items-center gap-2 font-semibold"><span className="flex size-8 items-center justify-center rounded-lg bg-[#414141] text-[#70FFE8]"><PlayCircle size={17} /></span> Watch within the Portal</span><a href={selectedLesson.videoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-primary hover:underline">Open in Loom <ExternalLink className="ml-1 inline" size={13} /></a></div><div className="aspect-video bg-black"><iframe className="h-full w-full" title={`Loom video: ${selectedLesson.title}`} src={embeddedLoomUrl} allowFullScreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" /></div></section> : <a href={selectedLesson.videoUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-4 rounded-xl border border-[#70FFE8]/60 bg-[#70FFE8]/10 p-4 transition hover:bg-[#70FFE8]/20"><span className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-lg bg-[#414141] text-[#70FFE8]"><PlayCircle size={20} /></span><span><span className="block font-semibold">Watch the lesson video</span><span className="mt-0.5 block text-xs text-muted-foreground">Opens the approved video in a new tab</span></span></span><ExternalLink size={18} className="shrink-0" /></a>)}
+            {selectedLesson.videoUrl && (embeddedVideoUrl ? (
+              <section className="overflow-hidden rounded-2xl border border-[#70FFE8]/60 bg-[#70FFE8]/10">
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <span className="flex items-center gap-2 font-semibold"><span className="flex size-8 items-center justify-center rounded-lg bg-[#414141] text-[#70FFE8]"><PlayCircle size={17} /></span> Watch within the Portal</span>
+                  <a href={selectedLesson.videoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-primary hover:underline">Open in {videoProvider} <ExternalLink className="ml-1 inline" size={13} /></a>
+                </div>
+                <div className="aspect-video bg-black">
+                  <iframe key={embeddedVideoUrl} className="h-full w-full" title={`${videoProvider} video: ${selectedLesson.title}`} src={embeddedVideoUrl} referrerPolicy="strict-origin-when-cross-origin" allowFullScreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" />
+                </div>
+                {embeddedYouTubeUrl && <p className="px-4 py-3 text-xs text-muted-foreground">If YouTube blocks playback here, use Open in YouTube above. Video privacy, age restrictions and embedding permissions are controlled by the video owner.</p>}
+              </section>
+            ) : <a href={selectedLesson.videoUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-4 rounded-xl border border-[#70FFE8]/60 bg-[#70FFE8]/10 p-4 transition hover:bg-[#70FFE8]/20"><span className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-lg bg-[#414141] text-[#70FFE8]"><PlayCircle size={20} /></span><span><span className="block font-semibold">Watch the lesson video</span><span className="mt-0.5 block text-xs text-muted-foreground">Opens the approved video in a new tab</span></span></span><ExternalLink size={18} className="shrink-0" /></a>)}
             {selectedLesson.attachmentUrl && <a href={selectedLesson.attachmentUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-4 rounded-xl border bg-muted/30 p-4 transition hover:bg-muted"><span className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-lg bg-card text-primary shadow-sm"><FileText size={20} /></span><span><span className="block font-semibold">{selectedLesson.attachmentName || "Download lesson resource"}</span><span className="mt-0.5 block text-xs text-muted-foreground">Open or save your copy</span></span></span><Download size={18} className="shrink-0" /></a>}
           </div>}
 
