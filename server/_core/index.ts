@@ -46,6 +46,7 @@ import { generateUniqueAgentIdForUser } from "../agent-crm-db";
 import { getMonthlyAmount } from "../../shared/membership";
 import bcrypt from "bcryptjs";
 import { completesJoinFlow } from "../join-payment-utils";
+import { hasManualJoiningFeeReceiptForBillingRequest, ManualJoiningFeeReceiptError } from "../join-manual-receipt";
 
 // HTML escape helper to prevent XSS in server-rendered payment page
 function escHtml(str: string): string {
@@ -1120,11 +1121,25 @@ async function startServer() {
       for (const event of events) {
         console.log(`[GC Webhook] ${event.resource_type}.${event.action}`, event.links);
 
+        // Canonical payment evidence must be durable even when an old signup
+        // request is blocked, malformed, or already processed. Guard only the
+        // join/provider-creation effects, never genuine payment inbox/history.
+        if (event.resource_type === "payments") {
+          const { receiveMembershipProviderEvent } = await import("../membership-payment-sync");
+          await receiveMembershipProviderEvent(
+            event as unknown as import("../membership-payment-sync").MembershipProviderEvent,
+            "webhook",
+          );
+        }
+        // Check before any join-session user/idempotency branch. Non-null opaque
+        // evidence throws and returns 503 rather than permitting automatic charges.
+        const manualJoiningFee = await hasManualJoiningFeeReceiptForBillingRequest(event.links.billing_request);
+
         // ── Join Flow: create agent account after billing request fulfilment.
         // GoCardless can confirm the joining-fee payment before (or without) delivering the
         // billing_request.fulfilled event. A confirmed payment with a billing_request link is
         // equally authoritative for completing this one-off onboarding flow.
-        if (completesJoinFlow({
+        if (!manualJoiningFee && completesJoinFlow({
           resourceType: event.resource_type,
           action: event.action,
           billingRequestId: event.links.billing_request,
@@ -1443,6 +1458,14 @@ async function startServer() {
             }
           }
 
+          // An active event commonly omits its BRQ. Check the local row's BRQ
+          // as well, outside the recovery catch so evidence errors cannot be
+          // swallowed. Unrelated later manually linked mandates remain normal.
+          if (manualJoiningFee || await hasManualJoiningFeeReceiptForBillingRequest(localMandate?.billingRequestId)) {
+            console.log(`[GC Webhook] mandates.active: original manual-receipt request blocked for ${mandateId}; manual linking only`);
+            continue;
+          }
+
           if (!localMandate) {
             // Mandate row missing — try to create it now by looking up the join session via billingRequestId
             console.warn(`[GC Webhook] mandates.active: no local mandate for ${mandateId}, attempting recovery via join session`);
@@ -1703,9 +1726,8 @@ async function startServer() {
         // Durable membership event receipt. Never use the legacy audit insert
         // as an effects checkpoint: a replay must resume unfinished work.
         if (event.resource_type === "payments") {
-          const { receiveMembershipProviderEvent, enrichMembershipProviderEvent } = await import("../membership-payment-sync");
+          const { enrichMembershipProviderEvent } = await import("../membership-payment-sync");
           const canonicalEvent = event as unknown as import("../membership-payment-sync").MembershipProviderEvent;
-          await receiveMembershipProviderEvent(canonicalEvent, "webhook");
           try {
             await enrichMembershipProviderEvent(canonicalEvent, "webhook");
             const { processMembershipPaymentOutbox } = await import("../membership-payment-service");
@@ -1720,7 +1742,13 @@ async function startServer() {
       res.status(200).json({ success: true });
     } catch (err) {
       console.error("[GC Webhook] Error:", err);
-      if (!res.headersSent) res.status(500).json({ error: "Internal error" });
+      if (!res.headersSent) {
+        if (err instanceof ManualJoiningFeeReceiptError) {
+          res.status(503).json({ error: err.message, code: err.code });
+        } else {
+          res.status(500).json({ error: "Internal error" });
+        }
+      }
     }
   });
 

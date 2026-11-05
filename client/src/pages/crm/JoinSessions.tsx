@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { TIER_LABELS, TYPE_LABELS } from "../../../../shared/membership";
+import { manualJoinReceiptLabel } from "../../../../shared/join-manual-receipt-summary";
 
 function ActivateButton({ userId }: { userId: number }) {
   const utils = trpc.useUtils();
@@ -210,7 +211,9 @@ function SessionsTab() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {session.joiningFeePaidAt ? (
+                    {session.joiningFeeManualReceipt != null ? (
+                      <span className="text-xs text-green-700">{manualJoinReceiptLabel(session.joiningFeeManualReceipt)}</span>
+                    ) : session.joiningFeePaidAt ? (
                       <span className="inline-flex items-center gap-1 text-xs text-green-600">
                         <CheckCircle2 size={12} />
                         {new Date(session.joiningFeePaidAt).toLocaleDateString("en-GB")}

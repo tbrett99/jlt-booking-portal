@@ -142,23 +142,39 @@ export async function createAgentUser(data: {
   hashedPassword: string;
   phone?: string;
 }) {
+  const email = typeof data.email === "string" ? data.email.trim().toLowerCase() : "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 320) {
+    throw new Error("A valid email address is required.");
+  }
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const openId = `agent_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  await db.insert(users).values({
-    openId,
-    name: data.name,
-    email: data.email,
-    loginMethod: "password",
-    role: "agent",
-    tempPassword: data.hashedPassword,
-    mustChangePassword: true,
-    isActive: true,
-    phone: data.phone ?? null,
-    lastSignedIn: new Date(),
-  } as any);
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-  return result[0];
+  return db.transaction(async (tx) => {
+    // No role/active filter or LIMIT: the normalized full scan takes InnoDB
+    // range locks until commit, including when no matching user exists.
+    const existing = await tx.select({ id: users.id }).from(users)
+      .where(sql`LOWER(TRIM(${users.email})) = ${email}`).for("update");
+    if (existing.length > 0) {
+      throw new Error("An account already exists for this email. No duplicate account was created.");
+    }
+    const openId = `agent_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    await tx.insert(users).values({
+      openId,
+      name: data.name,
+      email,
+      loginMethod: "password",
+      role: "agent",
+      tempPassword: data.hashedPassword,
+      mustChangePassword: true,
+      isActive: true,
+      phone: data.phone ?? null,
+      lastSignedIn: new Date(),
+    });
+    const result = await tx.select().from(users).where(eq(users.openId, openId)).limit(1);
+    if (!result[0]) {
+      throw new Error("Account creation could not be verified. No account was created.");
+    }
+    return result[0];
+  }, { isolationLevel: "serializable" });
 }
 
 export async function bulkCreateAgentUsers(agents: Array<{

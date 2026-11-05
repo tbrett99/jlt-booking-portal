@@ -1,0 +1,1 @@
+ALTER TABLE `join_sessions` ADD `joiningFeeManualReceipt` json;

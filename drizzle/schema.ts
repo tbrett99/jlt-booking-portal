@@ -1546,6 +1546,9 @@ export const joinSessions = mysqlTable("join_sessions", {
   billingRequestId: varchar("billingRequestId", { length: 100 }), // GC billing request ID
   billingRequestFlowUrl: text("billingRequestFlowUrl"),           // GC hosted page URL
   joiningFeePaidAt: timestamp("joiningFeePaidAt"),
+  // Staff-confirmed external receipt; never represents a GoCardless payment or payout.
+  // Identity/evidence-bound marker prevents the original signup request creating another DD.
+  joiningFeeManualReceipt: json("joiningFeeManualReceipt"),
   mandateId: varchar("mandateId", { length: 100 }),
   userId: int("userId"),                                           // set once account is created
   ipAddress: varchar("ipAddress", { length: 64 }),

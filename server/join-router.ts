@@ -40,6 +40,7 @@ import {
   LEGACY_JOINING_FEES,
 } from "../shared/membership";
 import { sendDirectEmail } from "./email";
+import { assertNoManuallyRecoveredJoinForEmail, ManualJoiningFeeReceiptError } from "./join-manual-receipt";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
 import { sdk } from "./_core/sdk";
@@ -90,6 +91,10 @@ export const joinRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
+      try { await assertNoManuallyRecoveredJoinForEmail(db, input.email); } catch (error) {
+        if (error instanceof ManualJoiningFeeReceiptError) throw new TRPCError({ code: "BAD_REQUEST", message: "Your joining fee has already been recorded. Please sign in or contact JLT; do not pay again." });
+        throw error;
+      }
       // Check if there's already an active session for this email
       // (allow re-use if not yet complete)
       const existing = await db
@@ -210,7 +215,7 @@ export const joinRouter = router({
       const session = await getSessionByToken(input.sessionToken);
       if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
       if (session.expiresAt < new Date()) throw new TRPCError({ code: "FORBIDDEN", message: "Session expired" });
-      if (session.step === "complete") throw new TRPCError({ code: "BAD_REQUEST", message: "Sign-up already complete" });
+      if (session.step === "complete" || session.joiningFeeManualReceipt != null) throw new TRPCError({ code: "BAD_REQUEST", message: "Sign-up already complete" });
 
       // Capture IP address
       const signingIp = (ctx.req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
@@ -269,6 +274,13 @@ export const joinRouter = router({
       const session = await getSessionByToken(input.sessionToken);
       if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
       if (session.expiresAt < new Date()) throw new TRPCError({ code: "FORBIDDEN", message: "Session expired" });
+      if (session.joiningFeeManualReceipt != null || session.step === "complete" || session.joiningFeePaidAt) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Joining fee already recorded. Do not pay again; contact JLT to finish onboarding." });
+      }
+      try { await assertNoManuallyRecoveredJoinForEmail(db, session.email); } catch (error) {
+        if (error instanceof ManualJoiningFeeReceiptError) throw new TRPCError({ code: "BAD_REQUEST", message: "Joining fee already recorded. Do not pay again; contact JLT to finish onboarding." });
+        throw error;
+      }
       if (!session.contractSignedAt) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Please sign the contract first" });
       }
@@ -801,6 +813,7 @@ export const joinRouter = router({
           contractSignedAt: joinSessions.contractSignedAt,
           signerName: joinSessions.signerName,
           joiningFeePaidAt: joinSessions.joiningFeePaidAt,
+          joiningFeeManualReceipt: joinSessions.joiningFeeManualReceipt,
           mandateId: joinSessions.mandateId,
           userId: joinSessions.userId,
           createdAt: joinSessions.createdAt,

@@ -11,6 +11,7 @@ export const systemRouter = router({
     )
     .query(() => ({
       ok: true,
+      manualJoiningFeeReceiptGuard: 1,
     })),
 
   notifyOwner: adminProcedure
