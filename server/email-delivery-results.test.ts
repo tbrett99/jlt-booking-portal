@@ -368,3 +368,46 @@ describe("approved Orbit reference emails (mocked, offline)", () => {
     expect(mocks.send.mock.calls[0][0].subject).toBe("Receipt PTS-OLD");
   });
 });
+
+const resetParams = { toEmail: "account@example.test", toName: "Synthetic account", userId: 47,
+  resetUrl: "https://portal.example.test/reset-password?token=INERT_TEST_TOKEN" };
+describe("password reset email acceptance and token privacy", () => {
+  it.each([
+    { data: null, error: { message: "Recipient rejected" } },
+    { data: { id: "ambiguous-id" }, error: { message: "Recipient rejected" } },
+  ])("does not claim acceptance for a resolved provider rejection", async response => {
+    mocks.send.mockResolvedValue(response);
+    expect(await email.sendPasswordResetEmail(resetParams)).toEqual({ success: false, error: "Recipient rejected" });
+    expectAudit("failed", resetParams.toEmail, "password_reset");
+    expect(JSON.stringify(mocks.values.mock.calls)).not.toContain("INERT_TEST_TOKEN");
+  });
+  it.each([undefined, { data: null, error: null }, { data: {}, error: null }, { data: { id: " " }, error: null }])("requires a usable provider message ID", async response => {
+    mocks.send.mockResolvedValue(response);
+    expect(await email.sendPasswordResetEmail(resetParams)).toEqual({ success: false, error: "Email provider did not return a message ID" });
+    expectAudit("failed", resetParams.toEmail, "password_reset");
+  });
+  it("records provider acceptance metadata but never the live reset URL/body", async () => {
+    expect(await email.sendPasswordResetEmail(resetParams)).toEqual({ success: true });
+    expectAudit("sent", resetParams.toEmail, "password_reset");
+    expect(mocks.send.mock.calls[0][0].html).toContain(resetParams.resetUrl);
+    const logged = JSON.stringify(mocks.values.mock.calls);
+    expect(logged).not.toContain(resetParams.resetUrl); expect(logged).not.toContain("INERT_TEST_TOKEN");
+    expect(mocks.values.mock.calls[0][0].bodyHtml).toBeNull();
+  });
+  it("audits thrown email failure without storing a reset link", async () => {
+    mocks.send.mockRejectedValue(new Error("Synthetic provider failure"));
+    expect(await email.sendPasswordResetEmail(resetParams)).toEqual({ success: false, error: "Synthetic provider failure" });
+    expectAudit("failed", resetParams.toEmail, "password_reset");
+    expect(JSON.stringify(mocks.values.mock.calls)).not.toContain("INERT_TEST_TOKEN");
+  });
+  it("does not resend or misreport accepted mail when metadata audit storage fails", async () => {
+    mocks.values.mockRejectedValue(new Error("Synthetic audit failure"));
+    expect(await email.sendPasswordResetEmail(resetParams)).toEqual({ success: true });
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+  it("does not send a reset to a merged archive", async () => {
+    mocks.mergeTarget.mockResolvedValue(99);
+    expect(await email.sendPasswordResetEmail(resetParams)).toEqual({ success: false, error: "Recipient is a merged agent archive" });
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+});

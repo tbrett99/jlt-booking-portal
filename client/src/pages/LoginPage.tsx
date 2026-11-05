@@ -196,8 +196,9 @@ export default function LoginPage() {
               <div>
                 <p className="font-semibold">Check your inbox</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  If an account exists for <strong>{forgotEmail}</strong>, you'll receive a
-                  password reset link shortly. The link expires in 1 hour.
+                  Your request has been received. If <strong>{forgotEmail}</strong> has an
+                  eligible password-login account, check your inbox and junk folder for a reset link.
+                  Links expire in 1 hour. If nothing arrives, contact support@thejltgroup.co.uk.
                 </p>
               </div>
               <Button variant="outline" onClick={handleForgotClose} className="w-full">

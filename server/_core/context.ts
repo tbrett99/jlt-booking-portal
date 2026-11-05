@@ -18,8 +18,10 @@ export async function createContext(
 
   try {
     user = await sdk.authenticateRequest(opts.req);
-    // Cancelled, paused, and suspended agents are locked out — treat as unauthenticated
-    if (user && BLOCKED_PORTAL_STATUSES.includes((user as any).portalStatus)) {
+    // Deactivation is authoritative for every role, including already-issued admin sessions.
+    // SDK-verified synthetic cron identities (id -1) are not database accounts.
+    // Existing cancelled/paused/suspended restrictions remain unchanged.
+    if (user && ((user.id > 0 && user.isActive !== true) || BLOCKED_PORTAL_STATUSES.includes((user as any).portalStatus))) {
       user = null;
     }
   } catch (error) {

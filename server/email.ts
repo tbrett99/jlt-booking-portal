@@ -496,17 +496,24 @@ export async function sendPasswordResetEmail(params: {
   `);
   try {
     const resend = getResend();
-    await resend.emails.send({
+    const result = await resend.emails.send({
       from: FROM_AGENT,
       replyTo: REPLY_TO_AGENT,
       to: `${params.toName} <${params.toEmail}>`,
       subject: "Reset your JLT Group Booking Portal password",
       html,
     });
+    requireAcceptedEmail(result);
+    // Never persist the email body: the reset URL contains a live bearer token.
+    await logAgentEmail({ userId: params.userId, toEmail: params.toEmail, toName: params.toName,
+      subject: "Reset your JLT Group Booking Portal password", triggerKey: "password_reset", status: "sent" });
     return { success: true };
   } catch (err: any) {
-    console.error("[Email] Failed to send password reset:", err?.message);
-    return { success: false, error: err?.message };
+    const error = emailFailureMessage(err);
+    console.error("[Email] Failed to send password reset:", error);
+    await logAgentEmail({ userId: params.userId, toEmail: params.toEmail, toName: params.toName,
+      subject: "Reset your JLT Group Booking Portal password", triggerKey: "password_reset", status: "failed" });
+    return { success: false, error };
   }
 }
 

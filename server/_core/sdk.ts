@@ -323,6 +323,11 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
+    // Enforce deactivation on every authenticated route, not only tRPC context.
+    // Verified synthetic cron users return earlier and retain their existing scope.
+    if (user.isActive !== true) {
+      throw ForbiddenError("This account is inactive");
+    }
     await assertAgentNotMerged(user.id);
     await db.upsertUser({
       openId: user.openId,
