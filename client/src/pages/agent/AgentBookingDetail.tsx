@@ -322,6 +322,10 @@ export default function AgentBookingDetail() {
 
   const utils = trpc.useUtils();
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
+  const { data: topUpRequests = [], isError: isTopUpRequestsError } = trpc.commissionClaims.myTopUpRequests.useQuery(undefined, {
+    enabled: Number.isInteger(bookingId) && bookingId > 0,
+  });
+  const bookingTopUpRequests = isTopUpRequestsError ? [] : topUpRequests.filter((request) => request.bookingId === bookingId);
   const { data: notes = [], refetch: refetchNotes } = trpc.notes.list.useQuery({ bookingId });
   const { data: amendments = [] } = trpc.amendments.byBooking.useQuery({ bookingId });
   const { data: refunds = [] } = trpc.refunds.byBooking.useQuery({ bookingId });
@@ -656,6 +660,23 @@ export default function AgentBookingDetail() {
           {badge.label}
         </span>
       </div>
+
+      {bookingTopUpRequests.length > 0 && (
+        <section aria-labelledby="booking-top-up-heading" className="rounded-2xl border-2 border-[#00c9b4] bg-[#f0fffb] p-4 shadow-sm sm:p-5">
+          <div className="flex items-start gap-3">
+            <AlertCircle size={22} className="mt-0.5 shrink-0 text-[#047857]" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#047857]">Top-up required · Booking #{bookingId}</p>
+              <h2 id="booking-top-up-heading" className="mt-1 text-lg font-bold text-[#065f46]">Already topped up? Tell JLT</h2>
+              <p className="mt-1 text-sm text-[#065f46]">After making your transfer, you must report it to JLT. Open the confirmation below to report your top-up; JLT will then review it. Your top-up remains pending review until JLT checks it.</p>
+              {bookingTopUpRequests.map((request) => Number.isSafeInteger(request.topUpAmountPence) && Number(request.topUpAmountPence) > 0 ? <p key={request.id} className="mt-2 text-sm font-semibold text-[#065f46]">Requested top-up: £{(Number(request.topUpAmountPence) / 100).toFixed(2)}</p> : null)}
+            </div>
+          </div>
+          <Button asChild className="mt-4 h-auto min-h-11 w-full whitespace-normal bg-[#047857] px-3 py-3 text-center font-semibold text-white hover:bg-[#065f46]">
+            <Link href={`/commissions?tab=top-up&booking=${bookingId}`} aria-label={`I’ve topped up — notify JLT for booking #${bookingId}, ${booking.clientName}`}>I’ve topped up — notify JLT</Link>
+          </Button>
+        </section>
+      )}
 
       {/* Attention banner */}
       {needsAction && (

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Loader2, CheckCircle, Clock, Banknote, Lock, AlertCircle, TrendingUp, ChevronRight, Download, FileSpreadsheet, Zap, TrendingDown, CalendarDays, Info, Plane, AlertTriangle } from "lucide-react";
 import { startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, format as fmtDate, isToday, isBefore } from "date-fns";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 
 type BookingType = "lapland" | "cruise" | "disney" | "other";
 
@@ -72,14 +72,24 @@ export default function AgentCommissions() {
 
   const [claimTarget, setClaimTarget] = useState<BookingWithClaim | null>(null);
   const [notifyTopUpId, setNotifyTopUpId] = useState<number | null>(null);
+  const topUpSubmitting = useRef(false);
+  const topUpSection = useRef<HTMLDivElement>(null);
+  const search = useSearch();
+  const topUpLink = new URLSearchParams(search);
+  const linkedBookingId = Number(topUpLink.get("booking"));
+  const commissionTabs = ["top-up", "claimable", "processing", "awaiting", "paid", "remittances", "not-ready"];
 
   const notifyTopUpMutation = trpc.commissionClaims.agentNotifyTopUpComplete.useMutation({
     onSuccess: () => {
-      toast.success("JLT have been notified — your claim will be reviewed shortly.");
+      toast.success("Top-up reported to JLT — your file is awaiting review.");
       setNotifyTopUpId(null);
-      utils.commissionClaims.myCommissions.invalidate();
+      void Promise.all([
+        utils.commissionClaims.myCommissions.invalidate(),
+        utils.commissionClaims.myTopUpRequests.invalidate(),
+      ]).catch(() => toast.warning("Your confirmation was saved. Refresh the page to update the top-up list."));
     },
     onError: (err) => toast.error(err.message),
+    onSettled: () => { topUpSubmitting.current = false; },
   });
   const [selectedType, setSelectedType] = useState<BookingType>("other");
   const [grossAmount, setGrossAmount] = useState<string>("");
@@ -87,7 +97,10 @@ export default function AgentCommissions() {
   const [hasKeyTransferSupplier, setHasKeyTransferSupplier] = useState<boolean | null>(null);
   const [claimStep, setClaimStep] = useState<"confirmation" | "details">("confirmation");
   const [markPaidIds, setMarkPaidIds] = useState<number[]>([]);
-  const [activeTab, setActiveTab] = useState<string>("claimable");
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    const tab = new URLSearchParams(search).get("tab");
+    return tab && commissionTabs.includes(tab) ? tab : "claimable";
+  });
 
   const { data: remittanceLines } = trpc.remittance.getMyRemittances.useQuery();
   const { data: timelineBookings, isLoading: timelineLoading } = trpc.commissionClaims.myTimeline.useQuery();
@@ -111,6 +124,20 @@ export default function AgentCommissions() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  useEffect(() => {
+    const tab = new URLSearchParams(search).get("tab");
+    if (tab && commissionTabs.includes(tab)) setActiveTab(tab);
+  }, [search]);
+
+  useEffect(() => {
+    if (!isLoading && activeTab === "top-up") {
+      const target = Number.isInteger(linkedBookingId) && linkedBookingId > 0
+        ? document.getElementById(`agent-top-up-booking-${linkedBookingId}`)
+        : topUpSection.current;
+      target?.scrollIntoView?.({ block: "start", behavior: "auto" });
+    }
+  }, [activeTab, isLoading, linkedBookingId]);
 
   if (isLoading) {
     return (
@@ -296,6 +323,28 @@ export default function AgentCommissions() {
         <p className="text-muted-foreground mt-1">Track and claim your commission for completed bookings.</p>
       </div>
 
+      {topUpRequired.length > 0 && (
+        <section aria-label="Top-up confirmation" className="rounded-xl border-2 border-amber-400 bg-amber-50 p-5 text-amber-950 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-6 w-6 shrink-0 mt-0.5" aria-hidden="true" />
+              <div>
+                <h2 className="text-lg font-bold">Already topped up? Tell JLT</h2>
+                <p className="mt-1 text-sm">{topUpRequired.length} booking{topUpRequired.length !== 1 ? "s need" : " needs"} a top-up. Once you have paid, use <strong>I've topped up — notify JLT</strong> on the relevant file below.</p>
+                <p className="mt-1 text-sm">Reporting a top-up does not take a payment. JLT will review your file.</p>
+              </div>
+            </div>
+            <Button size="lg" className="w-full sm:w-auto shrink-0 min-h-12 whitespace-normal bg-[#02E6D2] hover:bg-[#70FFE8] text-[#16413e] font-bold shadow-sm"
+              onClick={() => {
+                setActiveTab("top-up");
+                topUpSection.current?.scrollIntoView?.({ block: "start", behavior: "auto" });
+              }}>
+              <CheckCircle className="h-5 w-5 mr-2" aria-hidden="true" /> View top-ups & notify JLT
+            </Button>
+          </div>
+        </section>
+      )}
+
       {/* Pre-Auth Explainer Banner */}
       <div className="rounded-2xl overflow-hidden" style={{ border: '2px solid #02E6D2', background: 'linear-gradient(135deg, #f0fffe 0%, #e0fdfb 100%)' }}>
         <div className="px-5 py-4">
@@ -447,7 +496,7 @@ export default function AgentCommissions() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4 flex-wrap h-auto gap-1">
           <TabsTrigger value="top-up">
-            Files in Minus
+            Top-ups required
             {topUpRequired.length > 0 && (
               <span className="ml-2 bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
                 {topUpRequired.length}
@@ -497,8 +546,9 @@ export default function AgentCommissions() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="top-up">
-          <p className="text-sm text-muted-foreground mb-4">These files are currently in minus. Please top up your account and notify us once done — we will then review and move the claim back to Commission Due.</p>
+        <TabsContent value="top-up" id="agent-top-up-requests" ref={topUpSection} className="scroll-mt-24">
+          <h2 className="text-xl font-bold mb-2">Top-ups / Files in Minus</h2>
+          <p className="text-sm text-muted-foreground mb-4">Already paid your top-up? Select <strong>I've topped up — notify JLT</strong> on the correct booking below. JLT will review the file before resolving it. This button reports your payment; it does not take another payment.</p>
           {topUpRequired.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
@@ -509,9 +559,10 @@ export default function AgentCommissions() {
           ) : (
             <div className="space-y-3">
               {topUpRequired.map((b) => (
-                <div key={b.id} className="flex items-start justify-between p-4 border-2 border-red-300 rounded-lg bg-red-50">
+                <div key={b.id} id={`agent-top-up-booking-${b.id}`} className={`flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 p-5 border-2 rounded-xl bg-red-50 scroll-mt-24 ${linkedBookingId === b.id ? "border-amber-500 ring-2 ring-amber-300" : "border-red-300"}`}>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-foreground">{b.clientName}</p>
+                    <p className="text-sm font-medium text-muted-foreground">Booking #{b.id}</p>
                     <p className="text-sm text-muted-foreground">Departure: {fmt(b.departureDate)}</p>
                     {b.claim?.topUpAmountPence && (
                       <p className="text-sm font-bold text-red-600 mt-1">Amount to top up: £{(b.claim.topUpAmountPence / 100).toFixed(2)}</p>
@@ -520,23 +571,21 @@ export default function AgentCommissions() {
                       <p className="text-sm text-muted-foreground mt-1 italic">{b.claim.topUpNote}</p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                  <div className="flex flex-col gap-2 w-full sm:w-auto sm:max-w-xs flex-shrink-0">
                     <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-red-400 text-red-600 hover:bg-red-50"
+                      size="lg"
+                      className="w-full min-h-12 whitespace-normal h-auto py-3 bg-[#02E6D2] hover:bg-[#70FFE8] text-[#16413e] font-bold shadow-sm"
+                      aria-label={`I've topped up — notify JLT for ${b.clientName}, booking ${b.id}`}
                       onClick={() => setNotifyTopUpId(b.claim!.id)}
-                      disabled={notifyTopUpMutation.isPending && notifyTopUpId === b.claim?.id}
+                      disabled={notifyTopUpMutation.isPending}
                     >
                       {notifyTopUpMutation.isPending && notifyTopUpId === b.claim?.id ? (
                         <Loader2 size={14} className="animate-spin mr-1" />
-                      ) : null}
-                      I've Topped Up — Notify JLT
+                      ) : <CheckCircle size={20} className="mr-2 shrink-0" aria-hidden="true" />}
+                      I've topped up — notify JLT
                     </Button>
                     <Link href={`/bookings/${b.id}`}>
-                      <button className="p-1 rounded hover:bg-muted">
-                        <ChevronRight size={16} className="text-muted-foreground" />
-                      </button>
+                      <span className="flex items-center justify-center text-sm font-medium underline underline-offset-4 py-2">View booking <ChevronRight size={16} aria-hidden="true" /></span>
                     </Link>
                   </div>
                 </div>
@@ -544,25 +593,41 @@ export default function AgentCommissions() {
             </div>
           )}
           {/* Confirm top-up notify dialog */}
-          {notifyTopUpId !== null && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-              <div className="bg-background rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
-                <h3 className="font-bold text-lg mb-2">Confirm Top-Up</h3>
-                <p className="text-sm text-muted-foreground mb-4">Please confirm that you have topped up your account. JLT will be notified and will review your claim shortly.</p>
-                <div className="flex gap-2 justify-end">
-                  <Button variant="outline" onClick={() => setNotifyTopUpId(null)}>Cancel</Button>
+          <Dialog open={notifyTopUpId !== null} onOpenChange={(open) => { if (!open && !notifyTopUpMutation.isPending) setNotifyTopUpId(null); }}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Confirm your top-up</DialogTitle>
+                  <DialogDescription>Only confirm once you have made the top-up payment for this booking. This notifies JLT for review; it does not charge you or verify that the money has arrived.</DialogDescription>
+                </DialogHeader>
+                <p className="font-semibold mb-2">{topUpRequired.find(b => b.claim?.id === notifyTopUpId)?.clientName} · Booking #{topUpRequired.find(b => b.claim?.id === notifyTopUpId)?.id}</p>
+                {(() => {
+                  const amount = topUpRequired.find(b => b.claim?.id === notifyTopUpId)?.claim?.topUpAmountPence;
+                  return typeof amount === "number" && Number.isFinite(amount) && amount > 0
+                    ? <p className="text-sm font-semibold">Requested top-up: £{(amount / 100).toFixed(2)}</p>
+                    : null;
+                })()}
+                {topUpRequired.find(b => b.claim?.id === notifyTopUpId)?.claim?.topUpNote && (
+                  <p className="text-sm whitespace-pre-wrap text-muted-foreground">{topUpRequired.find(b => b.claim?.id === notifyTopUpId)?.claim?.topUpNote}</p>
+                )}
+                <DialogFooter>
+                  <Button variant="outline" disabled={notifyTopUpMutation.isPending} onClick={() => setNotifyTopUpId(null)}>Cancel</Button>
                   <Button
                     className="bg-[#02E6D2] text-[#414141] hover:bg-[#70FFE8]"
-                    onClick={() => notifyTopUpMutation.mutate({ claimId: notifyTopUpId! })}
+                    onClick={() => {
+                      if (topUpSubmitting.current || notifyTopUpMutation.isPending) return;
+                      const target = topUpRequired.find(b => b.claim?.id === notifyTopUpId);
+                      if (!target?.claim) return;
+                      topUpSubmitting.current = true;
+                      notifyTopUpMutation.mutate({ claimId: target.claim.id });
+                    }}
                     disabled={notifyTopUpMutation.isPending}
                   >
                     {notifyTopUpMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
-                    Confirm
+                    Confirm top-up & notify JLT
                   </Button>
-                </div>
-              </div>
-            </div>
-          )}
+                </DialogFooter>
+              </DialogContent>
+          </Dialog>
         </TabsContent>
 
         <TabsContent value="claimable">

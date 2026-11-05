@@ -2,20 +2,24 @@ import { describe, expect, it } from "vitest";
 import { AGENT_HOME_TILES, countAgentBookingActions } from "../shared/agent-home";
 
 describe("agent home hub", () => {
-  it("makes Academy live while keeping Knowledge Base visible as coming soon", () => {
+  it("keeps Academy, Knowledge Base and Webinar Library live", () => {
     const academy = AGENT_HOME_TILES.find((tile) => tile.key === "academy");
     const knowledgeBase = AGENT_HOME_TILES.find((tile) => tile.key === "knowledge_base");
+    const webinars = AGENT_HOME_TILES.find((tile) => tile.key === "webinars");
 
     expect(academy).toMatchObject({ title: "JLT Academy", href: "/academy" });
     expect(academy?.comingSoon).toBeUndefined();
-    expect(knowledgeBase).toMatchObject({ title: "Knowledge Base", comingSoon: true });
-    expect(knowledgeBase?.href).toBeUndefined();
+    expect(knowledgeBase).toMatchObject({ title: "Knowledge Base", href: "/knowledge-base" });
+    expect(knowledgeBase?.comingSoon).toBeUndefined();
+    expect(webinars).toMatchObject({ title: "Webinar Library", href: "/webinars" });
+    expect(webinars?.comingSoon).toBeUndefined();
   });
 
   it("offers all of the current live agent destinations from the new home grid", () => {
     expect(AGENT_HOME_TILES.filter((tile) => tile.href).map((tile) => tile.href)).toEqual([
       "/academy",
-      "/events",
+      "/knowledge-base",
+      "/webinars",
       "/suppliers",
       "/my-bookings",
       "/commissions",

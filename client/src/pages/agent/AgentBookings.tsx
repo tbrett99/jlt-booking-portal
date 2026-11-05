@@ -66,7 +66,8 @@ export default function AgentBookings() {
   const { data: bookings = [], isLoading } = trpc.bookings.myBookings.useQuery();
   const { data: missingDocItems = [] } = trpc.reimbursements.myBookingsWithMissingDocs.useQuery();
   const { data: flightRequests = [] } = trpc.flightRequests.myRequests.useQuery();
-  const { data: topUpRequests = [] } = trpc.commissionClaims.myTopUpRequests.useQuery();
+  const { data: queriedTopUpRequests = [], isError: isTopUpRequestsError } = trpc.commissionClaims.myTopUpRequests.useQuery();
+  const topUpRequests = isTopUpRequestsError ? [] : queriedTopUpRequests;
   const { data: myProfile } = trpc.crm.agentCrm.getMyProfile.useQuery();
   const openOrbit = trpc.sso.generateToken.useMutation();
 
@@ -81,7 +82,7 @@ export default function AgentBookings() {
     ...requiresPtsAction.map((booking) => ({ bookingId: booking.id, clientName: booking.clientName, description: "PTS details are still needed", severity: "urgent" as const })),
     ...missingDocItems.map((item: any) => ({ bookingId: item.bookingId, clientName: item.clientName ?? `Booking #${item.bookingId}`, description: `${item.supplierName} document needed`, severity: "urgent" as const })),
     ...flightQueries.map((request) => ({ bookingId: request.bookingId, clientName: request.clientName ?? `Booking #${request.bookingId}`, description: "Flight request query needs your reply", severity: "urgent" as const })),
-    ...topUpRequests.map((request: any) => ({ bookingId: request.bookingId, clientName: request.booking?.clientName ?? "Commission file", description: "Top-up required before commission can be paid", severity: "notice" as const })),
+    ...topUpRequests.map((request) => ({ bookingId: request.bookingId, clientName: request.booking?.clientName ?? "Commission file", description: "Already topped up? Notify JLT to review your transfer", severity: "notice" as const, href: `/commissions?tab=top-up&booking=${request.bookingId}` })),
   ], [bookingQueries, requiresPtsAction, missingDocItems, flightQueries, topUpRequests]);
 
   const handleOpenOrbit = async () => {
@@ -126,7 +127,7 @@ export default function AgentBookings() {
 
         <Card className={actionItems.length > 0 ? "border-orange-200" : "border-emerald-200"}>
           <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><AlertCircle size={18} className={actionItems.length > 0 ? "text-orange-600" : "text-emerald-600"} /> Your portal actions</CardTitle><p className="mt-1 text-sm font-normal text-muted-foreground">Only files where the Portal needs something from you.</p></CardHeader>
-          <CardContent className="space-y-2">{actionItems.length === 0 ? <div className="rounded-xl bg-emerald-50 p-4"><div className="flex gap-2 text-emerald-800"><CheckCircle2 size={18} className="shrink-0" /><p className="text-sm font-semibold">Nothing is waiting for you right now.</p></div><p className="mt-1 text-sm text-emerald-700">We&apos;ll show action points here when your input is needed.</p></div> : actionItems.slice(0, 6).map((item, index) => <Link key={`${item.bookingId}-${index}`} href={`/bookings/${item.bookingId}`}><div className={`flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/30 ${item.severity === "urgent" ? "border-orange-100 bg-orange-50/60" : "border-amber-100 bg-amber-50/60"}`}><AlertCircle size={16} className={item.severity === "urgent" ? "text-orange-600" : "text-amber-600"} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-foreground">{item.clientName}</p><p className="mt-0.5 text-xs text-muted-foreground">{item.description}</p></div><ChevronRight size={16} className="text-muted-foreground" /></div></Link>)}</CardContent>
+          <CardContent className="space-y-2">{actionItems.length === 0 ? <div className="rounded-xl bg-emerald-50 p-4"><div className="flex gap-2 text-emerald-800"><CheckCircle2 size={18} className="shrink-0" /><p className="text-sm font-semibold">Nothing is waiting for you right now.</p></div><p className="mt-1 text-sm text-emerald-700">We&apos;ll show action points here when your input is needed.</p></div> : actionItems.slice(0, 6).map((item, index) => <Link key={`${item.bookingId}-${index}`} href={"href" in item && typeof item.href === "string" ? item.href : `/bookings/${item.bookingId}`}><div className={`flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/30 ${item.severity === "urgent" ? "border-orange-100 bg-orange-50/60" : "border-amber-100 bg-amber-50/60"}`}><AlertCircle size={16} className={item.severity === "urgent" ? "text-orange-600" : "text-amber-600"} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-foreground">{item.clientName}</p><p className="mt-0.5 text-xs text-muted-foreground">{item.description}</p></div><ChevronRight size={16} className="text-muted-foreground" /></div></Link>)}</CardContent>
         </Card>
       </section>
 

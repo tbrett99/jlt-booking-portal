@@ -17,7 +17,8 @@ describe("agent manual commission claim safeguards", () => {
   it("uses one consolidated confirmation dialog rather than a separate amendment warning step", () => {
     expect(source).not.toContain("amendmentWarningTarget");
     expect(source).not.toContain("openClaimWithWarning");
-    expect(source.match(/<Dialog open=/g)).toHaveLength(1);
+    expect(source.match(/<Dialog open=\{!!claimTarget\}/g)).toHaveLength(1);
+    expect(source).toContain('<Dialog open={notifyTopUpId !== null}');
     expect(source).toContain("Once you claim commission on a booking");
     expect(source).toContain("new PTS file will need to be created");
   });

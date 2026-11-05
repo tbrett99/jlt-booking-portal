@@ -101,7 +101,8 @@ export default function AgentDashboard() {
   const { data: notifications = [] } = trpc.notifications.myNotifications.useQuery();
   const { data: missingDocItems = [] } = trpc.reimbursements.myBookingsWithMissingDocs.useQuery();
   const { data: flightRequests = [] } = trpc.flightRequests.myRequests.useQuery();
-  const { data: topUpRequests = [] } = trpc.commissionClaims.myTopUpRequests.useQuery();
+  const { data: queriedTopUpRequests = [], isError: isTopUpRequestsError } = trpc.commissionClaims.myTopUpRequests.useQuery();
+  const topUpRequests = isTopUpRequestsError ? [] : queriedTopUpRequests;
   const { data: unconfirmedUpdates = [], refetch: refetchUnconfirmed } = trpc.community.unconfirmedUpdates.useQuery();
   const { data: communityPosts = [] } = trpc.community.dashboardPosts.useQuery();
   const { data: unansweredThreads = [] } = trpc.notes.myUnansweredThreads.useQuery(undefined, { staleTime: 60_000 });
@@ -193,7 +194,7 @@ export default function AgentDashboard() {
     ...requiresPtsAction.map((booking) => ({ bookingId: booking.id, clientName: booking.clientName, label: "PTS details still needed" })),
     ...missingDocItems.map((item: any) => ({ bookingId: item.bookingId, clientName: item.clientName ?? `Booking #${item.bookingId}`, label: `${item.supplierName} document needed` })),
     ...flightQueries.map((request) => ({ bookingId: request.bookingId, clientName: request.clientName ?? `Booking #${request.bookingId}`, label: "Flight request query needs your reply" })),
-    ...topUpRequests.map((request: any) => ({ bookingId: request.bookingId, clientName: request.booking?.clientName ?? "Commission file", label: "Top-up required before commission can be paid" })),
+    ...topUpRequests.map((request) => ({ bookingId: request.bookingId, clientName: request.booking?.clientName ?? "Commission file", label: "Already topped up? Notify JLT to review your transfer", href: `/commissions?tab=top-up&booking=${request.bookingId}` })),
   ].slice(0, 4), [bookingQueries, requiresPtsAction, missingDocItems, flightQueries, topUpRequests]);
 
   const featuredPost = communityPosts[0] as any | undefined;
@@ -232,6 +233,30 @@ export default function AgentDashboard() {
           </Link>
         </div>
       </section>
+
+      {topUpRequests.length > 0 && (
+        <section aria-labelledby="dashboard-top-up-heading" className="rounded-2xl border-2 border-[#00c9b4] bg-[#f0fffb] p-4 shadow-sm sm:p-5">
+          <div className="mb-4 flex items-start gap-3">
+            <AlertCircle size={22} className="mt-0.5 shrink-0 text-[#047857]" aria-hidden="true" />
+            <div>
+              <h2 id="dashboard-top-up-heading" className="text-lg font-bold text-[#065f46]">Already topped up? Tell JLT</h2>
+              <p className="mt-1 text-sm text-[#065f46]">After making your transfer, you must report it to JLT. Open the booking below to confirm your top-up; JLT will then review it. Your top-up remains pending review until JLT checks it.</p>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {topUpRequests.map((request) => (
+              <div key={request.id} className="min-w-0 rounded-xl border border-[#a7f3e8] bg-white p-4">
+                <p className="break-words text-sm font-bold text-foreground">{request.booking?.clientName ?? "Commission file"}</p>
+                <p className="mt-1 text-sm text-muted-foreground">Booking #{request.bookingId}</p>
+                {Number.isSafeInteger(request.topUpAmountPence) && Number(request.topUpAmountPence) > 0 && <p className="mt-2 text-sm font-semibold text-[#065f46]">Requested top-up: £{(Number(request.topUpAmountPence) / 100).toFixed(2)}</p>}
+                <Button asChild className="mt-3 h-auto min-h-11 w-full whitespace-normal bg-[#047857] px-3 py-3 text-center font-semibold text-white hover:bg-[#065f46]">
+                  <Link href={`/commissions?tab=top-up&booking=${request.bookingId}`} aria-label={`I’ve topped up — notify JLT for booking #${request.bookingId}, ${request.booking?.clientName ?? "Commission file"}`}>I’ve topped up — notify JLT</Link>
+                </Button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -394,7 +419,7 @@ export default function AgentDashboard() {
         <Card>
           <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><AlertCircle size={17} className={bookingActionCount > 0 ? "text-orange-600" : "text-emerald-600"} /> Files requiring your attention</CardTitle></CardHeader>
           <CardContent>
-            {actionPreview.length > 0 ? <div className="space-y-2">{actionPreview.map((item, index) => <Link key={`${item.bookingId}-${index}`} href={`/bookings/${item.bookingId}`}><div className="flex items-center gap-3 rounded-xl border border-orange-100 bg-orange-50/60 p-3 transition-colors hover:bg-orange-50"><div className="rounded-lg bg-orange-100 p-1.5 text-orange-700"><AlertCircle size={15} /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-foreground">{item.clientName}</p><p className="mt-0.5 text-xs text-muted-foreground">{item.label}</p></div><ChevronRight size={16} className="text-muted-foreground" /></div></Link>)}<Link href="/my-bookings"><Button variant="ghost" size="sm" className="mt-1 gap-1 px-0 text-xs">View all booking actions <ArrowRight size={13} /></Button></Link></div> : <div className="rounded-xl bg-emerald-50 p-4"><div className="flex items-center gap-2 text-emerald-800"><CheckCircle2 size={18} /><p className="font-semibold">No booking actions are waiting for you.</p></div><p className="mt-1 text-sm text-emerald-700">We&apos;ll keep this area up to date whenever a file needs your input.</p></div>}
+            {actionPreview.length > 0 ? <div className="space-y-2">{actionPreview.map((item, index) => <Link key={`${item.bookingId}-${index}`} href={"href" in item && typeof item.href === "string" ? item.href : `/bookings/${item.bookingId}`}><div className="flex items-center gap-3 rounded-xl border border-orange-100 bg-orange-50/60 p-3 transition-colors hover:bg-orange-50"><div className="rounded-lg bg-orange-100 p-1.5 text-orange-700"><AlertCircle size={15} /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-foreground">{item.clientName}</p><p className="mt-0.5 text-xs text-muted-foreground">{item.label}</p></div><ChevronRight size={16} className="text-muted-foreground" /></div></Link>)}<Link href="/my-bookings"><Button variant="ghost" size="sm" className="mt-1 gap-1 px-0 text-xs">View all booking actions <ArrowRight size={13} /></Button></Link></div> : <div className="rounded-xl bg-emerald-50 p-4"><div className="flex items-center gap-2 text-emerald-800"><CheckCircle2 size={18} /><p className="font-semibold">No booking actions are waiting for you.</p></div><p className="mt-1 text-sm text-emerald-700">We&apos;ll keep this area up to date whenever a file needs your input.</p></div>}
           </CardContent>
         </Card>
         <Card>

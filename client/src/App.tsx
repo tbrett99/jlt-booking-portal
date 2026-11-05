@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { lazy, Suspense, useLayoutEffect } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch, useLocation } from "wouter";
+import { Redirect, Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ViewModeProvider, useViewMode } from "./contexts/ViewModeContext";
@@ -333,6 +333,7 @@ export function AuthRouter() {
           <Route path="/bookings/:id/cancel">{(params) => <CancellationForm key={params.id} />}</Route>
           <Route path="/bookings/:id/refund">{(params) => <RefundForm key={params.id} />}</Route>
           <Route path="/commissions" component={AgentCommissions} />
+          <Route path="/my-files-in-minus"><Redirect to="/commissions?tab=top-up" replace /></Route>
           <Route path="/commission-timeline" component={CommissionTimeline} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
@@ -395,6 +396,7 @@ export function AuthRouter() {
           <Route path="/bookings/:id/cancel">{(params) => <CancellationForm key={params.id} />}</Route>
           <Route path="/bookings/:id/refund">{(params) => <RefundForm key={params.id} />}</Route>
           <Route path="/commissions" component={AgentCommissions} />
+          <Route path="/my-files-in-minus"><Redirect to="/commissions?tab=top-up" replace /></Route>
           <Route path="/commission-timeline" component={CommissionTimeline} />
           <Route path="/cancel-booking" component={AgentCancelBooking} />
           <Route path="/request-amendment" component={AgentRequestAmendment} />
