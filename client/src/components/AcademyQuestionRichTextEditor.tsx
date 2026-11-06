@@ -24,12 +24,14 @@ export function AcademyQuestionRichTextEditor({
   placeholder,
   className,
   label,
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   className?: string;
   label: string;
+  disabled?: boolean;
 }) {
   const lastValue = useRef(value);
   const editor = useEditor({
@@ -38,6 +40,7 @@ export function AcademyQuestionRichTextEditor({
       Placeholder.configure({ placeholder }),
     ],
     content: academyQuestionTextToHtml(value),
+    editable: !disabled,
     editorProps: {
       attributes: {
         class: "academy-question-rich-editor min-h-[180px] px-3 py-2 text-sm leading-6 focus:outline-none",
@@ -47,6 +50,7 @@ export function AcademyQuestionRichTextEditor({
       // into whitespace. Academy prompts commonly use one return per question
       // or marking criterion, so preserve each one as a safe <br> instead.
       handlePaste: (view, event) => {
+        if (!view.editable) return false;
         const html = event.clipboardData?.getData("text/html").trim() ?? "";
         const text = event.clipboardData?.getData("text/plain") ?? "";
         if (!text.trim() || (html && hasMeaningfulClipboardFormatting(html))) return false;
@@ -56,6 +60,7 @@ export function AcademyQuestionRichTextEditor({
       },
     },
     onUpdate: ({ editor }) => {
+      if (!editor.isEditable) return;
       const next = academyQuestionHtmlToText(editor.getHTML());
       lastValue.current = next;
       onChange(next);
@@ -68,6 +73,10 @@ export function AcademyQuestionRichTextEditor({
     editor.commands.setContent(academyQuestionTextToHtml(value), { emitUpdate: false });
   }, [editor, value]);
 
+  useEffect(() => {
+    editor?.setEditable(!disabled, false);
+  }, [editor, disabled]);
+
   if (!editor) return null;
 
   const ToolButton = ({ active, title, onClick, children }: { active?: boolean; title: string; onClick: () => void; children: React.ReactNode }) => (
@@ -76,6 +85,7 @@ export function AcademyQuestionRichTextEditor({
       title={title}
       aria-label={title}
       aria-pressed={active}
+      disabled={disabled}
       onClick={onClick}
       className={cn("rounded p-1.5 transition hover:bg-muted", active && "bg-muted text-primary")}
     >

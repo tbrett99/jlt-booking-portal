@@ -5,6 +5,8 @@ import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import { RichEmailEditor, lessonHtmlToPlainText, plainTextToLessonHtml } from "@/components/RichEmailEditor";
+import { AcademyQuestionRichTextEditor } from "@/components/AcademyQuestionRichTextEditor";
 import {
   StaffField,
   StaffMutationError,
@@ -489,6 +491,7 @@ function LessonForm({
   );
   const [uploadError, setUploadError] = useState("");
   const [readingFile, setReadingFile] = useState(false);
+  const [formatSummary, setFormatSummary] = useState<string | null>(null);
   const save = trpc.academy.admin.saveLesson.useMutation({
     onSuccess: result => {
       setSavedLessonId(result.id);
@@ -504,6 +507,16 @@ function LessonForm({
     save.isPending || attachment.isPending || template.isPending || readingFile;
   function change<K extends keyof LessonDraft>(key: K, value: LessonDraft[K]) {
     setDraft(current => ({ ...current, [key]: value }));
+  }
+  function smartFormatCurrentContent() {
+    if (!allowed || pending || !draft.contentHtml?.trim()) return;
+    const formatted = plainTextToLessonHtml(lessonHtmlToPlainText(draft.contentHtml));
+    const headings = (formatted.match(/<h2>/g) ?? []).length;
+    const bullets = (formatted.match(/<li>/g) ?? []).length;
+    const summary = `Formatted ${headings} heading${headings === 1 ? "" : "s"} and ${bullets} bullet point${bullets === 1 ? "" : "s"}.`;
+    change("contentHtml", formatted);
+    setFormatSummary(summary);
+    toast.success(summary);
   }
   async function upload(
     file: File | undefined,
@@ -604,18 +617,51 @@ function LessonForm({
               onChange={event => change("summary", event.target.value)}
             />
           </StaffField>
-          <StaffField label="Lesson content (HTML)">
-            <textarea
-              maxLength={500000}
-              className={`${staffControl} font-mono`}
-              rows={12}
+          <section aria-label="Lesson content editor" className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold">Lesson content</h3>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!allowed || pending || !draft.contentHtml?.trim()}
+                onClick={smartFormatCurrentContent}
+              >
+                Smart format pasted text
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Paste directly from your source to keep headings, bold, italics,
+              underline, bullets, numbered lists, links and tables—the same
+              formatting tools as the regular Academy builder.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Smart format is for text already pasted as plain lines. Check the
+              preview before saving; it rebuilds text structure, not images or tables.
+            </p>
+            {formatSummary && (
+              <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800" role="status">
+                {formatSummary} The preview below has been updated; save the
+                lesson when you are happy with it.
+              </p>
+            )}
+            <RichEmailEditor
               value={draft.contentHtml ?? ""}
-              onChange={event => change("contentHtml", event.target.value)}
+              onChange={contentHtml => {
+                if (!allowed || pending) return;
+                change("contentHtml", contentHtml);
+                setFormatSummary(null);
+              }}
+              placeholder="Write the practical guidance for this lesson…"
+              preserveClipboardFormatting
+              restrictedAcademy
+              disabled={!allowed || pending}
+              ariaLabel="Lesson content"
             />
-          </StaffField>
+          </section>
           <p className="text-xs text-muted-foreground">
-            Use HTML paragraphs, headings, lists and links. Content is sanitised
-            on save. This editor has no CRM upload or email integration.
+            Content is sanitised on save. Use the course-scoped image upload
+            below; video links and downloadable resources stay separate.
           </p>
           <StaffImageUpload
             courseId={courseId}
@@ -883,16 +929,14 @@ function QuestionForm({
               </select>
             </StaffField>
             <StaffField label={`Question ${index + 1} prompt`}>
-              <textarea
-                className={staffControl}
-                required
-                minLength={4}
-                maxLength={10000}
-                rows={3}
+              <AcademyQuestionRichTextEditor
                 value={question.prompt}
-                onChange={event =>
-                  change(index, { prompt: event.target.value })
-                }
+                onChange={prompt => {
+                  if (allowed && !save.isPending) change(index, { prompt });
+                }}
+                placeholder="Write the question and any supporting context…"
+                label={`Question ${index + 1} prompt`}
+                disabled={!allowed || save.isPending}
               />
             </StaffField>
             {question.questionType === "multiple_choice" ? (
@@ -947,14 +991,14 @@ function QuestionForm({
             <StaffField
               label={`Question ${index + 1} explanation / private marking guide`}
             >
-              <textarea
-                className={staffControl}
-                rows={3}
-                maxLength={10000}
+              <AcademyQuestionRichTextEditor
                 value={question.explanation ?? ""}
-                onChange={event =>
-                  change(index, { explanation: event.target.value })
-                }
+                onChange={explanation => {
+                  if (allowed && !save.isPending) change(index, { explanation });
+                }}
+                placeholder="Write the explanation or private marking criteria…"
+                label={`Question ${index + 1} explanation / private marking guide`}
+                disabled={!allowed || save.isPending}
               />
             </StaffField>
           </section>

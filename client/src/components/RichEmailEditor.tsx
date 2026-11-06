@@ -5,7 +5,7 @@
  *           font size, horizontal rule divider, CTA button blocks,
  *           and personalisation merge tags ({{first_name}} etc.).
  */
-import { useEditor, EditorContent, Node, mergeAttributes } from "@tiptap/react";
+import { useEditor, EditorContent, Node, mergeAttributes, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
@@ -203,6 +203,10 @@ interface RichEmailEditorProps {
   showProspectLinks?: boolean;
   /** Keeps useful document formatting when staff paste into long-form Academy lessons. */
   preserveClipboardFormatting?: boolean;
+  /** Hides email-only tools and never mounts the CRM image-upload mutation. */
+  restrictedAcademy?: boolean;
+  disabled?: boolean;
+  ariaLabel?: string;
 }
 
 /**
@@ -336,9 +340,74 @@ function insertLessonHtmlIntoView(view: any, html: string) {
   view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView());
 }
 
-export function RichEmailEditor({ value, onChange, placeholder = "Compose your email…", className, showProspectLinks = false, preserveClipboardFormatting = false }: RichEmailEditorProps) {
+/** Only ordinary email builders may instantiate the CRM branding upload hook. */
+function OrdinaryEmailImageUpload({ editor, disabled }: { editor: Editor; disabled: boolean }) {
   const [imageUploading, setImageUploading] = useState(false);
   const uploadImageMutation = trpc.crm.emailBranding.uploadImage.useMutation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(false);
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  function canInsert() {
+    return mountedRef.current && !disabledRef.current && !editor.isDestroyed && editor.isEditable;
+  }
+
+  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || imageUploading || !canInsert()) return;
+    e.target.value = "";
+    // Upload to S3 via tRPC instead of embedding as base64.
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const base64 = (ev.target?.result as string).split(",")[1];
+      if (!base64 || !canInsert()) return;
+      setImageUploading(true);
+      try {
+        const { url } = await uploadImageMutation.mutateAsync({
+          fileName: file.name,
+          fileBase64: base64,
+          mimeType: file.type,
+        });
+        if (canInsert()) editor.chain().focus().setImage({ src: url }).run();
+      } catch {
+        // Preserve the ordinary email builder's base64 fallback on upload failure.
+        const src = ev.target?.result as string;
+        if (canInsert()) editor.chain().focus().setImage({ src }).run();
+      } finally {
+        if (mountedRef.current) setImageUploading(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={disabled || imageUploading}
+        title={imageUploading ? "Uploading…" : "Upload Image from Computer"}
+        onClick={() => fileInputRef.current?.click()}
+        className="p-1.5 rounded hover:bg-muted transition-colors"
+      >
+        {imageUploading ? (
+          <span className="text-xs font-medium px-1 animate-pulse">...</span>
+        ) : (
+          <span className="text-xs font-medium px-1">IMG</span>
+        )}
+      </button>
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" disabled={disabled} onChange={handleImageUpload} />
+    </>
+  );
+}
+
+export function RichEmailEditor({ value, onChange, placeholder = "Compose your email…", className, showProspectLinks = false, preserveClipboardFormatting: preserveFormatting = false, restrictedAcademy = false, disabled = false, ariaLabel = "Rich text content" }: RichEmailEditorProps) {
+  const preserveClipboardFormatting = preserveFormatting || restrictedAcademy;
   const [linkDialog, setLinkDialog] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
   const [imageDialog, setImageDialog] = useState(false);
@@ -355,12 +424,18 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
   const [buttonBg, setButtonBg] = useState("#02E6D2");
   const [buttonTextColor, setButtonTextColor] = useState("#414141");
   const [mergeTagOpen, setMergeTagOpen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const colorPickerRef = useRef<HTMLDivElement>(null);
   const fontSizeRef = useRef<HTMLDivElement>(null);
   const mergeTagRef = useRef<HTMLDivElement>(null);
+  const editorAttributes = {
+    role: "textbox",
+    "aria-label": ariaLabel,
+    "aria-multiline": "true",
+    "aria-disabled": String(disabled),
+  };
 
   const editor = useEditor({
+    editable: !disabled,
     extensions: [
       StarterKit.configure({ horizontalRule: false }),
       Underline,
@@ -385,8 +460,10 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
     // the enhanced paste handlers.
     ...(preserveClipboardFormatting ? {
       editorProps: {
+        attributes: editorAttributes,
         transformPastedHTML: normaliseClipboardHtml,
         handlePaste: (view, event) => {
+          if (!view.editable) return false;
           const html = event.clipboardData?.getData("text/html").trim() ?? "";
           const text = event.clipboardData?.getData("text/plain").trim() ?? "";
           if (!text || (html && hasMeaningfulClipboardFormatting(html))) return false;
@@ -397,7 +474,9 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       },
     } : {
       editorProps: {
+        attributes: editorAttributes,
         handlePaste: (view, event) => {
+          if (!view.editable) return false;
           const html = event.clipboardData?.getData("text/html").trim() ?? "";
           const text = event.clipboardData?.getData("text/plain").trim() ?? "";
           if (!text || html) return false;
@@ -408,9 +487,13 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       },
     }),
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      if (editor.isEditable) onChange(editor.getHTML());
     },
   });
+
+  useEffect(() => {
+    editor?.setEditable(!disabled, false);
+  }, [editor, disabled]);
 
   // Sync external value changes (e.g. loading a template)
   useEffect(() => {
@@ -439,20 +522,21 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
   if (!editor) return null;
 
   function insertLink() {
-    if (!linkUrl) return;
+    if (disabled || !editor?.isEditable || !linkUrl) return;
     editor?.chain().focus().setLink({ href: linkUrl }).run();
     setLinkDialog(false);
     setLinkUrl("");
   }
 
   function insertImage() {
-    if (!imageUrl) return;
+    if (disabled || restrictedAcademy || !editor?.isEditable || !imageUrl) return;
     editor?.chain().focus().setImage({ src: imageUrl }).run();
     setImageDialog(false);
     setImageUrl("");
   }
 
   function insertLoom() {
+    if (disabled || restrictedAcademy || !editor?.isEditable) return;
     setLoomError("");
     if (!loomUrl.trim()) return;
     const videoId = parseLoomVideoId(loomUrl.trim());
@@ -467,46 +551,20 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
     setLoomError("");
   }
 
-  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-    // Upload to S3 via tRPC instead of embedding as base64
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const base64 = (ev.target?.result as string).split(",")[1];
-      if (!base64) return;
-      setImageUploading(true);
-      try {
-        const { url } = await uploadImageMutation.mutateAsync({
-          fileName: file.name,
-          fileBase64: base64,
-          mimeType: file.type,
-        });
-        editor?.chain().focus().setImage({ src: url }).run();
-      } catch {
-        // Fallback to base64 if S3 upload fails
-        const src = ev.target?.result as string;
-        editor?.chain().focus().setImage({ src }).run();
-      } finally {
-        setImageUploading(false);
-      }
-    };
-    reader.readAsDataURL(file);
-  }
-
   function applyColor(color: string) {
+    if (disabled || !editor?.isEditable) return;
     editor?.chain().focus().setColor(color).run();
     setColorPickerOpen(false);
   }
 
   function applyFontSize(size: string) {
+    if (disabled || !editor?.isEditable) return;
     (editor?.chain().focus() as any).setFontSize(size).run();
     setFontSizeOpen(false);
   }
 
   function insertButtonBlock() {
-    if (!buttonText || !buttonUrl) return;
+    if (disabled || restrictedAcademy || !editor?.isEditable || !buttonText || !buttonUrl) return;
     editor?.chain().focus().insertContent({
       type: "buttonBlock",
       attrs: { href: buttonUrl, bgColor: buttonBg, textColor: buttonTextColor, label: buttonText },
@@ -519,6 +577,7 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
   }
 
   function insertMergeTag(token: string) {
+    if (disabled || restrictedAcademy || !editor?.isEditable) return;
     editor?.chain().focus().insertContent(token).run();
     setMergeTagOpen(false);
   }
@@ -531,6 +590,9 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
     <button
       type="button"
       title={title}
+      aria-label={title}
+      aria-pressed={active}
+      disabled={disabled}
       onClick={onClick}
       className={cn(
         "p-1.5 rounded hover:bg-muted transition-colors",
@@ -544,9 +606,18 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
   const activeColor = editor.getAttributes("textStyle").color ?? "#414141";
 
   return (
-    <div className={cn("border rounded-lg overflow-hidden bg-background", className)}>
+    <div
+      className={cn("border rounded-lg overflow-hidden bg-background", className)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.stopPropagation();
+          // Keep paragraph/line-break keys inside TipTap; inputs must not submit a parent form.
+          if ((event.target as HTMLElement).tagName === "INPUT") event.preventDefault();
+        }
+      }}
+    >
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-0.5 p-2 border-b bg-muted/30">
+      <fieldset disabled={disabled} role="toolbar" aria-label="Rich text formatting" aria-disabled={disabled} className="flex flex-wrap items-center gap-0.5 p-2 border-b bg-muted/30">
 
         {/* Text formatting */}
         <ToolbarBtn active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold">
@@ -597,11 +668,13 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
                   title="Custom colour"
                 />
                 <span className="text-xs text-muted-foreground flex-1">{customColor}</span>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => applyColor(customColor)}>
+                <Button type="button" disabled={disabled} size="sm" variant="outline" className="h-7 text-xs" onClick={() => applyColor(customColor)}>
                   Apply
                 </Button>
               </div>
               <Button
+                type="button"
+                disabled={disabled}
                 size="sm"
                 variant="ghost"
                 className="w-full mt-1 h-7 text-xs"
@@ -693,22 +766,21 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
         </ToolbarBtn>
 
         {/* Image */}
-        <ToolbarBtn onClick={() => setImageDialog(true)} title="Insert Image from URL">
-          <ImageIcon className="h-4 w-4" />
-        </ToolbarBtn>
-        <ToolbarBtn onClick={() => !imageUploading && fileInputRef.current?.click()} title={imageUploading ? "Uploading…" : "Upload Image from Computer"}>
-          {imageUploading ? (
-            <span className="text-xs font-medium px-1 animate-pulse">...</span>
-          ) : (
-            <span className="text-xs font-medium px-1">IMG</span>
-          )}
-        </ToolbarBtn>
-        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+        {!restrictedAcademy && (
+          <>
+            <ToolbarBtn onClick={() => setImageDialog(true)} title="Insert Image from URL">
+              <ImageIcon className="h-4 w-4" />
+            </ToolbarBtn>
+            <OrdinaryEmailImageUpload editor={editor} disabled={disabled} />
+          </>
+        )}
 
         {/* Loom */}
-        <ToolbarBtn onClick={() => { setLoomError(""); setLoomDialog(true); }} title="Embed Loom Video">
-          <Video className="h-4 w-4" />
-        </ToolbarBtn>
+        {!restrictedAcademy && (
+          <ToolbarBtn onClick={() => { setLoomError(""); setLoomDialog(true); }} title="Embed Loom Video">
+            <Video className="h-4 w-4" />
+          </ToolbarBtn>
+        )}
 
         {/* Divider */}
         <ToolbarBtn onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Insert Divider">
@@ -716,12 +788,14 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
         </ToolbarBtn>
 
         {/* CTA Button Block */}
-        <ToolbarBtn onClick={() => setButtonDialog(true)} title="Insert CTA Button">
-          <MousePointerClick className="h-4 w-4" />
-        </ToolbarBtn>
+        {!restrictedAcademy && (
+          <ToolbarBtn onClick={() => setButtonDialog(true)} title="Insert CTA Button">
+            <MousePointerClick className="h-4 w-4" />
+          </ToolbarBtn>
+        )}
 
         {/* Merge Tags */}
-        <div className="relative" ref={mergeTagRef}>
+        {!restrictedAcademy && <div className="relative" ref={mergeTagRef}>
           <button
             type="button"
             title="Insert Personalisation Tag"
@@ -752,7 +826,7 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
         <div className="w-px h-5 bg-border mx-1" />
 
@@ -762,7 +836,7 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
         <ToolbarBtn onClick={() => editor.chain().focus().redo().run()} title="Redo">
           <Redo className="h-4 w-4" />
         </ToolbarBtn>
-      </div>
+      </fieldset>
 
       {/* Editor area */}
       <EditorContent
@@ -773,78 +847,79 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       {/* Link dialog */}
       {linkDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setLinkDialog(false)}>
-          <div className="bg-background border rounded-lg p-4 w-80 shadow-lg" onClick={(e) => e.stopPropagation()}>
+          <fieldset disabled={disabled} role="dialog" aria-modal="true" aria-label="Insert Link" className="bg-background border rounded-lg p-4 w-80 shadow-lg" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-medium mb-2">Insert Link</p>
-            <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://..." className="mb-3" autoFocus onKeyDown={(e) => e.key === "Enter" && insertLink()} />
+            <Input disabled={disabled} value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://..." className="mb-3" autoFocus onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); insertLink(); } }} />
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setLinkDialog(false)}>Cancel</Button>
-              <Button size="sm" onClick={insertLink}>Insert</Button>
+              <Button type="button" disabled={disabled} variant="outline" size="sm" onClick={() => setLinkDialog(false)}>Cancel</Button>
+              <Button type="button" disabled={disabled} size="sm" onClick={insertLink}>Insert</Button>
             </div>
-          </div>
+          </fieldset>
         </div>
       )}
 
       {/* Image URL dialog */}
-      {imageDialog && (
+      {!restrictedAcademy && imageDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setImageDialog(false)}>
-          <div className="bg-background border rounded-lg p-4 w-80 shadow-lg" onClick={(e) => e.stopPropagation()}>
+          <fieldset disabled={disabled} role="dialog" aria-modal="true" aria-label="Insert Image from URL" className="bg-background border rounded-lg p-4 w-80 shadow-lg" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-medium mb-1">Insert Image from URL</p>
             <p className="text-xs text-muted-foreground mb-2">Images are automatically made responsive (full-width on mobile).</p>
-            <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." className="mb-3" autoFocus onKeyDown={(e) => e.key === "Enter" && insertImage()} />
+            <Input disabled={disabled} value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." className="mb-3" autoFocus onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); insertImage(); } }} />
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setImageDialog(false)}>Cancel</Button>
-              <Button size="sm" onClick={insertImage}>Insert</Button>
+              <Button type="button" disabled={disabled} variant="outline" size="sm" onClick={() => setImageDialog(false)}>Cancel</Button>
+              <Button type="button" disabled={disabled} size="sm" onClick={insertImage}>Insert</Button>
             </div>
-          </div>
+          </fieldset>
         </div>
       )}
 
       {/* Loom dialog */}
-      {loomDialog && (
+      {!restrictedAcademy && loomDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setLoomDialog(false)}>
-          <div className="bg-background border rounded-lg p-4 w-96 shadow-lg" onClick={(e) => e.stopPropagation()}>
+          <fieldset disabled={disabled} role="dialog" aria-modal="true" aria-label="Embed Loom Video" className="bg-background border rounded-lg p-4 w-96 shadow-lg" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-medium mb-1">Embed Loom Video</p>
             <p className="text-xs text-muted-foreground mb-3">
               Paste your Loom share URL. A clickable thumbnail will be inserted — recipients click it to watch on Loom.
               (Most email clients block video iframes, so a thumbnail link is used instead.)
             </p>
             <Input
+              disabled={disabled}
               value={loomUrl}
               onChange={(e) => { setLoomUrl(e.target.value); setLoomError(""); }}
               placeholder="https://www.loom.com/share/abc123..."
               className={cn("mb-1", loomError && "border-destructive")}
               autoFocus
-              onKeyDown={(e) => e.key === "Enter" && insertLoom()}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); insertLoom(); } }}
             />
             {loomError && <p className="text-xs text-destructive mb-2">{loomError}</p>}
             <div className="flex gap-2 justify-end mt-3">
-              <Button variant="outline" size="sm" onClick={() => { setLoomDialog(false); setLoomError(""); }}>Cancel</Button>
-              <Button size="sm" onClick={insertLoom}>Embed</Button>
+              <Button type="button" disabled={disabled} variant="outline" size="sm" onClick={() => { setLoomDialog(false); setLoomError(""); }}>Cancel</Button>
+              <Button type="button" disabled={disabled} size="sm" onClick={insertLoom}>Embed</Button>
             </div>
-          </div>
+          </fieldset>
         </div>
       )}
 
       {/* CTA Button dialog */}
-      {buttonDialog && (
+      {!restrictedAcademy && buttonDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setButtonDialog(false)}>
-          <div className="bg-background border rounded-lg p-5 w-96 shadow-lg" onClick={(e) => e.stopPropagation()}>
+          <fieldset disabled={disabled} role="dialog" aria-modal="true" aria-label="Insert CTA Button" className="bg-background border rounded-lg p-5 w-96 shadow-lg" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-medium mb-3">Insert CTA Button</p>
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Button text</label>
-                <Input value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder="Click here" autoFocus />
+                <Input disabled={disabled} value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder="Click here" autoFocus />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Link URL</label>
-                <Input value={buttonUrl} onChange={(e) => setButtonUrl(e.target.value)} placeholder="https://..." />
+                <Input disabled={disabled} value={buttonUrl} onChange={(e) => setButtonUrl(e.target.value)} placeholder="https://..." />
               </div>
               {showProspectLinks && (
                 <div className="rounded-md border bg-muted/30 p-2.5 space-y-1.5">
                   <p className="text-xs font-medium">Prospect campaign links</p>
                   <div className="flex flex-wrap gap-1.5">
-                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setButtonUrl("{{application_link}}")}>Use secure application link</Button>
-                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setButtonUrl("{{discovery_call_link}}")}>Use campaign call link</Button>
+                    <Button type="button" disabled={disabled} variant="outline" size="sm" className="h-7 text-xs" onClick={() => setButtonUrl("{{application_link}}")}>Use secure application link</Button>
+                    <Button type="button" disabled={disabled} variant="outline" size="sm" className="h-7 text-xs" onClick={() => setButtonUrl("{{discovery_call_link}}")}>Use campaign call link</Button>
                   </div>
                   <p className="text-xs text-muted-foreground">The application link is unique to each prospect. Set the campaign’s discovery-call URL before using its call link.</p>
                 </div>
@@ -853,14 +928,14 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
                 <div className="flex-1">
                   <label className="text-xs text-muted-foreground mb-1 block">Background colour</label>
                   <div className="flex items-center gap-2">
-                    <input type="color" value={buttonBg} onChange={(e) => setButtonBg(e.target.value)} className="w-8 h-8 rounded border cursor-pointer" />
+                    <input disabled={disabled} type="color" value={buttonBg} onChange={(e) => setButtonBg(e.target.value)} className="w-8 h-8 rounded border cursor-pointer" />
                     <span className="text-xs text-muted-foreground">{buttonBg}</span>
                   </div>
                 </div>
                 <div className="flex-1">
                   <label className="text-xs text-muted-foreground mb-1 block">Text colour</label>
                   <div className="flex items-center gap-2">
-                    <input type="color" value={buttonTextColor} onChange={(e) => setButtonTextColor(e.target.value)} className="w-8 h-8 rounded border cursor-pointer" />
+                    <input disabled={disabled} type="color" value={buttonTextColor} onChange={(e) => setButtonTextColor(e.target.value)} className="w-8 h-8 rounded border cursor-pointer" />
                     <span className="text-xs text-muted-foreground">{buttonTextColor}</span>
                   </div>
                 </div>
@@ -876,10 +951,10 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
               </div>
             </div>
             <div className="flex gap-2 justify-end mt-4">
-              <Button variant="outline" size="sm" onClick={() => setButtonDialog(false)}>Cancel</Button>
-              <Button size="sm" onClick={insertButtonBlock}>Insert Button</Button>
+              <Button type="button" disabled={disabled} variant="outline" size="sm" onClick={() => setButtonDialog(false)}>Cancel</Button>
+              <Button type="button" disabled={disabled} size="sm" onClick={insertButtonBlock}>Insert Button</Button>
             </div>
-          </div>
+          </fieldset>
         </div>
       )}
     </div>
