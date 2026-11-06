@@ -324,22 +324,21 @@ export default function AgentCommissions() {
       </div>
 
       {topUpRequired.length > 0 && (
-        <section aria-label="Top-up confirmation" className="rounded-xl border-2 border-amber-400 bg-amber-50 p-5 text-amber-950 shadow-sm">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-6 w-6 shrink-0 mt-0.5" aria-hidden="true" />
+        <section aria-label="Top-up confirmation" className="rounded-xl border bg-card px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <Banknote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               <div>
-                <h2 className="text-lg font-bold">Already topped up? Tell JLT</h2>
-                <p className="mt-1 text-sm">{topUpRequired.length} booking{topUpRequired.length !== 1 ? "s need" : " needs"} a top-up. Once you have paid, use <strong>I've topped up — notify JLT</strong> on the relevant file below.</p>
-                <p className="mt-1 text-sm">Reporting a top-up does not take a payment. JLT will review your file.</p>
+                <h2 className="text-sm font-semibold">Top-up confirmations ({topUpRequired.length})</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">Already paid? Open the relevant file to let JLT know.</p>
               </div>
             </div>
-            <Button size="lg" className="w-full sm:w-auto shrink-0 min-h-12 whitespace-normal bg-[#02E6D2] hover:bg-[#70FFE8] text-[#16413e] font-bold shadow-sm"
+            <Button size="sm" variant="outline" className="shrink-0 font-medium"
               onClick={() => {
                 setActiveTab("top-up");
                 topUpSection.current?.scrollIntoView?.({ block: "start", behavior: "auto" });
               }}>
-              <CheckCircle className="h-5 w-5 mr-2" aria-hidden="true" /> View top-ups & notify JLT
+              View top-ups & notify JLT
             </Button>
           </div>
         </section>
@@ -559,13 +558,13 @@ export default function AgentCommissions() {
           ) : (
             <div className="space-y-3">
               {topUpRequired.map((b) => (
-                <div key={b.id} id={`agent-top-up-booking-${b.id}`} className={`flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 p-5 border-2 rounded-xl bg-red-50 scroll-mt-24 ${linkedBookingId === b.id ? "border-amber-500 ring-2 ring-amber-300" : "border-red-300"}`}>
+                <div key={b.id} id={`agent-top-up-booking-${b.id}`} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border rounded-xl bg-card scroll-mt-24 ${linkedBookingId === b.id ? "border-[#00c9b4] ring-1 ring-[#a7f3e8]" : "border-border"}`}>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-foreground">{b.clientName}</p>
                     <p className="text-sm font-medium text-muted-foreground">Booking #{b.id}</p>
                     <p className="text-sm text-muted-foreground">Departure: {fmt(b.departureDate)}</p>
                     {b.claim?.topUpAmountPence && (
-                      <p className="text-sm font-bold text-red-600 mt-1">Amount to top up: £{(b.claim.topUpAmountPence / 100).toFixed(2)}</p>
+                      <p className="text-sm font-semibold mt-1">Amount to top up: £{(b.claim.topUpAmountPence / 100).toFixed(2)}</p>
                     )}
                     {b.claim?.topUpNote && (
                       <p className="text-sm text-muted-foreground mt-1 italic">{b.claim.topUpNote}</p>
@@ -573,19 +572,19 @@ export default function AgentCommissions() {
                   </div>
                   <div className="flex flex-col gap-2 w-full sm:w-auto sm:max-w-xs flex-shrink-0">
                     <Button
-                      size="lg"
-                      className="w-full min-h-12 whitespace-normal h-auto py-3 bg-[#02E6D2] hover:bg-[#70FFE8] text-[#16413e] font-bold shadow-sm"
+                      size="sm"
+                      className="bg-[#02E6D2] hover:bg-[#70FFE8] text-[#16413e] font-semibold"
                       aria-label={`I've topped up — notify JLT for ${b.clientName}, booking ${b.id}`}
                       onClick={() => setNotifyTopUpId(b.claim!.id)}
                       disabled={notifyTopUpMutation.isPending}
                     >
                       {notifyTopUpMutation.isPending && notifyTopUpId === b.claim?.id ? (
                         <Loader2 size={14} className="animate-spin mr-1" />
-                      ) : <CheckCircle size={20} className="mr-2 shrink-0" aria-hidden="true" />}
+                      ) : <CheckCircle size={15} className="mr-1.5 shrink-0" aria-hidden="true" />}
                       I've topped up — notify JLT
                     </Button>
                     <Link href={`/bookings/${b.id}`}>
-                      <span className="flex items-center justify-center text-sm font-medium underline underline-offset-4 py-2">View booking <ChevronRight size={16} aria-hidden="true" /></span>
+                      <span className="flex items-center justify-center text-xs font-medium underline underline-offset-4 py-1">View booking <ChevronRight size={14} aria-hidden="true" /></span>
                     </Link>
                   </div>
                 </div>

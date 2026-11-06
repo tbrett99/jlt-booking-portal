@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
   CheckCircle2, Circle, AlertCircle, Sparkles, TrendingUp, Clock,
   RefreshCw, Pencil, User, Check, X, Trash2, Plane,
-  CreditCard, Copy, ExternalLink, Paperclip, FolderOpen, Download, Zap, AlertTriangle
+  CreditCard, Copy, ExternalLink, Paperclip, FolderOpen, Download, Zap, AlertTriangle, Wallet
 } from "lucide-react";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -662,17 +662,16 @@ export default function AgentBookingDetail() {
       </div>
 
       {bookingTopUpRequests.length > 0 && (
-        <section aria-labelledby="booking-top-up-heading" className="rounded-2xl border-2 border-[#00c9b4] bg-[#f0fffb] p-4 shadow-sm sm:p-5">
-          <div className="flex items-start gap-3">
-            <AlertCircle size={22} className="mt-0.5 shrink-0 text-[#047857]" aria-hidden="true" />
+        <section aria-labelledby="booking-top-up-heading" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3">
+          <div className="flex items-start gap-2.5">
+            <Wallet size={17} className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden="true" />
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#047857]">Top-up required · Booking #{bookingId}</p>
-              <h2 id="booking-top-up-heading" className="mt-1 text-lg font-bold text-[#065f46]">Already topped up? Tell JLT</h2>
-              <p className="mt-1 text-sm text-[#065f46]">After making your transfer, you must report it to JLT. Open the confirmation below to report your top-up; JLT will then review it. Your top-up remains pending review until JLT checks it.</p>
-              {bookingTopUpRequests.map((request) => Number.isSafeInteger(request.topUpAmountPence) && Number(request.topUpAmountPence) > 0 ? <p key={request.id} className="mt-2 text-sm font-semibold text-[#065f46]">Requested top-up: £{(Number(request.topUpAmountPence) / 100).toFixed(2)}</p> : null)}
+              <h2 id="booking-top-up-heading" className="text-sm font-semibold">Top-up</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">If you've made the transfer, let JLT know so we can review it.</p>
+              {bookingTopUpRequests.map((request) => Number.isSafeInteger(request.topUpAmountPence) && Number(request.topUpAmountPence) > 0 ? <p key={request.id} className="mt-1 text-xs font-medium">Requested top-up: £{(Number(request.topUpAmountPence) / 100).toFixed(2)}</p> : null)}
             </div>
           </div>
-          <Button asChild className="mt-4 h-auto min-h-11 w-full whitespace-normal bg-[#047857] px-3 py-3 text-center font-semibold text-white hover:bg-[#065f46]">
+          <Button asChild size="sm" className="shrink-0 bg-[#047857] font-semibold text-white hover:bg-[#065f46]">
             <Link href={`/commissions?tab=top-up&booking=${bookingId}`} aria-label={`I’ve topped up — notify JLT for booking #${bookingId}, ${booking.clientName}`}>I’ve topped up — notify JLT</Link>
           </Button>
         </section>

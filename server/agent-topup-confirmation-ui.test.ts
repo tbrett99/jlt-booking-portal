@@ -185,18 +185,23 @@ afterEach(async () => {
 });
 
 describe("agent top-up confirmation rendered UI", () => {
-  it("puts the actionable banner after the page heading and before pre-auth, then opens and scrolls the top-up section without submitting", async () => {
+  it("puts a compact neutral shortcut after the page heading, then opens and scrolls the top-up section without submitting", async () => {
     await render();
     const text = container.textContent!;
-    expect(text.indexOf("Already topped up?")).toBeGreaterThan(
+    expect(text.indexOf("Top-up confirmations (2)")).toBeGreaterThan(
       text.indexOf("My Commissions")
     );
-    expect(text.indexOf("Already topped up?")).toBeLessThan(
+    expect(text.indexOf("Top-up confirmations (2)")).toBeLessThan(
       text.indexOf("Commission Pre-Authorisation — scheduled after travel")
     );
     expect(activeTab()).toContain("Ready to Claim");
     const cta = button("View top-ups & notify JLT");
-    expect(cta.className).toContain("bg-[#02E6D2]");
+    expect(cta.className).toContain("border");
+    expect(cta.className).not.toMatch(/min-h-12|w-full|bg-amber|shadow-sm/);
+    const shortcut = container.querySelector('section[aria-label="Top-up confirmation"]')!;
+    expect(shortcut.className).toContain("py-3");
+    expect(shortcut.className).not.toMatch(/border-2|bg-amber|p-5/);
+    expect(shortcut.querySelectorAll("p")).toHaveLength(1);
     await click("View top-ups & notify JLT");
     expect(activeTab()).toMatch(/Top-ups required|Top-ups \/ Files in Minus/);
     expect(document.getElementById("agent-top-up-requests")).not.toBeNull();
@@ -220,7 +225,7 @@ describe("agent top-up confirmation rendered UI", () => {
     );
     await render();
     expect(activeTab()).toContain("Ready to Claim");
-    expect(container.textContent).not.toContain("Already topped up?");
+    expect(container.querySelector('section[aria-label="Top-up confirmation"]')).toBeNull();
     expect(
       Array.from(container.querySelectorAll("button")).some(
         b => b.textContent?.trim() === "View top-ups & notify JLT"
@@ -239,8 +244,8 @@ describe("agent top-up confirmation rendered UI", () => {
     mocks.loading = false;
     await render();
     expect(activeTab()).toMatch(/Top-ups required|Top-ups \/ Files in Minus/);
-    expect(row(101).className).toContain("ring-2");
-    expect(row(102).className).not.toContain("ring-2");
+    expect(row(101).className).toContain("ring-1");
+    expect(row(102).className).not.toContain("ring-1");
     expect(mocks.scroll).toHaveBeenCalledWith(
       "agent-top-up-booking-101",
       expect.objectContaining({ block: "start" })
@@ -249,16 +254,15 @@ describe("agent top-up confirmation rendered UI", () => {
     expect(mocks.calls).toEqual([]);
   });
 
-  it("uses a large responsive teal row action to open a contextual confirmation with no financial editors, and cancels without mutation", async () => {
+  it("uses a normally sized clear row action to open a contextual confirmation with no financial editors, and cancels without mutation", async () => {
     await render();
     await openTopUp();
     const action = button("I've topped up — notify JLT", row());
     expect(action.className).toContain("bg-[#02E6D2]");
-    expect(action.className).toContain("min-h-12");
-    expect(action.className).toContain("w-full");
-    expect(action.className).toContain("whitespace-normal");
+    expect(action.className).not.toMatch(/min-h-12|w-full|py-3/);
     expect(action.className).not.toContain("border-input");
     expect(row().className).toContain("sm:flex-row");
+    expect(row().className).not.toMatch(/bg-red|border-2|p-5/);
     const modal = dialog();
     expect(
       document.getElementById(modal.getAttribute("aria-labelledby")!)

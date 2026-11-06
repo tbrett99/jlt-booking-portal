@@ -194,7 +194,7 @@ export default function AgentDashboard() {
     ...requiresPtsAction.map((booking) => ({ bookingId: booking.id, clientName: booking.clientName, label: "PTS details still needed" })),
     ...missingDocItems.map((item: any) => ({ bookingId: item.bookingId, clientName: item.clientName ?? `Booking #${item.bookingId}`, label: `${item.supplierName} document needed` })),
     ...flightQueries.map((request) => ({ bookingId: request.bookingId, clientName: request.clientName ?? `Booking #${request.bookingId}`, label: "Flight request query needs your reply" })),
-    ...topUpRequests.map((request) => ({ bookingId: request.bookingId, clientName: request.booking?.clientName ?? "Commission file", label: "Already topped up? Notify JLT to review your transfer", href: `/commissions?tab=top-up&booking=${request.bookingId}` })),
+    ...topUpRequests.map((request) => ({ bookingId: request.bookingId, clientName: request.booking?.clientName ?? "Commission file", label: "Top-up confirmation", href: `/commissions?tab=top-up&booking=${request.bookingId}` })),
   ].slice(0, 4), [bookingQueries, requiresPtsAction, missingDocItems, flightQueries, topUpRequests]);
 
   const featuredPost = communityPosts[0] as any | undefined;
@@ -234,36 +234,19 @@ export default function AgentDashboard() {
         </div>
       </section>
 
-      {topUpRequests.length > 0 && (
-        <section aria-labelledby="dashboard-top-up-heading" className="rounded-2xl border-2 border-[#00c9b4] bg-[#f0fffb] p-4 shadow-sm sm:p-5">
-          <div className="mb-4 flex items-start gap-3">
-            <AlertCircle size={22} className="mt-0.5 shrink-0 text-[#047857]" aria-hidden="true" />
-            <div>
-              <h2 id="dashboard-top-up-heading" className="text-lg font-bold text-[#065f46]">Already topped up? Tell JLT</h2>
-              <p className="mt-1 text-sm text-[#065f46]">After making your transfer, you must report it to JLT. Open the booking below to confirm your top-up; JLT will then review it. Your top-up remains pending review until JLT checks it.</p>
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {topUpRequests.map((request) => (
-              <div key={request.id} className="min-w-0 rounded-xl border border-[#a7f3e8] bg-white p-4">
-                <p className="break-words text-sm font-bold text-foreground">{request.booking?.clientName ?? "Commission file"}</p>
-                <p className="mt-1 text-sm text-muted-foreground">Booking #{request.bookingId}</p>
-                {Number.isSafeInteger(request.topUpAmountPence) && Number(request.topUpAmountPence) > 0 && <p className="mt-2 text-sm font-semibold text-[#065f46]">Requested top-up: £{(Number(request.topUpAmountPence) / 100).toFixed(2)}</p>}
-                <Button asChild className="mt-3 h-auto min-h-11 w-full whitespace-normal bg-[#047857] px-3 py-3 text-center font-semibold text-white hover:bg-[#065f46]">
-                  <Link href={`/commissions?tab=top-up&booking=${request.bookingId}`} aria-label={`I’ve topped up — notify JLT for booking #${request.bookingId}, ${request.booking?.clientName ?? "Commission file"}`}>I’ve topped up — notify JLT</Link>
-                </Button>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
       <section>
-        <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-foreground">Your attention</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">The things most worth looking at today.</p>
           </div>
+          {topUpRequests.length > 0 && (
+            <Button asChild size="sm" variant="outline" className="gap-2 font-medium">
+              <Link href="/commissions?tab=top-up" aria-label={`Confirm a top-up — ${topUpRequests.length} open request${topUpRequests.length === 1 ? "" : "s"}`}>
+                <Wallet size={14} aria-hidden="true" /> Confirm a top-up ({topUpRequests.length})
+              </Link>
+            </Button>
+          )}
           {bookingActionCount === 0 && outstandingAcademyActions.length === 0 && unconfirmedUpdates.length === 0 && commissionClaimable.length === 0 && (
             <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700"><CheckCircle2 size={16} /> All caught up</span>
           )}
