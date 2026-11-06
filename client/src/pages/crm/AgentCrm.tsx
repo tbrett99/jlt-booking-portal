@@ -34,6 +34,7 @@ import { canLinkGoCardlessMandate } from "@shared/gocardless-mandate-status";
 import { getOffboardingChecklist } from "@shared/offboarding-checklist";
 import { AgentMergeDialog } from "@/components/AgentMergeDialog";
 import { AgentMergeHistory } from "@/components/AgentMergeHistory";
+import { CrmSupplierAccess } from "@/components/CrmSupplierAccess";
 
 const UK_REGIONS = [
   "North West", "North East", "Yorkshire and the Humber", "East Midlands",
@@ -57,24 +58,6 @@ const MEMBERSHIP_TIERS = [
   "First Class Duo",
   "Economy",
   "CORE",
-];
-
-const SUPPLIERS = [
-  "Ace Rooms",
-  "Ambassador Cruises",
-  "Aviate",
-  "Easyjet",
-  "Etihad Holidays",
-  "Every Holiday",
-  "Gold Medal",
-  "Holiday Best",
-  "Koveli",
-  "Major Travel",
-  "MSC",
-  "NCL",
-  "P&O Cruises",
-  "Royal Caribbean/Celebrity",
-  "Virgin Voyages",
 ];
 
 type CrmProfile = {
@@ -865,7 +848,7 @@ export function AgentCrmSheet({ agent, open, onClose, onRefresh, onMerged, initi
               {activeSection === "operations" && (
                 <RecordDetailGroup title="Operations" description="Onboarding readiness and supplier access administration." defaultValue={isOnboarding ? ["onboarding"] : []}>
                   <RecordDetailPanel value="onboarding" label="Onboarding checklist" description="Controlled portal-access and onboarding hand-off tasks."><AdminOnboardingChecklistTab userId={agent.id} agentName={agent.name ?? ""} agentEmail={agent.email ?? ""} paymentExempt={crmData?.paymentExempt ?? false} open={open} onRefresh={refresh} /></RecordDetailPanel>
-                  <RecordDetailPanel value="suppliers" label="Supplier access" description="Supplier-portal access recorded for this agent."><SupplierAccessTab userId={agent.id} supplierLogins={crmData?.supplierLogins ?? []} onRefresh={refresh} /></RecordDetailPanel>
+                  <RecordDetailPanel value="suppliers" label="Supplier access" description="Supplier-portal access recorded for this agent."><CrmSupplierAccess key={agent.id} userId={agent.id} supplierLogins={crmData?.supplierLogins ?? []} onRefresh={refresh} /></RecordDetailPanel>
                 </RecordDetailGroup>
               )}
               {activeSection === "record-history" && (
@@ -1752,118 +1735,6 @@ function AgentEmailsTab({ userId }: { userId: number }) {
 
 
 // ─── Supplier Access Tab ──────────────────────────────────────────────────────
-
-function SupplierAccessTab({ userId, supplierLogins, onRefresh }: {
-  userId: number;
-  supplierLogins: Array<{ id: number; supplierName: string; notes?: string | null; username?: string | null }>;
-  onRefresh: () => void;
-}) {
-  // Optimistic local state — mirrors server state but updates immediately on click
-  const [optimisticEnabled, setOptimisticEnabled] = useState<Set<string>>(() => new Set(supplierLogins.map(l => l.supplierName)));
-  const [optimisticLogins, setOptimisticLogins] = useState(supplierLogins);
-
-  // Track whether a mutation is in-flight so we don't overwrite optimistic state mid-request
-  const mutationPendingRef = useRef(false);
-
-  // Sync from server when supplierLogins prop changes (after refetch) — but not while a mutation is pending
-  useEffect(() => {
-    if (!mutationPendingRef.current) {
-      setOptimisticEnabled(new Set(supplierLogins.map(l => l.supplierName)));
-      setOptimisticLogins(supplierLogins);
-    }
-  }, [supplierLogins]);
-
-  const addLogin = trpc.crm.agentCrm.addSupplierLogin.useMutation({
-    onSuccess: () => {
-      mutationPendingRef.current = false;
-      onRefresh();
-    },
-    onError: (e) => {
-      mutationPendingRef.current = false;
-      toast.error(e.message);
-      // Revert optimistic update on error
-      setOptimisticEnabled(new Set(supplierLogins.map(l => l.supplierName)));
-      setOptimisticLogins(supplierLogins);
-    },
-  });
-  const deleteLogin = trpc.crm.agentCrm.deleteSupplierLogin.useMutation({
-    onSuccess: () => {
-      mutationPendingRef.current = false;
-      onRefresh();
-    },
-    onError: (e) => {
-      mutationPendingRef.current = false;
-      toast.error(e.message);
-      // Revert optimistic update on error
-      setOptimisticEnabled(new Set(supplierLogins.map(l => l.supplierName)));
-      setOptimisticLogins(supplierLogins);
-    },
-  });
-
-  function toggle(supplier: string) {
-    mutationPendingRef.current = true;
-    if (optimisticEnabled.has(supplier)) {
-      // Optimistically remove
-      const newEnabled = new Set(optimisticEnabled);
-      newEnabled.delete(supplier);
-      setOptimisticEnabled(newEnabled);
-      const login = optimisticLogins.find(l => l.supplierName === supplier);
-      if (login) deleteLogin.mutate({ id: login.id });
-    } else {
-      // Optimistically add
-      const newEnabled = new Set(optimisticEnabled);
-      newEnabled.add(supplier);
-      setOptimisticEnabled(newEnabled);
-      addLogin.mutate({ userId, supplierName: supplier });
-    }
-  }
-
-  const isPending = addLogin.isPending || deleteLogin.isPending;
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Select which supplier portals this agent has access to.</p>
-      <div className="grid grid-cols-1 gap-2">
-        {SUPPLIERS.map((supplier) => {
-          const enabled = optimisticEnabled.has(supplier);
-          return (
-            <div
-              key={supplier}
-              className={`flex items-center justify-between p-3.5 rounded-lg border transition-colors ${
-                isPending ? "cursor-wait opacity-80" : "cursor-pointer"
-              } ${
-                enabled
-                  ? "border-primary/40 bg-primary/5"
-                  : "border-border bg-muted/20 hover:bg-muted/40"
-              }`}
-              onClick={() => !isPending && toggle(supplier)}
-            >
-              <div className="flex items-center gap-3">
-                <div className={`w-5 h-5 rounded flex items-center justify-center border ${
-                  enabled ? "bg-primary border-primary" : "border-muted-foreground/40"
-                }`}>
-                  {enabled && <svg className="w-3 h-3 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                </div>
-                <div>
-                  <span className={`text-sm font-medium ${enabled ? "text-foreground" : "text-muted-foreground"}`}>{supplier}</span>
-                  {enabled && supplier === "Aviate" && (() => {
-                    const login = optimisticLogins.find(l => l.supplierName === "Aviate");
-                    return login?.username ? (
-                      <div className="text-xs text-muted-foreground mt-0.5 font-mono">{login.username}</div>
-                    ) : null;
-                  })()}
-                </div>
-              </div>
-              {enabled && (
-                <Badge variant="secondary" className="text-xs">Access granted</Badge>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 // ─── Bank Details Tab ─────────────────────────────────────────────────────────
 

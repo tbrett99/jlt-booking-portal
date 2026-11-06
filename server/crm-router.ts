@@ -1814,6 +1814,18 @@ export const crmRouter = router({
         return { success: true };
       }),
 
+    getSupplierAccessCatalog: adminProcedure.query(async () => {
+      const { getSupplierAccessCatalog } = await import("./supplier-access-catalog");
+      return getSupplierAccessCatalog();
+    }),
+
+    addSupplierAccessOption: adminProcedure
+      .input(z.object({ name: z.string().min(1).max(500) }))
+      .mutation(async ({ input, ctx }) => {
+        const { addSupplierAccessOption } = await import("./supplier-access-catalog");
+        return addSupplierAccessOption(input.name, ctx.user.id);
+      }),
+
     addSupplierLogin: adminProcedure
       .input(
         z.object({
