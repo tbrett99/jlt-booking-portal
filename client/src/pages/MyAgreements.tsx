@@ -4,15 +4,10 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  ArrowLeft,
-  FileText,
-  ShieldCheck,
-  Printer,
-  ExternalLink,
-} from "lucide-react";
+import { ArrowLeft, ShieldCheck, Printer, ExternalLink } from "lucide-react";
 import { agreementLocalDate } from "@/components/MySignedAgencyTerms";
 import MyPolicyDocuments from "@/components/MyPolicyDocuments";
+import CurrentAgencyTermsNotice from "@/components/CurrentAgencyTermsNotice";
 import { printMyAgreement } from "@/lib/print-my-agreement";
 import { toast } from "sonner";
 import type {
@@ -103,8 +98,15 @@ export function AgreementRecord({ record }: { record: MyAgreementDetail }) {
           </p>
         )}
       </section>
-      <section className="space-y-3" aria-label="Agency terms at signing">
-        <h3 className="text-base font-semibold">Saved signing content</h3>
+      <section
+        className="space-y-3"
+        aria-label={
+          record.snapshotHtml ? "Agency terms at signing" : "Agency terms"
+        }
+      >
+        <h3 className="text-base font-semibold">
+          {record.snapshotHtml ? "Saved signing content" : "Agency terms"}
+        </h3>
         {record.snapshotHtml ? (
           <>
             <p className="text-sm font-medium">
@@ -127,14 +129,7 @@ export function AgreementRecord({ record }: { record: MyAgreementDetail }) {
           </>
         ) : (
           <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
-            <p className="text-sm font-semibold">
-              Signing-time text snapshot not available
-            </p>
-            <p className="text-sm text-muted-foreground">
-              This record does not contain a saved copy of the exact wording
-              displayed when it was signed. Today's terms are not substituted
-              here.
-            </p>
+            <CurrentAgencyTermsNotice />
             {record.versionDocumentUrl && (
               <div className="space-y-1">
                 <a
@@ -153,16 +148,6 @@ export function AgreementRecord({ record }: { record: MyAgreementDetail }) {
                 </p>
               </div>
             )}
-            <p className="text-sm">
-              For a copy of your original agreement, contact{" "}
-              <a
-                className="underline underline-offset-2"
-                href="mailto:support@thejltgroup.co.uk"
-              >
-                support@thejltgroup.co.uk
-              </a>
-              .
-            </p>
           </div>
         )}
       </section>
@@ -285,12 +270,18 @@ export default function MyAgreements() {
       </div>
       <MyPolicyDocuments />
       <div>
-        <h2 className="text-lg font-semibold">Your signed agency agreement</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Your recorded electronic signing history and available agreement
-          content or document references. Current published policies above do
-          not replace the wording saved at signing.
-        </p>
+        <h2 className="text-lg font-semibold">
+          {item && !isLoading && !isError
+            ? "Your signed agency agreement"
+            : "Agency agreement"}
+        </h2>
+        {item && !isLoading && !isError && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your recorded electronic signing history and available agreement
+            content or document references. Current published policies above do
+            not replace the wording saved at signing.
+          </p>
+        )}
       </div>
       {isLoading ? (
         <p className="text-sm text-muted-foreground" role="status">
@@ -309,18 +300,7 @@ export default function MyAgreements() {
       ) : !item ? (
         <Card>
           <CardContent className="space-y-3 pt-6">
-            <FileText size={22} className="text-muted-foreground" />
-            <h2 className="font-semibold">
-              No signed record linked to this account
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              You may have signed outside the Portal. This does not mean no
-              agreement exists. Contact{" "}
-              <a href="mailto:support@thejltgroup.co.uk" className="underline">
-                support@thejltgroup.co.uk
-              </a>{" "}
-              for your original copy.
-            </p>
+            <CurrentAgencyTermsNotice />
           </CardContent>
         </Card>
       ) : (

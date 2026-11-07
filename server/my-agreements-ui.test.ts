@@ -85,13 +85,30 @@ async function render(Component: React.ComponentType = MyAgreements) {
 }
 const text = () => container.textContent ?? "";
 const normalize = (value: string | null) => (value ?? "").replace(/\s+/g, " ").trim();
+const currentTermsNotice = "Your membership is governed by the latest JLT Agent Terms & Conditions, issued in May 2026. You can read these below.";
+function assertCurrentAgencyTermsNotice(scope: Element = container) {
+  const paragraphs = Array.from(scope.querySelectorAll("p")).filter(paragraph => normalize(paragraph.textContent) === currentTermsNotice);
+  expect(paragraphs).toHaveLength(1);
+  const notice = paragraphs[0].parentElement!;
+  const link = Array.from(notice.querySelectorAll("a")).find(item => normalize(item.textContent) === "Read Agent Terms & Conditions");
+  expect(link).toBeTruthy();
+  expect(link!.getAttribute("href")).toBe("/terms?section=terms");
+  expect(link!.getAttribute("data-slot")).toBe("button");
+  expect(notice.querySelector("button, input, textarea, canvas, form, img")).toBeNull();
+  return notice;
+}
+function assertNoOldMissingRecordCopy(scope: Element = container) {
+  expect(normalize(scope.textContent)).not.toMatch(/No signed (?:agreement )?record (?:is )?linked|signed outside|original copy|original agreement|snapshot not available|no signing-time text snapshot|today.s terms are not substituted/i);
+  expect(scope.querySelector('a[href^="mailto:"]')).toBeNull();
+  expect(normalize(scope.textContent)).not.toContain("support@thejltgroup.co.uk");
+}
 function assertAgreementsHub() {
   expect(Array.from(container.querySelectorAll("h1")).map(heading => normalize(heading.textContent))).toEqual(["Agreements & Policies"]);
   const back = container.querySelector('a[href="/dashboard"]');
   expect(back).toBeTruthy();
   expect(normalize(back!.textContent)).toMatch(/^Back/);
   expect(container.querySelector('a[href="/my-profile"]')).toBeNull();
-  const card = container.querySelector('a[href="/terms?section=terms"]')?.closest('[data-slot="card"]');
+  const card = container.querySelector('a[href="/terms?section=conduct"]')?.closest('[data-slot="card"]');
   expect(card).toBeTruthy();
   expect(normalize(card!.querySelector('[data-slot="card-title"]')?.textContent ?? null)).toBe("Current policy documents");
   const links = Array.from(card!.querySelectorAll("a"));
@@ -106,10 +123,20 @@ function assertAgreementsHub() {
   expect(card!.querySelectorAll("h3")).toHaveLength(4);
   expect(card!.querySelector('input, textarea, canvas, form, img, [data-slot="badge"]')).toBeNull();
   expect(normalize(card!.textContent)).not.toMatch(/you (?:have )?signed|signed by|accepted on|acknowledged on|signature verified/i);
-  const signedHeading = Array.from(container.querySelectorAll("h2")).find(heading => normalize(heading.textContent) === "Your signed agency agreement");
-  expect(signedHeading).toBeTruthy();
-  expect(card!.compareDocumentPosition(signedHeading!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(container.querySelector('article a[href^="/terms?section="]')).toBeNull();
+  const hasLoadedItem = !mocks.mine.isLoading && !mocks.mine.isError && Boolean(mocks.mine.data?.length);
+  const expectedHeading = hasLoadedItem ? "Your signed agency agreement" : "Agency agreement";
+  const agreementHeading = Array.from(container.querySelectorAll("h2")).find(heading => normalize(heading.textContent) === expectedHeading);
+  expect(agreementHeading).toBeTruthy();
+  expect(card!.compareDocumentPosition(agreementHeading!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(Array.from(container.querySelectorAll("h2")).some(heading => normalize(heading.textContent) === (hasLoadedItem ? "Agency agreement" : "Your signed agency agreement"))).toBe(false);
+  const intro = "Your recorded electronic signing history and available agreement content or document references. Current published policies above do not replace the wording saved at signing.";
+  if (hasLoadedItem) expect(normalize(container.textContent)).toContain(intro);
+  else expect(normalize(container.textContent)).not.toContain(intro);
+  for (const link of container.querySelectorAll('article a[href^="/terms?section="]')) {
+    expect(link.getAttribute("href")).toBe("/terms?section=terms");
+    expect(normalize(link.textContent)).toBe("Read Agent Terms & Conditions");
+    expect(link.getAttribute("data-slot")).toBe("button");
+  }
   expect(mocks.mutationHooks).toEqual([]);
   return card!;
 }
@@ -157,10 +184,27 @@ describe("compact signed-agency-terms account card", () => {
     expect(text()).toContain("Recorded signer");
     expect(text()).toContain(localDate());
     expect(text()).toContain("Signing record held by JLT");
+    expect(normalize(container.querySelector('[data-slot="card-title"]')?.textContent ?? null)).toBe("My signed agency terms");
+    expect(text()).not.toContain(currentTermsNotice);
     expect(container.querySelector('a[href="/my-agreements"]')?.textContent).toMatch(/agreement records/i);
     expect(container.querySelector('a[href="/terms"]')?.textContent).toMatch(/not your personal signing record/i);
     expect(container.querySelector("article, img, select, input, textarea")).toBeNull();
     expect(mocks.queries).toEqual([{ path: "myAgreements.mine", input: undefined }]);
+  });
+
+  it("keeps a genuine latest record title and details but offers current terms without an absence warning when its snapshot is missing", async () => {
+    supply(record("legacy", { snapshotHtml: null, snapshotAvailable: false, snapshotKind: null }));
+    await render(MySignedAgencyTerms);
+    expect(normalize(container.querySelector('[data-slot="card-title"]')?.textContent ?? null)).toBe("My signed agency terms");
+    expect(text()).toContain("Recorded signer");
+    expect(text()).toContain(localDate());
+    expect(text()).toContain("Signing record held by JLT");
+    expect(container.querySelector('a[href="/my-agreements"]')?.textContent).toMatch(/agreement records/i);
+    assertCurrentAgencyTermsNotice();
+    assertNoOldMissingRecordCopy();
+    expect(container.querySelector("article, img, select, input, textarea, .prose")).toBeNull();
+    expect(mocks.queries).toEqual([{ path: "myAgreements.mine", input: undefined }]);
+    expect(mocks.mutationHooks).toEqual([]);
   });
 
   it.each([["MyProfile", MyProfile], ["ProfilePage", ProfilePage]] as const)("does not render agreement or policy cards or query agreement APIs inside %s", async (_name, Component) => {
@@ -180,11 +224,12 @@ describe("Agreements & Policies hub", () => {
     supply(); await render();
     const card = assertAgreementsHub();
     expect(normalize(card.textContent)).toContain("Opening these documents does not create a new signature or acknowledgement record.");
-    expect(text()).toMatch(/No signed record linked to this account/i);
-    expect(text()).toMatch(/does not mean no agreement exists/i);
+    const notice = assertCurrentAgencyTermsNotice();
+    expect(card.contains(notice)).toBe(false);
+    assertNoOldMissingRecordCopy();
     expect(text()).not.toMatch(/never signed|no legally binding agreement|you have accepted|you have signed/i);
     expect(mocks.queries).toEqual([{ path: "myAgreements.mine", input: undefined }]);
-    expect(container.querySelector('input, textarea, canvas, form, select, [contenteditable="true"]')).toBeNull();
+    expect(container.querySelector('input, textarea, canvas, form, select, [contenteditable="true"], [data-slot="badge"]')).toBeNull();
     noRecordOrPrint();
   });
 });
@@ -206,13 +251,16 @@ describe("loading, stale errors and absence do not rewrite signing history", () 
     expect(mocks.refetchMine).toHaveBeenCalledOnce(); noRecordOrPrint();
     expect(mocks.queries.some(query => query.path === "myAgreements.detail")).toBe(false);
   });
-  it.each([["card", MySignedAgencyTerms], ["page", MyAgreements]] as const)("explains an empty linked record set in the %s without claiming never signed", async (_name, Component) => {
+  it.each([["card", MySignedAgencyTerms], ["page", MyAgreements]] as const)("offers the exact current terms notice in an empty %s without fake signing or historical absence copy", async (_name, Component) => {
     supply(); await render(Component);
     if (Component === MyAgreements) assertAgreementsHub();
-    expect(text()).toMatch(/signed outside the Portal/i);
-    expect(text()).toMatch(/does not mean no agreement exists/i);
-    expect(text()).not.toMatch(/never signed|no legally binding agreement/i);
-    expect(container.querySelector('a[href="mailto:support@thejltgroup.co.uk"]')).toBeTruthy();
+    else expect(normalize(container.querySelector('[data-slot="card-title"]')?.textContent ?? null)).toBe("Agency terms");
+    assertCurrentAgencyTermsNotice();
+    assertNoOldMissingRecordCopy();
+    expect(text()).not.toMatch(/never signed|no legally binding agreement|you have accepted|you have signed|My signed agency terms|Your signed agency agreement|Signing record held by JLT/i);
+    expect(container.querySelector('input, textarea, canvas, form, select, [contenteditable="true"], [data-slot="badge"]')).toBeNull();
+    expect(mocks.queries).toEqual([{ path: "myAgreements.mine", input: undefined }]);
+    expect(mocks.mutationHooks).toEqual([]);
     noRecordOrPrint();
   });
 });
@@ -236,7 +284,8 @@ describe("read-only personal agreement list and authorized detail", () => {
   });
 
   it("renders only simple, already-sanitized server signing HTML and the stored signature", async () => {
-    supply(record()); await render();
+    const original = record();
+    supply(original); await render();
     const article = container.querySelector("article")!;
     expect(article.textContent).not.toMatch(/PRIVATE_|87654321|12-34-56|private-account|Current policy documents/);
     expect(article.querySelector("h4")?.textContent).toBe("Saved agency provision");
@@ -248,21 +297,38 @@ describe("read-only personal agreement list and authorized detail", () => {
     expect(article.querySelector("time")?.getAttribute("datetime")).toBe(signedAt);
     expect(text()).toContain(localDate());
     expect(text()).toContain("Saved signing content");
+    const savedContent = article.querySelector('.prose')!;
+    expect(savedContent.innerHTML).toBe(savedHtml);
+    expect(original.snapshotHtml).toBe(savedHtml);
+    expect(article.textContent).not.toContain(currentTermsNotice);
+    expect(article.querySelector('a[href="/terms?section=terms"]')).toBeNull();
+    expect(article.querySelector('section[aria-label="Agency terms at signing"] h3')?.textContent).toBe("Saved signing content");
   });
 
-  it("does not substitute current policy for missing content and labels a linked version as not frozen", async () => {
-    supply(record("legacy", { snapshotHtml: null, snapshotAvailable: false, snapshotKind: null, signatureImage: null,
-      signatureAvailable: false, versionDocumentAvailable: true, versionDocumentUrl: "https://documents.example.invalid/version-A.pdf" }));
+  it.each([null, ""])("offers separate current terms for a legacy %j snapshot without injecting policy as historical content, and preserves the nonfrozen version link", async snapshotHtml => {
+    const original = record("legacy", { snapshotHtml, snapshotAvailable: false, snapshotKind: null, signatureImage: null,
+      signatureAvailable: false, versionDocumentAvailable: true, versionDocumentUrl: "https://documents.example.invalid/version-A.pdf" });
+    supply(original);
     await render();
-    expect(text()).toMatch(/snapshot not available/i);
-    expect(text()).toMatch(/today.s terms are not substituted/i);
-    expect(container.querySelector("article")?.textContent).toMatch(/Saved signing content/i);
-    const link = container.querySelector('article a[href="https://documents.example.invalid/version-A.pdf"]')!;
-    expect(link.textContent).toMatch(/document linked to this version/i);
-    expect(text()).toMatch(/not a separately captured signing-time snapshot/i);
+    assertAgreementsHub();
+    const article = container.querySelector("article")!;
+    const terms = article.querySelector('section[aria-label="Agency terms"]')!;
+    expect(terms.querySelector("h3")?.textContent).toBe("Agency terms");
+    expect(terms.textContent).not.toContain("Saved signing content");
+    const notice = assertCurrentAgencyTermsNotice(terms);
+    assertNoOldMissingRecordCopy(terms);
+    const link = terms.querySelector('a[href="https://documents.example.invalid/version-A.pdf"]')!;
+    expect(normalize(link.textContent)).toBe("Open document linked to this version");
+    expect(normalize(terms.textContent)).toContain("This is the document currently linked to the recorded version, not a separately captured signing-time snapshot.");
+    expect(notice.contains(link)).toBe(false);
     expect(link.getAttribute("rel")).toContain("noopener");
-    expect(container.querySelector("article")?.textContent).not.toContain("Saved agency provision");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(terms.querySelector(".prose, h4, iframe, object, embed")).toBeNull();
+    expect(article.textContent).not.toContain("Saved agency provision");
+    expect(original.snapshotHtml).toBe(snapshotHtml);
     expect(mocks.queries.map(query => query.path)).not.toContain("terms.latest");
+    expect(mocks.queries.every(query => ["myAgreements.mine", "myAgreements.detail"].includes(query.path))).toBe(true);
   });
 
   it("labels a document_reference as saved reference content rather than claiming a full terms snapshot", async () => {
@@ -340,6 +406,25 @@ describe("read-only personal agreement list and authorized detail", () => {
     expect(printed.textContent).not.toContain("Your signed agency agreement");
     expect(printed.querySelector('a[href^="/terms?section="]')).toBeNull();
     expect(printed.querySelector("button, select, input")).toBeNull();
+  });
+
+  it("prints only the authorized legacy article with its separate current notice, not other current policies or account data", async () => {
+    supply(record("legacy", { snapshotHtml: null, snapshotAvailable: false, snapshotKind: null }));
+    await render();
+    const outside = document.createElement("aside");
+    outside.textContent = "PRIVATE_BANK_HOLDER 87654321 12-34-56 private-account@example.invalid PRIVATE_PHONE";
+    container.appendChild(outside);
+    await click(/Print record \/ Save PDF/);
+    expect(mocks.print).toHaveBeenCalledOnce();
+    const printed = mocks.print.mock.calls[0][0] as HTMLElement;
+    expect(printed).toBe(container.querySelector("article"));
+    assertCurrentAgencyTermsNotice(printed);
+    expect(printed.textContent).toContain("Recorded signer");
+    expect(printed.textContent).not.toMatch(/PRIVATE_|87654321|12-34-56|private-account|Current policy documents|Your signed agency agreement/);
+    const currentLinks = Array.from(printed.querySelectorAll('a[href^="/terms?section="]'));
+    expect(currentLinks.map(link => link.getAttribute("href"))).toEqual(["/terms?section=terms"]);
+    expect(printed.querySelector("button, select, input, .prose")).toBeNull();
+    expect(mocks.queries.map(query => query.path)).not.toContain("terms.latest");
   });
 
   it("disables duplicate prints while pending and reports print failure without mutating the record", async () => {

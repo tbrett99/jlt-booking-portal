@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FileText, ShieldCheck, ArrowRight } from "lucide-react";
+import CurrentAgencyTermsNotice from "@/components/CurrentAgencyTermsNotice";
 
 export function agreementLocalDate(value: string) {
   return new Date(value).toLocaleString("en-GB", {
@@ -26,7 +27,10 @@ export default function MySignedAgencyTerms() {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldCheck size={17} /> My signed agency terms
+          <ShieldCheck size={17} />{" "}
+          {latest && !isLoading && !isError
+            ? "My signed agency terms"
+            : "Agency terms"}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -63,12 +67,7 @@ export default function MySignedAgencyTerms() {
               details recorded for your account. This is separate from the
               general Terms &amp; Policies page.
             </p>
-            {!latest.snapshotAvailable && (
-              <p className="text-xs text-muted-foreground">
-                The latest record has no signing-time text snapshot. Any
-                available version document is labelled separately.
-              </p>
-            )}
+            {!latest.snapshotAvailable && <CurrentAgencyTermsNotice />}
             <Button asChild variant="outline" size="sm" className="gap-2">
               <Link href="/my-agreements">
                 <FileText size={14} /> View my agreement records{" "}
@@ -77,23 +76,7 @@ export default function MySignedAgencyTerms() {
             </Button>
           </>
         ) : (
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              No signed agreement record is linked to this Portal account. You
-              may have signed outside the Portal; this does not mean no
-              agreement exists.
-            </p>
-            <p className="text-sm">
-              For a copy, contact{" "}
-              <a
-                href="mailto:support@thejltgroup.co.uk"
-                className="underline underline-offset-2"
-              >
-                support@thejltgroup.co.uk
-              </a>
-              .
-            </p>
-          </div>
+          <CurrentAgencyTermsNotice />
         )}
         <Link
           href="/terms"
