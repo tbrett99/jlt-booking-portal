@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import MySignedAgencyTerms from "@/components/MySignedAgencyTerms";
 import { Loader2, User, Lock, Eye, EyeOff, Link2 } from "lucide-react";
 
 export default function ProfilePage() {
@@ -83,6 +84,8 @@ export default function ProfilePage() {
             Manage your personal details and account security.
           </p>
         </div>
+
+        <MySignedAgencyTerms />
 
         {/* Personal Details */}
         <Card>

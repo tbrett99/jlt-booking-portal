@@ -100,6 +100,7 @@ const RecruitmentProspectDetail = lazy(() => import("./pages/crm/RecruitmentPros
 const RecruitmentDashboard = lazy(() => import("./pages/crm/RecruitmentDashboard"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const MyProfile = lazy(() => import("./pages/MyProfile"));
+const MyAgreements = lazy(() => import("./pages/MyAgreements"));
 const MyPublicProfile = lazy(() => import("./pages/agent/MyPublicProfile"));
 const MyHolidayShowcases = lazy(() => import("./pages/agent/MyHolidayShowcases"));
 const PublicProfiles = lazy(() => import("./pages/crm/PublicProfiles"));
@@ -341,6 +342,7 @@ export function AuthRouter() {
           <Route path="/notifications" component={AgentNotifications} />
           <Route path="/messages" component={AgentMessages} />
           <Route path="/my-profile" component={MyProfile} />
+          <Route path="/my-agreements" component={MyAgreements} />
           <Route path="/my-public-profile" component={MyPublicProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
@@ -404,6 +406,7 @@ export function AuthRouter() {
           <Route path="/notifications" component={AgentNotifications} />
           <Route path="/messages" component={AgentMessages} />
           <Route path="/my-profile" component={MyProfile} />
+          <Route path="/my-agreements" component={MyAgreements} />
           <Route path="/my-public-profile" component={MyPublicProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
@@ -519,6 +522,7 @@ export function AuthRouter() {
         <Route path="/webinars" component={WebinarLibrary} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/my-profile" component={MyProfile} />
+        <Route path="/my-agreements" component={MyAgreements} />
         <Route path="/my-public-profile" component={MyPublicProfile} />
         <Route path="/unsubscribe" component={UnsubscribePage} />
         {/* Terms & Policies — accessible to logged-in admins */}
