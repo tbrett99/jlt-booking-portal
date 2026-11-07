@@ -84,6 +84,35 @@ async function render(Component: React.ComponentType = MyAgreements) {
   await act(async () => root.render(React.createElement(Component)));
 }
 const text = () => container.textContent ?? "";
+const normalize = (value: string | null) => (value ?? "").replace(/\s+/g, " ").trim();
+function assertAgreementsHub() {
+  expect(Array.from(container.querySelectorAll("h1")).map(heading => normalize(heading.textContent))).toEqual(["Agreements & Policies"]);
+  const back = container.querySelector('a[href="/dashboard"]');
+  expect(back).toBeTruthy();
+  expect(normalize(back!.textContent)).toMatch(/^Back/);
+  expect(container.querySelector('a[href="/my-profile"]')).toBeNull();
+  const card = container.querySelector('a[href="/terms?section=terms"]')?.closest('[data-slot="card"]');
+  expect(card).toBeTruthy();
+  expect(normalize(card!.querySelector('[data-slot="card-title"]')?.textContent ?? null)).toBe("Current policy documents");
+  const links = Array.from(card!.querySelectorAll("a"));
+  expect(links.map(link => link.getAttribute("href"))).toEqual([
+    "/terms?section=terms", "/terms?section=conduct", "/terms?section=privacy", "/terms?section=appendices",
+  ]);
+  for (const link of links) {
+    expect(normalize(link.textContent)).toMatch(/^Read\s+\S/);
+    expect(link.getAttribute("data-slot")).toBe("button");
+  }
+  expect(card!.querySelector('[data-slot="card-content"] .grid')?.classList.contains("sm:grid-cols-2")).toBe(true);
+  expect(card!.querySelectorAll("h3")).toHaveLength(4);
+  expect(card!.querySelector('input, textarea, canvas, form, img, [data-slot="badge"]')).toBeNull();
+  expect(normalize(card!.textContent)).not.toMatch(/you (?:have )?signed|signed by|accepted on|acknowledged on|signature verified/i);
+  const signedHeading = Array.from(container.querySelectorAll("h2")).find(heading => normalize(heading.textContent) === "Your signed agency agreement");
+  expect(signedHeading).toBeTruthy();
+  expect(card!.compareDocumentPosition(signedHeading!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(container.querySelector('article a[href^="/terms?section="]')).toBeNull();
+  expect(mocks.mutationHooks).toEqual([]);
+  return card!;
+}
 function button(label: RegExp) {
   const found = Array.from(container.querySelectorAll("button")).find(item => label.test(item.textContent ?? ""));
   expect(found, `button ${label}`).toBeTruthy();
@@ -134,35 +163,52 @@ describe("compact signed-agency-terms account card", () => {
     expect(mocks.queries).toEqual([{ path: "myAgreements.mine", input: undefined }]);
   });
 
-  it.each([["MyProfile", MyProfile], ["ProfilePage", ProfilePage]] as const)("renders the actual compact card inside %s", async (_name, Component) => {
+  it.each([["MyProfile", MyProfile], ["ProfilePage", ProfilePage]] as const)("does not render agreement or policy cards or query agreement APIs inside %s", async (_name, Component) => {
     supply(record()); await render(Component);
-    const card = container.querySelector('a[href="/my-agreements"]')?.closest('[data-slot="card"]');
-    expect(card?.textContent).toContain("1 record");
-    expect(card?.textContent).toContain("Recorded signer");
-    expect(card?.textContent).toContain(localDate());
-    expect(card?.querySelector('a[href="/terms"]')).toBeTruthy();
-    expect(card?.textContent).not.toContain("PRIVATE_BANK_HOLDER");
-    expect(card?.querySelector("input, textarea, article")).toBeNull();
-    expect(mocks.queries.some(query => query.path === "myAgreements.mine")).toBe(true);
+    expect(container.querySelector('a[href="/my-agreements"], a[href="/terms"], a[href^="/terms?section="]')).toBeNull();
+    expect(text()).not.toContain("Current policy documents");
+    expect(text()).not.toContain("Signing record held by JLT");
+    expect(text()).not.toContain("Recorded signer");
+    expect(text()).not.toContain(localDate());
+    expect(container.querySelector("article")).toBeNull();
+    expect(mocks.queries.some(query => query.path.startsWith("myAgreements.") || query.path.startsWith("terms."))).toBe(false);
+  });
+});
+
+describe("Agreements & Policies hub", () => {
+  it("always offers all four current policy documents with no linked records or fake signing", async () => {
+    supply(); await render();
+    const card = assertAgreementsHub();
+    expect(normalize(card.textContent)).toContain("Opening these documents does not create a new signature or acknowledgement record.");
+    expect(text()).toMatch(/No signed record linked to this account/i);
+    expect(text()).toMatch(/does not mean no agreement exists/i);
+    expect(text()).not.toMatch(/never signed|no legally binding agreement|you have accepted|you have signed/i);
+    expect(mocks.queries).toEqual([{ path: "myAgreements.mine", input: undefined }]);
+    expect(container.querySelector('input, textarea, canvas, form, select, [contenteditable="true"]')).toBeNull();
+    noRecordOrPrint();
   });
 });
 
 describe("loading, stale errors and absence do not rewrite signing history", () => {
   it.each([["card", MySignedAgencyTerms], ["page", MyAgreements]] as const)("shows loading in the %s without exposing stale data", async (_name, Component) => {
     supply(record()); mocks.mine.isLoading = true; await render(Component);
+    if (Component === MyAgreements) assertAgreementsHub();
     expect(container.querySelector('[role="status"]')?.textContent).toMatch(/Loading your agreement records/);
     noRecordOrPrint();
   });
   it.each([["card", MySignedAgencyTerms], ["page", MyAgreements]] as const)("hides stale valid mine data on a %s error and retries safely", async (_name, Component) => {
     supply(record()); mocks.mine.isError = true; await render(Component);
+    if (Component === MyAgreements) assertAgreementsHub();
     expect(text()).toMatch(/does not mean there is no signed record/i); noRecordOrPrint();
     expect(container.querySelector('a[href="/my-agreements"]')).toBeNull();
     await click(/Retry agreement records/);
+    if (Component === MyAgreements) assertAgreementsHub();
     expect(mocks.refetchMine).toHaveBeenCalledOnce(); noRecordOrPrint();
     expect(mocks.queries.some(query => query.path === "myAgreements.detail")).toBe(false);
   });
   it.each([["card", MySignedAgencyTerms], ["page", MyAgreements]] as const)("explains an empty linked record set in the %s without claiming never signed", async (_name, Component) => {
     supply(); await render(Component);
+    if (Component === MyAgreements) assertAgreementsHub();
     expect(text()).toMatch(/signed outside the Portal/i);
     expect(text()).toMatch(/does not mean no agreement exists/i);
     expect(text()).not.toMatch(/never signed|no legally binding agreement/i);
@@ -175,6 +221,7 @@ describe("read-only personal agreement list and authorized detail", () => {
   it("selects all signed families, requests only source/id, and offers no signing mutation or editor", async () => {
     const records = (["join", "prospect", "legacy", "terms"] as const).map(source => record(source));
     supply(...records); await render();
+    assertAgreementsHub();
     const select = container.querySelector("select")!;
     expect(Array.from(select.options).map(option => option.value)).toEqual(records.map(item => `${item.source}:${item.id}`));
     for (const item of records) {
@@ -191,6 +238,7 @@ describe("read-only personal agreement list and authorized detail", () => {
   it("renders only simple, already-sanitized server signing HTML and the stored signature", async () => {
     supply(record()); await render();
     const article = container.querySelector("article")!;
+    expect(article.textContent).not.toMatch(/PRIVATE_|87654321|12-34-56|private-account|Current policy documents/);
     expect(article.querySelector("h4")?.textContent).toBe("Saved agency provision");
     expect(article.querySelector("script, iframe, object, embed, [onclick], [onerror]")).toBeNull();
     const image = article.querySelector("img")!;
@@ -252,6 +300,14 @@ describe("read-only personal agreement list and authorized detail", () => {
     expect(text()).toContain("Saved agency provision");
   });
 
+  it("keeps current policy documents visible during detail loading without exposing matching stale detail or printing", async () => {
+    supply(record()); mocks.detail = { data: record(), isLoading: true }; await render();
+    assertAgreementsHub();
+    expect(container.querySelector('[role="status"]')?.textContent).toMatch(/Loading your signing record/);
+    noRecordOrPrint();
+    expect(mocks.queries.filter(query => query.path === "myAgreements.detail").at(-1)?.input).toEqual({ source: "join", id: 7 });
+  });
+
   it.each([
     ["different source", { data: record("terms") }],
     ["different id", { data: record("join", { id: 800 }) }],
@@ -259,9 +315,11 @@ describe("read-only personal agreement list and authorized detail", () => {
     ["missing detail", { data: undefined }],
   ])("denies %s detail, offers retry and cannot print", async (_name, detail) => {
     supply(record()); mocks.detail = detail; await render(); noRecordOrPrint();
+    assertAgreementsHub();
     expect(text()).toMatch(/record could not be loaded/i);
     expect(text()).toMatch(/No signing data has been changed/i);
     await click(/Retry signing record/);
+    assertAgreementsHub();
     expect(mocks.refetchDetail).toHaveBeenCalledOnce(); noRecordOrPrint();
   });
 
@@ -278,6 +336,9 @@ describe("read-only personal agreement list and authorized detail", () => {
     expect(printed).toBe(container.querySelector("article"));
     expect(printed.textContent).toContain("Saved agency provision");
     expect(printed.textContent).not.toMatch(/PRIVATE_|87654321|12-34-56|private-account/);
+    expect(printed.textContent).not.toContain("Current policy documents");
+    expect(printed.textContent).not.toContain("Your signed agency agreement");
+    expect(printed.querySelector('a[href^="/terms?section="]')).toBeNull();
     expect(printed.querySelector("button, select, input")).toBeNull();
   });
 

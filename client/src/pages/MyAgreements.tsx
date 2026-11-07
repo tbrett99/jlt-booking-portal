@@ -12,6 +12,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { agreementLocalDate } from "@/components/MySignedAgencyTerms";
+import MyPolicyDocuments from "@/components/MyPolicyDocuments";
 import { printMyAgreement } from "@/lib/print-my-agreement";
 import { toast } from "sonner";
 import type {
@@ -269,17 +270,26 @@ export default function MyAgreements() {
   return (
     <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
       <Button asChild variant="ghost" size="sm" className="gap-2">
-        <Link href="/my-profile">
-          <ArrowLeft size={14} /> Back to My Profile
+        <Link href="/dashboard">
+          <ArrowLeft size={14} /> Back to dashboard
         </Link>
       </Button>
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold">
-          <ShieldCheck size={23} /> My signed agency terms
+          <ShieldCheck size={23} /> Agreements &amp; Policies
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
+          Your agency agreement, signing record and current JLT policy documents
+          in one place.
+        </p>
+      </div>
+      <MyPolicyDocuments />
+      <div>
+        <h2 className="text-lg font-semibold">Your signed agency agreement</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
           Your recorded electronic signing history and available agreement
-          content or document references.
+          content or document references. Current published policies above do
+          not replace the wording saved at signing.
         </p>
       </div>
       {isLoading ? (

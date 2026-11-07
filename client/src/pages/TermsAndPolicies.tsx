@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link, useSearch } from "wouter";
+import { policyTabFromSearch, type PolicyTab } from "@shared/policy-navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Accordion,
@@ -119,6 +121,9 @@ const PROSE_CLASS =
   "prose prose-sm max-w-none text-foreground [&_p]:mb-3 [&_ul]:mb-3 [&_ul]:pl-5 [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:pl-5 [&_strong]:font-semibold [&_table]:w-full [&_table]:border-collapse [&_th]:bg-muted [&_th]:p-2 [&_th]:text-left [&_th]:text-xs [&_th]:font-semibold [&_td]:p-2 [&_td]:border [&_td]:border-border [&_td]:text-sm [&_tr:nth-child(even)_td]:bg-muted/30";
 
 export default function TermsAndPolicies() {
+  const search = useSearch();
+  const [activeTab, setActiveTab] = useState<PolicyTab>(() => policyTabFromSearch(search));
+  useEffect(() => setActiveTab(policyTabFromSearch(search)), [search]);
   const [openTermsItems, setOpenTermsItems] = useState<string[]>([]);
   const [openCocItems, setOpenCocItems] = useState<string[]>([]);
   const [openPrivacyItems, setOpenPrivacyItems] = useState<string[]>([]);
@@ -144,6 +149,7 @@ export default function TermsAndPolicies() {
       {/* ── Main ── */}
       <main className="max-w-5xl mx-auto px-4 py-8">
         <div className="mb-6">
+          <Link href="/my-agreements" className="mb-4 inline-block text-sm font-medium underline underline-offset-2">Back to Agreements &amp; Policies</Link>
           <h2 className="text-2xl font-bold">Agent Terms &amp; Policies</h2>
           <p className="text-muted-foreground text-sm mt-1">
             These documents govern your membership with The JLT Group. Please read each section carefully.
@@ -151,7 +157,7 @@ export default function TermsAndPolicies() {
           <p className="text-xs text-muted-foreground mt-1">Terms &amp; Conditions last updated: <strong>May 2026</strong></p>
         </div>
 
-        <Tabs defaultValue="terms">
+        <Tabs value={activeTab} onValueChange={value => setActiveTab(policyTabFromSearch(`section=${encodeURIComponent(value)}`))}>
           <TabsList className="mb-6 h-auto flex-wrap gap-1">
             <TabsTrigger value="terms" className="text-sm">
               Full Terms &amp; Conditions

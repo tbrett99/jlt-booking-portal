@@ -10,7 +10,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import MySignedAgencyTerms from "@/components/MySignedAgencyTerms";
 import { PencilLine, CheckCircle2, Clock, XCircle, User, Mail, Phone, MapPin, Building2, CreditCard, Shield, Globe2, ArrowRight, Info } from "lucide-react";
 
 const CHANGEABLE_FIELDS = [
@@ -70,7 +69,6 @@ export default function MyProfile() {
         <p className="text-muted-foreground text-sm mt-1">View your details on file. To update any information, submit a change request and our team will review it.</p>
       </div>
 
-      <MySignedAgencyTerms />
 
       <Card className="border-teal-100 bg-teal-50/50">
         <CardContent className="flex flex-col gap-4 pt-6 sm:flex-row sm:items-center sm:justify-between">

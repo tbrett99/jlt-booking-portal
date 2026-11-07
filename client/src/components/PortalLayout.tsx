@@ -763,6 +763,19 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             <UserCircle size={16} />
             {!collapsed && <span>My Profile</span>}
           </Link>
+          <Link
+            href="/my-agreements"
+            title="Agreements & Policies"
+            aria-label="Agreements & Policies"
+            aria-current={location === "/my-agreements" ? "page" : undefined}
+            className={`flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${
+              location === "/my-agreements" ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent opacity-70 hover:opacity-100"
+            } ${collapsed ? "justify-center" : ""}`}
+            onClick={() => setSidebarOpen(false)}
+          >
+            <Shield size={16} />
+            {!collapsed && <span>Agreements & Policies</span>}
+          </Link>
           <button
             onClick={logout}
             className={`flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent opacity-70 hover:opacity-100 transition-colors ${collapsed ? "justify-center" : ""}`}
