@@ -542,6 +542,7 @@ export const communityRouter = router({
           origin: z.string().url(),
           customSubject: z.string().optional(),
           customIntro: z.string().optional(),
+          customIntroFormat: z.enum(["markdown", "html"]).optional(),
           testToEmail: z.string().email().optional(),
         })
       )
@@ -865,8 +866,11 @@ export const communityRouter = router({
         const periodLabel = digestType === "monthly"
           ? periodStart.toLocaleDateString("en-GB", { month: "long", year: "numeric" })
           : `${periodStart.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${displayEnd.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
-        const introText = input.customIntro || (digest as any).introText || "";
-        const introHtml = formatCommunityDigestIntro(introText);
+        // Stored legacy intros remain Markdown/plain text. Only an explicitly
+        // supplied rich-text intro may be parsed as HTML; an empty override clears it.
+        const introText = input.customIntro ?? (digest as any).introText ?? "";
+        const introFormat = input.customIntro !== undefined ? input.customIntroFormat ?? "markdown" : "markdown";
+        const introHtml = formatCommunityDigestIntro(introText, introFormat);
         const orbitSalesReportHtml = `
           <div style="margin-bottom:28px;background:#eefcff;border:1px solid #70FFE8;border-radius:12px;padding:18px 20px;text-align:center;">
             <h3 style="margin:0 0 8px;font-size:15px;color:#414141;font-family:'Poppins',sans-serif;">📈 View this period's sales update in Orbit</h3>
@@ -900,7 +904,7 @@ export const communityRouter = router({
       ${introHtml ? `
       <!-- Intro message -->
       <div style="background:#FFF6ED;border-left:4px solid #FFC3BC;border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:28px;">
-        <p style="margin:0;font-size:14px;color:#414141;line-height:1.6;">${introHtml}</p>
+        <div style="font-size:14px;color:#414141;line-height:1.6;">${introHtml}</div>
       </div>
       ` : ""}
 

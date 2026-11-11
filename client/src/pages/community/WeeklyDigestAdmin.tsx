@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { DigestIntroEditor } from "@/components/DigestIntroEditor";
+import { digestTextToEditorHtml, formatDigestIntro } from "@shared/community-digest-format";
 
 export default function WeeklyDigestAdmin() {
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -21,7 +22,7 @@ export default function WeeklyDigestAdmin() {
   const [testEmailOpen, setTestEmailOpen] = useState(false);
   const [testEmailAddress, setTestEmailAddress] = useState("");
   const [customSubject, setCustomSubject] = useState("");
-  const [customIntro, setCustomIntro] = useState("");
+  const [introByDraft, setIntroByDraft] = useState<Record<string, string>>({});
   const [digestType, setDigestType] = useState<"weekly" | "monthly">("weekly");
   const [editingFigures, setEditingFigures] = useState(false);
   const [figureEdits, setFigureEdits] = useState<Record<number, {
@@ -75,6 +76,23 @@ export default function WeeklyDigestAdmin() {
       && Math.abs(dStart.getTime() - periodStart.getTime()) <= 2 * 24 * 60 * 60 * 1000;
   });
 
+  const introDraftKey = draft ? `${digestType}:${draft.id}` : null;
+  // Capture the saved Markdown only when draft identity changes. Background
+  // refetches (including saving figures) must never replace local writing.
+  const initialIntroHtml = useMemo(
+    () => digestTextToEditorHtml(draft?.introText ?? ""),
+    [introDraftKey],
+  );
+  useEffect(() => {
+    if (!introDraftKey) return;
+    setIntroByDraft((existing) => introDraftKey in existing
+      ? existing
+      : { ...existing, [introDraftKey]: initialIntroHtml });
+  }, [introDraftKey, initialIntroHtml]);
+  // The fallback also makes the first render, preview and send consistent before
+  // the initialization effect. An explicitly empty edit stays empty.
+  const customIntro = introDraftKey ? introByDraft[introDraftKey] ?? initialIntroHtml : "";
+
   const sendTest = trpc.community.digest.send.useMutation({
     onSuccess: () => {
       toast.success(`Test email sent to ${testEmailAddress}`);
@@ -90,7 +108,8 @@ export default function WeeklyDigestAdmin() {
       origin: window.location.origin,
       testToEmail: testEmailAddress,
       customSubject: customSubject || undefined,
-      customIntro: customIntro || undefined,
+      customIntro,
+      customIntroFormat: "html",
     });
   };
 
@@ -194,10 +213,10 @@ export default function WeeklyDigestAdmin() {
       </div>
 
       <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-muted/30 p-2">
-        <Button type="button" variant={digestType === "weekly" ? "default" : "ghost"} onClick={() => { setDigestType("weekly"); setCustomSubject(""); setCustomIntro(""); }}>
+        <Button type="button" variant={digestType === "weekly" ? "default" : "ghost"} onClick={() => { setDigestType("weekly"); setCustomSubject(""); }}>
           Weekly Update
         </Button>
-        <Button type="button" variant={digestType === "monthly" ? "default" : "ghost"} onClick={() => { setDigestType("monthly"); setCustomSubject(""); setCustomIntro(""); }}>
+        <Button type="button" variant={digestType === "monthly" ? "default" : "ghost"} onClick={() => { setDigestType("monthly"); setCustomSubject(""); }}>
           Monthly Review
         </Button>
         <div className="ml-auto flex items-center px-2 text-sm font-medium text-muted-foreground">{periodLabel}</div>
@@ -292,14 +311,16 @@ export default function WeeklyDigestAdmin() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Personal intro message (optional)</Label>
-              <Textarea
-                placeholder={"Add a personal message from the team...\n\nPress Enter for a new line or paragraph."}
+              <Label htmlFor="digest-personal-intro" className="text-xs">Personal intro message (optional)</Label>
+              <DigestIntroEditor
+                key={introDraftKey}
                 value={customIntro}
-                onChange={(e) => setCustomIntro(e.target.value)}
-                rows={3}
+                onChange={(html) => {
+                  if (introDraftKey) setIntroByDraft((existing) => ({ ...existing, [introDraftKey]: html }));
+                }}
+                disabled={sendTest.isPending || sendDigest.isPending}
               />
-              <p className="text-xs text-muted-foreground">Line breaks and blank lines are preserved in the email.</p>
+              <p id="digest-personal-intro-help" className="text-xs text-muted-foreground">Paste from ChatGPT or type here. Bold text, headings, lists and paragraph spacing are included in the email.</p>
             </div>
           </div>
 
@@ -365,7 +386,7 @@ export default function WeeklyDigestAdmin() {
               <h2 className="text-lg font-bold">
                 {customSubject || `JLT ${digestTitle} — ${periodLabel}`}
               </h2>
-              {customIntro && <p className="whitespace-pre-wrap text-muted-foreground italic">{customIntro}</p>}
+              {customIntro && <div dangerouslySetInnerHTML={{ __html: formatDigestIntro(customIntro, "html") }} />}
               <h3>This {digestType === "monthly" ? "Month" : "Week"}'s Numbers</h3>
               {stats && (
                 <ul>
@@ -391,6 +412,7 @@ export default function WeeklyDigestAdmin() {
               )}
               <p><a href="https://orbit.thejltgroup.co.uk/travel-updates" target="_blank" rel="noreferrer" className="font-medium text-primary underline">Open Orbit Travel Updates</a> to view the relevant sales report.</p>
             </div>
+            <p className="border-t border-border pt-3 text-xs text-muted-foreground">This preview shows the formatted intro and a digest summary, not the exact whole-email layout. Send a test email to check the full email.</p>
           </DialogContent>
         </Dialog>
       )}
@@ -447,7 +469,8 @@ export default function WeeklyDigestAdmin() {
                   digestId: draft!.id,
                   origin: window.location.origin,
                   customSubject: customSubject || undefined,
-                  customIntro: customIntro || undefined,
+                  customIntro,
+                  customIntroFormat: "html",
                 })}
                 disabled={sendDigest.isPending}
               >
