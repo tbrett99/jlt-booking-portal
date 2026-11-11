@@ -15,6 +15,7 @@ export const systemRouter = router({
       accountRecoverySafetyGuard: 1,
       adminTaskIdentityConsolidationGuard: 1,
       digestIntroRichFormatting: 1,
+      academyLessonArchiveGuard: 1,
     })),
 
   notifyOwner: adminProcedure

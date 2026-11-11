@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import {
@@ -237,6 +237,7 @@ export default function AdminAcademy() {
     error: editorError,
     isLoading: editorLoading,
     isRefetching: editorRefetching,
+    dataUpdatedAt: editorDataUpdatedAt,
     refetch: refetchEditor,
   } = trpc.academy.admin.editor.useQuery(
     { courseId: courseId ?? 0 },
@@ -247,6 +248,15 @@ export default function AdminAcademy() {
   const [moduleSummary, setModuleSummary] = useState("");
   const [moduleReleaseWeek, setModuleReleaseWeek] = useState(0);
   const [openModuleId, setOpenModuleId] = useState<number | null>(null);
+  const [showArchivedLessons, setShowArchivedLessons] = useState(false);
+  const [lessonArchiveOverrides, setLessonArchiveOverrides] = useState<Record<number, Date | null>>({});
+  const [lessonArchivePending, setLessonArchivePending] = useState(false);
+  const lessonArchiveBusy = useRef(false);
+  // A successful fresh read is authoritative, including another admin's edit.
+  // A failed refetch does not advance dataUpdatedAt, so saved overlays remain.
+  useEffect(() => {
+    setLessonArchiveOverrides({});
+  }, [editor, editorDataUpdatedAt]);
   const [editingModuleId, setEditingModuleId] = useState<number | null>(null);
   const [editingModuleDraft, setEditingModuleDraft] = useState({
     title: "",
@@ -345,6 +355,58 @@ export default function AdminAcademy() {
     },
     onError: e => toast.error(e.message),
   });
+  const setLessonArchived = trpc.academy.admin.setLessonArchived.useMutation();
+  function lessonArchivedAt(lesson: { id: number; archivedAt?: Date | null }) {
+    return Object.prototype.hasOwnProperty.call(lessonArchiveOverrides, lesson.id)
+      ? lessonArchiveOverrides[lesson.id]
+      : lesson.archivedAt;
+  }
+  function isLessonArchived(lesson: { id: number; archivedAt?: Date | null }) {
+    return Boolean(lessonArchivedAt(lesson));
+  }
+  async function changeLessonArchived(lesson: { id: number; title: string; archivedAt?: Date | null }) {
+    if (lessonArchiveBusy.current || setLessonArchived.isPending) return;
+    const archived = !isLessonArchived(lesson);
+    const message = archived
+      ? `Hide ${lesson.title} from agents? Prior answers, grades and progress remain in staff history. This lesson will no longer be required in the current course.`
+      : `Restore ${lesson.title} for agents? This lesson may become required again in the current course. Prior answers, grades and progress remain in staff history; historic evidence will not be reset.`;
+    if (!window.confirm(message)) return;
+    lessonArchiveBusy.current = true;
+    setLessonArchivePending(true);
+    try {
+      let result;
+      try {
+        result = await setLessonArchived.mutateAsync({ lessonId: lesson.id, archived });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Lesson visibility could not be saved. Please try again.");
+        return;
+      }
+      // Only confirmed server state overrides the editor, including when refetch fails.
+      setLessonArchiveOverrides(current => ({ ...current, [result.lessonId]: result.archivedAt }));
+      const savedMessage = result.archivedAt ? "Lesson hidden from agents" : "Lesson restored for agents";
+      const refreshes = await Promise.allSettled([
+        async () => utils.academy.invalidate(undefined, undefined, { throwOnError: true }),
+        async () => utils.crm.agentCrm.getOverview.invalidate(undefined, undefined, { throwOnError: true }),
+        async () => utils.crm.agentCrm.getCallSnapshot.invalidate(undefined, undefined, { throwOnError: true }),
+        async () => utils.crm.agentCrm.list.invalidate(undefined, undefined, { throwOnError: true }),
+      ].map(refresh => refresh()));
+      if (refreshes[0].status === "fulfilled") {
+        setLessonArchiveOverrides(current => {
+          const next = { ...current };
+          delete next[result.lessonId];
+          return next;
+        });
+      }
+      if (refreshes.some(refresh => refresh.status === "rejected")) {
+        toast.warning(`${savedMessage} — saved, but some views could not refresh. Refresh the page to update them; do not repeat the change. Prior answers, grades and progress remain in staff history.`);
+      } else {
+        toast.success(`${savedMessage}. Prior answers, grades and progress remain in staff history.`);
+      }
+    } finally {
+      lessonArchiveBusy.current = false;
+      setLessonArchivePending(false);
+    }
+  }
   const saveEmailAlert = trpc.academy.admin.saveEmailAlert.useMutation({
     onSuccess: () => {
       toast.success("Academy email alert saved");
@@ -831,7 +893,7 @@ export default function AdminAcademy() {
                     <Label>{alertRequiresKnowledgeCheckScope ? "Specific knowledge check" : "Scope"}</Label>
                     {alertRequiresKnowledgeCheckScope ? <select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm" value={alertDraft.lessonId} onChange={event => setAlertDraft(current => ({ ...current, lessonId: event.target.value }))}>
                       <option value="">Choose a knowledge check…</option>
-                      {editor.modules.flatMap(module => module.lessons.filter(lesson => lesson.requiresAssessment && (lesson.assessmentMode ?? "quiz") === "quiz").map(lesson => <option key={lesson.id} value={lesson.id}>{module.title} — {lesson.title}</option>))}
+                      {editor.modules.flatMap(module => module.lessons.filter(lesson => !isLessonArchived(lesson) && lesson.requiresAssessment && (lesson.assessmentMode ?? "quiz") === "quiz").map(lesson => <option key={lesson.id} value={lesson.id}>{module.title} — {lesson.title}</option>))}
                     </select> : <select className="mt-1.5 h-10 w-full rounded-md border bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60" value={alertAllowsModuleScope ? alertDraft.moduleId : ""} disabled={!alertAllowsModuleScope} onChange={event => setAlertDraft(current => ({ ...current, moduleId: event.target.value }))}>
                       <option value="">Whole course</option>
                       {editor.modules.map(module => <option key={module.id} value={module.id}>{module.title}</option>)}
@@ -899,6 +961,10 @@ export default function AdminAcademy() {
                     agents until the course is published.
                   </p>
                 </div>
+                <label className="mt-3 inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox checked={showArchivedLessons} onCheckedChange={checked => setShowArchivedLessons(checked === true)} />
+                  Show archived lessons
+                </label>
                 <div className="mt-5 rounded-xl border bg-muted/20 p-4">
                   <p className="text-sm font-semibold">Add module</p>
                   <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.4fr_180px_auto]">
@@ -942,9 +1008,10 @@ export default function AdminAcademy() {
                 <div className="mt-5 space-y-4">
                   {editor.modules.map((module, index) => {
                     const isOpen = openModuleId === module.id;
-                    const lessonCountLabel = `${module.lessons.length} lesson${module.lessons.length === 1 ? "" : "s"}`;
+                    const activeLessons = module.lessons.filter(lesson => !isLessonArchived(lesson));
+                    const lessonCountLabel = `${activeLessons.length} lesson${activeLessons.length === 1 ? "" : "s"}`;
                     const videoLessonCount = module.lessons.filter(
-                      (lesson: any) => Boolean(lesson.videoUrl?.trim())
+                      (lesson: any) => !isLessonArchived(lesson) && Boolean(lesson.videoUrl?.trim())
                     ).length;
                     return (
                       <section
@@ -1095,20 +1162,25 @@ export default function AdminAcademy() {
                               </div>
                             )}
                             <div className="divide-y">
-                              {module.lessons.map((lesson, lessonIndex) => (
+                              {module.lessons.map((lesson, lessonIndex) => (showArchivedLessons || !isLessonArchived(lesson)) && (
                                 <div
                                   key={lesson.id}
                                   className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center"
                                 >
                                   <div className="flex min-w-0 flex-1 gap-3">
                                     <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-card text-xs font-bold shadow-sm">
-                                      {lessonIndex + 1}
+                                      {isLessonArchived(lesson) ? "—" : activeLessons.findIndex(active => active.id === lesson.id) + 1}
                                     </span>
                                     <div className="min-w-0">
                                       <div className="flex flex-wrap items-center gap-2">
                                         <p className="font-medium">
                                           {lesson.title}
                                         </p>
+                                        {isLessonArchived(lesson) && (
+                                          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground" title={`Archived ${formatDate(lessonArchivedAt(lesson))}`}>
+                                            Archived · Hidden from agents
+                                          </span>
+                                        )}
                                         {lesson.videoUrl?.trim() && (
                                           <span
                                             className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-800"
@@ -1124,7 +1196,9 @@ export default function AdminAcademy() {
                                       </div>
                                       <p className="mt-0.5 text-xs text-muted-foreground">
                                         {lesson.estimatedMinutes} min ·{" "}
-                                        {lesson.isRequired
+                                        {isLessonArchived(lesson)
+                                          ? "Not required while archived"
+                                          : lesson.isRequired
                                           ? "Required"
                                           : "Optional"}
                                         {lesson.requiresAcknowledgement
@@ -1140,6 +1214,7 @@ export default function AdminAcademy() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
+                                      title={`Move ${lesson.title} up`}
                                       disabled={!lessonIndex}
                                       onClick={() =>
                                         moveLesson(module, lesson.id, -1)
@@ -1150,6 +1225,7 @@ export default function AdminAcademy() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
+                                      title={`Move ${lesson.title} down`}
                                       disabled={
                                         lessonIndex ===
                                         module.lessons.length - 1
@@ -1172,8 +1248,20 @@ export default function AdminAcademy() {
                                     </Button>
                                     <Button
                                       variant="ghost"
+                                      size="sm"
+                                      title={isLessonArchived(lesson) ? `Restore ${lesson.title} for agents` : `Archive ${lesson.title} — hide from agents, retain staff history`}
+                                      disabled={lessonArchivePending || setLessonArchived.isPending || deleteLesson.isPending}
+                                      onClick={() => void changeLessonArchived(lesson)}
+                                    >
+                                      {isLessonArchived(lesson) ? <RefreshCw className="mr-1" size={15} aria-hidden="true" /> : <Archive className="mr-1" size={15} aria-hidden="true" />}
+                                      {isLessonArchived(lesson) ? "Restore" : "Archive"}
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
                                       size="icon"
                                       className="text-destructive"
+                                      title={`Delete ${lesson.title} permanently`}
+                                      disabled={lessonArchivePending || deleteLesson.isPending}
                                       onClick={() =>
                                         window.confirm(
                                           `Delete ${lesson.title}?`
@@ -1188,9 +1276,9 @@ export default function AdminAcademy() {
                                   </div>
                                 </div>
                               ))}
-                              {!module.lessons.length && (
+                              {!(showArchivedLessons ? module.lessons.length : activeLessons.length) && (
                                 <div className="px-4 py-4 text-sm text-muted-foreground">
-                                  No lessons added yet.
+                                  {module.lessons.length ? 'No active lessons. Turn on “Show archived lessons” to manage hidden lessons.' : "No lessons added yet."}
                                 </div>
                               )}
                             </div>
@@ -3037,6 +3125,22 @@ export function LearnerManager({
                                               : ""}
                                           </span>
                                         </div>
+                                        {(attempt.submissionDownloadUrl || attempt.templateDownloadUrl) && (
+                                          <div className="mt-3 flex flex-wrap gap-2">
+                                            {attempt.submissionDownloadUrl && (
+                                              <a href={attempt.submissionDownloadUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-muted">
+                                                <Download size={14} aria-hidden="true" />
+                                                Submitted document{attempt.submissionFileName ? `: ${attempt.submissionFileName}` : ""}
+                                              </a>
+                                            )}
+                                            {attempt.templateDownloadUrl && (
+                                              <a href={attempt.templateDownloadUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-muted">
+                                                <Download size={14} aria-hidden="true" />
+                                                Original template{attempt.assessmentTemplateName ? `: ${attempt.assessmentTemplateName}` : ""}
+                                              </a>
+                                            )}
+                                          </div>
+                                        )}
                                         {attempt.graderFeedback && (
                                           <div className="mt-3 rounded-md border border-blue-200 bg-blue-50/60 p-3 text-sm">
                                             <p className="font-semibold text-blue-950">

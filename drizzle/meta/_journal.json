@@ -1247,6 +1247,13 @@
       "when": 1793878990243,
       "tag": "0177_nostalgic_onslaught",
       "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "5",
+      "when": 1794411844115,
+      "tag": "0178_tan_loners",
+      "breakpoints": true
     }
   ]
 }

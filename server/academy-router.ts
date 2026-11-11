@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
 import { getDb, getRawDbPool, createInAppNotification, getUpcomingAgentEvents } from "./db";
@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { assertNotSelfReview, getInstructorCourseIds, isFullAdmin, recordStaffOperation, requireInstructorCourse } from "./staff-access";
 import { academyPrivateAttachmentUrl, assertAcademyImageUrls, assertAcademyLessonFiles, assertInstructorModuleReleaseWeek, rememberAcademyUpload, requireAcademyAttempt, requireAcademyLesson, requireAcademyModule, requireAcademyUploadCourse, teachingAttempt } from "./academy-staff-access";
 import { sanitiseInstructorLessonHtml } from "./academy-staff-html";
+import { setAcademyLessonArchived } from "./academy-lesson-archive";
 import {
   academyDocumentObjectKey,
   academyDocumentMimeTypes,
@@ -230,23 +231,25 @@ const legacyAcademyLessonColumns = {
   requiresAssessment: academyLessons.requiresAssessment,
   assessmentPassMark: academyLessons.assessmentPassMark,
   sortOrder: academyLessons.sortOrder,
+  archivedAt: academyLessons.archivedAt,
   createdAt: academyLessons.createdAt,
   updatedAt: academyLessons.updatedAt,
 };
 
 type AcademyLesson = typeof academyLessons.$inferSelect;
 
-async function getAcademyLessonsForModules(moduleIds: number[]): Promise<AcademyLesson[]> {
+async function getAcademyLessonsForModules(moduleIds: number[], opts: { includeArchived?: boolean } = {}): Promise<AcademyLesson[]> {
   if (!moduleIds.length) return [];
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const lessonFilter = and(inArray(academyLessons.moduleId, moduleIds), opts.includeArchived ? undefined : isNull(academyLessons.archivedAt));
   try {
-    return await db.select().from(academyLessons).where(inArray(academyLessons.moduleId, moduleIds))
+    return await db.select().from(academyLessons).where(lessonFilter)
       .orderBy(asc(academyLessons.sortOrder), asc(academyLessons.id));
   } catch (error) {
     if (!isMissingAcademyTranscriptColumn(error) && !isMissingAcademyDocumentAssessmentColumn(error)) throw error;
     const legacyLessons = await db.select(legacyAcademyLessonColumns).from(academyLessons)
-      .where(inArray(academyLessons.moduleId, moduleIds))
+      .where(lessonFilter)
       .orderBy(asc(academyLessons.sortOrder), asc(academyLessons.id));
     // Preserve every pre-existing lesson field. Only the optional private
     // transcript is absent while the additive Railway migration catches up.
@@ -387,13 +390,13 @@ async function addAudit(input: {
   } as any);
 }
 
-async function courseStructure(courseId: number) {
+async function courseStructure(courseId: number, opts: { includeArchived?: boolean } = {}) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
   const modules = await db.select().from(academyModules)
     .where(eq(academyModules.courseId, courseId)).orderBy(asc(academyModules.sortOrder), asc(academyModules.id));
   const moduleIds = modules.map((module) => module.id);
-  const rawLessons = await getAcademyLessonsForModules(moduleIds);
+  const rawLessons = await getAcademyLessonsForModules(moduleIds, opts);
   // The database lesson query is necessarily cross-module. Rebuild the flat
   // course path module first, then lesson order, so every learner and server
   // prerequisite gate shares one deterministic sequence.
@@ -1651,7 +1654,8 @@ export const academyRouter = router({
         const structure = await courseStructure(enrollment.courseId);
         const module = structure.modules.find((item) => item.id === lesson.moduleId);
         const moduleProgress = await db.select().from(academyLessonProgress).where(eq(academyLessonProgress.enrollmentId, enrollment.id));
-        const moduleComplete = !!module && module.lessons.filter((item) => item.isRequired).every((item) => moduleProgress.some((progress) => progress.lessonId === item.id && !!progress.completedAt));
+        const moduleRequiredLessons = module?.lessons.filter((item) => item.isRequired) ?? [];
+        const moduleComplete = moduleRequiredLessons.length > 0 && moduleRequiredLessons.every((item) => moduleProgress.some((progress) => progress.lessonId === item.id && !!progress.completedAt));
         if (module && moduleComplete) {
           const [course] = await db.select({ title: academyCourses.title }).from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
           if (course) void dispatchAcademyEmailAlerts({ eventType: "module_completed", eventKey: `module-completed-${module.id}`, enrollmentId: enrollment.id, courseId: enrollment.courseId, courseTitle: course.title, moduleId: module.id, moduleTitle: module.title, agentId: ctx.user.id, agentName: ctx.user.name, agentEmail: ctx.user.email }).catch((error) => console.error("[Academy] Module-completion alert dispatch failed:", error));
@@ -1972,13 +1976,14 @@ export const academyRouter = router({
         .from(academyAssessmentAttempts)
         .innerJoin(academyEnrollments, eq(academyEnrollments.id, academyAssessmentAttempts.enrollmentId))
         .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
-        .where(and(eq(academyAssessmentAttempts.id, input.attemptId), eq(academyEnrollments.agentId, ctx.user.id))).limit(1);
+        .innerJoin(academyModules, and(eq(academyModules.id, academyLessons.moduleId), eq(academyModules.courseId, academyEnrollments.courseId)))
+        .where(and(eq(academyAssessmentAttempts.id, input.attemptId), eq(academyEnrollments.agentId, ctx.user.id), isNull(academyLessons.archivedAt))).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment feedback not found" });
       if (row.attempt.status !== "feedback_pending") throw new TRPCError({ code: "BAD_REQUEST", message: "This feedback has already been acknowledged or is not ready yet" });
+      if (row.attempt.passed) await ensureSequentialAcademyLessonAccess(row.enrollment, row.lesson.id);
       const now = new Date();
       await db.update(academyAssessmentAttempts).set({ status: "feedback_acknowledged", feedbackAcknowledgedAt: now }).where(eq(academyAssessmentAttempts.id, row.attempt.id));
       if (row.attempt.passed) {
-        await ensureSequentialAcademyLessonAccess(row.enrollment, row.lesson.id);
         const [existing] = await db.select().from(academyLessonProgress).where(and(eq(academyLessonProgress.enrollmentId, row.enrollment.id), eq(academyLessonProgress.lessonId, row.lesson.id))).limit(1);
         if (existing) await db.update(academyLessonProgress).set({ completedAt: now, lastViewedAt: now, startedAt: existing.startedAt ?? now }).where(eq(academyLessonProgress.id, existing.id));
         else await db.insert(academyLessonProgress).values({ enrollmentId: row.enrollment.id, lessonId: row.lesson.id, startedAt: now, lastViewedAt: now, completedAt: now } as any);
@@ -2139,6 +2144,7 @@ export const academyRouter = router({
       const lessonIds = lessons.map((lesson) => lesson.id);
       const progress = enrollmentIds.length ? await db.select().from(academyLessonProgress).where(inArray(academyLessonProgress.enrollmentId, enrollmentIds)) : [];
       const attempts = enrollmentIds.length ? await db.select().from(academyAssessmentAttempts).where(inArray(academyAssessmentAttempts.enrollmentId, enrollmentIds)) : [];
+      const activeLessonIds = new Set(lessonIds);
       const attemptIds = attempts.map((attempt) => attempt.id);
       const responses = attemptIds.length ? await db.select().from(academyAssessmentResponses).where(inArray(academyAssessmentResponses.attemptId, attemptIds)) : [];
       const questions = lessonIds.length ? await db.select().from(academyQuestions).where(inArray(academyQuestions.lessonId, lessonIds)).orderBy(asc(academyQuestions.sortOrder), asc(academyQuestions.id)) : [];
@@ -2177,7 +2183,7 @@ export const academyRouter = router({
         const completion = summariseAcademyProgress(courseLessons.filter((lesson) => lesson.isRequired).map((lesson) => lesson.id), enrollmentProgress.filter((item) => item.completedAt).map((item) => item.lessonId));
         const activityDates = [
           ...enrollmentProgress.flatMap((item) => [item.lastActivityAt, item.lastViewedAt, item.startedAt]),
-          ...enrollmentAttempts.map((attempt) => attempt.takenAt),
+          ...attempts.filter((attempt) => attempt.enrollmentId === row.enrollment.id).map((attempt) => attempt.takenAt),
         ].filter((value): value is Date => value instanceof Date);
         const lastActivityAt = activityDates.length ? new Date(Math.max(...activityDates.map((value) => value.getTime()))) : null;
         const inactiveDays = lastActivityAt ? Math.floor((asOf.getTime() - lastActivityAt.getTime()) / 86_400_000) : null;
@@ -2224,7 +2230,7 @@ export const academyRouter = router({
           noRecordedActivity: inProgress.filter((item) => item.inactiveDays === null).length,
         },
         assessments: {
-          awaitingMarking: attempts.filter((attempt) => attempt.status === "awaiting_marking").length,
+          awaitingMarking: attempts.filter((attempt) => attempt.status === "awaiting_marking" && activeLessonIds.has(attempt.lessonId)).length,
           feedbackPending: actionableFeedback.length,
           feedbackAcknowledged: attempts.filter((attempt) => attempt.status === "feedback_acknowledged").length,
           supportLocks: assessmentSupportLocks.length,
@@ -2322,6 +2328,7 @@ export const academyRouter = router({
         .where(and(
           eq(academyAssessmentAttempts.status, "awaiting_marking"),
           eq(academyLessons.assessmentMode, "quiz"),
+          isNull(academyLessons.archivedAt),
           courseIds === null ? undefined : inArray(academyEnrollments.courseId, courseIds),
           courseIds === null ? undefined : ne(academyEnrollments.agentId, ctx.user.id),
         ))
@@ -2384,6 +2391,7 @@ export const academyRouter = router({
         .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
         .innerJoin(users, eq(users.id, academyEnrollments.agentId))
         .where(and(eq(academyAssessmentAttempts.status, "awaiting_marking"), eq(academyLessons.assessmentMode, "document_upload"),
+          isNull(academyLessons.archivedAt),
           courseIds === null ? undefined : inArray(academyEnrollments.courseId, courseIds),
           courseIds === null ? undefined : ne(academyEnrollments.agentId, ctx.user.id)))
         .orderBy(asc(academyAssessmentAttempts.takenAt));
@@ -2420,7 +2428,7 @@ export const academyRouter = router({
         .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
         .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
         .innerJoin(users, eq(users.id, academyEnrollments.agentId))
-        .where(eq(academyAssessmentAttempts.id, input.attemptId)).limit(1);
+        .where(and(eq(academyAssessmentAttempts.id, input.attemptId), isNull(academyLessons.archivedAt))).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment submission not found" });
       if (row.lesson.assessmentMode !== "quiz") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Document uploads must be reviewed in the document assessment queue" });
@@ -2522,7 +2530,7 @@ export const academyRouter = router({
         .innerJoin(academyModules, and(eq(academyModules.id, academyLessons.moduleId), eq(academyModules.courseId, academyEnrollments.courseId)))
         .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
         .innerJoin(users, eq(users.id, academyEnrollments.agentId))
-        .where(and(eq(academyAssessmentAttempts.id, input.attemptId), eq(academyEnrollments.id, scope.enrollmentId), eq(academyLessons.id, scope.lessonId), eq(academyEnrollments.courseId, scope.courseId), eq(academyEnrollments.agentId, scope.learnerId))).limit(1);
+        .where(and(eq(academyAssessmentAttempts.id, input.attemptId), eq(academyEnrollments.id, scope.enrollmentId), eq(academyLessons.id, scope.lessonId), eq(academyEnrollments.courseId, scope.courseId), eq(academyEnrollments.agentId, scope.learnerId), isNull(academyLessons.archivedAt))).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment submission not found" });
       if (row.lesson.assessmentMode !== "quiz") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Document uploads must be reviewed in the document assessment queue" });
@@ -2595,7 +2603,7 @@ export const academyRouter = router({
         .innerJoin(academyModules, and(eq(academyModules.id, academyLessons.moduleId), eq(academyModules.courseId, academyEnrollments.courseId)))
         .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
         .innerJoin(users, eq(users.id, academyEnrollments.agentId))
-        .where(and(eq(academyAssessmentAttempts.id, input.attemptId), eq(academyEnrollments.id, scope.enrollmentId), eq(academyLessons.id, scope.lessonId), eq(academyEnrollments.courseId, scope.courseId), eq(academyEnrollments.agentId, scope.learnerId))).limit(1);
+        .where(and(eq(academyAssessmentAttempts.id, input.attemptId), eq(academyEnrollments.id, scope.enrollmentId), eq(academyLessons.id, scope.lessonId), eq(academyEnrollments.courseId, scope.courseId), eq(academyEnrollments.agentId, scope.learnerId), isNull(academyLessons.archivedAt))).limit(1);
       if (!row || row.lesson.assessmentMode !== "document_upload" || !row.attempt.submissionFileKey) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Document assessment submission not found" });
       }
@@ -2648,7 +2656,8 @@ export const academyRouter = router({
         .innerJoin(academyLessons, eq(academyLessons.id, academyAssessmentAttempts.lessonId))
         .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
         .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
-        .innerJoin(users, eq(users.id, academyEnrollments.agentId));
+        .innerJoin(users, eq(users.id, academyEnrollments.agentId))
+        .where(isNull(academyLessons.archivedAt));
       const enrollmentIds = Array.from(new Set(rows.map((row) => row.enrollment.id)));
       const lessonIds = Array.from(new Set(rows.map((row) => row.lesson.id)));
       const attemptIds = rows.map((row) => row.attempt.id);
@@ -2695,7 +2704,7 @@ export const academyRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [enrollment] = await db.select().from(academyEnrollments).where(eq(academyEnrollments.id, input.enrollmentId)).limit(1);
-      const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(eq(academyLessons.id, input.lessonId)).limit(1);
+      const [lesson] = await db.select(legacyAcademyLessonColumns).from(academyLessons).where(and(eq(academyLessons.id, input.lessonId), isNull(academyLessons.archivedAt))).limit(1);
       const [question] = await db.select().from(academyQuestions).where(and(eq(academyQuestions.id, input.questionId), eq(academyQuestions.lessonId, input.lessonId))).limit(1);
       if (!enrollment || !lesson || !question) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment question not found" });
       const [module] = await db.select().from(academyModules).where(and(eq(academyModules.id, lesson.moduleId), eq(academyModules.courseId, enrollment.courseId))).limit(1);
@@ -2732,7 +2741,7 @@ export const academyRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, input.courseId)).limit(1);
       if (!course) throw new TRPCError({ code: "NOT_FOUND", message: "Course not found" });
-      return { course, ...(await courseStructure(course.id)) };
+      return { course, ...(await courseStructure(course.id, { includeArchived: true })) };
     }),
 
     saveCourse: instructorProcedure.input(courseInput).mutation(async ({ ctx, input }) => {
@@ -2992,6 +3001,9 @@ export const academyRouter = router({
       return { id };
     }),
 
+    setLessonArchived: adminProcedure.input(z.object({ lessonId: z.number().int().positive(), archived: z.boolean() })).mutation(({ ctx, input }) =>
+      setAcademyLessonArchived({ ...input, actorId: ctx.user.id })),
+
     deleteLesson: adminProcedure.input(z.object({ lessonId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -3001,7 +3013,7 @@ export const academyRouter = router({
       if (await hasAcademyLearnerEvidence([lesson.id])) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: "This lesson has learner progress or assessment evidence and cannot be deleted. Create a replacement lesson so existing learning and audit history stay accurate.",
+          message: "This lesson has learner progress or assessment evidence and cannot be deleted. Archive it instead to hide it while preserving learning and audit history.",
         });
       }
       await db.delete(academyQuestions).where(eq(academyQuestions.lessonId, lesson.id));
@@ -3383,7 +3395,7 @@ export const academyRouter = router({
             lastActivityAt,
             activeTimeSeconds,
             assessment: {
-              awaitingMarking: enrollmentAttempts.filter((item) => item.status === "awaiting_marking").length,
+              awaitingMarking: enrollmentAttempts.filter((item) => item.status === "awaiting_marking" && courseLessons.some((lesson) => lesson.id === item.lessonId)).length,
               feedbackPending: getActionableAcademyFeedbackAttempts({ attempts: enrollmentAttempts, lessons: courseLessons, progress: enrollmentProgress }).length,
             },
           };
@@ -3397,7 +3409,7 @@ export const academyRouter = router({
       };
     }),
 
-    learnerReview: adminProcedure.input(z.object({ enrollmentId: z.number().int().positive() })).query(async ({ input }) => {
+    learnerReview: adminProcedure.input(z.object({ enrollmentId: z.number().int().positive() })).query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [row] = await db.select({ enrollment: academyEnrollments, course: academyCourses, agent: users, profile: agentCrmProfiles })
@@ -3408,7 +3420,10 @@ export const academyRouter = router({
         .where(eq(academyEnrollments.id, input.enrollmentId)).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Academy enrolment not found" });
 
-      const structure = await courseStructure(row.course.id);
+      // Archived curriculum remains part of the staff evidence review, never
+      // part of the learner's current required pathway or percentage.
+      const structure = await courseStructure(row.course.id, { includeArchived: true });
+      const activeLessons = structure.lessons.filter((lesson) => lesson.archivedAt === null);
       const lessonIds = structure.lessons.map((lesson) => lesson.id);
       const progress = lessonIds.length ? await db.select().from(academyLessonProgress).where(eq(academyLessonProgress.enrollmentId, row.enrollment.id)) : [];
       const attempts = lessonIds.length ? await db.select().from(academyAssessmentAttempts)
@@ -3455,9 +3470,9 @@ export const academyRouter = router({
           }
         }
       }
-      const requiredLessonIds = structure.lessons.filter((lesson) => lesson.isRequired).map((lesson) => lesson.id);
+      const requiredLessonIds = activeLessons.filter((lesson) => lesson.isRequired).map((lesson) => lesson.id);
       const completion = summariseAcademyProgress(requiredLessonIds, progress.filter((item) => item.completedAt).map((item) => item.lessonId));
-      const currentRequiredLesson = structure.lessons.find((lesson) => lesson.isRequired && !progress.some((item) => item.lessonId === lesson.id && item.completedAt)) ?? null;
+      const currentRequiredLesson = activeLessons.find((lesson) => lesson.isRequired && !progress.some((item) => item.lessonId === lesson.id && item.completedAt)) ?? null;
 
       return {
         enrollment: row.enrollment,
@@ -3470,8 +3485,8 @@ export const academyRouter = router({
           id: module.id,
           title: module.title,
           completion: {
-            requiredLessons: module.lessons.filter((lesson) => lesson.isRequired).length,
-            completedRequiredLessons: module.lessons.filter((lesson) => lesson.isRequired && !!progress.find((item) => item.lessonId === lesson.id)?.completedAt).length,
+            requiredLessons: module.lessons.filter((lesson) => lesson.archivedAt === null && lesson.isRequired).length,
+            completedRequiredLessons: module.lessons.filter((lesson) => lesson.archivedAt === null && lesson.isRequired && !!progress.find((item) => item.lessonId === lesson.id)?.completedAt).length,
           },
           lessons: module.lessons.map((lesson) => {
             const lessonProgress = progress.find((item) => item.lessonId === lesson.id) ?? null;
@@ -3479,6 +3494,7 @@ export const academyRouter = router({
             return {
               id: lesson.id,
               title: lesson.title,
+              archivedAt: lesson.archivedAt,
               isRequired: lesson.isRequired,
               requiresAcknowledgement: lesson.requiresAcknowledgement,
               requiresAssessment: lesson.requiresAssessment,
@@ -3493,6 +3509,16 @@ export const academyRouter = router({
                 gradedAt: attempt.gradedAt,
                 feedbackAcknowledgedAt: attempt.feedbackAcknowledgedAt,
                 takenAt: attempt.takenAt,
+                submissionFileName: attempt.submissionFileName,
+                assessmentTemplateName: attempt.assessmentTemplateName,
+                // Historical evidence stays downloadable without returning an
+                // archived task to a live marking queue or exposing object keys.
+                submissionDownloadUrl: attempt.submissionFileKey && row.enrollment.agentId !== ctx.user.id
+                  ? createAcademyDocumentDownloadUrl({ kind: "submission", scope: "staff", userId: ctx.user.id, enrollmentId: row.enrollment.id, lessonId: lesson.id, attemptId: attempt.id }, ACADEMY_PORTAL_URL)
+                  : null,
+                templateDownloadUrl: attempt.assessmentTemplateKey && row.enrollment.agentId !== ctx.user.id
+                  ? createAcademyDocumentDownloadUrl({ kind: "template", scope: "staff", userId: ctx.user.id, enrollmentId: row.enrollment.id, lessonId: lesson.id, attemptId: attempt.id }, ACADEMY_PORTAL_URL)
+                  : null,
                 responses: responses.filter((response) => response.attemptId === attempt.id).map((response) => {
                   const question = lesson.questions.find((item) => item.id === response.questionId);
                   const options = asOptions(question?.answerOptions);

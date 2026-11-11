@@ -1660,6 +1660,8 @@ export const academyLessons = mysqlTable("academy_lessons", {
   assessmentTemplateSize: int("assessmentTemplateSize"),
   assessmentPassMark: int("assessmentPassMark").default(80).notNull(),
   sortOrder: int("sortOrder").default(0).notNull(),
+  // Hidden from current learner curriculum without deleting historic evidence.
+  archivedAt: timestamp("archivedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => [

@@ -1328,6 +1328,7 @@ export const crmRouter = router({
               CASE WHEN ${academyLessonProgress.completedAt} IS NULL
                 AND ${academyAssessmentAttempts.feedbackAcknowledgedAt} IS NULL
                 AND ${academyLessons.requiresAssessment} = 1
+                AND ${academyLessons.archivedAt} IS NULL
                 AND ${academyModules.courseId} = ${academyEnrollments.courseId}
                 THEN 1 ELSE 0 END
             ELSE 1 END)` })

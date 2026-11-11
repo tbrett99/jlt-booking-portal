@@ -96,7 +96,7 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
       }
       const [enrollmentRow] = await db.select({
         enrollment: { id: academyEnrollments.id, agentId: academyEnrollments.agentId, courseId: academyEnrollments.courseId },
-        lesson: { id: academyLessons.id, assessmentMode: academyLessons.assessmentMode },
+        lesson: { id: academyLessons.id, assessmentMode: academyLessons.assessmentMode, archivedAt: academyLessons.archivedAt },
       }).from(academyEnrollments)
         .innerJoin(academyLessons, eq(academyLessons.id, payload.lessonId))
         .innerJoin(academyModules, and(eq(academyModules.id, academyLessons.moduleId), eq(academyModules.courseId, academyEnrollments.courseId)))
@@ -106,6 +106,12 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
         return;
       }
       if (payload.scope === "agent") {
+        // Recheck visibility at download time; an already-minted token must
+        // not keep an archived lesson available to its learner.
+        if (enrollmentRow.lesson.archivedAt != null) {
+          res.status(404).end();
+          return;
+        }
         const [access] = await db.select({ status: academyAccess.status }).from(academyAccess)
           .where(eq(academyAccess.agentId, user.id)).limit(1);
         if (enrollmentRow.enrollment.agentId !== user.id || access?.status !== "active") {
@@ -196,11 +202,13 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
       const [upload] = await db.select({ courseId: staffAcademyUploads.courseId }).from(staffAcademyUploads)
         .where(and(eq(staffAcademyUploads.objectKey, key), eq(staffAcademyUploads.kind, "attachment"))).limit(1);
       if (!upload) { res.status(404).end(); return; }
-      const [lesson] = await db.select({ id: academyLessons.id, attachmentName: academyLessons.attachmentName }).from(academyLessons)
+      const lessons = await db.select({ id: academyLessons.id, attachmentName: academyLessons.attachmentName, archivedAt: academyLessons.archivedAt }).from(academyLessons)
         .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
-        .where(and(eq(academyLessons.attachmentKey, key), eq(academyModules.courseId, upload.courseId))).limit(1);
+        .where(and(eq(academyLessons.attachmentKey, key), eq(academyModules.courseId, upload.courseId)));
+      // A resource may legitimately be reused in another active lesson.
+      const lesson = lessons.find((item) => item.archivedAt == null) ?? lessons[0];
       // Keep an instructor's personal learner route independent of their grant.
-      const [learner] = lesson ? await db.select({ id: academyEnrollments.id }).from(academyEnrollments)
+      const [learner] = lesson && lesson.archivedAt == null ? await db.select({ id: academyEnrollments.id }).from(academyEnrollments)
         .innerJoin(academyAccess, and(eq(academyAccess.agentId, academyEnrollments.agentId), eq(academyAccess.status, "active")))
         .where(and(eq(academyEnrollments.agentId, user.id), eq(academyEnrollments.courseId, upload.courseId))).limit(1) : [];
       if (!learner) await requireInstructorCourse(user, upload.courseId);

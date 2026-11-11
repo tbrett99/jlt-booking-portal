@@ -23,6 +23,8 @@ export function academyMockDb(initial: Record<string, any[]>) {
       const op = chunks[at + 1]?.value?.join("").trim();
       const left = value(columns[0], bindings);
       const right = value(chunks[at + 2], bindings);
+      // Omitted nullable fields in older synthetic fixtures represent SQL NULL.
+      if (op === "is null") return left === null || left === undefined;
       if (op === "=") return left === right;
       if (op === "<>") return left !== right;
       if (op === "in") return right.includes(left);

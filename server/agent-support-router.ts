@@ -184,7 +184,7 @@ export async function loadAdminPilotSupportSources(): Promise<AgentSupportSource
     }).from(academyLessons)
       .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
       .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
-      .where(eq(academyCourses.status, "published")),
+      .where(and(eq(academyCourses.status, "published"), isNull(academyLessons.archivedAt))),
   ]);
 
   const articleSources: AgentSupportSource[] = articles.map((article) => ({
