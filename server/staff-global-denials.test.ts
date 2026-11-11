@@ -51,6 +51,7 @@ beforeEach(() => {
 const denied: [string, (c: ReturnType<typeof caller>) => Promise<unknown>][] = [
   ["CRM agent profile", c => c.crm.agentCrm.get({ userId: 99 })],
   ["Membership overview", c => c.crm.agentCrm.getMembershipsOverview()],
+  ["Commission workload forecast", c => c.commissionDue.forecast({ startDate: "2026-11-11", endDate: "2027-02-07", groupBy: "week" })],
   [
     "GoCardless mandate administration",
     c => c.gocardless.adminGetDdStatus({ userId: 99 }),

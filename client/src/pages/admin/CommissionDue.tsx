@@ -307,11 +307,16 @@ export default function CommissionDue() {
 
   return (
     <div className="p-6 space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Commission Due</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Bookings where the final supplier payment date has passed and commission is ready to be reviewed
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Commission Due</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Bookings where the final supplier payment date has passed and commission is ready to be reviewed
+          </p>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/commission-forecast"><CalendarClock size={14} />Forecast</Link>
+        </Button>
       </div>
 
       {/* Filters */}

@@ -114,6 +114,7 @@ const AgentCalendar = lazy(() => import("./pages/AgentCalendar"));
 const Roadmap = lazy(() => import("./pages/Roadmap"));
 const AdminRoadmap = lazy(() => import("./pages/admin/AdminRoadmap"));
 const WeeklyDigestAdmin = lazy(() => import("./pages/community/WeeklyDigestAdmin"));
+const CommissionWorkloadForecast = lazy(() => import("./pages/admin/CommissionWorkloadForecast"));
 const SuperAdminDashboard = lazy(() => import("./pages/admin/SuperAdminDashboard"));
 const Competitions = lazy(() => import("./pages/Competitions"));
 const AdminCompetitions = lazy(() => import("./pages/admin/AdminCompetitions"));
@@ -457,6 +458,7 @@ export function AuthRouter() {
         <Route path="/refunds" component={AdminRefunds} />
         <Route path="/refunds/pipeline" component={AdminRefundKanban} />
         <Route path="/commission-due" component={CommissionDue} />
+        <Route path="/commission-forecast" component={CommissionWorkloadForecast} />
         <Route path="/commissions-admin" component={AdminCommissions} />
         <Route path="/remittance" component={RemittanceManagement} />
         <Route path="/flights" component={AdminFlightsPipeline} />

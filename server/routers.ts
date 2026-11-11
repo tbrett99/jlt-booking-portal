@@ -205,6 +205,9 @@ import {
   updateGcMandate,
 } from "./gocardless-db";
 
+import { getCommissionWorkloadForecast } from "./commission-workload-forecast-service";
+import { parseForecastCalendarDate } from "../shared/commission-workload-forecast";
+
 // ─── Role middleware ──────────────────────────────────────────────────────────
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -3214,6 +3217,26 @@ export const appRouter = router({
   }),
   // ── Commission Due ────────────────────────────────────────────────────────
   commissionDue: router({
+    forecast: adminProcedure
+      .input(z.object({
+        startDate: z.string().refine((value) => Boolean(parseForecastCalendarDate(value)), "Choose a valid start date"),
+        endDate: z.string().refine((value) => Boolean(parseForecastCalendarDate(value)), "Choose a valid end date"),
+        groupBy: z.enum(["week", "month"]),
+      }).refine((value) => {
+        const start = parseForecastCalendarDate(value.startDate);
+        const end = parseForecastCalendarDate(value.endDate);
+        return Boolean(start && end && end >= start && end.getTime() - start.getTime() < 730 * 86400000);
+      }, "Choose an ordered date range of up to 730 days"))
+      .query(async ({ input }) => {
+        try {
+          return await getCommissionWorkloadForecast(input);
+        } catch {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Commission forecast could not be loaded. No complete forecast is shown; please retry.",
+          });
+        }
+      }),
     list: adminProcedure.query(async () => {
       const dueBookings = await getCommissionDueBookings();
       const allUsers = await getAllUsers();

@@ -503,6 +503,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: false,
       items: [
         { label: "Commission Due", href: "/commission-due", icon: <AlertCircle size={16} /> },
+        { label: "Commission Forecast", href: "/commission-forecast", icon: <CalendarDays size={16} /> },
         { label: "Commission Management", href: "/commissions-admin", icon: <Sparkles size={16} /> },
         { label: "PTS Remittance", href: "/remittance", icon: <FileSpreadsheet size={16} /> },
       ],
