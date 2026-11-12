@@ -76,6 +76,7 @@ const AdminInboxAudit = lazy(() => import("./pages/admin/AdminInboxAudit"));
 const AgentEmailLog = lazy(() => import("./pages/admin/AgentEmailLog"));
 const AbandonedSignups = lazy(() => import("./pages/admin/AbandonedSignups"));
 const AdminTermsTracker = lazy(() => import("./pages/admin/AdminTermsTracker"));
+const TermsRevisionReview = lazy(() => import("./pages/admin/TermsRevisionReview"));
 const CrmPipeline = lazy(() => import("./pages/crm/CrmPipeline"));
 const CrmProspects = lazy(() => import("./pages/crm/CrmProspects"));
 const ProspectDetail = lazy(() => import("./pages/crm/ProspectDetail"));
@@ -483,6 +484,7 @@ export function AuthRouter() {
         <Route path="/admin/api-keys" component={AdminApiKeys} />
         <Route path="/admin/oauth-clients" component={AdminOAuthClients} />
         <Route path="/admin/terms-tracker" component={AdminTermsTracker} />
+        {isAdminUser && <Route path="/admin/terms-review" component={TermsRevisionReview} />}
         {/* CRM Routes */}
         <Route path="/crm/pipeline" component={CrmPipeline} />
         <Route path="/crm/prospects" component={CrmProspects} />

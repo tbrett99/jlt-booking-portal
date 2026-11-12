@@ -13,6 +13,7 @@ import {
 import {
   CheckCircle2, Clock, Send, XCircle, Download, FileSignature, Search, AlertTriangle, ScrollText, Printer,
 } from "lucide-react";
+import { Link } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -263,6 +264,9 @@ export default function AdminTermsTracker() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/admin/terms-review">Terms revision review</Link>
+          </Button>
           {data?.activeVersion && (
             <Button
               variant="outline"

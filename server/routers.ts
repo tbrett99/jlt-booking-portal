@@ -182,6 +182,7 @@ import { membershipPaymentsRouter } from "./membership-payment-issues-router";
 import { agentMergeRouter } from "./agent-merge-router";
 import { staffAccessRouter } from "./staff-access-router";
 import { myAgreementsRouter } from "./my-agreements-router";
+import { termsReviewRouter } from "./terms-review-router";
 import {
   createBillingRequest,
   createBillingRequestFlow,
@@ -508,6 +509,7 @@ export const appRouter = router({
   agentMerge: agentMergeRouter,
   staffAccess: staffAccessRouter,
   myAgreements: myAgreementsRouter,
+  termsReview: termsReviewRouter,
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   auth: router({
