@@ -330,9 +330,10 @@ describe("staged terms review: independent exact brief wording", () => {
 });
 
 const changedSections = new Set([
-  1, 2, 6, 11, 15, 16, 21, 26, 30, 34, 42, 43, 44,
+  1, 2, 3, 6, 10, 11, 15, 16, 21, 26, 30, 34, 42, 43, 44,
 ]);
 const replacedPrefixes: Record<number, string[]> = {
+  3: ["3.4"],
   6: ["6.2", "6.4", "6.7"],
   11: ["11.4"],
   16: [
@@ -442,9 +443,9 @@ describe("staged terms review: complete unaffected baseline retention", () => {
     );
     expect(term(49)).toEqual(baseTerm(49));
   });
-  it("retains existing h3 anchors outside rewritten Section 15", () => {
+  it("retains existing h3 anchors outside rewritten Sections 10 and 15", () => {
     for (const [index, section] of FULL_TERMS_SECTIONS.entries()) {
-      if (index + 1 === 15) continue;
+      if (index + 1 === 10 || index + 1 === 15) continue;
       for (const anchor of section.content.match(/<h3\b[^>]*>/g) ?? [])
         expect(term(index + 1).content).toContain(anchor);
     }
@@ -499,7 +500,7 @@ describe("staged terms review: complete unaffected baseline retention", () => {
       )
     ).toContain("https://hub.thejltgroup.co.uk/bookingterms");
   });
-  it("preserves compliance text until approval, not a fabricated CAA Schedule", () => {
+  it("preserves other compliance proposals while replacing the old Section 10 summary", () => {
     const oldIntroduction = plain(clauseParagraph(baseTerm(1).content, "1.1"));
     const entityAndMembership = oldIntroduction.slice(
       0,
@@ -514,7 +515,12 @@ describe("staged terms review: complete unaffected baseline retention", () => {
     expect(term(1).content).toContain(
       clauseParagraph(baseTerm(1).content, "1.2")
     );
-    expect(term(10)).toEqual(baseTerm(10));
+    expect(term(10)).not.toEqual(baseTerm(10));
+    for (const p of paragraphs(baseTerm(10).content).slice(-4))
+      expect(plain(term(10).content)).not.toContain(plain(p));
+    expect(makeTermsReviewDraft().unchangedComplianceReferences).not.toContain(
+      "10"
+    );
     for (const clause of ["6.8", "6.9"])
       expect(term(6).content).toContain(
         clauseParagraph(baseTerm(6).content, clause)
@@ -528,7 +534,6 @@ describe("staged terms review: complete unaffected baseline retention", () => {
     );
     expect(appendix("H").content).toContain(baseAppendix("H").content);
     for (const reference of [
-      "10",
       "6.8",
       "6.9",
       "Appendix H",
@@ -694,7 +699,6 @@ describe("staged terms review: semantic removals, approvals and isolation", () =
     for (const required of [
       /CAA|ATOL/i,
       /10A/,
-      /10B/,
       /calculation/i,
       /voucher/i,
       /covenant|start date/i,

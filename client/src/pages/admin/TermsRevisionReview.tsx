@@ -97,7 +97,7 @@ function complianceNote(tab: ReviewTab, title: string): string | null {
     return "Appendix D item 2 contains proposed ATOL Certificate wording, not an approved compliance update. It remains subject to the CAA/compliance approval workstream before publication.";
   }
   if (tab === "terms" && number === "10") {
-    return "Section 10 has not been replaced. The complete CAA Schedule, applicable Agency Term 10A or 10B and agreement details remain pending compliance/legal approval. This retained baseline text is not confirmation of CAA compliance.";
+    return "Section 10 contains the complete current CAA Schedule from ORS3 version 19, with Agency Term 10A only. JLT does not permit sub-agents. The regulator's agreement-party, principal ATOL-holder/number and date placeholders must be completed against the actual contracting structure. Duo/Trio partners are not automatically separate agencies. This draft is not certification of JLT's legal/protection arrangements.";
   }
   if (tab === "terms" && number === "6") {
     return "Clauses 6.8 and 6.9 retain their baseline compliance wording; approved replacement wording is still required where needed.";
@@ -212,7 +212,9 @@ function ReviewSections({
                             (tab === "appendices" &&
                               /^Appendix D:/.test(section.title))
                               ? "Proposed compliance wording — not approved"
-                              : "Contains unchanged compliance wording — review required"}
+                              : tab === "terms" && /^10\./.test(section.title)
+                                ? "Full CAA Schedule with 10A — actual-party details require review"
+                                : "Contains unchanged compliance wording — review required"}
                           </span>
                         )}
                       </span>
@@ -367,9 +369,23 @@ function DraftContent({ draft }: { draft: TermsReviewDraft }) {
           Unchanged compliance wording — approval still required
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Section 10 has not been replaced with the complete CAA Schedule. Its
-          replacement and related compliance wording remain pending; retained
-          text is not an approved compliance update.
+          Section 10 now contains the full current CAA Schedule with 10A only.
+          The related descriptions below remain unchanged pending review against
+          the actual booking and protection arrangements. Retaining this wording
+          does not certify it as compliant.
+        </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Official source:{" "}
+          <a
+            href="https://www.caa.co.uk/publication/download/30069"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline"
+          >
+            CAA ORS3 version 19 — 2 November 2026
+          </a>
+          . The Agency Term 11 variation effective 1 April 2027 is not applied
+          early.
         </p>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
           {draft.unchangedComplianceReferences.map(reference => (

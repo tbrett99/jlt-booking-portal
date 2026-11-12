@@ -104,8 +104,16 @@ const changes: TermsReviewChange[] = [
       "Replaces only the opening sentence and preserves its corrective measures, existing 34.1–34.2 and Code of Conduct 8.2. Routine marketing materials do not require prior submission for approval.",
   },
   {
+    id: "sub-agents-and-duo-trio",
+    title: "No sub-agents; approved Duo/Trio business-partner arrangements",
+    references: ["3.4", "6.3", "10: Agency Term 10A"],
+    summary:
+      "JLT selected Agency Term 10A on 12 November 2026. The exact no-sub-agent sentence is added to clause 3.4 without removing its written-consent rule. Clause 6.3 gains the supplied Duo/Trio clarification: approved partners may work within the same business, not appoint a sub-agent network. Existing £150 fees, 47% membership uplift and payment/liability responsibility remain unchanged. The actual contracting business and participants must be identified according to their legal structure; sharing an account does not automatically require separate agency agreements.",
+  },
+  {
     id: "compliance-proposals",
-    title: "CAA/ATOL compliance workstream — not yet complete",
+    title:
+      "Full current CAA Schedule with 10A and related compliance proposals",
     references: [
       "1.1 financial-protection sentences",
       "10",
@@ -116,23 +124,27 @@ const changes: TermsReviewChange[] = [
       "Code of Conduct 5.2",
     ],
     summary:
-      "Stages the supplied qualified financial-protection proposal and payment-triggered certificate wording for sign-off. Section 10 remains the old abbreviated text, explicitly pending the approved complete mandatory schedule and 10A/10B selection. Related fee/documentation descriptions are preserved pending approved replacement wording, not silently certified or rewritten.",
+      "Section 10 replaces the old abbreviated text with the complete applicable Schedule from CAA ORS3 version 19, published 2 November 2026: agreement header, definitions, duration, scope, priority and Agency Terms 1–13 with 10A only. Regulator wording is retained unchanged; the Agency Term 11 variation effective 1 April 2027 is not applied early. Actual agreement-party/ATOL-number/date placeholders are retained for completion against JLT's arrangements. The supplied financial-protection and certificate proposals remain subject to review; related fee/documentation descriptions are preserved pending approved wording, not silently certified or rewritten.",
   },
 ];
 
 const approvals: TermsReviewApproval[] = [
   {
-    id: "caa-schedule",
-    title: "Complete applicable CAA schedule and Agency Term 10A or 10B",
-    references: ["10", "1.1", "Appendix D item 2"],
+    id: "contracting-parties",
+    title:
+      "Actual contracting-party, Duo/Trio and principal ATOL-holder details",
+    references: ["3.4", "6.3", "10: mandatory agreement header"],
     status: "pending",
     details:
-      "Compliance lead or UK travel-law solicitor must supply or approve the complete applicable ORS3 Section 1.4 schedule, identify exactly one of 10A/10B, and confirm the ATOL holder/Agent names and agreement date. Use provisions effective for that date; do not prematurely apply the 1 April 2027 changes. Section 10 is deliberately unchanged in this draft. The supplied financial-protection and certificate proposals are not certified compliant.",
+      "The full current official CAA Schedule and JLT's confirmed 10A choice are now included. JLT's travel-law solicitor must check the actual contracting format: identify the contracting business, partners/authorised participants according to its legal structure, the principal ATOL holder and number, and the agreement date. The regulator's header placeholders are retained rather than inventing these facts. Do not automatically treat each Duo/Trio partner as a separate independent agency or require separate agreements solely because partners share an account. This template does not certify JLT's actual legal/protection arrangements.",
   },
   {
     id: "related-compliance",
-    title: "Related booking-fee, card-cost and protection descriptions",
+    title:
+      "Financial-protection, certificate, booking-fee and card-cost descriptions",
     references: [
+      "1.1 financial-protection proposal",
+      "Appendix D item 2 certificate proposal",
       "6.8",
       "6.9",
       "Appendix H",
@@ -141,7 +153,7 @@ const approvals: TermsReviewApproval[] = [
     ],
     status: "pending",
     details:
-      "Obtain sign-off against actual booking and protection arrangements, including required disclosure of separately charged booking fees and protected/unprotected money. These descriptions remain unchanged except the separately instructed Appendix H no-double-recovery addition. No blanket replacement or unrestricted protection guarantee is approved by this preview.",
+      "The supplied clause 1.1 financial-protection and Appendix D item 2 ATOL Certificate proposals remain pending review against the actual booking, principal ATOL-holder and protection arrangements. Obtain sign-off on required disclosure of separately charged booking fees and protected/unprotected money. Related 6.8/6.9, Appendix H/I and Code of Conduct 5.2 descriptions remain unchanged except the separately instructed Appendix H no-double-recovery addition. The completed 10A Schedule does not itself approve an unrestricted financial-protection guarantee or certify those separate descriptions.",
   },
   {
     id: "margin-calculation",
@@ -274,7 +286,6 @@ export function makeTermsReviewDraft(): TermsReviewDraft {
       references: [...approval.references],
     })),
     unchangedComplianceReferences: [
-      "10",
       "6.8",
       "6.9",
       "Appendix H existing fee descriptions",
