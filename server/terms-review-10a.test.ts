@@ -6,7 +6,7 @@ import {
   FULL_TERMS_SECTIONS,
   CODE_OF_CONDUCT_SECTIONS,
   APPENDIX_SECTIONS,
-} from "../client/src/pages/policyData";
+} from "../shared/policyDataMay2026";
 import type { TrpcContext } from "./_core/context";
 
 const safety = vi.hoisted(() => ({
@@ -324,10 +324,10 @@ describe("10A-only changes: exact additions and preserved prior proposals", () =
       /each (?:Duo|Trio|participating|approved) partner must (?:enter|sign).*separate (?:independent )?agency agreement/i
     );
   });
-  it("never changes the published source bytes or the independently recorded baseline array SHA", () => {
+  it("preserves historical May source bytes and the independently recorded baseline array SHA", () => {
     expect(
       sha(
-        readFileSync(resolve(process.cwd(), "client/src/pages/policyData.ts"))
+        readFileSync(resolve(process.cwd(), "shared/policyDataMay2026.ts"))
       )
     ).toBe("e2a8010caadf02b1cf5702cde88ddfbb55b3b19226cdd689cf34e60d8388c8e4");
     expect(
@@ -385,11 +385,11 @@ describe("10A review API remains strictly read-only and isolated", () => {
     expect(procedures.draft._def.type).toBe("query");
   });
   it.each(["admin", "super_admin"])(
-    "allows only active %s to read the unpublished complete 10A Schedule",
+    "allows only active %s to read the archived complete 10A Schedule",
     async role => {
       const result = await caller(role).draft(undefined);
       expect(result).toEqual(makeTermsReviewDraft());
-      expect(result.status).toBe("draft_not_published");
+      expect(result.status).toBe("archived_proposal");
       expect(result.publicationDate).toBeNull();
       expect(result.effectiveDate).toBeNull();
       expect(plain(result.terms[9].content)).toContain(EXPECTED_TERMS["10A"]);

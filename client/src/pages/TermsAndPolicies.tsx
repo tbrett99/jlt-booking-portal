@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearch } from "wouter";
-import { policyTabFromSearch, type PolicyTab } from "@shared/policy-navigation";
+import { policyTabFromSearch, policyVersionFromSearch, type PolicyTab } from "@shared/policy-navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Accordion,
@@ -8,7 +8,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { FULL_TERMS_SECTIONS, CODE_OF_CONDUCT_SECTIONS, APPENDIX_SECTIONS } from "./policyData";
+import { FULL_TERMS_SECTIONS as CURRENT_TERMS, CODE_OF_CONDUCT_SECTIONS as CURRENT_CONDUCT, APPENDIX_SECTIONS as CURRENT_APPENDICES } from "./policyData";
+import { FULL_TERMS_SECTIONS as MAY_TERMS, CODE_OF_CONDUCT_SECTIONS as MAY_CONDUCT, APPENDIX_SECTIONS as MAY_APPENDICES } from "@shared/policyDataMay2026";
+import { CURRENT_POLICY_REVISION, MAY_2026_POLICY_BASELINE, PRIVACY_POLICY_LAST_UPDATED } from "@shared/policy-revision";
 
 // ─── Privacy Policy content (drafted for JLT Group) ──────────────────────────
 // Exported so the server-only support assistant can reference the exact policy
@@ -122,6 +124,10 @@ const PROSE_CLASS =
 
 export default function TermsAndPolicies() {
   const search = useSearch();
+  const isMayArchive = policyVersionFromSearch(search) === "2026-05";
+  const FULL_TERMS_SECTIONS = isMayArchive ? MAY_TERMS : CURRENT_TERMS;
+  const CODE_OF_CONDUCT_SECTIONS = isMayArchive ? MAY_CONDUCT : CURRENT_CONDUCT;
+  const APPENDIX_SECTIONS = isMayArchive ? MAY_APPENDICES : CURRENT_APPENDICES;
   const [activeTab, setActiveTab] = useState<PolicyTab>(() => policyTabFromSearch(search));
   useEffect(() => setActiveTab(policyTabFromSearch(search)), [search]);
   const [openTermsItems, setOpenTermsItems] = useState<string[]>([]);
@@ -152,9 +158,24 @@ export default function TermsAndPolicies() {
           <Link href="/my-agreements" className="mb-4 inline-block text-sm font-medium underline underline-offset-2">Back to Agreements &amp; Policies</Link>
           <h2 className="text-2xl font-bold">Agent Terms &amp; Policies</h2>
           <p className="text-muted-foreground text-sm mt-1">
-            These documents govern your membership with The JLT Group. Please read each section carefully.
+            Read these policy documents carefully. Publication does not automatically replace
+            an existing signed or accepted agreement. Reading this page does not record acceptance.
           </p>
-          <p className="text-xs text-muted-foreground mt-1">Terms &amp; Conditions last updated: <strong>May 2026</strong></p>
+          {isMayArchive ? (
+            <p className="text-xs text-muted-foreground mt-1" data-policy-revision={MAY_2026_POLICY_BASELINE.id}>
+              Archived Full Terms &amp; Conditions, Code of Conduct and Appendices:
+              {" "}<strong>{MAY_2026_POLICY_BASELINE.publicationLabel}</strong>.
+              {" "}<Link href={CURRENT_POLICY_REVISION.url} className="underline">Read current policy documents</Link>
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-1" data-policy-revision={CURRENT_POLICY_REVISION.id}>
+              Full Terms &amp; Conditions, Code of Conduct and Appendices published:
+              {" "}<strong><time dateTime={CURRENT_POLICY_REVISION.publicationDate}>{CURRENT_POLICY_REVISION.publicationLabel}</time></strong>
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground mt-1">
+            Privacy Policy last updated: <strong>{PRIVACY_POLICY_LAST_UPDATED}</strong>
+          </p>
         </div>
 
         <Tabs value={activeTab} onValueChange={value => setActiveTab(policyTabFromSearch(`section=${encodeURIComponent(value)}`))}>

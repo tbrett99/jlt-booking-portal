@@ -19,6 +19,7 @@ import {
 } from "../drizzle/schema";
 import { FULL_TERMS_SECTIONS, CODE_OF_CONDUCT_SECTIONS, APPENDIX_SECTIONS } from "../client/src/pages/policyData";
 import { PRIVACY_SECTIONS } from "../client/src/pages/TermsAndPolicies";
+import { CURRENT_POLICY_REVISION } from "../shared/policy-revision";
 import { AGENT_PORTAL_PROCEDURE_SOURCES } from "./agent-support-portal-procedures";
 import {
   buildAcademyAgentSupportText,
@@ -69,6 +70,8 @@ Only use the standard unavailable response when no supplied passage supports the
 
 Never provide or infer information about a specific booking, client, payment, commission claim, refund, reimbursement, cancellation case, personal financial record, email, attachment, PTS reference, supplier credential, private note, Community activity, Academy answer, marking guide, learner submission, audit information or any other private operational record. If a question identifies a particular booking, person, file, payment or case, explain that the assistant cannot inspect individual records and link only any relevant generic procedure. Do not take actions or promise that anything has been changed.
 
+Published policy passages describe the version available on the Portal. Do not infer that publication changed an individual's signed agreement, that a notice was delivered, or that the individual accepted a revision. Questions about which version binds an individual must be referred to JLT Support.
+
 Keep answers concise and practical. Cite every factual statement with one or more passage references in the exact form [S1], [S2].`;
 }
 
@@ -82,12 +85,12 @@ Do not invent steps, conditions or facts. If no passage directly supports an ans
 Cite every factual statement as [S1], [S2].`;
 }
 
-function policySources(): AgentSupportSource[] {
+export function policySources(): AgentSupportSource[] {
   const sections = [
-    ...FULL_TERMS_SECTIONS.map((section) => ({ title: `Terms & Conditions — ${section.title}`, content: section.content })),
-    ...CODE_OF_CONDUCT_SECTIONS.map((section) => ({ title: `Code of Conduct — ${section.title}`, content: section.content })),
-    ...APPENDIX_SECTIONS.map((section) => ({ title: `Terms appendix — ${section.title}`, content: section.content })),
-    ...PRIVACY_SECTIONS.map((section) => ({ title: `Privacy Policy — ${section.title}`, content: section.content })),
+    ...FULL_TERMS_SECTIONS.map((section) => ({ title: `Terms & Conditions (${CURRENT_POLICY_REVISION.publicationLabel}) — ${section.title}`, content: section.content, href: "/terms?version=2026-11&section=terms" })),
+    ...CODE_OF_CONDUCT_SECTIONS.map((section) => ({ title: `Code of Conduct (${CURRENT_POLICY_REVISION.publicationLabel}) — ${section.title}`, content: section.content, href: "/terms?version=2026-11&section=conduct" })),
+    ...APPENDIX_SECTIONS.map((section) => ({ title: `Terms appendix (${CURRENT_POLICY_REVISION.publicationLabel}) — ${section.title}`, content: section.content, href: "/terms?version=2026-11&section=appendices" })),
+    ...PRIVACY_SECTIONS.map((section) => ({ title: `Privacy Policy (May 2026) — ${section.title}`, content: section.content, href: "/terms?section=privacy" })),
   ];
 
   return sections.map((section, index) => ({
@@ -95,7 +98,7 @@ function policySources(): AgentSupportSource[] {
     kind: "policy",
     title: section.title,
     text: stripAgentSupportHtml(section.content),
-    href: "/terms",
+    href: section.href,
     category: "Agent Terms & Policies",
   }));
 }

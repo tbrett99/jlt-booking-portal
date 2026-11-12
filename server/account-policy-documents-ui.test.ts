@@ -3,8 +3,9 @@ import * as React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { POLICY_TABS, policyTabFromSearch, policyTabLink } from "../shared/policy-navigation";
+import { POLICY_TABS, policyTabFromSearch, policyTabLink, policyVersionFromSearch } from "../shared/policy-navigation";
 import { FULL_TERMS_SECTIONS, CODE_OF_CONDUCT_SECTIONS, APPENDIX_SECTIONS } from "../client/src/pages/policyData";
+import { FULL_TERMS_SECTIONS as MAY_TERMS, CODE_OF_CONDUCT_SECTIONS as MAY_CONDUCT, APPENDIX_SECTIONS as MAY_APPENDICES } from "../shared/policyDataMay2026";
 
 const mocks = vi.hoisted(() => ({
   search: "",
@@ -211,6 +212,48 @@ describe("read-only account policy documents", () => {
 });
 
 describe("real Radix policy tabs and accordions", () => {
+  it("labels the November terms, code and appendices publication separately from unchanged May privacy", async () => {
+    await render();
+    expect(normalize(container.querySelector('[data-policy-revision="2026-11-12-agent-terms"]')?.textContent ?? null)).toBe("Full Terms & Conditions, Code of Conduct and Appendices published: 12 November 2026");
+    expect(container.querySelector("time")?.getAttribute("datetime")).toBe("2026-11-12");
+    expect(normalize(container.textContent)).toContain("Privacy Policy last updated: May 2026");
+    expect(normalize(container.textContent)).toContain("Publication does not automatically replace an existing signed or accepted agreement");
+    expect(normalize(container.textContent)).not.toMatch(/These documents govern your membership|effective (?:on|from)/i);
+    expect(mocks.queries).toEqual([]);
+    expect(mocks.mutationHooks).toEqual([]);
+  });
+  it.each([["terms", MAY_TERMS], ["conduct", MAY_CONDUCT], ["appendices", MAY_APPENDICES], ["privacy", PRIVACY_SECTIONS]] as const)("renders exact May %s content through the pinned historical URL", async (tab, sections) => {
+    mocks.search = `version=2026-05&section=${tab}`;
+    await render();
+    const panel = activePanel(tab);
+    if (tab === "appendices") {
+      for (const trigger of accordionTriggers(panel)) await act(async () => trigger.click());
+    } else {
+      await clickControl(panel, "Expand all");
+    }
+    assertSourceSections(panel, sections);
+    expect(normalize(container.querySelector('[data-policy-revision="2026-05"]')?.textContent ?? null)).toContain("Archived Full Terms & Conditions, Code of Conduct and Appendices: May 2026");
+    expect(container.querySelector('[data-policy-revision="2026-11-12-agent-terms"]')).toBeNull();
+    expect(container.querySelector('a[href="/terms?version=2026-11"]')).toBeTruthy();
+    expect(normalize(container.textContent)).toContain("Privacy Policy last updated: May 2026");
+    expect(mocks.queries).toEqual([]);
+    expect(mocks.mutationHooks).toEqual([]);
+  });
+  it("uses only allowlisted archive versions and switches same-mounted content on version changes", async () => {
+    expect(policyVersionFromSearch("version=2026-05")).toBe("2026-05");
+    for (const search of ["", "version=2026-11", "version=unknown", "version=%2F2026-05", "version=2026-05-extra"]) {
+      expect(policyVersionFromSearch(search)).toBe("2026-11");
+    }
+    mocks.search = "version=2026-05&section=terms";
+    await render();
+    await clickControl(activePanel("terms"), "Expand all");
+    assertSourceSections(activePanel("terms"), MAY_TERMS);
+    mocks.search = "version=2026-11&section=terms";
+    await render();
+    assertSourceSections(activePanel("terms"), FULL_TERMS_SECTIONS);
+    expect(mocks.queries).toEqual([]);
+    expect(mocks.mutationHooks).toEqual([]);
+  });
   it("offers an internal return link to Agreements & Policies without accepting anything", async () => {
     await render();
     const link = container.querySelector('a[href="/my-agreements"]');

@@ -6,6 +6,7 @@ import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TermsReviewDraft } from "../shared/terms-review";
+import { CURRENT_POLICY_REVISION } from "../shared/policy-revision";
 
 const mocks = vi.hoisted(() => ({
   user: { id: 99, role: "admin", mustChangePassword: false } as {
@@ -122,11 +123,12 @@ function syntheticDraft(): TermsReviewDraft {
   }));
   return {
     id: "2026-11-12-clause-and-appendix-review",
-    status: "draft_not_published",
+    status: "archived_proposal",
     preparedDate: "2026-11-12",
     publishedBaseline: "May 2026",
     publicationDate: null,
     effectiveDate: null,
+    currentPublishedRevision: { ...CURRENT_POLICY_REVISION },
     baselineSha256: "a".repeat(64),
     draftSha256: "b".repeat(64),
     terms: Array.from({ length: 49 }, (_, index) => ({
@@ -294,14 +296,14 @@ afterEach(async () => {
 });
 
 describe("read-only terms revision review", () => {
-  it("identifies a prepared, unpublished draft separately from publication and effective dates", async () => {
+  it("identifies an archived proposal separately from current publication and agreement-specific effective dates", async () => {
     await render();
     expect(normalize(container.querySelector("h1")?.textContent)).toBe(
       "Terms revision review"
     );
     expect(
       normalize(container.querySelector("#draft-status-heading")?.textContent)
-    ).toBe("Draft — not published");
+    ).toBe("Archived proposal — May 2026 baseline");
     expect(container.querySelector("time")?.getAttribute("datetime")).toBe(
       "2026-11-12"
     );
@@ -315,13 +317,13 @@ describe("read-only terms revision review", () => {
       normalize(item.querySelector("dd")?.textContent),
     ]);
     expect(metadata).toEqual([
-      ["Draft prepared", "12 November 2026"],
-      ["Published baseline", "May 2026"],
-      ["Publication date", "Not set — approval required"],
-      ["Effective date", "Not set — approval required"],
+      ["Proposal prepared", "12 November 2026"],
+      ["Archived baseline", "May 2026"],
+      ["Current revision publication", "12 November 2026"],
+      ["Existing-agent effective date", "Not set by publication — agreement-specific"],
     ]);
     expect(normalize(container.textContent)).not.toMatch(
-      /last updated|published on|effective on/i
+      /live May 2026 terms.*unchanged|effective on/i
     );
     expect(normalize(container.textContent)).toContain(
       mocks.result.data!.notice
@@ -354,7 +356,7 @@ describe("read-only terms revision review", () => {
   it("shows every server approval as Pending and preserves supplied summaries and references", async () => {
     await render();
     expect(normalize(container.textContent)).toContain(
-      "All 4 approvals are Pending"
+      "All 4 historical review issues are Pending"
     );
     const approvals = container.querySelectorAll("[data-approval-id]");
     expect(approvals).toHaveLength(4);
@@ -585,7 +587,7 @@ describe("read-only terms revision review", () => {
     expect(normalize(prose.textContent)).toContain("Table content");
   });
 
-  it("refreshes through the same read query and labels navigation to the current published baseline", async () => {
+  it("refreshes only through a read query and links to current terms separately from the pinned May baseline", async () => {
     await render();
     expect(
       normalize(
@@ -594,7 +596,8 @@ describe("read-only terms revision review", () => {
     ).toBe("Back to terms tracker");
     expect(
       normalize(container.querySelector('a[href="/terms"]')?.textContent)
-    ).toBe("Published terms — May 2026");
+    ).toBe("Current terms — 12 November 2026");
+    expect(normalize(container.querySelector('a[href="/terms?version=2026-05"]')?.textContent)).toBe("Archived baseline — May 2026");
     const bookingTerms = container.querySelector(
       'a[href="https://hub.thejltgroup.co.uk/bookingterms"]'
     )!;
@@ -617,6 +620,7 @@ describe("read-only terms revision review", () => {
     "missing",
     "invalid-status",
     "invalid-dates",
+    "invalid-current-revision",
     "no-approvals",
     "approved-status",
   ])("fails closed for %s without a fallback preview", async state => {
@@ -628,6 +632,8 @@ describe("read-only terms revision review", () => {
       (mocks.result.data as any).status = "published";
     if (state === "invalid-dates")
       (mocks.result.data as any).publicationDate = "2026-11-12";
+    if (state === "invalid-current-revision")
+      (mocks.result.data!.currentPublishedRevision as any).publicationDate = "2026-05-01";
     if (state === "no-approvals") mocks.result.data!.approvals = [];
     if (state === "approved-status")
       (mocks.result.data!.approvals[0] as any).status = "approved";

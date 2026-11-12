@@ -5,6 +5,7 @@ import type {
   TermsReviewDraft,
   TermsReviewSection,
 } from "@shared/terms-review";
+import { CURRENT_POLICY_REVISION, MAY_2026_POLICY_BASELINE } from "@shared/policy-revision";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -264,7 +265,7 @@ function DraftContent({ draft }: { draft: TermsReviewDraft }) {
           id="draft-status-heading"
           className="text-lg font-semibold text-amber-950 dark:text-amber-100"
         >
-          Draft — not published
+          Archived proposal — May 2026 baseline
         </h2>
         <p className="mt-2 text-sm text-amber-900 dark:text-amber-200">
           {draft.notice}
@@ -275,34 +276,39 @@ function DraftContent({ draft }: { draft: TermsReviewDraft }) {
         </p>
         <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <dt className="text-xs text-muted-foreground">Draft prepared</dt>
+            <dt className="text-xs text-muted-foreground">Proposal prepared</dt>
             <dd className="mt-1 font-medium">
               <time dateTime={draft.preparedDate}>{preparedDate}</time>
             </dd>
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">
-              Published baseline
+              Archived baseline
             </dt>
             <dd className="mt-1 font-medium">{draft.publishedBaseline}</dd>
           </div>
           <div>
-            <dt className="text-xs text-muted-foreground">Publication date</dt>
-            <dd className="mt-1 font-medium">Not set — approval required</dd>
+            <dt className="text-xs text-muted-foreground">Current revision publication</dt>
+            <dd className="mt-1 font-medium">
+              <time dateTime={draft.currentPublishedRevision.publicationDate}>
+                {draft.currentPublishedRevision.publicationLabel}
+              </time>
+            </dd>
           </div>
           <div>
-            <dt className="text-xs text-muted-foreground">Effective date</dt>
-            <dd className="mt-1 font-medium">Not set — approval required</dd>
+            <dt className="text-xs text-muted-foreground">Existing-agent effective date</dt>
+            <dd className="mt-1 font-medium">Not set by publication — agreement-specific</dd>
           </div>
         </dl>
       </section>
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Approval checklist</CardTitle>
+          <CardTitle className="text-base">Historical legal and operational review checklist</CardTitle>
           <CardDescription>
-            All {draft.approvals.length} approvals are Pending. No approval is
-            recorded by opening this page.
+            All {draft.approvals.length} historical review issues are Pending.
+            Approval of the terms text does not record solicitor or compliance sign-off.
+            No approval is recorded by opening this page.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -463,9 +469,12 @@ export default function TermsRevisionReview() {
     trpc.termsReview.draft.useQuery(undefined, { refetchOnMount: "always" });
   // Never substitute published policies or a fabricated local draft on failure.
   const validDraft =
-    data?.status === "draft_not_published" &&
+    data?.status === "archived_proposal" &&
     data.publicationDate === null &&
     data.effectiveDate === null &&
+    data.currentPublishedRevision?.id === CURRENT_POLICY_REVISION.id &&
+    data.currentPublishedRevision.publicationDate === CURRENT_POLICY_REVISION.publicationDate &&
+    data.currentPublishedRevision.sourceSha256 === CURRENT_POLICY_REVISION.sourceSha256 &&
     data.approvals.length > 0 &&
     data.approvals.every(approval => approval.status === "pending");
   return (
@@ -484,7 +493,7 @@ export default function TermsRevisionReview() {
             Terms revision review
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Admin review of proposed clause and appendix changes.
+            Archived clause and appendix proposal, with separate current-revision metadata.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -498,7 +507,10 @@ export default function TermsRevisionReview() {
             </a>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link href="/terms">Published terms — May 2026</Link>
+            <Link href="/terms">Current terms — {CURRENT_POLICY_REVISION.publicationLabel}</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href={MAY_2026_POLICY_BASELINE.url}>Archived baseline — May 2026</Link>
           </Button>
           <Button
             type="button"

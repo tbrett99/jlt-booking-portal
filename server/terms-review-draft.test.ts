@@ -6,7 +6,8 @@ import {
   FULL_TERMS_SECTIONS,
   CODE_OF_CONDUCT_SECTIONS,
   APPENDIX_SECTIONS,
-} from "../client/src/pages/policyData";
+} from "../shared/policyDataMay2026";
+import { CURRENT_POLICY_REVISION } from "../shared/policy-revision";
 import { makeTermsReviewDraft } from "./terms-review-draft";
 
 // Independently captured from the user-supplied brief, not the draft renderer or its fixtures.
@@ -682,14 +683,16 @@ describe("staged terms review: semantic removals, approvals and isolation", () =
       "This Section creates no automatic commission forfeiture merely because a bank claim is made."
     );
   });
-  it("is unambiguously an unpublished staging version with no invented dates or approvals", () => {
+  it("archives the proposal separately from current publication with no invented effective date or legal sign-off", () => {
     const draft = makeTermsReviewDraft();
     expect(draft.id).toBe("2026-11-12-clause-and-appendix-review");
-    expect(draft.status).toBe("draft_not_published");
+    expect(draft.status).toBe("archived_proposal");
     expect(draft.preparedDate).toBe("2026-11-12");
     expect(draft.publishedBaseline).toBe("May 2026");
     expect(draft.publicationDate).toBeNull();
     expect(draft.effectiveDate).toBeNull();
+    expect(draft.currentPublishedRevision).toEqual(CURRENT_POLICY_REVISION);
+    expect(draft.currentPublishedRevision).not.toHaveProperty("effectiveDate");
     expect(draft.approvals.length).toBeGreaterThanOrEqual(7);
     for (const approval of draft.approvals)
       expect(approval.status).toBe("pending");
@@ -715,12 +718,14 @@ describe("staged terms review: semantic removals, approvals and isolation", () =
     expect(draft.changes.length).toBeGreaterThan(0);
     expect(draft.notice).toMatch(/draft|staging/i);
     expect(draft.notice).toMatch(/signed|acceptance/i);
-    expect(draft.notice).toMatch(/not.*publish|unpublished/i);
+    expect(draft.notice).toMatch(/not itself a published/i);
+    expect(draft.notice).not.toMatch(/live May 2026 terms.*unchanged/i);
+    expect(draft.notice).toMatch(/does not automatically vary/i);
   });
-  it("fingerprints the actual baseline arrays and never changes the published source file", () => {
+  it("fingerprints the archived baseline arrays and preserves the original May source bytes", () => {
     expect(hash(baseline)).toBe(BASELINE_ARRAY_SHA);
     const file = readFileSync(
-      resolve(process.cwd(), "client/src/pages/policyData.ts")
+      resolve(process.cwd(), "shared/policyDataMay2026.ts")
     );
     expect(createHash("sha256").update(file).digest("hex")).toBe(
       BASELINE_FILE_SHA
@@ -739,7 +744,7 @@ describe("staged terms review: semantic removals, approvals and isolation", () =
     expect(JSON.stringify(baseline)).toBe(initialBaseline);
     expect(hash(baseline)).toBe(BASELINE_ARRAY_SHA);
   });
-  it("fails closed if the in-memory public baseline changes, and restores the synthetic test mutation", () => {
+  it("fails closed if the in-memory historical baseline changes, and restores the synthetic test mutation", () => {
     const original = FULL_TERMS_SECTIONS[0].content;
     try {
       FULL_TERMS_SECTIONS[0].content = "synthetic baseline divergence";

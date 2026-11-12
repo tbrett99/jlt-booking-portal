@@ -56,11 +56,11 @@ describe("terms review draft router: protected, read-only and database-free", ()
     }
   );
   it.each(["admin", "super_admin"])(
-    "allows a verified active %s to read the same unpublished draft",
+    "allows a verified active %s to read the same archived proposal",
     async role => {
       const result = await caller(role).draft();
       expect(result).toEqual(makeTermsReviewDraft());
-      expect(result.status).toBe("draft_not_published");
+      expect(result.status).toBe("archived_proposal");
       expect(result.publicationDate).toBeNull();
       expect(result.effectiveDate).toBeNull();
       expect(mocks.getDb).not.toHaveBeenCalled();

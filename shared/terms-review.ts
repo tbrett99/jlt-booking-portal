@@ -1,3 +1,5 @@
+import type { CurrentPolicyRevision } from "./policy-revision";
+
 export interface TermsReviewSection {
   title: string;
   content: string;
@@ -20,11 +22,14 @@ export interface TermsReviewApproval {
 
 export interface TermsReviewDraft {
   id: "2026-11-12-clause-and-appendix-review";
-  status: "draft_not_published";
+  status: "archived_proposal";
   preparedDate: "2026-11-12";
+  /** Historical baseline, not a claim about today's published source. */
   publishedBaseline: "May 2026";
+  /** The archived proposal itself has no publication or effective date. */
   publicationDate: null;
   effectiveDate: null;
+  currentPublishedRevision: CurrentPolicyRevision;
   baselineSha256: string;
   draftSha256: string;
   terms: TermsReviewSection[];

@@ -85,7 +85,7 @@ async function render(Component: React.ComponentType = MyAgreements) {
 }
 const text = () => container.textContent ?? "";
 const normalize = (value: string | null) => (value ?? "").replace(/\s+/g, " ").trim();
-const currentTermsNotice = "Your membership is governed by the latest JLT Agent Terms & Conditions, issued in May 2026. You can read these below.";
+const currentTermsNotice = "The current JLT Agent Terms & Conditions are available to read below. Publication does not automatically replace your existing agreement, and reading these terms does not record acceptance.";
 function assertCurrentAgencyTermsNotice(scope: Element = container) {
   const paragraphs = Array.from(scope.querySelectorAll("p")).filter(paragraph => normalize(paragraph.textContent) === currentTermsNotice);
   expect(paragraphs).toHaveLength(1);
@@ -95,6 +95,7 @@ function assertCurrentAgencyTermsNotice(scope: Element = container) {
   expect(link!.getAttribute("href")).toBe("/terms?section=terms");
   expect(link!.getAttribute("data-slot")).toBe("button");
   expect(notice.querySelector("button, input, textarea, canvas, form, img")).toBeNull();
+  expect(normalize(notice.textContent)).not.toMatch(/membership is governed|issued in May/i);
   return notice;
 }
 function assertNoOldMissingRecordCopy(scope: Element = container) {

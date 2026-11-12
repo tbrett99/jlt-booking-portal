@@ -3,7 +3,8 @@ import {
   FULL_TERMS_SECTIONS,
   CODE_OF_CONDUCT_SECTIONS,
   APPENDIX_SECTIONS,
-} from "../client/src/pages/policyData";
+} from "../shared/policyDataMay2026";
+import { CURRENT_POLICY_REVISION } from "../shared/policy-revision";
 import type {
   TermsReviewDraft,
   TermsReviewSection,
@@ -234,7 +235,7 @@ const escapeTitle = (value: string) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-/** Read-only preview. Never consumed by signup, published terms, billing or RAG. */
+/** Archived read-only proposal. Never consumed by signup, billing or acceptance. */
 export function makeTermsReviewDraft(): TermsReviewDraft {
   const baseline = {
     FULL_TERMS_SECTIONS,
@@ -242,9 +243,9 @@ export function makeTermsReviewDraft(): TermsReviewDraft {
     APPENDIX_SECTIONS,
   };
   if (fingerprint(baseline) !== TERMS_REVIEW_BASELINE_SHA256) {
-    // Fail closed if published text changed since this proposal was prepared.
+    // Fail closed if the immutable historical source is unexpectedly altered.
     throw new Error(
-      "The published baseline has changed. Reconcile the draft before reviewing it."
+      "The archived May baseline has changed. Reconcile the draft before reviewing it."
     );
   }
   const terms = revisedSections("FULL_TERMS_SECTIONS", FULL_TERMS_SECTIONS);
@@ -267,11 +268,12 @@ export function makeTermsReviewDraft(): TermsReviewDraft {
   };
   return {
     id: "2026-11-12-clause-and-appendix-review",
-    status: "draft_not_published",
+    status: "archived_proposal",
     preparedDate: "2026-11-12",
     publishedBaseline: "May 2026",
     publicationDate: null,
     effectiveDate: null,
+    currentPublishedRevision: { ...CURRENT_POLICY_REVISION },
     baselineSha256: TERMS_REVIEW_BASELINE_SHA256,
     draftSha256: fingerprint({ terms, conduct, appendices }),
     terms,
@@ -293,6 +295,6 @@ export function makeTermsReviewDraft(): TermsReviewDraft {
       "Code of Conduct 5.2",
     ],
     notice:
-      "Draft for JLT review only — not published or effective. The live May 2026 terms and existing signing/acceptance records are unchanged. Outstanding compliance and approval points must be resolved before publication. Viewing this draft does not create acceptance, change an agreement or apply financial/account actions.",
+      "Archived proposal prepared against the May 2026 baseline. This draft is not itself a published or effective agreement. The separately approved current terms revision is dated 12 November 2026; its publication metadata does not automatically vary existing signed/accepted agreements or set an effective date for every Agent. The historical checklist below does not record solicitor or compliance sign-off. Outstanding legal and operational issues remain pending. Viewing this archive does not create acceptance, change an agreement, send notice or apply financial/account actions.",
   };
 }

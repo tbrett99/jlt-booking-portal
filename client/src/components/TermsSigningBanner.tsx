@@ -117,7 +117,7 @@ export function TermsSigningBanner() {
 
             <p className="text-sm text-muted-foreground">
               You can read the full updated terms in the{" "}
-              <a href="/terms" className="underline text-primary" target="_blank" rel="noopener noreferrer">
+              <a href="/terms?version=2026-05" className="underline text-primary" target="_blank" rel="noopener noreferrer">
                 Terms &amp; Policies
               </a>{" "}
               section of the portal.

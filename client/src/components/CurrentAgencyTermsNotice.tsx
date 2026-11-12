@@ -6,8 +6,9 @@ export default function CurrentAgencyTermsNotice() {
   return (
     <div className="space-y-3" aria-label="Current agency terms">
       <p className="text-sm text-muted-foreground">
-        Your membership is governed by the latest JLT Agent Terms &amp;
-        Conditions, issued in May 2026. You can read these below.
+        The current JLT Agent Terms &amp; Conditions are available to read below.
+        Publication does not automatically replace your existing agreement, and
+        reading these terms does not record acceptance.
       </p>
       <Button asChild size="sm" variant="outline">
         <Link href={policyTabLink("terms")}>

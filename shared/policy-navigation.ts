@@ -14,3 +14,10 @@ export function policyTabFromSearch(search: string): PolicyTab {
 export function policyTabLink(tab: PolicyTab): string {
   return `/terms?section=${tab}`;
 }
+
+/** Unknown versions never become a path or an arbitrary policy source. */
+export function policyVersionFromSearch(search: string): "2026-05" | "2026-11" {
+  return new URLSearchParams(search).get("version") === "2026-05"
+    ? "2026-05"
+    : "2026-11";
+}
