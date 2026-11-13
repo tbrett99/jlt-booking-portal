@@ -1567,6 +1567,38 @@ describe("retention purge is atomic and expiry is enforced even if cleanup fails
 });
 
 describe("source loading remains positive-projection only", () => {
+  it("includes learner-visible published library text even without a historical timestamp, never drafts or archives", async () => {
+    for (const table of ["knowledge_base_articles", "webinar_library_items"]) {
+      for (const [index, status] of ["published", "draft", "archived"].entries()) {
+        fixture.seed(table, { id: index + 1, status, publishedAt: null, title: `${table}-${status}`, summary: `VISIBLE_${status}`, ...(table === "knowledge_base_articles" ? { contentHtml: "Published article guidance." } : { descriptionHtml: "Published webinar guidance." }) });
+      }
+    }
+    const sources = await loadAdminPilotSupportSources();
+    expect(sources.find(source => source.key === "kb:1")?.text).toContain("VISIBLE_published");
+    expect(sources.find(source => source.key === "webinar:1")?.text).toContain("VISIBLE_published");
+    expect(sources.some(source => ["kb:2", "kb:3", "webinar:2", "webinar:3"].includes(source.key))).toBe(false);
+    expect(writes()).toEqual([]);
+  });
+
+  it("includes only published non-archived Academy lesson text and explicitly approved webinar transcripts", async () => {
+    fixture.seed("academy_courses", { id: 1, status: "published", title: "Approved course" });
+    fixture.seed("academy_courses", { id: 2, status: "draft", title: "Private draft course" });
+    fixture.seed("academy_modules", { id: 1, courseId: 1, title: "Guidance module" });
+    fixture.seed("academy_modules", { id: 2, courseId: 2, title: "Draft module" });
+    for (const [id, moduleId, archivedAt] of [[1, 1, null], [2, 1, NOW], [3, 2, null]] as const) {
+      fixture.seed("academy_lessons", { id, moduleId, archivedAt, title: "Reimbursement", contentHtml: "Approved lesson evidence guidance.", videoTranscript: "PRIVATE_ACADEMY_TRANSCRIPT", assessmentTemplateKey: "PRIVATE_TEMPLATE_KEY", attachmentKey: "PRIVATE_RESOURCE_KEY" });
+    }
+    for (const [id, approved] of [[1, null], [2, NOW]] as const) {
+      fixture.seed("webinar_library_items", { id, title: "Published webinar", status: "published", summary: "Webinar summary", privateTranscript: approved ? "APPROVED_TRANSCRIPT" : "UNAPPROVED_TRANSCRIPT", assistantTranscriptApprovedAt: approved });
+    }
+    const sources = await loadAdminPilotSupportSources();
+    expect(sources.find(source => source.key === "academy:1")?.text).toContain("Approved lesson evidence guidance");
+    expect(sources.some(source => ["academy:2", "academy:3"].includes(source.key))).toBe(false);
+    expect(sources.find(source => source.key === "webinar:2")?.text).toContain("APPROVED_TRANSCRIPT");
+    expect(JSON.stringify(sources)).not.toMatch(/PRIVATE_ACADEMY_TRANSCRIPT|PRIVATE_TEMPLATE_KEY|PRIVATE_RESOURCE_KEY|UNAPPROVED_TRANSCRIPT/);
+    expect(writes()).toEqual([]);
+  });
+
   it("loads no private supplier, Academy assessment, or community-activity fields", async () => {
     await loadAdminPilotSupportSources();
     const queries = sourceQueries();

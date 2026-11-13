@@ -144,22 +144,49 @@ afterEach(async () => {
 });
 
 describe("rendered conversational Admin support pilot", () => {
-  it("keeps the compact privacy warning, disabled agent access, unchanged source counts, and optional metrics defaults", async () => {
+  it("keeps the privacy warning, admin-only scope, all seven source counts, and optional metrics defaults", async () => {
     await render();
+    expect(text()).toContain("Admin and Super Admin only.");
     expect(text()).toContain("Agent access disabled");
     expect(text()).toContain("Do not include client names, booking/payment references, bank details or private documents. This pilot cannot inspect individual records.");
     expect(text()).toContain("not a guarantee that every claim is correct");
     expect(text()).not.toContain("grounded answers");
-    const metric = [...container.querySelectorAll("p")].find(item => item.textContent === "Knowledge Base")!.parentElement!;
-    expect(metric.textContent).toBe("4Knowledge Base");
+    for (const [label, count] of [["Knowledge Base", 4], ["JLT Academy", 0], ["Webinar", 0], ["Supplier Directory", 0], ["Community update", 0], ["Terms & Policies", 0], ["Portal procedure", 1]]) {
+      const metric = [...container.querySelectorAll("p")].find(item => item.textContent === label)!.parentElement!;
+      expect(metric.textContent).toBe(`${count}${label}`);
+    }
     for (const label of ["clarifications", "answers withheld", "privacy blocked", "technical failures", "prompt tokens", "completion tokens", "model calls"]) {
       expect([...container.querySelectorAll("p")].find(item => item.textContent === label)!.parentElement!.textContent).toBe(`0${label}`);
     }
     expect(container.querySelector("details")!.open).toBe(false);
-    expect(mocks.queries.every(item => item.path.startsWith("agentSupport."))).toBe(true);
+    expect([...new Set(mocks.queries.map(item => item.path))]).toEqual(["agentSupport.overview", "agentSupport.conversations", "agentSupport.recentGaps"]);
     expect(mocks.queries.filter(item => item.path === "agentSupport.conversations").every(item => item.input === undefined)).toBe(true);
+    expect(mocks.queries.filter(item => item.path === "agentSupport.recentGaps").every(item => (item.options as { enabled: boolean }).enabled === false)).toBe(true);
     expect(mocks.history).not.toHaveBeenCalled();
     expect(mocks.ask).not.toHaveBeenCalled();
+    expect(mocks.feedback).not.toHaveBeenCalled();
+  });
+
+  it("still renders every supported source kind when no eligible sources are loaded", async () => {
+    mocks.overview.data.sourceCounts = {};
+    await render();
+    for (const label of ["Knowledge Base", "JLT Academy", "Webinar", "Supplier Directory", "Community update", "Terms & Policies", "Portal procedure"]) {
+      const metric = [...container.querySelectorAll("p")].find(item => item.textContent === label)!.parentElement!;
+      expect(metric.textContent).toBe(`0${label}`);
+    }
+    expect(mocks.ask).not.toHaveBeenCalled();
+  });
+
+  it("explains indexed text and exclusions, distinguishes loaded sources from model passages, and suggests generic reimbursement guidance", async () => {
+    await render();
+    expect(text()).toContain("Indexed: published Knowledge Base text; published, non-archived Academy lesson text; webinar descriptions and staff-approved transcript text; active supplier public descriptions; eligible admin announcements; current policies and curated procedures.");
+    expect(text()).toContain("Not indexed: Academy video/audio transcripts or downloadable document contents; draft or archived content, private assessments, or learner, customer or financial data.");
+    expect(text()).toContain("Counts show loaded eligible sources, not everything sent to the model. Only relevant passages are sent for each question.");
+    expect(text()).toContain("held for 90 days for quality review. Only your own unexpired conversations appear here.");
+    expect(button("What is the process for requesting reimbursement?")).toBeTruthy();
+    expect(text()).not.toContain("What does the Academy say about client data?");
+    expect(mocks.ask).not.toHaveBeenCalled();
+    expect(mocks.history).not.toHaveBeenCalled();
   });
 
   it("retains each answer's own citations and feedback inside its bubble after more turns", async () => {

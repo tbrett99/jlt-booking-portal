@@ -1,3 +1,5 @@
+import { rankSupportChunks, retrievalTokens, scoreSupportChunk } from "./agent-support-retrieval";
+
 export type AgentSupportSourceKind =
   | "knowledge_base"
   | "webinar"
@@ -23,10 +25,6 @@ export type AgentSupportChunk = AgentSupportSource & {
   chunkText: string;
   score: number;
 };
-
-const STOP_WORDS = new Set([
-  "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "for", "from", "how", "i", "if", "in", "is", "it", "me", "my", "of", "on", "or", "our", "please", "the", "to", "what", "when", "where", "which", "who", "with", "you", "your",
-]);
 
 const SENSITIVE_SUPPLIER_VALUES = [
   "loginUsername",
@@ -60,13 +58,7 @@ export function normaliseAgentSupportText(value: string | null | undefined) {
 }
 
 export function queryTokens(value: string) {
-  return Array.from(new Set(
-    value
-      .toLocaleLowerCase()
-      .replace(/[^a-z0-9£@._-]+/g, " ")
-      .split(/\s+/)
-      .filter((token) => token.length > 1 && !STOP_WORDS.has(token)),
-  ));
+  return retrievalTokens(value);
 }
 
 export function chunkAgentSupportSource(source: AgentSupportSource, maxCharacters = 1_400): AgentSupportChunk[] {
@@ -103,41 +95,11 @@ export function chunkAgentSupportSource(source: AgentSupportSource, maxCharacter
 }
 
 export function scoreAgentSupportChunk(chunk: Omit<AgentSupportChunk, "score">, question: string) {
-  const tokens = queryTokens(question);
-  if (!tokens.length) return 0;
-  const title = `${chunk.title} ${chunk.category ?? ""}`.toLocaleLowerCase();
-  const text = chunk.chunkText.toLocaleLowerCase();
-  let score = 0;
-
-  for (const token of tokens) {
-    if (title.includes(token)) score += 6;
-    const matches = text.match(new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"))?.length ?? 0;
-    score += Math.min(matches, 4);
-  }
-
-  // Prefer sources with a direct topic overlap, without allowing a popular long
-  // article to overwhelm a more exact shorter match.
-  if (text.includes(question.toLocaleLowerCase().trim())) score += 10;
-  return score;
+  return scoreSupportChunk(chunk, question);
 }
 
 export function retrieveAgentSupportChunks(sources: AgentSupportSource[], question: string, limit = 5) {
-  const ranked = sources
-    .flatMap((source) => chunkAgentSupportSource(source))
-    .map((chunk) => ({ ...chunk, score: scoreAgentSupportChunk(chunk, question) }))
-    .filter((chunk) => chunk.score > 0)
-    .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
-
-  const selected: AgentSupportChunk[] = [];
-  const perSource = new Map<string, number>();
-  for (const chunk of ranked) {
-    const included = perSource.get(chunk.key) ?? 0;
-    if (included >= 2) continue;
-    selected.push(chunk);
-    perSource.set(chunk.key, included + 1);
-    if (selected.length >= limit) break;
-  }
-  return selected;
+  return rankSupportChunks(sources.flatMap(source => chunkAgentSupportSource(source)), question, limit);
 }
 
 export function sourceCitationLabel(source: Pick<AgentSupportSource, "kind" | "title" | "timestampLabel">) {

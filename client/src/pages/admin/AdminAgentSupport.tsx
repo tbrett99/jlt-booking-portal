@@ -11,10 +11,12 @@ import { isSafeSupportHref } from "@shared/agent-support-metadata";
 
 const SUGGESTED_PROMPTS = [
   "Where can I find guidance on a supplier?",
-  "What does the Academy say about client data?",
+  "What is the process for requesting reimbursement?",
   "What is the process described in the Knowledge Base for a booking amendment?",
   "Which recorded webinar covers business development?",
 ];
+
+const SOURCE_KINDS = ["knowledge_base", "academy", "webinar", "supplier", "community", "policy", "portal_procedure"] as const;
 
 function labelForSourceKind(kind: string) {
   return {
@@ -61,9 +63,7 @@ export default function AdminAgentSupport() {
 
   const sourceCards = useMemo(() => {
     if (!overview.data) return [];
-    return Object.entries(overview.data.sourceCounts)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([kind, count]) => ({ kind, count }));
+    return SOURCE_KINDS.map(kind => ({ kind, count: overview.data.sourceCounts[kind] ?? 0 }));
   }, [overview.data]);
 
   // Saving a turn or feedback and refreshing audit queries are separate outcomes.
@@ -221,7 +221,11 @@ export default function AdminAgentSupport() {
 
       <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
         <Card className="border-emerald-200 bg-emerald-50/50"><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base text-emerald-950"><ShieldCheck size={18} /> Guardrails on</CardTitle></CardHeader><CardContent className="space-y-2 text-sm leading-5 text-emerald-950/85"><p>Approved Portal guidance only. No individual booking, client, money, email or private record access; no web search or Portal actions.</p><p className="text-xs">Source-checked means cited records passed pilot checks, not a guarantee that every claim is correct. Check the linked guidance before acting.</p></CardContent></Card>
-        <Card><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Gauge size={18} className="text-primary" /> Pilot coverage</CardTitle><p className="text-xs leading-5 text-muted-foreground">Fresh source query on every question. Screened questions, answers, cited source references and feedback are held for {overview.data.retentionDays} days for quality review. Only your own unexpired conversations appear here.</p></CardHeader><CardContent className="grid grid-cols-2 gap-2">{sourceCards.map(source => <Metric key={source.kind} value={source.count} label={labelForSourceKind(source.kind)} />)}</CardContent></Card>
+        <Card><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Gauge size={18} className="text-primary" /> Pilot coverage</CardTitle>
+          <p className="text-xs leading-5 text-muted-foreground">Indexed: published Knowledge Base text; published, non-archived Academy lesson text; webinar descriptions and staff-approved transcript text; active supplier public descriptions; eligible admin announcements; current policies and curated procedures.</p>
+          <p className="text-xs leading-5 text-muted-foreground">Not indexed: Academy video/audio transcripts or downloadable document contents; draft or archived content, private assessments, or learner, customer or financial data.</p>
+          <p className="text-xs leading-5 text-muted-foreground">Counts show loaded eligible sources, not everything sent to the model. Only relevant passages are sent for each question.</p>
+          <p className="text-xs leading-5 text-muted-foreground">Fresh source query on every question. Screened questions, answers, cited source references and feedback are held for {overview.data.retentionDays} days for quality review. Only your own unexpired conversations appear here.</p></CardHeader><CardContent className="grid grid-cols-2 gap-2">{sourceCards.map(source => <Metric key={source.kind} value={source.count} label={labelForSourceKind(source.kind)} />)}</CardContent></Card>
         <Card><CardHeader className="pb-3"><CardTitle className="text-base">Last 30 days</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-2"><Metric value={metrics.questions} label="questions" /><Metric value={metrics.answered} label="answered turns" /><Metric value={metrics.unresolved} label="unresolved turns" /><Metric value={metrics.helpful + metrics.notHelpful} label="feedback votes" /><Metric value={metrics.clarified ?? 0} label="clarifications" /><Metric value={metrics.withheld ?? 0} label="answers withheld" /><Metric value={metrics.privacyBlocked ?? 0} label="privacy blocked" /><Metric value={metrics.failed ?? 0} label="technical failures" /><Metric value={metrics.promptTokens ?? 0} label="prompt tokens" /><Metric value={metrics.completionTokens ?? 0} label="completion tokens" /><Metric value={metrics.modelCalls ?? 0} label="model calls" /></CardContent></Card>
         <Card><CardContent className="p-4"><details onToggle={event => setShowGaps(event.currentTarget.open)}><summary className="cursor-pointer text-sm font-medium">Recent content gaps</summary><div className="mt-2 space-y-2 text-xs text-muted-foreground">{showGaps && gaps.isError ? <p role="alert">Recent gaps could not load. <button className="underline" disabled={gaps.isFetching} onClick={() => void gaps.refetch()}>Retry gaps</button></p> : showGaps && gaps.isLoading ? <p>Loading gaps…</p> : showGaps && gaps.data?.length ? gaps.data.map(gap => <p key={gap.id} className="border-t pt-2">{gap.question}{gap.reason ? <span className="mt-0.5 block">{gap.reason}</span> : null}</p>) : showGaps ? <p>No recent content gaps.</p> : null}</div></details></CardContent></Card>
         <Card className="border-amber-200 bg-amber-50/60"><CardContent className="p-4 text-xs leading-5 text-amber-950"><strong>Trial discipline:</strong> use synthetic or anonymised questions, including refusals. Improve approved sources for genuine content gaps; do not treat chat replies as policy.</CardContent></Card>

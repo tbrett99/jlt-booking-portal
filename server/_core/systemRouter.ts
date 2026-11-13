@@ -18,6 +18,7 @@ export const systemRouter = router({
       academyLessonArchiveGuard: 1,
       termsReviewCaa10aDraft: 1,
       agentSupportConversationalPilot: 1,
+      agentSupportTopicRetrieval: 1,
     })),
 
   notifyOwner: adminProcedure

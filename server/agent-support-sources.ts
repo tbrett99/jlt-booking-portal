@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import { getDb } from "./db";
 import {
   academyCourses,
@@ -90,12 +90,9 @@ export async function loadAdminPilotSupportSources(): Promise<
           updatedAt: knowledgeBaseArticles.updatedAt,
         })
         .from(knowledgeBaseArticles)
-        .where(
-          and(
-            eq(knowledgeBaseArticles.status, "published"),
-            sql`${knowledgeBaseArticles.publishedAt} IS NOT NULL`
-          )
-        ),
+        // The learner library uses published status as its visibility gate;
+        // a missing historical timestamp must not hide otherwise published text.
+        .where(eq(knowledgeBaseArticles.status, "published")),
       db
         .select({
           id: webinarLibraryItems.id,
@@ -112,12 +109,7 @@ export async function loadAdminPilotSupportSources(): Promise<
           updatedAt: webinarLibraryItems.updatedAt,
         })
         .from(webinarLibraryItems)
-        .where(
-          and(
-            eq(webinarLibraryItems.status, "published"),
-            sql`${webinarLibraryItems.publishedAt} IS NOT NULL`
-          )
-        ),
+        .where(eq(webinarLibraryItems.status, "published")),
       db
         .select({
           id: suppliers.id,
