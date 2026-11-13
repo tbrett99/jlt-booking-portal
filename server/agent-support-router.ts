@@ -17,6 +17,7 @@ import {
 } from "./agent-support-privacy";
 import {
   readSupportMetadata,
+  readSupportValidationDiagnostic,
   supportEnvelope,
 } from "../shared/agent-support-metadata";
 import type {
@@ -219,7 +220,7 @@ async function conversationHistory(
     )
       continue;
     const userText = safeStoredSupportText(user.content);
-    const assistantText = safeStoredSupportText(assistant.content, true);
+    const assistantText = safeStoredSupportText(assistant.content, true, assistantMeta.verified);
     if (
       [userText, assistantText].some(text =>
         text.startsWith("[Private details omitted")
@@ -406,11 +407,14 @@ export const agentSupportRouter = router({
         return {
           id: row.id,
           role: row.role,
-          content: safeStoredSupportText(row.content, row.role === "assistant"),
+          content: safeStoredSupportText(row.content, row.role === "assistant", meta.verified),
           createdAt: row.createdAt,
           sources: row.role === "assistant" ? meta.sources : [],
           disposition: meta.disposition,
           verified: meta.verified,
+          ...(row.role === "assistant" && meta.validationDiagnostic
+            ? { validationDiagnostic: meta.validationDiagnostic }
+            : {}),
           feedback:
             feedbackRows.find(vote => vote.messageId === row.id)?.rating ??
             null,
@@ -491,6 +495,10 @@ export const agentSupportRouter = router({
       } else result = blockedResult();
       if (result.status === "answered" && !result.verified)
         throw new Error("Unverified assistant answer refused");
+      const validationDiagnostic =
+        result.disposition === "validation_failed" && result.status !== "answered"
+          ? readSupportValidationDiagnostic(result.validationDiagnostic)
+          : null;
       const saved = await db.transaction(async tx => {
         // Long model calls must never revive an expired/deleted/foreign conversation.
         const committedAt = new Date();
@@ -537,6 +545,7 @@ export const agentSupportRouter = router({
               verified: result.verified,
               modelCalls: result.modelCalls,
               latencyMs: result.latencyMs,
+              ...(validationDiagnostic ? { validationDiagnostic } : {}),
             }),
             model: result.model,
             promptTokens: result.promptTokens,
@@ -563,6 +572,7 @@ export const agentSupportRouter = router({
         status: result.status,
         disposition: result.disposition,
         verified: result.verified,
+        ...(validationDiagnostic ? { validationDiagnostic } : {}),
       };
     }),
 

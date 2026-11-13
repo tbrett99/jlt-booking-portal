@@ -1,3 +1,5 @@
+import { maskGenericDocumentRequirementClauses } from "./agent-support-language";
+
 // This is defence in depth, not a claim to recognise every possible personal
 // detail. The UI and model policy also prohibit private-record input/inference.
 const PHONE = /(?:\+\d{1,3}[ .()-]*)?(?:\(?\d{2,5}\)?[ .()-]*){2,5}\d{3,5}\b/g;
@@ -65,7 +67,8 @@ export function screenSupportInput(value: string): {
 
 export function safeStoredSupportText(
   value: unknown,
-  assistant = false
+  assistant = false,
+  verifiedGenericOutput = false
 ): string {
   if (typeof value !== "string") return "This message is unavailable.";
   const publicSupportLink = "[JLT Support](mailto:support@thejltgroup.co.uk)";
@@ -75,9 +78,9 @@ export function safeStoredSupportText(
   const screened = assistant
     ? value.replaceAll(publicSupportLink, placeholder)
     : value;
-  const checked = screenSupportInput(screened);
+  const checked = screenSupportInput(assistant && verifiedGenericOutput ? maskGenericDocumentRequirementClauses(screened) : screened);
   return checked.safe
-    ? checked.text.replaceAll(placeholder, publicSupportLink)
+    ? screened.replace(/\u0000/g, "").trim().replaceAll(placeholder, publicSupportLink)
     : checked.text;
 }
 

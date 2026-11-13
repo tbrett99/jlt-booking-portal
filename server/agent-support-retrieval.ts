@@ -9,7 +9,7 @@ const FORMS: Record<string, string[]> = {
   cancellation: ["cancel", "cancelled", "canceled", "cancelling", "canceling", "cancellations"],
   booking: ["bookings", "booked"],
   payment: ["payments", "pay", "paid", "paying"],
-  document: ["documents", "documentation"],
+  document: ["documents", "documentation", "docs"],
   invoice: ["invoices"],
   supplier: ["suppliers"],
   claim: ["claims", "claimed", "claiming"],

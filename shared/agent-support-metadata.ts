@@ -1,8 +1,21 @@
+import { SUPPORT_VALIDATION_DIAGNOSTIC_LABELS } from "./agent-support-pilot";
 import type {
   SupportAnswerEnvelope,
   SupportCitation,
   SupportDisposition,
+  SupportValidationDiagnostic,
 } from "./agent-support-pilot";
+
+const validationDiagnostics = new Set<string>(
+  Object.keys(SUPPORT_VALIDATION_DIAGNOSTIC_LABELS)
+);
+export function readSupportValidationDiagnostic(
+  value: unknown
+): SupportValidationDiagnostic | null {
+  return typeof value === "string" && validationDiagnostics.has(value)
+    ? (value as SupportValidationDiagnostic)
+    : null;
+}
 
 const dispositions = new Set<SupportDisposition>([
   "answered",
@@ -93,6 +106,7 @@ export function readSupportMetadata(
   disposition: SupportDisposition;
   verified: boolean;
   inputScreened: boolean;
+  validationDiagnostic?: SupportValidationDiagnostic | null;
   modelCalls: number;
   latencyMs: number;
 } {
@@ -117,9 +131,14 @@ export function readSupportMetadata(
     current && dispositions.has(row.disposition as SupportDisposition)
       ? (row.disposition as SupportDisposition)
       : fallback;
+  const validationDiagnostic =
+    disposition === "validation_failed" && status !== "answered"
+      ? readSupportValidationDiagnostic(row.validationDiagnostic)
+      : null;
   return {
     sources: citations(row.sources),
     disposition,
+    ...(validationDiagnostic ? { validationDiagnostic } : {}),
     verified:
       current &&
       row.verified === true &&
@@ -141,5 +160,19 @@ export function readSupportMetadata(
 export function supportEnvelope(
   input: Omit<SupportAnswerEnvelope, "version" | "inputScreened">
 ): SupportAnswerEnvelope {
-  return { ...input, version: 2, inputScreened: true };
+  const validationDiagnostic =
+    input.disposition === "validation_failed"
+      ? readSupportValidationDiagnostic(input.validationDiagnostic)
+      : null;
+  // Persist only known envelope fields, never arbitrary provider metadata.
+  return {
+    version: 2,
+    inputScreened: true,
+    sources: input.sources,
+    disposition: input.disposition,
+    verified: input.verified,
+    modelCalls: input.modelCalls,
+    latencyMs: input.latencyMs,
+    ...(validationDiagnostic ? { validationDiagnostic } : {}),
+  };
 }

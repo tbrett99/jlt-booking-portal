@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
-import { SUPPORT_DISPOSITION_LABELS, type SupportConversationMessage } from "@shared/agent-support-pilot";
-import { isSafeSupportHref } from "@shared/agent-support-metadata";
+import { SUPPORT_DISPOSITION_LABELS, SUPPORT_VALIDATION_DIAGNOSTIC_LABELS, type SupportConversationMessage } from "@shared/agent-support-pilot";
+import { isSafeSupportHref, readSupportValidationDiagnostic } from "@shared/agent-support-metadata";
 
 const SUGGESTED_PROMPTS = [
   "Where can I find guidance on a supplier?",
@@ -103,6 +103,8 @@ export default function AdminAgentSupport() {
       } : message), {
         id: result.messageId, role: "assistant", content: result.answer, createdAt: new Date(),
         sources: result.sources, disposition: result.disposition, verified: result.verified, feedback: null,
+        validationDiagnostic: result.disposition === "validation_failed" && result.status !== "answered"
+          ? readSupportValidationDiagnostic(result.validationDiagnostic) : null,
       }]);
       refreshAudit(epoch);
     } catch (error) {
@@ -178,8 +180,11 @@ export default function AdminAgentSupport() {
     if (message.role !== "assistant") return null;
     const legacy = !message.verified && (!message.disposition || message.disposition === "answered");
     const label = legacy ? "Unverified legacy answer" : SUPPORT_DISPOSITION_LABELS[message.disposition] ?? "Unverified answer";
+    const diagnostic = message.disposition === "validation_failed"
+      ? readSupportValidationDiagnostic(message.validationDiagnostic) : null;
     return <div className="mt-3 space-y-2 border-t border-border/70 pt-2 text-xs" data-answer-id={message.id}>
       <p className="font-medium text-muted-foreground">{label}</p>
+      {diagnostic ? <p className="text-muted-foreground">Pilot check: {SUPPORT_VALIDATION_DIAGNOSTIC_LABELS[diagnostic]} ({diagnostic}). No rejected draft text is retained.</p> : null}
       {message.sources?.length ? <div className="space-y-1" aria-label="Sources for this answer">{message.sources.map(source => {
         const href = isSafeSupportHref(source.href) ? source.href : null;
         const title = `[${source.index}] ${source.title}`;

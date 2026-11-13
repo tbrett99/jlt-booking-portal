@@ -10,6 +10,7 @@ import type {
   SupportCitation,
   SupportTurnResult,
 } from "../shared/agent-support-pilot";
+import { SUPPORT_VALIDATION_DIAGNOSTIC_LABELS } from "../shared/agent-support-pilot";
 import {
   agentSupportRouter,
   loadAdminPilotSupportSources,
@@ -1322,6 +1323,143 @@ describe("generation metadata, atomic persistence, and safe failure surfaces", (
   });
 });
 
+describe("allowlisted validation diagnostics through the actual offline router", () => {
+  const PRIVATE = "PRIVATE_DIAGNOSTIC_SENTINEL provider@example.test";
+  const withheld = (overrides: Record<string, unknown> = {}) =>
+    generated({
+      answer: "This answer was withheld. Please ask JLT Support.",
+      sources: [],
+      disposition: "validation_failed",
+      verified: false,
+      status: "failed",
+      unresolvedReason: "citation_validation_failed",
+      ...overrides,
+    } as Partial<SupportTurnResult>);
+  const assertSuppressed = (value: unknown) => {
+    expect(JSON.stringify(value)).not.toContain(PRIVATE);
+    expect(JSON.stringify([...errorLog.mock.calls, ...warningLog.mock.calls]))
+      .not.toContain(PRIVATE);
+  };
+
+  it.each(Object.keys(SUPPORT_VALIDATION_DIAGNOSTIC_LABELS))(
+    "stores only the safe %s code in existing sourceRefs and resumes it for its owner",
+    async code => {
+      guards.generate.mockResolvedValue(withheld({
+        validationDiagnostic: code,
+        diagnosticMessage: PRIVATE,
+        rejectedDraft: PRIVATE,
+        providerError: PRIVATE,
+        rawSources: PRIVATE,
+      }));
+      const result = await caller().ask({ question: "How do I cancel a booking?" });
+      expect(result).toMatchObject({
+        disposition: "validation_failed", validationDiagnostic: code, sources: [],
+      });
+      const records = fixture.rows("agent_support_messages");
+      const refs = JSON.parse(records.at(-1)!.sourceRefs);
+      expect(refs).toEqual(envelope({
+        sources: [], disposition: "validation_failed", verified: false,
+        validationDiagnostic: code as SupportAnswerEnvelope["validationDiagnostic"],
+      }));
+      expect(JSON.parse(records.at(-2)!.sourceRefs)).not.toHaveProperty("validationDiagnostic");
+      const resumed = await caller().conversation({ conversationId: result.conversationId });
+      expect(resumed.messages.at(-1)).toMatchObject({
+        disposition: "validation_failed", validationDiagnostic: code,
+      });
+      expect(resumed.messages[0]).not.toHaveProperty("validationDiagnostic");
+      assertSuppressed([result, records, writes(), resumed]);
+      expect(errorLog).not.toHaveBeenCalled();
+      expect(warningLog).not.toHaveBeenCalled();
+      // Resume uses the same ownership/message/feedback/ownership reads as before.
+      expect(fixture.trace.slice(-4).map(query => query.sql.match(/from `([^`]+)`/)?.[1]))
+        .toEqual(["agent_support_conversations", "agent_support_messages", "agent_support_feedback", "agent_support_conversations"]);
+    }
+  );
+
+  it.each([
+    undefined, null, "unknown_check", "citation_invalid ", "CITATION_INVALID",
+    "__proto__", "constructor", PRIVATE,
+    { code: "citation_invalid", message: PRIVATE }, ["citation_invalid"],
+  ].map(value => [value]))(
+    "does not store or return invalid diagnostic %# or adjacent raw metadata",
+    async value => {
+      guards.generate.mockResolvedValue(withheld({
+        validationDiagnostic: value, diagnosticMessage: PRIVATE, providerError: PRIVATE,
+      }));
+      const result = await caller().ask({ question: "How do I cancel a booking?" });
+      const records = fixture.rows("agent_support_messages");
+      expect(result).not.toHaveProperty("validationDiagnostic");
+      expect(JSON.parse(records.at(-1)!.sourceRefs)).not.toHaveProperty("validationDiagnostic");
+      const resumed = await caller().conversation({ conversationId: result.conversationId });
+      expect(resumed.messages.at(-1)).not.toHaveProperty("validationDiagnostic");
+      assertSuppressed([result, records, writes(), resumed]);
+    }
+  );
+
+  it.each(["answered", "partial", "clarify", "escalated", "privacy_blocked", "failed"] as const)(
+    "ignores a valid code supplied on %s rather than widening diagnostic access",
+    async disposition => {
+      guards.generate.mockResolvedValue(generated({
+        disposition, validationDiagnostic: "citation_invalid",
+        verified: disposition === "answered" || disposition === "partial",
+        status: disposition === "answered" ? "answered" : "insufficient_sources",
+      }));
+      const result = await caller().ask({ question: "How do I cancel a booking?" });
+      const records = fixture.rows("agent_support_messages");
+      expect(result).not.toHaveProperty("validationDiagnostic");
+      expect(JSON.parse(records.at(-1)!.sourceRefs)).not.toHaveProperty("validationDiagnostic");
+      const resumed = await caller().conversation({ conversationId: result.conversationId });
+      expect(resumed.messages.at(-1)).not.toHaveProperty("validationDiagnostic");
+    }
+  );
+
+  it("suppresses diagnostic metadata on successful status and untrusted saved envelopes", async () => {
+    conversation();
+    const raw = {
+      ...envelope({ sources: [], disposition: "validation_failed", verified: false }),
+      validationDiagnostic: "citation_invalid", diagnosticMessage: PRIVATE, providerError: PRIVATE,
+    };
+    for (const [index, sourceRefs, responseStatus, role] of [
+      [0, { ...raw, validationDiagnostic: PRIVATE }, "failed", "assistant"],
+      [1, { ...raw, validationDiagnostic: { code: "citation_invalid", message: PRIVATE } }, "failed", "assistant"],
+      [2, { ...raw, disposition: "answered" }, "answered", "assistant"],
+      [3, { ...raw, version: 1 }, "failed", "assistant"],
+      [4, { ...raw, inputScreened: false }, "failed", "assistant"],
+      [5, raw, "answered", "assistant"],
+      [6, raw, "failed", "user"],
+    ] as const)
+      message({ id: index + 1, sourceRefs, responseStatus, role });
+    const resumed = await caller().conversation({ conversationId: 10 });
+    for (const row of resumed.messages) expect(row).not.toHaveProperty("validationDiagnostic");
+    assertSuppressed(resumed);
+
+    guards.generate.mockResolvedValue(withheld({
+      status: "answered", verified: true, validationDiagnostic: "citation_invalid",
+    }));
+    const result = await caller().ask({ conversationId: 10, question: "How do I cancel a booking?" });
+    expect(result).not.toHaveProperty("validationDiagnostic");
+    expect(JSON.parse(fixture.rows("agent_support_messages").at(-1)!.sourceRefs))
+      .not.toHaveProperty("validationDiagnostic");
+  });
+
+  it.each(["foreign", "expired", "agent-scope"])(
+    "keeps %s diagnostic conversations inaccessible before any content read or model call",
+    async boundary => {
+      conversation(boundary === "foreign" ? { userId: 999 }
+        : boundary === "expired" ? { expiresAt: OLD } : { pilotScope: "agent" });
+      message({ responseStatus: "failed", sourceRefs: {
+        ...envelope({ disposition: "validation_failed", verified: false }),
+        validationDiagnostic: "citation_invalid", diagnosticMessage: PRIVATE,
+      } });
+      await expect(caller().conversation({ conversationId: 10 })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(caller().feedback({ messageId: 100, rating: "helpful" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(messageContentQueries()).toEqual([]);
+      expect(writes()).toEqual([]);
+      expect(guards.generate).not.toHaveBeenCalled();
+    }
+  );
+});
+
 describe("feedback privacy, exact-answer ownership, and gap review", () => {
   it("writes safe feedback on exactly the owned assistant answer and retains no other answer's feedback", async () => {
     conversation();
@@ -1627,5 +1765,30 @@ describe("source loading remains positive-projection only", () => {
       expect.arrayContaining(["news_announcements", "admin", "super_admin"])
     );
     expect(guards.generate).not.toHaveBeenCalled();
+  });
+});
+
+describe("verified generic document wording resumption", () => {
+  it("preserves a verified field requirement on resume and in a fresh screened follow-up", async () => {
+    conversation();
+    message({ id: 1, role: "user", content: "What reimbursement documents are required?", sourceRefs: envelope({ sources: [], verified: false }) });
+    const content = "**Direct answer**\n\n- The client name is required on the confirmation or invoice. [S1]";
+    message({ id: 2, content });
+    const resumed = await caller().conversation({ conversationId: 10 });
+    expect(resumed.messages[1].content).toBe(content);
+    expect(resumed.messages[1].verified).toBe(true);
+    await caller().ask({ conversationId: 10, question: "Where do I upload it?" });
+    expect(guards.generate.mock.calls[0][0].history).toEqual([{ role: "user", content: "What reimbursement documents are required?" }, { role: "assistant", content }]);
+  });
+  it.each([
+    "Client name: required on the invoice.",
+    "Client name: required on the invoice. Actual value: Synthetic Person.",
+    "Client name: required on the invoice.\nActual value: Synthetic Person.",
+  ])("does not relax legacy/private stored text suppression: %s", async content => {
+    conversation();
+    message({ content, sourceRefs: [citation()] });
+    const resumed = await caller().conversation({ conversationId: 10 });
+    expect(resumed.messages[0].content).toBe(OMISSION);
+    expect(resumed.messages[0].verified).toBe(false);
   });
 });

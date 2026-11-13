@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupportCitation, SupportConversationMessage } from "../shared/agent-support-pilot";
+import { SUPPORT_VALIDATION_DIAGNOSTIC_LABELS } from "../shared/agent-support-pilot";
 
 const mocks = vi.hoisted(() => ({
   overview: {} as any, conversations: {} as any, gaps: {} as any,
@@ -463,6 +464,97 @@ describe("rendered conversational Admin support pilot", () => {
     mocks.overview.isError = false; await render();
     expect(text()).toContain("Synthetic answer 12");
     expect(footer(12)).toBeTruthy();
+  });
+});
+
+describe("safe validation diagnostic DOM rendering", () => {
+  const PRIVATE = "PRIVATE_DIAGNOSTIC_SENTINEL provider@example.test";
+  const codes = Object.keys(SUPPORT_VALIDATION_DIAGNOSTIC_LABELS) as Array<keyof typeof SUPPORT_VALIDATION_DIAGNOSTIC_LABELS>;
+  const invalid: unknown[] = [
+    undefined, null, "unknown_check", "citation_invalid ", "CITATION_INVALID",
+    "__proto__", "constructor", PRIVATE,
+    { code: "citation_invalid", message: PRIVATE }, ["citation_invalid"],
+  ];
+
+  it.each(codes)("shows only the fixed %s label for a newly withheld answer", async code => {
+    mocks.ask.mockResolvedValueOnce(result(12, {
+      disposition: "validation_failed", status: "failed", verified: false, sources: [],
+      answer: "This answer was withheld. Please ask JLT Support.", validationDiagnostic: code,
+      diagnosticMessage: PRIVATE, rejectedDraft: PRIVATE, providerError: PRIVATE,
+    }));
+    await render(); await submit();
+    const expected = `Pilot check: ${SUPPORT_VALIDATION_DIAGNOSTIC_LABELS[code]} (${code}). No rejected draft text is retained.`;
+    expect(footer(12).textContent).toContain(expected);
+    expect(footer(12).textContent).toContain("Answer withheld");
+    expect(text()).not.toContain(PRIVATE);
+    expect(container.innerHTML).not.toContain(PRIVATE);
+    expect(mocks.toastError).not.toHaveBeenCalled();
+  });
+
+  it.each(codes)("shows only the fixed %s label after resuming a withheld answer", async code => {
+    mocks.history.mockResolvedValueOnce({ id: 7, messages: [turn(10, {
+      disposition: "validation_failed", verified: false, sources: [], validationDiagnostic: code,
+      content: "This answer was withheld. Please ask JLT Support.",
+      diagnosticMessage: PRIVATE, rejectedDraft: PRIVATE, providerError: PRIVATE,
+    } as Partial<SupportConversationMessage>)] });
+    await render(); await resume(7);
+    const expected = `Pilot check: ${SUPPORT_VALIDATION_DIAGNOSTIC_LABELS[code]} (${code}). No rejected draft text is retained.`;
+    expect(footer(10).textContent).toContain(expected);
+    expect(text()).not.toContain(PRIVATE);
+    expect(container.innerHTML).not.toContain(PRIVATE);
+    await submit("General follow-up");
+    expect(footer(10).textContent).toContain(expected);
+    expect(footer(12).textContent).not.toContain("Pilot check:");
+  });
+
+  it.each(invalid.map(value => [value]))("does not render absent, unknown or arbitrary diagnostics %# on new or saved turns", async value => {
+    mocks.ask.mockResolvedValueOnce(result(12, {
+      disposition: "validation_failed", status: "failed", verified: false, sources: [],
+      validationDiagnostic: value, diagnosticMessage: PRIVATE, rejectedDraft: PRIVATE,
+    }));
+    mocks.history.mockResolvedValueOnce({ id: 7, messages: [turn(10, {
+      disposition: "validation_failed", verified: false, sources: [],
+      validationDiagnostic: value, diagnosticMessage: PRIVATE, providerError: PRIVATE,
+    } as Partial<SupportConversationMessage>)] });
+    await render(); await submit();
+    expect(footer(12).textContent).toContain("Answer withheld");
+    expect(text()).not.toContain("Pilot check:");
+    expect(text()).not.toContain("No rejected draft text is retained.");
+    expect(container.innerHTML).not.toContain(PRIVATE);
+    await resume(7);
+    expect(footer(10).textContent).toContain("Answer withheld");
+    expect(text()).not.toContain("Pilot check:");
+    expect(text()).not.toContain("No rejected draft text is retained.");
+    expect(container.innerHTML).not.toContain(PRIVATE);
+    if (typeof value === "string" && value) expect(text()).not.toContain(value);
+  });
+
+  it.each(["answered", "partial", "clarify", "escalated", "privacy_blocked", "failed"] as const)(
+    "never shows a diagnostic on new or resumed %s answers", async disposition => {
+      mocks.ask.mockResolvedValueOnce(result(12, { disposition, validationDiagnostic: "citation_invalid" }));
+      mocks.history.mockResolvedValueOnce({ id: 7, messages: [turn(10, {
+        disposition, validationDiagnostic: "citation_invalid",
+      })] });
+      await render(); await submit();
+      expect(text()).not.toContain("Pilot check:");
+      expect(text()).not.toContain("citation_invalid");
+      await resume(7);
+      expect(text()).not.toContain("Pilot check:");
+      expect(text()).not.toContain("citation_invalid");
+    }
+  );
+
+  it("ignores a diagnostic on a successful status or user message", async () => {
+    mocks.ask.mockResolvedValueOnce(result(12, { disposition: "validation_failed", validationDiagnostic: "citation_invalid" }));
+    mocks.history.mockResolvedValueOnce({ id: 7, messages: [turn(10, {
+      role: "user", disposition: "validation_failed", validationDiagnostic: "citation_invalid",
+    })] });
+    await render(); await submit();
+    expect(text()).not.toContain("Pilot check:");
+    await resume(7);
+    expect(container.querySelector("[data-answer-id]")).toBeNull();
+    expect(text()).not.toContain("Pilot check:");
+    expect(text()).not.toContain("citation_invalid");
   });
 });
 
