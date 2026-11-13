@@ -140,7 +140,7 @@ describe("approved-corpus retrieval repair — deterministic static/synthetic on
 describe("mixed-corpus generation contracts — mocked model only", () => {
   const evidence = "A payment still shown as pending is not accepted.";
   const candidate = { disposition: "answered", clarification: null, claims: [{ id: 1, section: "direct_answer", text: evidence, evidence: [{ citationIndex: 1, quote: evidence }] }] };
-  const verified = { claimResults: [{ claimId: 1, supported: true, retainsMaterialExceptions: true, safe: true }], answerRetainsMaterialExceptions: true, dispositionAppropriate: true, clarification: null };
+  const verified = { claimResults: [{ claimId: 1, supported: true, retainsMaterialExceptions: true, safe: true }], answerRetainsMaterialExceptions: true, missingConditions: [], dispositionAppropriate: true, clarification: null };
   function invoker(...values: unknown[]) {
     const invoke = vi.fn<SupportModelInvoker>();
     for (const value of values) invoke.mockResolvedValueOnce({ id: "synthetic", created: 0, model: "gpt-5-mini", choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify(value) } }] });

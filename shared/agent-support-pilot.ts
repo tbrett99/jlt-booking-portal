@@ -51,6 +51,36 @@ export type SupportCitation = {
   timestampLabel: string | null;
   updatedAt: Date | string | null;
 };
+export type SupportConditionCheck = {
+  target: "question_checklist" | "claim";
+  claimId: number | null;
+  relation:
+    | "document_field"
+    | "payment_evidence"
+    | "per_item_scope"
+    | "branch_qualification"
+    | "procedure_prerequisite";
+  source: SupportCitation;
+  chunkIndex: number;
+  start: number;
+  end: number;
+  sourceFingerprint: string;
+};
+export const SUPPORT_CONDITION_RELATION_LABELS: Readonly<
+  Record<SupportConditionCheck["relation"], string>
+> = Object.freeze({
+  document_field: "Document field requirement",
+  payment_evidence: "Payment evidence requirement",
+  per_item_scope: "Per-item scope",
+  branch_qualification: "Branch qualification",
+  procedure_prerequisite: "Procedure prerequisite",
+});
+export const SUPPORT_CONDITION_TARGET_LABELS: Readonly<
+  Record<SupportConditionCheck["target"], string>
+> = Object.freeze({
+  question_checklist: "Question checklist",
+  claim: "Claim",
+});
 export type SupportAnswerEnvelope = {
   version: 2;
   sources: SupportCitation[];
@@ -58,6 +88,7 @@ export type SupportAnswerEnvelope = {
   verified: boolean;
   inputScreened: true;
   validationDiagnostic?: SupportValidationDiagnostic | null;
+  conditionChecks?: SupportConditionCheck[];
   modelCalls: number;
   latencyMs: number;
 };
@@ -71,6 +102,7 @@ export type SupportTurnResult = {
   disposition: SupportDisposition;
   verified: boolean;
   validationDiagnostic?: SupportValidationDiagnostic | null;
+  conditionChecks?: SupportConditionCheck[];
   status: "answered" | "insufficient_sources" | "failed";
   unresolvedReason: string | null;
   model: string | null;
@@ -88,6 +120,7 @@ export type SupportConversationMessage = {
   disposition: SupportDisposition;
   verified: boolean;
   validationDiagnostic?: SupportValidationDiagnostic | null;
+  conditionChecks?: SupportConditionCheck[];
   feedback: "helpful" | "not_helpful" | null;
 };
 export const SUPPORT_DISPOSITION_LABELS: Record<SupportDisposition, string> = {

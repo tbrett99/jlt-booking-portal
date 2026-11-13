@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  readSupportConditionChecks,
   readSupportMetadata,
   readSupportValidationDiagnostic,
   supportEnvelope,
 } from "../shared/agent-support-metadata";
 import {
+  SUPPORT_CONDITION_RELATION_LABELS,
   SUPPORT_VALIDATION_DIAGNOSTIC_LABELS,
   type SupportAnswerEnvelope,
   type SupportCitation,
+  type SupportConditionCheck,
   type SupportDisposition,
   type SupportValidationDiagnostic,
 } from "../shared/agent-support-pilot";
@@ -202,6 +205,82 @@ describe("safe support validation diagnostic metadata", () => {
         expect(metadata.inputScreened).toBe(false);
         expect(metadata.disposition).toBe(status === "answered" ? "answered" : status === "failed" ? "failed" : "escalated");
       }
+    }
+  });
+});
+
+const condition = (overrides: Record<string, unknown> = {}): SupportConditionCheck => ({
+  target: "question_checklist", claimId: null, relation: "document_field", source: citation,
+  chunkIndex: 0, start: 0, end: 30, sourceFingerprint: "a".repeat(64), ...overrides,
+}) as SupportConditionCheck;
+
+describe("source-bound condition reference metadata", () => {
+  it("exports exactly the fixed relation labels and reconstructs only approved fields", () => {
+    expect(Object.keys(SUPPORT_CONDITION_RELATION_LABELS)).toEqual([
+      "document_field", "payment_evidence", "per_item_scope", "branch_qualification", "procedure_prerequisite",
+    ]);
+    expect(Object.isFrozen(SUPPORT_CONDITION_RELATION_LABELS)).toBe(true);
+    const raw = condition({ explanation: PRIVATE, rawText: PRIVATE, excerpt: PRIVATE,
+      source: { ...citation, text: PRIVATE, rejectedDraft: PRIVATE },
+    });
+    expect(readSupportConditionChecks([raw])).toEqual([condition()]);
+    expect(Object.keys(readSupportConditionChecks([raw])[0]).sort()).toEqual([
+      "target", "claimId", "relation", "source", "chunkIndex", "start", "end", "sourceFingerprint",
+    ].sort());
+    expect(JSON.stringify(readSupportConditionChecks([raw]))).not.toContain(PRIVATE);
+    expect(readSupportConditionChecks(Array.from({ length: 20 }, () => raw))).toHaveLength(8);
+    expect(readSupportConditionChecks({ checks: [raw] })).toEqual([]);
+  });
+
+  it.each([
+    { target: "other" }, { target: "claim", claimId: null }, { target: "claim", claimId: 0 },
+    { target: "claim", claimId: 11 }, { claimId: 1 }, { claimId: undefined },
+    { target: "claim", claimId: 1.1 }, { relation: PRIVATE }, { relation: "constructor" },
+    { chunkIndex: -1 }, { chunkIndex: 0.5 }, { chunkIndex: "0" }, { chunkIndex: Infinity },
+    { chunkIndex: Number.MAX_SAFE_INTEGER + 1 }, { start: -1 }, { start: 0.5 },
+    { start: 1401 }, { end: 1401 }, { end: 0 }, { start: 30, end: 30 },
+    { start: 31, end: 30 }, { end: "30" }, { sourceFingerprint: "A".repeat(64) },
+    { sourceFingerprint: "a".repeat(63) }, { sourceFingerprint: PRIVATE },
+  ])("drops invalid reference %#", overrides => {
+    expect(readSupportConditionChecks([condition(overrides), condition()])).toEqual([condition()]);
+  });
+
+  it.each([
+    { href: "//private.invalid" }, { href: "/admin/users" },
+    { href: "/knowledge-base?article=7&raw=private" }, { index: 0 }, { index: 6 },
+    { key: "x".repeat(101) }, { key: PRIVATE }, { kind: "x".repeat(41) },
+    { title: "x".repeat(301) }, { title: "" }, { label: "x".repeat(401) },
+    { timestampLabel: "x".repeat(201) }, { updatedAt: PRIVATE },
+    { title: "unsafe\u0000title" },
+  ])("drops invalid nested citation %#", overrides => {
+    expect(readSupportConditionChecks([condition({ source: { ...citation, ...overrides } })])).toEqual([]);
+  });
+
+  it("accepts boundary integers and target/claim consistency", () => {
+    const rows = [condition({ target: "claim", claimId: 10, start: 1399, end: 1400 }),
+      condition({ chunkIndex: Number.MAX_SAFE_INTEGER, end: 1400 })];
+    expect(readSupportConditionChecks(rows)).toEqual(rows);
+  });
+
+  it("stores and reads references only for current conditions_missing failures", () => {
+    const envelope = supportEnvelope(input({ validationDiagnostic: "conditions_missing", conditionChecks: [condition()] }));
+    expect(envelope.conditionChecks).toEqual([condition()]);
+    expect(readSupportMetadata(envelope, "failed").conditionChecks).toEqual([condition()]);
+    expect(readSupportMetadata(envelope, "answered")).not.toHaveProperty("conditionChecks");
+    for (const raw of [
+      { ...envelope, version: 1 }, { ...envelope, inputScreened: false },
+      { ...envelope, validationDiagnostic: "verification_safety" },
+      { ...envelope, validationDiagnostic: undefined },
+      { ...envelope, disposition: "privacy_blocked" },
+      { ...envelope, disposition: "answered" }, [condition()],
+    ]) expect(readSupportMetadata(raw, "failed")).not.toHaveProperty("conditionChecks");
+    for (const disposition of ["answered", "partial", "clarify", "escalated", "privacy_blocked", "failed"]) {
+      expect(supportEnvelope(input({ disposition, validationDiagnostic: "conditions_missing", conditionChecks: [condition()] })))
+        .not.toHaveProperty("conditionChecks");
+    }
+    for (const code of codes.filter(code => code !== "conditions_missing")) {
+      expect(supportEnvelope(input({ validationDiagnostic: code, conditionChecks: [condition()] })))
+        .not.toHaveProperty("conditionChecks");
     }
   });
 });

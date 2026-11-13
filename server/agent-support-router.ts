@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { createHash } from "node:crypto";
 import { and, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure, router } from "./_core/trpc";
@@ -10,12 +11,15 @@ import {
 } from "../drizzle/schema";
 import { loadAdminPilotSupportSources } from "./agent-support-sources";
 import { generateSupportTurn } from "./agent-support-generation";
+import { chunkAgentSupportSource, normaliseAgentSupportText } from "./agent-support-utils";
+import { maskGenericDocumentRequirementClauses } from "./agent-support-language";
 import {
   safeStoredSupportText,
   screenSupportInput,
   SUPPORT_PRIVACY_MESSAGE,
 } from "./agent-support-privacy";
 import {
+  readSupportConditionChecks,
   readSupportMetadata,
   readSupportValidationDiagnostic,
   supportEnvelope,
@@ -255,6 +259,12 @@ function blockedResult(): SupportTurnResult {
   };
 }
 
+function safeConditionChecks(value: unknown) {
+  return readSupportConditionChecks(value).filter(check => screenSupportInput([
+    check.source.title, check.source.label, check.source.timestampLabel ?? "",
+  ].join("\n")).safe);
+}
+
 export const agentSupportRouter = router({
   overview: safeAdminProcedure.query(async () => {
     const db = await database();
@@ -404,6 +414,7 @@ export const agentSupportRouter = router({
       await requireOwnedConversation(db, ctx.user.id, input.conversationId);
       const messages: SupportConversationMessage[] = rows.reverse().map(row => {
         const meta = readSupportMetadata(row.sourceRefs, row.responseStatus);
+        const conditionChecks = safeConditionChecks(meta.conditionChecks);
         return {
           id: row.id,
           role: row.role,
@@ -415,12 +426,75 @@ export const agentSupportRouter = router({
           ...(row.role === "assistant" && meta.validationDiagnostic
             ? { validationDiagnostic: meta.validationDiagnostic }
             : {}),
+          ...(row.role === "assistant" && conditionChecks.length
+            ? { conditionChecks }
+            : {}),
           feedback:
             feedbackRows.find(vote => vote.messageId === row.id)?.rating ??
             null,
         };
       });
       return { id: conversation.id, messages };
+    }),
+
+  conditionSource: safeAdminProcedure
+    .input(z.object({
+      messageId: z.number().int().positive(),
+      checkIndex: z.number().int().min(0).max(7),
+    }).strict())
+    .query(async ({ ctx, input }) => {
+      const db = await database();
+      const userId = ctx.user.id;
+      const requireCurrentIdentity = () => {
+        if (!ctx.user || ctx.user.id !== userId || ctx.user.isActive === false ||
+          !["admin", "super_admin"].includes(ctx.user.role))
+          throw new TRPCError({ code: "FORBIDDEN", message: "This assistant pilot is available only to active administrators." });
+      };
+      // The request names only an owned message and a bounded saved reference.
+      // It cannot select an arbitrary source key, content snapshot or quote.
+      const [message] = await db
+        .select({
+          conversationId: agentSupportMessages.conversationId,
+          sourceRefs: agentSupportMessages.sourceRefs,
+          responseStatus: agentSupportMessages.responseStatus,
+        })
+        .from(agentSupportMessages)
+        .innerJoin(agentSupportConversations, eq(agentSupportConversations.id, agentSupportMessages.conversationId))
+        .where(and(
+          eq(agentSupportMessages.id, input.messageId),
+          eq(agentSupportMessages.role, "assistant"),
+          eq(agentSupportConversations.userId, userId),
+          currentScope(new Date())
+        ))
+        .limit(1);
+      if (!message) throw new TRPCError({ code: "NOT_FOUND", message: "This assistant answer is no longer available." });
+      await requireOwnedConversation(db, userId, message.conversationId);
+      requireCurrentIdentity();
+      const unavailable = { available: false as const, reason: "source_changed_or_unavailable" as const };
+      const finish = async <T,>(value: T) => {
+        await requireOwnedConversation(db, userId, message.conversationId);
+        requireCurrentIdentity();
+        return value;
+      };
+      const meta = readSupportMetadata(message.sourceRefs, message.responseStatus);
+      const check = meta.disposition === "validation_failed" && meta.validationDiagnostic === "conditions_missing"
+        ? safeConditionChecks(meta.conditionChecks)[input.checkIndex] : undefined;
+      if (!check) return finish(unavailable);
+      const sources = await loadAdminPilotSupportSources();
+      const source = sources.find(row => row.key === check.source.key);
+      if (!source || source.kind !== check.source.kind || source.href !== check.source.href || source.title !== check.source.title)
+        return finish(unavailable);
+      const chunk = chunkAgentSupportSource(source).find(row => row.chunkIndex === check.chunkIndex);
+      if (!chunk || check.end > chunk.chunkText.length ||
+        createHash("sha256").update(normaliseAgentSupportText(chunk.chunkText)).digest("hex") !== check.sourceFingerprint)
+        return finish(unavailable);
+      const excerpt = chunk.chunkText.slice(check.start, check.end);
+      // This masks only the same closed generic requirements as the verified
+      // output boundary. Actual values/extra clauses still fail ordinary screening.
+      const screened = [excerpt, source.title, check.source.title, check.source.label, check.source.timestampLabel ?? ""]
+        .map(text => maskGenericDocumentRequirementClauses(text)).join("\n");
+      if (!screenSupportInput(screened).safe) return finish(unavailable);
+      return finish({ available: true as const, source: check.source, excerpt });
     }),
 
   ask: safeAdminProcedure
@@ -499,6 +573,8 @@ export const agentSupportRouter = router({
         result.disposition === "validation_failed" && result.status !== "answered"
           ? readSupportValidationDiagnostic(result.validationDiagnostic)
           : null;
+      const conditionChecks = screened.safe && validationDiagnostic === "conditions_missing"
+        ? safeConditionChecks(result.conditionChecks) : [];
       const saved = await db.transaction(async tx => {
         // Long model calls must never revive an expired/deleted/foreign conversation.
         const committedAt = new Date();
@@ -546,6 +622,7 @@ export const agentSupportRouter = router({
               modelCalls: result.modelCalls,
               latencyMs: result.latencyMs,
               ...(validationDiagnostic ? { validationDiagnostic } : {}),
+              ...(conditionChecks.length ? { conditionChecks } : {}),
             }),
             model: result.model,
             promptTokens: result.promptTokens,
@@ -573,6 +650,7 @@ export const agentSupportRouter = router({
         disposition: result.disposition,
         verified: result.verified,
         ...(validationDiagnostic ? { validationDiagnostic } : {}),
+        ...(conditionChecks.length ? { conditionChecks } : {}),
       };
     }),
 

@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
-import { SUPPORT_DISPOSITION_LABELS, SUPPORT_VALIDATION_DIAGNOSTIC_LABELS, type SupportConversationMessage } from "@shared/agent-support-pilot";
-import { isSafeSupportHref, readSupportValidationDiagnostic } from "@shared/agent-support-metadata";
+import { SUPPORT_CONDITION_RELATION_LABELS, SUPPORT_CONDITION_TARGET_LABELS, SUPPORT_DISPOSITION_LABELS, SUPPORT_VALIDATION_DIAGNOSTIC_LABELS, type SupportConversationMessage } from "@shared/agent-support-pilot";
+import { isSafeSupportHref, readSupportConditionChecks, readSupportValidationDiagnostic } from "@shared/agent-support-metadata";
 
 const SUGGESTED_PROMPTS = [
   "Where can I find guidance on a supplier?",
@@ -34,6 +34,12 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Please try again.";
 }
 
+type ConditionInspection =
+  | { status: "loading" }
+  | { status: "available"; excerpt: string }
+  | { status: "unavailable" }
+  | { status: "error" };
+
 export default function AdminAgentSupport() {
   const utils = trpc.useUtils();
   const overview = trpc.agentSupport.overview.useQuery();
@@ -47,6 +53,8 @@ export default function AdminAgentSupport() {
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
+  const [conditionInspections, setConditionInspections] = useState<Record<number, Array<ConditionInspection | undefined>>>({});
+  const conditionLocks = useRef(new Set<string>());
   const generation = useRef(0);
   const mounted = useRef(true);
   const askLock = useRef(false);
@@ -105,6 +113,8 @@ export default function AdminAgentSupport() {
         sources: result.sources, disposition: result.disposition, verified: result.verified, feedback: null,
         validationDiagnostic: result.disposition === "validation_failed" && result.status !== "answered"
           ? readSupportValidationDiagnostic(result.validationDiagnostic) : null,
+        conditionChecks: result.disposition === "validation_failed" && result.status !== "answered" &&
+          result.validationDiagnostic === "conditions_missing" ? readSupportConditionChecks(result.conditionChecks) : undefined,
       }]);
       refreshAudit(epoch);
     } catch (error) {
@@ -127,6 +137,8 @@ export default function AdminAgentSupport() {
     setRefreshWarning(null);
     setConversationId(undefined);
     setMessages([]);
+    setConditionInspections({});
+    conditionLocks.current.clear();
   };
 
   const resumeConversation = async (id: number) => {
@@ -138,6 +150,8 @@ export default function AdminAgentSupport() {
     setRefreshWarning(null);
     setConversationId(id);
     setMessages([]); // Never show the previous conversation while loading another one.
+    setConditionInspections({});
+    conditionLocks.current.clear();
     try {
       const result = await utils.agentSupport.conversation.fetch({ conversationId: id });
       if (!mounted.current || epoch !== generation.current) return;
@@ -175,6 +189,36 @@ export default function AdminAgentSupport() {
     }
   };
 
+  const inspectCondition = async (message: SupportConversationMessage, checkIndex: number) => {
+    if (message.id < 1 || message.role !== "assistant" || message.disposition !== "validation_failed" ||
+      message.validationDiagnostic !== "conditions_missing" || !readSupportConditionChecks(message.conditionChecks)[checkIndex]) return;
+    const epoch = generation.current;
+    const lock = `${epoch}:${message.id}:${checkIndex}`;
+    if (conditionLocks.current.has(lock)) return;
+    conditionLocks.current.add(lock);
+    const saveInspection = (inspection: ConditionInspection) => {
+      if (!mounted.current || epoch !== generation.current) return;
+      setConditionInspections(current => {
+        const checks = [...(current[message.id] ?? [])].slice(0, 8);
+        checks[checkIndex] = inspection;
+        // At most 100 message entries, each with at most eight transient checks.
+        const other = Object.entries(current).filter(([id]) => Number(id) !== message.id).slice(-99);
+        return { ...Object.fromEntries(other), [message.id]: checks };
+      });
+    };
+    saveInspection({ status: "loading" });
+    try {
+      const result = await utils.agentSupport.conditionSource.fetch({ messageId: message.id, checkIndex }, { staleTime: 0 });
+      saveInspection(result.available && typeof result.excerpt === "string" && result.excerpt.length > 0 && result.excerpt.length <= 1400
+        ? { status: "available", excerpt: result.excerpt } : { status: "unavailable" });
+    } catch {
+      // Never display provider/error bodies or retain an earlier quote on error.
+      saveInspection({ status: "error" });
+    } finally {
+      conditionLocks.current.delete(lock);
+    }
+  };
+
   const busy = askBusy || historyBusy || feedbackBusy;
   const answerFooter = (message: SupportConversationMessage) => {
     if (message.role !== "assistant") return null;
@@ -182,9 +226,30 @@ export default function AdminAgentSupport() {
     const label = legacy ? "Unverified legacy answer" : SUPPORT_DISPOSITION_LABELS[message.disposition] ?? "Unverified answer";
     const diagnostic = message.disposition === "validation_failed"
       ? readSupportValidationDiagnostic(message.validationDiagnostic) : null;
+    const conditionChecks = diagnostic === "conditions_missing" ? readSupportConditionChecks(message.conditionChecks) : [];
     return <div className="mt-3 space-y-2 border-t border-border/70 pt-2 text-xs" data-answer-id={message.id}>
       <p className="font-medium text-muted-foreground">{label}</p>
       {diagnostic ? <p className="text-muted-foreground">Pilot check: {SUPPORT_VALIDATION_DIAGNOSTIC_LABELS[diagnostic]} ({diagnostic}). No rejected draft text is retained.</p> : null}
+      {conditionChecks.length ? <section aria-label="Possible missing conditions" className="space-y-2">
+        <p className="font-medium">Verifier flagged a possible missing condition — not a verified answer</p>
+        <ul className="space-y-2">{conditionChecks.map((check, checkIndex) => {
+          const inspection = conditionInspections[message.id]?.[checkIndex];
+          return <li key={checkIndex} className="rounded-md border p-2" data-condition-index={checkIndex}>
+            <p>{SUPPORT_CONDITION_RELATION_LABELS[check.relation]} · {SUPPORT_CONDITION_TARGET_LABELS[check.target]}{check.target === "claim" ? ` ${check.claimId}` : ""} · {check.source.title}</p>
+            <Button size="sm" variant="outline" className="mt-1 h-7 px-2 text-xs" disabled={inspection?.status === "loading" || busy || Boolean(historyError)} onClick={() => void inspectCondition(message, checkIndex)}>Inspect source check</Button>
+            <div aria-live="polite">
+              {inspection?.status === "loading" ? <p className="mt-1 text-muted-foreground" role="status">Checking the current approved source…</p> : null}
+              {inspection?.status === "available" ? <div className="mt-2 space-y-1">
+                <blockquote className="whitespace-pre-wrap border-l-2 pl-2">{inspection.excerpt}</blockquote>
+                <a href={check.source.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary underline underline-offset-2">{check.source.title}<ExternalLink size={12} /></a>
+                <p className="text-muted-foreground">Current approved source excerpt only; this does not verify the withheld answer.</p>
+              </div> : null}
+              {inspection?.status === "unavailable" ? <p className="mt-1 text-muted-foreground">Source changed or is no longer available. No saved excerpt is shown.</p> : null}
+              {inspection?.status === "error" ? <p className="mt-1 text-muted-foreground" role="alert">Could not inspect the current source. Please try again. No saved excerpt is shown.</p> : null}
+            </div>
+          </li>;
+        })}</ul>
+      </section> : null}
       {message.sources?.length ? <div className="space-y-1" aria-label="Sources for this answer">{message.sources.map(source => {
         const href = isSafeSupportHref(source.href) ? source.href : null;
         const title = `[${source.index}] ${source.title}`;

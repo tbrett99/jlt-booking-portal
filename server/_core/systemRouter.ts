@@ -20,6 +20,7 @@ export const systemRouter = router({
       agentSupportConversationalPilot: 1,
       agentSupportTopicRetrieval: 1,
       agentSupportValidationDiagnostics: 1,
+      agentSupportScopedConditionChecks: 1,
     })),
 
   notifyOwner: adminProcedure

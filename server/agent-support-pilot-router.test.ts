@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import { getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/mysql-core";
 import { drizzle } from "drizzle-orm/mysql-proxy";
@@ -8,6 +9,7 @@ import type { TrpcContext } from "./_core/context";
 import type {
   SupportAnswerEnvelope,
   SupportCitation,
+  SupportConditionCheck,
   SupportTurnResult,
 } from "../shared/agent-support-pilot";
 import { SUPPORT_VALIDATION_DIAGNOSTIC_LABELS } from "../shared/agent-support-pilot";
@@ -16,6 +18,7 @@ import {
   loadAdminPilotSupportSources,
 } from "./agent-support-router";
 import { SUPPORT_PRIVACY_MESSAGE } from "./agent-support-privacy";
+import { chunkAgentSupportSource, normaliseAgentSupportText, type AgentSupportSource } from "./agent-support-utils";
 
 const guards = vi.hoisted(() => ({
   getDb: vi.fn(),
@@ -407,6 +410,7 @@ describe("FIRST admin pilot — authorization before any database or model acces
     ["overview", undefined],
     ["conversations", undefined],
     ["conversation", { conversationId: 10 }],
+    ["conditionSource", { messageId: 100, checkIndex: 0 }],
     ["ask", { question: "How do I cancel a booking?" }],
     ["feedback", { messageId: 100, rating: "helpful" }],
     ["recentGaps", undefined],
@@ -1790,5 +1794,232 @@ describe("verified generic document wording resumption", () => {
     const resumed = await caller().conversation({ conversationId: 10 });
     expect(resumed.messages[0].content).toBe(OMISSION);
     expect(resumed.messages[0].verified).toBe(false);
+  });
+});
+
+const inspectionSource = (text = "The client name is required on the invoice."): AgentSupportSource => ({
+  key: "kb:7", kind: "knowledge_base", title: citation().title, href: citation().href, text,
+});
+function savedCondition(source = inspectionSource(), overrides: Partial<SupportConditionCheck> = {}): SupportConditionCheck {
+  const chunk = chunkAgentSupportSource(source)[0];
+  return { target: "question_checklist", claimId: null, relation: "document_field",
+    source: { ...citation(), key: source.key, kind: source.kind, title: source.title, href: source.href, updatedAt: OLD.toISOString() },
+    chunkIndex: 0, start: 0, end: chunk.chunkText.length,
+    sourceFingerprint: createHash("sha256").update(normaliseAgentSupportText(chunk.chunkText)).digest("hex"), ...overrides,
+  };
+}
+function conditionMessage(overrides: Record<string, unknown> = {}) {
+  return message({ responseStatus: "failed", sourceRefs: envelope({
+    sources: [], disposition: "validation_failed", verified: false,
+    validationDiagnostic: "conditions_missing", conditionChecks: [savedCondition()],
+  }), ...overrides });
+}
+const unavailableCondition = { available: false, reason: "source_changed_or_unavailable" };
+
+describe("condition reference transport and current approved-source inspection", () => {
+  it("stores sanitized refs in existing JSON, resumes refs without text, and excludes them from follow-up history", async () => {
+    conversation();
+    const check = savedCondition();
+    guards.generate.mockResolvedValueOnce(generated({ disposition: "validation_failed", status: "failed", verified: false,
+      sources: [], validationDiagnostic: "conditions_missing", conditionChecks: [{ ...check,
+        explanation: "PRIVATE_VERIFIER_SENTINEL provider@example.test", excerpt: "PRIVATE_SNAPSHOT_SENTINEL",
+        source: { ...check.source, text: "PRIVATE_SOURCE_SNAPSHOT" },
+      }] as SupportConditionCheck[],
+    }));
+    const result = await caller().ask({ conversationId: 10, question: "Which generic documents are required?" });
+    expect(result.conditionChecks).toEqual([check]);
+    const stored = fixture.rows("agent_support_messages");
+    expect(JSON.parse(stored[0].sourceRefs)).not.toHaveProperty("conditionChecks");
+    expect(JSON.parse(stored[1].sourceRefs).conditionChecks).toEqual(JSON.parse(JSON.stringify([check])));
+    expect(JSON.stringify(stored)).not.toMatch(/PRIVATE_VERIFIER_SENTINEL|PRIVATE_SNAPSHOT_SENTINEL|PRIVATE_SOURCE_SNAPSHOT/);
+    const resumed = await caller().conversation({ conversationId: 10 });
+    expect(resumed.messages[1].conditionChecks).toEqual([check]);
+    expect(resumed.messages[0]).not.toHaveProperty("conditionChecks");
+    await caller().ask({ conversationId: 10, question: "Which general step comes next?" });
+    expect(guards.generate.mock.calls[1][0].history).toEqual([]);
+  });
+
+  it.each(["answered", "privacy_blocked", "failed", "other-diagnostic", "successful-status"])(
+    "never persists or returns condition refs for %s", async kind => {
+      guards.generate.mockResolvedValueOnce(generated({
+        disposition: kind === "other-diagnostic" || kind === "successful-status" ? "validation_failed" : kind as SupportTurnResult["disposition"],
+        status: kind === "answered" || kind === "successful-status" ? "answered" : "failed",
+        verified: kind === "answered" || kind === "successful-status", conditionChecks: [savedCondition()],
+        validationDiagnostic: kind === "other-diagnostic" ? "verification_safety" : "conditions_missing",
+      }));
+      const result = await caller().ask({ question: "Which generic documents are required?" });
+      expect(result).not.toHaveProperty("conditionChecks");
+      expect(JSON.parse(fixture.rows("agent_support_messages")[1].sourceRefs)).not.toHaveProperty("conditionChecks");
+    }
+  );
+
+  it.each(["foreign", "expired", "at-boundary", "scope", "user-message", "missing"])(
+    "denies inspection for %s before loading sources", async kind => {
+      conversation(kind === "foreign" ? { userId: 999 } : kind === "expired" ? { expiresAt: OLD }
+        : kind === "at-boundary" ? { expiresAt: NOW } : kind === "scope" ? { pilotScope: "agent" } : {});
+      if (kind !== "missing") conditionMessage({ role: kind === "user-message" ? "user" : "assistant" });
+      await expect(caller().conditionSource({ messageId: 100, checkIndex: 0 })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(guards.sources).not.toHaveBeenCalled();
+      expect(messageContentQueries()).toEqual([]);
+      expect(writes()).toEqual([]);
+    }
+  );
+
+  it("denies inactive administrators before database access", async () => {
+    const ctx = context(); ctx.user!.isActive = false;
+    await expect(agentSupportRouter.createCaller(ctx).conditionSource({ messageId: 100, checkIndex: 0 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(guards.getDb).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { messageId: 0, checkIndex: 0 }, { messageId: 100, checkIndex: -1 },
+    { messageId: 100, checkIndex: 8 }, { messageId: 100, checkIndex: 0.1 },
+    { messageId: 100, checkIndex: 0, key: "kb:999" },
+    { messageId: 100, checkIndex: 0, excerpt: "PRIVATE_SNAPSHOT_SENTINEL" },
+  ])("rejects invalid/arbitrary snapshot input %#", async input => {
+    await expect(caller().conditionSource(input as any)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(guards.getDb).not.toHaveBeenCalled();
+    expect(guards.sources).not.toHaveBeenCalled();
+  });
+
+  it.each(["legacy", "success", "privacy", "other", "invalid", "index"])(
+    "does not inspect irrelevant %s saved references", async kind => {
+      conversation();
+      const sourceRefs = envelope({ sources: [], disposition: "validation_failed", verified: false,
+        validationDiagnostic: kind === "other" ? "citation_invalid" : "conditions_missing", conditionChecks: [savedCondition()],
+      });
+      if (kind === "legacy") (sourceRefs as any).version = 1;
+      if (kind === "privacy") sourceRefs.disposition = "privacy_blocked";
+      if (kind === "invalid") sourceRefs.conditionChecks = [savedCondition({ ...inspectionSource(), href: "/admin/users" })];
+      conditionMessage({ sourceRefs, responseStatus: kind === "success" ? "answered" : "failed" });
+      expect(await caller().conditionSource({ messageId: 100, checkIndex: kind === "index" ? 7 : 0 })).toEqual(unavailableCondition);
+      expect(guards.sources).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(["admin", "super_admin"])("returns only a fresh exact hash-matched slice for %s", async role => {
+    conversation();
+    const source = inspectionSource("Before the checklist. Each invoice must be uploaded separately. After the checklist.");
+    const start = source.text.indexOf("Each invoice"), end = source.text.indexOf(" After");
+    const check = savedCondition(source, { target: "claim", claimId: 2, relation: "per_item_scope", start, end });
+    conditionMessage({ sourceRefs: envelope({ disposition: "validation_failed", verified: false,
+      validationDiagnostic: "conditions_missing", sources: [], conditionChecks: [check] }) });
+    guards.sources.mockResolvedValue([source]);
+    expect(await caller(role).conditionSource({ messageId: 100, checkIndex: 0 })).toEqual({
+      available: true, source: check.source, excerpt: source.text.slice(start, end),
+    });
+    expect(guards.sources).toHaveBeenCalledOnce();
+    expect(messageContentQueries()).toEqual([]);
+    expect(writes()).toEqual([]);
+    expect(guards.generate).not.toHaveBeenCalled();
+  });
+
+  it.each(["changed", "deleted", "unpublished", "archived"])("never returns stale text after the source is %s", async kind => {
+    conversation();
+    fixture.seed("knowledge_base_articles", { id: 7, title: citation().title, status: "published", contentHtml: inspectionSource().text });
+    conditionMessage();
+    if (kind === "changed") fixture.mutate("UPDATE knowledge_base_articles SET contentHtml = ? WHERE id = ?", "Changed guidance.", 7);
+    else if (kind === "deleted") fixture.mutate("DELETE FROM knowledge_base_articles WHERE id = ?", 7);
+    else fixture.mutate("UPDATE knowledge_base_articles SET status = ? WHERE id = ?", kind === "unpublished" ? "draft" : "archived", 7);
+    expect(await caller().conditionSource({ messageId: 100, checkIndex: 0 })).toEqual(unavailableCondition);
+    expect(writes()).toEqual([]);
+  });
+
+  it.each(["fingerprint", "range", "chunk", "title"])("refuses mismatched %s references", async kind => {
+    conversation();
+    const source = inspectionSource();
+    const check = savedCondition(source, kind === "fingerprint" ? { sourceFingerprint: "f".repeat(64) }
+      : kind === "range" ? { end: 1400 } : kind === "chunk" ? { chunkIndex: 1 }
+      : { source: { ...citation(), title: "Changed title" } });
+    conditionMessage({ sourceRefs: envelope({ disposition: "validation_failed", verified: false,
+      validationDiagnostic: "conditions_missing", conditionChecks: [check] }) });
+    guards.sources.mockResolvedValue([source]);
+    expect(await caller().conditionSource({ messageId: 100, checkIndex: 0 })).toEqual(unavailableCondition);
+  });
+
+  it.each([
+    "Client name: required on the invoice.", "Proof of payment must show that your payment has cleared.",
+  ])("uses only closed generic masking for exact source excerpt: %s", async text => {
+    conversation(); const source = inspectionSource(text), check = savedCondition(source);
+    conditionMessage({ sourceRefs: envelope({ disposition: "validation_failed", verified: false,
+      validationDiagnostic: "conditions_missing", conditionChecks: [check] }) });
+    guards.sources.mockResolvedValue([source]);
+    expect(await caller().conditionSource({ messageId: 100, checkIndex: 0 })).toEqual({ available: true, source: check.source, excerpt: text });
+  });
+
+  it.each([
+    "Client name: Synthetic Person.", "Client name: required on the invoice. Actual value: Synthetic Person.",
+    "PRIVATE_SOURCE_SENTINEL provider@example.test", "payment reference: PAY-12345",
+  ])("withholds privacy-unsafe source text even when its hash matches: %s", async text => {
+    conversation(); const source = inspectionSource(text);
+    conditionMessage({ sourceRefs: envelope({ disposition: "validation_failed", verified: false,
+      validationDiagnostic: "conditions_missing", conditionChecks: [savedCondition(source)] }) });
+    guards.sources.mockResolvedValue([source]);
+    const result = await caller().conditionSource({ messageId: 100, checkIndex: 0 });
+    expect(result).toEqual(unavailableCondition);
+    expect(JSON.stringify([result, errorLog.mock.calls, warningLog.mock.calls])).not.toContain(text);
+  });
+
+  it("screens current source titles and saved label metadata before returning them", async () => {
+    conversation(); const source = { ...inspectionSource(), title: "PRIVATE_TITLE_SENTINEL provider@example.test" };
+    conditionMessage({ sourceRefs: envelope({ disposition: "validation_failed", verified: false,
+      validationDiagnostic: "conditions_missing", conditionChecks: [savedCondition(source)] }) });
+    guards.sources.mockResolvedValue([source]);
+    expect(await caller().conditionSource({ messageId: 100, checkIndex: 0 })).toEqual(unavailableCondition);
+  });
+
+  it.each(["owner", "expiry", "deleted", "scope", "role", "inactive", "identity"])(
+    "rechecks %s after source loading before returning any quote", async boundary => {
+      conversation({ expiresAt: new Date(NOW.getTime() + 1000) }); conditionMessage();
+      const ctx = context();
+      guards.sources.mockImplementation(async () => {
+        if (boundary === "owner") fixture.mutate("UPDATE agent_support_conversations SET userId = ? WHERE id = ?", 999, 10);
+        else if (boundary === "expiry") vi.setSystemTime(new Date(NOW.getTime() + 1000));
+        else if (boundary === "deleted") fixture.mutate("DELETE FROM agent_support_conversations WHERE id = ?", 10);
+        else if (boundary === "scope") fixture.mutate("UPDATE agent_support_conversations SET pilotScope = ? WHERE id = ?", "agent", 10);
+        else if (boundary === "role") ctx.user!.role = "agent";
+        else if (boundary === "inactive") ctx.user!.isActive = false;
+        else ctx.user!.id = 999;
+        return [inspectionSource()];
+      });
+      await expect(agentSupportRouter.createCaller(ctx).conditionSource({ messageId: 100, checkIndex: 0 })).rejects.toMatchObject({
+        code: ["role", "inactive", "identity"].includes(boundary) ? "FORBIDDEN" : "NOT_FOUND",
+      });
+      expect(writes()).toEqual([]);
+    }
+  );
+
+  it("sanitizes source loading failures without returning snapshots or raw errors", async () => {
+    conversation(); conditionMessage();
+    guards.sources.mockRejectedValue(new Error("DATABASE_PRIVATE_SENTINEL provider@example.test"));
+    const result = await caller().conditionSource({ messageId: 100, checkIndex: 0 }).catch(error => error);
+    expect(result).toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
+    assertNoPrivateFailure(result);
+    expect(writes()).toEqual([]);
+  });
+});
+
+describe("condition citation metadata privacy before display", () => {
+  it.each(["title", "label", "timestampLabel"])("drops private %s metadata on ask, resume and inspection", async field => {
+    conversation();
+    const privateText = "PRIVATE_CONDITION_METADATA_SENTINEL provider@example.test";
+    const check = savedCondition();
+    (check.source as any)[field] = privateText;
+    guards.generate.mockResolvedValueOnce(generated({ disposition: "validation_failed", status: "failed", verified: false,
+      sources: [], validationDiagnostic: "conditions_missing", conditionChecks: [check],
+    }));
+    const result = await caller().ask({ conversationId: 10, question: "Which generic documents are required?" });
+    expect(result).not.toHaveProperty("conditionChecks");
+    expect(JSON.stringify(fixture.rows("agent_support_messages"))).not.toContain(privateText);
+    conditionMessage({ id: 200, sourceRefs: envelope({ disposition: "validation_failed", verified: false,
+      validationDiagnostic: "conditions_missing", conditionChecks: [check], sources: [],
+    }) });
+    const resumed = await caller().conversation({ conversationId: 10 });
+    expect(resumed.messages.find(row => row.id === 200)).not.toHaveProperty("conditionChecks");
+    expect(JSON.stringify(resumed)).not.toContain(privateText);
+    guards.sources.mockClear();
+    expect(await caller().conditionSource({ messageId: 200, checkIndex: 0 })).toEqual(unavailableCondition);
+    expect(guards.sources).not.toHaveBeenCalled();
+    expect(JSON.stringify([errorLog.mock.calls, warningLog.mock.calls])).not.toContain(privateText);
   });
 });

@@ -3,13 +3,13 @@ import * as React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SupportCitation, SupportConversationMessage } from "../shared/agent-support-pilot";
-import { SUPPORT_VALIDATION_DIAGNOSTIC_LABELS } from "../shared/agent-support-pilot";
+import type { SupportCitation, SupportConditionCheck, SupportConversationMessage } from "../shared/agent-support-pilot";
+import { SUPPORT_CONDITION_RELATION_LABELS, SUPPORT_VALIDATION_DIAGNOSTIC_LABELS } from "../shared/agent-support-pilot";
 
 const mocks = vi.hoisted(() => ({
   overview: {} as any, conversations: {} as any, gaps: {} as any,
   queries: [] as { path: string; input: unknown; options: unknown }[],
-  ask: vi.fn(), feedback: vi.fn(), history: vi.fn(), invalidate: vi.fn(),
+  ask: vi.fn(), feedback: vi.fn(), history: vi.fn(), conditionSource: vi.fn(), invalidate: vi.fn(),
   refetchOverview: vi.fn(), refetchConversations: vi.fn(), refetchGaps: vi.fn(),
   toastError: vi.fn(), toastSuccess: vi.fn(),
 }));
@@ -18,6 +18,7 @@ vi.mock("@/lib/trpc", () => {
     if (key === "useUtils") return () => node();
     if (key === "invalidate") return mocks.invalidate;
     if (key === "fetch" && path === "agentSupport.conversation") return mocks.history;
+    if (key === "fetch" && path === "agentSupport.conditionSource") return mocks.conditionSource;
     if (key === "useMutation") return () => {
       if (path === "agentSupport.ask") return { mutateAsync: mocks.ask, isPending: false };
       if (path === "agentSupport.feedback") return { mutateAsync: mocks.feedback, isPending: false };
@@ -125,6 +126,7 @@ beforeEach(() => {
   mocks.gaps = { data: [], isLoading: false, isError: false, isFetching: false };
   mocks.ask.mockReset().mockResolvedValue(result());
   mocks.feedback.mockReset().mockResolvedValue({ success: true });
+  mocks.conditionSource.mockReset().mockResolvedValue({ available: false, reason: "source_changed_or_unavailable" });
   mocks.history.mockReset().mockImplementation(async ({ conversationId }: { conversationId: number }) => ({ id: conversationId, messages: [
     turn(9, { role: "user", content: "Synthetic saved question", sources: [], verified: false }), turn(10, { feedback: "helpful" }),
   ] }));
@@ -573,5 +575,164 @@ describe("backward-compatible shared chat footer", () => {
     await act(async () => root.render(React.createElement(AIChatBox, { messages, onSendMessage: send })));
     expect(text()).toContain("Synthetic assistant"); expect(text()).not.toContain("Footer");
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+function uiCondition(overrides: Partial<SupportConditionCheck> = {}): SupportConditionCheck {
+  return { target: "question_checklist", claimId: null, relation: "document_field",
+    source: { ...source(1, "Synthetic condition guide"), key: "kb:1" }, chunkIndex: 0, start: 0, end: 40,
+    sourceFingerprint: "a".repeat(64), ...overrides };
+}
+function conditionResult(id = 12, checks = [uiCondition()]) {
+  return result(id, { disposition: "validation_failed", status: "failed", verified: false,
+    validationDiagnostic: "conditions_missing", conditionChecks: checks, sources: [],
+    answer: "This answer was withheld. Please check the approved guidance.",
+  });
+}
+const inspectionRow = (id: number, index = 0) => footer(id).querySelector<HTMLElement>(`[data-condition-index="${index}"]`)!;
+
+describe("on-demand current-source condition inspection UI", () => {
+  it("shows fixed relation/target/source labels only, with no verifier text or automatic source fetch", async () => {
+    const checks = Object.keys(SUPPORT_CONDITION_RELATION_LABELS).map((relation, index) => uiCondition({
+      relation: relation as SupportConditionCheck["relation"],
+      ...(index === 1 ? { target: "claim" as const, claimId: 2 } : {}),
+      explanation: "PRIVATE_VERIFIER_UI_SENTINEL provider@example.test", excerpt: "PRIVATE_STALE_EXCERPT",
+      source: { ...uiCondition().source, text: "PRIVATE_SOURCE_SNAPSHOT" },
+    } as Partial<SupportConditionCheck>));
+    mocks.ask.mockResolvedValueOnce(conditionResult(12, checks));
+    await render(); await submit();
+    expect(footer(12).textContent).toContain("Verifier flagged a possible missing condition — not a verified answer");
+    for (const label of Object.values(SUPPORT_CONDITION_RELATION_LABELS)) expect(footer(12).textContent).toContain(label);
+    expect(footer(12).textContent).toContain("Claim 2");
+    expect(footer(12).textContent).toContain("Question checklist");
+    expect(footer(12).textContent).toContain("Synthetic condition guide");
+    expect(footer(12).querySelectorAll('[data-condition-index]')).toHaveLength(5);
+    expect(container.innerHTML).not.toMatch(/PRIVATE_VERIFIER_UI_SENTINEL|PRIVATE_STALE_EXCERPT|PRIVATE_SOURCE_SNAPSHOT/);
+    expect(mocks.conditionSource).not.toHaveBeenCalled();
+  });
+
+  it("renders a fresh exact quote as React text, never Markdown/HTML, and preserves the safe source link", async () => {
+    const quote = '<img src=x onerror="evil()"> **not markdown** [unsafe](javascript:evil())';
+    mocks.ask.mockResolvedValueOnce(conditionResult());
+    mocks.conditionSource.mockResolvedValueOnce({ available: true, source: uiCondition().source, excerpt: quote });
+    await render(); await submit(); await click("Inspect source check", inspectionRow(12));
+    expect(mocks.conditionSource).toHaveBeenCalledWith({ messageId: 12, checkIndex: 0 }, { staleTime: 0 });
+    const row = inspectionRow(12);
+    expect(row.querySelector("blockquote")!.textContent).toBe(quote);
+    expect(row.querySelector("img")).toBeNull();
+    expect(row.querySelector("strong")).toBeNull();
+    expect(row.querySelectorAll("a")).toHaveLength(1);
+    expect(row.querySelector("a")!.getAttribute("href")).toBe("/knowledge-base?article=1");
+    expect(row.querySelector("a")!.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(row.textContent).toContain("this does not verify the withheld answer");
+    await submit("Another general process question");
+    expect(inspectionRow(12).querySelector("blockquote")!.textContent).toBe(quote);
+    expect(footer(12).textContent).not.toContain("Source-checked guidance");
+    expect(mocks.ask.mock.calls[1][0]).toEqual({ question: "Another general process question", conversationId: 7 });
+  });
+
+  it("resumes only bounded source refs and loads each saved quote only when clicked", async () => {
+    const checks = Array.from({ length: 12 }, () => uiCondition());
+    mocks.history.mockResolvedValueOnce({ id: 7, messages: [turn(10, {
+      disposition: "validation_failed", verified: false, sources: [], validationDiagnostic: "conditions_missing", conditionChecks: checks,
+    })] });
+    mocks.conditionSource.mockResolvedValueOnce({ available: true, source: uiCondition().source, excerpt: "Each invoice must be uploaded separately." });
+    await render(); await resume(7);
+    expect(footer(10).querySelectorAll('[data-condition-index]')).toHaveLength(8);
+    expect(mocks.conditionSource).not.toHaveBeenCalled();
+    await click("Inspect source check", inspectionRow(10, 7));
+    expect(mocks.conditionSource.mock.calls[0][0]).toEqual({ messageId: 10, checkIndex: 7 });
+    expect(inspectionRow(10, 7).querySelector("blockquote")!.textContent).toBe("Each invoice must be uploaded separately.");
+    expect(inspectionRow(10, 0).querySelector("blockquote")).toBeNull();
+  });
+
+  it.each(["new", "resume", "remount"])("clears source excerpts and rejects late responses after %s conversation/view change", async change => {
+    const waiting = deferred();
+    mocks.ask.mockResolvedValueOnce(conditionResult());
+    mocks.conditionSource.mockReturnValueOnce(waiting.promise);
+    await render(); await submit();
+    await click("Inspect source check", inspectionRow(12));
+    expect(text()).toContain("Checking the current approved source");
+    expect(button("New conversation").disabled).toBe(false);
+    if (change === "new") await click("New conversation");
+    else if (change === "resume") await resume(8);
+    else await render("fresh-condition-page");
+    await act(async () => waiting.resolve({ available: true, source: uiCondition().source, excerpt: "LATE_UNRELATED_SOURCE_EXCERPT" }));
+    expect(text()).not.toContain("LATE_UNRELATED_SOURCE_EXCERPT");
+    expect(container.querySelector("blockquote")).toBeNull();
+    expect(footer(12)).toBeNull();
+  });
+
+  it("new/resume clears a completed inspection and never reuses it for a saved message with the same ID", async () => {
+    mocks.ask.mockResolvedValueOnce(conditionResult());
+    mocks.conditionSource.mockResolvedValueOnce({ available: true, source: uiCondition().source, excerpt: "FIRST_VIEW_EXCERPT" });
+    mocks.history.mockResolvedValueOnce({ id: 8, messages: [turn(12, {
+      disposition: "validation_failed", verified: false, validationDiagnostic: "conditions_missing", conditionChecks: [uiCondition()], sources: [],
+    })] });
+    await render(); await submit(); await click("Inspect source check", inspectionRow(12));
+    expect(text()).toContain("FIRST_VIEW_EXCERPT");
+    await click("New conversation"); expect(text()).not.toContain("FIRST_VIEW_EXCERPT");
+    await resume(8); expect(text()).not.toContain("FIRST_VIEW_EXCERPT");
+    expect(mocks.conditionSource).toHaveBeenCalledTimes(1);
+  });
+
+  it("deduplicates pending clicks, reports unavailable honestly, and discards prior quotes on errors", async () => {
+    const waiting = deferred();
+    mocks.ask.mockResolvedValueOnce(conditionResult());
+    mocks.conditionSource.mockReturnValueOnce(waiting.promise)
+      .mockResolvedValueOnce({ available: true, source: uiCondition().source, excerpt: "CURRENT_QUOTE_TO_CLEAR" })
+      .mockRejectedValueOnce(new Error("PRIVATE_PROVIDER_UI_SENTINEL provider@example.test"));
+    await render(); await submit();
+    await act(async () => { const inspect = button("Inspect source check", inspectionRow(12)); inspect.click(); inspect.click(); });
+    expect(mocks.conditionSource).toHaveBeenCalledTimes(1);
+    expect(button("Inspect source check", inspectionRow(12)).disabled).toBe(true);
+    await act(async () => waiting.resolve({ available: false, reason: "source_changed_or_unavailable", excerpt: "PRIVATE_STALE_QUOTE" }));
+    expect(text()).toContain("Source changed or is no longer available. No saved excerpt is shown.");
+    expect(text()).not.toContain("PRIVATE_STALE_QUOTE");
+    await click("Inspect source check", inspectionRow(12));
+    expect(text()).toContain("CURRENT_QUOTE_TO_CLEAR");
+    await click("Inspect source check", inspectionRow(12));
+    expect(text()).not.toContain("CURRENT_QUOTE_TO_CLEAR");
+    expect(text()).toContain("Could not inspect the current source. Please try again. No saved excerpt is shown.");
+    expect(container.innerHTML).not.toContain("PRIVATE_PROVIDER_UI_SENTINEL");
+    expect(mocks.toastError).not.toHaveBeenCalled();
+  });
+
+  it.each(["answered", "partial", "privacy_blocked", "failed", "other-diagnostic", "successful-status", "user"])(
+    "does not show checks for %s new or resumed messages", async kind => {
+      const disposition = ["other-diagnostic", "successful-status", "user"].includes(kind) ? "validation_failed" : kind;
+      mocks.ask.mockResolvedValueOnce(result(12, { disposition, status: kind === "successful-status" ? "answered" : "failed",
+        verified: false, sources: [], validationDiagnostic: kind === "other-diagnostic" ? "citation_invalid" : "conditions_missing", conditionChecks: [uiCondition()],
+      }));
+      mocks.history.mockResolvedValueOnce({ id: 7, messages: [turn(10, {
+        disposition: disposition as SupportConversationMessage["disposition"], verified: false, sources: [],
+        validationDiagnostic: kind === "successful-status" ? null : kind === "other-diagnostic" ? "citation_invalid" : "conditions_missing",
+        conditionChecks: kind === "successful-status" ? undefined : [uiCondition()], ...(kind === "user" ? { role: "user" } : {}),
+      })] });
+      await render();
+      if (kind !== "user") {
+        await submit(); expect(container.querySelector('[aria-label="Possible missing conditions"]')).toBeNull();
+      }
+      // Successful responseStatus is filtered by the server reader on resume;
+      // its synthetic result here must represent that reader output.
+      await resume(7);
+      expect(container.querySelector('[aria-label="Possible missing conditions"]')).toBeNull();
+      expect(mocks.conditionSource).not.toHaveBeenCalled();
+    }
+  );
+
+  it("drops invalid/private/arbitrary check fields on newly returned and resumed checks", async () => {
+    const invalid = [uiCondition({ target: "claim", claimId: null }), uiCondition({ source: source(1, "Unsafe source", "/admin/users") }),
+      { ...uiCondition(), relation: "PRIVATE_RELATION_SENTINEL provider@example.test" } as SupportConditionCheck];
+    mocks.ask.mockResolvedValueOnce(conditionResult(12, invalid));
+    mocks.history.mockResolvedValueOnce({ id: 7, messages: [turn(10, {
+      disposition: "validation_failed", verified: false, sources: [], validationDiagnostic: "conditions_missing", conditionChecks: invalid,
+    })] });
+    await render(); await submit();
+    expect(container.querySelector('[aria-label="Possible missing conditions"]')).toBeNull();
+    await resume(7);
+    expect(container.querySelector('[aria-label="Possible missing conditions"]')).toBeNull();
+    expect(container.innerHTML).not.toContain("PRIVATE_RELATION_SENTINEL");
+    expect(mocks.conditionSource).not.toHaveBeenCalled();
   });
 });

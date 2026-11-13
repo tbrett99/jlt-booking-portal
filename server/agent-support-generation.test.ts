@@ -64,6 +64,7 @@ function verification(overrides: Record<string, unknown> = {}) {
       },
     ],
     answerRetainsMaterialExceptions: true,
+    missingConditions: [],
     dispositionAppropriate: true,
     clarification: null,
     ...overrides,

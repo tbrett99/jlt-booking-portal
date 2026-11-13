@@ -11,7 +11,7 @@ function candidate(wording: string) {
   return { disposition: "answered", clarification: null, claims: [claim(1, "A confirmation or invoice must show the supplier name and amount paid."), claim(2, wording), claim(3, "Proof of payment must match the supplier and amount and show the payment has cleared; pending payment is not accepted.")] };
 }
 function verdict() {
-  return { claimResults: [1, 2, 3].map(claimId => ({ claimId, supported: true, retainsMaterialExceptions: true, safe: true })), answerRetainsMaterialExceptions: true, dispositionAppropriate: true, clarification: null };
+  return { claimResults: [1, 2, 3].map(claimId => ({ claimId, supported: true, retainsMaterialExceptions: true, safe: true })), answerRetainsMaterialExceptions: true, missingConditions: [] as any[], dispositionAppropriate: true, clarification: null };
 }
 function invoker(...values: unknown[]) {
   const invoke = vi.fn<SupportModelInvoker>();
@@ -160,7 +160,7 @@ describe("history vocabulary permits nouns/spelling, never new facts, statuses o
 
 describe("allowlisted content-free verification diagnostics", () => {
   it.each([
-    ["conditions_missing", { answerRetainsMaterialExceptions: false }],
+    ["conditions_missing", { answerRetainsMaterialExceptions: false, missingConditions: [{ evidenceId: "E1", target: "question_checklist", claimId: null, relation: "document_field" }] }],
     ["relevance_failed", { dispositionAppropriate: false }],
     ["verification_contract", { claimResults: [] }],
     ["clarification_failed", { clarification: { safe: true, needed: true, noUnstatedAssumptions: true } }],
@@ -181,6 +181,7 @@ describe("allowlisted content-free verification diagnostics", () => {
   ])("continues rejecting negative per-claim flag %s", async (flag, code) => {
     const checked = verdict();
     (checked.claimResults[1] as Record<string, unknown>)[flag] = false;
+    if (flag === "retainsMaterialExceptions") checked.missingConditions = [{ evidenceId: "E1", target: "claim", claimId: 2, relation: "document_field" }];
     const result = await generateSupportTurn({ question, history: [], sources: [source] }, invoker(candidate(generic[0]), checked));
     expect(result.validationDiagnostic).toBe(code);
     expect(result.verified).toBe(false);
@@ -228,7 +229,7 @@ describe("server-issued evidence references — quotes remain exact and source-b
     return { disposition: "answered", clarification: null, claims: [{ id: 1, section: "direct_answer", text, evidence: [{ evidenceId }] }] };
   }
   function oneVerdict(overrides = {}) {
-    return { claimResults: [{ claimId: 1, supported: true, retainsMaterialExceptions: true, safe: true }], answerRetainsMaterialExceptions: true, dispositionAppropriate: true, clarification: null, ...overrides };
+    return { claimResults: [{ claimId: 1, supported: true, retainsMaterialExceptions: true, safe: true }], answerRetainsMaterialExceptions: true, missingConditions: [] as any[], dispositionAppropriate: true, clarification: null, ...overrides };
   }
   it("expands only the selected real source passage before exact semantic verification", async () => {
     const text = "Provide a supplier confirmation or invoice showing supplier name, client name and amount paid, and proof of payment matching supplier and amount that has cleared; pending payment is not accepted.";
