@@ -18,6 +18,7 @@ import type {
 import { isSafeSupportHref } from "../shared/agent-support-metadata";
 import { screenSupportInput } from "./agent-support-privacy";
 import { maskGenericDocumentRequirementClauses, normalizeSupportRewriteNoun } from "./agent-support-language";
+import { bindCommonDurationFollowUp, explicitSupportTopics } from "./agent-support-context";
 
 const MODEL = "gpt-5-mini";
 const MAX_CALLS = 3;
@@ -672,11 +673,17 @@ export async function generateSupportTurn(
         screenSupportInput(turn.content).safe
     );
     let retrievalQuestion = question;
-    if (priorUsers.length) {
+    const durationFollowUp = bindCommonDurationFollowUp(question, priorUsers);
+    if (durationFollowUp) {
+      if (!groundedRewrite(durationFollowUp.question, question,
+        durationFollowUp.priorUserIndices.map(index => priorUsers[index].content))) invalid("context_provenance");
+      retrievalQuestion = durationFollowUp.question;
+    }
+    if (priorUsers.length && !durationFollowUp) {
       const raw = await call(
         "support_contextualization",
         rewriteSchema,
-        "Resolve the current question using only selected prior USER turns for topic/reference context. Do not add facts, identifiers or constraints. Choose priorUserIndices identifying exactly the user turns used. If the current question names its own generic topic and asks a complete question, return resolved with question=currentQuestion unchanged and priorUserIndices=[]; the mere presence of history is not ambiguity. Informal spelling or docs wording, repetition and lowercase are not reasons to clarify. You need not correct spelling to resolve a complete question. When prior indices are used to resolve it/that/this, explicitly include the referenced generic subject in the question; do not return an unresolved Where do I upload it. Retain user-supplied relevant conditions such as payment still pending so the fresh guidance cannot ignore them. Prior assistant clarification (if present) is intent-only, never factual evidence. Reuse or quote the supplied user topic/status words instead of inventing synonyms, evidence or policy. Vocabulary must come from current/selected prior user text, plus ordinary grammatical/procedural connecting words or the supplied narrow noun equivalences. A follow-up asking whether pending payment is okay after a reimbursement topic asks for the generic requirement, not confirmation that a particular payment cleared: resolve the generic question using the supplied words. Where do I upload it may similarly reuse the prior user evidence/reimbursement topic; no private document is inspected. Still block an actual request to inspect an individual record or decide an individual's outcome. Return clarify only if essential referential/procedural context cannot be resolved. STRICT disposition contract: resolved requires a question; clarify or blocked require BOTH question=null AND priorUserIndices=[] even if a prior turn prompted the refusal. Never populate indices for clarify or blocked.",
+        "Resolve the current question using only selected prior USER turns for topic/reference context. Do not add facts, identifiers or constraints. Choose priorUserIndices identifying exactly the user turns used. If the current question names its own generic topic and asks a complete question, return resolved with question=currentQuestion unchanged and priorUserIndices=[]; the mere presence of history is not ambiguity. Informal spelling or docs wording, repetition and lowercase are not reasons to clarify. You need not correct spelling to resolve a complete question. When prior indices are used to resolve it/that/this, explicitly include the referenced generic subject in the question; never return an unchanged/unresolved Where do I upload it or how long will it take. A duration question can retain the user topic without asserting any deadline or payment outcome; source availability is a fresh-retrieval decision, not a reason to forget an available topic. Reuse the literal user words, for example how long will the reimbursement request take, instead of inventing processing/timeframe synonyms. Retain user-supplied relevant conditions such as payment still pending so the fresh guidance cannot ignore them. Prior assistant clarification (if present) is intent-only, never factual evidence. Reuse or quote the supplied user topic/status words instead of inventing synonyms, evidence or policy. Vocabulary must come from current/selected prior user text, plus ordinary grammatical/procedural connecting words or the supplied narrow noun equivalences. A follow-up asking whether pending payment is okay after a reimbursement topic asks for the generic requirement, not confirmation that a particular payment cleared: resolve the generic question using the supplied words. Where do I upload it may similarly reuse the prior user evidence/reimbursement topic; no private document is inspected. Still block an actual request to inspect an individual record or decide an individual's outcome. Return clarify only if essential referential/procedural context cannot be resolved. STRICT disposition contract: resolved requires a question; clarify or blocked require BOTH question=null AND priorUserIndices=[] even if a prior turn prompted the refusal. Never populate indices for clarify or blocked.",
         {
           currentQuestion: question,
           priorUserTurns: priorUsers.map((turn, index) => ({
@@ -728,8 +735,18 @@ export async function generateSupportTurn(
         )
       )
         invalid("context_provenance");
+      const selectedTopics = rewritten.priorUserIndices.flatMap(index => explicitSupportTopics(priorUsers[index].content));
+      const needsTopicReference = /\b(?:it|this|that|those|these)\b/i.test(question) &&
+        !explicitSupportTopics(question).length && priorUsers.some(turn => explicitSupportTopics(turn.content).length);
+      if (needsTopicReference && (!selectedTopics.length ||
+          !explicitSupportTopics(rewritten.question).some(topic => selectedTopics.includes(topic)))) invalid("context_provenance");
+      if (selectedTopics.length && /\b(?:it|this|that|those|these)\b/i.test(question) &&
+          !explicitSupportTopics(rewritten.question).some(topic => selectedTopics.includes(topic))) invalid("context_provenance");
       retrievalQuestion = rewritten.question;
     }
+    const noSupport = durationFollowUp
+      ? `You’re asking about ${durationFollowUp.topic} timing. I can’t confirm a turnaround time from the approved guidance retrieved for this question. Please check the relevant Portal page or contact ${SUPPORT_LINK}. No action has been taken.`
+      : NO_SUPPORT;
     // Fresh existing retrieval, including after contextualization. Never use old citations.
     const chunks = retrieveAgentSupportChunks(
       input.sources,
@@ -739,7 +756,7 @@ export async function generateSupportTurn(
     if (!chunks.length)
       return result(
         "escalated",
-        NO_SUPPORT,
+        noSupport,
         [],
         false,
         "no_relevant_approved_source"
@@ -755,6 +772,7 @@ export async function generateSupportTurn(
         "Each claim must select 1–5 evidenceId values from untrustedEvidenceExcerpts. The server attaches the exact source quote and citation. Never invent an ID, copy quote text, supply a citationIndex, or treat the existence of an excerpt as proof that it supports your claim. Choose only excerpts that actually entail the whole claim and its qualifications.",
         "Answer ONLY the aspect asked, normally 2–5 claims. For a docs/documents/evidence/confirmation/invoice requirements question, give the document checklist and relevant conditions only. Do not add navigation, submission steps or company-card routing unless the question asks for them or the actual claim needs that condition. Do not force all section types into every answer.",
         "Before drafting a document checklist, inspect all supplied passages for the required document types, document fields, proof/matching/cleared-status restrictions and each-item scope actually required by the sources for THIS question. Include every such material requirement in the claims; brevity must not drop one. These examples are not policy by themselves. Separate a source's actual requirements from unrelated processing purposes, liability clauses or opposite-direction repayment obligations; never infer extra documents merely because those topics mention reimbursement. If applicable requirements genuinely conflict, do not confirm the disputed checklist.",
+        "For a how long / duration question, retain the resolved user topic and give only a source-supported duration plus its actual start point/conditions. Do not restart a document checklist or ask which unrelated Portal procedure is meant. If the selected passages give no applicable duration, return no_support with no claims and null clarification; do not invent a timescale, treat an unrelated deadline as turnaround, or borrow a personal-travel duration for a general reimbursement question. Ask a targeted non-sensitive stage clarification only when materially different applicable durations actually require it. Any supplied prior-user topic context is intent only, never factual evidence or a confirmed personal status.",
         "For a navigation/process question, give relevant ordered steps and qualifying prerequisites, retaining item/evidence requirements and distinguishing new requests from further-evidence requests. Use words such as then or the Unicode arrow → for navigation, never raw < or > characters. Do not emit HTML, URLs or Markdown links.",
         "Preserve all material conditions/exceptions that qualify the guidance actually provided, with clearly applicable conditions claims if needed. A direct_answer claim is required for answered/partial. Partial may contain only supported useful guidance; it is not a way to confirm a disputed requirement, fee or deadline.",
         "For clarify/no_support claims must be empty. no_support and answered must have null clarification. clarify may use null for the harmless fallback or one necessary non-sensitive question ending with ?. A partial clarification must also be non-sensitive and necessary. No uncited facts, recovery, invented policy or private-record inference.",
@@ -762,6 +780,7 @@ export async function generateSupportTurn(
       {
         screenedCurrentQuestion: question,
         resolvedQuestion: retrievalQuestion,
+        ...(durationFollowUp ? { untrustedPriorUserTopicContext: priorUsers[durationFollowUp.priorUserIndices[0]].content } : {}),
         untrustedSourcePassages: passages,
         untrustedEvidenceExcerpts: excerpts,
       },
@@ -773,7 +792,7 @@ export async function generateSupportTurn(
     if (generated.disposition === "no_support")
       return result(
         "escalated",
-        NO_SUPPORT,
+        noSupport,
         [],
         false,
         "model_confirmed_no_direct_support"
@@ -793,6 +812,7 @@ export async function generateSupportTurn(
       {
         screenedCurrentQuestion: question,
         resolvedQuestion: retrievalQuestion,
+        ...(durationFollowUp ? { untrustedPriorUserTopicContext: priorUsers[durationFollowUp.priorUserIndices[0]].content } : {}),
         untrustedSourcePassages: passages,
         untrustedEvidenceExcerpts: excerpts,
         untrustedCandidate: generated,

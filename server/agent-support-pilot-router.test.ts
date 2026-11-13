@@ -1773,6 +1773,142 @@ describe("source loading remains positive-projection only", () => {
 });
 
 describe("verified generic document wording resumption", () => {
+  // Generic, source-shaped audit answer: deliberately longer than one context
+  // message, while containing neither private values nor a new intent channel.
+  const firstQuestion = "what docs do i need for a reimbursement";
+  const followUp = "how long will it take";
+  const longSafeAnswer = [
+    "**Direct answer**",
+    "",
+    "- Provide a confirmation or invoice showing supplier name, client name and amount paid, and proof of payment matching the supplier and amount that shows the payment has cleared. [S1]",
+    "",
+    "**Next steps**",
+    "",
+    "1. Open My bookings and find the correct booking. Open that booking and go to My Reimbursements, then select Request Additional Reimbursement. [S1]",
+    "2. Before continuing, have the supporting documents ready and confirm that the documents are ready and the payment has cleared. [S1]",
+    "3. Add each reimbursement item with its supplier name and amount. Upload the supporting documents for every reimbursement item, then submit the request. [S1]",
+    "",
+    "**Conditions and exceptions**",
+    "",
+    "- Payments still shown as pending are not accepted; proof of payment must match the supplier and amount and show the payment has cleared. [S1]",
+    "- Select the JLT company card option only when the expense was paid using the JLT company card; those funds return to JLT rather than being paid back to the agent. [S1]",
+    "- If JLT asks for further information after submission, check the booking Messages and upload the requested evidence in the relevant My Reimbursements item. Do not send reimbursement documents as a general booking-message attachment. [S1]",
+    "",
+    "**Sources**",
+    "",
+    "- [Source S1](/my-bookings)",
+  ].join("\n");
+
+  it("keeps a newly stored verified answer over 1200 characters paired with its exact first user question in the real ask follow-up", async () => {
+    conversation({ id: 11, userId: 999 });
+    conversation({ id: 12 });
+    for (const conversationId of [11, 12]) {
+      message({ id: conversationId * 10, conversationId, role: "user", content: "OTHER_CONVERSATION: What refund documents are required?" });
+      message({ id: conversationId * 10 + 1, conversationId, content: "OTHER_CONVERSATION: Read the refund procedure [S1]." });
+    }
+    guards.generate.mockResolvedValueOnce(generated({ answer: longSafeAnswer }));
+    const first = await caller().ask({ question: firstQuestion });
+    expect(longSafeAnswer.length).toBeGreaterThan(1200);
+    expect(first.answer).toBe(longSafeAnswer);
+    const stored = fixture.rows("agent_support_messages").filter(row => row.conversationId === first.conversationId);
+    expect(stored.map(row => row.content)).toEqual([firstQuestion, longSafeAnswer]);
+    expect(stored.map(row => JSON.parse(row.sourceRefs))).toEqual([
+      expect.objectContaining({ version: 2, inputScreened: true, verified: false }),
+      expect.objectContaining({ version: 2, inputScreened: true, verified: true }),
+    ]);
+    const resumed = await caller().conversation({ conversationId: first.conversationId });
+    expect(resumed.messages[1]).toMatchObject({ content: longSafeAnswer, verified: true });
+    await caller().ask({ conversationId: first.conversationId, question: followUp });
+    // The generation module is mocked in this fixture. This assertion verifies
+    // router provenance/pairing, not the production contextualizer's binding.
+    expect(guards.generate.mock.calls[1][0]).toMatchObject({
+      question: followUp,
+      history: [{ role: "user", content: firstQuestion }, { role: "assistant", content: longSafeAnswer.slice(0, 1200) }],
+    });
+    expect(JSON.stringify(guards.generate.mock.calls[1][0].history)).not.toContain("OTHER_CONVERSATION");
+  });
+
+  it.each([1199, 1200, 1201])("retains the complete screened pair for a safe %i-character assistant answer, bounding only its text", async length => {
+    conversation();
+    const prefix = "Read the generic reimbursement procedure. ";
+    const content = prefix + "g".repeat(length - prefix.length);
+    message({ id: 1, role: "user", content: firstQuestion, sourceRefs: envelope({ sources: [], verified: false }) });
+    message({ id: 2, content });
+    expect(content).toHaveLength(length);
+    await caller().ask({ conversationId: 10, question: followUp });
+    expect(guards.generate.mock.calls[0][0]).toMatchObject({
+      question: followUp,
+      history: [{ role: "user", content: firstQuestion }, { role: "assistant", content: content.slice(0, 1200) }],
+    });
+  });
+
+  it.each(["user", "assistant"].flatMap(role => [
+    "The client name is Synthetic Person.", "booking reference: ABCD-123", "customer@example.test",
+  ].map(detail => ({ role, detail }))))("drops both halves when the $role has private suffix $detail beyond character 1200", async ({ role, detail }) => {
+    conversation();
+    message({ id: 1, role: "user", content: "How do reimbursements work?" });
+    message({ id: 2, content: "Read the generic reimbursement procedure [S1]." });
+    const unsafe = `${"general procedure ".repeat(80)}\n${detail}`;
+    expect(unsafe.indexOf(detail)).toBeGreaterThan(1200);
+    message({ id: 3, role: "user", content: role === "user" ? unsafe : firstQuestion });
+    message({ id: 4, content: role === "assistant" ? unsafe : longSafeAnswer });
+    const resumed = await caller().conversation({ conversationId: 10 });
+    expect(resumed.messages.find(row => row.id === (role === "user" ? 3 : 4))?.content).toBe(OMISSION);
+    await caller().ask({ conversationId: 10, question: followUp });
+    expect(guards.generate.mock.calls[0][0].history).toEqual([
+      { role: "user", content: "How do reimbursements work?" },
+      { role: "assistant", content: "Read the generic reimbursement procedure [S1]." },
+    ]);
+    expect(JSON.stringify(guards.generate.mock.calls[0][0])).not.toContain(detail);
+  });
+
+  it.each([
+    { side: "user", refs: null, label: "legacy user" },
+    { side: "user", refs: { ...envelope(), version: 1 }, label: "old-version user" },
+    { side: "user", refs: { ...envelope(), inputScreened: false }, label: "unscreened user" },
+    { side: "assistant", refs: [citation()], label: "legacy assistant" },
+    { side: "assistant", refs: { ...envelope(), version: 1 }, label: "old-version assistant" },
+    { side: "assistant", refs: { ...envelope(), inputScreened: false }, label: "unscreened assistant" },
+    { side: "assistant", refs: envelope({ verified: false }), label: "unverified assistant" },
+  ])("does not reintroduce a long answer through $label metadata", async ({ side, refs }) => {
+    conversation();
+    message({ id: 1, role: "user", content: firstQuestion, sourceRefs: side === "user" ? refs : envelope({ sources: [], verified: false }) });
+    message({ id: 2, content: longSafeAnswer, sourceRefs: side === "assistant" ? refs : envelope() });
+    await caller().ask({ conversationId: 10, question: followUp });
+    expect(guards.generate.mock.calls[0][0].history).toEqual([]);
+  });
+
+  it.each([".", "?", "!", "\\!"])("resumes only a verified closed invoice requirement ending in %s with its first question", async ending => {
+    conversation();
+    const content = `**Direct answer**\n\n- Client name: required on the invoice${ending} [S1]`;
+    message({ id: 1, role: "user", content: firstQuestion, sourceRefs: envelope({ sources: [], verified: false }) });
+    message({ id: 2, content });
+    const resumed = await caller().conversation({ conversationId: 10 });
+    expect(resumed.messages[1]).toMatchObject({ content, verified: true });
+    await caller().ask({ conversationId: 10, question: followUp });
+    expect(guards.generate.mock.calls[0][0].history).toEqual([{ role: "user", content: firstQuestion }, { role: "assistant", content }]);
+  });
+
+  it.each([
+    "Client name: required on the invoice Synthetic Person\\! [S1]",
+    "Client name: required on the invoice\\! Synthetic Person. [S1]",
+    "Client name: required on the invoice\\! Actual value: Synthetic Person. [S1]",
+    "The client name is Synthetic Person.\n- Client name: required on the invoice\\! [S1]",
+    "- Client name: required on the invoice\\! [S1]\nThe client name is Synthetic Person.",
+    "booking reference: ABCD-123\n- Client name: required on the invoice\\! [S1]",
+    "- Client name: required on the invoice\\! [S1]\nbooking reference: ABCD-123",
+    "Client name: required on the invoice; payment PM01ABCDEFGHIJKL\\! [S1]",
+    "Client name: required on the invoice\\!; payment PM01ABCDEFGHIJKL [S1]",
+  ])("suppresses private content before/after escaped punctuation and drops its whole verified pair: %s", async content => {
+    conversation();
+    message({ id: 1, role: "user", content: firstQuestion, sourceRefs: envelope({ sources: [], verified: false }) });
+    message({ id: 2, content });
+    const resumed = await caller().conversation({ conversationId: 10 });
+    expect(resumed.messages[1].content).toBe(OMISSION);
+    await caller().ask({ conversationId: 10, question: followUp });
+    expect(guards.generate.mock.calls[0][0].history).toEqual([]);
+  });
+
   it("preserves a verified field requirement on resume and in a fresh screened follow-up", async () => {
     conversation();
     message({ id: 1, role: "user", content: "What reimbursement documents are required?", sourceRefs: envelope({ sources: [], verified: false }) });

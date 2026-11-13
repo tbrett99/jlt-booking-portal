@@ -291,4 +291,53 @@ describe("verified-history-only requirement normalization", () => {
     }
     expect(safeStoredSupportText("Client name: required on the invoice.", true, true)).toBe("Client name: required on the invoice.");
   });
+
+  it.each(["!", ".", "?"])("preserves a verified closed %s requirement through actual generation, rendering and storage", async punctuation => {
+    const wording = `Client name: required on the invoice${punctuation}`;
+    const invoke = invoker(candidate(wording), verdict());
+    const result = await generateSupportTurn({ question, history: [], sources: [source] }, invoke);
+    const renderedWording = punctuation === "!" ? "Client name: required on the invoice\\!" : wording;
+    expect(result).toMatchObject({ disposition: "answered", verified: true });
+    expect(result.answer).toContain(`- ${renderedWording} [S1]`);
+    expect(invoke).toHaveBeenCalledTimes(2);
+    const verification = JSON.parse(invoke.mock.calls[1][0].messages[2].content as string);
+    expect(verification.untrustedCandidate.claims[1].text).toBe(wording);
+    expect(safeStoredSupportText(result.answer, true, result.verified)).toBe(result.answer);
+    expect(safeStoredSupportText(result.answer, true)).toContain("Private details omitted");
+    expect(safeStoredSupportText(result.answer, true, false)).toContain("Private details omitted");
+    expect(safeStoredSupportText(result.answer, false, true)).toContain("Private details omitted");
+  });
+
+  it("recognizes the exact renderer-escaped exclamation without unescaping stored text", () => {
+    const text = "**Direct answer**\n\n- Client name: required on the invoice\\! [S1]";
+    expect(maskGenericDocumentRequirementClauses(text)).toBe("**Direct answer**\n\ngeneric document field requirement");
+    expect(safeStoredSupportText(text, true, true)).toBe(text);
+    expect(safeStoredSupportText(text, true, false)).toContain("Private details omitted");
+    expect(screenSupportInput(text).safe).toBe(false);
+  });
+
+  it.each(["\\.", "\\?", "\\*", "\\\\!"])("does not generally unescape Markdown suffix %s", suffix => {
+    const text = `- Client name: required on the invoice${suffix} [S1]`;
+    expect(maskGenericDocumentRequirementClauses(text)).toBe(text);
+    expect(safeStoredSupportText(text, true, true)).toContain("Private details omitted");
+  });
+
+  it.each([
+    "Client name: required on the invoice Synthetic Person\\! [S1]",
+    "Client name: required on the invoice\\! Synthetic Person. [S1]",
+    "Client name: required on the invoice for Synthetic Person\\! [S1]",
+    "Client name: required on the invoice\\! Actual value: Synthetic Person. [S1]",
+    "The client name is Synthetic Person.\n- Client name: required on the invoice\\! [S1]",
+    "- Client name: required on the invoice\\! [S1]\nThe client name is Synthetic Person.",
+    "booking reference: ABCD-123\n- Client name: required on the invoice\\! [S1]",
+    "- Client name: required on the invoice\\! [S1]\nbooking reference: ABCD-123",
+    "Client name: required on the invoice; payment PM01ABCDEFGHIJKL\\! [S1]",
+    "Client name: required on the invoice\\!; payment PM01ABCDEFGHIJKL [S1]",
+    "customer@example.test\n- Client name: required on the invoice\\! [S1]",
+    "- Client name: required on the invoice\\! [S1]\ncustomer@example.test",
+  ])("still suppresses private names/identifiers before or after escaped punctuation: %s", text => {
+    expect(safeStoredSupportText(text, true, true)).toContain("Private details omitted");
+    expect(safeStoredSupportText(text, true, false)).toContain("Private details omitted");
+    expect(screenSupportInput(text).safe).toBe(false);
+  });
 });

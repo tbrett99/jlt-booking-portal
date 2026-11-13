@@ -4,6 +4,15 @@
 const NOUN_FORMS: Record<string, string[]> = {
   document: ["documents", "docs", "documentation"],
   reimbursement: ["reimbursements", "reimbursment", "reimbursments", "reimbursmet", "reimbursmeent", "riembursement", "rembursement"],
+  refund: ["refunds"],
+  amendment: ["amendments"],
+  cancellation: ["cancellations"],
+  commission: ["commissions"],
+  assessment: ["assessments"],
+  mandate: ["mandates"],
+  booking: ["bookings"],
+  supplier: ["suppliers"],
+  webinar: ["webinars"],
   invoice: ["invoices"],
   receipt: ["receipts"],
   lesson: ["lessons"],
@@ -25,7 +34,9 @@ export function normalizeSupportRewriteNoun(word: string): string {
 // in a following sentence on the same line must keep the original privacy anchor.
 // Server-owned citation markers may follow the otherwise closed statement.
 const start = "^\\s*(?:- |\\d+\\. )?";
-const end = "[.!?]?(?:\\s+\\[S\\d+\\])*\\s*$";
+// The controlled Markdown renderer escapes '!'. Recognize that exact terminal
+// form only; never broadly unescape Markdown or mask an open clause prefix.
+const end = "(?:[.!?]|\\\\!)?(?:\\s+\\[S\\d+\\])*\\s*$";
 const document = "(?:the )?(?:supplier )?(?:confirmation|invoice|receipt|document)(?: or (?:invoice|confirmation|receipt|document))?";
 const clientFieldRequirement = new RegExp(
   start + "(?:the )?client name(?: is required| must be (?:shown|included|present)|: required)(?: (?:on|in) " + document + ")?" + end,
