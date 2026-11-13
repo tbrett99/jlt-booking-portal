@@ -54,6 +54,13 @@ export default function AcademyHome() {
             <Link href={courseHref(continueItem.course.id, continueItem.id)} className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[#70FFE8] px-4 py-2.5 text-sm font-bold text-[#27302e] transition hover:bg-[#8cffef]">
               <PlayCircle size={17} /> {continueItem.nextLesson ? `Continue: ${continueItem.nextLesson.title}` : `Open ${continueItem.course.title}`} <ArrowRight size={16} />
             </Link>
+          ) : completed.length ? (
+            <div className="mt-5">
+              <p className="text-sm text-white/75">Your completed courses are available below whenever you want to recap.</p>
+              <Link href={courseHref(completed[0].course.id, completed[0].id)} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#70FFE8] px-4 py-2.5 text-sm font-bold text-[#27302e] transition hover:bg-[#8cffef]">
+                <BookOpenCheck size={17} /> Revisit: {completed[0].course.title} <ArrowRight size={16} />
+              </Link>
+            </div>
           ) : (
             <div className="mt-6 inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2.5 text-sm font-medium text-white/80"><Sparkles size={17} /> Your team will assign learning here when it is ready.</div>
           )}
@@ -91,7 +98,14 @@ export default function AcademyHome() {
 
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Your record</p><h2 className="mt-1 text-xl font-bold">Completed learning</h2>
-          {completed.length ? <div className="mt-4 space-y-3">{completed.map((item) => <div key={item.id} className="flex gap-3 rounded-xl bg-emerald-50/70 p-3"><CheckCircle2 className="mt-0.5 shrink-0 text-emerald-600" size={18} /><div><p className="text-sm font-semibold">{item.course.title}</p><p className="mt-0.5 text-xs text-emerald-700">{item.status === "waived" ? "Completion waived by JLT" : `Completed ${formatDate(item.completedAt)}`}</p></div></div>)}</div> : <div className="mt-4 rounded-xl bg-muted/50 p-4 text-sm text-muted-foreground">Completed courses will be retained here as part of your learning record.</div>}
+          {completed.length ? <>
+            <p className="mt-2 text-sm text-muted-foreground">Revisit the course content whenever you need a refresher. Your completion record stays unchanged.</p>
+            <div className="mt-4 space-y-3">{completed.map((item) => <div key={item.id} className="flex flex-wrap items-center gap-3 rounded-xl bg-emerald-50/70 p-3">
+              <CheckCircle2 className="shrink-0 text-emerald-600" size={18} />
+              <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{item.course.title}</p><p className="mt-0.5 text-xs text-emerald-700">{item.status === "waived" ? "Completion waived by JLT" : `Completed ${formatDate(item.completedAt)}`}</p></div>
+              <Link href={courseHref(item.course.id, item.id)} aria-label={`Revisit course: ${item.course.title}`} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100">Revisit course <ArrowRight size={15} /></Link>
+            </div>)}</div>
+          </> : <div className="mt-4 rounded-xl bg-muted/50 p-4 text-sm text-muted-foreground">Completed courses will be retained here as part of your learning record.</div>}
         </section>
       </div>
     </div>
