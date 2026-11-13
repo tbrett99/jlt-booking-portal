@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Bot, BookOpen, CheckCircle2, ExternalLink, Gauge, MessageCircleQuestion, RefreshCw, ShieldCheck, ThumbsDown, ThumbsUp } from "lucide-react";
-import { AIChatBox, type Message } from "@/components/AIChatBox";
+import { Bot, ExternalLink, Gauge, MessageCircleQuestion, RefreshCw, ShieldCheck, ThumbsDown, ThumbsUp } from "lucide-react";
+import { AIChatBox } from "@/components/AIChatBox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
+import { SUPPORT_DISPOSITION_LABELS, type SupportConversationMessage } from "@shared/agent-support-pilot";
+import { isSafeSupportHref } from "@shared/agent-support-metadata";
 
 const SUGGESTED_PROMPTS = [
   "Where can I find guidance on a supplier?",
@@ -14,30 +16,10 @@ const SUGGESTED_PROMPTS = [
   "Which recorded webinar covers business development?",
 ];
 
-type Citation = {
-  key: string;
-  kind: string;
-  title: string;
-  href: string;
-  label: string;
-  timestampLabel: string | null;
-  updatedAt: Date | string | null;
-};
-
-type AnswerMeta = {
-  messageId: number;
-  sources: Citation[];
-  status: "answered" | "insufficient_sources" | "failed";
-};
-
 function labelForSourceKind(kind: string) {
   return {
-    knowledge_base: "Knowledge Base",
-    webinar: "Webinar",
-    academy: "JLT Academy",
-    supplier: "Supplier Directory",
-    community: "Community update",
-    policy: "Terms & Policies",
+    knowledge_base: "Knowledge Base", webinar: "Webinar", academy: "JLT Academy",
+    supplier: "Supplier Directory", community: "Community update", policy: "Terms & Policies",
     portal_procedure: "Portal procedure",
   }[kind] ?? kind;
 }
@@ -46,36 +28,36 @@ function Metric({ value, label }: { value: number; label: string }) {
   return <div className="rounded-xl border bg-background/70 p-3"><p className="text-xl font-bold tabular-nums">{value}</p><p className="mt-0.5 text-xs text-muted-foreground">{label}</p></div>;
 }
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Please try again.";
+}
+
 export default function AdminAgentSupport() {
   const utils = trpc.useUtils();
   const overview = trpc.agentSupport.overview.useQuery();
+  const conversations = trpc.agentSupport.conversations.useQuery();
+  const [showGaps, setShowGaps] = useState(false);
+  const gaps = trpc.agentSupport.recentGaps.useQuery(undefined, { enabled: showGaps });
   const [conversationId, setConversationId] = useState<number | undefined>();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [latestAnswer, setLatestAnswer] = useState<AnswerMeta | null>(null);
-  const [feedbackGiven, setFeedbackGiven] = useState<"helpful" | "not_helpful" | null>(null);
+  const [messages, setMessages] = useState<SupportConversationMessage[]>([]);
+  const [askBusy, setAskBusy] = useState(false);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
+  const generation = useRef(0);
+  const mounted = useRef(true);
+  const askLock = useRef(false);
+  const feedbackLock = useRef(false);
+  const historyLock = useRef(false);
+  const optimisticId = useRef(-1);
+  const ask = trpc.agentSupport.ask.useMutation();
+  const feedback = trpc.agentSupport.feedback.useMutation();
 
-  const ask = trpc.agentSupport.ask.useMutation({
-    onSuccess: async (result) => {
-      setConversationId(result.conversationId);
-      setMessages((current) => [...current, { role: "assistant", content: result.answer }]);
-      setLatestAnswer({ messageId: result.messageId, sources: result.sources, status: result.status });
-      setFeedbackGiven(null);
-      await utils.agentSupport.overview.invalidate();
-    },
-    onError: (error) => {
-      setMessages((current) => current.slice(0, -1));
-      toast.error(error.message);
-    },
-  });
-
-  const feedback = trpc.agentSupport.feedback.useMutation({
-    onSuccess: async (_result, variables) => {
-      setFeedbackGiven(variables.rating);
-      toast.success("Feedback recorded for the pilot review.");
-      await utils.agentSupport.overview.invalidate();
-    },
-    onError: (error) => toast.error(error.message),
-  });
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; generation.current += 1; };
+  }, []);
 
   const sourceCards = useMemo(() => {
     if (!overview.data) return [];
@@ -84,47 +66,165 @@ export default function AdminAgentSupport() {
       .map(([kind, count]) => ({ kind, count }));
   }, [overview.data]);
 
-  const submitQuestion = (question: string) => {
-    setMessages((current) => [...current, { role: "user", content: question }]);
-    ask.mutate({ question, conversationId });
+  // Saving a turn or feedback and refreshing audit queries are separate outcomes.
+  // A refresh failure must not roll back a successfully saved, screened answer.
+  const refreshAudit = (epoch: number) => {
+    void Promise.all([
+      utils.agentSupport.overview.invalidate(),
+      utils.agentSupport.conversations.invalidate(),
+      utils.agentSupport.recentGaps.invalidate(),
+    ]).catch(() => {
+      if (mounted.current && epoch === generation.current) {
+        setRefreshWarning("Saved successfully, but the pilot summary could not refresh. Your conversation is unchanged.");
+      }
+    });
+  };
+
+  const submitQuestion = async (input: string) => {
+    const question = input.trim();
+    if (!question || askLock.current || historyLock.current || feedbackLock.current || historyError) return;
+    askLock.current = true;
+    setAskBusy(true);
+    setRefreshWarning(null);
+    const epoch = generation.current;
+    const id = optimisticId.current--;
+    setMessages(current => [...current, {
+      id, role: "user", content: question, createdAt: new Date(), sources: [],
+      disposition: "clarify", verified: false, feedback: null,
+    }]);
+    try {
+      const result = await ask.mutateAsync({ question, conversationId });
+      if (!mounted.current || epoch !== generation.current) return;
+      setConversationId(result.conversationId);
+      setMessages(current => [...current.map(message => message.id === id ? {
+        ...message, id: result.userMessageId,
+        // Never retain the optimistic raw input after a successful screened response.
+        content: typeof result.question === "string" ? result.question : "[Question unavailable.]",
+      } : message), {
+        id: result.messageId, role: "assistant", content: result.answer, createdAt: new Date(),
+        sources: result.sources, disposition: result.disposition, verified: result.verified, feedback: null,
+      }]);
+      refreshAudit(epoch);
+    } catch (error) {
+      if (!mounted.current || epoch !== generation.current) return;
+      setMessages(current => current.filter(message => message.id !== id));
+      toast.error(errorMessage(error));
+    } finally {
+      askLock.current = false;
+      if (mounted.current && epoch === generation.current) setAskBusy(false);
+    }
   };
 
   const startNewConversation = () => {
+    if (askLock.current || feedbackLock.current || historyLock.current) return;
+    // Invalidates any obsolete reads from the previous view.
+    generation.current += 1;
+    historyLock.current = false;
+    setHistoryBusy(false);
+    setHistoryError(null);
+    setRefreshWarning(null);
     setConversationId(undefined);
     setMessages([]);
-    setLatestAnswer(null);
-    setFeedbackGiven(null);
+  };
+
+  const resumeConversation = async (id: number) => {
+    if (askLock.current || feedbackLock.current || historyLock.current) return;
+    const epoch = ++generation.current;
+    historyLock.current = true;
+    setHistoryBusy(true);
+    setHistoryError(null);
+    setRefreshWarning(null);
+    setConversationId(id);
+    setMessages([]); // Never show the previous conversation while loading another one.
+    try {
+      const result = await utils.agentSupport.conversation.fetch({ conversationId: id });
+      if (!mounted.current || epoch !== generation.current) return;
+      if (result.id !== id) throw new Error("The requested conversation is unavailable.");
+      setMessages(result.messages);
+    } catch (error) {
+      if (!mounted.current || epoch !== generation.current) return;
+      setMessages([]);
+      setHistoryError(errorMessage(error));
+    } finally {
+      if (mounted.current && epoch === generation.current) {
+        historyLock.current = false;
+        setHistoryBusy(false);
+      }
+    }
+  };
+
+  const rateAnswer = async (messageId: number, rating: "helpful" | "not_helpful") => {
+    if (askLock.current || feedbackLock.current || historyLock.current || historyError) return;
+    feedbackLock.current = true;
+    setFeedbackBusy(true);
+    setRefreshWarning(null);
+    const epoch = generation.current;
+    try {
+      await feedback.mutateAsync({ messageId, rating });
+      if (!mounted.current || epoch !== generation.current) return;
+      setMessages(current => current.map(message => message.id === messageId ? { ...message, feedback: rating } : message));
+      toast.success("Feedback recorded for the pilot review.");
+      refreshAudit(epoch);
+    } catch (error) {
+      if (mounted.current && epoch === generation.current) toast.error(errorMessage(error));
+    } finally {
+      feedbackLock.current = false;
+      if (mounted.current && epoch === generation.current) setFeedbackBusy(false);
+    }
+  };
+
+  const busy = askBusy || historyBusy || feedbackBusy;
+  const answerFooter = (message: SupportConversationMessage) => {
+    if (message.role !== "assistant") return null;
+    const legacy = !message.verified && (!message.disposition || message.disposition === "answered");
+    const label = legacy ? "Unverified legacy answer" : SUPPORT_DISPOSITION_LABELS[message.disposition] ?? "Unverified answer";
+    return <div className="mt-3 space-y-2 border-t border-border/70 pt-2 text-xs" data-answer-id={message.id}>
+      <p className="font-medium text-muted-foreground">{label}</p>
+      {message.sources?.length ? <div className="space-y-1" aria-label="Sources for this answer">{message.sources.map(source => {
+        const href = isSafeSupportHref(source.href) ? source.href : null;
+        const title = `[${source.index}] ${source.title}`;
+        return <div key={`${source.index}:${source.key}`}>{href ? <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary underline underline-offset-2">{title}<ExternalLink size={12} /></a> : <span className="text-muted-foreground">{title} — link unavailable</span>}{source.timestampLabel ? <span className="ml-1 text-muted-foreground">{source.timestampLabel}</span> : null}</div>;
+      })}</div> : <p className="text-muted-foreground">{legacy ? "Source checks are unavailable for this older answer." : "No source-checked guidance in this response."}</p>}
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="mr-1 text-muted-foreground">Was this answer useful?</span>
+        <Button size="sm" className="h-7 px-2 text-xs" variant={message.feedback === "helpful" ? "default" : "outline"} aria-pressed={message.feedback === "helpful"} disabled={busy || Boolean(historyError)} onClick={() => void rateAnswer(message.id, "helpful")}><ThumbsUp size={12} /> Helpful</Button>
+        <Button size="sm" className="h-7 px-2 text-xs" variant={message.feedback === "not_helpful" ? "default" : "outline"} aria-pressed={message.feedback === "not_helpful"} disabled={busy || Boolean(historyError)} onClick={() => void rateAnswer(message.id, "not_helpful")}><ThumbsDown size={12} /> Needs work</Button>
+      </div>
+    </div>;
   };
 
   if (overview.isLoading) {
-    return <div className="mx-auto max-w-7xl space-y-5 animate-pulse"><div className="h-48 rounded-3xl bg-muted" /><div className="h-[600px] rounded-3xl bg-muted" /></div>;
+    return <div className="mx-auto max-w-7xl space-y-5 animate-pulse"><div className="h-32 rounded-3xl bg-muted" /><div className="h-[570px] rounded-3xl bg-muted" /></div>;
   }
-
   if (overview.isError || !overview.data) {
-    return <div className="mx-auto max-w-3xl rounded-2xl border border-destructive/30 bg-destructive/5 p-6"><h1 className="text-xl font-bold">AI Support Pilot is not ready yet</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">The Portal could not load the assistant’s audit and retention records. Nothing has been sent to an AI model. {overview.error?.message}</p><Button className="mt-5 gap-2" onClick={() => overview.refetch()} disabled={overview.isFetching}>{overview.isFetching ? <RefreshCw className="animate-spin" size={15} /> : <RefreshCw size={15} />} Try again</Button></div>;
+    return <div className="mx-auto max-w-3xl rounded-2xl border border-destructive/30 bg-destructive/5 p-6"><h1 className="text-xl font-bold">AI Support Pilot is not ready yet</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">The Portal could not load the assistant’s audit and retention records. Sending is unavailable until these records load. {overview.error?.message}</p><Button className="mt-5 gap-2" onClick={() => void overview.refetch()} disabled={overview.isFetching}><RefreshCw className={overview.isFetching ? "animate-spin" : ""} size={15} /> Try again</Button></div>;
   }
 
-  const { metrics } = overview.data;
+  const metrics = overview.data.metrics as typeof overview.data.metrics & Partial<Record<"clarified" | "withheld" | "privacyBlocked" | "failed" | "promptTokens" | "completionTokens" | "modelCalls", number>>;
   return <div className="mx-auto max-w-7xl space-y-6">
-    <header className="overflow-hidden rounded-3xl border border-cyan-200 bg-gradient-to-r from-slate-950 via-slate-800 to-cyan-900 p-6 text-white shadow-sm md:p-8">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-3xl"><div className="flex items-center gap-2 text-sm font-semibold text-cyan-100"><Bot size={18} /> Controlled AI support pilot</div><h1 className="mt-2 text-3xl font-bold tracking-tight">JLT Support Assistant</h1><p className="mt-2 text-sm leading-6 text-cyan-50/85">Admin and Super Admin only. It answers from current approved Portal content, links the exact source, and refuses when the evidence is not there. It cannot search the web, access operational records or take action.</p></div>
-        <div className="flex flex-wrap gap-2"><Badge className="border border-cyan-200/30 bg-cyan-300/15 px-3 py-1.5 text-cyan-50">Admin pilot</Badge><Badge className="border border-cyan-200/30 bg-cyan-300/15 px-3 py-1.5 text-cyan-50">Fresh retrieval per question</Badge></div>
-      </div>
+    <header className="overflow-hidden rounded-3xl border border-cyan-200 bg-gradient-to-r from-slate-950 via-slate-800 to-cyan-900 p-6 text-white shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div className="max-w-3xl"><div className="flex items-center gap-2 text-sm font-semibold text-cyan-100"><Bot size={18} /> Controlled AI support pilot</div><h1 className="mt-2 text-3xl font-bold tracking-tight">JLT Support Assistant</h1><p className="mt-2 text-sm leading-6 text-cyan-50/85">Admin and Super Admin only. Conversational guidance from approved Portal content, with fresh retrieval for follow-ups. It cannot inspect individual records or take action.</p></div><div className="flex flex-wrap gap-2"><Badge className="border border-cyan-200/30 bg-cyan-300/15 text-cyan-50">Admin pilot</Badge><Badge className="border border-cyan-200/30 bg-cyan-300/15 text-cyan-50">Agent access disabled</Badge></div></div>
     </header>
 
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
       <main className="space-y-4">
-        <Card className="overflow-hidden"><CardHeader className="border-b bg-muted/25"><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><MessageCircleQuestion className="text-primary" size={20} /> Ask a question</CardTitle><p className="mt-1 text-sm text-muted-foreground">Try normal agent questions and check the answer, source links and refusal behaviour before agent rollout.</p></div><Button variant="outline" size="sm" onClick={startNewConversation} disabled={ask.isPending}>New conversation</Button></div></CardHeader><CardContent className="p-0"><AIChatBox messages={messages} onSendMessage={submitQuestion} isLoading={ask.isPending} height="570px" placeholder="Ask about approved Portal guidance…" emptyStateMessage="Ask a practical agent-support question to start the pilot." suggestedPrompts={SUGGESTED_PROMPTS} /></CardContent></Card>
-
-        {latestAnswer ? <Card className="border-cyan-200"><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><BookOpen className="text-cyan-700" size={18} /> Sources used for this answer</CardTitle><p className="text-sm text-muted-foreground">These are the only source records supplied to the model for the answer above.</p></CardHeader><CardContent className="space-y-3">{latestAnswer.sources.length ? <div className="grid gap-2">{latestAnswer.sources.map((source) => <a key={source.key} href={source.href} target="_blank" rel="noreferrer" className="group flex items-start justify-between gap-3 rounded-xl border bg-card p-3 transition hover:border-primary/50 hover:bg-muted/30"><span><span className="text-xs font-semibold text-primary">{labelForSourceKind(source.kind)}</span><span className="mt-0.5 block text-sm font-semibold group-hover:underline">{source.title}</span>{source.timestampLabel ? <span className="mt-1 block text-xs text-muted-foreground">{source.timestampLabel}</span> : null}</span><ExternalLink className="mt-1 shrink-0 text-muted-foreground" size={16} /></a>)}</div> : <div className="rounded-xl bg-amber-50 p-4 text-sm leading-6 text-amber-950">No approved source was sufficiently relevant, so the assistant gave the standard support escalation instead.</div>}<div className="flex flex-wrap items-center gap-2 border-t pt-3"><span className="mr-1 text-sm text-muted-foreground">Was this answer useful?</span><Button size="sm" variant={feedbackGiven === "helpful" ? "default" : "outline"} disabled={feedback.isPending} onClick={() => feedback.mutate({ messageId: latestAnswer.messageId, rating: "helpful" })}><ThumbsUp size={14} /> Helpful</Button><Button size="sm" variant={feedbackGiven === "not_helpful" ? "default" : "outline"} disabled={feedback.isPending} onClick={() => feedback.mutate({ messageId: latestAnswer.messageId, rating: "not_helpful" })}><ThumbsDown size={14} /> Needs work</Button></div></CardContent></Card> : null}
+        <Card className="overflow-hidden"><CardHeader className="border-b bg-muted/25"><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><MessageCircleQuestion className="text-primary" size={20} /> Ask a question</CardTitle><p className="mt-1 text-sm text-muted-foreground">Ask follow-ups in the same conversation; check each answer and its sources.</p></div><Button variant="outline" size="sm" onClick={startNewConversation} disabled={busy}>New conversation</Button></div>
+          <p className="text-xs leading-5 text-muted-foreground">Do not include client names, booking/payment references, bank details or private documents. This pilot cannot inspect individual records.</p>
+          <div className="flex flex-wrap items-center gap-2 text-xs"><label htmlFor="support-conversation" className="text-muted-foreground">Your conversations</label><select id="support-conversation" aria-label="Resume your conversation" className="min-w-0 max-w-full rounded-md border bg-background px-2 py-1.5 text-xs" value={conversationId ?? ""} disabled={busy || conversations.isLoading || conversations.isError} onChange={event => { if (event.target.value) void resumeConversation(Number(event.target.value)); }}><option value="">Select a saved conversation…</option>{!conversations.isError ? conversations.data?.map(item => <option key={item.id} value={item.id}>Conversation {item.id} · {new Date(item.updatedAt).toLocaleString("en-GB")}</option>) : null}</select>{conversations.isError ? <span role="alert" className="text-destructive">Your conversation list could not load. <button className="underline" disabled={conversations.isFetching} onClick={() => void conversations.refetch()}>Retry list</button></span> : null}</div>
+        </CardHeader><CardContent className="p-0">
+          {historyBusy ? <p role="status" className="px-4 pt-3 text-sm text-muted-foreground">Loading your conversation…</p> : null}
+          {historyError ? <div role="alert" className="p-4 text-sm text-destructive">This conversation could not load. {historyError} <Button size="sm" variant="outline" onClick={() => conversationId && void resumeConversation(conversationId)}>Retry conversation</Button></div> : null}
+          {refreshWarning ? <p role="status" className="px-4 pt-3 text-xs text-muted-foreground">{refreshWarning}</p> : null}
+          <AIChatBox key={conversationId ?? "new"} supportPilotMarkdown messages={messages} onSendMessage={question => void submitQuestion(question)} isLoading={busy || Boolean(historyError)} height="570px" placeholder="Ask about approved Portal guidance…" emptyStateMessage={historyBusy ? "Loading your saved conversation…" : historyError ? "History is unavailable. Retry or start a new conversation." : "Ask a practical agent-support question to start the pilot."} suggestedPrompts={historyError || historyBusy ? [] : SUGGESTED_PROMPTS} renderMessageFooter={(_message, index) => answerFooter(messages[index])} />
+        </CardContent></Card>
       </main>
 
       <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-        <Card className="border-emerald-200 bg-emerald-50/50"><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base text-emerald-950"><ShieldCheck size={18} /> Guardrails on</CardTitle></CardHeader><CardContent><ul className="space-y-2 text-sm leading-5 text-emerald-950/85"><li>Only approved, agent-facing text is retrieved.</li><li>Generic sourced procedures—such as cancellations or flight disruptions—can be answered.</li><li>No individual booking, client, money, email or private record access.</li><li>No public web search, tools or Portal actions.</li><li>Every answer must link its source or escalate.</li></ul></CardContent></Card>
-        <Card><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Gauge size={18} className="text-primary" /> Pilot coverage</CardTitle><p className="text-xs leading-5 text-muted-foreground">Fresh source query on every question. Conversation questions, answers, cited source references and feedback are held for {overview.data.retentionDays} days for quality review.</p></CardHeader><CardContent className="grid grid-cols-2 gap-2">{sourceCards.map((source) => <Metric key={source.kind} value={source.count} label={labelForSourceKind(source.kind)} />)}</CardContent></Card>
-        <Card><CardHeader className="pb-3"><CardTitle className="text-base">Last 30 days</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-2"><Metric value={metrics.questions} label="questions" /><Metric value={metrics.answered} label="grounded answers" /><Metric value={metrics.unresolved} label="content gaps" /><Metric value={metrics.helpful + metrics.notHelpful} label="feedback votes" /></CardContent></Card>
-        <Card className="border-amber-200 bg-amber-50/60"><CardContent className="p-4 text-sm leading-6 text-amber-950"><strong>Trial discipline:</strong> test 20–50 real questions, including questions that should be refused. Add or improve an approved source when a refusal reveals a genuine content gap; do not teach the model from a one-off chat reply.</CardContent></Card>
+        <Card className="border-emerald-200 bg-emerald-50/50"><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base text-emerald-950"><ShieldCheck size={18} /> Guardrails on</CardTitle></CardHeader><CardContent className="space-y-2 text-sm leading-5 text-emerald-950/85"><p>Approved Portal guidance only. No individual booking, client, money, email or private record access; no web search or Portal actions.</p><p className="text-xs">Source-checked means cited records passed pilot checks, not a guarantee that every claim is correct. Check the linked guidance before acting.</p></CardContent></Card>
+        <Card><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Gauge size={18} className="text-primary" /> Pilot coverage</CardTitle><p className="text-xs leading-5 text-muted-foreground">Fresh source query on every question. Screened questions, answers, cited source references and feedback are held for {overview.data.retentionDays} days for quality review. Only your own unexpired conversations appear here.</p></CardHeader><CardContent className="grid grid-cols-2 gap-2">{sourceCards.map(source => <Metric key={source.kind} value={source.count} label={labelForSourceKind(source.kind)} />)}</CardContent></Card>
+        <Card><CardHeader className="pb-3"><CardTitle className="text-base">Last 30 days</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-2"><Metric value={metrics.questions} label="questions" /><Metric value={metrics.answered} label="answered turns" /><Metric value={metrics.unresolved} label="unresolved turns" /><Metric value={metrics.helpful + metrics.notHelpful} label="feedback votes" /><Metric value={metrics.clarified ?? 0} label="clarifications" /><Metric value={metrics.withheld ?? 0} label="answers withheld" /><Metric value={metrics.privacyBlocked ?? 0} label="privacy blocked" /><Metric value={metrics.failed ?? 0} label="technical failures" /><Metric value={metrics.promptTokens ?? 0} label="prompt tokens" /><Metric value={metrics.completionTokens ?? 0} label="completion tokens" /><Metric value={metrics.modelCalls ?? 0} label="model calls" /></CardContent></Card>
+        <Card><CardContent className="p-4"><details onToggle={event => setShowGaps(event.currentTarget.open)}><summary className="cursor-pointer text-sm font-medium">Recent content gaps</summary><div className="mt-2 space-y-2 text-xs text-muted-foreground">{showGaps && gaps.isError ? <p role="alert">Recent gaps could not load. <button className="underline" disabled={gaps.isFetching} onClick={() => void gaps.refetch()}>Retry gaps</button></p> : showGaps && gaps.isLoading ? <p>Loading gaps…</p> : showGaps && gaps.data?.length ? gaps.data.map(gap => <p key={gap.id} className="border-t pt-2">{gap.question}{gap.reason ? <span className="mt-0.5 block">{gap.reason}</span> : null}</p>) : showGaps ? <p>No recent content gaps.</p> : null}</div></details></CardContent></Card>
+        <Card className="border-amber-200 bg-amber-50/60"><CardContent className="p-4 text-xs leading-5 text-amber-950"><strong>Trial discipline:</strong> use synthetic or anonymised questions, including refusals. Improve approved sources for genuine content gaps; do not treat chat replies as policy.</CardContent></Card>
       </aside>
     </div>
   </div>;

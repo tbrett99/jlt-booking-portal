@@ -3,8 +3,47 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Loader2, Send, User, Sparkles } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
-import { Streamdown } from "streamdown";
+import { useState, useEffect, useRef, type ReactNode } from "react";
+import { Streamdown, defaultRemarkPlugins, type StreamdownProps } from "streamdown";
+import { isSafeSupportHref } from "@shared/agent-support-metadata";
+
+function isSafePilotMarkdownHref(href: unknown): href is string {
+  if (href === "mailto:support@thejltgroup.co.uk") return true;
+  // Use the same navigation allowlist as citations, but do not accept encoded
+  // or browser-normalised aliases for those approved destinations in Markdown.
+  return isSafeSupportHref(href) && !href.includes("%") &&
+    new URL(href, "https://portal.thejltgroup.co.uk").pathname === href.split("?")[0];
+}
+
+const supportPilotMarkdownProps: StreamdownProps = {
+  skipHtml: true,
+  // Streamdown's defaults include rehype-raw and permissive link/image hardening.
+  // GFM alone retains lists, tables and emphasis without HTML/math renderers.
+  rehypePlugins: [],
+  remarkPlugins: [defaultRemarkPlugins.gfm],
+  parseIncompleteMarkdown: false,
+  controls: false,
+  allowedElements: [
+    "p", "br", "strong", "em", "del", "blockquote", "ul", "ol", "li",
+    "h1", "h2", "h3", "h4", "h5", "h6", "hr", "pre", "code",
+    "table", "thead", "tbody", "tr", "th", "td", "a", "img", "input",
+    "section", "sup",
+  ],
+  urlTransform: (url, key) => key === "href" && isSafePilotMarkdownHref(url) ? url : undefined,
+  components: {
+    a: ({ href, children }) => isSafePilotMarkdownHref(href) ? (
+      <a href={href} target={href.startsWith("/") ? "_blank" : undefined}
+        rel="noopener noreferrer" className="wrap-anywhere font-medium text-primary underline">
+        {children}
+      </a>
+    ) : <span>{children}</span>,
+    img: ({ alt }) => alt ? <span>{alt}</span> : null,
+    // Never send untrusted fenced code to Mermaid's SVG/HTML renderer. Keep all
+    // code (including HTML and diagrams) as React-escaped, readable text instead.
+    code: ({ children }) => <code className="rounded bg-muted px-1 py-0.5 font-mono text-sm">{children}</code>,
+    pre: ({ children }) => <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-muted p-3">{children}</pre>,
+  },
+};
 
 /**
  * Message type matching server-side LLM Message interface
@@ -57,6 +96,12 @@ export type AIChatBoxProps = {
    * Click to send directly
    */
   suggestedPrompts?: string[];
+
+  /** Optional footer inside each message bubble; index is in the supplied messages array. */
+  renderMessageFooter?: (message: Message, index: number) => ReactNode;
+
+  /** Opt-in only for the controlled admin support pilot; ordinary chat is unchanged. */
+  supportPilotMarkdown?: boolean;
 };
 
 /**
@@ -119,6 +164,8 @@ export function AIChatBox({
   height = "600px",
   emptyStateMessage = "Start a conversation with AI",
   suggestedPrompts,
+  renderMessageFooter,
+  supportPilotMarkdown = false,
 }: AIChatBoxProps) {
   const [input, setInput] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -127,7 +174,7 @@ export function AIChatBox({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Filter out system messages
-  const displayMessages = messages.filter((msg) => msg.role !== "system");
+  const displayMessages = messages.map((message, index) => ({ message, originalIndex: index })).filter(({ message }) => message.role !== "system");
 
   // Calculate min-height for last assistant message to push user message to top
   const [minHeightForLastMessage, setMinHeightForLastMessage] = useState(0);
@@ -225,7 +272,7 @@ export function AIChatBox({
         ) : (
           <ScrollArea className="h-full">
             <div className="flex flex-col space-y-4 p-4">
-              {displayMessages.map((message, index) => {
+              {displayMessages.map(({ message, originalIndex }, index) => {
                 // Apply min-height to last message only if NOT loading (when loading, the loading indicator gets it)
                 const isLastMessage = index === displayMessages.length - 1;
                 const shouldApplyMinHeight =
@@ -262,13 +309,19 @@ export function AIChatBox({
                     >
                       {message.role === "assistant" ? (
                         <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <Streamdown>{message.content}</Streamdown>
+                          <Streamdown
+                            // Streamdown 1.4 memoises content, not policy props: remount
+                            // when opting in/out so identical text cannot retain old links.
+                            key={supportPilotMarkdown ? "support-pilot" : "default"}
+                            {...(supportPilotMarkdown ? supportPilotMarkdownProps : {})}
+                          >{message.content}</Streamdown>
                         </div>
                       ) : (
                         <p className="whitespace-pre-wrap text-sm">
                           {message.content}
                         </p>
                       )}
+                      {renderMessageFooter?.(message, originalIndex)}
                     </div>
 
                     {message.role === "user" && (
