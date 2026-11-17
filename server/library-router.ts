@@ -5,6 +5,7 @@ import { adminProcedure, protectedProcedure, router } from "./_core/trpc";
 import { createInAppNotification, getDb } from "./db";
 import { sendDirectEmail } from "./email";
 import { awardMomentum } from "./momentum";
+import { getBusinessStaffAuthority } from "./business-staff-access";
 import { storagePut } from "./storage";
 import { KnowledgeBaseCsvImportError, parseKnowledgeBaseArticleCsv } from "../shared/knowledge-base-csv";
 import {
@@ -286,6 +287,10 @@ export const libraryRouter = router({
   }),
 
   markCompleted: protectedProcedure.input(z.object({ contentType: z.enum(CONTENT_TYPES), contentId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const authority = await getBusinessStaffAuthority(ctx.user);
+    if (authority.managed && (!authority.active || !authority.membership?.permissions.resourceAccess)) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "This business staff permission is not available." });
+    }
     const content = await assertContentExists(input.contentType, input.contentId, true);
     const previous = await getActivity(ctx.user.id, input.contentType, input.contentId);
     const now = new Date();
@@ -300,7 +305,9 @@ export const libraryRouter = router({
       completedAt: now,
     }).onDuplicateKeyUpdate({ set: { lastViewedAt: now, completedAt: previous?.completedAt ?? now } });
     const completedAt = previous?.completedAt ?? now;
-    const award = previous?.completedAt
+    const award = authority.managed
+      ? { awarded: false, reason: "business_staff_resource_only", points: 0 }
+      : previous?.completedAt
       ? { awarded: false, reason: "already_completed", points: 0 }
       : await awardMomentum({
           agentId: ctx.user.id,

@@ -13,6 +13,76 @@ import {
   agentCrmProfiles,
 } from "../drizzle/schema";
 import { eq, like, or, and, asc, desc, sql } from "drizzle-orm";
+import { getBusinessStaffAuthority, type BusinessStaffActor } from "./business-staff-access";
+
+// Positive projection: staff resource reads never select stored credentials or
+// personal-login configuration. Null/private slots retain the familiar UI DTO.
+const businessStaffSupplierFields = {
+  id: suppliers.id,
+  name: suppliers.name,
+  description: suppliers.description,
+  shortDescription: suppliers.shortDescription,
+  publicWebsite: suppliers.publicWebsite,
+  tradeWebsite: suppliers.tradeWebsite,
+  additionalWebsite: suppliers.additionalWebsite,
+  agencyId: sql<string | null>`NULL`,
+  loginUsername: sql<string | null>`NULL`,
+  loginPassword: sql<string | null>`NULL`,
+  // Directory-wide published commission policy, never owner-specific finances.
+  commission: suppliers.commission,
+  facebookUrl: suppliers.facebookUrl,
+  instagramUrl: suppliers.instagramUrl,
+  mediaAssetsUrl: suppliers.mediaAssetsUrl,
+  accountManager: suppliers.accountManager,
+  phone: suppliers.phone,
+  email: suppliers.email,
+  outOfHoursContactName: suppliers.outOfHoursContactName,
+  outOfHoursPhone: suppliers.outOfHoursPhone,
+  outOfHoursEmail: suppliers.outOfHoursEmail,
+  outOfHoursNotes: suppliers.outOfHoursNotes,
+  generalNotes: suppliers.generalNotes,
+  video1: suppliers.video1,
+  video2: suppliers.video2,
+  video3: suppliers.video3,
+  video4: suppliers.video4,
+  video5: suppliers.video5,
+  categories: suppliers.categories,
+  locations: suppliers.locations,
+  imageUrl: suppliers.imageUrl,
+  adminUsername: sql<string | null>`NULL`,
+  adminPassword: sql<string | null>`NULL`,
+  adminNotes: sql<string | null>`NULL`,
+  credentialStage: sql<number>`3`, // safe display constant, not a stage entitlement
+  isActive: suppliers.isActive,
+  sortOrder: suppliers.sortOrder,
+  usp: suppliers.usp,
+  priceTier: suppliers.priceTier,
+  notSuitableFor: suppliers.notSuitableFor,
+  preferredContact: suppliers.preferredContact,
+  aiSummary: suppliers.aiSummary,
+  idealClient: suppliers.idealClient,
+  bookingTips: suppliers.bookingTips,
+  aiEnrichedAt: suppliers.aiEnrichedAt,
+  requiresLoginRequest: sql<boolean>`false`,
+  loginRequestNotes: sql<string | null>`NULL`,
+  isPreferredPartner: suppliers.isPreferredPartner,
+  preferredPartnerNote: suppliers.preferredPartnerNote,
+  createdAt: suppliers.createdAt,
+  updatedAt: suppliers.updatedAt,
+};
+
+async function supplierResourceAccess(user: BusinessStaffActor) {
+  const isAdmin = user.role === "admin" || user.role === "super_admin";
+  const authority = await getBusinessStaffAuthority(user);
+  if (authority.managed) {
+    if (!authority.active || !authority.membership?.permissions.resourceAccess) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "This business staff permission is not available." });
+    }
+    // Never read either the staff's legacy stage or the owner's stage.
+    return { isAdmin: false, resourceOnly: true, agentStage: 0 };
+  }
+  return { isAdmin, resourceOnly: false, agentStage: isAdmin ? 3 : await getAgentStage(user.id) };
+}
 
 // ─── Helper: get agent's current stage ───────────────────────────────────────
 async function getAgentStage(userId: number): Promise<number> {
@@ -31,10 +101,11 @@ async function getAgentStage(userId: number): Promise<number> {
 function applyStageFilter(
   supplier: typeof suppliers.$inferSelect,
   agentStage: number,
-  isAdmin: boolean
+  isAdmin: boolean,
+  resourceOnly = false
 ) {
-  if (isAdmin) return supplier; // admins see everything
-  const canSeeCredentials = agentStage >= supplier.credentialStage;
+  if (isAdmin && !resourceOnly) return supplier; // admins see everything
+  const canSeeCredentials = !resourceOnly && agentStage >= supplier.credentialStage;
   return {
     ...supplier,
     loginUsername: canSeeCredentials ? supplier.loginUsername : null,
@@ -60,8 +131,7 @@ export const suppliersRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
-      const agentStage = isAdmin ? 3 : await getAgentStage(ctx.user.id);
+      const { isAdmin, agentStage, resourceOnly } = await supplierResourceAccess(ctx.user);
 
       const conditions = [eq(suppliers.isActive, 1)];
 
@@ -92,8 +162,7 @@ export const suppliersRouter = router({
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       const [rows, countResult] = await Promise.all([
-        db
-          .select()
+        (resourceOnly ? db.select(businessStaffSupplierFields) : db.select())
           .from(suppliers)
           .where(and(...conditions))
           .orderBy(asc(suppliers.sortOrder), asc(suppliers.name))
@@ -108,7 +177,7 @@ export const suppliersRouter = router({
       const total = Number(countResult[0]?.count ?? 0);
 
       return {
-        suppliers: rows.map((s: typeof suppliers.$inferSelect) => applyStageFilter(s, agentStage, isAdmin)),
+        suppliers: rows.map((s: typeof suppliers.$inferSelect) => applyStageFilter(s, agentStage, isAdmin, resourceOnly)),
         total,
         page: input.page,
         pageSize: input.pageSize,
@@ -120,37 +189,33 @@ export const suppliersRouter = router({
   // ── List preferred partners (for dashboard widget + directory section) ────────
   preferredPartners: protectedProcedure
     .query(async ({ ctx }) => {
-      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
-      const agentStage = isAdmin ? 3 : await getAgentStage(ctx.user.id);
+      const { isAdmin, agentStage, resourceOnly } = await supplierResourceAccess(ctx.user);
       const { getDb } = await import("./db");
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-      const rows = await db
-        .select()
+      const rows = await (resourceOnly ? db.select(businessStaffSupplierFields) : db.select())
         .from(suppliers)
         .where(and(eq(suppliers.isActive, 1), eq(suppliers.isPreferredPartner, true)))
         .orderBy(asc(suppliers.sortOrder), asc(suppliers.name));
-      return rows.map((s: typeof suppliers.$inferSelect) => applyStageFilter(s, agentStage, isAdmin));
+      return rows.map((s: typeof suppliers.$inferSelect) => applyStageFilter(s, agentStage, isAdmin, resourceOnly));
     }),
 
   // ── Get single supplier ─────────────────────────────────────────────────────
   get: protectedProcedure
     .input(z.object({ id: z.number().int() }))
     .query(async ({ ctx, input }) => {
-      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
-      const agentStage = isAdmin ? 3 : await getAgentStage(ctx.user.id);
+      const { isAdmin, agentStage, resourceOnly } = await supplierResourceAccess(ctx.user);
 
       const { getDb } = await import("./db");
       const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-      const rows = await db
-        .select()
+      const rows = await (resourceOnly ? db.select(businessStaffSupplierFields) : db.select())
         .from(suppliers)
         .where(and(eq(suppliers.id, input.id), eq(suppliers.isActive, 1)))
         .limit(1);
 
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
-      return applyStageFilter(rows[0], agentStage, isAdmin);
+      return applyStageFilter(rows[0], agentStage, isAdmin, resourceOnly);
     }),
 
   // ── Get all unique categories ───────────────────────────────────────────────
@@ -969,10 +1034,10 @@ Return at most ${input.limit} matches. Only include suppliers that are genuinely
           id: supplierAttachments.id,
           fileName: supplierAttachments.fileName,
           fileUrl: supplierAttachments.fileUrl,
-          fileKey: supplierAttachments.fileKey,
+          fileKey: isAdmin ? supplierAttachments.fileKey : sql<string | null>`NULL`,
           fileSize: supplierAttachments.fileSize,
           uploadedAt: supplierAttachments.uploadedAt,
-          uploadedById: supplierAttachments.uploadedById,
+          uploadedById: isAdmin ? supplierAttachments.uploadedById : sql<number | null>`NULL`,
         })
         .from(supplierAttachments)
         .where(eq(supplierAttachments.supplierId, input.supplierId))

@@ -10,6 +10,7 @@ import PortalLayout from "./components/PortalLayout";
 import { Link } from "wouter";
 const BusinessStaffWorkspace = lazy(() => import("./pages/business/BusinessStaffWorkspace"));
 const AdminBusinessStaff = lazy(() => import("./pages/business/AdminBusinessStaff"));
+import BusinessStaffPortalLayout, { BusinessStaffPortalProvider } from "./pages/business/BusinessStaffPortalLayout";
 
 // Critical path — always bundled
 import LoginPage from "./pages/LoginPage";
@@ -304,15 +305,33 @@ export function AuthRouter() {
   // Classification is authoritative and fail-closed. Never render the legacy
   // agent shell while the staff registry is loading or unavailable.
   if (user.role === "agent") {
-    if (businessStaff.isLoading || !businessStaff.data || businessStaff.error) {
+    if (businessStaff.isLoading || (businessStaff.isFetching && businessStaff.data?.managed) || !businessStaff.data || businessStaff.error) {
       return <main className="min-h-screen bg-background p-8 text-foreground"><h1 className="text-xl font-semibold">Checking Portal access</h1><p className="mt-2">{businessStaff.error ? "Access could not be verified. No business or financial data has been loaded." : "Please wait while your access is checked."}</p>{businessStaff.error && <button type="button" className="mt-4 underline" onClick={() => businessStaff.refetch()}>Try again</button>}</main>;
     }
     if (businessStaff.data.managed) {
-      if (businessStaff.data.active && businessStaff.data.membership?.permissions.academyAccess && (location === "/academy" || location.startsWith("/academy/course/"))) {
-        return <main className="min-h-screen bg-background p-4 text-foreground md:p-8"><Link href="/business-staff" className="mb-4 inline-block underline">Back to Business staff</Link><Switch><Route path="/academy" component={AcademyHome} /><Route path="/academy/course/:enrollmentId">{params => <AcademyCourse enrollmentId={params.enrollmentId} />}</Route><Route component={NotFound} /></Switch></main>;
-      }
-      if (location === "/my-agreements") return <main className="min-h-screen bg-background p-4 text-foreground md:p-8"><Link href="/business-staff" className="mb-4 inline-block underline">Back to Business staff</Link><MyAgreements /></main>;
-      return <BusinessStaffWorkspace />;
+      const activeStaff = businessStaff.data.active;
+      const resourcesAvailable = activeStaff && businessStaff.data.membership?.permissions.resourceAccess === true;
+      const academyAvailable = activeStaff && businessStaff.data.membership?.permissions.academyAccess === true;
+      return (
+        <BusinessStaffPortalProvider authority={businessStaff.data}>
+          <BusinessStaffPortalLayout>
+            <Switch>
+              <Route path="/business-staff" component={BusinessStaffWorkspace} />
+              <Route path="/business-staff/bookings" component={BusinessStaffWorkspace} />
+              <Route path="/dashboard" component={BusinessStaffWorkspace} />
+              <Route path="/my-bookings" component={BusinessStaffWorkspace} />
+              {resourcesAvailable && <Route path="/suppliers">{() => <SupplierDirectory businessStaffMode />}</Route>}
+              {resourcesAvailable && <Route path="/knowledge-base" component={KnowledgeBase} />}
+              {resourcesAvailable && <Route path="/webinars" component={WebinarLibrary} />}
+              {academyAvailable && <Route path="/academy" component={AcademyHome} />}
+              {academyAvailable && <Route path="/academy/course/:enrollmentId">{params => <AcademyCourse enrollmentId={params.enrollmentId} />}</Route>}
+              <Route path="/my-agreements" component={MyAgreements} />
+              <Route path="/terms" component={TermsAndPolicies} />
+              <Route component={BusinessStaffWorkspace} />
+            </Switch>
+          </BusinessStaffPortalLayout>
+        </BusinessStaffPortalProvider>
+      );
     }
   }
 
@@ -371,7 +390,7 @@ export function AuthRouter() {
           <Route path="/my-public-profile" component={MyPublicProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
-          <Route path="/suppliers" component={SupplierDirectory} />
+          <Route path="/suppliers">{() => <SupplierDirectory />}</Route>
           <Route path="/pricing-calculator" component={PackagePricingCalculator} />
           <Route path="/my-margin" component={MyMarginReport} />
           <Route path="/community" component={Community} />
@@ -435,7 +454,7 @@ export function AuthRouter() {
           <Route path="/my-public-profile" component={MyPublicProfile} />
           <Route path="/profile" component={ProfilePage} />
           <Route path="/unsubscribe" component={UnsubscribePage} />
-          <Route path="/suppliers" component={SupplierDirectory} />
+          <Route path="/suppliers">{() => <SupplierDirectory />}</Route>
           <Route path="/pricing-calculator" component={PackagePricingCalculator} />
           <Route path="/my-margin" component={MyMarginReport} />
           <Route path="/community" component={Community} />
@@ -530,7 +549,7 @@ export function AuthRouter() {
         <Route path="/crm/recruitment/:id" component={RecruitmentProspectDetail} />
         <Route path="/crm/workflows" component={WorkflowBuilder} />
         {/* Supplier Directory */}
-        <Route path="/suppliers" component={SupplierDirectory} />
+        <Route path="/suppliers">{() => <SupplierDirectory />}</Route>
         <Route path="/admin/suppliers" component={AdminSuppliers} />
         <Route path="/admin/system-workflows" component={SystemWorkflows} />
         <Route path="/community" component={Community} />

@@ -32,9 +32,10 @@ export function useStaffAuthority() {
 }
 
 // A capability lookup is not an admin-view switch and never changes users.role.
-export function useStaffAccess() {
+export function useStaffAccess(enabled = true) {
   const { user } = useAuth();
   const eligible =
+    enabled &&
     user?.role === "agent" &&
     user.portalStatus === "active" &&
     user.isActive &&

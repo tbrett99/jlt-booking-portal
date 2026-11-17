@@ -102,6 +102,12 @@ import AdminBusinessStaff, {
   privateSetupUrl,
 } from "../client/src/pages/business/AdminBusinessStaff";
 import BusinessStaffWorkspace from "../client/src/pages/business/BusinessStaffWorkspace";
+import BusinessStaffPortalLayout, {
+  BusinessStaffPortalProvider,
+} from "../client/src/pages/business/BusinessStaffPortalLayout";
+import PortalLayout from "../client/src/components/PortalLayout";
+import { ViewModeProvider } from "../client/src/contexts/ViewModeContext";
+import { useStaffAccess } from "../client/src/pages/staff/StaffWorkspace";
 import BusinessStaffOwnerNotes from "../client/src/pages/business/BusinessStaffOwnerNotes";
 
 const owner = {
@@ -174,6 +180,56 @@ async function render(component: React.ReactElement) {
   await act(async () => {
     root.render(component);
   });
+  await flush();
+}
+async function renderStaffWorkspace(path = "/business-staff/bookings") {
+  window.history.replaceState(null, "", path);
+  const current = mock.data["businessStaff.mine"] ?? {
+    ...authority(),
+    active: false,
+    membership: null,
+  };
+  // Root classification withholds active authority while it cannot be verified.
+  const checked =
+    mock.errors["businessStaff.mine"] ||
+    mock.loading["businessStaff.mine"] ||
+    mock.fetching["businessStaff.mine"]
+      ? { ...current, active: false }
+      : current;
+  await render(
+    React.createElement(BusinessStaffPortalProvider, {
+      authority: checked,
+      children: React.createElement(BusinessStaffPortalLayout, {
+        children: React.createElement(BusinessStaffWorkspace),
+      }),
+    })
+  );
+}
+async function renderStaffShell(
+  current = authority(),
+  children: React.ReactNode = React.createElement(
+    "p",
+    null,
+    "Resource content"
+  ),
+  viaPortal = false
+) {
+  await render(
+    React.createElement(BusinessStaffPortalProvider, {
+      authority: current,
+      children: React.createElement(
+        viaPortal ? PortalLayout : BusinessStaffPortalLayout,
+        { children }
+      ),
+    })
+  );
+}
+async function clickLabel(label: string) {
+  const control = controls().querySelector<HTMLButtonElement>(
+    `button[aria-label="${label}"]`
+  );
+  expect(control, `button labelled ${label}`).toBeTruthy();
+  await act(async () => control!.click());
   await flush();
 }
 function controls() {
@@ -323,6 +379,7 @@ beforeEach(() => {
   mock.hooks = [];
   mock.mutations = [];
   mock.operations = [];
+  window.localStorage.clear();
   mock.logout.mockReset();
   mock.logout.mockResolvedValue(undefined);
   window.history.replaceState(null, "", "/business-staff");
@@ -664,7 +721,7 @@ describe("Business-staff administration", () => {
 });
 
 describe("Business-staff isolated workspace", () => {
-  it.each(["ordinary", "revoked", "missing", "error", "fetching"])(
+  it.each(["ordinary", "revoked", "missing", "error", "loading", "fetching"])(
     "does not mount booking queries or agent fallback on %s authority",
     async state => {
       mock.user = { id: account.id, role: "agent" };
@@ -687,8 +744,9 @@ describe("Business-staff isolated workspace", () => {
         mock.errors["businessStaff.mine"] = {
           message: "Authority unavailable",
         };
+      if (state === "loading") mock.loading["businessStaff.mine"] = true;
       if (state === "fetching") mock.fetching["businessStaff.mine"] = true;
-      await render(React.createElement(BusinessStaffWorkspace));
+      await renderStaffWorkspace();
       expect(mock.hooks.every(item => item.path === "businessStaff.mine")).toBe(
         true
       );
@@ -698,7 +756,7 @@ describe("Business-staff isolated workspace", () => {
       assertOnlyBusinessHooks();
     }
   );
-  it("shows only read-only business records, own Academy and a pending Orbit notice", async () => {
+  it("shows read-only business records, own Academy and familiar resource links with a compact Orbit note", async () => {
     mock.user = { id: account.id, role: "agent" };
     mock.data["businessStaff.mine"].membership.orbitRequested = true;
     // Even malicious surplus DTO properties are never enumerated or rendered.
@@ -712,10 +770,12 @@ describe("Business-staff isolated workspace", () => {
         agentEmail: owner.email,
       },
     ]);
-    await render(React.createElement(BusinessStaffWorkspace));
+    await renderStaffWorkspace();
     expect(container.textContent).toContain(booking.clientName);
     expect(container.querySelector('a[href="/academy"]')).toBeTruthy();
-    expect(container.textContent).toContain("Request recorded only");
+    expect(container.textContent).toContain("Orbit access request recorded");
+    expect(container.textContent).toContain("Continue to use it directly");
+    expect(container.textContent).not.toContain("Orbit access is not ready");
     for (const privateValue of [
       "PRIVATE_PRICE",
       "PRIVATE_COMMISSION",
@@ -728,7 +788,18 @@ describe("Business-staff isolated workspace", () => {
       [...container.querySelectorAll("a")].map(item =>
         item.getAttribute("href")
       )
-    ).toEqual(["/business-staff", "/academy"]);
+    ).toEqual([
+      "/business-staff",
+      "/business-staff/bookings",
+      "/academy",
+      "/knowledge-base",
+      "/webinars",
+      "/suppliers",
+      "https://fees.thejltgroup.co.uk",
+      "https://fees.thejltgroup.co.uk/card-fees",
+      "mailto:support@thejltgroup.co.uk",
+      "/my-agreements",
+    ]);
     expect(
       mock.hooks.find(item => item.path === "businessBookings.list")?.input
     ).toEqual({ page: 1, pageSize: 50 });
@@ -745,7 +816,7 @@ describe("Business-staff isolated workspace", () => {
       addBookingNotes: true,
       academyAccess: false,
     });
-    await render(React.createElement(BusinessStaffWorkspace));
+    await renderStaffWorkspace();
     expect(container.textContent).toContain("Booking access is not assigned");
     expect(mock.hooks.every(item => item.path === "businessStaff.mine")).toBe(
       true
@@ -755,7 +826,7 @@ describe("Business-staff isolated workspace", () => {
   it("searches and paginates only businessBookings.list and opens the safe detail modal", async () => {
     mock.user = { id: account.id, role: "agent" };
     mock.data["businessBookings.list"] = page([booking], true);
-    await render(React.createElement(BusinessStaffWorkspace));
+    await renderStaffWorkspace();
     await change(field("Search business bookings"), " Island ");
     await click("Search bookings");
     expect(
@@ -790,14 +861,14 @@ describe("Business-staff isolated workspace", () => {
     mock.data["businessBookings.list"] = page([
       { ...booking, grossCost: "PRIVATE_NET_COST" },
     ]);
-    await render(React.createElement(BusinessStaffWorkspace));
+    await renderStaffWorkspace();
     expect(container.textContent).toContain("Customer selling price");
     expect(container.textContent).toContain("Not available");
     expect(container.textContent).not.toContain("PRIVATE_NET_COST");
     mock.data["businessBookings.list"] = page([
       { ...booking, grossPrice: "1234.00" },
     ]);
-    await render(React.createElement(BusinessStaffWorkspace));
+    await renderStaffWorkspace();
     expect(container.textContent).toContain("1234.00");
   });
   it("posts only to the separate notes channel and retains plain-text draft after denial", async () => {
@@ -817,7 +888,7 @@ describe("Business-staff isolated workspace", () => {
         createdAt: "2026-01-01T12:00:00Z",
       },
     ]);
-    await render(React.createElement(BusinessStaffWorkspace));
+    await renderStaffWorkspace();
     await click("View details");
     const dialog = controls().querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain(literal);
@@ -835,10 +906,10 @@ describe("Business-staff isolated workspace", () => {
   it("withholds stale list/detail records on endpoint errors", async () => {
     mock.user = { id: account.id, role: "agent" };
     mock.errors["businessBookings.list"] = { message: "Bookings unavailable" };
-    await render(React.createElement(BusinessStaffWorkspace));
+    await renderStaffWorkspace();
     expect(container.textContent).not.toContain(booking.clientName);
     delete mock.errors["businessBookings.list"];
-    await render(React.createElement(BusinessStaffWorkspace));
+    await renderStaffWorkspace();
     mock.errors["businessBookings.detail"] = {
       message: "Booking access changed",
     };
@@ -850,6 +921,399 @@ describe("Business-staff isolated workspace", () => {
       mock.hooks.find(item => item.path === "businessBookings.listNotes")
         ?.enabled
     ).toBe(false);
+  });
+});
+
+describe("Business-staff familiar Portal shell", () => {
+  const resourceHrefs = [
+    "/knowledge-base",
+    "/webinars",
+    "/suppliers",
+    "https://fees.thejltgroup.co.uk",
+    "https://fees.thejltgroup.co.uk/card-fees",
+  ];
+  const forbiddenHrefs = [
+    "/dashboard",
+    "/my-profile",
+    "/profile",
+    "/pipeline",
+    "/staff",
+    "/academy/actions",
+    "/admin/academy",
+    "/pricing-calculator",
+    "/commissions",
+    "/commission-timeline",
+    "/my-margin",
+    "/messages",
+    "/bookings/new",
+    "/request-amendment",
+    "/cancel-booking",
+    "/crm/agents",
+    "/users",
+  ];
+  function staffIdentity() {
+    mock.user = {
+      id: account.id,
+      role: "agent",
+      name: account.name,
+      portalStatus: "active",
+      isActive: true,
+      mustChangePassword: false,
+    };
+  }
+  function assertRestrictedShell() {
+    for (const href of forbiddenHrefs)
+      expect(container.querySelector(`a[href="${href}"]`), href).toBeNull();
+    expect(
+      container.querySelector('input[placeholder="Search bookings..."]')
+    ).toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Notifications"]')
+    ).toBeNull();
+    expect(container.textContent).not.toContain("Review & Sign");
+    expect(container.textContent).not.toContain("Open Orbit");
+    // Count every hook, not only enabled queries: ordinary mutation hooks and
+    // disabled search/counter/terms hooks must never be instantiated either.
+    expect(mock.hooks).toEqual([]);
+    expect(mock.mutations).toEqual([]);
+    assertOnlyBusinessHooks();
+  }
+  it.each([false, true])(
+    "uses authoritative staff context through direct/wrapper shell (wrapper=%s), not users.role",
+    async viaPortal => {
+      // Even a broad role must not override authoritative staff classification.
+      mock.user = { id: account.id, role: "super_admin", name: account.name };
+      await renderStaffShell(authority(), undefined, viaPortal);
+      expect(container.querySelectorAll("aside")).toHaveLength(1);
+      expect(container.querySelector("aside")?.classList.contains("w-56")).toBe(
+        true
+      );
+      expect(container.querySelector("aside")?.style.background).toBe(
+        "var(--sidebar)"
+      );
+      expect(container.textContent).toContain("JLT Group");
+      expect(container.textContent).toContain("Booking Portal");
+      expect(container.textContent).toContain(`Working with ${owner.name}`);
+      expect(container.textContent).toContain("Staff");
+      for (const href of [
+        "/business-staff",
+        "/business-staff/bookings",
+        "/academy",
+        "/my-agreements",
+        ...resourceHrefs,
+      ])
+        expect(container.querySelector(`a[href="${href}"]`), href).toBeTruthy();
+      for (const href of resourceHrefs.filter(href =>
+        href.startsWith("https")
+      )) {
+        const link = container.querySelector(`a[href="${href}"]`)!;
+        expect(link.getAttribute("target")).toBe("_blank");
+        expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+      }
+      assertRestrictedShell();
+    }
+  );
+  it("opens mobile navigation, closes on links, close button and overlay, and expands a previously collapsed sidebar", async () => {
+    staffIdentity();
+    await renderStaffShell();
+    const sidebar = () => container.querySelector("aside")!;
+    const openButton = () =>
+      container.querySelector('button[aria-label="Open navigation"]')!;
+    expect(sidebar().classList.contains("-translate-x-full")).toBe(true);
+    expect(openButton().getAttribute("aria-expanded")).toBe("false");
+    await clickLabel("Open navigation");
+    expect(sidebar().classList.contains("translate-x-0")).toBe(true);
+    expect(openButton().getAttribute("aria-expanded")).toBe("true");
+    await act(async () =>
+      container
+        .querySelector<HTMLAnchorElement>('a[href="/suppliers"]')!
+        .click()
+    );
+    await flush();
+    expect(sidebar().classList.contains("-translate-x-full")).toBe(true);
+    expect(
+      container.querySelector('[aria-label="Close navigation overlay"]')
+    ).toBeNull();
+    await clickLabel("Open navigation");
+    await clickLabel("Close navigation");
+    expect(openButton().getAttribute("aria-expanded")).toBe("false");
+    await clickLabel("Open navigation");
+    await clickLabel("Close navigation overlay");
+    expect(openButton().getAttribute("aria-expanded")).toBe("false");
+    await clickLabel("Collapse sidebar");
+    await clickLabel("Open navigation");
+    expect(sidebar().classList.contains("w-56")).toBe(true);
+    assertRestrictedShell();
+  });
+  it("collapses to accessible icons without changing external fee links and restores Explore portal navigation", async () => {
+    staffIdentity();
+    await renderStaffShell();
+    await clickLabel("Collapse sidebar");
+    expect(container.querySelector("aside")?.classList.contains("w-14")).toBe(
+      true
+    );
+    expect(
+      container
+        .querySelector('button[aria-label="Expand sidebar"]')
+        ?.getAttribute("aria-expanded")
+    ).toBe("false");
+    expect(
+      container.querySelector('a[aria-label="Supplier Directory"]')
+    ).toBeTruthy();
+    for (const href of resourceHrefs.filter(href => href.startsWith("https"))) {
+      const link = container.querySelector(`a[href="${href}"]`)!;
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+      expect(link.getAttribute("aria-label")).toMatch(/Fees/);
+    }
+    expect(
+      container.querySelector('button[aria-label="Sign out"]')
+    ).toBeTruthy();
+    expect(
+      container.querySelector('a[aria-label="Agreements & Policies"]')
+    ).toBeTruthy();
+    await click("Explore portal");
+    expect(container.querySelector("aside")?.classList.contains("w-56")).toBe(
+      true
+    );
+    expect(container.textContent).toContain("Knowledge Base");
+    assertRestrictedShell();
+  });
+  it("uses shared group preferences scoped to staff and reopens a directly reached resource group", async () => {
+    staffIdentity();
+    window.localStorage.setItem(
+      `jlt-sidebar:${account.id}:agent:learning`,
+      "closed"
+    );
+    await renderStaffShell();
+    expect(container.querySelector('a[href="/knowledge-base"]')).toBeTruthy();
+    await click("Learning");
+    expect(container.querySelector('a[href="/knowledge-base"]')).toBeNull();
+    expect(
+      window.localStorage.getItem(
+        `jlt-sidebar:${account.id}:business-staff:learning`
+      )
+    ).toBe("closed");
+    await act(async () =>
+      window.history.pushState(null, "", "/knowledge-base")
+    );
+    await flush();
+    expect(button("Learning").getAttribute("aria-expanded")).toBe("true");
+    expect(
+      container
+        .querySelector('a[href="/knowledge-base"]')
+        ?.getAttribute("aria-current")
+    ).toBe("page");
+    assertRestrictedShell();
+  });
+  it("removes all resource links when denied without removing own Academy or read-only booking access", async () => {
+    staffIdentity();
+    await renderStaffShell(
+      authority({
+        ...DEFAULT_BUSINESS_STAFF_PERMISSIONS,
+        resourceAccess: false,
+      })
+    );
+    for (const href of resourceHrefs)
+      expect(container.querySelector(`a[href="${href}"]`)).toBeNull();
+    expect(container.querySelector('a[href="/academy"]')).toBeTruthy();
+    expect(
+      container.querySelector('a[href="/business-staff/bookings"]')
+    ).toBeTruthy();
+    expect(container.textContent).not.toContain("Pricing & Fees");
+    assertRestrictedShell();
+  });
+  it("retains resources for valid legacy four-boolean permissions but rejects malformed grants", async () => {
+    staffIdentity();
+    const legacy = {
+      viewBookings: true,
+      viewCustomerAmounts: false,
+      addBookingNotes: false,
+      academyAccess: true,
+    };
+    await renderStaffShell(authority(legacy as any));
+    for (const href of resourceHrefs)
+      expect(container.querySelector(`a[href="${href}"]`)).toBeTruthy();
+    await renderStaffShell(authority({ resourceAccess: "true" } as any));
+    for (const href of [
+      ...resourceHrefs,
+      "/academy",
+      "/business-staff/bookings",
+    ])
+      expect(container.querySelector(`a[href="${href}"]`)).toBeNull();
+    assertRestrictedShell();
+  });
+  it.each(["revoked", "ordinary", "no-membership", "unauthenticated"])(
+    "never exposes capability navigation for %s authority",
+    async state => {
+      staffIdentity();
+      const current = authority();
+      if (state === "revoked") current.active = false;
+      if (state === "ordinary") current.managed = false;
+      if (state === "no-membership") current.membership = null as any;
+      if (state === "unauthenticated") mock.user = null;
+      await renderStaffShell(current, undefined, true);
+      for (const href of [
+        ...resourceHrefs,
+        "/academy",
+        "/business-staff/bookings",
+      ])
+        expect(container.querySelector(`a[href="${href}"]`)).toBeNull();
+      expect(container.querySelector('a[href="/my-agreements"]')).toBeTruthy();
+      expect(container.textContent).not.toContain(`Working with ${owner.name}`);
+      assertRestrictedShell();
+    }
+  );
+  it.each([false, true])(
+    "never renders double frames for nested PortalLayout resource children (root wrapper=%s)",
+    async viaPortal => {
+      staffIdentity();
+      await renderStaffShell(
+        authority(),
+        React.createElement(PortalLayout, {
+          children: React.createElement(PortalLayout, {
+            children: React.createElement(
+              "section",
+              { "data-test-resource": true },
+              "Own Academy resource"
+            ),
+          }),
+        }),
+        viaPortal
+      );
+      expect(container.querySelectorAll("aside")).toHaveLength(1);
+      expect(container.querySelectorAll("main")).toHaveLength(1);
+      expect(
+        container.querySelectorAll("[data-business-staff-portal]")
+      ).toHaveLength(1);
+      expect(container.querySelectorAll("[data-test-resource]")).toHaveLength(
+        1
+      );
+      assertRestrictedShell();
+    }
+  );
+  it("has a familiar lightweight home with permitted shortcuts but no booking hooks or oversized Orbit warning", async () => {
+    staffIdentity();
+    await renderStaffWorkspace("/business-staff");
+    expect(container.querySelector("h1")?.textContent).toBe(
+      "Welcome, Synthetic"
+    );
+    expect(
+      container.querySelector(
+        '[aria-label="Portal shortcuts"] a[href="/suppliers"]'
+      )
+    ).toBeTruthy();
+    expect(
+      container.querySelector(
+        '[aria-label="Portal shortcuts"] a[href="/business-staff/bookings"]'
+      )
+    ).toBeTruthy();
+    expect(container.textContent).toContain("read-only");
+    expect(container.textContent).toContain("Continue to use it directly");
+    expect(container.textContent).not.toContain("Orbit access is not ready");
+    expect(container.querySelector("table")).toBeNull();
+    expect(container.querySelectorAll("aside")).toHaveLength(1);
+    expect(mock.hooks.every(hook => hook.path === "businessStaff.mine")).toBe(
+      true
+    );
+    assertOnlyBusinessHooks();
+  });
+  it("retains signout failure, blocks duplicate pending signout and allows retry without legacy mutations", async () => {
+    staffIdentity();
+    mock.logout.mockRejectedValueOnce(new Error("Signout failed"));
+    await renderStaffShell();
+    await clickLabel("Sign out");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Sign out failed. Please try again."
+    );
+    let finish!: () => void;
+    mock.logout.mockImplementationOnce(
+      () =>
+        new Promise<void>(resolve => {
+          finish = resolve;
+        })
+    );
+    await clickLabel("Sign out");
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Sign out"]'
+      )?.disabled
+    ).toBe(true);
+    await clickLabel("Sign out");
+    expect(mock.logout).toHaveBeenCalledTimes(2);
+    await act(async () => finish());
+    await flush();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Sign out"]'
+      )?.disabled
+    ).toBe(false);
+    assertRestrictedShell();
+  });
+  it("keeps the ordinary agent shell collapsed and its existing hooks available outside staff context", async () => {
+    staffIdentity();
+    await render(
+      React.createElement(ViewModeProvider, {
+        children: React.createElement(PortalLayout, {
+          children: React.createElement("p", null, "Ordinary portal"),
+        }),
+      })
+    );
+    expect(container.querySelector("aside")?.classList.contains("w-14")).toBe(
+      true
+    );
+    expect(button("Explore portal")).toBeTruthy();
+    expect(
+      mock.hooks.some(hook => hook.path === "staffAccess.mine" && hook.enabled)
+    ).toBe(true);
+    expect(
+      mock.hooks.some(hook => hook.path === "crm.agentCrm.getMyProfile")
+    ).toBe(true);
+    expect(
+      mock.hooks.some(hook => hook.path === "notifications.unreadCount")
+    ).toBe(true);
+    expect(
+      mock.hooks.some(
+        hook => hook.path === "bookings.quickSearch" && hook.enabled === false
+      )
+    ).toBe(true);
+    expect(
+      mock.hooks.some(
+        hook => hook.path === "terms.sign" && hook.kind === "mutation"
+      )
+    ).toBe(true);
+    expect(mock.mutations).toEqual([]);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it("allows root to disable the separate instructor capability lookup until ordinary authority is confirmed", async () => {
+    staffIdentity();
+    mock.data["staffAccess.mine"] = {
+      instructor: true,
+      engagement: true,
+      schemaAvailable: true,
+      courseIds: [99],
+    };
+    function DisabledLookup() {
+      const query = useStaffAccess(false);
+      return React.createElement(
+        "p",
+        null,
+        `${query.eligible}:${query.access.instructor}:${query.access.engagement}`
+      );
+    }
+    await render(React.createElement(DisabledLookup));
+    expect(container.textContent).toBe("false:false:false");
+    expect(mock.hooks).toEqual([
+      {
+        kind: "query",
+        path: "staffAccess.mine",
+        input: undefined,
+        enabled: false,
+      },
+    ]);
+    expect(mock.mutations).toEqual([]);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
 

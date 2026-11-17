@@ -25,6 +25,7 @@ export const systemRouter = router({
       recruitmentSignupLinking: 1,
       businessStaffPermissions: 1,
       businessStaffOrbitPending: 1,
+      businessStaffPortalResources: 1,
     })),
 
   notifyOwner: adminProcedure

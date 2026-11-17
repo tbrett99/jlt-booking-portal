@@ -2,6 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import GlobalSearch from "@/components/GlobalSearch";
 import { TermsSigningBanner } from "@/components/TermsSigningBanner";
 import { useStaffAccess } from "@/pages/staff/StaffWorkspace";
+import { BusinessStaffPortalLayout, useBusinessStaffPortalAuthority } from "@/pages/business/BusinessStaffPortalLayout";
 import { trpc } from "@/lib/trpc";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import {
@@ -11,7 +12,7 @@ import {
   MessageSquare, BarChart2, CheckSquare, BellRing, PoundSterling, ClipboardList, Bot,
   RefreshCw, Sparkles, FileUp, Mail, Settings, UserSearch, Megaphone, UserCheck, CreditCard, FileSpreadsheet, Plane, UserX, UserPlus, Key, Shield, ExternalLink, FileSignature, Calculator, TrendingUp, Zap, Newspaper, Activity, Rocket, Trophy, Globe2, GraduationCap, ClipboardCheck, PlayCircle
 } from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 
@@ -78,7 +79,7 @@ interface NavItem {
   exact?: boolean;
 }
 
-interface NavGroup {
+export interface NavGroup {
   label: string;
   icon: React.ReactNode;
   items: NavItem[];
@@ -124,7 +125,7 @@ function OpenCrmButton({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function SidebarGroup({
+export function SidebarGroup({
   group,
   location,
   collapsed,
@@ -191,24 +192,35 @@ function SidebarGroup({
         {group.items.map((item) => {
           const isActive = matchesItem(item);
           const badge = getItemBadge(item);
+          const itemClass = `flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors relative ${
+            isActive ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent opacity-70 hover:opacity-100"
+          }`;
+          const itemContent = (
+            <span className="relative">
+              {item.icon}
+              {(badge ?? 0) > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 rounded-full text-[9px] font-bold flex items-center justify-center" style={{ background: '#ef4444', color: 'white' }}>
+                  {(badge ?? 0) > 9 ? '9+' : badge}
+                </span>
+              )}
+            </span>
+          );
+          if (item.external) return (
+            <a key={item.href} href={item.href} target="_blank" rel="noopener noreferrer" className={itemClass} onClick={onNavigate} title={item.label} aria-label={item.label}>
+              {itemContent}
+            </a>
+          );
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors relative ${
-                isActive ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent opacity-70 hover:opacity-100"
-              }`}
+              className={itemClass}
               onClick={onNavigate}
               title={item.label}
+              aria-label={item.label}
+              aria-current={isActive ? "page" : undefined}
             >
-              <span className="relative">
-                {item.icon}
-                {(badge ?? 0) > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 rounded-full text-[9px] font-bold flex items-center justify-center" style={{ background: '#ef4444', color: 'white' }}>
-                    {(badge ?? 0) > 9 ? '9+' : badge}
-                  </span>
-                )}
-              </span>
+              {itemContent}
             </Link>
           );
         })}
@@ -276,6 +288,7 @@ function SidebarGroup({
                 target="_blank"
                 rel="noopener noreferrer"
                 className={itemClass}
+                onClick={onNavigate}
               >
                 {itemContent}
               </a>
@@ -285,6 +298,7 @@ function SidebarGroup({
                 href={item.href}
                 className={itemClass}
                 onClick={onNavigate}
+                aria-current={isActive ? "page" : undefined}
               >
                 {itemContent}
               </Link>
@@ -297,7 +311,25 @@ function SidebarGroup({
 }
 
 // ─── Main layout ──────────────────────────────────────────────────────────────
+const PortalFrame = createContext(false);
+
+// Dispatch before mounting the ordinary shell: disabled legacy queries and
+// mutation hooks are not a safe substitute for keeping that body unmounted.
+// Resource and Academy pages can retain their own nested PortalLayout calls.
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
+  const authority = useBusinessStaffPortalAuthority();
+  const alreadyFramed = useContext(PortalFrame);
+  if (alreadyFramed) return <>{children}</>;
+  return (
+    <PortalFrame.Provider value={true}>
+      {authority !== null
+        ? <BusinessStaffPortalLayout>{children}</BusinessStaffPortalLayout>
+        : <RegularPortalLayout>{children}</RegularPortalLayout>}
+    </PortalFrame.Provider>
+  );
+}
+
+function RegularPortalLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [location] = useLocation();
   const { isAgentView, setViewMode } = useViewMode();

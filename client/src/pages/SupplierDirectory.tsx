@@ -338,11 +338,13 @@ function SupplierModal({
   agentStage,
   isAdmin,
   onClose,
+  businessStaffMode = false,
 }: {
   supplierId: number;
   agentStage: number;
   isAdmin: boolean;
   onClose: () => void;
+  businessStaffMode?: boolean;
 }) {
   const { data: supplier, isLoading } = trpc.suppliers.get.useQuery(
     { id: supplierId },
@@ -352,7 +354,7 @@ function SupplierModal({
     { supplierId },
     { enabled: !isLoading && !!supplier, staleTime: 60000 }
   );
-  const { data: myLoginRequests, refetch: refetchRequests } = trpc.suppliers.getMyLoginRequests.useQuery(undefined, { staleTime: 30000 });
+  const { data: myLoginRequests, refetch: refetchRequests } = trpc.suppliers.getMyLoginRequests.useQuery(undefined, { staleTime: 30000, enabled: !businessStaffMode });
   const requestLoginMutation = trpc.suppliers.requestLogin.useMutation({
     onSuccess: (data) => {
       if (data.alreadyRequested) {
@@ -697,7 +699,7 @@ function SupplierModal({
           )}
 
           {/* Personal login request */}
-          {(supplier as any).requiresLoginRequest && (
+          {!businessStaffMode && (supplier as any).requiresLoginRequest && (
             <div className="space-y-2">
               <h4 className="text-sm font-semibold flex items-center gap-2">
                 <KeyRound className="h-4 w-4 text-muted-foreground" />
@@ -738,7 +740,7 @@ function SupplierModal({
           )}
 
           {/* Login credentials */}
-          {hasCredentials && (
+          {!businessStaffMode && hasCredentials && (
             <div className="space-y-2">
               <h4 className="text-sm font-semibold flex items-center gap-2">
                 {credentialsLocked ? (
@@ -980,7 +982,7 @@ function AiChatPanel({ onClose, onSelectSupplier }: { onClose: () => void; onSel
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
-export default function SupplierDirectory() {
+export default function SupplierDirectory({ businessStaffMode = false }: { businessStaffMode?: boolean } = {}) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
@@ -1004,7 +1006,7 @@ export default function SupplierDirectory() {
   const { data: aiSearchData, isFetching: aiSearchLoading } = trpc.suppliers.aiSearch.useQuery(
     { query: activeAiQuery ?? "", limit: 12 },
     {
-      enabled: !!activeAiQuery,
+      enabled: !businessStaffMode && !!activeAiQuery,
       staleTime: 30 * 60 * 1000, // cache 30 min — same query won't re-call LLM
       retry: false,
     }
@@ -1036,7 +1038,9 @@ export default function SupplierDirectory() {
   const agentStage = data?.agentStage ?? 1;
 
   const stageDescription =
-    agentStage === 1
+    businessStaffMode
+      ? "Supplier information, contacts and training resources"
+      : agentStage === 1
       ? "Stage 1 — General info & training videos only"
       : agentStage === 2
       ? "Stage 2 — Credentials unlocked for most suppliers"
@@ -1065,14 +1069,14 @@ export default function SupplierDirectory() {
             <p className="text-sm text-muted-foreground mt-1">{stageDescription}</p>
           </div>
           <div className="flex items-center gap-2 self-start sm:self-auto">
-            {!isAdmin && (
+            {!isAdmin && !businessStaffMode && (
               <Badge
                 variant={agentStage === 1 ? "secondary" : "default"}
               >
                 {agentStage === 1 ? "🔒 Stage 1" : agentStage === 2 ? "🔓 Stage 2" : "🔓 Stage 3"}
               </Badge>
             )}
-            <Button
+            {!businessStaffMode && <Button
               variant={showAiChat ? "default" : "outline"}
               size="sm"
               onClick={() => setShowAiChat(!showAiChat)}
@@ -1080,7 +1084,7 @@ export default function SupplierDirectory() {
             >
               <MessageSquare className="h-4 w-4" />
               AI Chat
-            </Button>
+            </Button>}
           </div>
         </div>
 
@@ -1125,7 +1129,7 @@ export default function SupplierDirectory() {
           )}
 
           {/* AI Search — opt-in prompt (only shown when not already in AI mode) */}
-          {!showAiSearch && !aiResults && (
+          {!businessStaffMode && !showAiSearch && !aiResults && (
             <button
               onClick={() => setShowAiSearch(true)}
               className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group w-full text-left"
@@ -1136,7 +1140,7 @@ export default function SupplierDirectory() {
           )}
 
           {/* AI Search expanded panel */}
-          {(showAiSearch || aiResults) && (
+          {!businessStaffMode && (showAiSearch || aiResults) && (
             <div className="bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/30 rounded-xl p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1358,12 +1362,13 @@ export default function SupplierDirectory() {
             agentStage={agentStage}
             isAdmin={isAdmin}
             onClose={() => setSelectedId(null)}
+            businessStaffMode={businessStaffMode}
           />
         )}
       </div>
 
       {/* AI Chat side panel */}
-      {showAiChat && (
+      {!businessStaffMode && showAiChat && (
         <div className="w-80 shrink-0 border-l border-border flex flex-col bg-background">
           <AiChatPanel
             onClose={() => setShowAiChat(false)}

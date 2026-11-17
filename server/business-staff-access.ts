@@ -58,6 +58,10 @@ export async function assertBusinessStaffRouteAllowed(user: BusinessStaffActor |
   if (path.startsWith("businessBookings.") && authority.active) return;
   if (path.startsWith("academy.") && authority.active && authority.membership?.permissions.academyAccess) return;
   if (path.startsWith("myAgreements.")) return; // Existing self-owned signing history; no signing campaign.
+  if (authority.active && authority.membership?.permissions.resourceAccess && [
+    "library.browse", "library.article", "library.webinar", "library.recordView", "library.markCompleted",
+    "suppliers.list", "suppliers.get", "suppliers.categories", "suppliers.locations", "suppliers.preferredPartners", "suppliers.listAttachments",
+  ].includes(path)) return;
   throw new TRPCError({ code: "FORBIDDEN", message: "Use the restricted Business staff workspace. This account cannot access owner financial, ordinary agent or JLT staff operations." });
 }
 export function notBusinessStaffUser(column: any) {
