@@ -37,7 +37,7 @@ export const MERGE_OWNERS: readonly OwnerPolicy[] = [
   { table: "momentum_ledger", label: "Momentum reward history", owner: "agentId", mode: "move" },
   ...[
     ["contract_signatures", "Original signed contracts"], ["terms_signings", "Original signed terms"],
-    ["join_sessions", "Original onboarding / contract evidence"], ["agent_status_events", "Original membership status history"],
+    ["join_sessions", "Original onboarding / contract evidence"], ["recruitment_signup_links", "Original recruitment signup link"], ["agent_status_events", "Original membership status history"],
     ["agent_crm_profiles", "Original CRM profile and document references"], ["admin_onboarding_checklist", "Original staff onboarding checklist"],
     ["gc_payment_failures", "Original legacy payment counter audit"], ["membership_payment_fees", "Original administration-fee ledger"],
     ["membership_payment_outbox", "Original payment email idempotency ledger"], ["inbox_audit_logs", "Original inbox audit"],

@@ -26,6 +26,7 @@ import {
   logRecruitmentEmail,
   updateRecruitmentProspect,
 } from "./recruitment-db";
+import { isRecruitmentSignupLinked } from "./recruitment-signup-link-integration";
 import { getEmailBrandingSettings } from "./crm-db";
 import { PROSPECT_FROM, PROSPECT_REPLY_TO } from "./resend-email";
 import { Resend } from "resend";
@@ -110,6 +111,7 @@ async function sendConfiguredWorkflowStep(opts: {
 
   const prospect = await getRecruitmentProspectById(opts.prospectId);
   if (!prospect) return false;
+  if (await isRecruitmentSignupLinked(prospect.id)) return false;
 
   const templateContext = {
     firstName: prospect.firstName,
@@ -497,6 +499,9 @@ export async function processWorkflowEmailsInternal(opts?: { prospectId?: number
         // Workflow disabled — skip but don't cancel enrollment
         continue;
       }
+
+      const currentProspect = await getRecruitmentProspectById(enrollment.prospectId);
+      if (!currentProspect || currentProspect.pipelineStage !== workflow.stage || await isRecruitmentSignupLinked(enrollment.prospectId)) continue;
 
       const steps = await getWorkflowEmails(enrollment.workflowId);
       const currentStepData = steps.find((s) => s.stepOrder === enrollment.currentStep);

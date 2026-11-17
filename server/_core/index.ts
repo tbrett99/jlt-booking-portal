@@ -114,30 +114,19 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
-/** Keep the recruitment funnel aligned with a confirmed joining-fee conversion. */
-async function markRecruitmentProspectWonForPaidJoin(email: string | null | undefined, userId: number): Promise<void> {
-  if (!email) return;
+/** A completed application, not email/name similarity, controls conversion. */
+async function markRecruitmentProspectWonForPaidJoin(_email: string | null | undefined, userId: number, joinSessionId: number): Promise<void> {
   try {
-    const { getAllRecruitmentProspects, moveRecruitmentProspectStage } = await import("../recruitment-db");
-    const normalizedEmail = email.trim().toLowerCase();
-    const prospect = (await getAllRecruitmentProspects()).find(
-      (candidate: any) => candidate.email?.trim().toLowerCase() === normalizedEmail
-    );
-    if (prospect && prospect.pipelineStage !== "won") {
-      await moveRecruitmentProspectStage({
-        prospectId: prospect.id,
-        toStage: "won",
-        changedByName: "System (payment confirmed)",
-        note: `Joining fee paid via GoCardless — agent account confirmed (user #${userId})`,
-      });
+    const { syncRecruitmentCompletedSignup } = await import("../recruitment-signup-conversion");
+    const result = await syncRecruitmentCompletedSignup(userId, joinSessionId);
+    if (result.changed && result.prospectId) {
       const { enrollProspectInWorkflow } = await import("../recruitment-workflow-db");
       const { processWorkflowEmailsInternal } = await import("../recruitment-workflow-router");
-      await enrollProspectInWorkflow(prospect.id, "won");
-      await processWorkflowEmailsInternal({ prospectId: prospect.id });
-      console.log(`[GC Webhook] Recruitment prospect ${prospect.id} advanced to 'won'`);
+      await enrollProspectInWorkflow(result.prospectId, "won");
+      await processWorkflowEmailsInternal({ prospectId: result.prospectId });
     }
-  } catch (recruitErr) {
-    console.error("[GC Webhook] Failed to advance recruitment prospect stage:", recruitErr);
+  } catch {
+    console.error("[Recruitment] Completed signup conversion held for staff review; no email fallback used.");
   }
 }
 
@@ -1168,7 +1157,7 @@ async function startServer() {
             const existingMandate = await getGcMandateByBillingRequestId(billingRequestId);
             if (existingMandate) {
               console.log(`[GC Webhook] billing_request.fulfilled: already fully processed for session ${session.id}`);
-              await markRecruitmentProspectWonForPaidJoin(session.email, session.userId);
+              await markRecruitmentProspectWonForPaidJoin(session.email, session.userId, session.id);
               continue;
             }
             // User exists but mandate row is missing — create it now
@@ -1186,7 +1175,7 @@ async function startServer() {
             } catch (mErr: any) {
               console.error(`[GC Webhook] Failed to create missing mandate row for user ${session.userId}:`, mErr.message);
             }
-            await markRecruitmentProspectWonForPaidJoin(session.email, session.userId);
+            await markRecruitmentProspectWonForPaidJoin(session.email, session.userId, session.id);
             continue;
           }
 
@@ -1434,7 +1423,7 @@ async function startServer() {
 
           console.log(`[GC Webhook] billing_request.fulfilled: created agent user ${newUser.id} for ${session.email}`);
 
-          await markRecruitmentProspectWonForPaidJoin(session.email, newUser.id);
+          await markRecruitmentProspectWonForPaidJoin(session.email, newUser.id, session.id);
         }
 
         // Mandate became active → create the subscription

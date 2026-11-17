@@ -1254,6 +1254,13 @@
       "when": 1794411844115,
       "tag": "0178_tan_loners",
       "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "5",
+      "when": 1794913768282,
+      "tag": "0179_medical_domino",
+      "breakpoints": true
     }
   ]
 }

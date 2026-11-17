@@ -1,3 +1,4 @@
+import { countRecruitmentConversions, notSupersededRecruitmentProspect } from "./recruitment-signup-link-integration";
 /**
  * Monday Morning Business Digest
  * Triggered by a Heartbeat cron every Monday at 08:00 UTC.
@@ -143,9 +144,9 @@ export async function mondayDigestHandler(req: Request, res: Response) {
 
     // ── Recruitment ──
     const [newProspects, newProspectsPrev, wonThisWeek] = await Promise.all([
-      db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, reportFrom), lt(recruitmentProspects.createdAt, reportTo))),
-      db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, prevFrom), lt(recruitmentProspects.createdAt, prevTo))),
-      db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(and(eq(recruitmentStageHistory.toStage, "won"), gte(recruitmentStageHistory.changedAt, reportFrom), lt(recruitmentStageHistory.changedAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(notSupersededRecruitmentProspect(), gte(recruitmentProspects.createdAt, reportFrom), lt(recruitmentProspects.createdAt, reportTo))),
+      db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(notSupersededRecruitmentProspect(), gte(recruitmentProspects.createdAt, prevFrom), lt(recruitmentProspects.createdAt, prevTo))),
+      countRecruitmentConversions(db, reportFrom, reportTo),
     ]);
 
     // ── Build HTML ──

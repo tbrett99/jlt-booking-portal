@@ -1,3 +1,4 @@
+import { isRecruitmentSignupLinked } from "./recruitment-signup-link-integration";
 /**
  * Resend email helper for the JLT email marketing system.
  * Handles campaign sends, drip step sends, open/click tracking pixel injection,
@@ -126,6 +127,8 @@ export async function getCampaignProspectMergeValues(opts: {
   if (!prospect || prospect.email.trim().toLowerCase() !== opts.recipientEmail.trim().toLowerCase()) {
     throw new Error("Could not verify the recruitment prospect for the secure application link");
   }
+
+  if (await isRecruitmentSignupLinked(prospect.id)) throw new Error("Recruitment reminders are stopped for this completed signup.");
 
   let token = extractApplicationToken(prospect.adminNotes);
   if (!token) {
@@ -463,6 +466,7 @@ export async function sendMarketingEmail(opts: {
   }
   // Agent campaigns and drip emails use the CRM correspondence selection at the
   // instant of delivery. Prospect sends are intentionally unchanged.
+  if (opts.audienceType === "prospect" && opts.recipientId != null && await isRecruitmentSignupLinked(opts.recipientId)) return { sendId: 0, success: false, error: "Recruitment reminders are stopped for this completed signup" };
   const recipient = opts.audienceType === "agent" && opts.recipientId
     ? await resolveAgentCorrespondence({ userId: opts.recipientId, fallbackEmail: opts.to, fallbackName: opts.toName })
     : { email: opts.to, name: opts.toName ?? "Agent" };
@@ -694,6 +698,11 @@ export async function processCampaignQueue(
       && await getAgentMergeTarget(row.recipientId) !== null) {
       // Includes exact historical retry IDs. Preserve original status/provider
       // evidence: a skipped archive must not rewrite a previously sent row.
+      skipped++;
+      continue;
+    }
+    if (audienceType === "prospect" && row.recipientId != null && await isRecruitmentSignupLinked(row.recipientId)) {
+      // Never requeue or send nurturing to a manually linked completed signup.
       skipped++;
       continue;
     }

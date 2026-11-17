@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS `recruitment_signup_links` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`prospectId` int NOT NULL,
+	`joinSessionId` int NOT NULL,
+	`userId` int NOT NULL,
+	`supersededProspectId` int,
+	`linkedById` int NOT NULL,
+	`linkedAt` timestamp NOT NULL DEFAULT (now()),
+	`conversionAt` timestamp NOT NULL,
+	`reason` text NOT NULL,
+	CONSTRAINT `recruitment_signup_links_id` PRIMARY KEY(`id`),
+	CONSTRAINT `recruitment_signup_links_prospect_uq` UNIQUE(`prospectId`),
+	CONSTRAINT `recruitment_signup_links_session_uq` UNIQUE(`joinSessionId`),
+	CONSTRAINT `recruitment_signup_links_user_uq` UNIQUE(`userId`),
+	CONSTRAINT `recruitment_signup_links_superseded_uq` UNIQUE(`supersededProspectId`),
+	CONSTRAINT `recruitment_signup_links_prospect_fk` FOREIGN KEY (`prospectId`) REFERENCES `recruitment_prospects`(`id`) ON DELETE no action ON UPDATE no action,
+	CONSTRAINT `recruitment_signup_links_session_fk` FOREIGN KEY (`joinSessionId`) REFERENCES `join_sessions`(`id`) ON DELETE no action ON UPDATE no action,
+	CONSTRAINT `recruitment_signup_links_user_fk` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE no action ON UPDATE no action,
+	CONSTRAINT `recruitment_signup_links_superseded_fk` FOREIGN KEY (`supersededProspectId`) REFERENCES `recruitment_prospects`(`id`) ON DELETE no action ON UPDATE no action,
+	CONSTRAINT `recruitment_signup_links_actor_fk` FOREIGN KEY (`linkedById`) REFERENCES `users`(`id`) ON DELETE no action ON UPDATE no action
+);

@@ -5,6 +5,8 @@
  * Admin procedures: listProspects, getProspect, updateStage, updateNotes, getStageHistory, getEmailsSent
  */
 import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
+import { recruitmentSignupLinkProcedures } from "./recruitment-signup-link-router";
+import { isRecruitmentSignupLinked } from "./recruitment-signup-link-integration";
 import { getRecruitmentAnalytics } from "./recruitment-analytics";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -150,6 +152,7 @@ function generateApplicationToken(): string {
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 export const recruitmentRouter = router({
+  ...recruitmentSignupLinkProcedures,
   /**
    * PUBLIC — Submit initial enquiry form.
    * Creates a prospect in new_enquiry stage and sends prospectus email.
@@ -324,6 +327,10 @@ export const recruitmentRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Invalid or expired application link" });
       }
       // Already submitted?
+      if (await isRecruitmentSignupLinked(prospect.id)) {
+        throw new TRPCError({ code: "CONFLICT", message: "This enquiry is already linked to a completed signup. Please sign in to the Portal or contact JLT." });
+      }
+
       if (prospect.applicationSubmittedAt) {
         return { success: true, alreadySubmitted: true };
       }
@@ -503,6 +510,7 @@ export const recruitmentRouter = router({
         adminNotes: stripApplicationToken(prospect.adminNotes),
         stageHistory,
         emailsSent,
+        signupLinked: await isRecruitmentSignupLinked(input.id),
       };
     }),
 
@@ -587,6 +595,8 @@ export const recruitmentRouter = router({
       const prospect = await getRecruitmentProspectById(input.id);
       if (!prospect) throw new TRPCError({ code: "NOT_FOUND" });
 
+      if (await isRecruitmentSignupLinked(prospect.id)) throw new TRPCError({ code: "CONFLICT", message: "This enquiry is linked to a completed signup; recruitment reminders are stopped." });
+
       let token = extractApplicationToken(prospect.adminNotes);
       if (!token) {
         token = generateApplicationToken();
@@ -621,6 +631,8 @@ export const recruitmentRouter = router({
       if (!prospect) throw new TRPCError({ code: 'NOT_FOUND' });
 
       // Ensure a token exists
+      if (await isRecruitmentSignupLinked(prospect.id)) throw new TRPCError({ code: "CONFLICT", message: "This enquiry is linked to a completed signup; recruitment reminders are stopped." });
+
       let token = extractApplicationToken(prospect.adminNotes);
       if (!token) {
         token = generateApplicationToken();
@@ -766,13 +778,16 @@ export const recruitmentRouter = router({
         try {
           for (const prospect of prospects) {
             try {
+              if (await isRecruitmentSignupLinked(prospect.id)) { bulkEmailJob.skipped++; continue; }
               const alreadySent = await hasRecruitmentEmailBeenSent(prospect.id, "re_engagement_june_2026");
               if (alreadySent) {
                 bulkEmailJob.skipped++;
                 continue;
               }
 
-              let token = extractApplicationToken(prospect.adminNotes);
+              if (await isRecruitmentSignupLinked(prospect.id)) throw new TRPCError({ code: "CONFLICT", message: "This enquiry is linked to a completed signup; recruitment reminders are stopped." });
+
+      let token = extractApplicationToken(prospect.adminNotes);
               if (!token) {
                 token = generateApplicationToken();
                 await updateRecruitmentProspect(prospect.id, {
@@ -897,7 +912,9 @@ export const recruitmentRouter = router({
               if (alreadySent) { apologyEmailJob.skipped++; continue; }
 
               // Ensure prospect has a token
-              let token = extractApplicationToken(prospect.adminNotes);
+              if (await isRecruitmentSignupLinked(prospect.id)) throw new TRPCError({ code: "CONFLICT", message: "This enquiry is linked to a completed signup; recruitment reminders are stopped." });
+
+      let token = extractApplicationToken(prospect.adminNotes);
               if (!token) {
                 token = generateApplicationToken();
                 await updateRecruitmentProspect(prospect.id, {

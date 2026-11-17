@@ -10,10 +10,12 @@
  * - totalProspects, funnel, and conversion rates are still based on enquiry
  *   createdAt so the funnel remains meaningful.
  */
+import { notSupersededRecruitmentProspect } from "./recruitment-signup-link-integration";
 import { getDb } from "./db";
 import {
   recruitmentProspects,
   recruitmentStageHistory,
+  recruitmentSignupLinks,
 } from "../drizzle/schema";
 import { gte, and, sql } from "drizzle-orm";
 
@@ -84,7 +86,7 @@ export async function getRecruitmentAnalytics(opts?: {
   const dateFrom = opts?.dateFrom;
 
   // ── Fetch ALL prospects (no date filter) for funnel/conversion accuracy ──
-  const allProspects: any[] = await (db.select().from(recruitmentProspects) as any);
+  const allProspects: any[] = await (db.select().from(recruitmentProspects).where(notSupersededRecruitmentProspect()) as any);
 
   // ── Fetch ALL stage history ───────────────────────────────────────────────
   let stageHistory: any[] = [];
@@ -105,8 +107,11 @@ export async function getRecruitmentAnalytics(opts?: {
 
   // Build a map of prospectId → earliest won date (from history or createdAt)
   const wonDateByProspect = new Map<number, Date>();
+  const links = await db.select({ prospectId: recruitmentSignupLinks.prospectId, conversionAt: recruitmentSignupLinks.conversionAt }).from(recruitmentSignupLinks);
+  const explicitIds = new Set(links.map(link => link.prospectId));
+  for (const link of links) if (wonProspectIds.has(link.prospectId)) wonDateByProspect.set(link.prospectId, link.conversionAt);
   for (const row of stageHistory) {
-    if (row.toStage === "won" && wonProspectIds.has(row.prospectId)) {
+    if (row.toStage === "won" && wonProspectIds.has(row.prospectId) && !explicitIds.has(row.prospectId)) {
       const existing = wonDateByProspect.get(row.prospectId);
       const rowDate = new Date(row.changedAt);
       if (!existing || rowDate < existing) {
@@ -226,6 +231,7 @@ export async function getRecruitmentAnalytics(opts?: {
   const stageDurations: Record<string, number[]> = {};
   const byProspect: Record<number, any[]> = {};
   for (const row of stageHistory) {
+    if (!allProspects.some(p => p.id === row.prospectId)) continue;
     if (!byProspect[row.prospectId]) byProspect[row.prospectId] = [];
     byProspect[row.prospectId].push(row);
   }

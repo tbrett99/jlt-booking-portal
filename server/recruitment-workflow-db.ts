@@ -6,6 +6,7 @@
  *   recruitment_workflow_emails    — ordered email steps per workflow
  *   recruitment_workflow_enrollments — tracks which step each prospect is on
  */
+import { isRecruitmentSignupLinked } from "./recruitment-signup-link-integration";
 import { getDb } from "./db";
 import {
   recruitmentWorkflows,
@@ -141,6 +142,7 @@ export async function reorderWorkflowEmails(workflowId: number, orderedIds: numb
 export async function enrollProspectInWorkflow(prospectId: number, stage: string, opts?: { skipFirstStep?: boolean }) {
   const db = await getDb();
   if (!db) return null;
+  if (await isRecruitmentSignupLinked(prospectId)) return null;
   // Cancel all existing active enrollments for this prospect
   await db
     .update(recruitmentWorkflowEnrollments)

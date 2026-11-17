@@ -72,6 +72,7 @@ export function buildMergePlan(loaded: Loaded, actor: number, keepBanksAsIs = fa
   const sourceId = Number(loaded.source.id), primaryId = Number(loaded.primary.id);
   identifiersValid(sourceId, primaryId);
   const blockers: string[] = [], warnings: string[] = [];
+  if (recordSet(loaded, "recruitment_signup_links", "userId", sourceId).length) blockers.push("The source account has a preserved recruitment signup link. A reviewed identity-link consolidation is required; this merge will not move or rewrite original signup evidence.");
   if (loaded.aliases.some(r => [sourceId, primaryId].includes(Number(r.sourceUserId)))) blockers.push("One of these accounts is already an archived duplicate; select the current primary record instead.");
   if (loaded.aliases.some(r => Number(r.primaryUserId) === sourceId)) blockers.push("This source already owns merged history. Keep it as primary instead; nested merge chains are not permitted.");
   if (sourceId === actor || primaryId === actor) blockers.push("The operator cannot merge their own staff/login identity.");

@@ -2,6 +2,7 @@
  * Super Admin Router — Business Intelligence Dashboard
  * All procedures restricted to super_admin role only.
  */
+import { countRecruitmentConversions, averageRecruitmentConversionDays, notSupersededRecruitmentProspect } from "./recruitment-signup-link-integration";
 import { router, protectedProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -484,6 +485,7 @@ export const superAdminRouter = router({
         .select({ count: sql<number>`COUNT(*)` })
         .from(recruitmentProspects)
         .where(and(
+          notSupersededRecruitmentProspect(),
           gte(recruitmentProspects.createdAt, weekStartDate),
           lt(recruitmentProspects.createdAt, weekEndDate),
         ));
@@ -492,30 +494,25 @@ export const superAdminRouter = router({
         .select({ count: sql<number>`COUNT(*)` })
         .from(recruitmentProspects)
         .where(and(
+          notSupersededRecruitmentProspect(),
           gte(recruitmentProspects.createdAt, prevWeekStart),
           lt(recruitmentProspects.createdAt, prevWeekEnd),
         ));
 
       // Won prospects this week (stage moved to "won" this week)
-      const wonProspectsThisWeek = await db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(recruitmentStageHistory)
-        .where(and(
-          eq(recruitmentStageHistory.toStage, "won"),
-          gte(recruitmentStageHistory.changedAt, weekStartDate),
-          lt(recruitmentStageHistory.changedAt, weekEndDate),
-        ));
+      const wonProspectsThisWeek = await countRecruitmentConversions(db, weekStartDate, weekEndDate);
 
       // Direct paid joins have no matching recruitment prospect and therefore
       // belong to membership sign-ups rather than recruitment conversions.
       const directJoinersThisWeekRaw = (await db.execute(sql`
-        SELECT COUNT(*) AS count
+        SELECT COUNT(DISTINCT m.userId) AS count
         FROM gc_mandates m
         INNER JOIN users u ON u.id = m.userId
-        LEFT JOIN recruitment_prospects p ON LOWER(TRIM(p.email)) = LOWER(TRIM(u.email))
+        LEFT JOIN recruitment_prospects p ON LOWER(TRIM(CONVERT(p.email USING utf8mb4))) COLLATE utf8mb4_unicode_ci = LOWER(TRIM(CONVERT(u.email USING utf8mb4))) COLLATE utf8mb4_unicode_ci
         WHERE m.joiningFeePaidAt >= ${weekStartDate}
           AND m.joiningFeePaidAt < ${weekEndDate}
           AND p.id IS NULL
+          AND NOT EXISTS (SELECT 1 FROM recruitment_signup_links rsl WHERE rsl.userId = m.userId OR EXISTS (SELECT 1 FROM agent_record_merges arm WHERE arm.sourceUserId = rsl.userId AND arm.primaryUserId = m.userId))
       `) as unknown as [Array<{ count: number }>, unknown])[0];
 
       // Current funnel snapshot
@@ -525,7 +522,7 @@ export const superAdminRouter = router({
           count: sql<number>`COUNT(*)`,
         })
         .from(recruitmentProspects)
-        .where(ne(recruitmentProspects.pipelineStage, "archived"))
+        .where(and(notSupersededRecruitmentProspect(), ne(recruitmentProspects.pipelineStage, "archived")))
         .groupBy(recruitmentProspects.pipelineStage)
         .orderBy(sql`COUNT(*) DESC`);
 
@@ -1506,34 +1503,30 @@ export const superAdminRouter = router({
         newProspectsThisMonth, newProspectsPrevMonth, wonProspectsThisMonth,
         recruitmentFunnel, recruitmentStageMovesThisMonth,
       ] = await Promise.all([
-        db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, monthStartDate), lt(recruitmentProspects.createdAt, monthEndDate))),
-        db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, prevMonthStart), lt(recruitmentProspects.createdAt, prevMonthEnd))),
-        db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(and(eq(recruitmentStageHistory.toStage, "won"), gte(recruitmentStageHistory.changedAt, monthStartDate), lt(recruitmentStageHistory.changedAt, monthEndDate))),
-        db.select({ stage: recruitmentProspects.pipelineStage, count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(ne(recruitmentProspects.pipelineStage, "archived")).groupBy(recruitmentProspects.pipelineStage).orderBy(sql`COUNT(*) DESC`),
+        db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(notSupersededRecruitmentProspect(), gte(recruitmentProspects.createdAt, monthStartDate), lt(recruitmentProspects.createdAt, monthEndDate))),
+        db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(notSupersededRecruitmentProspect(), gte(recruitmentProspects.createdAt, prevMonthStart), lt(recruitmentProspects.createdAt, prevMonthEnd))),
+        countRecruitmentConversions(db, monthStartDate, monthEndDate),
+        db.select({ stage: recruitmentProspects.pipelineStage, count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(notSupersededRecruitmentProspect(), ne(recruitmentProspects.pipelineStage, "archived"))).groupBy(recruitmentProspects.pipelineStage).orderBy(sql`COUNT(*) DESC`),
         db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(and(gte(recruitmentStageHistory.changedAt, monthStartDate), lt(recruitmentStageHistory.changedAt, monthEndDate))),
       ]);
 
       // Recruitment conversion rate: won / total non-archived
-      const totalNonArchivedProspects = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(ne(recruitmentProspects.pipelineStage, "archived"));
-      const wonAllTime = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentStageHistory).where(eq(recruitmentStageHistory.toStage, "won"));
-      const totalEnquiries = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects);
-      const totalApplications = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(isNotNull(recruitmentProspects.applicationSubmittedAt));
+      const totalNonArchivedProspects = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(notSupersededRecruitmentProspect(), ne(recruitmentProspects.pipelineStage, "archived")));
+      const wonAllTime = await countRecruitmentConversions(db);
+      const totalEnquiries = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(notSupersededRecruitmentProspect());
+      const totalApplications = await db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(notSupersededRecruitmentProspect(), isNotNull(recruitmentProspects.applicationSubmittedAt)));
       const directJoinersThisMonthRaw = (await db.execute(sql`
-        SELECT COUNT(*) AS count
+        SELECT COUNT(DISTINCT m.userId) AS count
         FROM gc_mandates m
         INNER JOIN users u ON u.id = m.userId
-        LEFT JOIN recruitment_prospects p ON LOWER(TRIM(p.email)) = LOWER(TRIM(u.email))
+        LEFT JOIN recruitment_prospects p ON LOWER(TRIM(CONVERT(p.email USING utf8mb4))) COLLATE utf8mb4_unicode_ci = LOWER(TRIM(CONVERT(u.email USING utf8mb4))) COLLATE utf8mb4_unicode_ci
         WHERE m.joiningFeePaidAt >= ${monthStartDate}
           AND m.joiningFeePaidAt < ${monthEndDate}
           AND p.id IS NULL
+          AND NOT EXISTS (SELECT 1 FROM recruitment_signup_links rsl WHERE rsl.userId = m.userId OR EXISTS (SELECT 1 FROM agent_record_merges arm WHERE arm.sourceUserId = rsl.userId AND arm.primaryUserId = m.userId))
       `) as unknown as [Array<{ count: number }>, unknown])[0];
       // Avg time from enquiry to won (days)
-      const avgTimeToSignupRaw = await db.execute(sql`
-        SELECT AVG(TIMESTAMPDIFF(DAY, rp.createdAt, rsh.changedAt)) AS avgDays
-        FROM recruitment_stage_history rsh
-        JOIN recruitment_prospects rp ON rsh.prospectId = rp.id
-        WHERE rsh.toStage = 'won'
-      `) as unknown as Array<{ avgDays: number | null }>;
+      const avgTimeToSignupRaw = await averageRecruitmentConversionDays(db);
 
       // ── Section 6: Staff Productivity ──
       const adminUsers = await db.select({ id: users.id, name: users.name, role: users.role }).from(users).where(inArray(users.role, ["admin", "super_admin"]));
@@ -1650,7 +1643,7 @@ export const superAdminRouter = router({
           db.select({ count: sql<number>`COUNT(*)` }).from(gcMandates).where(and(isNotNull(gcMandates.joiningFeePaidAt), gte(gcMandates.joiningFeePaidAt, m.start), lt(gcMandates.joiningFeePaidAt, m.end))),
           db.select({ count: sql<number>`COUNT(*)` }).from(agentStatusEvents).where(and(inArray(agentStatusEvents.toStatus, ["cancelled", "in_notice"]), gte(agentStatusEvents.createdAt, m.start), lt(agentStatusEvents.createdAt, m.end))),
           db.select({ count: sql<number>`COUNT(*)` }).from(bookings).where(and(isNotNull(bookings.bookedDate), gte(bookings.bookedDate, m.start), lt(bookings.bookedDate, m.end))),
-          db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(gte(recruitmentProspects.createdAt, m.start), lt(recruitmentProspects.createdAt, m.end))),
+          db.select({ count: sql<number>`COUNT(*)` }).from(recruitmentProspects).where(and(notSupersededRecruitmentProspect(), gte(recruitmentProspects.createdAt, m.start), lt(recruitmentProspects.createdAt, m.end))),
           db.select({ total: sql<number>`SUM(jlt20)` }).from(remittanceLines).innerJoin(remittanceBatches, eq(remittanceLines.batchId, remittanceBatches.id)).where(and(gte(remittanceBatches.createdAt, m.start), lt(remittanceBatches.createdAt, m.end), isNotNull(remittanceLines.jlt20))),
           db.select({ count: sql<number>`COUNT(*)` }).from(commissionClaims).where(and(gte(commissionClaims.createdAt, m.start), lt(commissionClaims.createdAt, m.end))),
         ]);

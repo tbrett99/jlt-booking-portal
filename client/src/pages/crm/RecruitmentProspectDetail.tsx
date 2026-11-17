@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner";
 import { ArrowLeft, Mail, Clock, ChevronRight, Send, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
+import RecruitmentSignupLink from "./RecruitmentSignupLink";
 import { getStageBadge, PIPELINE_STAGES } from "./RecruitmentPipeline";
 
 // ─── Application data type ────────────────────────────────────────────────────
@@ -241,7 +242,7 @@ export default function RecruitmentProspectDetail() {
 
         {/* Stage actions */}
         <div className="flex flex-wrap gap-2 justify-end">
-          {availableTransitions.map((toStage) => {
+          {(data.signupLinked ? [] : availableTransitions).map((toStage) => {
             const meta = getStageBadge(toStage);
             const isNegative = DECLINE_STAGES.includes(toStage);
             return (
@@ -261,7 +262,7 @@ export default function RecruitmentProspectDetail() {
             size="sm"
             variant="outline"
             onClick={() => resendProspectus.mutate({ id, origin: window.location.origin })}
-            disabled={resendProspectus.isPending}
+            disabled={resendProspectus.isPending || data.signupLinked}
           >
             <Send size={12} className="mr-1" />
             Resend Prospectus
@@ -271,7 +272,7 @@ export default function RecruitmentProspectDetail() {
             variant="outline"
             className="border-[#70FFE8] text-[#0d6b5e] hover:bg-[#70FFE8]/10"
             onClick={() => resendApplicationLink.mutate({ id, origin: window.location.origin })}
-            disabled={resendApplicationLink.isPending}
+            disabled={resendApplicationLink.isPending || data.signupLinked}
           >
             <Send size={12} className="mr-1" />
             {resendApplicationLink.isPending ? "Sending..." : "Resend Application Link"}
@@ -281,6 +282,7 @@ export default function RecruitmentProspectDetail() {
             variant="outline"
             className="text-red-500 border-red-200 hover:bg-red-50 hover:text-red-600"
             onClick={() => setShowDeleteDialog(true)}
+            disabled={data.signupLinked}
           >
             <Trash2 size={12} className="mr-1" />
             Delete
@@ -288,6 +290,7 @@ export default function RecruitmentProspectDetail() {
         </div>
       </div>
 
+      <div className="mb-6"><RecruitmentSignupLink key={id} prospectId={id} /></div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column — application answers + notes */}
         <div className="lg:col-span-2 space-y-6">

@@ -356,7 +356,7 @@ describe("actual webhook source wiring (offline AST-extracted callback)", () => 
   it("retains linked-user mandate recovery for an unmarked ordinary BRQ", async () => {
     const harness = webhookHarness({ noLocal: true });
     expect((await harness.run([event("billing_requests", "fulfilled", { billing_request: "BRQ_ORDINARY" })])).statusCode).toBe(200);
-    expect(harness.insertMandate).toHaveBeenCalledOnce(); expect(harness.markWon).toHaveBeenCalledWith("agent@example.test", 8001);
+    expect(harness.insertMandate).toHaveBeenCalledOnce(); expect(harness.markWon).toHaveBeenCalledWith("agent@example.test", 8001, 7001);
     expect(harness.createAgentUser).not.toHaveBeenCalled();
   });
 });

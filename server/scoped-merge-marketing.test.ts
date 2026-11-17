@@ -4,7 +4,7 @@ import fs from "node:fs";
 const mocks = vi.hoisted(() => ({
   send: vi.fn(), resend: vi.fn(), getDb: vi.fn(), select: vi.fn(),
   insert: vi.fn(), update: vi.fn(), mergeTarget: vi.fn(), resolve: vi.fn(),
-  branding: vi.fn(), results: [] as any[][],
+  branding: vi.fn(), signupLinked: vi.fn(), results: [] as any[][],
 }));
 vi.mock("resend", () => ({ Resend: mocks.resend }));
 vi.mock("./_core/env", () => ({ ENV: { resendApiKey: "offline-only-fake-key" } }));
@@ -14,6 +14,7 @@ vi.mock("./recruitment-db", () => ({
   encodeApplicationToken: vi.fn(), extractApplicationToken: vi.fn(),
   getRecruitmentProspectById: vi.fn(), updateRecruitmentProspect: vi.fn(),
 }));
+vi.mock("./recruitment-signup-link-integration", () => ({ isRecruitmentSignupLinked: mocks.signupLinked }));
 vi.mock("./agent-correspondence", () => ({ resolveAgentCorrespondence: mocks.resolve }));
 vi.mock("./agent-merge-identity", () => ({ getAgentMergeTarget: mocks.mergeTarget }));
 let email: typeof import("./resend-email");
@@ -22,6 +23,7 @@ beforeEach(async () => {
   vi.resetAllMocks();
   vi.stubGlobal("fetch", vi.fn(() => { throw new Error("Network forbidden in offline tests"); }));
   mocks.mergeTarget.mockResolvedValue(10);
+  mocks.signupLinked.mockResolvedValue(false);
   mocks.getDb.mockResolvedValue({ select: mocks.select, insert: mocks.insert, update: mocks.update });
   mocks.select.mockImplementation(() => {
     const rows = mocks.results.shift() ?? [];
@@ -80,6 +82,17 @@ describe("archived marketing recipient guards", () => {
     expect(await email.processCampaignQueue(50, [99])).toEqual({ sent: 0, failed: 0, skipped: 1 });
     expect(mocks.mergeTarget).not.toHaveBeenCalled();
     expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it.each(["queued", "failed", "sent"])("skips linked prospect %s dispatch without provider or original-ledger writes", async status => {
+    mocks.signupLinked.mockResolvedValue(true);
+    mocks.results = [[{ id: 99, campaignId: 7, recipientType: "prospect", recipientId: 20, recipientEmail: params.to, status }], [{ id: 7, audienceType: "prospect", subject: "Campaign", bodyHtml: "<p>Hi</p>" }], [{ id: 99 }]];
+    expect(await email.processCampaignQueue(50, [99])).toEqual({ sent: 0, failed: 0, skipped: 1 });
+    expect(mocks.signupLinked).toHaveBeenCalledWith(20); expect(mocks.mergeTarget).not.toHaveBeenCalled(); expect(mocks.update).not.toHaveBeenCalled(); expect(mocks.insert).not.toHaveBeenCalled(); expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it("blocks direct prospect marketing before queue/provider effects when explicitly linked", async () => {
+    mocks.signupLinked.mockResolvedValue(true);
+    expect(await email.sendMarketingEmail({ ...params, audienceType: "prospect", recipientType: "prospect" })).toMatchObject({ success: false, sendId: 0 });
+    expect(mocks.insert).not.toHaveBeenCalled(); expect(mocks.send).not.toHaveBeenCalled();
   });
   it("fails closed on identity table permission errors", async () => {
     mocks.mergeTarget.mockRejectedValue(new Error("offline identity store failure"));

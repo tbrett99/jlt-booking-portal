@@ -447,54 +447,13 @@ const DEFAULT_TEMPLATES = [
 ];
 
 // ─── Recruitment pipeline helper ─────────────────────────────────────────────
-/**
- * After an agent account is created, ensure the recruitment pipeline has a
- * 'won' record for that email. If a prospect already exists, advance it to
- * 'won'. If no prospect exists, create one at 'won' stage.
- * Errors are swallowed so they never block account creation.
- */
-async function ensureProspectWon(email: string, name: string, userId: number): Promise<void> {
+/** Account creation alone never creates a Won enquiry or an automatic duplicate. */
+async function ensureProspectWon(_email: string, _name: string, userId: number): Promise<void> {
   try {
-    const { getRecruitmentProspectByEmail, moveRecruitmentProspectStage, createRecruitmentProspect } =
-      await import("./recruitment-db");
-    const existing = await getRecruitmentProspectByEmail(email);
-    if (existing) {
-      if (existing.pipelineStage !== "won") {
-        await moveRecruitmentProspectStage({
-          prospectId: existing.id,
-          toStage: "won",
-          changedByName: "System (account created)",
-          note: `Agent account created (user #${userId}) — pipeline advanced to won`,
-        });
-        const { enrollProspectInWorkflow } = await import("./recruitment-workflow-db");
-        const { processWorkflowEmailsInternal } = await import("./recruitment-workflow-router");
-        await enrollProspectInWorkflow(existing.id, "won");
-        await processWorkflowEmailsInternal({ prospectId: existing.id });
-      }
-    } else {
-      const nameParts = name.trim().split(" ");
-      const firstName = nameParts[0] || email.split("@")[0];
-      const lastName = nameParts.slice(1).join(" ") || "";
-      const newId = await createRecruitmentProspect({
-        firstName,
-        lastName,
-        email: email.toLowerCase().trim(),
-        pipelineStage: "won",
-        source: "direct_signup",
-      });
-      await moveRecruitmentProspectStage({
-        prospectId: newId,
-        toStage: "won",
-        changedByName: "System (account created)",
-        note: `Agent account created (user #${userId}) — prospect record created automatically`,
-      });
-      const { enrollProspectInWorkflow } = await import("./recruitment-workflow-db");
-      const { processWorkflowEmailsInternal } = await import("./recruitment-workflow-router");
-      await enrollProspectInWorkflow(newId, "won");
-      await processWorkflowEmailsInternal({ prospectId: newId });
-    }
-  } catch (err: any) {
-    console.error("[ensureProspectWon] Non-fatal error:", err?.message);
+    const { syncRecruitmentCompletedSignup } = await import("./recruitment-signup-conversion");
+    await syncRecruitmentCompletedSignup(userId);
+  } catch {
+    console.error("[Recruitment] Account created; completed signup conversion held for staff review.");
   }
 }
 

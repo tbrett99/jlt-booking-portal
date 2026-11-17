@@ -5,7 +5,7 @@ import { getRawDbPool } from "./db";
 type MergeIdentityRow = RowDataPacket & { sourceUserId: number; primaryUserId: number };
 
 /** Read only the additive table: old users projections remain migration-safe. */
-async function readMergeIdentities(): Promise<Map<number, number>> {
+async function readMergeIdentities(strict = false): Promise<Map<number, number>> {
   const pool = await getRawDbPool();
   let rows: MergeIdentityRow[];
   try {
@@ -14,7 +14,7 @@ async function readMergeIdentities(): Promise<Map<number, number>> {
     );
   } catch (error) {
     // Rolling deployment only. Connection/permission/column errors must fail closed.
-    if (error && typeof error === "object" && "code" in error && error.code === "ER_NO_SUCH_TABLE") {
+    if (!strict && error && typeof error === "object" && "code" in error && error.code === "ER_NO_SUCH_TABLE") {
       return new Map();
     }
     throw error;
@@ -44,8 +44,8 @@ async function readMergeIdentities(): Promise<Map<number, number>> {
 }
 
 /** Final primary for historical reads only; null means this ID is not archived. Never use for login. */
-export async function getAgentMergeTarget(id: number): Promise<number | null> {
-  const targets = await readMergeIdentities();
+export async function getAgentMergeTarget(id: number, strict = false): Promise<number | null> {
+  const targets = await readMergeIdentities(strict);
   if (!targets.has(id)) return null;
   let current = id;
   while (targets.has(current)) current = targets.get(current)!;
@@ -64,8 +64,8 @@ export async function getArchivedAgentMergeIds(): Promise<number[]> {
 }
 
 /** Primary plus every source whose historical chain terminates at it, for read-only history. */
-export async function getAgentMergeHistoryIds(primary: number): Promise<number[]> {
-  const targets = await readMergeIdentities();
+export async function getAgentMergeHistoryIds(primary: number, strict = false): Promise<number[]> {
+  const targets = await readMergeIdentities(strict);
   const ids = [primary];
   for (const source of Array.from(targets.keys())) {
     let current = source;

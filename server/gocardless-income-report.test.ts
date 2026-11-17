@@ -984,6 +984,7 @@ describe("existing recorded recruitment attribution and read-only identity looku
       "gc_mandate_replacements",
       "users",
       "recruitment_prospects",
+      "recruitment_signup_links",
       "prospects",
       "membership_payment_fees",
     ]);

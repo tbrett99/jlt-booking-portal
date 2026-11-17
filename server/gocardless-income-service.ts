@@ -11,6 +11,7 @@ import {
   prospects,
   prospectArForms,
   recruitmentProspects,
+  recruitmentSignupLinks,
   membershipPaymentFees,
 } from "../drizzle/schema";
 import { membershipProviderGet } from "./membership-payment-sync";
@@ -160,6 +161,7 @@ export function selectIncomeSource(input: {
   introducedBy?: string | null;
   linkedForms: string[];
   recruitment: { howHeard: string | null; applicationData: unknown }[];
+  explicitRecruitmentLink?: boolean;
 }) {
   // Each entry is one prospect's current submission, not a historical union.
   // Only exact known labels are canonicalized; never guess a channel from free text.
@@ -213,14 +215,14 @@ export function selectIncomeSource(input: {
       return {
         sources: recorded,
         evidence:
-          "Currently recorded application source; one exact-email recruitment match (attribution only)",
+          input.explicitRecruitmentLink ? "Currently recorded application source; staff-confirmed recruitment signup link (attribution only)" : "Currently recorded application source; one exact-email recruitment match (attribution only)",
       };
     const enquiry = listSources(row.howHeard);
     if (enquiry.length)
       return {
         sources: enquiry,
         evidence:
-          "Currently recorded enquiry source; one exact-email recruitment match (attribution only)",
+          input.explicitRecruitmentLink ? "Currently recorded enquiry source; staff-confirmed recruitment signup link (attribution only)" : "Currently recorded enquiry source; one exact-email recruitment match (attribution only)",
       };
   }
   if (input.recruitment.length > 1)
@@ -344,6 +346,7 @@ export async function readIncomeIdentities(
         .from(recruitmentProspects)
         .where(inArray(sql`LOWER(TRIM(${recruitmentProspects.email}))`, emails))
     : [];
+  const explicitRecruitment = userIds.length ? await db.select({ userId: recruitmentSignupLinks.userId, howHeard: recruitmentProspects.howHeard, applicationData: sql<unknown>`JSON_EXTRACT(${recruitmentProspects.applicationData}, '$.heardAbout')` }).from(recruitmentSignupLinks).innerJoin(recruitmentProspects, eq(recruitmentSignupLinks.prospectId, recruitmentProspects.id)).where(inArray(recruitmentSignupLinks.userId, userIds)) : [];
   // Project only the explicit attribution field, never free-text application, bank or assessment data.
   const linked = userIds.length
     ? await db
@@ -380,14 +383,15 @@ export async function readIncomeIdentities(
       linkedForms: currentForms
         .filter(f => f.userId === person.id)
         .map(f => f.hearAboutUs ?? ""),
-      recruitment: recruitment
+      explicitRecruitmentLink: explicitRecruitment.some(r => r.userId === person.id),
+      recruitment: (explicitRecruitment.some(r => r.userId === person.id) ? explicitRecruitment.filter(r => r.userId === person.id) : recruitment
         .filter(r =>
           [person.email, person.personalEmail].some(
             email =>
               email?.trim().toLowerCase() === r.email.trim().toLowerCase()
           )
         )
-        .map(r => ({
+        ).map(r => ({
           howHeard: r.howHeard,
           applicationData: {
             heardAbout:

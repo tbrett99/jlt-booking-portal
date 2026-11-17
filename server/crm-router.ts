@@ -3066,16 +3066,17 @@ export const crmRouter = router({
     }),
 
     deleteNewSignUp: adminProcedure
-      .input(z.object({ userId: z.number().int() }))
+      .input(z.object({ userId: z.number().int().positive() }))
       .mutation(async ({ input, ctx }) => {
         await assertAgentNotMerged(input.userId);
         const { getDb } = await import("./db");
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-        const { users, agentCrmProfiles, adminOnboardingChecklist, joinSessions, userDeletions } = await import("../drizzle/schema");
+        const { users, agentCrmProfiles, adminOnboardingChecklist, joinSessions, userDeletions, recruitmentSignupLinks } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
+        return db.transaction(async tx => {
         // Only allow deleting users still in onboarding status (not yet active agents)
-        const [row] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
+        const [row] = await tx.select().from(users).where(eq(users.id, input.userId)).limit(1).for("update");
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
         if (row.portalStatus === "active") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot delete an active agent from here. Use the CRM agent management page instead." });
@@ -3083,8 +3084,10 @@ export const crmRouter = router({
         if (row.role !== "agent") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Admin accounts cannot be deleted from the onboarding queue." });
         }
+        const links = await tx.select({ id: recruitmentSignupLinks.id }).from(recruitmentSignupLinks).where(eq(recruitmentSignupLinks.userId, input.userId));
+        if (links.length) throw new TRPCError({ code: "CONFLICT", message: "This agent has a preserved recruitment signup link. Its account and signed signup evidence cannot be deleted here." });
         // Log the deletion before deleting
-        await db.insert(userDeletions).values({
+        await tx.insert(userDeletions).values({
           deletedUserId: row.id,
           deletedUserEmail: row.email ?? '',
           deletedUserName: row.name ?? undefined,
@@ -3095,11 +3098,12 @@ export const crmRouter = router({
           deletedFrom: 'newSignUps.deleteNewSignUp',
         } as any);
         // Delete related records first
-        await db.delete(adminOnboardingChecklist).where(eq(adminOnboardingChecklist.userId, input.userId));
-        await db.delete(agentCrmProfiles).where(eq(agentCrmProfiles.userId, input.userId));
-        await db.delete(joinSessions).where(eq(joinSessions.userId, input.userId));
-        await db.delete(users).where(eq(users.id, input.userId));
+        await tx.delete(adminOnboardingChecklist).where(eq(adminOnboardingChecklist.userId, input.userId));
+        await tx.delete(agentCrmProfiles).where(eq(agentCrmProfiles.userId, input.userId));
+        await tx.delete(joinSessions).where(eq(joinSessions.userId, input.userId));
+        await tx.delete(users).where(eq(users.id, input.userId));
         return { ok: true };
+        });
       }),
   }),
 
@@ -3424,8 +3428,14 @@ export const crmRouter = router({
               console.warn("[Campaign Send] Could not run agent email safeguard check:", e);
             }
           }
+          const { getDb: getLinkDb } = await import("./db");
+          const linkDb = await getLinkDb();
+          if (!linkDb) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Recruitment link safeguard unavailable; no campaign queued." });
+          const { recruitmentSignupLinks: linkTable } = await import("../drizzle/schema");
+          const linkedEnquiries = await linkDb.select({ prospectId: linkTable.prospectId, supersededProspectId: linkTable.supersededProspectId }).from(linkTable);
+          const linkedEnquiryIds = new Set(linkedEnquiries.flatMap(row => row.supersededProspectId ? [row.prospectId, row.supersededProspectId] : [row.prospectId]));
           const candidateRecipients = filtered
-            .filter((p) => p.email && !agentEmailSet.has(p.email.toLowerCase()))
+            .filter((p) => p.email && !linkedEnquiryIds.has(p.id) && !agentEmailSet.has(p.email.toLowerCase()))
             .map((p) => ({ email: p.email!, name: `${p.firstName} ${p.lastName}`.trim(), id: p.id, type: "prospect" as const }));
           // Exclude confirmed opt-outs before a send row is queued. They remain
           // prospect records in CRM, but do not inflate campaign recipient or

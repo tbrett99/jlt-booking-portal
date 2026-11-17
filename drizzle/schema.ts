@@ -12,6 +12,7 @@ import {
   json,
   index,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/mysql-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -2244,6 +2245,30 @@ export const recruitmentStageHistory = mysqlTable("recruitment_stage_history", {
   changedAt: timestamp("changedAt").defaultNow().notNull(),
 });
 export type RecruitmentStageHistory = typeof recruitmentStageHistory.$inferSelect;
+
+// Explicit staff-confirmed cross-email identity; never rewrites checkout evidence,
+// user emails, provider references or the original enquiry's attribution/history.
+export const recruitmentSignupLinks = mysqlTable("recruitment_signup_links", {
+  id: int("id").primaryKey().autoincrement(),
+  prospectId: int("prospectId").notNull(),
+  joinSessionId: int("joinSessionId").notNull(),
+  userId: int("userId").notNull(),
+  supersededProspectId: int("supersededProspectId"),
+  linkedById: int("linkedById").notNull(),
+  linkedAt: timestamp("linkedAt").defaultNow().notNull(),
+  conversionAt: timestamp("conversionAt").notNull(),
+  reason: text("reason").notNull(),
+}, (table) => [
+  uniqueIndex("recruitment_signup_links_prospect_uq").on(table.prospectId),
+  uniqueIndex("recruitment_signup_links_session_uq").on(table.joinSessionId),
+  uniqueIndex("recruitment_signup_links_user_uq").on(table.userId),
+  uniqueIndex("recruitment_signup_links_superseded_uq").on(table.supersededProspectId),
+  foreignKey({ name: "recruitment_signup_links_prospect_fk", columns: [table.prospectId], foreignColumns: [recruitmentProspects.id] }),
+  foreignKey({ name: "recruitment_signup_links_session_fk", columns: [table.joinSessionId], foreignColumns: [joinSessions.id] }),
+  foreignKey({ name: "recruitment_signup_links_user_fk", columns: [table.userId], foreignColumns: [users.id] }),
+  foreignKey({ name: "recruitment_signup_links_superseded_fk", columns: [table.supersededProspectId], foreignColumns: [recruitmentProspects.id] }),
+  foreignKey({ name: "recruitment_signup_links_actor_fk", columns: [table.linkedById], foreignColumns: [users.id] }),
+]);
 
 // ─── External API Keys ────────────────────────────────────────────────────────
 

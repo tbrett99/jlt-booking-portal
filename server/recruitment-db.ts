@@ -2,8 +2,11 @@
  * Recruitment Pipeline DB helpers
  */
 import { getDb } from "./db";
+import { TRPCError } from "@trpc/server";
+import { notLinkedRecruitmentProspect, notSupersededRecruitmentProspect, recruitmentWonDateFilter } from "./recruitment-signup-link-integration";
 import {
   recruitmentProspects,
+  recruitmentSignupLinks,
   recruitmentEmailsSent,
   recruitmentStageHistory,
   users,
@@ -113,7 +116,7 @@ export async function getAllRecruitmentProspects(opts?: {
   const isWonStageWithDateFilter =
     opts?.stage === "won" && (opts?.dateFrom || opts?.dateTo);
 
-  const conditions: any[] = [];
+  const conditions: any[] = [notSupersededRecruitmentProspect()];
 
   if (opts?.stage && opts.stage !== "all") {
     conditions.push(eq(recruitmentProspects.pipelineStage, opts.stage));
@@ -163,23 +166,7 @@ export async function getAllRecruitmentProspects(opts?: {
   if (isWonStageWithDateFilter) {
     const endOfDay = opts!.dateTo ? new Date(opts!.dateTo) : null;
     if (endOfDay) endOfDay.setHours(23, 59, 59, 999);
-
-    const historyConditions: any[] = [
-      eq(recruitmentStageHistory.toStage, "won"),
-    ];
-    if (opts!.dateFrom) {
-      historyConditions.push(gte(recruitmentStageHistory.changedAt, opts!.dateFrom));
-    }
-    if (endOfDay) {
-      historyConditions.push(lte(recruitmentStageHistory.changedAt, endOfDay));
-    }
-
-    const wonProspectIds = db
-      .selectDistinct({ id: recruitmentStageHistory.prospectId })
-      .from(recruitmentStageHistory)
-      .where(and(...historyConditions));
-
-    conditions.push(inArray(recruitmentProspects.id, wonProspectIds));
+    conditions.push(recruitmentWonDateFilter(opts!.dateFrom, endOfDay ?? undefined));
   }
 
   const baseQuery = db
@@ -209,10 +196,14 @@ export async function updateRecruitmentProspect(
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db
+  const guardedStage = data.pipelineStage !== undefined;
+  const [changed] = await db
     .update(recruitmentProspects)
     .set({ ...data, updatedAt: new Date() })
-    .where(eq(recruitmentProspects.id, id));
+    .where(and(eq(recruitmentProspects.id, id), guardedStage
+      ? data.pipelineStage === "won" ? notSupersededRecruitmentProspect() : notLinkedRecruitmentProspect()
+      : undefined));
+  if (guardedStage && changed.affectedRows === 0) throw new TRPCError({ code: "CONFLICT", message: "The enquiry changed or has a preserved signup link. Refresh before changing its stage." });
 }
 
 export async function moveRecruitmentProspectStage(opts: {
@@ -223,34 +214,26 @@ export async function moveRecruitmentProspectStage(opts: {
   note?: string;
 }): Promise<void> {
   const db = await getDb();
-  if (!db) return;
-
-  // Get current stage for history
-  const current = await getRecruitmentProspectById(opts.prospectId);
-  const fromStage = current?.pipelineStage ?? null;
-
-  // Update prospect
-  await db
-    .update(recruitmentProspects)
-    .set({
-      pipelineStage: opts.toStage,
-      updatedAt: new Date(),
-      ...(opts.toStage === "archived" ? { archivedAt: new Date() } : {}),
-      ...(opts.toStage === "ar_approved" || opts.toStage === "ar_declined"
-        ? { reviewedAt: new Date(), reviewedById: opts.changedById ?? null }
-        : {}),
-    })
-    .where(eq(recruitmentProspects.id, opts.prospectId));
-
-  // Insert history record
-  await db.insert(recruitmentStageHistory).values({
-    prospectId: opts.prospectId,
-    fromStage: fromStage ?? null,
-    toStage: opts.toStage,
-    changedById: opts.changedById ?? null,
-    changedByName: opts.changedByName ?? null,
-    note: opts.note ?? null,
-    changedAt: new Date(),
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Recruitment database unavailable." });
+  await db.transaction(async tx => {
+    const [current] = await tx.select({ pipelineStage: recruitmentProspects.pipelineStage }).from(recruitmentProspects)
+      .where(eq(recruitmentProspects.id, opts.prospectId)).for("update");
+    if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Enquiry not found." });
+    const links = await tx.select({ prospectId: recruitmentSignupLinks.prospectId, supersededProspectId: recruitmentSignupLinks.supersededProspectId })
+      .from(recruitmentSignupLinks).where(or(eq(recruitmentSignupLinks.prospectId, opts.prospectId), eq(recruitmentSignupLinks.supersededProspectId, opts.prospectId)));
+    if (links.some(link => link.supersededProspectId === opts.prospectId || opts.toStage !== "won"))
+      throw new TRPCError({ code: "CONFLICT", message: "This enquiry has a preserved signup link. Its converted or duplicate status cannot be changed here." });
+    if (current.pipelineStage === opts.toStage) return;
+    const now = new Date();
+    await tx.update(recruitmentProspects).set({
+      pipelineStage: opts.toStage, updatedAt: now,
+      ...(opts.toStage === "archived" ? { archivedAt: now } : {}),
+      ...(opts.toStage === "ar_approved" || opts.toStage === "ar_declined" ? { reviewedAt: now, reviewedById: opts.changedById ?? null } : {}),
+    }).where(eq(recruitmentProspects.id, opts.prospectId));
+    await tx.insert(recruitmentStageHistory).values({
+      prospectId: opts.prospectId, fromStage: current.pipelineStage, toStage: opts.toStage,
+      changedById: opts.changedById ?? null, changedByName: opts.changedByName ?? null, note: opts.note ?? null, changedAt: now,
+    });
   });
 }
 
@@ -317,9 +300,13 @@ export async function hasRecruitmentEmailBeenSent(
 export async function deleteRecruitmentProspect(id: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  // Delete related rows first to avoid FK constraint errors
-  await db.delete(recruitmentEmailsSent).where(eq(recruitmentEmailsSent.prospectId, id));
-  await db.delete(recruitmentStageHistory).where(eq(recruitmentStageHistory.prospectId, id));
-  // Delete the prospect itself
-  await db.delete(recruitmentProspects).where(eq(recruitmentProspects.id, id));
+  await db.transaction(async tx => {
+    await tx.select({ id: recruitmentProspects.id }).from(recruitmentProspects).where(eq(recruitmentProspects.id, id)).for("update");
+    const links = await tx.select({ id: recruitmentSignupLinks.id }).from(recruitmentSignupLinks)
+      .where(or(eq(recruitmentSignupLinks.prospectId, id), eq(recruitmentSignupLinks.supersededProspectId, id)));
+    if (links.length) throw new TRPCError({ code: "CONFLICT", message: "This enquiry is part of a preserved signup link and cannot be deleted." });
+    await tx.delete(recruitmentEmailsSent).where(eq(recruitmentEmailsSent.prospectId, id));
+    await tx.delete(recruitmentStageHistory).where(eq(recruitmentStageHistory.prospectId, id));
+    await tx.delete(recruitmentProspects).where(eq(recruitmentProspects.id, id));
+  });
 }
