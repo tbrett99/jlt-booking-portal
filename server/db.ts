@@ -228,7 +228,17 @@ export async function updateUserRole(userId: number, role: "super_admin" | "admi
   await assertAgentNotMerged(userId);
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(users).set({ role }).where(writableAgentUser(userId));
+  await db.transaction(async tx => {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1).for("update");
+    const { businessStaffMemberships } = await import("../drizzle/schema");
+    const { or } = await import("drizzle-orm");
+    const links = await tx.select({ id: businessStaffMemberships.id }).from(businessStaffMemberships).where(or(eq(businessStaffMemberships.staffUserId, userId), eq(businessStaffMemberships.ownerUserId, userId))).limit(1).for("update");
+    if (links.length && role !== "agent") {
+      const { TRPCError } = await import("@trpc/server");
+      throw new TRPCError({ code: "CONFLICT", message: "This account has retained business-staff relationships. Its role cannot be promoted through the ordinary user editor." });
+    }
+    await tx.update(users).set({ role }).where(writableAgentUser(userId));
+  });
 }
 
 export async function toggleUserActive(userId: number, isActive: boolean) {

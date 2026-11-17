@@ -8,7 +8,16 @@ const t = initTRPC.context<TrpcContext>().create({
 });
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
+// Business employees never inherit the independent-agent or JLT-staff APIs.
+// The registry is rechecked per request; revoked links remain restrictive.
+const businessStaffBoundary = t.middleware(async opts => {
+  if (opts.ctx.user?.role === "agent") {
+    const { assertBusinessStaffRouteAllowed } = await import("../business-staff-access");
+    await assertBusinessStaffRouteAllowed(opts.ctx.user, opts.path);
+  }
+  return opts.next();
+});
+export const publicProcedure = t.procedure.use(businessStaffBoundary);
 
 const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
@@ -25,7 +34,7 @@ const requireUser = t.middleware(async opts => {
   });
 });
 
-export const protectedProcedure = t.procedure.use(requireUser);
+export const protectedProcedure = t.procedure.use(requireUser).use(businessStaffBoundary);
 
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
@@ -42,4 +51,4 @@ export const adminProcedure = t.procedure.use(
       },
     });
   }),
-);
+).use(businessStaffBoundary);

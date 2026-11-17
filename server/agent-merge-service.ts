@@ -54,6 +54,12 @@ export async function loadMergeScope(db: Queryable, sourceId: number, primaryId:
   const control = tables.has("membership_payment_control") ? (await rows(db, `SELECT * FROM membership_payment_control WHERE id = 1${lock ? " FOR UPDATE" : ""}`))[0] ?? null : null;
   // Check source-led pending invite/automation routes, without ever reparenting a credential token.
   if (tables.has("team_invites")) data.set("team_invites", await rows(db, `SELECT * FROM team_invites WHERE leaderId = ? AND status = 'pending'${lock ? " FOR UPDATE" : ""}`, [sourceId]));
+  if (tables.has("business_staff_memberships")) {
+    if (!["id", "ownerUserId", "staffUserId", "status"].every(column => tables.get("business_staff_memberships")!.has(column))) error("The business-staff identity schema is incomplete. No automatic merge is safe.", "PRECONDITION_FAILED");
+    const links = await rows(db, `SELECT id,ownerUserId,staffUserId,status FROM business_staff_memberships WHERE ownerUserId IN (?, ?) OR staffUserId IN (?, ?) ORDER BY id LIMIT 10001${lock ? " FOR UPDATE" : ""}`, [sourceId,primaryId,sourceId,primaryId]);
+    if (links.length > 10000) error("A separately reviewed large business-staff identity consolidation is required.", "PRECONDITION_FAILED");
+    data.set("business_staff_memberships", links);
+  }
   // Get complete external-resource owner sets: no third-person mandate can be swept into this merge.
   for (const [table, reference] of [["gc_mandates", "mandateId"], ["gc_subscriptions", "subscriptionId"]]) {
     const ids = Array.from(new Set((data.get(table) ?? []).map(r => r[reference]).filter(Boolean)));
@@ -73,6 +79,7 @@ export function buildMergePlan(loaded: Loaded, actor: number, keepBanksAsIs = fa
   identifiersValid(sourceId, primaryId);
   const blockers: string[] = [], warnings: string[] = [];
   if (recordSet(loaded, "recruitment_signup_links", "userId", sourceId).length) blockers.push("The source account has a preserved recruitment signup link. A reviewed identity-link consolidation is required; this merge will not move or rewrite original signup evidence.");
+  if ((loaded.rows.get("business_staff_memberships") ?? []).length) blockers.push("One of these accounts has preserved business-staff relationships. A separately reviewed identity-link consolidation is required; staff access and history will not be reassigned by this merge.");
   if (loaded.aliases.some(r => [sourceId, primaryId].includes(Number(r.sourceUserId)))) blockers.push("One of these accounts is already an archived duplicate; select the current primary record instead.");
   if (loaded.aliases.some(r => Number(r.primaryUserId) === sourceId)) blockers.push("This source already owns merged history. Keep it as primary instead; nested merge chains are not permitted.");
   if (sourceId === actor || primaryId === actor) blockers.push("The operator cannot merge their own staff/login identity.");

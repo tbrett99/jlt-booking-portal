@@ -1834,6 +1834,12 @@ async function startServer() {
         res.status(401).json({ error: "Unauthorized" });
         return;
       }
+      const { getBusinessStaffAuthority } = await import("../business-staff-access");
+      const businessAuthority = await getBusinessStaffAuthority(user);
+      if (businessAuthority.managed) {
+        res.status(403).json({ error: "Business staff cannot use the legacy document proxy." });
+        return;
+      }
 
       const key = req.query.key as string | undefined;
       if (!key || typeof key !== "string" || key.includes("..")) {

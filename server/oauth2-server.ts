@@ -19,6 +19,7 @@ import { oauthClients, oauthCodes, users } from "../drizzle/schema";
 import { eq, and, gt } from "drizzle-orm";
 import { ENV } from "./_core/env";
 import { COOKIE_NAME } from "../shared/const";
+import { legacyExternalSignInAllowed } from "./business-staff-external-access";
 
 const router = Router();
 
@@ -104,6 +105,9 @@ router.get("/authorize", async (req: Request, res: Response) => {
   if (!["agent", "admin", "super_admin"].includes(user.role)) {
     return res.status(403).send("Only agent accounts can authorise this application.");
   }
+  try {
+    if (!await legacyExternalSignInAllowed(user)) return res.status(403).send("Business staff cannot use unscoped external sign-in. Orbit business-staff support is required.");
+  } catch { return res.status(503).send("External sign-in access could not be verified."); }
 
   // Issue auth code (valid for 10 minutes, single-use)
   const code = crypto.randomBytes(32).toString("hex");
@@ -209,6 +213,9 @@ router.post("/token", async (req: Request, res: Response) => {
   if (!user || !user.isActive) {
     return res.status(400).json({ error: "invalid_grant", error_description: "User account not found or inactive" });
   }
+  try {
+    if (!await legacyExternalSignInAllowed(user)) return res.status(400).json({ error: "invalid_grant", error_description: "This identity cannot use unscoped external sign-in." });
+  } catch { return res.status(503).json({ error: "server_error" }); }
 
   // Issue JWT access token (valid 1 hour)
   const accessToken = jwt.sign(
@@ -262,6 +269,9 @@ router.get("/userinfo", async (req: Request, res: Response) => {
   if (!user || !user.isActive) {
     return res.status(401).json({ error: "invalid_token", error_description: "User not found or inactive" });
   }
+  try {
+    if (!await legacyExternalSignInAllowed(user)) return res.status(401).json({ error: "invalid_token", error_description: "This identity cannot use unscoped external sign-in." });
+  } catch { return res.status(503).json({ error: "server_error" }); }
 
   // Return standard OIDC-style userinfo
   return res.json({

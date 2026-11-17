@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TRPCError } from "@trpc/server";
 import { academyMockDb } from "./academy-staff-test-db";
+import { businessStaffMemberships } from "../drizzle/schema";
 
 const state = vi.hoisted(() => ({ db: null as any, courseIds: [1] as number[], audit: vi.fn(), put: vi.fn(), encrypted: vi.fn(), decrypted: vi.fn(), notify: vi.fn(), email: vi.fn(), user: null as any }));
 vi.mock("./db", () => ({ getDb: async () => state.db, getRawDbPool: vi.fn(() => { throw new Error("No real/raw database calls in mock tests"); }), createInAppNotification: (...args: any[]) => state.notify(...args), getUpcomingAgentEvents: vi.fn() }));
@@ -30,12 +31,30 @@ const attempt = (id: number, enrollmentId: number, lessonId: number) => ({ id, e
 const courseInput = { id: 1, title: "Updated teaching", summary: "Teaching", estimatedMinutes: 30, isCoreAcademy: true, isAcceleratorJourney: false };
 const grade = { attemptId: 1, feedback: "Reviewed carefully", responses: [{ questionId: 1, score: 95, feedback: "Strong answer" }] };
 
+// Keep the complete raw log. Only the explicitly empty identity registry is
+// excluded from legacy content-read counts; users/CRM/unknown schema reads remain.
+const contentReads = () => mock.reads.filter(read => read.table !== "business_staff_memberships");
+const registryReads = () => mock.reads.filter(read => read.table === "business_staff_memberships");
+function expectRegistryReads(count: number) {
+  expect(mock.tables.business_staff_memberships).toEqual([]);
+  expect(registryReads()).toHaveLength(count);
+  for (const read of registryReads()) {
+    expect(read.projection).toEqual({
+      id: businessStaffMemberships.id, ownerUserId: businessStaffMemberships.ownerUserId,
+      staffUserId: businessStaffMemberships.staffUserId, status: businessStaffMemberships.status,
+      permissions: businessStaffMemberships.permissions, orbitRequested: businessStaffMemberships.orbitRequested,
+      revision: businessStaffMemberships.revision,
+    });
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks(); state.audit.mockReset(); state.audit.mockResolvedValue(undefined); state.courseIds = [1]; state.user = agent;
   process.env.JWT_SECRET = "test-only-document-secret"; process.env.S3_PUBLIC_URL = "https://objects.example.test";
   state.put.mockImplementation(async (key: string) => ({ key, url: `https://objects.example.test/${key}` }));
   state.encrypted.mockImplementation(async (key: string) => ({ key })); state.decrypted.mockResolvedValue(Buffer.from("private plaintext"));
   mock = academyMockDb({
+    business_staff_memberships: [],
     academy_courses: [{ id: 1, title: "Assigned", status: "published", isCoreAcademy: true, isAcceleratorJourney: false, coverImageUrl: null }, { id: 2, title: "Other", status: "published", isCoreAcademy: true, isAcceleratorJourney: false }],
     academy_modules: [{ id: 1, courseId: 1 }, { id: 2, courseId: 2 }, { id: 3, courseId: 1 }],
     academy_lessons: [{ id: 1, moduleId: 1, title: "Written", assessmentMode: "quiz", assessmentPassMark: 90, attachmentKey: "existing/resource", attachmentUrl: "https://existing.example/resource", contentHtml: "", assessmentTemplateKey: null }, { id: 2, moduleId: 2, title: "Other", assessmentMode: "document_upload" }, { id: 3, moduleId: 1, title: "Document", assessmentMode: "document_upload", assessmentPassMark: 90, assessmentTemplateKey: "template/3" }],
@@ -61,11 +80,11 @@ describe("restricted instructor real Academy API handlers", () => {
   });
   it("no grants means empty lists and forbidden direct editor lookup", async () => {
     state.courseIds = []; expect(await caller().courses()).toEqual([]); expect(await caller().markingQueue()).toEqual([]); expect(await caller().documentMarkingQueue()).toEqual([]);
-    await expect(caller().editor({ courseId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" }); expect(mock.reads).toEqual([]);
+    await expect(caller().editor({ courseId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" }); expect(contentReads()).toEqual([]); expectRegistryReads(4);
   });
   it("out-of-scope editor and course save are rejected before content reads", async () => {
     await expect(caller().editor({ courseId: 2 })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(caller().saveCourse({ ...courseInput, id: 2 })).rejects.toMatchObject({ code: "FORBIDDEN" }); expect(mock.reads).toEqual([]);
+    await expect(caller().saveCourse({ ...courseInput, id: 2 })).rejects.toMatchObject({ code: "FORBIDDEN" }); expect(contentReads()).toEqual([]); expectRegistryReads(2);
   });
   it("cannot create courses, change global flags, delete, publish, enrol or run AI", async () => {
     await expect(caller().saveCourse({ ...courseInput, id: undefined })).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -112,7 +131,7 @@ describe("restricted instructor real Academy API handlers", () => {
   });
   it.each([2, 3, 4])("rejects written marking forbidden/self/inconsistent attempt %i before fetching work or notifying", async (attemptId) => {
     await expect(caller().markWrittenAssessment({ ...grade, attemptId })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(mock.reads).toHaveLength(1); expect(mock.reads[0].projection).not.toHaveProperty("attempt"); expect(mock.writes).toEqual([]); expect(state.notify).not.toHaveBeenCalled();
+    expect(contentReads()).toHaveLength(1); expect(contentReads()[0].projection).not.toHaveProperty("attempt"); expectRegistryReads(1); expect(mock.writes).toEqual([]); expect(state.notify).not.toHaveBeenCalled();
   });
   it.each([2, 6])("rejects document marking forbidden/self attempt %i", async (attemptId) => {
     await expect(caller().markDocumentAssessment({ attemptId, score: 95, feedback: "Reviewed" })).rejects.toMatchObject({ code: "FORBIDDEN" }); expect(mock.writes).toEqual([]); expect(state.notify).not.toHaveBeenCalled();
@@ -179,7 +198,9 @@ describe("private Academy Express downloads reauthorize at request time", () => 
     const routes: Record<string, any> = {}; registerAcademyDocumentDownloadRoutes({ get: (path: string, handler: any) => { routes[path] = handler; } } as any);
     const url = createAcademyDocumentDownloadUrl({ scope: "staff", userId: 10, enrollmentId: 1, lessonId: 1, kind: "submission", attemptId: 1, ...payload }, "https://portal.example.test");
     const res: any = { headersSent: false, statusCode: 0, status(code: number) { this.statusCode = code; return this; }, end: vi.fn(), send: vi.fn(), set: vi.fn() };
-    await routes["/api/academy/assessment-document/:token"]({ params: { token: url.split("/").pop() } }, res); return res;
+    const previousRegistryReads = registryReads().length;
+    await routes["/api/academy/assessment-document/:token"]({ params: { token: url.split("/").pop() } }, res);
+    expectRegistryReads(previousRegistryReads + 1); return res;
   }
   it("current instructor grant authorizes other learner document; revoked grant blocks a still-valid token", async () => {
     expect((await download({ lessonId: 3, enrollmentId: 4, attemptId: 5 })).statusCode).toBe(200); expect(state.decrypted).toHaveBeenCalledWith("private/5");
@@ -201,7 +222,9 @@ describe("private Academy Express downloads reauthorize at request time", () => 
     mock.tables.staff_academy_uploads.push({ userId: 10, courseId: 1, kind: "attachment", objectKey: "private/attachment" }, { userId: 20, courseId: 2, kind: "attachment", objectKey: "other/attachment" });
     async function getAttachment(key: string) {
       const res: any = { headersSent: false, statusCode: 0, status(code: number) { this.statusCode = code; return this; }, end: vi.fn(), send: vi.fn(), set: vi.fn() };
-      await routes["/api/academy/course-attachment/:objectKey"]({ params: { objectKey: key } }, res); return res;
+      const previousRegistryReads = registryReads().length;
+      await routes["/api/academy/course-attachment/:objectKey"]({ params: { objectKey: key } }, res);
+      expectRegistryReads(previousRegistryReads + 1); return res;
     }
     expect((await getAttachment("private/attachment")).statusCode).toBe(200);
     expect((await getAttachment("other/attachment")).statusCode).toBe(404);

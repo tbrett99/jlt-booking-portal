@@ -22,6 +22,7 @@ import {
   membershipPaymentControl as control,
   membershipPaymentInbox as inbox,
   membershipPaymentSettlements as settlements,
+  businessStaffMemberships,
 } from "../drizzle/schema";
 
 const SCHEMA_ERROR =
@@ -199,7 +200,16 @@ async function issueBase(): Promise<SQL> {
       SELECT latest_s.id FROM ${gcSubscriptions} latest_s WHERE latest_s.userId = ${users.id}
       AND latest_s.mandateId = ${gcMandates.mandateId}
       ORDER BY latest_s.createdAt DESC, latest_s.id DESC LIMIT 1)
-    WHERE (${users.role} = 'agent' OR ${agentCrmProfiles.userId} IS NOT NULL OR ${accounts.userId} IS NOT NULL) AND ${visibleIdentity}`;
+    WHERE (${users.role} = 'agent' OR ${agentCrmProfiles.userId} IS NOT NULL OR ${accounts.userId} IS NOT NULL) AND ${visibleIdentity}
+      AND (NOT EXISTS (SELECT 1 FROM ${businessStaffMemberships} bsm WHERE bsm.staffUserId = ${users.id})
+        OR ${agentCrmProfiles.userId} IS NOT NULL OR ${accounts.userId} IS NOT NULL
+        OR EXISTS (SELECT 1 FROM ${gcMandates} bm WHERE bm.userId = ${users.id})
+        OR EXISTS (SELECT 1 FROM ${gcSubscriptions} bs WHERE bs.userId = ${users.id})
+        OR EXISTS (SELECT 1 FROM ${obligations} bo WHERE bo.userId = ${users.id})
+        OR EXISTS (SELECT 1 FROM ${fees} bf WHERE bf.userId = ${users.id})
+        OR EXISTS (SELECT 1 FROM ${inbox} bi WHERE bi.userId = ${users.id})
+        OR EXISTS (SELECT 1 FROM ${outbox} bx WHERE bx.userId = ${users.id})
+        OR EXISTS (SELECT 1 FROM ${settlements} bst WHERE bst.userId = ${users.id}))`;
 }
 
 const anyIssue = sql`(outstandingCount > 0 OR ddIssue = 1 OR onboardingDd = 1 OR deliveryIssueCount > 0 OR mailPendingCount > 0 OR reviewIssue = 1 OR pendingFeeCount > 0)`;

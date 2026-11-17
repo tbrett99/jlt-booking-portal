@@ -11,6 +11,7 @@ import {
   type User,
 } from "../drizzle/schema";
 import { academyMockDb } from "./academy-staff-test-db";
+import { BUSINESS_STAFF_ORBIT_NOTICE } from "../shared/business-staff";
 
 type SyntheticUser = Pick<User, "id" | "role" | "isActive" | "portalStatus"> & {
   isInstructor?: boolean;
@@ -24,6 +25,8 @@ const external = vi.hoisted(() => ({
   storage: vi.fn(),
   requireCourse: vi.fn(),
   selfReview: vi.fn(),
+  businessAuthority:
+    vi.fn<typeof import("./business-staff-access").getBusinessStaffAuthority>(),
 }));
 vi.mock("./db", () => ({
   getDb: external.getDb,
@@ -35,6 +38,9 @@ vi.mock("./_core/sdk", () => ({
   sdk: { authenticateRequest: external.authenticate },
 }));
 vi.mock("./storage", () => ({ storageGetDecrypted: external.storage }));
+vi.mock("./business-staff-access", () => ({
+  getBusinessStaffAuthority: external.businessAuthority,
+}));
 vi.mock("./staff-access", () => ({
   isFullAdmin: (user: SyntheticUser) =>
     ["admin", "super_admin"].includes(user.role),
@@ -198,6 +204,17 @@ beforeEach(() => {
   vi.stubEnv("JWT_SECRET", "synthetic-test-only-archive-download-secret");
   external.user = learner;
   external.grants = [];
+  // This suite isolates ordinary learners and JLT instructor scopes. The real
+  // business-staff authority/fresh grants are covered separately; this explicit
+  // negative fixture is not a production fallback for an unavailable registry.
+  external.businessAuthority.mockReset().mockResolvedValue({
+    managed: false,
+    active: false,
+    orbitReady: false,
+    orbitNotice: BUSINESS_STAFF_ORBIT_NOTICE,
+    owner: null,
+    membership: null,
+  });
   external.authenticate
     .mockReset()
     .mockImplementation(async () => external.user);

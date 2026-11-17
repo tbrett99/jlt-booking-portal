@@ -1,6 +1,10 @@
 import { normaliseBookingReference, staffBookingReferenceError } from "./booking-reference-guard";
 import { bookingOrbitReference, orbitReferenceEmailParagraph, normaliseBookingReferenceTemplate } from "../shared/booking-email-reference";
 import { writableAgentUser } from "./agent-merge-user-write";
+import { businessStaffRouter } from "./business-staff-management-router";
+import { businessStaffBookingsRouter } from "./business-staff-bookings";
+import { publicAuthIdentity } from "./public-auth-identity";
+import { getBusinessStaffAuthority } from "./business-staff-access";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { assertNewAdminTaskAssignee, getEquivalentAdminTaskOwnerIds, listActiveAdminTaskOwners } from "./admin-task-identity";
@@ -467,12 +471,18 @@ export const appRouter = router({
   membershipPayments: membershipPaymentsRouter,
   agentMerge: agentMergeRouter,
   staffAccess: staffAccessRouter,
+  businessStaff: businessStaffRouter,
+  businessBookings: businessStaffBookingsRouter,
   myAgreements: myAgreementsRouter,
   termsReview: termsReviewRouter,
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
+    me: publicProcedure.query(async ({ ctx }) => {
+      if (!ctx.user) return null;
+      const authority = await getBusinessStaffAuthority(ctx.user);
+      return publicAuthIdentity(ctx.user, authority.managed);
+    }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -513,13 +523,14 @@ export const appRouter = router({
         }
         const valid = await bcrypt.compare(input.password, user.tempPassword);
         if (!valid) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid credentials" });
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
         }
+        const authority = await getBusinessStaffAuthority(user);
         // Issue JWT session cookie using the SDK so the token format matches verifySession
         const token = await sdk.createSessionToken(user.openId, { name: user.name ?? user.email ?? "" });
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
-        return { success: true, mustChangePassword: user.mustChangePassword, user };
+        return { success: true, mustChangePassword: user.mustChangePassword, user: publicAuthIdentity(user, authority.managed) };
       }),
     changePassword: protectedProcedure
       .input(z.object({ newPassword: z.string().min(8) }))
@@ -617,9 +628,11 @@ export const appRouter = router({
     // Lightweight list of all bookable users for dropdowns/matching (agents + admins + super_admins)
     listAgents: adminProcedure.query(async () => {
       const all = await getAllUsers();
+      const { getRetainedBusinessStaffIds } = await import("./business-staff-identity-protection");
+      const staffIds = await getRetainedBusinessStaffIds();
       // Include all roles that can register bookings: agent, admin, super_admin
       return all
-        .filter((u) => u.role === "agent" || u.role === "admin" || u.role === "super_admin")
+        .filter((u) => !staffIds.has(u.id) && (u.role === "agent" || u.role === "admin" || u.role === "super_admin"))
         .map((u) => ({ id: u.id, name: u.name ?? "", email: u.email ?? "", role: u.role, phone: (u as any).phone ?? "", credentialsSentAt: (u as any).credentialsSentAt ?? null }));
     }),
     listAdmins: protectedProcedure.query(() => listActiveAdminTaskOwners()),

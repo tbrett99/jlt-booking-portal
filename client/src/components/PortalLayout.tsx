@@ -587,6 +587,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       defaultOpen: false,
       items: [
         { label: "Users", href: "/users", icon: <Users size={16} /> },
+        { label: "Business staff", href: "/admin/business-staff", icon: <UserCheck size={16} /> },
         ...(user?.role === "super_admin"
           ? [{ label: "Staff assignments", href: "/admin/staff-access", icon: <Shield size={16} /> }]
           : []),

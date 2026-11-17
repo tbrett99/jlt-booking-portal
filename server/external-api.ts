@@ -534,12 +534,16 @@ router.get("/sso/verify", async (req: Request, res: Response) => {
 
     // Get agent details
     const agentResults = await db
-      .select({ id: users.id, email: users.email, name: users.name, role: users.role, phone: users.phone })
+      .select({ id: users.id, email: users.email, name: users.name, role: users.role, phone: users.phone, isActive: users.isActive, portalStatus: users.portalStatus, mustChangePassword: users.mustChangePassword })
       .from(users)
       .where(eq(users.id, record.userId))
       .limit(1);
     const agent = agentResults[0];
     if (!agent) return res.status(404).json({ valid: false, error: "Agent not found" });
+    const { legacyExternalSignInAllowed } = await import("./business-staff-external-access");
+    if (!await legacyExternalSignInAllowed(agent)) {
+      return res.status(403).json({ valid: false, error: "This account cannot use unscoped Orbit sign-in. Business staff sign-in requires Orbit-side support." });
+    }
 
     // Get Agent ID (JLT-XXXX) from CRM profile so Orbit can link the account
     const profileResults = await db

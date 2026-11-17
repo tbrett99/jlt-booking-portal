@@ -17,21 +17,23 @@ function find(node: ts.Node) {
 }
 find(tree);
 if (!callback) throw new Error("Actual onboarding deletion callback not found");
-const script = ts.transpileModule("const callback = " + callback.getText(tree).replace('await import("./db")', 'deps.db').replace('await import("../drizzle/schema")', 'deps.schema').replace('await import("drizzle-orm")', 'deps.orm') + ";", { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+const script = ts.transpileModule("const callback = " + callback.getText(tree).replace('await import("./db")', 'deps.db').replace('await import("../drizzle/schema")', 'deps.schema').replace('await import("drizzle-orm")', 'deps.orm').replace('await import("./business-staff-identity-protection")', 'deps.business') + ";", { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
 const make = new Function("deps", "assertAgentNotMerged", "TRPCError", script + "return callback;");
 const tables = Object.fromEntries(["users", "agentCrmProfiles", "adminOnboardingChecklist", "joinSessions", "userDeletions", "recruitmentSignupLinks"].map(name => [name, { name, id: "id", userId: "userId" }]));
 const user = { id: 22, role: "agent", portalStatus: "onboarding", email: "synthetic@example.test", name: "Synthetic Person" };
 let events: string[], linked: boolean, person: typeof user | undefined, failDelete: boolean;
 const merged = vi.fn();
+const identity = vi.fn();
 const tx: any = {
   select: () => { let table: any; const chain: any = { from: (value: any) => { table = value; return chain; }, where: () => chain, limit: () => chain, for: (lock: string) => { events.push("lock:" + table.name + ":" + lock); return chain; }, then: (resolve: any, reject: any) => Promise.resolve(table === tables.users ? person ? [person] : [] : linked ? [{ id: 99 }] : []).then(resolve, reject) }; return chain; },
   insert: (table: any) => ({ values: async () => { events.push("insert:" + table.name); } }),
   delete: (table: any) => ({ where: async () => { events.push("delete:" + table.name); if (failDelete && table === tables.joinSessions) throw new Error("Injected FK/storage failure"); } }),
 };
 const db = { transaction: async (fn: any) => { events.push("begin"); try { const result = await fn(tx); events.push("commit"); return result; } catch (error) { events.push("rollback"); throw error; } } };
-const invoke = () => make({ db: { getDb: async () => db }, schema: tables, orm: { eq: () => "bound-id-only" } }, merged, TRPCError)({ input: { userId: 22 }, ctx: { user: { id: 1, email: "staff@example.test", name: "Staff" } } });
-beforeEach(() => { events = []; linked = false; person = { ...user }; failDelete = false; merged.mockReset().mockResolvedValue(undefined); });
+const invoke = () => make({ db: { getDb: async () => db }, schema: tables, business: { assertBusinessStaffIdentityNotDeleted: identity }, orm: { eq: () => "bound-id-only" } }, merged, TRPCError)({ input: { userId: 22 }, ctx: { user: { id: 1, email: "staff@example.test", name: "Staff" } } });
+beforeEach(() => { events = []; linked = false; person = { ...user }; failDelete = false; merged.mockReset().mockResolvedValue(undefined); identity.mockReset().mockResolvedValue(undefined); });
 describe("actual onboarding deletion callback, fully offline", () => {
+  it("blocks retained business staff identities before cleanup", async () => { identity.mockRejectedValue(new TRPCError({code:"CONFLICT"})); await expect(invoke()).rejects.toMatchObject({code:"CONFLICT"}); expect(identity).toHaveBeenCalledWith(tx,22); expect(events).toEqual(["begin","lock:users:update","rollback"]); });
   it("blocks a linked onboarding agent before audit/profile/signing/user writes", async () => { linked = true; await expect(invoke()).rejects.toMatchObject({ code: "CONFLICT" }); expect(events).toEqual(["begin", "lock:users:update", "rollback"]); });
   it("locks the user before cleanup and commits all ordinary unlinked cleanup together", async () => { expect(await invoke()).toEqual({ ok: true }); expect(events).toEqual(["begin", "lock:users:update", "insert:userDeletions", "delete:adminOnboardingChecklist", "delete:agentCrmProfiles", "delete:joinSessions", "delete:users", "commit"]); });
   it("rolls back prior cleanup if signing-row/FK deletion fails, rather than leaving a missing profile", async () => { failDelete = true; await expect(invoke()).rejects.toThrow("Injected FK/storage failure"); expect(events.at(-1)).toBe("rollback"); expect(events).not.toContain("commit"); expect(events).not.toContain("delete:users"); });

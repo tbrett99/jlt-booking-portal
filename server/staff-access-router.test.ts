@@ -5,6 +5,7 @@ import {
   academyCourses,
   agentCrmProfiles,
   agentRecordMerges,
+  businessStaffMemberships,
   staffAccessAudit,
   staffInstructorCourses,
   staffRoleAssignments,
@@ -170,6 +171,16 @@ function syntheticDb(initial: Partial<State> = {}, fault?: Fault) {
                 params: query.params,
                 transactional,
               });
+              // These are ordinary/JLT staff fixtures: the fresh business-staff
+              // registry read succeeds with no memberships, even when the
+              // subsequent existing staff-access read is configured to fail.
+              if (table === businessStaffMemberships) {
+                expect(query.sql).toContain(
+                  "`business_staff_memberships`.`staffUserId` = ?"
+                );
+                expect(limit).toBe(2);
+                return [];
+              }
               if (fault === "read")
                 throw new Error(
                   "SELECT financial_secret FROM users connection-password"
@@ -388,7 +399,7 @@ describe("actual staffAccess router caller gates and safe read models", () => {
   });
 
   it("allows management only to Super Admin, not plain agents, assigned staff, or ordinary Admin", async () => {
-    const { db } = syntheticDb({
+    const { db, events } = syntheticDb({
       assignments: [assignment],
       scopes: [{ assignmentId: 51, courseId: 9 }],
     });
@@ -404,7 +415,10 @@ describe("actual staffAccess router caller gates and safe read models", () => {
         code: "FORBIDDEN",
       });
     }
-    expect(db.select).not.toHaveBeenCalled();
+    // This legacy JLT Super Admin guard wraps protectedProcedure, so only its
+    // three empty-registry checks occur; no management or private reads do.
+    expect(events.filter(event => event.kind === "select").map(event => event.table)).toEqual([businessStaffMemberships,businessStaffMemberships,businessStaffMemberships]);
+    expect(db.select).toHaveBeenCalledTimes(3);
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
@@ -416,14 +430,26 @@ describe("actual staffAccess router caller gates and safe read models", () => {
       courseIds: [],
       schemaAvailable: true,
     });
+    let table: unknown;
     const chain: any = {
-      from: () => chain,
+      from: (value: unknown) => {
+        table = value;
+        return chain;
+      },
       where: () => chain,
-      then: (_resolve: unknown, reject: (error: unknown) => unknown) =>
-        Promise.reject({
+      limit: () => chain,
+      then: (
+        resolve: (rows: any[]) => unknown,
+        reject: (error: unknown) => unknown
+      ) => {
+        if (table === businessStaffMemberships)
+          return Promise.resolve([]).then(resolve, reject);
+        expect(table).toBe(staffRoleAssignments);
+        return Promise.reject({
           code: "ER_NO_SUCH_TABLE",
           sqlMessage: "Table 'synthetic.staff_role_assignments' doesn't exist",
-        }).then(undefined, reject),
+        }).then(resolve, reject);
+      },
     };
     mocks.getDb.mockResolvedValue({ select: () => chain });
     expect(await caller(agent()).mine()).toEqual({
@@ -523,11 +549,16 @@ describe("actual staffAccess router caller gates and safe read models", () => {
   });
 
   it("mine denies unknown database failures without leaking query/connection details", async () => {
-    syntheticDb({}, "read");
+    const s = syntheticDb({}, "read");
     await expect(caller(agent()).mine()).rejects.toMatchObject({
       code: "FORBIDDEN",
       message: "Staff permissions could not be verified",
     });
+    expect(
+      s.events
+        .filter(event => event.kind === "select")
+        .map(event => event.table)
+    ).toEqual([businessStaffMemberships, staffRoleAssignments]);
   });
 
   it.each(["adminOptions", "adminList"] as const)(

@@ -3124,3 +3124,50 @@ export const staffAcademyUploads = mysqlTable("staff_academy_uploads", {
   kind: mysqlEnum("kind", ["attachment", "document_template", "image"]).notNull(),
   createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
 }, (t) => [uniqueIndex("staff_upload_key_uq").on(t.objectKey), index("staff_upload_course_idx").on(t.courseId, t.userId)]);
+
+// Business employees remain separate users. A retained membership row also marks
+// a revoked staff-only login, preventing fallback to the independent-agent APIs.
+export const businessStaffMemberships = mysqlTable("business_staff_memberships", {
+  id: int("id").autoincrement().primaryKey(),
+  ownerUserId: int("ownerUserId").notNull(),
+  staffUserId: int("staffUserId").notNull(),
+  status: mysqlEnum("status", ["active", "revoked"]).default("active").notNull(),
+  permissions: json("permissions").notNull(),
+  orbitRequested: boolean("orbitRequested").default(false).notNull(),
+  revision: int("revision").default(1).notNull(),
+  createdById: int("createdById").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  revokedAt: timestamp("revokedAt"),
+}, table => [uniqueIndex("business_staff_member_user_uq").on(table.staffUserId), index("business_staff_owner_idx").on(table.ownerUserId),
+  foreignKey({ name: "business_staff_owner_fk", columns: [table.ownerUserId], foreignColumns: [users.id] }),
+  foreignKey({ name: "business_staff_user_fk", columns: [table.staffUserId], foreignColumns: [users.id] }),
+  foreignKey({ name: "business_staff_creator_fk", columns: [table.createdById], foreignColumns: [users.id] })
+]);
+export const businessStaffAudit = mysqlTable("business_staff_audit", {
+  id: int("id").autoincrement().primaryKey(),
+  membershipId: int("membershipId").notNull(),
+  actorUserId: int("actorUserId").notNull(),
+  action: varchar("action", { length: 40 }).notNull(),
+  reason: varchar("reason", { length: 1000 }).notNull(),
+  beforeState: json("beforeState"),
+  afterState: json("afterState").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => [index("business_staff_audit_member_idx").on(table.membershipId),
+  foreignKey({ name: "business_staff_audit_member_fk", columns: [table.membershipId], foreignColumns: [businessStaffMemberships.id] }),
+  foreignKey({ name: "business_staff_audit_actor_fk", columns: [table.actorUserId], foreignColumns: [users.id] })
+]);
+export const businessStaffBookingNotes = mysqlTable("business_staff_booking_notes", {
+  id: int("id").autoincrement().primaryKey(),
+  bookingId: int("bookingId").notNull(),
+  ownerUserId: int("ownerUserId").notNull(),
+  authorUserId: int("authorUserId").notNull(),
+  membershipId: int("membershipId"),
+  text: text("text").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => [index("business_staff_notes_booking_idx").on(table.bookingId, table.ownerUserId),
+  foreignKey({ name: "business_staff_note_booking_fk", columns: [table.bookingId], foreignColumns: [bookings.id] }),
+  foreignKey({ name: "business_staff_note_owner_fk", columns: [table.ownerUserId], foreignColumns: [users.id] }),
+  foreignKey({ name: "business_staff_note_author_fk", columns: [table.authorUserId], foreignColumns: [users.id] }),
+  foreignKey({ name: "business_staff_note_member_fk", columns: [table.membershipId], foreignColumns: [businessStaffMemberships.id] })
+]);

@@ -6,6 +6,7 @@ import { getDb } from "./db";
 import { storageGetDecrypted } from "./storage";
 import { TRPCError } from "@trpc/server";
 import { assertNotSelfReview, isFullAdmin, requireInstructorCourse } from "./staff-access";
+import { getBusinessStaffAuthority } from "./business-staff-access";
 import {
   academyAccess,
   academyAssessmentAttempts,
@@ -75,6 +76,10 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
       if (!payload || !user || ["cancelled", "paused", "suspended"].includes(String((user as any).portalStatus))) {
         res.status(404).end();
         return;
+      }
+      const businessAuthority = await getBusinessStaffAuthority(user);
+      if (businessAuthority.managed && (!businessAuthority.active || !businessAuthority.membership?.permissions.academyAccess || payload.scope !== "agent")) {
+        res.status(404).end(); return;
       }
       const isStaff = isFullAdmin(user);
       if (payload.scope === "staff") {
@@ -196,6 +201,10 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
       if (!user || !user.isActive || ["cancelled", "paused", "suspended"].includes(String(user.portalStatus))) {
         res.status(404).end(); return;
       }
+      const businessAuthority = await getBusinessStaffAuthority(user);
+      if (businessAuthority.managed && (!businessAuthority.active || !businessAuthority.membership?.permissions.academyAccess)) {
+        res.status(404).end(); return;
+      }
       const db = await getDb();
       if (!db) { res.status(503).send("Document service is temporarily unavailable"); return; }
       const key = String(req.params.objectKey ?? "");
@@ -211,6 +220,7 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
       const [learner] = lesson && lesson.archivedAt == null ? await db.select({ id: academyEnrollments.id }).from(academyEnrollments)
         .innerJoin(academyAccess, and(eq(academyAccess.agentId, academyEnrollments.agentId), eq(academyAccess.status, "active")))
         .where(and(eq(academyEnrollments.agentId, user.id), eq(academyEnrollments.courseId, upload.courseId))).limit(1) : [];
+      if (businessAuthority.managed && !learner) { res.status(404).end(); return; }
       if (!learner) await requireInstructorCourse(user, upload.courseId);
       const body = await storageGetDecrypted(key);
       res.set({

@@ -3086,6 +3086,8 @@ export const crmRouter = router({
         }
         const links = await tx.select({ id: recruitmentSignupLinks.id }).from(recruitmentSignupLinks).where(eq(recruitmentSignupLinks.userId, input.userId));
         if (links.length) throw new TRPCError({ code: "CONFLICT", message: "This agent has a preserved recruitment signup link. Its account and signed signup evidence cannot be deleted here." });
+        const { assertBusinessStaffIdentityNotDeleted } = await import("./business-staff-identity-protection");
+        await assertBusinessStaffIdentityNotDeleted(tx, input.userId);
         // Log the deletion before deleting
         await tx.insert(userDeletions).values({
           deletedUserId: row.id,

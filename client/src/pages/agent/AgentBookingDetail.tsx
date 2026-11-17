@@ -18,6 +18,7 @@ import { ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
 } from "lucide-react";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
+import BusinessStaffOwnerPanel from "@/pages/business/BusinessStaffOwnerPanel";
 
 // Render note content: @mentions highlighted, [Attachment: name](url) as clickable links
 function NoteContent({ content, textColor }: { content: string; textColor?: string }) {
@@ -1580,6 +1581,7 @@ export default function AgentBookingDetail() {
         </Card>
       )}
 
+      {user?.role === "agent" && booking.agentId === user.id && !booking.isPersonalBooking && <BusinessStaffOwnerPanel bookingId={bookingId} />}
       {/* Messages */}
       <Card>
         <CardHeader className="pb-2">

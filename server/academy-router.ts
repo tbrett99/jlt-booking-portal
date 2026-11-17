@@ -1282,6 +1282,8 @@ async function recalculateCompletion(enrollmentId: number, actorId: number) {
   const summary = summariseAcademyProgress(requiredLessonIds, progress.filter((item) => item.completedAt).map((item) => item.lessonId));
   if (!summary.isComplete) return enrollment;
 
+  const { businessStaffMemberships } = await import("../drizzle/schema");
+  const employeeLinks = await db.select({ id: businessStaffMemberships.id }).from(businessStaffMemberships).where(eq(businessStaffMemberships.staffUserId, enrollment.agentId)).limit(1);
   const now = new Date();
   await db.update(academyEnrollments).set({ status: "completed", completedAt: now, completionOutcomeAppliedAt: now })
     .where(eq(academyEnrollments.id, enrollmentId));
@@ -1291,7 +1293,7 @@ async function recalculateCompletion(enrollmentId: number, actorId: number) {
   // Only a Training (or legacy unset) profile crosses into Accelerator on core
   // completion. A staff-migrated or returning Accredited/Accelerator agent must
   // retain their stage and existing personalised journey start date.
-  const entersAccelerator = course?.isCoreAcademy && (!profile?.trainingStage || profile.trainingStage === "Training");
+  const entersAccelerator = !employeeLinks.length && course?.isCoreAcademy && (!profile?.trainingStage || profile.trainingStage === "Training");
   if (entersAccelerator) {
     await db.update(agentCrmProfiles).set({ trainingStage: "Agent Accelerator", academyAcceleratorStartedAt: now })
       .where(eq(agentCrmProfiles.userId, enrollment.agentId));

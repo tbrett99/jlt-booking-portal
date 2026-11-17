@@ -7,6 +7,9 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ViewModeProvider, useViewMode } from "./contexts/ViewModeContext";
 import PortalLayout from "./components/PortalLayout";
+import { Link } from "wouter";
+const BusinessStaffWorkspace = lazy(() => import("./pages/business/BusinessStaffWorkspace"));
+const AdminBusinessStaff = lazy(() => import("./pages/business/AdminBusinessStaff"));
 
 // Critical path — always bundled
 import LoginPage from "./pages/LoginPage";
@@ -235,6 +238,12 @@ export function AuthRouter() {
   const { user, loading } = useAuth();
   const { isAgentView } = useViewMode();
   const [location] = useLocation();
+  const businessStaff = trpc.businessStaff.mine.useQuery(undefined, {
+    enabled: !loading && user?.role === "agent",
+    retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
 
   if (loading) {
     return (
@@ -291,6 +300,20 @@ export function AuthRouter() {
   const isImpersonating = document.cookie.split(";").some((c) => c.trim().startsWith("is_impersonating="));
   if (user.mustChangePassword && !isImpersonating) {
     return <ChangePasswordPage />;
+  }
+  // Classification is authoritative and fail-closed. Never render the legacy
+  // agent shell while the staff registry is loading or unavailable.
+  if (user.role === "agent") {
+    if (businessStaff.isLoading || !businessStaff.data || businessStaff.error) {
+      return <main className="min-h-screen bg-background p-8 text-foreground"><h1 className="text-xl font-semibold">Checking Portal access</h1><p className="mt-2">{businessStaff.error ? "Access could not be verified. No business or financial data has been loaded." : "Please wait while your access is checked."}</p>{businessStaff.error && <button type="button" className="mt-4 underline" onClick={() => businessStaff.refetch()}>Try again</button>}</main>;
+    }
+    if (businessStaff.data.managed) {
+      if (businessStaff.data.active && businessStaff.data.membership?.permissions.academyAccess && (location === "/academy" || location.startsWith("/academy/course/"))) {
+        return <main className="min-h-screen bg-background p-4 text-foreground md:p-8"><Link href="/business-staff" className="mb-4 inline-block underline">Back to Business staff</Link><Switch><Route path="/academy" component={AcademyHome} /><Route path="/academy/course/:enrollmentId">{params => <AcademyCourse enrollmentId={params.enrollmentId} />}</Route><Route component={NotFound} /></Switch></main>;
+      }
+      if (location === "/my-agreements") return <main className="min-h-screen bg-background p-4 text-foreground md:p-8"><Link href="/business-staff" className="mb-4 inline-block underline">Back to Business staff</Link><MyAgreements /></main>;
+      return <BusinessStaffWorkspace />;
+    }
   }
 
   // Team members exist as onboarding agents before their contract is signed.
@@ -465,6 +488,7 @@ export function AuthRouter() {
         <Route path="/flights" component={AdminFlightsPipeline} />
         <Route path="/cancellations" component={AdminCancellations} />
         <Route path="/super-admin" component={SuperAdminDashboard} />
+        <Route path="/admin/business-staff" component={AdminBusinessStaff} />
         {user.role === "super_admin" && <Route path="/admin/staff-access" component={AdminStaffAccess} />}
         <Route path="/reports" component={AdminReports} />
         <Route path="/commission-margin" component={CommissionMarginReport} />

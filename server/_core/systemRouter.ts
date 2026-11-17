@@ -23,6 +23,8 @@ export const systemRouter = router({
       agentSupportScopedConditionChecks: 1,
       agentSupportDurationContext: 1,
       recruitmentSignupLinking: 1,
+      businessStaffPermissions: 1,
+      businessStaffOrbitPending: 1,
     })),
 
   notifyOwner: adminProcedure
