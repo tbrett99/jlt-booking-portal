@@ -15,6 +15,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
 import { isCountableFnfVoucherUse, selectCurrentFnfVoucherAllocation } from "./fnf-voucher-utils";
+import { assertBookingActorAccess, withBookingActorWrite } from "./business-staff-booking-scope";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") {
@@ -139,9 +140,9 @@ export const fnfRouter = router({
   /** Agent or Admin: apply a voucher to a booking */
   applyToBooking: protectedProcedure
     .input(z.object({ bookingId: z.number().int() }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) => withBookingActorWrite(ctx, input.bookingId, async writer => {
       const { getDb } = await import("./db");
-      const db = await getDb();
+      const db = writer ?? await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       const { bookings, fnfVoucherUses } = await import("../drizzle/schema");
@@ -152,10 +153,7 @@ export const fnfRouter = router({
       if (!booking) throw new TRPCError({ code: "NOT_FOUND", message: "Booking not found" });
 
       // Determine which agent owns this booking
-      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
-      if (!isAdmin && booking.agentId !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Not your booking" });
-      }
+      await assertBookingActorAccess(ctx, booking, "operate");
 
       // Check not already applied
       if (booking.fnfVoucherUsed) {
@@ -181,7 +179,7 @@ export const fnfRouter = router({
       await db.update(bookings).set({ fnfVoucherUsed: true }).where(eq(bookings.id, input.bookingId));
 
       return { success: true, remaining: result.remaining - 1 };
-    }),
+    }, "operate", { operation: "booking_voucher_applied" })),
 
   /** Admin only: remove a voucher from a booking (returns it to the agent's balance) */
   removeFromBooking: adminProcedure

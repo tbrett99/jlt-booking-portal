@@ -10,8 +10,10 @@ import { useLocation } from "wouter";
 import { ArrowLeft, Upload, X, Loader2, PoundSterling, Info, CheckCircle2, CreditCard, AlertTriangle } from "lucide-react";
 import { Link } from "wouter";
 import CountrySelect from "@/components/CountrySelect";
+import { useBusinessStaffBookingAccess } from "@/pages/business/BusinessStaffPortalLayout";
 
 export default function RegisterBooking() {
+  const { isBusinessStaff, canManage } = useBusinessStaffBookingAccess();
   const [, navigate] = useLocation();
   const [clientName, setClientName] = useState("");
   const [departureDate, setDepartureDate] = useState("");
@@ -48,7 +50,7 @@ export default function RegisterBooking() {
   const utils = trpc.useUtils();
   const createBooking = trpc.bookings.create.useMutation();
   const uploadDoc = trpc.bookings.uploadReimbDoc.useMutation();
-  const { data: fnfBalance } = trpc.fnf.getBalance.useQuery();
+  const { data: fnfBalance } = trpc.fnf.getBalance.useQuery(undefined, { enabled: !isBusinessStaff });
   const { data: preferredPartners } = trpc.suppliers.preferredPartners.useQuery(undefined, { staleTime: 300000 });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -70,6 +72,7 @@ export default function RegisterBooking() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManage) return;
     if (!clientName || !departureDate || !bookedDate) {
       toast.error("Please fill in all required fields");
       return;
@@ -107,9 +110,9 @@ export default function RegisterBooking() {
         destination: destination || undefined,
         passengers: parseInt(passengers),
         numberOfNights: parseInt(numberOfNights),
-        isPersonalBooking,
+        isPersonalBooking: !isBusinessStaff && isPersonalBooking,
         isHistoricBooking,
-        useFnfVoucher: useFnfVoucher && !isPersonalBooking && (fnfBalance?.remaining ?? 0) > 0 ? true : undefined,
+        useFnfVoucher: !isBusinessStaff && useFnfVoucher && !isPersonalBooking && (fnfBalance?.remaining ?? 0) > 0 ? true : undefined,
       });
 
       if (booking && docFile) {
@@ -135,6 +138,8 @@ export default function RegisterBooking() {
     }
   };
 
+  if (!canManage) return <p>Booking management is not assigned.</p>;
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
@@ -157,7 +162,7 @@ export default function RegisterBooking() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Personal Booking Toggle */}
-            <div className="rounded-lg border-2 border-dashed p-4 space-y-2" style={{ borderColor: isPersonalBooking ? '#70FFE8' : undefined, background: isPersonalBooking ? '#F0FFFB' : undefined }}>
+            {!isBusinessStaff && <div className="rounded-lg border-2 border-dashed p-4 space-y-2" style={{ borderColor: isPersonalBooking ? '#70FFE8' : undefined, background: isPersonalBooking ? '#F0FFFB' : undefined }}>
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -172,7 +177,7 @@ export default function RegisterBooking() {
                   </p>
                 </div>
               </label>
-            </div>
+            </div>}
 
             {/* Client Name */}
             <div className="space-y-2">
@@ -357,7 +362,7 @@ export default function RegisterBooking() {
                 </div>
               )}
               {/* F&F Voucher toggle — only show if agent has remaining vouchers and not personal */}
-              {!isPersonalBooking && fnfBalance && fnfBalance.hasAllocation && (
+              {!isBusinessStaff && !isPersonalBooking && fnfBalance && fnfBalance.hasAllocation && (
                 <div
                   className="rounded-lg border p-3 flex items-center gap-3 cursor-pointer select-none"
                   style={{ background: useFnfVoucher ? '#fdf2f8' : '#f9fafb', borderColor: useFnfVoucher ? '#f9a8d4' : '#e5e7eb' }}

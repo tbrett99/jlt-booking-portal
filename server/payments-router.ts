@@ -7,6 +7,7 @@ import { paymentLinks, bookings, users } from "../drizzle/schema";
 import { buildPpsSignature } from "./pps-signature";
 import { ENV } from "./_core/env";
 import { randomUUID } from "crypto";
+import { assertBookingActorAccess, withBookingActorWrite } from "./business-staff-booking-scope";
 
 // ─── Payments Router ──────────────────────────────────────────────────────────
 
@@ -26,17 +27,13 @@ export const paymentsRouter = router({
 
       // Fetch booking to verify ownership and get PTS ref
       const [booking] = await db
-        .select({ id: bookings.id, ptsRef: bookings.ptsRef, clientName: bookings.clientName, agentId: bookings.agentId })
+        .select({ id: bookings.id, ptsRef: bookings.ptsRef, clientName: bookings.clientName, agentId: bookings.agentId, isPersonalBooking: bookings.isPersonalBooking })
         .from(bookings)
         .where(eq(bookings.id, input.bookingId));
 
       if (!booking) throw new TRPCError({ code: "NOT_FOUND", message: "Booking not found" });
 
-      // Agents can only create links for their own bookings; admins/super_admins can create for any
-      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
-      if (!isAdmin && booking.agentId !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "You can only create payment links for your own bookings" });
-      }
+      await assertBookingActorAccess(ctx, booking, "operate");
 
       const ptsRef = booking.ptsRef ?? `JLT-${booking.id}`;
       const amountPence = Math.round(parseFloat(input.amountPounds) * 100);
@@ -56,7 +53,8 @@ export const paymentsRouter = router({
 
       // Persist the payment link record (expires 24 hours from now)
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      await db.insert(paymentLinks).values({
+      await withBookingActorWrite(ctx, input.bookingId, async writer => {
+        await (writer ?? db).insert(paymentLinks).values({
         id: linkId,
         bookingId: input.bookingId,
         createdById: ctx.user.id,
@@ -69,7 +67,8 @@ export const paymentsRouter = router({
         callbackUrl,
         status: "pending",
         expiresAt,
-      });
+        });
+      }, "operate", { operation: "booking_payment_link_created" });
 
       return {
         linkId,
@@ -147,12 +146,11 @@ export const paymentsRouter = router({
       const isAdmin = ctx.user.role === "admin" || ctx.user.role === "super_admin";
       if (!isAdmin) {
         const [booking] = await db
-          .select({ agentId: bookings.agentId })
+          .select({ agentId: bookings.agentId, isPersonalBooking: bookings.isPersonalBooking })
           .from(bookings)
           .where(eq(bookings.id, input.bookingId));
-        if (!booking || booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN", message: "You can only view payment links for your own bookings" });
-        }
+        if (!booking) throw new TRPCError({ code: "FORBIDDEN" });
+        await assertBookingActorAccess(ctx, booking, "read");
       }
 
       const links = await db

@@ -1,10 +1,14 @@
+import { sharedReimbursementAttachmentUrl } from "./booking-document-download-routes";
 import { normaliseBookingReference, staffBookingReferenceError } from "./booking-reference-guard";
 import { bookingOrbitReference, orbitReferenceEmailParagraph, normaliseBookingReferenceTemplate } from "../shared/booking-email-reference";
 import { writableAgentUser } from "./agent-merge-user-write";
 import { businessStaffRouter } from "./business-staff-management-router";
 import { businessStaffBookingsRouter } from "./business-staff-bookings";
 import { publicAuthIdentity } from "./public-auth-identity";
+import { assertSharedBookingAttachmentReferences, bookingDocumentDownloadUrl, canonicalBookingDocumentProvider, isEncryptedBookingDocument, isSharedMessageReceipt, sharedBookingNoteAttachments, SHARED_BOOKING_DOCUMENT_PREFIX, SHARED_BOOKING_MESSAGE_PREFIX } from "./booking-document-download-routes";
 import { getBusinessStaffAuthority } from "./business-staff-access";
+import { getBookingActorScope as formalRequestScope, assertBookingActorAccess as assertFormalBookingAccess, withBookingActorWrite as withFormalBookingWrite } from "./business-staff-booking-scope";
+import { assertBookingActorAccess, getBookingActorScope, withBookingActorWrite, withoutStaffClaimFields } from "./business-staff-booking-scope";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { assertNewAdminTaskAssignee, getEquivalentAdminTaskOwnerIds, listActiveAdminTaskOwners } from "./admin-task-identity";
@@ -923,7 +927,9 @@ export const appRouter = router({
   // ── Bookings ──────────────────────────────────────────────────────────────
   bookings: router({
     myBookings: protectedProcedure.query(async ({ ctx }) => {
-      return getBookingsByAgent(ctx.user.id);
+      const scope = await getBookingActorScope(ctx);
+      const rows = await getBookingsByAgent(scope.ownerUserId, undefined, scope.managed);
+      return scope.managed ? rows.map(withoutStaffClaimFields) : rows;
     }),
     all: adminProcedure
       .input(
@@ -952,8 +958,9 @@ export const appRouter = router({
     quickSearch: protectedProcedure
       .input(z.object({ query: z.string().min(1).max(100) }))
       .query(async ({ input, ctx }) => {
+        const scope = await getBookingActorScope(ctx);
         const all = ctx.user.role === 'agent'
-          ? await getBookingsByAgent(ctx.user.id)
+          ? await getBookingsByAgent(scope.ownerUserId, undefined, scope.managed)
           : await getAllBookings();
         const q = input.query.toLowerCase();
         const results = (all as any[]).filter((b) =>
@@ -962,18 +969,15 @@ export const appRouter = router({
           (b.topdogRef ?? '').toLowerCase().includes(q) ||
           String(b.id).includes(q)
         );
-        return results.slice(0, 10);
+        return scope.managed ? results.slice(0, 10).map(withoutStaffClaimFields) : results.slice(0, 10);
       }),
     byId: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input, ctx }) => {
         const booking = await getBookingWithAgent(input.id);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        // Agents can only see their own bookings
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
-        return booking;
+        const scope = await assertBookingActorAccess(ctx, booking);
+        return scope.managed ? withoutStaffClaimFields(booking) : booking;
       }),
     orbitFinancialSyncStatus: adminProcedure
       .input(z.object({ bookingId: z.number() }))
@@ -1007,81 +1011,46 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        // Duplicate guard: reject if same agent submitted same client name + departure date within 10 minutes
-        const recentBookings = await getBookingsByAgent(ctx.user.id);
-        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-        const inputDeparture = input.departureDate.toISOString().slice(0, 10);
-        const duplicate = recentBookings.find((b) => {
-          const bDeparture = b.departureDate ? new Date(b.departureDate).toISOString().slice(0, 10) : null;
-          const bCreated = b.createdAt ? new Date(b.createdAt as any) : null;
-          return (
-            b.clientName?.trim().toLowerCase() === input.clientName.trim().toLowerCase() &&
-            bDeparture === inputDeparture &&
-            bCreated !== null && bCreated > tenMinutesAgo
-          );
-        });
-        if (duplicate) {
-          const minsAgo = Math.round((Date.now() - new Date(duplicate.createdAt as any).getTime()) / 60000);
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `A booking for "${input.clientName}" with that departure date was already submitted ${minsAgo} minute(s) ago (Booking #${duplicate.id}). If this is a different booking, please wait a few minutes before resubmitting.`,
+        const actorScope = await getBookingActorScope(ctx, "operate");
+        if (actorScope.managed && input.isPersonalBooking) throw new TRPCError({ code: "FORBIDDEN", message: "Business staff cannot register a personal booking." });
+        if (actorScope.managed && input.useFnfVoucher) throw new TRPCError({ code: "FORBIDDEN", message: "Register the business booking first before applying an authorised voucher." });
+        const booking = await withBookingActorWrite(ctx, null, async (writer, scope) => {
+          // The business owner, not the submitting employee, is the durable owner.
+          const recentBookings = await getBookingsByAgent(scope.ownerUserId, writer, scope.managed);
+          const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+          const inputDeparture = input.departureDate.toISOString().slice(0, 10);
+          const duplicate = recentBookings.find((b) => {
+            const bDeparture = b.departureDate ? new Date(b.departureDate).toISOString().slice(0, 10) : null;
+            const bCreated = b.createdAt ? new Date(b.createdAt as any) : null;
+            return b.clientName?.trim().toLowerCase() === input.clientName.trim().toLowerCase() && bDeparture === inputDeparture && bCreated !== null && bCreated > tenMinutesAgo;
           });
-        }
-        const booking = await createBooking({ ...input, agentId: ctx.user.id });
-        // Create reimbursement items if provided
-        if (booking?.id && input.reimbursementItems && input.reimbursementItems.length > 0) {
-          await createReimbursementItems(
-            input.reimbursementItems.map((item) => ({
-              bookingId: booking.id,
-              agentId: ctx.user.id,
-              supplierName: item.supplierName,
-              amount: item.amount,
-              isLate: false,
-              jltCompanyCard: item.jltCompanyCard ?? false,
-            }))
-          );
-        }
-        // If historic booking, move immediately to "Added to PTS"
-        if (input.isHistoricBooking && booking?.id) {
-          await updateBookingStage(booking.id, "Added to PTS", ctx.user.id);
-          await createNote({
-            bookingId: booking.id,
-            authorId: ctx.user.id,
-            content: `[System] Historic booking — automatically moved to "Added to PTS" by ${ctx.user.name ?? "Agent"}.`,
-            isInternal: false,
-          });
-        }
-        // Notify all admins of new booking
+          if (duplicate) {
+            const minsAgo = Math.round((Date.now() - new Date(duplicate.createdAt as any).getTime()) / 60000);
+            throw new TRPCError({ code: "CONFLICT", message: `A booking for "${input.clientName}" with that departure date was already submitted ${minsAgo} minute(s) ago (Booking #${duplicate.id}). If this is a different booking, please wait a few minutes before resubmitting.` });
+          }
+          const created = await createBooking({ ...input, agentId: scope.ownerUserId }, writer);
+          if (scope.managed && !created?.id) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The booking could not be verified." });
+          if (created?.id && input.reimbursementItems?.length) {
+            await createReimbursementItems(input.reimbursementItems.map(item => ({ bookingId: created.id, agentId: scope.ownerUserId, supplierName: item.supplierName, amount: item.amount, isLate: false, jltCompanyCard: item.jltCompanyCard ?? false })), writer);
+          }
+          if (input.isHistoricBooking && created?.id) {
+            await updateBookingStage(created.id, "Added to PTS", ctx.user.id, writer);
+            await createNote({ bookingId: created.id, authorId: ctx.user.id, content: `[System] Historic booking — automatically moved to "Added to PTS" by ${ctx.user.name ?? "Agent"}.`, isInternal: false }, writer);
+          }
+          if (created?.id) await createNote({ bookingId: created.id, authorId: ctx.user.id, content: `[System] Booking created by ${ctx.user.name ?? "Agent"}${scope.managed ? " on behalf of the business owner" : ""}.`, isInternal: false }, writer);
+          return created;
+        }, "operate", { operation: "booking_created" });
+        // Notifications happen only after a successfully committed registration.
         const allUsers = await getAllUsers();
-        const admins = allUsers.filter((u) => u.role === "admin" || u.role === "super_admin");
-        for (const admin of admins) {
-          await createInAppNotification({
-            userId: admin.id,
-            bookingId: booking?.id,
-            message: `New booking registered by ${ctx.user.name}: ${input.clientName}`,
-            linkUrl: `/bookings/${booking?.id}`,
-          });
-        }
-        // Apply F&F voucher if requested
+        const admins = allUsers.filter(u => u.role === "admin" || u.role === "super_admin");
+        for (const admin of admins) await createInAppNotification({ userId: admin.id, bookingId: booking?.id, message: `New booking registered by ${ctx.user.name}: ${input.clientName}`, linkUrl: `/bookings/${booking?.id}` });
         if (input.useFnfVoucher && booking?.id && !input.isPersonalBooking) {
           try {
-            const { applyFnfVoucherToBooking } = await import('./fnf-router');
-            await applyFnfVoucherToBooking(booking.id, ctx.user.id, ctx.user.name ?? 'Agent');
-          } catch (fnfErr: any) {
-            // Non-fatal — booking is created, just log the voucher failure
-            console.error('[create booking] F&F voucher apply failed:', fnfErr?.message);
-          }
+            const { applyFnfVoucherToBooking } = await import("./fnf-router");
+            await applyFnfVoucherToBooking(booking.id, ctx.user.id, ctx.user.name ?? "Agent");
+          } catch (fnfErr: any) { console.error("[create booking] F&F voucher apply failed:", fnfErr?.message); }
         }
-        // System audit note
-        if (booking?.id) {
-          await createNote({
-            bookingId: booking.id,
-            authorId: ctx.user.id,
-            content: `[System] Booking created by ${ctx.user.name ?? "Agent"}.`,
-            isInternal: false,
-          });
-        }
-        return booking;
+        return actorScope.managed && booking ? withoutStaffClaimFields(booking) : booking;
       }),
     uploadReimbDoc: protectedProcedure
       .input(
@@ -1099,13 +1068,21 @@ export const appRouter = router({
         }
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
+        const scope = await assertBookingActorAccess(ctx, booking, "operate");
+        let url: string;
+        if (scope.managed) {
+          const { uploadPrivateStaffBookingDocument } = await import("./booking-document-download-routes");
+          const result = await uploadPrivateStaffBookingDocument(ctx, input, async (writer, doc) => {
+            await addReimbursementDoc({ bookingId: input.bookingId, uploadedById: ctx.user.id, fileUrl: doc.url, fileName: input.fileName, mimeType: input.mimeType }, writer);
+            await uploadReimbursementDoc(input.bookingId, doc.url, false, writer);
+            await createNote({ bookingId: input.bookingId, authorId: ctx.user.id, content: `[System] Reimbursement document uploaded by ${ctx.user.name ?? "Agent"}: ${input.fileName}.`, isInternal: false }, writer);
+            return doc;
+          });
+          url = result.url;
+        } else {
         // Upload to S3 and store in reimbursement_docs table (multi-doc support)
         const buffer = Buffer.from(input.fileBase64, "base64");
         const key = `reimb-docs/${input.bookingId}-${nanoid(8)}-${input.fileName}`;
-        let url: string;
         try {
           ({ url } = await storagePut(key, buffer, input.mimeType));
         } catch (storageErr: any) {
@@ -1132,6 +1109,8 @@ export const appRouter = router({
           content: `[System] Reimbursement document uploaded by ${ctx.user.name ?? "Agent"}: ${input.fileName}.`,
           isInternal: false,
         });
+
+        }
 
         // Notify all admins in-app about the doc upload
         const allUsers = await getAllUsers();
@@ -1160,9 +1139,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
+        await assertBookingActorAccess(ctx, booking, "read");
         return getReimbursementDocs(input.bookingId);
       }),
     moveStage: adminProcedure
@@ -1440,19 +1417,20 @@ export const appRouter = router({
     updateCommission: protectedProcedure
       .input(z.object({ bookingId: z.number(), expectedCommission: z.number().min(0) }))
       .mutation(async ({ input, ctx }) => {
-        const booking = await getBookingById(input.bookingId);
+        return withBookingActorWrite(ctx, input.bookingId, async (writer, scope) => {
+        const booking = await getBookingById(input.bookingId, writer);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
-        await updateBookingAdminFields(input.bookingId, { expectedCommission: input.expectedCommission });
+        await assertBookingActorAccess(ctx, booking, "operate");
+        await updateBookingAdminFields(input.bookingId, { expectedCommission: input.expectedCommission }, writer);
         await createNote({
           bookingId: input.bookingId,
           authorId: ctx.user.id,
           content: `[System] Expected commission set to £${input.expectedCommission.toFixed(2)} by ${ctx.user.name ?? "Agent"}.`,
           isInternal: false,
-        });
+        }, writer);
         return { success: true };
+
+        }, "operate", { operation: "booking_figures_updated" });
       }),
     toggleSuppliersAndDocs: adminProcedure
       .input(z.object({ bookingId: z.number(), value: z.boolean() }))
@@ -1567,12 +1545,11 @@ export const appRouter = router({
         finalSupplierPaymentDate: z.date().nullable().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const booking = await getBookingById(input.bookingId);
+        const result = await withBookingActorWrite(ctx, input.bookingId, async (writer, scope) => {
+        const booking = await getBookingById(input.bookingId, writer);
         if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
         // Agents can only update their own bookings
-        if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: 'FORBIDDEN' });
-        }
+        await assertBookingActorAccess(ctx, booking, "operate");
         // Allowed in "Creating own PTS file" stage, OR when ptsRef has not been set yet (e.g. historic imports)
         const ptsRefMissing = !booking.ptsRef;
         if (booking.currentStage !== 'Creating own PTS file' && !ptsRefMissing) {
@@ -1582,17 +1559,14 @@ export const appRouter = router({
           await updateBookingAdminFields(input.bookingId, {
             ...(input.ptsRef !== undefined ? { ptsRef: input.ptsRef } : {}),
             ...(input.finalSupplierPaymentDate !== undefined ? { finalSupplierPaymentDate: input.finalSupplierPaymentDate } : {}),
-          });
+          }, writer);
         } catch (error) {
           if (ctx.user.role !== "agent") staffBookingReferenceError(error);
           throw error;
         }
         // Auto-move from "Creating own PTS file" to "Added to PTS" when ptsRef is provided
         if (input.ptsRef && booking.currentStage === 'Creating own PTS file') {
-          await updateBookingStage(input.bookingId, 'Added to PTS', ctx.user.id);
-        }
-        if (input.finalSupplierPaymentDate) {
-          await queueBookingForCommissionReview(input.bookingId, ctx.user.id);
+          await updateBookingStage(input.bookingId, 'Added to PTS', ctx.user.id, writer);
         }
         const changes: string[] = [];
         if (input.ptsRef) changes.push(`PTS Ref set to "${input.ptsRef}"`);
@@ -1603,9 +1577,13 @@ export const appRouter = router({
             authorId: ctx.user.id,
             content: `[System] Agent updated PTS details: ${changes.join('; ')}.`,
             isInternal: false,
-          });
+          }, writer);
         }
         return { success: true };
+
+        }, "operate", { operation: "booking_pts_updated", referenceLock: true });
+        if (input.finalSupplierPaymentDate) await queueBookingForCommissionReview(input.bookingId, ctx.user.id);
+        return result;
       }),
 
     // Agent: set Topdog ref (only allowed once — when topdogRef is currently blank)
@@ -1615,24 +1593,25 @@ export const appRouter = router({
         topdogRef: z.string().min(1, "TD reference cannot be empty").max(100),
       }))
       .mutation(async ({ input, ctx }) => {
-        const booking = await getBookingById(input.bookingId);
+        return withBookingActorWrite(ctx, input.bookingId, async (writer, scope) => {
+        const booking = await getBookingById(input.bookingId, writer);
         if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
         // Agents can only update their own bookings
-        if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: 'FORBIDDEN' });
-        }
+        await assertBookingActorAccess(ctx, booking, "operate");
         // Only allow setting if currently blank — once set, must go via admin amendment
         if ((booking as any).topdogRef) {
           throw new TRPCError({ code: 'FORBIDDEN', message: 'TD reference is already set. Please contact an admin to amend it.' });
         }
-        await updateBookingAdminFields(input.bookingId, { topdogRef: input.topdogRef });
+        await updateBookingAdminFields(input.bookingId, { topdogRef: input.topdogRef }, writer);
         await createNote({
           bookingId: input.bookingId,
           authorId: ctx.user.id,
           content: `[System] Agent set Topdog reference to "${input.topdogRef}".`,
           isInternal: false,
-        });
+        }, writer);
         return { success: true };
+
+        }, "operate", { operation: "booking_td_ref_updated" });
       }),
 
     setCrmRef: protectedProcedure
@@ -1641,14 +1620,13 @@ export const appRouter = router({
         crmRef: z.string().min(1, "Orbit reference cannot be empty").max(100),
       }))
       .mutation(async ({ input, ctx }) => {
-        const booking = await getBookingById(input.bookingId);
+        return withBookingActorWrite(ctx, input.bookingId, async (writer, scope) => {
+        const booking = await getBookingById(input.bookingId, writer);
         if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
         // Agents can only update their own bookings
-        if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: 'FORBIDDEN' });
-        }
+        await assertBookingActorAccess(ctx, booking, "operate");
         try {
-          await updateBookingAdminFields(input.bookingId, { crmRef: input.crmRef });
+          await updateBookingAdminFields(input.bookingId, { crmRef: input.crmRef }, writer);
         } catch (error) {
           if (ctx.user.role !== "agent") staffBookingReferenceError(error);
           throw error;
@@ -1658,8 +1636,10 @@ export const appRouter = router({
           authorId: ctx.user.id,
           content: `[System] ${ctx.user.role === 'agent' ? 'Agent' : 'Admin'} set Orbit reference to "${input.crmRef}".`,
           isInternal: false,
-        });
+        }, writer);
         return { success: true };
+
+        }, "operate", { operation: "booking_orbit_ref_updated", referenceLock: true });
       }),
 
     // Bulk import bookings from CSV (admin only)
@@ -1950,12 +1930,34 @@ export const appRouter = router({
         if (!isAllowedMimeType(input.mimeType, input.fileName)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Only ${ALLOWED_TYPES_LABEL} files are allowed.` });
         }
+        await getBookingActorScope(ctx, "operate");
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
+        const scope = await assertBookingActorAccess(ctx, booking, "operate");
         const buffer = Buffer.from(input.fileBase64, "base64");
+        if (buffer.length > 20 * 1024 * 1024 || !buffer.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Attachment must contain 1 byte to 20 MB." });
+        if (scope.managed) {
+          const { storagePutEncrypted } = await import("./storage");
+          const { bookingDocuments } = await import("../drizzle/schema");
+          const { eq } = await import("drizzle-orm");
+          const { getDb } = await import("./db");
+          const key = `${SHARED_BOOKING_MESSAGE_PREFIX}/${input.bookingId}/${nanoid(24)}.enc`;
+          await storagePutEncrypted(key, buffer);
+          return withBookingActorWrite(ctx, input.bookingId, async (writer) => {
+            const lockedBooking = await getBookingById(input.bookingId, writer);
+            if (!lockedBooking) throw new TRPCError({ code: "NOT_FOUND" });
+            await assertBookingActorAccess(ctx, lockedBooking, "operate");
+            const db = writer ?? await getDb();
+            if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+            const result = await db.insert(bookingDocuments).values({ bookingId: input.bookingId, uploadedById: ctx.user.id, uploadedByName: ctx.user.name ?? null, docType: "other", displayName: input.fileName.slice(0, 255), fileKey: key, fileUrl: "", mimeType: input.mimeType, fileSize: buffer.length });
+            const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+            if (!Number.isSafeInteger(id) || id < 1) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+            const url = bookingDocumentDownloadUrl(id);
+            await db.update(bookingDocuments).set({ fileUrl: url }).where(eq(bookingDocuments.id, id));
+            await createNote({ bookingId: input.bookingId, authorId: ctx.user.id, content: `[System] ${ctx.user.name ?? "User"} uploaded message attachment "${input.fileName}".`, isInternal: false }, writer);
+            return { url, fileName: input.fileName };
+          });
+        }
         const key = `msg-attachments/${input.bookingId}-${nanoid(8)}-${input.fileName}`;
         let url: string;
         try {
@@ -1977,18 +1979,17 @@ export const appRouter = router({
         expectedCommission: z.number().min(0),
       }))
       .mutation(async ({ input, ctx }) => {
-        const booking = await getBookingById(input.bookingId);
+        return withBookingActorWrite(ctx, input.bookingId, async (writer, scope) => {
+        const booking = await getBookingById(input.bookingId, writer);
         if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
-        if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: 'FORBIDDEN' });
-        }
+        await assertBookingActorAccess(ctx, booking, "operate");
         if (ctx.user.role === 'agent' && booking.grossCostLockedAt != null) {
           throw new TRPCError({ code: 'FORBIDDEN', message: 'Gross selling price is locked. Contact an admin to make changes.' });
         }
         const { getDb } = await import('./db');
         const { bookings: bookingsTable } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
-        const db = await getDb();
+        const db = writer ?? await getDb();
         if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
         const now = new Date();
         await db.update(bookingsTable)
@@ -1998,7 +1999,10 @@ export const appRouter = router({
             grossCostLockedAt: booking.grossCostLockedAt ?? now,
           })
           .where(eq(bookingsTable.id, input.bookingId));
-        return getBookingById(input.bookingId);
+        const updated = await getBookingById(input.bookingId, writer);
+        return scope.managed && updated ? withoutStaffClaimFields(updated) : updated;
+
+        }, "operate", { operation: "booking_gross_updated" });
       }),
     // Admin: override gross selling price + expected commission (bypasses lock)
     adminUpdateGrossData: adminProcedure
@@ -2165,6 +2169,7 @@ export const appRouter = router({
   notes: router({
     // Agent: get threads on my bookings where the latest shared note came from admin (unanswered)
     myUnansweredThreads: protectedProcedure.query(async ({ ctx }) => {
+      const scope = await getBookingActorScope(ctx, "read");
       const db = await (await import('./db')).getDb();
       if (!db) return [];
       const { notes: notesTable, users: usersTable, bookings: bookingsTable } = await import('../drizzle/schema');
@@ -2176,6 +2181,7 @@ export const appRouter = router({
           content: notesTable.content,
           createdAt: notesTable.createdAt,
           isReadByAgent: notesTable.isReadByAgent,
+          authorId: notesTable.authorId,
           authorRole: usersTable.role,
           authorName: usersTable.name,
           clientName: bookingsTable.clientName,
@@ -2188,14 +2194,15 @@ export const appRouter = router({
         .innerJoin(bookingsTable, eq(notesTable.bookingId, bookingsTable.id))
         .where(and(
           eq(notesTable.isInternal, false),
-          eq(bookingsTable.agentId, ctx.user.id),
+          eq(bookingsTable.agentId, scope.ownerUserId),
+          scope.managed ? eq(bookingsTable.isPersonalBooking, false) : undefined,
           not(like(notesTable.content, '[System]%')),
         ))
         .orderBy(desc(notesTable.createdAt));
       // Group by bookingId, keep only threads where latest note is from admin/super_admin
       const threadMap = new Map<number, {
         bookingId: number; clientName: string; topdogRef: string | null; ptsRef: string | null;
-        latestMessage: string; latestMessageAt: Date; latestAuthorName: string; latestAuthorRole: string;
+        latestMessage: string; latestMessageAt: Date; latestAuthorName: string; latestAuthorRole: string; latestAuthorId: number;
         totalMessages: number; isReadByAgent: boolean;
       }>();
       for (const row of allRows) {
@@ -2207,6 +2214,7 @@ export const appRouter = router({
             ptsRef: row.ptsRef ?? null,
             latestMessage: row.content,
             latestMessageAt: row.createdAt,
+            latestAuthorId: row.authorId,
             latestAuthorName: row.authorName ?? 'JLT Team',
             latestAuthorRole: row.authorRole ?? 'agent',
             totalMessages: 1,
@@ -2225,6 +2233,7 @@ export const appRouter = router({
     }),
     // Agent: get ALL message threads on my bookings (for the full messages page)
     myAllThreads: protectedProcedure.query(async ({ ctx }) => {
+      const scope = await getBookingActorScope(ctx, "read");
       const db = await (await import('./db')).getDb();
       if (!db) return [];
       const { notes: notesTable, users: usersTable, bookings: bookingsTable } = await import('../drizzle/schema');
@@ -2235,6 +2244,7 @@ export const appRouter = router({
           bookingId: notesTable.bookingId,
           content: notesTable.content,
           createdAt: notesTable.createdAt,
+          authorId: notesTable.authorId,
           authorRole: usersTable.role,
           authorName: usersTable.name,
           clientName: bookingsTable.clientName,
@@ -2247,13 +2257,14 @@ export const appRouter = router({
         .innerJoin(bookingsTable, eq(notesTable.bookingId, bookingsTable.id))
         .where(and(
           eq(notesTable.isInternal, false),
-          eq(bookingsTable.agentId, ctx.user.id),
+          eq(bookingsTable.agentId, scope.ownerUserId),
+          scope.managed ? eq(bookingsTable.isPersonalBooking, false) : undefined,
           not(like(notesTable.content, '[System]%')),
         ))
         .orderBy(desc(notesTable.createdAt));
       const threadMap = new Map<number, {
         bookingId: number; clientName: string; topdogRef: string | null; ptsRef: string | null;
-        latestMessage: string; latestMessageAt: Date; latestAuthorName: string; latestAuthorRole: string;
+        latestMessage: string; latestMessageAt: Date; latestAuthorName: string; latestAuthorRole: string; latestAuthorId: number;
         totalMessages: number;
       }>();
       for (const row of allRows) {
@@ -2265,6 +2276,7 @@ export const appRouter = router({
             ptsRef: row.ptsRef ?? null,
             latestMessage: row.content,
             latestMessageAt: row.createdAt,
+            latestAuthorId: row.authorId,
             latestAuthorName: row.authorName ?? 'JLT Team',
             latestAuthorRole: row.authorRole ?? 'agent',
             totalMessages: 1,
@@ -2280,21 +2292,21 @@ export const appRouter = router({
     markThreadRead: protectedProcedure
       .input(z.object({ bookingId: z.number() }))
       .mutation(async ({ input, ctx }) => {
-        const db = await (await import('./db')).getDb();
-        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-        const { notes: notesTable, bookings: bookingsTable } = await import('../drizzle/schema');
+        await getBookingActorScope(ctx, "read");
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        await assertBookingActorAccess(ctx, booking, "read");
+        const { notes: notesTable } = await import('../drizzle/schema');
         const { eq, and } = await import('drizzle-orm');
-        // Verify the booking belongs to this agent
-        const [booking] = await db.select({ agentId: bookingsTable.agentId })
-          .from(bookingsTable)
-          .where(eq(bookingsTable.id, input.bookingId))
-          .limit(1);
-        if (!booking || booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'Not your booking' });
-        }
-        await db.update(notesTable)
-          .set({ isReadByAgent: true })
-          .where(and(eq(notesTable.bookingId, input.bookingId), eq(notesTable.isInternal, false)));
+        await withBookingActorWrite(ctx, input.bookingId, async (writer) => {
+          const lockedBooking = await getBookingById(input.bookingId, writer);
+          if (!lockedBooking) throw new TRPCError({ code: "NOT_FOUND" });
+          await assertBookingActorAccess(ctx, lockedBooking, "read");
+          const db = writer ?? await (await import('./db')).getDb();
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+          await db.update(notesTable).set({ isReadByAgent: true })
+            .where(and(eq(notesTable.bookingId, input.bookingId), eq(notesTable.isInternal, false)));
+        }, "read");
         return { success: true };
       }),
 
@@ -2369,13 +2381,13 @@ export const appRouter = router({
     list: protectedProcedure
       .input(z.object({ bookingId: z.number() }))
       .query(async ({ input, ctx }) => {
+        await getBookingActorScope(ctx, "read");
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
-        const includeInternal = ctx.user.role !== "agent";
-        const noteRows = await getNotesByBooking(input.bookingId, includeInternal);
+        const scope = await assertBookingActorAccess(ctx, booking, "read");
+        const includeInternal = !scope.managed && ctx.user.role !== "agent";
+        const rawNotes = await getNotesByBooking(input.bookingId, includeInternal);
+        const noteRows = scope.managed ? await sharedBookingNoteAttachments(rawNotes.filter(note => !note.isInternal), input.bookingId) : rawNotes;
         // Enrich with author info
         const enriched = await Promise.all(
           noteRows.map(async (n) => {
@@ -2392,6 +2404,7 @@ export const appRouter = router({
     byAmendment: protectedProcedure
       .input(z.object({ amendmentId: z.number() }))
       .query(async ({ input, ctx }) => {
+        await getBookingActorScope(ctx, "read");
         const db = await (await import("./db")).getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         const { amendments: amendmentsTable } = await import("../drizzle/schema");
@@ -2401,11 +2414,10 @@ export const appRouter = router({
         if (!amendment) throw new TRPCError({ code: "NOT_FOUND", message: "Amendment not found" });
         const booking = await getBookingById(amendment.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND", message: "Booking not found" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
+        const scope = await assertBookingActorAccess(ctx, booking, "read");
         const { getNotesByAmendment } = await import("./db");
-        const noteRows = await getNotesByAmendment(input.amendmentId);
+        const rawNotes = (await getNotesByAmendment(input.amendmentId)).filter(note => !note.isInternal && note.bookingId === booking.id);
+        const noteRows = scope.managed ? await sharedBookingNoteAttachments(rawNotes, booking.id) : rawNotes;
         return Promise.all(noteRows.map(async (note) => {
           const author = await getUserById(note.authorId);
           return { ...note, authorName: author?.name ?? "JLT Team", authorRole: author?.role ?? "admin" };
@@ -2423,15 +2435,17 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        const actorScope = await getBookingActorScope(ctx, "operate");
+        if (actorScope.managed && (input.isInternal || input.amendmentId !== undefined || input.createActionTasks || (input.mentionUserIds?.length ?? 0) > 0)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Business staff can send shared booking messages only." });
+        }
         // Agents cannot post internal notes
         if (input.isInternal && ctx.user.role === "agent") {
           throw new TRPCError({ code: "FORBIDDEN", message: "Agents cannot post internal notes" });
         }
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
+        await assertBookingActorAccess(ctx, booking, "operate");
         if (input.amendmentId) {
           if (ctx.user.role === "agent") {
             throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can send a message directly from an amendment" });
@@ -2451,13 +2465,20 @@ export const appRouter = router({
             if (recipientId !== ctx.user.id) await assertNewAdminTaskAssignee(recipientId);
           }
         }
-        const createdNote = await createNote({
-          bookingId: input.bookingId,
-          amendmentId: input.amendmentId,
-          authorId: ctx.user.id,
-          content: input.content,
-          isInternal: input.isInternal,
+        const createdNote = await withBookingActorWrite(ctx, input.bookingId, async (writer, scope) => {
+          const lockedBooking = await getBookingById(input.bookingId, writer);
+          if (!lockedBooking) throw new TRPCError({ code: "NOT_FOUND" });
+          await assertBookingActorAccess(ctx, lockedBooking, "operate");
+          if (scope.managed) await assertSharedBookingAttachmentReferences(input.content, input.bookingId, writer);
+          return createNote({
+            bookingId: input.bookingId,
+            amendmentId: input.amendmentId,
+            authorId: ctx.user.id,
+            content: input.content,
+            isInternal: input.isInternal,
+          }, writer);
         });
+
 
         // Selected mention recipients are passed as IDs by the internal-note
         // composer and always verified server-side. The legacy name parser stays
@@ -2633,10 +2654,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
-        await createAmendment({ ...input, agentId: ctx.user.id, lineItems: input.lineItems });
+        await assertFormalBookingAccess(ctx, booking, "operate");
         // System audit note — show structured summary if line items present
         const summaryLines = (input.lineItems ?? []).map((li) => {
           const typeLabel = li.type === "add_supplier" ? "Add" : li.type === "remove_supplier" ? "Remove" : li.type === "change_cost" ? "Change Cost" : "Other";
@@ -2648,11 +2666,18 @@ export const appRouter = router({
         const auditContent = summaryLines.length > 0
           ? `[System] Amendment submitted by ${ctx.user.name ?? "Agent"}: ${summaryLines.join(" | ")}.`
           : `[System] Amendment submitted by ${ctx.user.name ?? "Agent"}: ${input.details.slice(0, 120)}.`;
-        await createNote({
-          bookingId: input.bookingId,
-          authorId: ctx.user.id,
-          content: auditContent,
-          isInternal: false,
+        const amendmentId = await withFormalBookingWrite(ctx, input.bookingId, async (writer, scope) => {
+          const current = await getBookingById(input.bookingId, writer);
+          if (!current) throw new TRPCError({ code: "NOT_FOUND" });
+          await assertFormalBookingAccess(ctx, current, "operate");
+          const requestId = await createAmendment({ ...input, agentId: scope.ownerUserId, lineItems: input.lineItems }, writer);
+          await createNote({
+            bookingId: input.bookingId,
+            authorId: ctx.user.id,
+            content: `${auditContent} Amendment #${requestId}.`,
+            isInternal: false,
+          }, writer);
+          return requestId;
         });
         // Notify admins in-app + email support@ for workflow events
         const allUsers = await getAllUsers();
@@ -2666,7 +2691,7 @@ export const appRouter = router({
           });
         }
         // Admin email notification disabled — admins use dashboard + in-app notifications
-        return { success: true };
+        return { success: true, amendmentId };
       }),
     byBooking: protectedProcedure
       .input(z.object({ bookingId: z.number() }))
@@ -2674,9 +2699,7 @@ export const appRouter = router({
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
         // Agents can only see amendments for their own bookings
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
+        await assertFormalBookingAccess(ctx, booking);
         const amendments = await getAmendmentsByBooking(input.bookingId);
         // Enrich with assignee name
         const allUsers = await getAllUsers();
@@ -2688,8 +2711,18 @@ export const appRouter = router({
       }),
     getLineItems: protectedProcedure
       .input(z.object({ amendmentId: z.number() }))
-      .query(async ({ input }) => {
-        const { getLineItemsByAmendment } = await import("./db");
+      .query(async ({ input, ctx }) => {
+        const { getLineItemsByAmendment, getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { amendments } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const [amendment] = await db.select().from(amendments).where(eq(amendments.id, input.amendmentId)).limit(1);
+        if (!amendment) throw new TRPCError({ code: "NOT_FOUND" });
+        const booking = await getBookingById(amendment.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        await assertFormalBookingAccess(ctx, booking);
+        if (amendment.agentId !== booking.agentId) throw new TRPCError({ code: "FORBIDDEN" });
         return getLineItemsByAmendment(input.amendmentId);
       }),
     all: adminProcedure.query(async () => {
@@ -2823,18 +2856,22 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
-       await createCancellation({ bookingId: input.bookingId, agentId: ctx.user.id });
-        await updateBookingStage(input.bookingId, "Cancellation Requested", ctx.user.id);
+        await assertFormalBookingAccess(ctx, booking, "operate");
         // System audit note
         const reasonText = input.reason ? ` Reason: ${input.reason}` : "";
-        await createNote({
-          bookingId: input.bookingId,
-          authorId: ctx.user.id,
-          content: `[System] Cancellation requested by ${ctx.user.name ?? "Agent"}. Agent confirmed they have cancelled directly with the supplier.${reasonText} Booking moved to "Cancellation Requested" stage pending admin review so JLT can update PTS and cancel any pending supplier payments.`,
-          isInternal: false,
+        const cancellationId = await withFormalBookingWrite(ctx, input.bookingId, async (writer, scope) => {
+          const current = await getBookingById(input.bookingId, writer);
+          if (!current) throw new TRPCError({ code: "NOT_FOUND" });
+          await assertFormalBookingAccess(ctx, current, "operate");
+          const requestId = await createCancellation({ bookingId: input.bookingId, agentId: scope.ownerUserId }, writer);
+          await updateBookingStage(input.bookingId, "Cancellation Requested", ctx.user.id, writer);
+          await createNote({
+            bookingId: input.bookingId,
+            authorId: ctx.user.id,
+            content: `[System] Cancellation #${requestId} requested by ${ctx.user.name ?? "Agent"}. Agent confirmed they have cancelled directly with the supplier.${reasonText} Booking moved to "Cancellation Requested" stage pending admin review so JLT can update PTS and cancel any pending supplier payments.`,
+            isInternal: false,
+          }, writer);
+          return requestId;
         });
         // Notify all admins in-app
         const allUsers = await getAllUsers();
@@ -2864,12 +2901,15 @@ export const appRouter = router({
         } catch (_) {
           // Non-fatal — in-app notifications already sent
         }
-        return { success: true };
+        return { success: true, cancellationId };
       }),
     all: adminProcedure.query(async () => getAllCancellations()),
-    byBooking: adminProcedure
+    byBooking: protectedProcedure
       .input(z.object({ bookingId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        await assertFormalBookingAccess(ctx, booking);
         return getCancellationsByBooking(input.bookingId);
       }),
     markActioned: adminProcedure
@@ -2942,15 +2982,25 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
-        const refundId = await createRefund({
-          ...input,
-          agentId: ctx.user.id,
-          clientBankName: encryptOptional(input.clientBankName) ?? undefined,
-          clientSortCode: encryptOptional(input.clientSortCode) ?? undefined,
-          clientAccountNumber: encryptOptional(input.clientAccountNumber) ?? undefined,
+        await assertFormalBookingAccess(ctx, booking, "operate");
+        const refundId = await withFormalBookingWrite(ctx, input.bookingId, async (writer, scope) => {
+          const current = await getBookingById(input.bookingId, writer);
+          if (!current) throw new TRPCError({ code: "NOT_FOUND" });
+          await assertFormalBookingAccess(ctx, current, "operate");
+          const requestId = await createRefund({
+            ...input,
+            agentId: scope.ownerUserId,
+            clientBankName: encryptOptional(input.clientBankName) ?? undefined,
+            clientSortCode: encryptOptional(input.clientSortCode) ?? undefined,
+            clientAccountNumber: encryptOptional(input.clientAccountNumber) ?? undefined,
+          }, writer);
+          await createNote({
+            bookingId: input.bookingId,
+            authorId: ctx.user.id,
+            content: `[System] Refund request #${requestId} submitted by ${ctx.user.name ?? "Agent"} (type: ${input.refundType}, reason: ${input.refundReason.slice(0, 80)}).`,
+            isInternal: false,
+          }, writer);
+          return requestId;
         });
         // Notify admins in-app + email support@ for workflow events
         const allUsers = await getAllUsers();
@@ -3014,13 +3064,6 @@ export const appRouter = router({
           console.error('[Refund] Failed to send confirmation email to agent:', emailErr);
           // Non-fatal — refund was still created successfully
         }
-        // System audit note
-        await createNote({
-          bookingId: input.bookingId,
-          authorId: ctx.user.id,
-          content: `[System] Refund request submitted by ${ctx.user.name ?? "Agent"} (type: ${input.refundType}, reason: ${input.refundReason.slice(0, 80)}).`,
-          isInternal: false,
-        });
         return { success: true, refundId };
       }),
     byBooking: protectedProcedure
@@ -3028,9 +3071,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
+        await assertFormalBookingAccess(ctx, booking);
         const refundRows = await getRefundsByBooking(input.bookingId);
         const allUsers = await getAllUsers();
         const userMap = new Map(allUsers.map((u) => [u.id, u]));
@@ -4951,12 +4992,12 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     getByBooking: protectedProcedure
       .input(z.object({ bookingId: z.number() }))
       .query(async ({ input, ctx }) => {
-        const items = await getReimbursementsByBooking(input.bookingId);
-        // Agents can only see their own booking's reimbursements
-        if (ctx.user.role === "agent" && items.length > 0 && items[0].agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
-        return items;
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        await assertFormalBookingAccess(ctx, booking);
+        // Authorize the booking even when no items exist, and validate every
+        // item owner before the helper loads documents or creates signed URLs.
+        return getReimbursementsByBooking(input.bookingId, booking.agentId);
       }),
 
     // Admin: list all reimbursements with optional status filter
@@ -5095,22 +5136,32 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         const { getBookingById: getBooking } = await import("./db");
         const booking = await getBooking(input.bookingId);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
+        await assertFormalBookingAccess(ctx, booking, "operate");
         // Determine if this is late (booking already at Added to PTS or later)
         const lateStages = ["Added to PTS", "Commission Claimable", "Commission Claimed", "Commission Due for Payment", "Commission Paid", "Cancelled", "Holding Accounts"];
-        const isLate = lateStages.includes(booking.currentStage);
-        const created = await createReimbursementItems(
-          input.items.map((item) => ({
+        const { created, isLate } = await withFormalBookingWrite(ctx, input.bookingId, async (writer) => {
+          const current = await getBooking(input.bookingId, writer);
+          if (!current) throw new TRPCError({ code: "NOT_FOUND" });
+          await assertFormalBookingAccess(ctx, current, "operate");
+          const isLate = lateStages.includes(current.currentStage);
+          const created = await createReimbursementItems(
+            input.items.map((item) => ({
+              bookingId: input.bookingId,
+              agentId: current.agentId,
+              supplierName: item.supplierName,
+              amount: item.amount,
+              isLate,
+              jltCompanyCard: item.jltCompanyCard ?? false,
+            })), writer
+          );
+          await createNote({
             bookingId: input.bookingId,
-            agentId: booking.agentId,
-            supplierName: item.supplierName,
-            amount: item.amount,
-            isLate,
-            jltCompanyCard: item.jltCompanyCard ?? false,
-          }))
-        );
+            authorId: ctx.user.id,
+            content: `[System] Reimbursement items ${created.map((item) => `#${item.id}`).join(", ")} added by ${ctx.user.name ?? "Agent"}.`,
+            isInternal: false,
+          }, writer);
+          return { created, isLate };
+        });
         // Notify admins of late reimbursement
         if (isLate) {
           const admins = (await getAllUsers()).filter((u) => u.role === "admin" || u.role === "super_admin");
@@ -5136,13 +5187,30 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         fileName: z.string(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const { addReimbursementItemDoc } = await import("./db");
-        // Verify the reimbursement item exists and belongs to this agent (if agent)
-        const items = await getReimbursementsByBooking(input.bookingId);
-        const item = items.find((i) => i.id === input.reimbursementItemId);
+        const { addReimbursementItemDoc, getReimbursementItemById } = await import("./db");
+        // Resolve the actual item and booking before reading docs or touching storage.
+        const item = await getReimbursementItemById(input.reimbursementItemId);
         if (!item) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.user.role === "agent" && item.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN" });
+        if (item.bookingId !== input.bookingId) throw new TRPCError({ code: "FORBIDDEN" });
+        const booking = await getBookingById(item.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        const scope = await assertFormalBookingAccess(ctx, booking, "operate");
+        if (item.agentId !== booking.agentId) throw new TRPCError({ code: "FORBIDDEN" });
+        if (scope.managed) {
+          const match = /^data:([^;]+);base64,(.+)$/.exec(input.fileUrl);
+          if (!match) throw new TRPCError({ code: "FORBIDDEN", message: "Business staff must upload the document itself, not an existing file URL or storage key." });
+          const { uploadPrivateStaffBookingDocument } = await import("./booking-document-download-routes");
+          const privateDocs = await uploadPrivateStaffBookingDocument(ctx, { bookingId: input.bookingId, fileName: input.fileName, mimeType: match[1], fileBase64: match[2] }, async (writer, doc) => {
+            const currentItem = await getReimbursementItemById(input.reimbursementItemId, writer, true);
+            if (!currentItem || currentItem.bookingId !== input.bookingId || currentItem.agentId !== scope.ownerUserId) throw new TRPCError({ code: "FORBIDDEN", message: "Reimbursement item has changed." });
+            const docs = await addReimbursementItemDoc({ reimbursementItemId: currentItem.id, bookingId: currentItem.bookingId, fileUrl: doc.url, fileKey: doc.fileKey, fileName: input.fileName, uploadedById: ctx.user.id }, writer);
+            await uploadReimbursementDoc(currentItem.bookingId, doc.url, false, writer);
+            await createNote({ bookingId: currentItem.bookingId, authorId: ctx.user.id, content: `[System] Document uploaded for reimbursement #${currentItem.id} by ${ctx.user.name ?? "Agent"}.`, isInternal: false }, writer);
+            return docs;
+          });
+          const admins = (await getAllUsers()).filter(user => user.role === "admin" || user.role === "super_admin");
+          for (const admin of admins) await createInAppNotification({ userId: admin.id, message: `Document uploaded for reimbursement "${item.supplierName}" on booking #${input.bookingId}.`, linkUrl: `/bookings/${input.bookingId}` });
+          return privateDocs;
         }
         // If the client sent a base64 data URL, upload it to S3 first
         let finalUrl = input.fileUrl;
@@ -5167,16 +5235,42 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             });
           }
         }
-        const docs = await addReimbursementItemDoc({
-          reimbursementItemId: input.reimbursementItemId,
-          bookingId: input.bookingId,
-          fileUrl: finalUrl,
-          fileKey: input.fileKey,
-          fileName: input.fileName,
-          uploadedById: ctx.user.id,
+        // Storage can await external I/O: recheck current authority, booking and
+        // locked item before registration, never rely on the pre-upload snapshot.
+        const docs = await withFormalBookingWrite(ctx, item.bookingId, async (writer) => {
+          const currentBooking = await getBookingById(item.bookingId, writer);
+          if (!currentBooking) throw new TRPCError({ code: "NOT_FOUND" });
+          await assertFormalBookingAccess(ctx, currentBooking, "operate");
+          const currentItem = await getReimbursementItemById(input.reimbursementItemId, writer, !!writer);
+          if (!currentItem || currentItem.bookingId !== input.bookingId || currentItem.agentId !== currentBooking.agentId) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Reimbursement item has changed." });
+          }
+          const docs = await addReimbursementItemDoc({
+            reimbursementItemId: currentItem.id,
+            bookingId: currentItem.bookingId,
+            fileUrl: finalUrl,
+            fileKey: input.fileKey,
+            fileName: input.fileName,
+            uploadedById: ctx.user.id,
+          }, writer);
+          // Keep legacy badges in sync on the same writer, not the global DB.
+          if (writer) {
+            await updateBookingAdminFields(currentItem.bookingId, {
+              reimbursementDocUrl: finalUrl,
+              reimbursementDocUploadedAt: new Date(),
+              reimbursementDocLateUpload: false,
+            }, writer);
+          } else {
+            await uploadReimbursementDoc(currentItem.bookingId, finalUrl, false);
+          }
+          await createNote({
+            bookingId: currentItem.bookingId,
+            authorId: ctx.user.id,
+            content: `[System] Document uploaded for reimbursement #${currentItem.id} by ${ctx.user.name ?? "Agent"}.`,
+            isInternal: false,
+          }, writer);
+          return docs;
         });
-        // Keep the legacy reimbursementDocUrl field in sync so Kanban badges stay accurate
-        await uploadReimbursementDoc(input.bookingId, finalUrl, false);
         // Notify admins when an agent uploads a doc
         if (ctx.user.role === "agent") {
           const admins = (await getAllUsers()).filter((u) => u.role === "admin" || u.role === "super_admin");
@@ -5195,14 +5289,15 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     getItemDocs: protectedProcedure
       .input(z.object({ reimbursementItemId: z.number(), bookingId: z.number() }))
       .query(async ({ input, ctx }) => {
-        const { getReimbursementItemDocs } = await import("./db");
-        // Verify ownership for agents
-        if (ctx.user.role === "agent") {
-          const items = await getReimbursementsByBooking(input.bookingId);
-          const item = items.find((i) => i.id === input.reimbursementItemId);
-          if (!item || item.agentId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
-        }
-        return getReimbursementItemDocs(input.reimbursementItemId);
+        const { getReimbursementItemDocs, getReimbursementItemById } = await import("./db");
+        const item = await getReimbursementItemById(input.reimbursementItemId);
+        if (!item || item.bookingId !== input.bookingId) throw new TRPCError({ code: "FORBIDDEN" });
+        const booking = await getBookingById(item.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        const scope = await assertFormalBookingAccess(ctx, booking);
+        if (item.agentId !== booking.agentId) throw new TRPCError({ code: "FORBIDDEN" });
+        const docs = await getReimbursementItemDocs(item.id, item.bookingId);
+        return scope.managed ? docs.map(doc => ({ ...doc, fileUrl: sharedReimbursementAttachmentUrl(doc) })) : docs;
       }),
     // Admin: correct a document linked to the wrong reimbursement item on the
     // same booking. This preserves the file and creates activity on both items.
@@ -5230,10 +5325,10 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
       .input(z.object({ bookingId: z.number() }))
       .query(async ({ input, ctx }) => {
         // Agents can only see their own bookings
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        await assertFormalBookingAccess(ctx, booking);
         if (ctx.user.role === "agent") {
-          const { getBookingById: getBooking } = await import("./db");
-          const booking = await getBooking(input.bookingId);
-          if (!booking || booking.agentId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
           // Chase notes and staff follow-up dates are internal. Agents see only the
           // established payment-status history for their own reimbursements.
           return (await getReimbursementAuditLog(input.bookingId))
@@ -5270,7 +5365,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     // Agent: get bookings that have at least one reimbursement item with no docs
     // Agent: comprehensive outstanding items summary for the dashboard
     agentOutstandingSummary: protectedProcedure.query(async ({ ctx }) => {
-      const agentId = ctx.user.id;
+      const scope = await formalRequestScope(ctx);
+      const agentId = scope.ownerUserId;
       const { getDb } = await import("./db");
       const db = await getDb();
       if (!db) return { reimbursements: [], amendments: [], refunds: [], flightRequests: [], cancellations: [] };
@@ -5287,7 +5383,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           ptsRef: bookings.ptsRef,
         })
         .from(bookings)
-        .where(eq(bookings.agentId, agentId));
+        .where(and(eq(bookings.agentId, agentId), scope.managed ? eq(bookings.isPersonalBooking, false) : undefined));
       const agentBookingIds = agentBookingRows.map((b) => b.id);
       const bookingNameMap = new Map(agentBookingRows.map((b) => [b.id, b.clientName]));
       const bookingReferenceMap = new Map(agentBookingRows.map((b) => [b.id, b.ptsRef ?? b.topdogRef ?? null]));
@@ -5298,6 +5394,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             .from(reimbursementItems)
             .where(and(
               inArray(reimbursementItems.bookingId, agentBookingIds),
+              eq(reimbursementItems.agentId, agentId),
               ne(reimbursementItems.status, "paid")
             ))
         : [];
@@ -5309,6 +5406,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             .from(amendments)
             .where(and(
               inArray(amendments.bookingId, agentBookingIds),
+              eq(amendments.agentId, agentId),
               ne(amendments.pipelineStage, "Actioned"),
               ne(amendments.status, "actioned"),
               ne(amendments.status, "rejected"),
@@ -5322,6 +5420,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
             .from(refunds)
             .where(and(
               inArray(refunds.bookingId, agentBookingIds),
+              eq(refunds.agentId, agentId),
               ne(refunds.pipelineStage, "Refund Processed")
             ))
         : [];
@@ -5339,8 +5438,11 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           createdAt: flightRequests.createdAt,
         })
         .from(flightRequests)
+        .innerJoin(bookings, eq(flightRequests.bookingId, bookings.id))
         .where(and(
           eq(flightRequests.agentId, agentId),
+          eq(bookings.agentId, agentId),
+          scope.managed ? eq(bookings.isPersonalBooking, false) : undefined,
           ne(flightRequests.status, "ticketed"),
           ne(flightRequests.status, "cancelled")
         ));
@@ -5355,7 +5457,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           status: cancellations.status,
         })
         .from(cancellations)
-        .where(and(eq(cancellations.agentId, agentId), eq(cancellations.status, "pending")))
+        .innerJoin(bookings, eq(cancellations.bookingId, bookings.id))
+        .where(and(eq(cancellations.agentId, agentId), eq(bookings.agentId, agentId), scope.managed ? eq(bookings.isPersonalBooking, false) : undefined, eq(cancellations.status, "pending")))
         .orderBy(desc(cancellations.confirmedAt));
 
       return {
@@ -5411,7 +5514,8 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
 
     myBookingsWithMissingDocs: protectedProcedure.query(async ({ ctx }) => {
       const { getReimbItemsWithMissingDocsByAgent } = await import("./db");
-      return getReimbItemsWithMissingDocsByAgent(ctx.user.id);
+      const scope = await formalRequestScope(ctx);
+      return getReimbItemsWithMissingDocsByAgent(scope.ownerUserId, scope.managed);
     }),
 
     // Admin: count of outstanding reimbursements (pending, not yet scheduled)
@@ -6771,33 +6875,28 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     list: protectedProcedure
       .input(z.object({ bookingId: z.number() }))
       .query(async ({ input, ctx }) => {
+        await getBookingActorScope(ctx, "read");
+        const booking = await getBookingById(input.bookingId);
+        if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+        const scope = await assertBookingActorAccess(ctx, booking, "read");
         const { bookingDocuments } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
         const { getDb } = await import('./db');
-        const { storageGet } = await import('./storage');
         const db = await getDb();
         if (!db) return [];
-        // Agents can only see docs for their own bookings
-        if (ctx.user.role === 'agent') {
-          const booking = await getBookingById(input.bookingId);
-          if (!booking || booking.agentId !== ctx.user.id) throw new TRPCError({ code: 'FORBIDDEN' });
-        }
         const docs = await db
           .select()
           .from(bookingDocuments)
           .where(eq(bookingDocuments.bookingId, input.bookingId))
           .orderBy(bookingDocuments.createdAt);
-        // Generate fresh presigned download URLs for each document
-        return Promise.all(
-          docs.map(async (doc) => {
-            try {
-              const { url } = await storageGet(doc.fileKey);
-              return { ...doc, fileUrl: url };
-            } catch {
-              return doc; // fallback to stored URL if presign fails
-            }
-          })
-        );
+        // Never manufacture an R2 URL for an original CloudFront object.
+        // Receipts belong to Messages, not the standalone document list.
+        return docs.filter(doc => !isSharedMessageReceipt(doc)).map(doc => ({
+          ...doc,
+          fileUrl: scope.managed || isEncryptedBookingDocument(doc)
+            ? bookingDocumentDownloadUrl(doc.id)
+            : canonicalBookingDocumentProvider(doc)?.url ?? doc.fileUrl,
+        }));
       }),
 
     // Agent/Admin: upload a document to a booking
@@ -6816,17 +6915,35 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         if (!isAllowedMimeType(input.mimeType, input.filename)) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: `Only ${ALLOWED_TYPES_LABEL} files are allowed.` });
         }
+        await getBookingActorScope(ctx, "operate");
         const { bookingDocuments } = await import('../drizzle/schema');
         const { getDb } = await import('./db');
         const db = await getDb();
         if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-        // Agents can only upload to their own bookings
         const booking = await getBookingById(input.bookingId);
         if (!booking) throw new TRPCError({ code: 'NOT_FOUND' });
-        if (ctx.user.role === 'agent' && booking.agentId !== ctx.user.id) {
-          throw new TRPCError({ code: 'FORBIDDEN' });
-        }
+        const scope = await assertBookingActorAccess(ctx, booking, "operate");
         const buffer = Buffer.from(input.fileBase64, 'base64');
+        if (buffer.length > 20 * 1024 * 1024 || !buffer.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Document must contain 1 byte to 20 MB." });
+        if (scope.managed) {
+          const { storagePutEncrypted } = await import("./storage");
+          const { eq } = await import("drizzle-orm");
+          const key = `${SHARED_BOOKING_DOCUMENT_PREFIX}/${input.bookingId}/${nanoid(24)}.enc`;
+          await storagePutEncrypted(key, buffer);
+          return withBookingActorWrite(ctx, input.bookingId, async (writer) => {
+            const lockedBooking = await getBookingById(input.bookingId, writer);
+            if (!lockedBooking) throw new TRPCError({ code: "NOT_FOUND" });
+            await assertBookingActorAccess(ctx, lockedBooking, "operate");
+            const connection = writer ?? db;
+            const result = await connection.insert(bookingDocuments).values({ bookingId: input.bookingId, uploadedById: ctx.user.id, uploadedByName: ctx.user.name ?? null, docType: input.docType, displayName: input.displayName, fileKey: key, fileUrl: "", mimeType: input.mimeType, fileSize: buffer.length });
+            const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+            if (!Number.isSafeInteger(id) || id < 1) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+            const url = bookingDocumentDownloadUrl(id);
+            await connection.update(bookingDocuments).set({ fileUrl: url }).where(eq(bookingDocuments.id, id));
+            await createNote({ bookingId: input.bookingId, authorId: ctx.user.id, content: `[Document] ${ctx.user.name ?? "User"} uploaded "${input.displayName}" (${input.docType}).`, isInternal: false }, writer);
+            return { success: true, url, docId: id };
+          });
+        }
         const ext = input.filename.split('.').pop() ?? 'bin';
         const fileKey = `booking-docs/${input.bookingId}/${nanoid(12)}-${Date.now()}.${ext}`;
         let url: string;
@@ -6857,7 +6974,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           content: `[Document] ${ctx.user.name ?? 'User'} uploaded "${input.displayName}" (${input.docType}).`,
           isInternal: false,
         });
-        return { success: true };
+        return { success: true, url, docId: null };
       }),
 
     // Admin only: rename a document

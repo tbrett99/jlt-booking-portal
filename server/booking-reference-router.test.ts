@@ -14,6 +14,7 @@ vi.mock("./db", async (importOriginal) => {
 });
 vi.mock("./email", () => ({ sendNotificationEmail: vi.fn(), sendDirectEmail: vi.fn(), sendCredentialsEmail: vi.fn() }));
 vi.mock("./agent-merge-identity", () => ({ assertAgentNotMerged: vi.fn(), getArchivedAgentMergeIds: vi.fn(async () => []), getAgentMergeTarget: vi.fn(async () => null) }));
+vi.mock("./business-staff-access", async importOriginal => ({ ...await importOriginal<any>(), getBusinessStaffAuthority: vi.fn(async () => ({ managed: false })), assertBusinessStaffRouteAllowed: vi.fn(async () => undefined) }));
 import { BookingReferenceConflictError } from "./booking-reference-guard";
 import { appRouter } from "./routers";
 

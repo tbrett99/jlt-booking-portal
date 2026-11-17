@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useBusinessStaffBookingAccess } from "@/pages/business/BusinessStaffPortalLayout";
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,7 +72,7 @@ function ThreadCard({
 
           <p className="text-xs text-muted-foreground truncate mb-1">
             <span className="font-medium">
-              {isFromAdmin ? "JLT Team" : "You"}:
+              {isFromAdmin ? "JLT Team" : thread.latestAuthorName || "Colleague"}:
             </span>{" "}
             {thread.latestMessage.startsWith("[System]")
               ? "(system note)"
@@ -127,6 +128,7 @@ function ThreadCard({
 }
 
 export default function AgentMessages() {
+  const { canManage } = useBusinessStaffBookingAccess();
   const [tab, setTab] = useState<"unanswered" | "all">("unanswered");
   const [search, setSearch] = useState("");
   const [messageOrder, setMessageOrder] = useState<"oldest" | "newest">("oldest");
@@ -155,7 +157,7 @@ export default function AgentMessages() {
   });
 
   const handleMarkRead = (bookingId: number) => {
-    markThreadRead.mutate({ bookingId });
+    if (canManage) markThreadRead.mutate({ bookingId });
   };
 
   const isLoading = tab === "unanswered" ? loadingUnanswered : loadingAll;
@@ -317,7 +319,7 @@ export default function AgentMessages() {
                   key={thread.bookingId}
                   thread={thread}
                   showBadge={tab === "unanswered"}
-                  onMarkRead={tab === "unanswered" ? handleMarkRead : undefined}
+                  onMarkRead={canManage && tab === "unanswered" ? handleMarkRead : undefined}
                 />
               ))}
             </div>

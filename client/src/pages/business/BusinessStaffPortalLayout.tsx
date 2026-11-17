@@ -8,6 +8,8 @@ import {
   CreditCard,
   ExternalLink,
   GraduationCap,
+  FileText,
+  Plane,
   Home,
   LogOut,
   Mail,
@@ -46,6 +48,20 @@ export function BusinessStaffPortalProvider({
 
 export function useBusinessStaffPortalAuthority() {
   return useContext(BusinessStaffPortalContext);
+}
+
+// Reuse the single root authority without adding another stale query observer.
+// A supplied but inactive authority never falls back to ordinary-agent access.
+export function useBusinessStaffBookingAccess() {
+  const authority = useBusinessStaffPortalAuthority();
+  const isBusinessStaff = authority !== null;
+  const permissions = readBusinessStaffPermissions(authority?.membership?.permissions);
+  const active = authority?.managed === true && authority.active === true && !!authority.membership;
+  return {
+    isBusinessStaff,
+    canView: !isBusinessStaff || (active && permissions.viewBookings),
+    canManage: !isBusinessStaff || (active && permissions.viewBookings && permissions.manageBookings),
+  };
 }
 
 // The direct root shell and nested resource PortalLayout calls share one frame.
@@ -102,9 +118,17 @@ function BusinessStaffPortalBody({ children }: { children: ReactNode }) {
           ? [
               {
                 label: "My Bookings",
-                href: "/business-staff/bookings",
+                href: "/my-bookings",
                 icon: <BookOpen size={16} />,
               },
+              { label: "My Requests", href: "/my-requests", icon: <FileText size={16} /> },
+              { label: "Messages", href: "/messages", icon: <Mail size={16} /> },
+              ...(permissions.manageBookings ? [
+                { label: "Register Booking", href: "/bookings/new", icon: <BookOpen size={16} /> },
+                { label: "Request Amendment", href: "/request-amendment", icon: <FileText size={16} /> },
+                { label: "Flight Requests", href: "/flight-requests", icon: <Plane size={16} /> },
+                { label: "Cancel Booking", href: "/cancel-booking", icon: <X size={16} /> },
+              ] : []),
             ]
           : []),
       ],

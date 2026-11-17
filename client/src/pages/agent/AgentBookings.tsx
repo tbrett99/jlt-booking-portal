@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -19,6 +19,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { format } from "date-fns";
+import { useBusinessStaffBookingAccess } from "@/pages/business/BusinessStaffPortalLayout";
 
 const STAGE_BADGE: Record<string, { label: string; color: string; background: string }> = {
   "Query": { label: "Reply needed", color: "#9a3412", background: "#ffedd5" },
@@ -62,14 +63,35 @@ function RequestAction({
 }
 
 export default function AgentBookings() {
-  const [search, setSearch] = useState("");
-  const { data: bookings = [], isLoading } = trpc.bookings.myBookings.useQuery();
-  const { data: missingDocItems = [] } = trpc.reimbursements.myBookingsWithMissingDocs.useQuery();
-  const { data: flightRequests = [] } = trpc.flightRequests.myRequests.useQuery();
+  const access = useBusinessStaffBookingAccess();
+  if (!access.canView) return <p>Booking access is not assigned.</p>;
+  // Owner-only financial and identity sidecars never mount for managed staff.
+  return access.isBusinessStaff ? <BookingCentre topUpRequests={[]} orbitButton={<Button asChild className="gap-2 bg-[#70FFE8] text-[#414141]"><a href="https://orbit.thejltgroup.co.uk" target="_blank" rel="noopener noreferrer"><ExternalLink size={15} />Open your Orbit login</a></Button>} /> : <OrdinaryBookingCentre />;
+}
+
+function OrdinaryBookingCentre() {
   const { data: queriedTopUpRequests = [], isError: isTopUpRequestsError } = trpc.commissionClaims.myTopUpRequests.useQuery();
   const topUpRequests = isTopUpRequestsError ? [] : queriedTopUpRequests;
   const { data: myProfile } = trpc.crm.agentCrm.getMyProfile.useQuery();
   const openOrbit = trpc.sso.generateToken.useMutation();
+  const handleOpenOrbit = async () => {
+    try {
+      const { ssoUrl } = await openOrbit.mutateAsync();
+      window.open(ssoUrl, "_blank", "noopener,noreferrer");
+    } catch {
+      toast.error("Could not open Orbit. Please try again.");
+    }
+  };
+
+  return <BookingCentre topUpRequests={topUpRequests} orbitButton={myProfile?.orbitEnabled ? <Button onClick={handleOpenOrbit} disabled={openOrbit.isPending} className="gap-2 bg-[#70FFE8] font-semibold text-[#414141] hover:bg-[#54ead4]"><ExternalLink size={15} />{openOrbit.isPending ? "Opening Orbit..." : "Open Orbit"}</Button> : null} />;
+}
+
+function BookingCentre({ topUpRequests, orbitButton }: { topUpRequests: any[]; orbitButton: ReactNode }) {
+  const { canManage } = useBusinessStaffBookingAccess();
+  const [search, setSearch] = useState("");
+  const { data: bookings = [], isLoading } = trpc.bookings.myBookings.useQuery();
+  const { data: missingDocItems = [] } = trpc.reimbursements.myBookingsWithMissingDocs.useQuery();
+  const { data: flightRequests = [] } = trpc.flightRequests.myRequests.useQuery();
 
   const bookingQueries = bookings.filter((booking) => ["Query", "Reimb Docs Missing"].includes(booking.currentStage));
   const requiresPtsAction = bookings.filter(
@@ -85,34 +107,27 @@ export default function AgentBookings() {
     ...topUpRequests.map((request) => ({ bookingId: request.bookingId, clientName: request.booking?.clientName ?? "Commission file", description: "Already topped up? Notify JLT to review your transfer", severity: "notice" as const, href: `/commissions?tab=top-up&booking=${request.bookingId}` })),
   ], [bookingQueries, requiresPtsAction, missingDocItems, flightQueries, topUpRequests]);
 
-  const handleOpenOrbit = async () => {
-    try {
-      const { ssoUrl } = await openOrbit.mutateAsync();
-      window.open(ssoUrl, "_blank", "noopener,noreferrer");
-    } catch {
-      toast.error("Could not open Orbit. Please try again.");
-    }
-  };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div data-portal-route-content className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-col gap-4 rounded-2xl border bg-card p-5 shadow-sm sm:p-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <Link href="/dashboard" className="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"><ArrowLeft size={14} /> Back to JLT Home</Link>
           <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Bookings &amp; requests</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Use Orbit to create and manage live bookings. Use this request centre when you need to find a file or ask the JLT team to help with an amendment, cancellation, flight or document.</p>
         </div>
-        {myProfile?.orbitEnabled && <Button onClick={handleOpenOrbit} disabled={openOrbit.isPending} className="gap-2 bg-[#70FFE8] font-semibold text-[#414141] hover:bg-[#54ead4]"><ExternalLink size={15} />{openOrbit.isPending ? "Opening Orbit..." : "Open Orbit"}</Button>}
+        {orbitButton}
       </div>
 
-      <section>
+      {canManage && <section>
         <div className="mb-3"><h2 className="text-base font-bold text-foreground">What would you like to do?</h2><p className="mt-0.5 text-sm text-muted-foreground">Start a new request, or find an existing booking below.</p></div>
         <div className="grid gap-3 md:grid-cols-3">
           <RequestAction title="Request an amendment" description="Tell JLT about a change needed on an existing booking." icon={FileText} href="/request-amendment" tone="violet" />
           <RequestAction title="Request flights" description="Ask the team for help with a flight requirement." icon={Plane} href="/flight-requests" tone="sky" />
           <RequestAction title="Cancel a booking" description="Start a cancellation request with the correct booking details." icon={XCircle} href="/cancel-booking" tone="mint" />
         </div>
-      </section>
+      </section>}
+      {!canManage && <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">Read-only booking access. Contact your business owner to request booking-management permission.</p>}
 
       <section className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Card className="border-[#a7f3e8] shadow-sm">

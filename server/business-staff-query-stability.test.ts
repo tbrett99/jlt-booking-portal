@@ -6,7 +6,7 @@ import { Link, Route, Switch, useLocation } from "wouter";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import ts from "typescript";
-import { DEFAULT_BUSINESS_STAFF_PERMISSIONS } from "../shared/business-staff";
+import { DEFAULT_BUSINESS_STAFF_PERMISSIONS, readBusinessStaffPermissions } from "../shared/business-staff";
 
 // Only authentication and transport are synthetic. In particular, never mock
 // useQuery's flags, the root fetching guard, Workspace or its authority context.
@@ -38,9 +38,9 @@ vi.mock("@/lib/trpc", async () => {
       if (key === "then" || typeof key === "symbol") return undefined;
       if (key === "useQuery") return (input: any, options: any = {}) => {
         const path = parts.join(".");
-        if (path !== "businessStaff.mine" && path !== "businessBookings.list") deny(`${path}.useQuery`);
+        if (!["businessStaff.mine", "bookings.myBookings", "reimbursements.myBookingsWithMissingDocs", "flightRequests.myRequests"].includes(path)) deny(`${path}.useQuery`);
         if (path === "businessStaff.mine" && input !== undefined) deny(`${path}:unexpected-input`);
-        if (path === "businessBookings.list" && JSON.stringify(input) !== JSON.stringify({ page: 1, pageSize: 50 })) deny(`${path}:unexpected-input`);
+        if (path !== "businessStaff.mine" && input !== undefined) deny(`${path}:unexpected-input`);
         transport.hooks.push({ path, enabled: options.enabled !== false });
         // Options come verbatim from the actual components. Both mine observers
         // share the same cache entry, just as the actual tRPC hooks do. Do not
@@ -56,7 +56,7 @@ vi.mock("@/lib/trpc", async () => {
               if (transport.mineError) throw transport.mineError;
               return structuredClone(transport.authority);
             }
-            return { items: [], page: 1, pageSize: 50, hasMore: false };
+            return [];
           },
         });
       };
@@ -73,11 +73,12 @@ vi.mock("@/components/PortalLayout", async importOriginal => {
   // Preserve the real SidebarGroup export used by the actual staff shell. A
   // replacement provider/context here would mask the original observer bug.
   const actual = await importOriginal<any>();
-  return { ...actual, default: (props: any) => transport.ordinaryShell(props) };
+  return { ...actual, default: (props: any) => React.createElement(actual.default, props) };
 });
 
 import { trpc } from "../client/src/lib/trpc";
 import BusinessStaffWorkspace from "../client/src/pages/business/BusinessStaffWorkspace";
+import AgentBookings from "../client/src/pages/agent/AgentBookings";
 import BusinessStaffPortalLayout, { BusinessStaffPortalProvider } from "../client/src/pages/business/BusinessStaffPortalLayout";
 
 function WorkspaceProbe() {
@@ -88,6 +89,10 @@ function WorkspaceProbe() {
   return React.createElement(BusinessStaffWorkspace);
 }
 
+function BookingsProbe() {
+  React.useEffect(() => { transport.mounts++; return () => { transport.unmounts++; }; }, []);
+  return React.createElement(AgentBookings);
+}
 // Extract the production AuthRouter, not a test reimplementation of its guard.
 // This mirrors business-staff-auth-routing.test.ts, but supplies real queries,
 // Wouter routes, Workspace, provider and restricted shell instead of flag mocks.
@@ -119,7 +124,8 @@ Object.assign(dependencies, {
   React,
   useAuth: () => ({ user: transport.user, loading: false }),
   useViewMode: () => ({ isAgentView: false }),
-  useLocation, trpc, Link, Route, Switch,
+  useLocation, trpc, Link, Route, Switch, readBusinessStaffPermissions,
+  AgentBookings: BookingsProbe,
   BusinessStaffWorkspace: WorkspaceProbe,
   BusinessStaffPortalProvider,
   BusinessStaffPortalLayout,
@@ -128,7 +134,7 @@ Object.assign(dependencies, {
 const ActualAuthRouter = new Function(...Object.keys(dependencies), `${script}\nreturn AuthRouter;`)(...Object.values(dependencies));
 
 const MINE_KEY = ["businessStaff.mine", null];
-const LIST_KEY = ["businessBookings.list", { page: 1, pageSize: 50 }];
+const LIST_KEY = ["bookings.myBookings", null];
 const CACHED_RECORD = "SYNTHETIC_CACHED_BOOKING";
 function syntheticAuthority() {
   return {
@@ -175,16 +181,14 @@ function assertStableContent(path: string) {
   expect(host.querySelector("[data-business-staff-portal]")).not.toBeNull();
   expect(host.querySelector("[data-portal-route-content]")).not.toBeNull();
   expect(host.textContent).not.toMatch(/Checking (Portal|your business-staff) access|Loading records/);
-  expect(host.textContent).toContain("Working with Synthetic Owner");
   if (path === "/business-staff") {
+    expect(host.textContent).toContain("Working with Synthetic Owner");
     expect(host.querySelector("h1")?.textContent).toBe("Welcome, Synthetic");
     expect(host.textContent).toContain("Everything you need, in one place");
     expect(host.querySelector('[aria-label="Portal shortcuts"]')).not.toBeNull();
   } else {
-    expect(host.querySelector("h1")?.textContent).toBe("My Bookings");
-    expect(host.textContent).toContain("Business bookings");
-    expect(host.textContent).toContain("No matching records");
-    expect(host.querySelector('input[placeholder="Customer, destination or reference"]')).not.toBeNull();
+    expect(host.querySelector("h1")?.textContent).toBe("Bookings & requests");
+    expect(host.querySelector('input[aria-label="Search my bookings"]')).not.toBeNull();
   }
   assertNoFallback();
 }
@@ -193,11 +197,11 @@ function holdMine() {
 }
 async function seedVisibleCachedBooking() {
   await act(async () => {
-    client.setQueryData(LIST_KEY, {
-      items: [{ id: 701, clientName: CACHED_RECORD, destination: "Synthetic destination", departureDate: null, bookedDate: null, topdogRef: null, ptsRef: null, crmRef: null, currentStage: "Booked", passengers: 1, numberOfNights: 1 }],
-      page: 1, pageSize: 50, hasMore: false,
-    });
+    client.setQueryData(LIST_KEY, [{ id: 701, clientName: CACHED_RECORD, destination: "Synthetic destination", departureDate: null, bookedDate: null, topdogRef: null, ptsRef: null, crmRef: null, currentStage: "Booked", passengers: 1, numberOfNights: 1 }]);
   });
+  await flush();
+  const field = host.querySelector('input[aria-label="Search my bookings"]') as HTMLInputElement;
+  await act(async () => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; setter.call(field, CACHED_RECORD); field.dispatchEvent(new Event("input", { bubbles: true })); field.dispatchEvent(new Event("change", { bubbles: true })); });
   await flush();
   expect(host.textContent).toContain(CACHED_RECORD);
 }
@@ -254,11 +258,11 @@ describe("actual managed-staff router/query observer stability (React 19 / React
     expect(transport.mounts).toBe(1);
     expect(transport.unmounts).toBe(0);
     expect(requests("businessStaff.mine")).toBe(1);
-    expect(requests("businessBookings.list")).toBe(path.endsWith("/bookings") ? 1 : 0);
-    expect(client.getQueryCache().find({ queryKey: MINE_KEY, exact: true })?.getObserversCount()).toBe(2);
+    expect(requests("bookings.myBookings")).toBe(path.endsWith("/bookings") ? 1 : 0);
+    expect(client.getQueryCache().find({ queryKey: MINE_KEY, exact: true })?.getObserversCount()).toBe(path === "/business-staff" ? 2 : 1);
     expect(transport.hooks.filter(hook => hook.path === "businessStaff.mine").some(hook => hook.enabled)).toBe(true);
-    expect(transport.hooks.filter(hook => hook.path === "businessStaff.mine").some(hook => !hook.enabled)).toBe(true);
-    console.info(`[query-stability] ${path}: mine=${requests("businessStaff.mine")}, list=${requests("businessBookings.list")}, mounts=${transport.mounts}, unmounts=${transport.unmounts} after 250ms`);
+    if (path === "/business-staff") expect(transport.hooks.filter(hook => hook.path === "businessStaff.mine").some(hook => !hook.enabled)).toBe(true);
+    console.info(`[query-stability] ${path}: mine=${requests("businessStaff.mine")}, list=${requests("bookings.myBookings")}, mounts=${transport.mounts}, unmounts=${transport.unmounts} after 250ms`);
   });
 
   it("still performs one explicit fresh root check, then remounts bookings without an authority refetch loop", async () => {
@@ -270,7 +274,7 @@ describe("actual managed-staff router/query observer stability (React 19 / React
     await flush();
     expect(host.textContent).toContain("Checking Portal access");
     expect(host.querySelector("[data-portal-route-content]")).toBeNull();
-    expect(host.querySelector('input[placeholder="Customer, destination or reference"]')).toBeNull();
+    expect(host.querySelector('input[aria-label="Search my bookings"]')).toBeNull();
     expect(client.getQueryData(MINE_KEY)).toMatchObject({ active: true, managed: true });
     expect(client.isFetching({ queryKey: MINE_KEY, exact: true })).toBe(1);
     assertNoFallback();
@@ -279,7 +283,7 @@ describe("actual managed-staff router/query observer stability (React 19 / React
     assertStableContent("/business-staff/bookings");
     expect(requests("businessStaff.mine")).toBe(2);
     // A new booking observer may legitimately refresh its stale list once.
-    expect(requests("businessBookings.list")).toBe(2);
+    expect(requests("bookings.myBookings")).toBe(2);
     expect(transport.mounts).toBe(2);
     expect(transport.unmounts).toBe(1);
     console.info(`[query-stability] explicit active refetch: mine=2, list=2, mounts=2, unmounts=1`);
@@ -304,11 +308,11 @@ describe("actual managed-staff router/query observer stability (React 19 / React
     expect(host.textContent).toContain("Business-staff access revoked or inactive");
     expect(host.textContent).not.toContain(CACHED_RECORD);
     expect(host.textContent).not.toContain("Checking Portal access");
-    expect(host.querySelector('input[placeholder="Customer, destination or reference"]')).toBeNull();
+    expect(host.querySelector('input[aria-label="Search my bookings"]')).toBeNull();
     expect(client.getQueryData(MINE_KEY)).toMatchObject({ managed: true, active: false });
-    expect(client.getQueryData(LIST_KEY)).toMatchObject({ items: [{ clientName: CACHED_RECORD }] });
+    expect(client.getQueryData(LIST_KEY)).toMatchObject([{ clientName: CACHED_RECORD }]);
     expect(requests("businessStaff.mine")).toBe(2);
-    expect(requests("businessBookings.list")).toBe(1);
+    expect(requests("bookings.myBookings")).toBe(1);
     assertNoFallback();
     console.info(`[query-stability] root revocation: mine=2, list=1; cached booking retained in memory but withheld from DOM`);
   });
@@ -332,7 +336,7 @@ describe("actual managed-staff router/query observer stability (React 19 / React
     expect(host.querySelector("[data-business-staff-portal]")).toBeNull();
     expect(host.textContent).not.toContain(CACHED_RECORD);
     expect(requests("businessStaff.mine")).toBe(2);
-    expect(requests("businessBookings.list")).toBe(1);
+    expect(requests("bookings.myBookings")).toBe(1);
     assertNoFallback();
     transport.mineError = null;
     transport.mineWait = undefined;
@@ -343,7 +347,7 @@ describe("actual managed-staff router/query observer stability (React 19 / React
     assertStableContent("/business-staff/bookings");
     expect(client.getQueryState(MINE_KEY)?.status).toBe("success");
     expect(requests("businessStaff.mine")).toBe(3);
-    expect(requests("businessBookings.list")).toBe(2);
+    expect(requests("bookings.myBookings")).toBe(2);
     expect(transport.mounts).toBe(2);
     expect(transport.unmounts).toBe(1);
     console.info(`[query-stability] cache error/retry: mine=3, list=2; error withheld cached authority and booking`);
@@ -352,11 +356,12 @@ describe("actual managed-staff router/query observer stability (React 19 / React
   it("retains a functional standalone authority query when Workspace has no root provider", async () => {
     await render("/business-staff", React.createElement(BusinessStaffWorkspace));
     await flush(250);
+    expect(host.textContent).toContain("Working with Synthetic Owner");
     expect(host.querySelector("h1")?.textContent).toBe("Welcome, Synthetic");
     expect(host.textContent).toContain("Everything you need, in one place");
     expect(host.textContent).not.toMatch(/Checking|Loading records|access denied/);
     expect(requests("businessStaff.mine")).toBe(1);
-    expect(requests("businessBookings.list")).toBe(0);
+    expect(requests("bookings.myBookings")).toBe(0);
     expect(transport.hooks.filter(hook => hook.path === "businessStaff.mine").every(hook => hook.enabled)).toBe(true);
     expect(client.getQueryCache().find({ queryKey: MINE_KEY, exact: true })?.getObserversCount()).toBe(1);
     assertNoFallback();

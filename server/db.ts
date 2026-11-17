@@ -332,6 +332,8 @@ export async function updateUserPassword(userId: number, hashedPassword: string)
     .where(writableAgentUser(userId));
 }
 
+export type BookingWriter = Pick<NonNullable<Awaited<ReturnType<typeof getDb>>>, "select" | "insert" | "update" | "delete">;
+
 // ─── Bookings ─────────────────────────────────────────────────────────────────
 
 export async function createBooking(data: {
@@ -351,8 +353,8 @@ export async function createBooking(data: {
   isPersonalBooking?: boolean;
   crmRef?: string;
   orbitMarginPct?: number;
-}) {
-  const db = await getDb();
+}, connection?: BookingWriter) {
+  const db = connection ?? await getDb();
   if (!db) throw new Error("DB unavailable");
   // Personal bookings: payment date = departure date automatically
   const finalSupplierPaymentDate = data.isPersonalBooking ? data.departureDate : undefined;
@@ -381,21 +383,21 @@ export async function createBooking(data: {
     return (result as any)[0]?.insertId ?? (result as any).insertId;
   };
   const hasReference = data.crmRef !== undefined || data.ptsRef !== undefined;
-  const id = hasReference
+  const id = connection ? await insert(connection) : hasReference
     ? await withBookingReferenceLock((locked) => locked.transaction(insert))
     : await insert(db);
-  return getBookingById(id);
+  return getBookingById(id, connection);
 }
 
-export async function getBookingById(id: number) {
-  const db = await getDb();
+export async function getBookingById(id: number, writer?: BookingWriter) {
+  const db = writer ?? await getDb();
   if (!db) return undefined;
   const result = await db.select().from(bookings).where(eq(bookings.id, id)).limit(1);
   return result[0];
 }
 
-export async function getBookingWithAgent(id: number) {
-  const db = await getDb();
+export async function getBookingWithAgent(id: number, writer?: BookingWriter) {
+  const db = writer ?? await getDb();
   if (!db) return undefined;
   const result = await db
     .select({
@@ -416,13 +418,13 @@ export async function getBookingWithAgent(id: number) {
   };
 }
 
-export async function getBookingsByAgent(agentId: number) {
-  const db = await getDb();
+export async function getBookingsByAgent(agentId: number, writer?: BookingWriter, nonPersonal = false) {
+  const db = writer ?? await getDb();
   if (!db) return [];
   return db
     .select()
     .from(bookings)
-    .where(eq(bookings.agentId, agentId))
+    .where(nonPersonal ? and(eq(bookings.agentId, agentId), eq(bookings.isPersonalBooking, false)) : eq(bookings.agentId, agentId))
     .orderBy(desc(bookings.createdAt));
 }
 
@@ -480,11 +482,12 @@ export async function getAllBookings(filters?: {
 export async function updateBookingStage(
   bookingId: number,
   toStage: string,
-  movedById: number
+  movedById: number,
+  writer?: BookingWriter
 ) {
-  const db = await getDb();
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
-  const booking = await getBookingById(bookingId);
+  const booking = await getBookingById(bookingId, writer);
   if (!booking) throw new Error("Booking not found");
 
   await db.insert(pipelineHistory).values({
@@ -495,12 +498,15 @@ export async function updateBookingStage(
   });
 
   await db.update(bookings).set({ currentStage: toStage }).where(eq(bookings.id, bookingId));
-  return getBookingById(bookingId);
+  return getBookingById(bookingId, writer);
 }
 
 export async function updateBookingAdminFields(
   bookingId: number,
   data: {
+    reimbursementDocUrl?: string;
+    reimbursementDocUploadedAt?: Date;
+    reimbursementDocLateUpload?: boolean;
     ptsRef?: string;
     topdogRef?: string;
     destination?: string;
@@ -517,9 +523,10 @@ export async function updateBookingAdminFields(
     isPersonalBooking?: boolean;
     commissionVat?: number | null;
     crmRef?: string | null;
-  }
+  },
+  writer?: BookingWriter
 ) {
-  const db = await getDb();
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
   // Only include fields that were explicitly provided (not undefined).
   // This prevents unintended overwrites when only a subset of fields are being saved.
@@ -527,9 +534,15 @@ export async function updateBookingAdminFields(
   for (const [key, value] of Object.entries(data)) {
     if (value !== undefined) safeData[key] = value;
   }
-  if (Object.keys(safeData).length === 0) return getBookingById(bookingId);
+  if (Object.keys(safeData).length === 0) return getBookingById(bookingId, writer);
   const hasReference = safeData.ptsRef !== undefined || safeData.crmRef !== undefined;
-  if (hasReference) {
+  if (hasReference && writer) {
+    const [current] = await writer.select({ id: bookings.id, ptsRef: bookings.ptsRef, crmRef: bookings.crmRef })
+      .from(bookings).where(eq(bookings.id, bookingId)).limit(1).for("update");
+    if (!current) throw new Error("Booking not found");
+    const references = await assertBookingReferencesAvailable(writer, data, current);
+    await writer.update(bookings).set({ ...safeData, ...references } as any).where(eq(bookings.id, bookingId));
+  } else if (hasReference) {
     await withBookingReferenceLock((locked) => locked.transaction(async (tx: any) => {
       const [current] = await tx.select({ id: bookings.id, ptsRef: bookings.ptsRef, crmRef: bookings.crmRef })
         .from(bookings).where(eq(bookings.id, bookingId)).limit(1).for("update");
@@ -540,15 +553,16 @@ export async function updateBookingAdminFields(
   } else {
     await db.update(bookings).set(safeData as any).where(eq(bookings.id, bookingId));
   }
-  return getBookingById(bookingId);
+  return getBookingById(bookingId, writer);
 }
 
 export async function uploadReimbursementDoc(
   bookingId: number,
   docUrl: string,
-  isLate: boolean
+  isLate: boolean,
+  writer?: BookingWriter
 ) {
-  const db = await getDb();
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
   await db
     .update(bookings)
@@ -558,7 +572,7 @@ export async function uploadReimbursementDoc(
       reimbursementDocLateUpload: isLate,
     })
     .where(eq(bookings.id, bookingId));
-  return getBookingById(bookingId);
+  return getBookingById(bookingId, writer);
 }
 
 export async function getPipelineHistory(bookingId: number) {
@@ -586,8 +600,8 @@ export async function createNote(data: {
   authorId: number;
   content: string;
   isInternal: boolean;
-}) {
-  const db = await getDb();
+}, writer?: BookingWriter) {
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
   const result = await db.insert(notes).values(data);
   const id = (result as any)[0]?.insertId ?? (result as any).insertId;
@@ -892,8 +906,8 @@ export async function createAmendment(data: {
     oldCost?: string | null;
     notes?: string | null;
   }>;
-}) {
-  const db = await getDb();
+}, writer?: any) {
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
   const [result] = await db.insert(amendments).values({
     bookingId: data.bookingId,
@@ -1039,10 +1053,11 @@ export async function rejectAmendment(amendmentId: number, adminId: number, reas
 
 // ─── Cancellations ────────────────────────────────────────────────────────────
 
-export async function createCancellation(data: { bookingId: number; agentId: number }) {
-  const db = await getDb();
+export async function createCancellation(data: { bookingId: number; agentId: number }, writer?: any) {
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.insert(cancellations).values(data);
+  const result = await db.insert(cancellations).values(data);
+  return Number(result[0]?.insertId ?? result.insertId);
 }
 
 export async function getAllCancellations() {
@@ -1086,8 +1101,8 @@ export async function createRefund(data: {
   clientAccountNumber?: string; // already encrypted
   stepsTaken: string;
   suppliers: { supplierName: string; amountDue: number }[];
-}) {
-  const db = await getDb();
+}, writer?: any) {
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
   const { suppliers, ...refundData } = data;
   const result = await db.insert(refunds).values(refundData as any);
@@ -1969,8 +1984,8 @@ export async function addReimbursementDoc(params: {
   fileUrl: string;
   fileName: string;
   mimeType?: string;
-}) {
-  const db = await getDb();
+}, writer?: BookingWriter) {
+  const db = writer ?? await getDb();
   if (!db) return;
   await db.insert(reimbursementDocs).values({
     bookingId: params.bookingId,
@@ -2665,10 +2680,36 @@ export async function createReimbursementItems(items: Array<{
   amount: number;
   isLate?: boolean;
   jltCompanyCard?: boolean;
-}>) {
-  const db = await getDb();
+}>, writer?: any) {
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
   if (items.length === 0) return [];
+  // Delegated operations must use the caller's locked transaction. The ordinary
+  // provider-compatible prepared path below intentionally stays unchanged.
+  if (writer) {
+    const createdIds: number[] = [];
+    for (const item of items) {
+      const result = await writer.insert(reimbursementItems).values({
+        bookingId: item.bookingId,
+        agentId: item.agentId,
+        supplierName: item.supplierName,
+        amount: String(item.amount),
+        status: "pending",
+        isLate: item.isLate ?? false,
+        jltCompanyCard: item.jltCompanyCard ?? false,
+      });
+      const id = Number(result[0]?.insertId ?? result.insertId);
+      if (!Number.isSafeInteger(id) || id < 1) throw new Error("Reimbursement item insert did not return an ID");
+      createdIds.push(id);
+    }
+    const created = await writer.select().from(reimbursementItems).where(inArray(reimbursementItems.id, createdIds));
+    const createdById = new Map<number, any>(created.map((item: any) => [item.id, item]));
+    return createdIds.map(id => {
+      const item = createdById.get(id);
+      if (!item) throw new Error("Created reimbursement items could not be reloaded");
+      return item;
+    });
+  }
   // Callers use the returned rows to attach each uploaded document to its own
   // newly-created reimbursement. Returning every reimbursement on the booking
   // made an older item appear at the front of this response, so later evidence
@@ -2712,7 +2753,7 @@ export async function createReimbursementItems(items: Array<{
     .select()
     .from(reimbursementItems)
     .where(inArray(reimbursementItems.id, createdIds));
-  const createdById = new Map(created.map((item) => [item.id, item]));
+  const createdById = new Map<number, typeof reimbursementItems.$inferSelect>(created.map((item: typeof reimbursementItems.$inferSelect) => [item.id, item]));
   return createdIds.map((id) => {
     const createdItem = createdById.get(id);
     if (!createdItem) throw new Error("Created reimbursement items could not be reloaded");
@@ -2720,7 +2761,16 @@ export async function createReimbursementItems(items: Array<{
   });
 }
 
-export async function getReimbursementsByBooking(bookingId: number) {
+/** Resolve the actual parent item without touching its documents or storage. */
+export async function getReimbursementItemById(id: number, writer?: any, lock = false) {
+  const db = writer ?? await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const query = db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
+  const [item] = await (lock ? query.for("update") : query);
+  return item;
+}
+
+export async function getReimbursementsByBooking(bookingId: number, expectedAgentId?: number) {
   const db = await getDb();
   if (!db) return [];
   const { reimbursementItemDocs } = await import("../drizzle/schema");
@@ -2731,6 +2781,10 @@ export async function getReimbursementsByBooking(bookingId: number) {
     .where(eq(reimbursementItems.bookingId, bookingId))
     .orderBy(reimbursementItems.createdAt);
   if (items.length === 0) return [];
+  if (expectedAgentId !== undefined && items.some((item: any) => item.agentId !== expectedAgentId || item.bookingId !== bookingId)) {
+    const { TRPCError } = await import("@trpc/server");
+    throw new TRPCError({ code: "FORBIDDEN", message: "Reimbursement does not match its booking owner." });
+  }
   // Fetch all docs for this booking
   const docs = await db
     .select()
@@ -2741,6 +2795,7 @@ export async function getReimbursementsByBooking(bookingId: number) {
   const { storageGet } = await import("./storage");
   const docsWithUrls = await Promise.all(
     docs.map(async (doc) => {
+      if (doc.fileKey.startsWith("booking-private/") && /^\/api\/booking-documents\/[1-9]\d*\/download$/.test(doc.fileUrl)) return doc;
       try {
         const { url } = await storageGet(doc.fileKey);
         return { ...doc, fileUrl: url };
@@ -3020,20 +3075,21 @@ export async function addReimbursementItemDoc(data: {
   fileKey: string;
   fileName: string;
   uploadedById: number;
-}) {
-  const db = await getDb();
+}, writer?: any) {
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
   const { reimbursementItemDocs } = await import("../drizzle/schema");
   await db.insert(reimbursementItemDocs).values(data);
   const rows = await db
     .select()
     .from(reimbursementItemDocs)
-    .where(eq(reimbursementItemDocs.reimbursementItemId, data.reimbursementItemId))
+    .where(and(eq(reimbursementItemDocs.reimbursementItemId, data.reimbursementItemId), eq(reimbursementItemDocs.bookingId, data.bookingId)))
     .orderBy(desc(reimbursementItemDocs.createdAt));
   // Return presigned URLs so the client can open files immediately after upload
   const { storageGet } = await import("./storage");
   return Promise.all(
-    rows.map(async (doc) => {
+    rows.map(async (doc: typeof reimbursementItemDocs.$inferSelect) => {
+      if (doc.fileKey.startsWith("booking-private/") && /^\/api\/booking-documents\/[1-9]\d*\/download$/.test(doc.fileUrl)) return doc;
       try {
         const { url } = await storageGet(doc.fileKey);
         return { ...doc, fileUrl: url };
@@ -3044,18 +3100,19 @@ export async function addReimbursementItemDoc(data: {
   );
 }
 
-export async function getReimbursementItemDocs(reimbursementItemId: number) {
+export async function getReimbursementItemDocs(reimbursementItemId: number, bookingId?: number) {
   const db = await getDb();
   if (!db) return [];
   const { reimbursementItemDocs } = await import("../drizzle/schema");
   const docs = await db
     .select()
     .from(reimbursementItemDocs)
-    .where(eq(reimbursementItemDocs.reimbursementItemId, reimbursementItemId))
+    .where(and(eq(reimbursementItemDocs.reimbursementItemId, reimbursementItemId), bookingId === undefined ? undefined : eq(reimbursementItemDocs.bookingId, bookingId)))
     .orderBy(reimbursementItemDocs.createdAt);
   const { storageGet } = await import("./storage");
   return Promise.all(
     docs.map(async (doc) => {
+      if (doc.fileKey.startsWith("booking-private/") && /^\/api\/booking-documents\/[1-9]\d*\/download$/.test(doc.fileUrl)) return doc;
       try {
         const { url } = await storageGet(doc.fileKey);
         return { ...doc, fileUrl: url };
@@ -3161,7 +3218,7 @@ export async function moveReimbursementItemDoc(params: {
 }
 
 // Get bookings for an agent that have at least one reimbursement item with no uploaded docs
-export async function getReimbItemsWithMissingDocsByAgent(agentId: number) {
+export async function getReimbItemsWithMissingDocsByAgent(agentId: number, nonPersonalOnly = false) {
   const db = await getDb();
   if (!db) return [];
   const { reimbursementItems, reimbursementItemDocs, bookings } = await import("../drizzle/schema");
@@ -3175,7 +3232,8 @@ export async function getReimbItemsWithMissingDocsByAgent(agentId: number) {
       status: reimbursementItems.status,
     })
     .from(reimbursementItems)
-    .where(eq(reimbursementItems.agentId, agentId))
+    .innerJoin(bookings, eq(reimbursementItems.bookingId, bookings.id))
+    .where(and(eq(reimbursementItems.agentId, agentId), eq(bookings.agentId, agentId), nonPersonalOnly ? eq(bookings.isPersonalBooking, false) : undefined))
     .orderBy(reimbursementItems.createdAt);
 
   if (items.length === 0) return [];
@@ -3197,7 +3255,7 @@ export async function getReimbItemsWithMissingDocsByAgent(agentId: number) {
   const bookingRows = await db
     .select({ id: bookings.id, clientName: bookings.clientName, currentStage: bookings.currentStage })
     .from(bookings)
-    .where(inArray(bookings.id, bookingIds));
+    .where(and(inArray(bookings.id, bookingIds), eq(bookings.agentId, agentId), nonPersonalOnly ? eq(bookings.isPersonalBooking, false) : undefined));
 
   const bookingMap = new Map(bookingRows.map((b) => [b.id, b]));
 

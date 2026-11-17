@@ -1,11 +1,14 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
+import type { BusinessStaffAuthority } from "../business-staff-access";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
   user: User | null;
+  /** Set only by server middleware, never from procedure input or session roles. */
+  businessStaffAuthority?: BusinessStaffAuthority | null;
 };
 
 // Portal statuses that block all access

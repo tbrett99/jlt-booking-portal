@@ -182,7 +182,7 @@ async function render(component: React.ReactElement) {
   });
   await flush();
 }
-async function renderStaffWorkspace(path = "/business-staff/bookings") {
+async function renderStaffWorkspace(path = "/my-bookings") {
   window.history.replaceState(null, "", path);
   const current = mock.data["businessStaff.mine"] ?? {
     ...authority(),
@@ -435,12 +435,9 @@ describe("Business-staff administration", () => {
     expect(
       checkbox(BUSINESS_STAFF_PERMISSION_LABELS.viewBookings).checked
     ).toBe(true);
-    expect(
-      checkbox(BUSINESS_STAFF_PERMISSION_LABELS.viewCustomerAmounts).checked
-    ).toBe(false);
-    expect(
-      checkbox(BUSINESS_STAFF_PERMISSION_LABELS.addBookingNotes).checked
-    ).toBe(false);
+    expect(checkbox(BUSINESS_STAFF_PERMISSION_LABELS.manageBookings).checked).toBe(true);
+    expect(controls().textContent).not.toContain(BUSINESS_STAFF_PERMISSION_LABELS.viewCustomerAmounts);
+    expect(controls().textContent).not.toContain(BUSINESS_STAFF_PERMISSION_LABELS.addBookingNotes);
     expect(
       checkbox(BUSINESS_STAFF_PERMISSION_LABELS.academyAccess).checked
     ).toBe(true);
@@ -496,18 +493,9 @@ describe("Business-staff administration", () => {
   it("records an Orbit request only and clears dependent permissions when booking visibility is removed", async () => {
     await chooseOwner();
     await chooseAccount();
-    await toggle(BUSINESS_STAFF_PERMISSION_LABELS.viewCustomerAmounts);
-    await toggle(BUSINESS_STAFF_PERMISSION_LABELS.addBookingNotes);
     await toggle(BUSINESS_STAFF_PERMISSION_LABELS.viewBookings);
-    expect(
-      checkbox(BUSINESS_STAFF_PERMISSION_LABELS.viewCustomerAmounts).checked
-    ).toBe(false);
-    expect(
-      checkbox(BUSINESS_STAFF_PERMISSION_LABELS.addBookingNotes).checked
-    ).toBe(false);
-    expect(
-      checkbox(BUSINESS_STAFF_PERMISSION_LABELS.addBookingNotes).disabled
-    ).toBe(true);
+    expect(checkbox(BUSINESS_STAFF_PERMISSION_LABELS.manageBookings).checked).toBe(false);
+    expect(checkbox(BUSINESS_STAFF_PERMISSION_LABELS.manageBookings).disabled).toBe(true);
     await toggle("Request Orbit");
     await confirmations();
     await click("Confirm link existing account");
@@ -593,7 +581,7 @@ describe("Business-staff administration", () => {
     const input = [...dialog.querySelectorAll("label")]
       .find(item =>
         item.textContent?.includes(
-          BUSINESS_STAFF_PERMISSION_LABELS.addBookingNotes
+          BUSINESS_STAFF_PERMISSION_LABELS.manageBookings
         )
       )!
       .querySelector<HTMLInputElement>("input")!;
@@ -611,7 +599,7 @@ describe("Business-staff administration", () => {
         reason: "Explicit booking note approval",
         permissions: {
           ...DEFAULT_BUSINESS_STAFF_PERMISSIONS,
-          addBookingNotes: true,
+          manageBookings: false,
         },
         orbitRequested: false,
       },
@@ -620,7 +608,7 @@ describe("Business-staff administration", () => {
     expect(field("Audit reason (at least 10 characters)").value).toBe(
       "Explicit booking note approval"
     );
-    expect(input.checked).toBe(true);
+    expect(input.checked).toBe(false);
   });
   it.each(["active", "revoked"] as const)(
     "confirms %s membership status changes without a delete operation",
@@ -720,207 +708,23 @@ describe("Business-staff administration", () => {
   });
 });
 
-describe("Business-staff isolated workspace", () => {
-  it.each(["ordinary", "revoked", "missing", "error", "loading", "fetching"])(
-    "does not mount booking queries or agent fallback on %s authority",
-    async state => {
-      mock.user = { id: account.id, role: "agent" };
-      if (state === "ordinary")
-        mock.data["businessStaff.mine"] = {
-          managed: false,
-          active: false,
-          membership: null,
-          owner: null,
-          orbitReady: false,
-        };
-      if (state === "revoked")
-        mock.data["businessStaff.mine"] = {
-          ...authority(),
-          active: false,
-          membership: member("revoked"),
-        };
-      if (state === "missing") mock.data["businessStaff.mine"] = undefined;
-      if (state === "error")
-        mock.errors["businessStaff.mine"] = {
-          message: "Authority unavailable",
-        };
-      if (state === "loading") mock.loading["businessStaff.mine"] = true;
-      if (state === "fetching") mock.fetching["businessStaff.mine"] = true;
-      await renderStaffWorkspace();
-      expect(mock.hooks.every(item => item.path === "businessStaff.mine")).toBe(
-        true
-      );
-      expect(container.querySelector('a[href="/dashboard"]')).toBeNull();
-      expect(container.querySelector('a[href="/academy"]')).toBeNull();
-      expect(container.textContent).not.toContain(booking.clientName);
-      assertOnlyBusinessHooks();
-    }
-  );
-  it("shows read-only business records, own Academy and familiar resource links with a compact Orbit note", async () => {
-    mock.user = { id: account.id, role: "agent" };
-    mock.data["businessStaff.mine"].membership.orbitRequested = true;
-    // Even malicious surplus DTO properties are never enumerated or rendered.
-    mock.data["businessBookings.list"] = page([
-      {
-        ...booking,
-        grossPrice: "PRIVATE_PRICE",
-        commission: "PRIVATE_COMMISSION",
-        grossCost: "PRIVATE_SUPPLIER_COST",
-        notes: "PRIVATE_LEGACY_NOTE",
-        agentEmail: owner.email,
-      },
-    ]);
-    await renderStaffWorkspace();
-    expect(container.textContent).toContain(booking.clientName);
-    expect(container.querySelector('a[href="/academy"]')).toBeTruthy();
-    expect(container.textContent).toContain("Orbit access request recorded");
-    expect(container.textContent).toContain("Continue to use it directly");
-    expect(container.textContent).not.toContain("Orbit access is not ready");
-    for (const privateValue of [
-      "PRIVATE_PRICE",
-      "PRIVATE_COMMISSION",
-      "PRIVATE_SUPPLIER_COST",
-      "PRIVATE_LEGACY_NOTE",
-      owner.email,
-    ])
-      expect(container.textContent).not.toContain(privateValue);
-    expect(
-      [...container.querySelectorAll("a")].map(item =>
-        item.getAttribute("href")
-      )
-    ).toEqual([
-      "/business-staff",
-      "/business-staff/bookings",
-      "/academy",
-      "/knowledge-base",
-      "/webinars",
-      "/suppliers",
-      "https://fees.thejltgroup.co.uk",
-      "https://fees.thejltgroup.co.uk/card-fees",
-      "mailto:support@thejltgroup.co.uk",
-      "/my-agreements",
-    ]);
-    expect(
-      mock.hooks.find(item => item.path === "businessBookings.list")?.input
-    ).toEqual({ page: 1, pageSize: 50 });
-    expect(container.querySelector('table th[scope="col"]')).toBeTruthy();
-    await click("Sign out");
-    expect(mock.logout).toHaveBeenCalledOnce();
-    assertOnlyBusinessHooks();
+describe("Business-staff home uses normal booking navigation", () => {
+  it("offers the normal booking centre without the removed simplified modal", async () => {
+    mock.user = { id: account.id, role: "agent", name: account.name, portalStatus: "active", mustChangePassword: false };
+    mock.data["businessStaff.mine"] = { managed: true, active: true, owner: { name: "Synthetic Owner" }, membership: member() };
+    await render(React.createElement(BusinessStaffWorkspace));
+    expect(container.querySelector('a[href="/my-bookings"]')).not.toBeNull();
+    expect(mock.hooks.some(hook => hook.path === "businessBookings.list")).toBe(false);
+    expect(container.textContent).toContain("normal booking pages");
+    expect(container.textContent).toContain("Commission claims remain with the business owner");
   });
-  it("honours absent booking and Academy permissions without loading bookings", async () => {
-    mock.user = { id: account.id, role: "agent" };
-    mock.data["businessStaff.mine"] = authority({
-      viewBookings: false,
-      viewCustomerAmounts: true,
-      addBookingNotes: true,
-      academyAccess: false,
-    });
-    await renderStaffWorkspace();
-    expect(container.textContent).toContain("Booking access is not assigned");
-    expect(mock.hooks.every(item => item.path === "businessStaff.mine")).toBe(
-      true
-    );
-    expect(container.querySelector('a[href="/academy"]')).toBeNull();
-  });
-  it("searches and paginates only businessBookings.list and opens the safe detail modal", async () => {
-    mock.user = { id: account.id, role: "agent" };
-    mock.data["businessBookings.list"] = page([booking], true);
-    await renderStaffWorkspace();
-    await change(field("Search business bookings"), " Island ");
-    await click("Search bookings");
-    expect(
-      mock.hooks.filter(item => item.path === "businessBookings.list").at(-1)
-        ?.input
-    ).toEqual({ page: 1, pageSize: 50, search: "Island" });
-    await click(
-      "Next",
-      controls().querySelector('[aria-label="Business bookings pagination"]')!
-    );
-    expect(
-      mock.hooks.filter(item => item.path === "businessBookings.list").at(-1)
-        ?.input.page
-    ).toBe(2);
-    await click("View details");
-    expect(controls().querySelector('[role="dialog"]')).toBeTruthy();
-    expect(
-      mock.hooks.find(item => item.path === "businessBookings.detail")?.input
-    ).toEqual({ bookingId: 701 });
-    expect(
-      mock.hooks.find(item => item.path === "businessBookings.listNotes")?.input
-    ).toEqual({ bookingId: 701, page: 1, pageSize: 50 });
-    expect(controls().querySelector("textarea")).toBeNull();
-    assertOnlyBusinessHooks();
-  });
-  it("shows actual permitted customer price, never substitutes costs when absent", async () => {
-    mock.user = { id: account.id, role: "agent" };
-    mock.data["businessStaff.mine"] = authority({
-      ...DEFAULT_BUSINESS_STAFF_PERMISSIONS,
-      viewCustomerAmounts: true,
-    });
-    mock.data["businessBookings.list"] = page([
-      { ...booking, grossCost: "PRIVATE_NET_COST" },
-    ]);
-    await renderStaffWorkspace();
-    expect(container.textContent).toContain("Customer selling price");
-    expect(container.textContent).toContain("Not available");
-    expect(container.textContent).not.toContain("PRIVATE_NET_COST");
-    mock.data["businessBookings.list"] = page([
-      { ...booking, grossPrice: "1234.00" },
-    ]);
-    await renderStaffWorkspace();
-    expect(container.textContent).toContain("1234.00");
-  });
-  it("posts only to the separate notes channel and retains plain-text draft after denial", async () => {
-    mock.user = { id: account.id, role: "agent" };
-    mock.data["businessStaff.mine"] = authority({
-      ...DEFAULT_BUSINESS_STAFF_PERMISSIONS,
-      addBookingNotes: true,
-    });
-    mock.rejects["businessBookings.addNote"] = "Note permission revoked";
-    const literal =
-      '<img src="https://example.test/secret"><b>literal</b> https://example.test/note';
-    mock.data["businessBookings.listNotes"] = page([
-      {
-        id: 1,
-        text: literal,
-        authorUserId: 40,
-        createdAt: "2026-01-01T12:00:00Z",
-      },
-    ]);
-    await renderStaffWorkspace();
-    await click("View details");
-    const dialog = controls().querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain(literal);
-    expect(dialog.querySelector("img,b,a")).toBeNull();
-    await change(field("New business-staff note"), " Staff plain text ");
-    await click("Post note");
-    expect(mock.mutations[0]).toEqual({
-      path: "businessBookings.addNote",
-      input: { bookingId: 701, text: "Staff plain text" },
-    });
-    expect(field("New business-staff note").value).toBe(" Staff plain text ");
-    expect(controls().textContent).toContain("Note permission revoked");
-    assertOnlyBusinessHooks();
-  });
-  it("withholds stale list/detail records on endpoint errors", async () => {
-    mock.user = { id: account.id, role: "agent" };
-    mock.errors["businessBookings.list"] = { message: "Bookings unavailable" };
-    await renderStaffWorkspace();
-    expect(container.textContent).not.toContain(booking.clientName);
-    delete mock.errors["businessBookings.list"];
-    await renderStaffWorkspace();
-    mock.errors["businessBookings.detail"] = {
-      message: "Booking access changed",
-    };
-    await click("View details");
-    const dialog = controls().querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain("Booking access changed");
-    expect(dialog.textContent).not.toContain(booking.clientName);
-    expect(
-      mock.hooks.find(item => item.path === "businessBookings.listNotes")
-        ?.enabled
-    ).toBe(false);
+  it("does not expose any booking shortcut after revocation", async () => {
+    mock.user = { id: account.id, role: "agent", name: account.name, portalStatus: "active", mustChangePassword: false };
+    mock.data["businessStaff.mine"] = { managed: true, active: false, owner: null, membership: member({ status: "revoked" }) };
+    await render(React.createElement(BusinessStaffWorkspace));
+    expect(container.querySelector('a[href="/my-bookings"]')).toBeNull();
+    expect(container.textContent).toContain("revoked or inactive");
+    expect(mock.hooks.every(hook => hook.path === "businessStaff.mine")).toBe(true);
   });
 });
 
@@ -933,7 +737,6 @@ describe("Business-staff familiar Portal shell", () => {
     "https://fees.thejltgroup.co.uk/card-fees",
   ];
   const forbiddenHrefs = [
-    "/dashboard",
     "/my-profile",
     "/profile",
     "/pipeline",
@@ -944,10 +747,6 @@ describe("Business-staff familiar Portal shell", () => {
     "/commissions",
     "/commission-timeline",
     "/my-margin",
-    "/messages",
-    "/bookings/new",
-    "/request-amendment",
-    "/cancel-booking",
     "/crm/agents",
     "/users",
   ];
@@ -997,7 +796,7 @@ describe("Business-staff familiar Portal shell", () => {
       expect(container.textContent).toContain("Staff");
       for (const href of [
         "/business-staff",
-        "/business-staff/bookings",
+        "/my-bookings",
         "/academy",
         "/my-agreements",
         ...resourceHrefs,
@@ -1118,7 +917,7 @@ describe("Business-staff familiar Portal shell", () => {
       expect(container.querySelector(`a[href="${href}"]`)).toBeNull();
     expect(container.querySelector('a[href="/academy"]')).toBeTruthy();
     expect(
-      container.querySelector('a[href="/business-staff/bookings"]')
+      container.querySelector('a[href="/my-bookings"]')
     ).toBeTruthy();
     expect(container.textContent).not.toContain("Pricing & Fees");
     assertRestrictedShell();
@@ -1138,7 +937,7 @@ describe("Business-staff familiar Portal shell", () => {
     for (const href of [
       ...resourceHrefs,
       "/academy",
-      "/business-staff/bookings",
+      "/my-bookings",
     ])
       expect(container.querySelector(`a[href="${href}"]`)).toBeNull();
     assertRestrictedShell();
@@ -1156,7 +955,7 @@ describe("Business-staff familiar Portal shell", () => {
       for (const href of [
         ...resourceHrefs,
         "/academy",
-        "/business-staff/bookings",
+        "/my-bookings",
       ])
         expect(container.querySelector(`a[href="${href}"]`)).toBeNull();
       expect(container.querySelector('a[href="/my-agreements"]')).toBeTruthy();
@@ -1205,10 +1004,10 @@ describe("Business-staff familiar Portal shell", () => {
     ).toBeTruthy();
     expect(
       container.querySelector(
-        '[aria-label="Portal shortcuts"] a[href="/business-staff/bookings"]'
+        '[aria-label="Portal shortcuts"] a[href="/my-bookings"]'
       )
     ).toBeTruthy();
-    expect(container.textContent).toContain("read-only");
+    expect(container.textContent).toContain("normal booking pages");
     expect(container.textContent).toContain("Continue to use it directly");
     expect(container.textContent).not.toContain("Orbit access is not ready");
     expect(container.querySelector("table")).toBeNull();

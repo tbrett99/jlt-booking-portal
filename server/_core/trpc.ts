@@ -11,11 +11,14 @@ export const router = t.router;
 // Business employees never inherit the independent-agent or JLT-staff APIs.
 // The registry is rechecked per request; revoked links remain restrictive.
 const businessStaffBoundary = t.middleware(async opts => {
+  if (opts.path === "auth.logout") return opts.next({ ctx: { businessStaffAuthority: null } });
   if (opts.ctx.user?.role === "agent") {
-    const { assertBusinessStaffRouteAllowed } = await import("../business-staff-access");
-    await assertBusinessStaffRouteAllowed(opts.ctx.user, opts.path);
+    const { assertBusinessStaffRouteAllowed, getBusinessStaffAuthority } = await import("../business-staff-access");
+    const authority = await getBusinessStaffAuthority(opts.ctx.user);
+    await assertBusinessStaffRouteAllowed(opts.ctx.user, opts.path, authority);
+    return opts.next({ ctx: { businessStaffAuthority: authority } });
   }
-  return opts.next();
+  return opts.next({ ctx: { businessStaffAuthority: null } });
 });
 export const publicProcedure = t.procedure.use(businessStaffBoundary);
 

@@ -195,7 +195,7 @@ describe("real retained business-staff authority, fully synthetic", () => {
     syntheticDb({ members: [member({ permissions: value })] });
     const result = await getBusinessStaffAuthority(syntheticUser());
     const expected = typeof value === "string" && value.startsWith("{") ? { viewBookings: true, viewCustomerAmounts: false, addBookingNotes: false, academyAccess: true } : { viewBookings: false, viewCustomerAmounts: false, addBookingNotes: false, academyAccess: false };
-    expect(result.membership?.permissions).toEqual({ ...expected, resourceAccess: false });
+    expect(result.membership?.permissions).toEqual({ ...expected, resourceAccess: false, manageBookings: false });
     if (!expected.viewBookings) await expect(requireBusinessStaffCapability(syntheticUser(), "viewBookings")).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
   it("missing DB, unknown schema, and rejected connection all produce sanitized errors, never ordinary fail-open", async () => {

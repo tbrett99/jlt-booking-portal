@@ -140,6 +140,7 @@ const AdminStaffAccess = lazy(() => import("./pages/admin/AdminStaffAccess"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import { Loader2 } from "lucide-react";
+import { readBusinessStaffPermissions } from "@shared/business-staff";
 
 function RouteScrollController() {
   const [location] = useLocation();
@@ -235,6 +236,10 @@ function SuspendedGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function StaffBookingWriteNotice() {
+  return <section className="rounded-xl border bg-card p-5 space-y-3"><h1 className="text-lg font-semibold">Booking management is not assigned</h1><p className="text-sm text-muted-foreground">An active booking-management permission is required to submit requests. You can still read assigned bookings and request updates when booking visibility is enabled.</p><Link href="/my-bookings" className="text-sm font-semibold text-emerald-700 underline">Back to My Bookings</Link></section>;
+}
+
 export function AuthRouter() {
   const { user, loading } = useAuth();
   const { isAgentView } = useViewMode();
@@ -309,7 +314,10 @@ export function AuthRouter() {
       return <main className="min-h-screen bg-background p-8 text-foreground"><h1 className="text-xl font-semibold">Checking Portal access</h1><p className="mt-2">{businessStaff.error ? "Access could not be verified. No business or financial data has been loaded." : "Please wait while your access is checked."}</p>{businessStaff.error && <button type="button" className="mt-4 underline" onClick={() => businessStaff.refetch()}>Try again</button>}</main>;
     }
     if (businessStaff.data.managed) {
-      const activeStaff = businessStaff.data.active;
+      const activeStaff = businessStaff.data.active && !!businessStaff.data.membership;
+      const staffPermissions = readBusinessStaffPermissions(activeStaff ? businessStaff.data.membership?.permissions : null);
+      const bookingsAvailable = activeStaff && staffPermissions.viewBookings;
+      const manageAvailable = bookingsAvailable && staffPermissions.manageBookings;
       const resourcesAvailable = activeStaff && businessStaff.data.membership?.permissions.resourceAccess === true;
       const academyAvailable = activeStaff && businessStaff.data.membership?.permissions.academyAccess === true;
       return (
@@ -317,9 +325,21 @@ export function AuthRouter() {
           <BusinessStaffPortalLayout>
             <Switch>
               <Route path="/business-staff" component={BusinessStaffWorkspace} />
-              <Route path="/business-staff/bookings" component={BusinessStaffWorkspace} />
               <Route path="/dashboard" component={BusinessStaffWorkspace} />
-              <Route path="/my-bookings" component={BusinessStaffWorkspace} />
+              {bookingsAvailable && <Route path="/business-staff/bookings" component={AgentBookings} />}
+              {bookingsAvailable && <Route path="/my-bookings" component={AgentBookings} />}
+              {bookingsAvailable && <Route path="/my-requests" component={AgentRequestTracker} />}
+              {bookingsAvailable && <Route path="/messages" component={AgentMessages} />}
+              {/* Write-only pages do not mount for read-only staff. Detail keeps
+                  booking, message, document and request-status read flows. */}
+              <Route path="/bookings/new">{manageAvailable ? <RegisterBooking /> : <StaffBookingWriteNotice />}</Route>
+              <Route path="/request-amendment">{manageAvailable ? <AgentRequestAmendment /> : <StaffBookingWriteNotice />}</Route>
+              <Route path="/cancel-booking">{manageAvailable ? <AgentCancelBooking /> : <StaffBookingWriteNotice />}</Route>
+              <Route path="/flight-requests">{manageAvailable ? <AgentFlightRequests /> : <StaffBookingWriteNotice />}</Route>
+              <Route path="/bookings/:id/amend">{params => manageAvailable ? <AmendmentForm key={params.id} /> : <StaffBookingWriteNotice />}</Route>
+              <Route path="/bookings/:id/cancel">{params => manageAvailable ? <CancellationForm key={params.id} /> : <StaffBookingWriteNotice />}</Route>
+              <Route path="/bookings/:id/refund">{params => manageAvailable ? <RefundForm key={params.id} /> : <StaffBookingWriteNotice />}</Route>
+              {bookingsAvailable && <Route path="/bookings/:id">{params => <AgentBookingDetail key={params.id} />}</Route>}
               {resourcesAvailable && <Route path="/suppliers">{() => <SupplierDirectory businessStaffMode />}</Route>}
               {resourcesAvailable && <Route path="/knowledge-base" component={KnowledgeBase} />}
               {resourcesAvailable && <Route path="/webinars" component={WebinarLibrary} />}

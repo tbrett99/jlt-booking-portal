@@ -19,6 +19,7 @@ import { ArrowLeft, Send, Upload, FileText, Loader2, Calendar,
 import { format, differenceInDays, isPast } from "date-fns";
 import { useAuth } from "@/_core/hooks/useAuth";
 import BusinessStaffOwnerPanel from "@/pages/business/BusinessStaffOwnerPanel";
+import { useBusinessStaffBookingAccess } from "@/pages/business/BusinessStaffPortalLayout";
 
 // Render note content: @mentions highlighted, [Attachment: name](url) as clickable links
 function NoteContent({ content, textColor }: { content: string; textColor?: string }) {
@@ -51,6 +52,7 @@ function NoteContent({ content, textColor }: { content: string; textColor?: stri
 
 // ─── Agent Payments Card ─────────────────────────────────────────────────────
 function AgentPaymentsCard({ bookingId, booking }: { bookingId: number; booking: any }) {
+  const { canManage } = useBusinessStaffBookingAccess();
   const utils = trpc.useUtils();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [amount, setAmount] = useState("");
@@ -283,6 +285,7 @@ export default function AgentBookingDetail() {
   const { id } = useParams<{ id: string }>();
   const bookingId = Number(id);
   const { user } = useAuth();
+  const { isBusinessStaff, canManage } = useBusinessStaffBookingAccess();
   const [noteContent, setNoteContent] = useState("");
   const [isSendingNote, setIsSendingNote] = useState(false);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
@@ -324,9 +327,9 @@ export default function AgentBookingDetail() {
   const utils = trpc.useUtils();
   const { data: booking, isLoading } = trpc.bookings.byId.useQuery({ id: bookingId });
   const { data: topUpRequests = [], isError: isTopUpRequestsError } = trpc.commissionClaims.myTopUpRequests.useQuery(undefined, {
-    enabled: Number.isInteger(bookingId) && bookingId > 0,
+    enabled: !isBusinessStaff && Number.isInteger(bookingId) && bookingId > 0,
   });
-  const bookingTopUpRequests = isTopUpRequestsError ? [] : topUpRequests.filter((request) => request.bookingId === bookingId);
+  const bookingTopUpRequests = isBusinessStaff || isTopUpRequestsError ? [] : topUpRequests.filter((request) => request.bookingId === bookingId);
   const { data: notes = [], refetch: refetchNotes } = trpc.notes.list.useQuery({ bookingId });
   const { data: amendments = [] } = trpc.amendments.byBooking.useQuery({ bookingId });
   const { data: refunds = [] } = trpc.refunds.byBooking.useQuery({ bookingId });
@@ -354,6 +357,7 @@ export default function AgentBookingDetail() {
   });
 
   const handleSaveTdRef = () => {
+    if (!canManage) { toast.error("Booking management is not enabled for this staff account."); return; }
     if (!tdRefInput.trim()) { toast.error("Please enter a TD reference"); return; }
     setTopdogRef.mutate({ bookingId, topdogRef: tdRefInput.trim() });
   };
@@ -369,11 +373,13 @@ export default function AgentBookingDetail() {
   });
 
   const handleSaveCrmRef = () => {
+    if (!canManage) { toast.error("Booking management is not enabled for this staff account."); return; }
     if (!crmRefInput.trim()) { toast.error("Please enter an Orbit reference"); return; }
     setCrmRef.mutate({ bookingId, crmRef: crmRefInput.trim() });
   };
 
   const handleSavePtsDetails = () => {
+    if (!canManage) { toast.error("Booking management is not enabled for this staff account."); return; }
     updatePtsDetails.mutate({
       bookingId,
       ptsRef: ptsRefInput.trim() || undefined,
@@ -385,7 +391,7 @@ export default function AgentBookingDetail() {
   const applyFnfVoucher = trpc.fnf.applyToBooking.useMutation({
     onSuccess: (res) => {
       utils.bookings.byId.invalidate({ id: bookingId });
-      utils.fnf.getBalance.invalidate();
+      if (!isBusinessStaff) utils.fnf.getBalance.invalidate();
       toast.success(`Friends & Family voucher applied. ${res.remaining} remaining.`);
     },
     onError: (e: any) => toast.error(e.message || "Failed to apply voucher"),
@@ -410,6 +416,7 @@ export default function AgentBookingDetail() {
   });
 
   const handleSaveCommission = () => {
+    if (!canManage) { toast.error("Booking management is not enabled for this staff account."); return; }
     const val = parseFloat(commissionInput);
     if (isNaN(val) || val < 0) { toast.error("Please enter a valid amount"); return; }
     updateCommission.mutate({ bookingId, expectedCommission: val });
@@ -425,6 +432,7 @@ export default function AgentBookingDetail() {
   });
 
   const handleSaveGrossData = () => {
+    if (!canManage) { toast.error("Booking management is not enabled for this staff account."); return; }
     const gc = parseFloat(grossCostInput);
     const ec = parseFloat(grossCommissionInput);
     if (isNaN(gc) || gc <= 0) { toast.error("Please enter a valid gross selling price"); return; }
@@ -436,6 +444,7 @@ export default function AgentBookingDetail() {
   const uploadMessageDoc = trpc.bookings.uploadMessageDoc.useMutation();
 
   const handleSendNote = async () => {
+    if (!canManage) { toast.error("Booking management is not enabled for this staff account."); return; }
     if (!noteContent.trim() && messageAttachments.length === 0) return;
     setIsSendingNote(true);
     try {
@@ -474,6 +483,7 @@ export default function AgentBookingDetail() {
   const isAllowed = (f: File) => ALLOWED_TYPES.includes(f.type) || ALLOWED_EXTS.includes('.' + f.name.split('.').pop()?.toLowerCase());
 
   const handleItemDocUpload = async (e: React.ChangeEvent<HTMLInputElement>, itemId: number) => {
+    if (!canManage) { toast.error("Booking management is not enabled for this staff account."); return; }
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
     const invalidFile = files.find(f => !isAllowed(f));
@@ -514,6 +524,7 @@ export default function AgentBookingDetail() {
   };
 
   const handleSubmitAdditionalReimb = async () => {
+    if (!canManage) { toast.error("Booking management is not enabled for this staff account."); return; }
     const valid = addReimbItems.every(i => i.supplierName.trim() && parseFloat(i.amount) > 0);
     if (!valid) { toast.error("Please fill in all supplier names and amounts"); return; }
     const missingDoc = addReimbItems.findIndex(i => i.files.length === 0);
@@ -709,7 +720,7 @@ export default function AgentBookingDetail() {
       )}
 
       {/* Commission ready banner */}
-      {isCommissionReady && (
+      {!isBusinessStaff && isCommissionReady && (
         <div className="rounded-xl border-l-4 p-4 flex items-center gap-3"
           style={{ borderLeftColor: '#02E6D2', background: '#ecfdf5' }}>
           <Sparkles size={18} style={{ color: '#02E6D2' }} className="flex-shrink-0" />
@@ -807,7 +818,7 @@ export default function AgentBookingDetail() {
                 autoFocus
               />
               <div className="flex gap-1">
-                <Button size="sm" className="h-6 text-xs px-2" onClick={handleSaveTdRef} disabled={setTopdogRef.isPending}>
+                <Button size="sm" className="h-6 text-xs px-2" onClick={handleSaveTdRef} disabled={!canManage || setTopdogRef.isPending}>
                   {setTopdogRef.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
                 </Button>
                 <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setEditingTdRef(false)}>Cancel</Button>
@@ -847,7 +858,7 @@ export default function AgentBookingDetail() {
                 autoFocus
               />
               <div className="flex gap-1">
-                <Button size="sm" className="h-6 text-xs px-2" onClick={handleSaveCrmRef} disabled={setCrmRef.isPending}>
+                <Button size="sm" className="h-6 text-xs px-2" onClick={handleSaveCrmRef} disabled={!canManage || setCrmRef.isPending}>
                   {setCrmRef.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
                 </Button>
                 <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setEditingCrmRef(false)}>Cancel</Button>
@@ -898,7 +909,7 @@ export default function AgentBookingDetail() {
                 />
               </div>
               <div className="flex items-center gap-1">
-                <button onClick={handleSavePtsDetails} disabled={updatePtsDetails.isPending} className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[10px] font-medium">
+                <button onClick={handleSavePtsDetails} disabled={!canManage || updatePtsDetails.isPending} className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[10px] font-medium">
                   {updatePtsDetails.isPending ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Save
                 </button>
                 <button onClick={() => setEditingPts(false)} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-red-50 text-red-600 text-[10px]">
@@ -944,8 +955,9 @@ export default function AgentBookingDetail() {
         <div className="rounded-xl p-3 border col-span-2" style={{ background: (booking as any).grossCost ? '#ecfdf5' : '#fffbeb' }}>
           <p className="text-xs text-muted-foreground mb-2 flex items-center justify-between gap-1">
             <span className="flex items-center gap-1"><TrendingUp size={11} /> Gross Selling Price &amp; Commission</span>
-            {!editingGrossData && !(booking as any).grossCostLockedAt && (
+            {canManage && !editingGrossData && !(booking as any).grossCostLockedAt && (
               <button
+                disabled={!canManage}
                 onClick={() => {
                   setGrossCostInput((booking as any).grossCost ? String(Number((booking as any).grossCost)) : "");
                   setGrossCommissionInput(booking.expectedCommission ? String(Number(booking.expectedCommission)) : "");
@@ -998,7 +1010,7 @@ export default function AgentBookingDetail() {
                 </p>
               )}
               <div className="flex items-center gap-1 pt-1">
-                <button onClick={handleSaveGrossData} disabled={updateGrossData.isPending} className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[10px] font-medium">
+                <button onClick={handleSaveGrossData} disabled={!canManage || updateGrossData.isPending} className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[10px] font-medium">
                   {updateGrossData.isPending ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Save
                 </button>
                 <button onClick={() => setEditingGrossData(false)} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-red-50 text-red-600 text-[10px]">
@@ -1041,7 +1053,7 @@ export default function AgentBookingDetail() {
       </div>
 
       {/* Commission Pre-Authorisation Toggle */}
-      {booking.expectedCommission && !['Commission Claimed', 'Commission Due for Payment', 'Commission Paid', 'Cancelled'].includes(booking.currentStage) && (
+      {!isBusinessStaff && booking.expectedCommission && !['Commission Claimed', 'Commission Due for Payment', 'Commission Paid', 'Cancelled'].includes(booking.currentStage) && (
         <div
           className="rounded-xl border p-4 flex items-start gap-3"
           style={{
@@ -1103,7 +1115,7 @@ export default function AgentBookingDetail() {
                 applyFnfVoucher.mutate({ bookingId: booking.id });
               }
             }}
-            disabled={applyFnfVoucher.isPending}
+            disabled={!canManage || applyFnfVoucher.isPending}
             className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
             style={{ background: '#db2777', color: '#fff' }}
           >
@@ -1231,14 +1243,14 @@ export default function AgentBookingDetail() {
                           accept=".pdf,.jpg,.jpeg,.png"
                           multiple
                           onChange={(e) => handleItemDocUpload(e, item.id)}
-                          disabled={uploadingItemId === item.id}
+                          disabled={!canManage || uploadingItemId === item.id}
                         />
                         <Button
                           size="sm"
                           variant={needsMoreDocs ? 'default' : 'outline'}
                           className="w-full gap-1 text-xs"
                           style={needsMoreDocs ? { background: '#f59e0b', color: 'white' } : {}}
-                          disabled={uploadingItemId === item.id}
+                          disabled={!canManage || uploadingItemId === item.id}
                           onClick={(e) => { e.preventDefault(); (e.currentTarget.previousElementSibling as HTMLInputElement)?.click(); }}
                         >
                           {uploadingItemId === item.id ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
@@ -1281,6 +1293,7 @@ export default function AgentBookingDetail() {
                 variant="outline"
                 size="sm"
                 className="w-full gap-2 text-xs"
+                disabled={!canManage}
                 onClick={() => { setReimbDisclaimerOpen(true); setReimbDisclaimerAccepted(false); }}
               >
                 <Upload size={12} /> Request Additional Reimbursement
@@ -1401,7 +1414,7 @@ export default function AgentBookingDetail() {
                     size="sm"
                     className="flex-1 text-xs"
                     onClick={handleSubmitAdditionalReimb}
-                    disabled={isSubmittingReimb || addReimbItems.some(i => i.files.length === 0)}
+                    disabled={!canManage || isSubmittingReimb || addReimbItems.some(i => i.files.length === 0)}
                     style={addReimbItems.every(i => i.files.length > 0) ? { background: '#02E6D2', color: '#414141' } : {}}
                   >
                     {isSubmittingReimb ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
@@ -1546,7 +1559,7 @@ export default function AgentBookingDetail() {
       })()}
 
       {/* Actions */}
-      {(!isCancelled || true) && (
+      {canManage && (!isCancelled || true) && (
         <Card style={{ border: '2px solid #70FFE8', background: 'rgba(112,255,232,0.04)' }}>
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-bold flex items-center gap-2" style={{ color: '#0d7a6b' }}>
@@ -1675,13 +1688,15 @@ export default function AgentBookingDetail() {
                 size="icon"
                 variant="outline"
                 className="self-end shrink-0 h-9 w-9"
+                disabled={!canManage}
                 onClick={() => messageFileRef.current?.click()}
                 title="Attach a file"
               >
                 <Paperclip size={14} />
               </Button>
               <Textarea
-                placeholder="Type a message to the JLT team..."
+                disabled={!canManage}
+                placeholder={canManage ? "Type a message to the JLT team..." : "Booking management is disabled — messages are read-only."}
                 value={noteContent}
                 onChange={(e) => setNoteContent(e.target.value)}
                 className="min-h-[60px] resize-none text-sm"
@@ -1693,8 +1708,9 @@ export default function AgentBookingDetail() {
                 }}
               />
               <Button
+                aria-label="Send message"
                 onClick={handleSendNote}
-                disabled={isSendingNote || (!noteContent.trim() && messageAttachments.length === 0)}
+                disabled={!canManage || isSendingNote || (!noteContent.trim() && messageAttachments.length === 0)}
                 style={{ background: '#70FFE8', color: '#414141' }}
                 className="self-end"
               >
@@ -1712,7 +1728,7 @@ export default function AgentBookingDetail() {
       <FlightRequestsSection bookingId={bookingId} />
 
       {/* Flight Request Form Dialog */}
-      {booking && (
+      {canManage && booking && (
         <FlightRequestForm
           open={flightFormOpen}
           onOpenChange={setFlightFormOpen}
@@ -1789,6 +1805,7 @@ const ALLOWED_UPLOAD_EXTS = ['.pdf', '.jpg', '.jpeg', '.png'];
 const isAllowedUpload = (f: File) => ALLOWED_UPLOAD_TYPES.includes(f.type) || ALLOWED_UPLOAD_EXTS.includes('.' + f.name.split('.').pop()?.toLowerCase());
 
 function BookingDocumentsSection({ bookingId }: { bookingId: number }) {
+  const { canManage } = useBusinessStaffBookingAccess();
   const { user } = useAuth();
   const utils = trpc.useUtils();
   const { data: docs = [], isLoading } = trpc.bookingDocs.list.useQuery({ bookingId }, { staleTime: 0 });
@@ -1812,6 +1829,7 @@ function BookingDocumentsSection({ bookingId }: { bookingId: number }) {
   });
 
   const handleUpload = async () => {
+    if (!canManage) { toast.error("Booking management is not enabled for this staff account."); return; }
     const file = fileRef.current?.files?.[0];
     if (!file) { toast.error('Please select a file'); return; }
     if (!isAllowedUpload(file)) { toast.error('Only PDF, JPG, or PNG files are allowed'); return; }
@@ -1854,7 +1872,7 @@ function BookingDocumentsSection({ bookingId }: { bookingId: number }) {
             <FolderOpen className="h-4 w-4 text-primary" />
             Booking Documents
           </CardTitle>
-          <Button size="sm" variant="outline" onClick={() => setShowForm((v) => !v)}>
+          <Button size="sm" variant="outline" disabled={!canManage} onClick={() => setShowForm((v) => !v)}>
             <Upload className="h-3.5 w-3.5 mr-1.5" />
             Upload Document
           </Button>
@@ -1900,7 +1918,7 @@ function BookingDocumentsSection({ bookingId }: { bookingId: number }) {
               <p className="text-xs text-muted-foreground">Accepted formats: PDF, JPG, PNG</p>
             </div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleUpload} disabled={uploading || uploadMutation.isPending}>
+              <Button size="sm" onClick={handleUpload} disabled={!canManage || uploading || uploadMutation.isPending}>
                 {(uploading || uploadMutation.isPending) ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
                 Upload
               </Button>

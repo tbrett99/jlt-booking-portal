@@ -1,30 +1,13 @@
 import { useState, type ReactNode } from "react";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { BookOpen, Building2, GraduationCap, PlayCircle } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import {
   readBusinessStaffPermissions,
-  type BusinessStaffPermissions,
 } from "@shared/business-staff";
 import { useBusinessStaffPortalAuthority } from "./BusinessStaffPortalLayout";
 
@@ -199,9 +182,6 @@ export type BusinessStaffAuthority = ApiOutputs["businessStaff"]["mine"];
 export default function BusinessStaffWorkspace() {
   const { user } = useAuth();
   const rootAuthority = useBusinessStaffPortalAuthority();
-  const [location] = useLocation();
-  const bookingsPage =
-    location === "/business-staff/bookings" || location === "/my-bookings";
   const standaloneMine = trpc.businessStaff.mine.useQuery(undefined, {
     enabled: !!user && !rootAuthority,
     retry: false,
@@ -231,7 +211,7 @@ export default function BusinessStaffWorkspace() {
       ? [
           {
             label: "My Bookings",
-            href: "/business-staff/bookings",
+            href: "/my-bookings",
             icon: <BookOpen size={22} />,
             description:
               "Browse your business owner's bookings and view the latest booking details.",
@@ -279,13 +259,11 @@ export default function BusinessStaffWorkspace() {
           Your Portal
         </p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-          {bookingsPage
-            ? "My Bookings"
-            : `Welcome${user?.name ? `, ${user.name.split(" ")[0]}` : " back"}`}
+          {`Welcome${user?.name ? `, ${user.name.split(" ")[0]}` : " back"}`}
         </h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           {authorised
-            ? `Working with ${mine.data?.owner?.name || mine.data?.owner?.email || "your business owner"}. Your business bookings are read-only; finance and commission information are not included.`
+            ? `Working with ${mine.data?.owner?.name || mine.data?.owner?.email || "your business owner"}. Use the normal booking pages for your assigned business bookings${permissions.manageBookings ? ", messages and requests" : " (read-only)"}. Commission claims remain with the business owner.`
             : "Your assignment is checked before any business records are loaded."}
         </p>
       </header>
@@ -312,17 +290,6 @@ export default function BusinessStaffWorkspace() {
         </BusinessNotice>
       ) : (
         <>
-          {bookingsPage ? (
-            permissions.viewBookings ? (
-              <BusinessBookingsWorkspace permissions={permissions} />
-            ) : (
-              <BusinessNotice title="Booking access is not assigned">
-                Only the permissions explicitly assigned to your account are
-                available.
-              </BusinessNotice>
-            )
-          ) : (
-            <>
               <section className="rounded-xl border border-[#a7f3e8] bg-[#f0fffb] p-6">
                 <h2 className="text-xl font-semibold tracking-tight">
                   Everything you need, in one place
@@ -363,10 +330,8 @@ export default function BusinessStaffWorkspace() {
                   available.
                 </BusinessNotice>
               )}
-            </>
-          )}
           <p className="rounded-lg border bg-muted/30 px-4 py-3 text-xs leading-5 text-muted-foreground">
-            Already have your own Orbit login? Continue to use it directly.
+            Already have your own Orbit login? <a className="underline font-semibold" href="https://orbit.thejltgroup.co.uk" target="_blank" rel="noopener noreferrer">Continue to use it directly.</a>
             Portal single sign-on for business staff is currently unavailable.
             {mine.data?.membership?.orbitRequested &&
               " Orbit access request recorded; pending the Orbit team."}
@@ -449,217 +414,5 @@ export function BusinessNoteComposer({
         {mutation.isPending ? "Posting…" : "Post note"}
       </Button>
     </form>
-  );
-}
-function formatDate(value: string | Date | null) {
-  return value ? new Date(value).toLocaleDateString() : "Not recorded";
-}
-function customerPrice(booking: BusinessBooking) {
-  return "grossPrice" in booking
-    ? (booking.grossPrice ?? "Not available")
-    : "Not available";
-}
-function BusinessBookingsWorkspace({
-  permissions,
-}: {
-  permissions: BusinessStaffPermissions;
-}) {
-  const [page, setPage] = useState(1);
-  const [draftSearch, setDraftSearch] = useState("");
-  const [search, setSearch] = useState("");
-  const [bookingId, setBookingId] = useState<number | null>(null);
-  const list = businessBookingApi.list.useQuery(
-    { page, pageSize: 50, ...(search ? { search } : {}) },
-    { retry: false }
-  );
-  const usable = !list.error && !list.isLoading && !list.isFetching;
-  return (
-    <section className="space-y-4">
-      <h2 className="text-xl font-semibold">Business bookings</h2>
-      <p className="text-sm text-muted-foreground">
-        Read-only non-personal bookings for your assigned owner.
-      </p>
-      <form
-        className="flex items-end gap-3"
-        onSubmit={event => {
-          event.preventDefault();
-          setPage(1);
-          setSearch(draftSearch.trim());
-          setBookingId(null);
-        }}
-      >
-        <div className="flex-1">
-          <BusinessField label="Search business bookings">
-            <input
-              className={businessControl}
-              maxLength={100}
-              value={draftSearch}
-              onChange={event => setDraftSearch(event.target.value)}
-              placeholder="Customer, destination or reference"
-            />
-          </BusinessField>
-        </div>
-        <Button type="submit">Search bookings</Button>
-      </form>
-      <BusinessQueryState query={list} empty={!list.data?.items.length}>
-        <Table>
-          <TableCaption>
-            Assigned business bookings; personal bookings are excluded.
-          </TableCaption>
-          <TableHeader>
-            <TableRow>
-              <TableHead scope="col">Customer</TableHead>
-              <TableHead scope="col">Destination</TableHead>
-              <TableHead scope="col">Departure</TableHead>
-              <TableHead scope="col">Reference</TableHead>
-              <TableHead scope="col">Stage</TableHead>
-              {permissions.viewCustomerAmounts && (
-                <TableHead scope="col">Customer selling price</TableHead>
-              )}
-              <TableHead scope="col">Details</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {usable &&
-              list.data?.items.map(booking => (
-                <TableRow key={booking.id}>
-                  <TableCell>{booking.clientName}</TableCell>
-                  <TableCell>{booking.destination || "Not recorded"}</TableCell>
-                  <TableCell>{formatDate(booking.departureDate)}</TableCell>
-                  <TableCell>
-                    {booking.topdogRef ||
-                      booking.ptsRef ||
-                      booking.crmRef ||
-                      `#${booking.id}`}
-                  </TableCell>
-                  <TableCell>{booking.currentStage}</TableCell>
-                  {permissions.viewCustomerAmounts && (
-                    <TableCell>{customerPrice(booking)}</TableCell>
-                  )}
-                  <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      aria-label={`View booking ${booking.id}`}
-                      onClick={() => setBookingId(booking.id)}
-                    >
-                      View details
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-          </TableBody>
-        </Table>
-      </BusinessQueryState>
-      <BusinessPagination
-        page={page}
-        hasMore={usable && list.data?.hasMore}
-        busy={!usable}
-        onPage={setPage}
-        label="Business bookings pagination"
-      />
-      <BusinessWithheldNotice />
-      <Dialog
-        open={bookingId !== null}
-        onOpenChange={open => {
-          if (!open) setBookingId(null);
-        }}
-      >
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Business booking #{bookingId}</DialogTitle>
-            <DialogDescription>
-              Read-only booking details and the separate staff-visible note
-              channel.
-            </DialogDescription>
-          </DialogHeader>
-          {bookingId !== null && usable && (
-            <BusinessBookingDetail
-              key={bookingId}
-              bookingId={bookingId}
-              permissions={permissions}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-    </section>
-  );
-}
-function BusinessBookingDetail({
-  bookingId,
-  permissions,
-}: {
-  bookingId: number;
-  permissions: BusinessStaffPermissions;
-}) {
-  const detail = businessBookingApi.detail.useQuery(
-    { bookingId },
-    { retry: false }
-  );
-  const [page, setPage] = useState(1);
-  const detailReady =
-    !detail.error && !detail.isLoading && !detail.isFetching && !!detail.data;
-  const notes = businessBookingApi.listNotes.useQuery(
-    { bookingId, page, pageSize: 50 },
-    { enabled: detailReady, retry: false }
-  );
-  const addNote = businessBookingApi.addNote.useMutation();
-  return (
-    <BusinessQueryState query={detail}>
-      <div className="space-y-5">
-        {detailReady && detail.data && (
-          <dl className="grid grid-cols-2 gap-4 text-sm">
-            {[
-              ["Customer", detail.data.clientName],
-              ["Destination", detail.data.destination],
-              ["Departure", formatDate(detail.data.departureDate)],
-              ["Booked", formatDate(detail.data.bookedDate)],
-              ["Passengers", detail.data.passengers],
-              ["Nights", detail.data.numberOfNights],
-              ["Stage", detail.data.currentStage],
-              ["Topdog reference", detail.data.topdogRef],
-              ["PTS reference", detail.data.ptsRef],
-              ["CRM reference", detail.data.crmRef],
-              ...(permissions.viewCustomerAmounts
-                ? [["Customer selling price", customerPrice(detail.data)]]
-                : []),
-            ].map(([label, value]) => (
-              <div key={String(label)}>
-                <dt className="text-muted-foreground">{label}</dt>
-                <dd className="mt-1 break-words font-medium">
-                  {value ?? "Not recorded"}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        )}
-        <BusinessWithheldNotice />
-        <h3 className="font-semibold">Business-staff notes</h3>
-        <BusinessQueryState query={notes} empty={!notes.data?.items.length}>
-          <BusinessPlainNotes notes={notes.data?.items ?? []} />
-        </BusinessQueryState>
-        <BusinessPagination
-          page={page}
-          hasMore={!notes.error && notes.data?.hasMore}
-          busy={notes.isLoading || notes.isFetching || !!notes.error}
-          onPage={setPage}
-          label="Booking notes pagination"
-        />
-        {detailReady &&
-          !notes.error &&
-          !notes.isLoading &&
-          !notes.isFetching &&
-          permissions.addBookingNotes && (
-            <BusinessNoteComposer
-              mutation={addNote}
-              bookingId={bookingId}
-              onSaved={async () => {
-                setPage(1);
-                await notes.refetch();
-              }}
-            />
-          )}
-      </div>
-    </BusinessQueryState>
   );
 }

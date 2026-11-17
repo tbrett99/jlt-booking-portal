@@ -8,6 +8,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { registerAcademyDocumentDownloadRoutes } from "../academy-document-download-routes";
+import { registerBookingDocumentDownloadRoutes } from "../booking-document-download-routes";
 import { registerMembershipPaymentRoutes } from "../membership-payment-routes";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -1823,7 +1824,6 @@ async function startServer() {
   // ── Document Proxy ─────────────────────────────────────────────────────────
   // Proxies private Manus-storage documents through the server so the browser
   // doesn't need direct CloudFront access. Requires an authenticated session.
-  // Usage: GET /api/doc-proxy?key=onboarding/123/id-abc.jpeg
   app.get("/api/doc-proxy", async (req, res) => {
     try {
       // Auth check — must be a logged-in user
@@ -1883,6 +1883,8 @@ async function startServer() {
       res.status(500).json({ error: "Error loading document" });
     }
   });
+
+  registerBookingDocumentDownloadRoutes(app);
 
   // ── Email Unsubscribe ─────────────────────────────────────────────────────
   app.get("/api/unsubscribe", async (req, res) => {

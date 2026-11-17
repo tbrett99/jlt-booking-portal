@@ -23,7 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { businessStaffRouter } from "../../../../server/business-staff-management-router";
 import {
-  BUSINESS_STAFF_PERMISSION_KEYS,
+
   BUSINESS_STAFF_PERMISSION_LABELS,
   BUSINESS_STAFF_ORBIT_NOTICE,
   DEFAULT_BUSINESS_STAFF_PERMISSIONS,
@@ -43,6 +43,7 @@ type ManagementOutputs = inferRouterOutputs<typeof businessStaffRouter>;
 type ManagementInputs = inferRouterInputs<typeof businessStaffRouter>;
 type Member = ManagementOutputs["adminList"]["items"][number];
 type Person = ManagementOutputs["searchOwners"]["items"][number];
+const NORMAL_PERMISSION_KEYS = ["viewBookings", "manageBookings", "resourceAccess", "academyAccess"] as const;
 
 export function BusinessPermissionEditor({
   value,
@@ -56,22 +57,19 @@ export function BusinessPermissionEditor({
   return (
     <fieldset disabled={disabled} className="space-y-3">
       <legend className="mb-3 text-sm font-semibold">Staff permissions</legend>
-      {BUSINESS_STAFF_PERMISSION_KEYS.map(key => (
+      {NORMAL_PERMISSION_KEYS.map(key => (
         <label key={key} className="flex items-start gap-3 text-sm leading-6">
           <input
             type="checkbox"
             className="mt-1 size-4 accent-emerald-700"
             checked={value[key]}
             disabled={
-              (key === "viewCustomerAmounts" || key === "addBookingNotes") &&
+              key === "manageBookings" &&
               !value.viewBookings
             }
             onChange={event =>
               onChange(
-                readBusinessStaffPermissions({
-                  ...value,
-                  [key]: event.target.checked,
-                })
+                { ...value, [key]: event.target.checked, ...(key === "viewBookings" && !event.target.checked ? { manageBookings: false } : {}) }
               )
             }
           />
@@ -79,8 +77,7 @@ export function BusinessPermissionEditor({
         </label>
       ))}
       <p className="text-xs leading-5 text-muted-foreground">
-        Customer amounts and note posting require booking visibility. Academy
-        access uses this person's own enrolments.
+        Booking visibility includes standard booking figures. Management requires booking visibility. Commission claims and pre-authorisation always remain owner-only. Academy access uses this person's own enrolments. Legacy channel permissions are retained unchanged.
       </p>
     </fieldset>
   );
@@ -467,7 +464,7 @@ function OwnerManagement({
                   </TableCell>
                   <TableCell>
                     <ul className="max-w-56 whitespace-normal text-xs leading-5">
-                      {BUSINESS_STAFF_PERMISSION_KEYS.filter(
+                      {NORMAL_PERMISSION_KEYS.filter(
                         key => member.permissions[key]
                       ).map(key => (
                         <li key={key}>

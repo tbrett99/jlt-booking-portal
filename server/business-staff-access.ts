@@ -49,10 +49,10 @@ export async function requireBusinessStaffCapability(user: BusinessStaffActor, p
   return authority;
 }
 /** Every authenticated procedure, including legacy public procedures, is checked. */
-export async function assertBusinessStaffRouteAllowed(user: BusinessStaffActor | null, path: string): Promise<void> {
+export async function assertBusinessStaffRouteAllowed(user: BusinessStaffActor | null, path: string, verifiedAuthority?: BusinessStaffAuthority): Promise<void> {
   if (path === "auth.logout") return;
   if (!user || user.role !== "agent" || user.id < 1) return;
-  const authority = await getBusinessStaffAuthority(user);
+  const authority = verifiedAuthority ?? await getBusinessStaffAuthority(user);
   if (!authority.managed) return;
   if (["auth.me", "auth.logout", "auth.changePassword", "auth.loginWithPassword", "auth.forgotPassword", "auth.resetPassword", "businessStaff.mine"].includes(path)) return;
   if (path.startsWith("businessBookings.") && authority.active) return;
@@ -62,6 +62,19 @@ export async function assertBusinessStaffRouteAllowed(user: BusinessStaffActor |
     "library.browse", "library.article", "library.webinar", "library.recordView", "library.markCompleted",
     "suppliers.list", "suppliers.get", "suppliers.categories", "suppliers.locations", "suppliers.preferredPartners", "suppliers.listAttachments",
   ].includes(path)) return;
+  const bookingReads = [
+    "bookings.myBookings", "bookings.quickSearch", "bookings.byId", "bookings.listReimbDocs",
+    "notes.list", "notes.byAmendment", "notes.myAllThreads", "notes.myUnansweredThreads", "notes.markThreadRead",
+    "amendments.byBooking", "amendments.getLineItems", "refunds.byBooking",
+    "reimbursements.getByBooking", "reimbursements.getItemDocs", "reimbursements.auditLog", "reimbursements.myBookingsWithMissingDocs", "reimbursements.agentOutstandingSummary",
+    "flightRequests.myRequests", "flightRequests.byBooking", "bookingDocs.list", "payments.listForBooking",
+  ];
+  const bookingWrites = [
+    "bookings.create", "bookings.uploadReimbDoc", "bookings.uploadMessageDoc", "bookings.updatePtsDetails", "bookings.setTopdogRef", "bookings.setCrmRef", "bookings.updateCommission", "bookings.updateGrossData",
+    "notes.add", "amendments.submit", "cancellations.submit", "refunds.submit", "reimbursements.addLate", "reimbursements.uploadItemDoc",
+    "flightRequests.create", "flightRequests.acceptPriceIncrease", "flightRequests.declinePriceIncrease", "bookingDocs.upload", "payments.createLink", "fnf.applyToBooking",
+  ];
+  if (authority.active && authority.membership?.permissions.viewBookings && (bookingReads.includes(path) || (authority.membership.permissions.manageBookings && bookingWrites.includes(path)))) return;
   throw new TRPCError({ code: "FORBIDDEN", message: "Use the restricted Business staff workspace. This account cannot access owner financial, ordinary agent or JLT staff operations." });
 }
 export function notBusinessStaffUser(column: any) {

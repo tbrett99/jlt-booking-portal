@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { eq, desc, asc, count, inArray } from "drizzle-orm";
+import { and, eq, desc, asc, count, inArray } from "drizzle-orm";
 import { router, protectedProcedure, adminProcedure } from "./_core/trpc";
-import { getDb } from "./db";
+import { getDb, getBookingById } from "./db";
 import { flightRequests, flightRequestActions, bookings, users } from "../drizzle/schema";
 import { createInAppNotification, createNote } from "./db";
 import { sendNotificationEmail } from "./email";
+import { getBookingActorScope, assertBookingActorAccess, withBookingActorWrite } from "./business-staff-booking-scope";
 
 async function logFlightRequestAction(
   db: any,
@@ -60,17 +61,20 @@ export const flightRequestsRouter = router({
         .from(bookings)
         .where(eq(bookings.id, input.bookingId));
       if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-      if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      await assertBookingActorAccess(ctx, booking, "operate");
       if (input.requestType === "both") {
         if (!input.cancellationPnr || !input.cancellationDepartureDate || !input.cancellationTicketingDeadline) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Cancellation PNR, departure date and ticketing deadline are required when request type is Both." });
         }
       }
-      const result = await db.insert(flightRequests).values({
+      return withBookingActorWrite(ctx, input.bookingId, async (writer, scope) => {
+      const connection = writer ?? db;
+      const current = await getBookingById(input.bookingId, writer);
+      if (!current) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertBookingActorAccess(ctx, current, "operate");
+      const result = await connection.insert(flightRequests).values({
         bookingId: input.bookingId,
-        agentId: ctx.user.id,
+        agentId: scope.ownerUserId,
         requestType: input.requestType,
         supplier: input.supplier,
         pnr: input.pnr,
@@ -85,7 +89,7 @@ export const flightRequestsRouter = router({
         invoiceAddedToPts: false,
       });
       const insertId = (result as any)[0]?.insertId ?? (result as any).insertId;
-      await logFlightRequestAction(db, {
+      await logFlightRequestAction(connection, {
         flightRequestId: Number(insertId),
         bookingId: input.bookingId,
         action: "submitted",
@@ -93,15 +97,17 @@ export const flightRequestsRouter = router({
         performedById: ctx.user.id,
         details: `Flight ${input.requestType} request submitted.`,
       });
-      const [created] = await db
+      const [created] = await connection
         .select()
         .from(flightRequests)
         .where(eq(flightRequests.id, insertId));
       return created;
+      }, "operate", { operation: "flight_request_create" });
     }),
 
   // ─── Agent: list their own flight requests ───────────────────────────────
   myRequests: protectedProcedure.query(async ({ ctx }) => {
+    const scope = await getBookingActorScope(ctx);
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
     const rows = await db
@@ -135,7 +141,7 @@ export const flightRequestsRouter = router({
       })
       .from(flightRequests)
       .innerJoin(bookings, eq(flightRequests.bookingId, bookings.id))
-      .where(eq(flightRequests.agentId, ctx.user.id))
+      .where(and(eq(flightRequests.agentId, scope.ownerUserId), eq(bookings.agentId, scope.ownerUserId), scope.managed ? eq(bookings.isPersonalBooking, false) : undefined))
       .orderBy(desc(flightRequests.createdAt));
     return rows;
   }),
@@ -151,13 +157,11 @@ export const flightRequestsRouter = router({
         .from(bookings)
         .where(eq(bookings.id, input.bookingId));
       if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-      if (ctx.user.role === "agent" && booking.agentId !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      await assertBookingActorAccess(ctx, booking);
       return db
         .select()
         .from(flightRequests)
-        .where(eq(flightRequests.bookingId, input.bookingId))
+        .where(and(eq(flightRequests.bookingId, input.bookingId), eq(flightRequests.agentId, booking.agentId)))
         .orderBy(desc(flightRequests.createdAt));
     }),
 
@@ -501,30 +505,28 @@ export const flightRequestsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-      const [req] = await db
-        .select({
-          id: flightRequests.id,
-          agentId: flightRequests.agentId,
-          bookingId: flightRequests.bookingId,
-          pnr: flightRequests.pnr,
-          priceIncreaseAmount: flightRequests.priceIncreaseAmount,
-          status: flightRequests.status,
-          clientName: bookings.clientName,
-        })
-        .from(flightRequests)
-        .innerJoin(bookings, eq(flightRequests.bookingId, bookings.id))
-        .where(eq(flightRequests.id, input.id));
-      if (!req) throw new TRPCError({ code: "NOT_FOUND" });
-      if (ctx.user.role === "agent" && req.agentId !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const [initial] = await db.select().from(flightRequests).where(eq(flightRequests.id, input.id)).limit(1);
+      if (!initial) throw new TRPCError({ code: "NOT_FOUND" });
+      const booking = await getBookingById(initial.bookingId);
+      if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertBookingActorAccess(ctx, booking, "operate");
+      if (initial.agentId !== booking.agentId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      return withBookingActorWrite(ctx, initial.bookingId, async (writer) => {
+      const connection = writer ?? db;
+      const currentBooking = await getBookingById(initial.bookingId, writer);
+      if (!currentBooking) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertBookingActorAccess(ctx, currentBooking, "operate");
+      const query = connection.select().from(flightRequests).where(eq(flightRequests.id, input.id)).limit(1);
+      const [req] = await (writer ? query.for("update") : query);
+      if (!req || req.bookingId !== initial.bookingId || req.agentId !== currentBooking.agentId) throw new TRPCError({ code: "FORBIDDEN", message: "Flight request has changed." });
       if (req.status !== "price_increase_pending") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "No pending price increase on this request." });
       }
 
       const now = new Date();
       // Accept: update flightCost to the new price, clear increase fields, revert to pending
-      await db
+      await connection
         .update(flightRequests)
         .set({
           flightCost: req.priceIncreaseAmount,  // update the agreed price
@@ -535,7 +537,7 @@ export const flightRequestsRouter = router({
         } as any)
         .where(eq(flightRequests.id, input.id));
 
-      await logFlightRequestAction(db, {
+      await logFlightRequestAction(connection, {
         flightRequestId: req.id,
         bookingId: req.bookingId,
         action: "price_increase_accepted",
@@ -549,12 +551,13 @@ export const flightRequestsRouter = router({
       await createNote({
         bookingId: req.bookingId,
         authorId: ctx.user.id,
-        content: `[Flight Price Increase Accepted] ${ctx.user.name ?? "Agent"} accepted the price increase for PNR ${req.pnr}. New agreed price: £${Number(req.priceIncreaseAmount ?? 0).toFixed(2)}.`,
+        content: `[Flight Price Increase Accepted] ${ctx.user.name ?? "Agent"} accepted the price increase for request #${req.id}, PNR ${req.pnr}. New agreed price: £${Number(req.priceIncreaseAmount ?? 0).toFixed(2)}.`,
         isInternal: false,
-      });
+      }, writer);
 
-      const [updated] = await db.select().from(flightRequests).where(eq(flightRequests.id, input.id));
+      const [updated] = await connection.select().from(flightRequests).where(eq(flightRequests.id, input.id));
       return updated;
+      }, "operate", { operation: "flight_price_accept" });
     }),
 
   // ─── Agent: decline a price increase ────────────────────────────────────────
@@ -564,28 +567,27 @@ export const flightRequestsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-      const [req] = await db
-        .select({
-          id: flightRequests.id,
-          agentId: flightRequests.agentId,
-          bookingId: flightRequests.bookingId,
-          pnr: flightRequests.pnr,
-          status: flightRequests.status,
-          clientName: bookings.clientName,
-        })
-        .from(flightRequests)
-        .innerJoin(bookings, eq(flightRequests.bookingId, bookings.id))
-        .where(eq(flightRequests.id, input.id));
-      if (!req) throw new TRPCError({ code: "NOT_FOUND" });
-      if (ctx.user.role === "agent" && req.agentId !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const [initial] = await db.select().from(flightRequests).where(eq(flightRequests.id, input.id)).limit(1);
+      if (!initial) throw new TRPCError({ code: "NOT_FOUND" });
+      const booking = await getBookingById(initial.bookingId);
+      if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertBookingActorAccess(ctx, booking, "operate");
+      if (initial.agentId !== booking.agentId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      return withBookingActorWrite(ctx, initial.bookingId, async (writer) => {
+      const connection = writer ?? db;
+      const currentBooking = await getBookingById(initial.bookingId, writer);
+      if (!currentBooking) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertBookingActorAccess(ctx, currentBooking, "operate");
+      const query = connection.select().from(flightRequests).where(eq(flightRequests.id, input.id)).limit(1);
+      const [req] = await (writer ? query.for("update") : query);
+      if (!req || req.bookingId !== initial.bookingId || req.agentId !== currentBooking.agentId) throw new TRPCError({ code: "FORBIDDEN", message: "Flight request has changed." });
       if (req.status !== "price_increase_pending") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "No pending price increase on this request." });
       }
 
       const now = new Date();
-      await db
+      await connection
         .update(flightRequests)
         .set({
           priceIncreaseDeclinedAt: now,
@@ -595,7 +597,7 @@ export const flightRequestsRouter = router({
         } as any)
         .where(eq(flightRequests.id, input.id));
 
-      await logFlightRequestAction(db, {
+      await logFlightRequestAction(connection, {
         flightRequestId: req.id,
         bookingId: req.bookingId,
         action: "price_increase_declined",
@@ -608,12 +610,13 @@ export const flightRequestsRouter = router({
       await createNote({
         bookingId: req.bookingId,
         authorId: ctx.user.id,
-        content: `[Flight Price Increase Declined] ${ctx.user.name ?? "Agent"} declined the price increase for PNR ${req.pnr}. Please contact the agent to discuss next steps.`,
+        content: `[Flight Price Increase Declined] ${ctx.user.name ?? "Agent"} declined the price increase for request #${req.id}, PNR ${req.pnr}. Please contact the agent to discuss next steps.`,
         isInternal: false,
-      });
+      }, writer);
 
-      const [updated] = await db.select().from(flightRequests).where(eq(flightRequests.id, input.id));
+      const [updated] = await connection.select().from(flightRequests).where(eq(flightRequests.id, input.id));
       return updated;
+      }, "operate", { operation: "flight_price_decline" });
     }),
 
   // ─── Admin: delete a flight request ──────────────────────────────────────

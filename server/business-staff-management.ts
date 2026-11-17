@@ -7,7 +7,7 @@ import { BUSINESS_STAFF_ORBIT_NOTICE, readBusinessStaffPermissions, type Busines
 
 const id = z.number().int().positive().max(2147483647);
 const reason = z.string().trim().min(10).max(1000);
-export const permissionsInput = z.object({ viewBookings: z.boolean(), viewCustomerAmounts: z.boolean(), addBookingNotes: z.boolean(), academyAccess: z.boolean(), resourceAccess: z.boolean().default(true) }).strict().superRefine((p, ctx) => {
+export const permissionsInput = z.object({ viewBookings: z.boolean(), viewCustomerAmounts: z.boolean(), addBookingNotes: z.boolean(), academyAccess: z.boolean(), resourceAccess: z.boolean().default(true), manageBookings: z.boolean().default(true) }).strict().superRefine((p, ctx) => {
   if (!p.viewBookings && (p.viewCustomerAmounts || p.addBookingNotes)) ctx.addIssue({ code: "custom", message: "Customer amounts and booking notes require booking access" });
 });
 const pagination = { page: z.number().int().min(1).max(10000).default(1), pageSize: z.number().int().min(1).max(50).default(25) };

@@ -214,19 +214,19 @@ describe("resourceAccess shared and strict management compatibility", () => {
   });
   it.each([false, true])("honors explicit resourceAccess=%s in object and JSON", resourceAccess => {
     for (const value of [{ ...legacy, resourceAccess }, JSON.stringify({ ...legacy, resourceAccess })]) {
-      expect(readBusinessStaffPermissions(value)).toEqual({ ...legacy, resourceAccess });
+      expect(readBusinessStaffPermissions(value)).toEqual({ ...legacy, resourceAccess, manageBookings: true });
     }
   });
   it.each([null, [], "bad-json", {}, { viewBookings: true }, { ...legacy, academyAccess: 1 }, { ...legacy, admin: false }, { ...legacy, resourceAccess: "true" }, { ...legacy, resourceAccess: true, unknown: false }, { resourceAccess: true }])("never derives resources from malformed or partial %j", value => {
     expect(readBusinessStaffPermissions(value).resourceAccess).toBe(false);
   });
   it("preserves the original exact-true and booking dependency behavior", () => {
-    expect(readBusinessStaffPermissions({ viewBookings: true, academyAccess: true, unknown: 1 })).toEqual({ viewBookings: true, academyAccess: true, viewCustomerAmounts: false, addBookingNotes: false, resourceAccess: false });
-    expect(readBusinessStaffPermissions({ ...legacy, viewBookings: false, viewCustomerAmounts: true, addBookingNotes: true })).toEqual({ viewBookings: false, viewCustomerAmounts: false, addBookingNotes: false, academyAccess: true, resourceAccess: true });
+    expect(readBusinessStaffPermissions({ viewBookings: true, academyAccess: true, unknown: 1 })).toEqual({ viewBookings: true, academyAccess: true, viewCustomerAmounts: false, addBookingNotes: false, resourceAccess: false, manageBookings: false });
+    expect(readBusinessStaffPermissions({ ...legacy, viewBookings: false, viewCustomerAmounts: true, addBookingNotes: true })).toEqual({ viewBookings: false, viewCustomerAmounts: false, addBookingNotes: false, academyAccess: true, resourceAccess: true, manageBookings: false });
   });
   it("management defaults omitted resourceAccess true and retains explicit false", () => {
-    expect(permissionsInput.parse(legacy)).toEqual({ ...legacy, resourceAccess: true });
-    expect(permissionsInput.parse({ ...legacy, resourceAccess: false })).toEqual({ ...legacy, resourceAccess: false });
+    expect(permissionsInput.parse(legacy)).toEqual({ ...legacy, resourceAccess: true, manageBookings: true });
+    expect(permissionsInput.parse({ ...legacy, resourceAccess: false })).toEqual({ ...legacy, resourceAccess: false, manageBookings: true });
   });
   it.each([{ ...legacy, unknown: true }, { ...legacy, resourceAccess: "false" }, { viewBookings: true }, { ...legacy, viewBookings: false, viewCustomerAmounts: true }])("strict management rejects %j before storage", value => {
     expect(permissionsInput.safeParse(value).success).toBe(false); expect(external.getDb).not.toHaveBeenCalled();

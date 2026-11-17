@@ -148,6 +148,7 @@ async function ownedBooking(db: Connection, ownerUserId: number, bookingId: numb
   if (!booking) missingBooking();
   return booking;
 }
+export { eligibleAccount as eligibleBusinessBookingAccount, ownedBooking as lockedBusinessBooking };
 async function ownerAuthority(user: BusinessStaffActor, db: Connection, lock = false) {
   if (user.role !== "agent") forbidden();
   const authority = await getBusinessStaffAuthority(user);
