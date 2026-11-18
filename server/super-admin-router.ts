@@ -15,7 +15,8 @@ import {
 } from "../shared/business-intelligence-periods";
 import { buildDepartureReasonBreakdown, normaliseDepartureReasons } from "../shared/departure-reporting";
 import { DEPARTURE_REASON_LABELS } from "../shared/departure-reasons";
-
+import { readFinancialsIncome } from "./financials-income";
+import type { FinancialsIncome } from "../shared/financials-income";
 const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "super_admin") {
     throw new TRPCError({ code: "FORBIDDEN", message: "Super admin access required" });
@@ -409,6 +410,8 @@ export const superAdminRouter = router({
           isNotNull(remittanceLines.jlt20),
         ));
 
+      const incomeAfterVat = await readFinancialsIncome(db, weekStartDate, weekEndDate);
+
       // Agent payouts (remit80) this week
       const agentPayoutsThisWeek = await db
         .select({ total: sql<number>`SUM(remit80)` })
@@ -560,6 +563,7 @@ export const superAdminRouter = router({
           amendmentsThisWeek, amendmentsActionedThisWeek, refundsThisWeek, refundsByStage,
           flightRequestsThisWeek, flightRequestsPendingCount, pipelineDwellRaw,
           jltRevenueThisWeek, jltRevenuePrevWeek, agentPayoutsThisWeek,
+          incomeAfterVat,
           commissionClaimsThisWeek, commissionClaimsPaidThisWeek,
           reimbursementsPaidThisWeek, reimbursementsScheduled, reimbursementsPending,
           newProspectsThisWeek, newProspectsPrevWeek, wonProspectsThisWeek, directJoinersThisWeekRaw,
@@ -993,6 +997,7 @@ export const superAdminRouter = router({
         amendmentsThisWeek, amendmentsActionedThisWeek, refundsThisWeek, refundsByStage,
         flightRequestsThisWeek, flightRequestsPendingCount, pipelineDwellRaw,
         jltRevenueThisWeek, jltRevenuePrevWeek, agentPayoutsThisWeek,
+        incomeAfterVat,
         commissionClaimsThisWeek, commissionClaimsPaidThisWeek,
         reimbursementsPaidThisWeek, reimbursementsScheduled, reimbursementsPending,
         newProspectsThisWeek, newProspectsPrevWeek, wonProspectsThisWeek, directJoinersThisWeekRaw,
@@ -1498,6 +1503,8 @@ export const superAdminRouter = router({
         db.select({ count: sql<number>`COUNT(*)`, total: sql<number>`SUM(amount)` }).from(reimbursementItems).where(eq(reimbursementItems.status, "pending")),
       ]);
 
+      const incomeAfterVat = await readFinancialsIncome(db, monthStartDate, monthEndDate);
+
       // ── Section 5: Recruitment ──
       const [
         newProspectsThisMonth, newProspectsPrevMonth, wonProspectsThisMonth,
@@ -1712,6 +1719,7 @@ export const superAdminRouter = router({
           refundsByStage: refundsByStage.map((r) => ({ stage: r.stage ?? "Unknown", count: n(r.count) })),
         },
         financials: {
+          incomeAfterVat,
           // Total Income = JLT 20% PTS remittance share + GoCardless paid-out funds (money in the bank)
           totalIncomeThisMonth: n(jltRevenueThisMonth[0]?.total) + Math.round(n(paidOutThisMonthRaw[0]?.totalPence) / 100),
           jltRevenueThisMonth: n(jltRevenueThisMonth[0]?.total),
@@ -2325,6 +2333,7 @@ function buildResponse(data: {
   flightRequestsThisWeek: Array<{ count: number }>;
   flightRequestsPendingCount: Array<{ count: number }>;
   pipelineDwellRaw: unknown;
+  incomeAfterVat: FinancialsIncome;
   jltRevenueThisWeek: Array<{ total: number | null }>;
   jltRevenuePrevWeek: Array<{ total: number | null }>;
   agentPayoutsThisWeek: Array<{ total: number | null }>;
@@ -2467,6 +2476,7 @@ function buildResponse(data: {
 
     // Section 4: Financials
     financials: {
+      incomeAfterVat: data.incomeAfterVat,
       // Total Income = JLT 20% PTS remittance share + GoCardless paid-out funds (money in the bank)
       totalIncomeThisWeek: Number(data.jltRevenueThisWeek[0]?.total ?? 0) + Math.round(n(data.paymentsPaidOutThisWeek[0]?.totalPence) / 100),
       jltRevenueThisWeek: Number(data.jltRevenueThisWeek[0]?.total ?? 0),
