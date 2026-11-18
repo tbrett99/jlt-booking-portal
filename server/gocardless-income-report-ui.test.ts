@@ -230,6 +230,40 @@ const tableRows = () =>
   container.querySelectorAll(
     'table[aria-label="GoCardless paid-out payments"] tbody tr'
   );
+function incomeCard(
+  category: "joining" | "membership" | "overall",
+  currency = "GBP"
+) {
+  const card = container.querySelector(
+    `[data-testid="income-card-${category}-${currency}"]`
+  );
+  expect(card, `${category} ${currency} income card`).not.toBeNull();
+  return card!;
+}
+function expectVatCard(
+  category: "joining" | "membership" | "overall",
+  currency: string,
+  gross: string,
+  vat: string,
+  excludingVat: string
+) {
+  const card = incomeCard(category, currency);
+  expect(card.textContent).toContain(gross);
+  expect(card.textContent).toContain("Excluding VAT (20% estimate)");
+  expect(card.querySelector('[data-testid="income-vat"]')!.textContent).toBe(
+    vat
+  );
+  expect(
+    card.querySelector('[data-testid="income-excluding-vat"]')!.textContent
+  ).toBe(excludingVat);
+}
+function paymentCells(paymentId: string) {
+  const payment = Array.from(tableRows()).find(element =>
+    element.textContent?.includes(`Payment: ${paymentId}`)
+  );
+  expect(payment, paymentId).toBeTruthy();
+  return payment!.querySelectorAll("td");
+}
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -396,6 +430,215 @@ describe("GoCardless paid-out income rendered UI (synthetic reports only)", () =
     expect(container.textContent).toContain("Counts are payments, not people");
   });
 
+  it("keeps gross £120 alongside estimated VAT £20 and excluding-VAT £100, with conditional overall income including other/unclassified", async () => {
+    await load(
+      fixture({
+        rows: [
+          row({ paymentId: "PM-VAT-JOIN", amountMinor: 12000 }),
+          row({
+            paymentId: "PM-VAT-MEMBER",
+            category: "membership",
+            amountMinor: 12000,
+          }),
+          row({
+            paymentId: "PM-VAT-OTHER",
+            category: "other",
+            amountMinor: 6000,
+          }),
+          row({
+            paymentId: "PM-VAT-UNCLASSIFIED",
+            category: "unclassified",
+            amountMinor: 6000,
+          }),
+        ],
+      })
+    );
+    expectVatCard("joining", "GBP", "£120.00", "£20.00", "£100.00");
+    expectVatCard("membership", "GBP", "£120.00", "£20.00", "£100.00");
+    expectVatCard("overall", "GBP", "£360.00", "£60.00", "£300.00");
+    expect(incomeCard("overall").textContent).toContain(
+      "Conditional estimate includes other/unclassified payments; their tax treatment needs review."
+    );
+    const headers = Array.from(container.querySelectorAll("table th")).map(
+      element => element.textContent
+    );
+    expect(headers).toEqual([
+      "Payer / member",
+      "Category / review",
+      "Source(s)",
+      "Gross / currency",
+      "Paid-out date / reference",
+      "VAT (20% estimate)",
+      "Excluding VAT (estimate)",
+    ]);
+    const cells = paymentCells("PM-VAT-JOIN");
+    expect(cells[3].textContent).toContain("£120.00");
+    expect(cells[4].textContent).toContain("PO-PAID-1");
+    expect(cells[5].textContent).toBe("£20.00");
+    expect(cells[6].textContent).toBe("£100.00");
+    expect(container.textContent).toContain(
+      "Assumes all included gross payments contain VAT at 20%. VAT is gross ÷ 6; income excluding VAT is gross ÷ 1.20 before rounding. VAT is rounded per payment; totals sum those rows. Not a VAT return or net bank payout; no fees, refunds or chargebacks deducted. Other/unclassified payments need tax-treatment review."
+    );
+    expect(container.textContent).not.toMatch(
+      /actual (VAT|tax liability)|zero-rated/i
+    );
+  });
+
+  it("reconciles category and overall VAT estimates by summing rounded individual payments, not rounding gross totals", async () => {
+    await load(
+      fixture({
+        rows: [
+          row({ paymentId: "PM-ROUND-1", amountMinor: 101 }),
+          row({ paymentId: "PM-ROUND-2", amountMinor: 101 }),
+          row({
+            paymentId: "PM-ROUND-3",
+            category: "membership",
+            amountMinor: 101,
+          }),
+        ],
+      })
+    );
+    await click("All");
+    expectVatCard("joining", "GBP", "£2.02", "£0.34", "£1.68");
+    expectVatCard("membership", "GBP", "£1.01", "£0.17", "£0.84");
+    expectVatCard("overall", "GBP", "£3.03", "£0.51", "£2.52");
+    const minor = (text: string | null) => Number(text!.replace(/[^\d]/g, ""));
+    const rowTotals = Array.from(tableRows()).reduce(
+      (totals, element) => {
+        const cells = element.querySelectorAll("td");
+        const vat = minor(cells[5].textContent);
+        const excludingVat = minor(cells[6].textContent);
+        expect(vat).toBe(17);
+        expect(excludingVat).toBe(84);
+        expect(vat + excludingVat).toBe(101);
+        return {
+          vat: totals.vat + vat,
+          excludingVat: totals.excludingVat + excludingVat,
+        };
+      },
+      { vat: 0, excludingVat: 0 }
+    );
+    expect(rowTotals).toEqual({ vat: 51, excludingVat: 252 });
+    expect(rowTotals.vat + rowTotals.excludingVat).toBe(303);
+    expect(
+      minor(
+        incomeCard("overall").querySelector('[data-testid="income-vat"]')!
+          .textContent
+      )
+    ).toBe(rowTotals.vat);
+    expect(
+      minor(
+        incomeCard("overall").querySelector(
+          '[data-testid="income-excluding-vat"]'
+        )!.textContent
+      )
+    ).toBe(rowTotals.excludingVat);
+  });
+
+  it("shows unavailable estimates for unknown amount/currency rather than zero and excludes those rows from known-currency totals", async () => {
+    await load(
+      fixture({
+        rows: [
+          row({ paymentId: "PM-KNOWN", amountMinor: 12000 }),
+          row({ paymentId: "PM-NULL-AMOUNT", amountMinor: null }),
+          row({
+            paymentId: "PM-NULL-CURRENCY",
+            amountMinor: 12000,
+            currency: null,
+          }),
+          row({ paymentId: "PM-NULL-BOTH", amountMinor: null, currency: null }),
+        ],
+      })
+    );
+    expectVatCard("joining", "GBP", "£120.00", "£20.00", "£100.00");
+    expectVatCard("overall", "GBP", "£120.00", "£20.00", "£100.00");
+    expect(incomeCard("joining").textContent).toContain(
+      "1 joining-fee payments"
+    );
+    for (const id of ["PM-NULL-AMOUNT", "PM-NULL-CURRENCY", "PM-NULL-BOTH"]) {
+      const cells = paymentCells(id);
+      expect(cells[3].textContent).toContain("Unknown gross / currency");
+      expect(cells[5].textContent).toBe("Not available");
+      expect(cells[6].textContent).toBe("Not available");
+      expect(cells[5].textContent).not.toContain("0.00");
+      expect(cells[6].textContent).not.toContain("0.00");
+    }
+    expect(container.textContent).toContain("4 paid-out payment rows");
+    expect(container.textContent).toContain(
+      "Missing values are not assumed to be zero"
+    );
+  });
+
+  it("estimates each currency independently under the same conditional assumption without conversion or non-GBP zero-rating", async () => {
+    await load(
+      fixture({
+        rows: [
+          row({ paymentId: "PM-GBP-VAT", amountMinor: 12000, currency: "GBP" }),
+          row({ paymentId: "PM-USD-VAT", amountMinor: 6000, currency: "USD" }),
+          row({ paymentId: "PM-EUR-VAT", amountMinor: 24000, currency: "EUR" }),
+        ],
+      })
+    );
+    expectVatCard("overall", "GBP", "£120.00", "£20.00", "£100.00");
+    expectVatCard("overall", "USD", "US$60.00", "US$10.00", "US$50.00");
+    expectVatCard("overall", "EUR", "€240.00", "€40.00", "€200.00");
+    expect(paymentCells("PM-USD-VAT")[5].textContent).toBe("US$10.00");
+    expect(paymentCells("PM-USD-VAT")[6].textContent).toBe("US$50.00");
+    expect(paymentCells("PM-EUR-VAT")[5].textContent).toBe("€40.00");
+    expect(paymentCells("PM-EUR-VAT")[6].textContent).toBe("€200.00");
+    expect(
+      container.querySelectorAll('[data-testid^="income-currency-"]')
+    ).toHaveLength(3);
+    expect(container.textContent).toContain("no currency conversion");
+    expect(container.textContent).not.toMatch(
+      /zero-rated|VAT exempt|actual tax liability/i
+    );
+  });
+
+  it("keeps new VAT and excluding-VAT totals on the full report through category/search filters and updates the empty-row colspan", async () => {
+    await load(
+      fixture({
+        rows: [
+          row({ paymentId: "PM-FILTER-JOIN", amountMinor: 12000 }),
+          row({
+            paymentId: "PM-FILTER-MEMBER",
+            category: "membership",
+            amountMinor: 6000,
+          }),
+          row({
+            paymentId: "PM-FILTER-OTHER",
+            category: "other",
+            amountMinor: 6000,
+          }),
+        ],
+      })
+    );
+    expect(tableRows()).toHaveLength(1); // Default joining-fee filter.
+    expectVatCard("overall", "GBP", "£240.00", "£40.00", "£200.00");
+    const totals = container.querySelector(
+      '[data-testid="income-currency-GBP"]'
+    )!.textContent;
+    await click("Membership");
+    expect(paymentCells("PM-FILTER-MEMBER")[6].textContent).toBe("£50.00");
+    await click("All");
+    await fill("income-search", "PM-FILTER-OTHER");
+    expect(tableRows()).toHaveLength(1);
+    expect(paymentCells("PM-FILTER-OTHER")[5].textContent).toBe("£10.00");
+    expect(
+      container.querySelector('[data-testid="income-currency-GBP"]')!
+        .textContent
+    ).toBe(totals);
+    await fill("income-search", "no such payment");
+    expect(tableRows()[0].querySelector("td")!.getAttribute("colspan")).toBe(
+      "7"
+    );
+    expect(
+      container.querySelector('[data-testid="income-currency-GBP"]')!
+        .textContent
+    ).toBe(totals);
+    expectVatCard("overall", "GBP", "£240.00", "£40.00", "£200.00");
+  });
+
   it("shows actual London paid-out dates, source evidence and CRM links only for confirmed identities", async () => {
     await load();
     expect(tableRows()).toHaveLength(3);
@@ -521,10 +764,20 @@ describe("GoCardless paid-out income rendered UI (synthetic reports only)", () =
     async flag => {
       await load();
       expect(results()).not.toBeNull();
+      expect(
+        container.querySelectorAll('[data-testid="income-excluding-vat"]')
+      ).toHaveLength(9);
       mocks.flags[flag] = true;
       await render();
       expect(results()).toBeNull();
       expect(container.querySelector("table")).toBeNull();
+      expect(
+        container.querySelector('[data-testid="income-excluding-vat"]')
+      ).toBeNull();
+      expect(container.querySelector('[data-testid="income-vat"]')).toBeNull();
+      expect(container.textContent).not.toContain(
+        "Excluding VAT (20% estimate)"
+      );
       expect(container.textContent).not.toContain("£292.37");
       expect(container.textContent).toContain(
         "Previous results are withheld while loading"
@@ -537,11 +790,19 @@ describe("GoCardless paid-out income rendered UI (synthetic reports only)", () =
 
   it("withholds cached success on error rather than reporting true zero, and allows explicit retry", async () => {
     await load();
+    expect(
+      container.querySelector('[data-testid="income-excluding-vat"]')
+    ).not.toBeNull();
     mocks.flags.isError = true;
     mocks.error = new Error("Synthetic provider timeout");
     await render();
     expect(results()).toBeNull();
     expect(container.querySelector("table")).toBeNull();
+    expect(
+      container.querySelector('[data-testid="income-excluding-vat"]')
+    ).toBeNull();
+    expect(container.querySelector('[data-testid="income-vat"]')).toBeNull();
+    expect(container.textContent).not.toContain("Excluding VAT (20% estimate)");
     expect(container.textContent).toContain("Synthetic provider timeout");
     expect(container.textContent).toContain("not a zero-income result");
     expect(container.textContent).not.toContain(

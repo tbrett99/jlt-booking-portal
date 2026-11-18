@@ -20,6 +20,8 @@ import {
   incomeHistoryFloor,
   incomeMoney,
   incomeCsv,
+  incomeVatBreakdown,
+  incomeVatSummary,
   isCalendarDate,
   londonDate,
   validateIncomeRange,
@@ -61,6 +63,38 @@ function dateLabel(value: string) {
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function IncomeVatEstimate({
+  breakdown,
+  currency,
+}: {
+  breakdown: ReturnType<typeof incomeVatBreakdown>;
+  currency: string;
+}) {
+  return (
+    <div className="mt-3 border-t pt-3">
+      <p className="text-xs font-medium text-muted-foreground">
+        Excluding VAT (20% estimate)
+      </p>
+      <p
+        className="mt-1 text-xl font-bold tabular-nums text-primary"
+        data-testid="income-excluding-vat"
+      >
+        {breakdown
+          ? incomeMoney(breakdown.excludingVatMinor, currency)
+          : "Not available"}
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        VAT (20% estimate):{" "}
+        <span className="tabular-nums" data-testid="income-vat">
+          {breakdown
+            ? incomeMoney(breakdown.vatMinor, currency)
+            : "Not available"}
+        </span>
+      </p>
+    </div>
+  );
 }
 
 export default function GoCardlessIncomeReport() {
@@ -426,78 +460,109 @@ export default function GoCardlessIncomeReport() {
             people. Paid-out event pagination is complete; payment details,
             Portal ownership or sources may still need review.
           </p>
-          {report.currencies.map(summary => (
-            <div
-              key={summary.currency}
-              className="space-y-2"
-              data-testid={`income-currency-${summary.currency}`}
-            >
-              <h3 className="text-sm font-semibold">
-                Verified gross amounts · {summary.currency} — no currency
-                conversion
-              </h3>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Card>
-                  <CardContent className="pt-4 pb-4">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Joining fees · {summary.currency}
-                    </p>
-                    <p className="mt-1 text-xl font-bold tabular-nums">
-                      {incomeMoney(summary.joiningGrossMinor, summary.currency)}
-                    </p>
-                    <p className="text-sm">
-                      {summary.joiningCount} joining-fee payments
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4 pb-4">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Membership · {summary.currency}
-                    </p>
-                    <p className="mt-1 text-xl font-bold tabular-nums">
-                      {incomeMoney(
-                        summary.membershipGrossMinor,
-                        summary.currency
-                      )}
-                    </p>
-                    <p className="text-sm">
-                      {summary.membershipCount} individual membership payments
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4 pb-4">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Overall gross · {summary.currency}
-                    </p>
-                    <p className="mt-1 text-xl font-bold tabular-nums">
-                      {incomeMoney(summary.totalGrossMinor, summary.currency)}
-                    </p>
-                    <p className="text-sm">
-                      {summary.totalCount} payments, including other /
-                      unclassified
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Other: {summary.otherCount} payments ·{" "}
-                      {incomeMoney(summary.otherGrossMinor, summary.currency)}
-                      <br />
-                      Unclassified: {summary.unclassifiedCount} payments ·{" "}
-                      {incomeMoney(
-                        summary.unclassifiedGrossMinor,
-                        summary.currency
-                      )}
-                    </p>
-                  </CardContent>
-                </Card>
+          <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+            Assumes all included gross payments contain VAT at 20%. VAT is gross
+            ÷ 6; income excluding VAT is gross ÷ 1.20 before rounding. VAT is
+            rounded per payment; totals sum those rows. Not a VAT return or net
+            bank payout; no fees, refunds or chargebacks deducted.
+            Other/unclassified payments need tax-treatment review.
+          </p>
+          {report.currencies.map(summary => {
+            const vat = incomeVatSummary(report.rows, summary.currency);
+            return (
+              <div
+                key={summary.currency}
+                className="space-y-2"
+                data-testid={`income-currency-${summary.currency}`}
+              >
+                <h3 className="text-sm font-semibold">
+                  Verified gross amounts · {summary.currency} — no currency
+                  conversion
+                </h3>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Card data-testid={`income-card-joining-${summary.currency}`}>
+                    <CardContent className="pt-4 pb-4">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Joining fees · {summary.currency}
+                      </p>
+                      <p className="mt-1 text-xl font-bold tabular-nums">
+                        {incomeMoney(
+                          summary.joiningGrossMinor,
+                          summary.currency
+                        )}
+                      </p>
+                      <p className="text-sm">
+                        {summary.joiningCount} joining-fee payments
+                      </p>
+                      <IncomeVatEstimate
+                        breakdown={vat.joining}
+                        currency={summary.currency}
+                      />
+                    </CardContent>
+                  </Card>
+                  <Card
+                    data-testid={`income-card-membership-${summary.currency}`}
+                  >
+                    <CardContent className="pt-4 pb-4">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Membership · {summary.currency}
+                      </p>
+                      <p className="mt-1 text-xl font-bold tabular-nums">
+                        {incomeMoney(
+                          summary.membershipGrossMinor,
+                          summary.currency
+                        )}
+                      </p>
+                      <p className="text-sm">
+                        {summary.membershipCount} individual membership payments
+                      </p>
+                      <IncomeVatEstimate
+                        breakdown={vat.membership}
+                        currency={summary.currency}
+                      />
+                    </CardContent>
+                  </Card>
+                  <Card data-testid={`income-card-overall-${summary.currency}`}>
+                    <CardContent className="pt-4 pb-4">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Overall gross · {summary.currency}
+                      </p>
+                      <p className="mt-1 text-xl font-bold tabular-nums">
+                        {incomeMoney(summary.totalGrossMinor, summary.currency)}
+                      </p>
+                      <p className="text-sm">
+                        {summary.totalCount} payments, including other /
+                        unclassified
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Other: {summary.otherCount} payments ·{" "}
+                        {incomeMoney(summary.otherGrossMinor, summary.currency)}
+                        <br />
+                        Unclassified: {summary.unclassifiedCount} payments ·{" "}
+                        {incomeMoney(
+                          summary.unclassifiedGrossMinor,
+                          summary.currency
+                        )}
+                      </p>
+                      <IncomeVatEstimate
+                        breakdown={vat.total}
+                        currency={summary.currency}
+                      />
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Conditional estimate includes other/unclassified
+                        payments; their tax treatment needs review.
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Card payment counts include only rows with verified gross
+                  amounts and currency. All returned rows, including unknown
+                  amounts, remain in the full report and CSV.
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Card payment counts include only rows with verified gross
-                amounts and currency. All returned rows, including unknown
-                amounts, remain in the full report and CSV.
-              </p>
-            </div>
-          ))}
+            );
+          })}
           {!report.rows.length && (
             <p role="status" className="rounded-lg border p-4">
               No paid-out payment events were returned for this applied range.
@@ -601,97 +666,115 @@ export default function GoCardlessIncomeReport() {
                     <TableHead>Source(s)</TableHead>
                     <TableHead>Gross / currency</TableHead>
                     <TableHead>Paid-out date / reference</TableHead>
+                    <TableHead>VAT (20% estimate)</TableHead>
+                    <TableHead>Excluding VAT (estimate)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pageRows.map((row, index) => (
-                    <TableRow
-                      key={`${row.paymentId}-${row.paidOutAt}-${index}`}
-                    >
-                      <TableCell className="align-top whitespace-normal min-w-40">
-                        {row.identityStatus === "matched" &&
-                        row.agentId !== null ? (
-                          <a
-                            className="font-medium text-primary underline"
-                            href={`/crm/agents?agent=${row.agentId}`}
+                  {pageRows.map((row, index) => {
+                    const vat = incomeVatBreakdown(
+                      row.amountMinor,
+                      row.currency
+                    );
+                    return (
+                      <TableRow
+                        key={`${row.paymentId}-${row.paidOutAt}-${index}`}
+                      >
+                        <TableCell className="align-top whitespace-normal min-w-40">
+                          {row.identityStatus === "matched" &&
+                          row.agentId !== null ? (
+                            <a
+                              className="font-medium text-primary underline"
+                              href={`/crm/agents?agent=${row.agentId}`}
+                            >
+                              {row.agentName || `Matched agent ${row.agentId}`}
+                            </a>
+                          ) : (
+                            <span className="font-medium">
+                              {row.identityStatus === "ambiguous"
+                                ? "Unknown payer"
+                                : row.agentName || "Unknown payer"}
+                            </span>
+                          )}
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {row.identityStatus === "matched"
+                              ? "Matched identity"
+                              : row.category === "joining_fee" &&
+                                  row.identityStatus === "unmatched" &&
+                                  row.agentId === null &&
+                                  row.agentName
+                                ? "GoCardless payer · not linked to one Portal agent"
+                                : `${row.identityStatus === "ambiguous" ? "Ambiguous" : "Unmatched"} identity — needs review`}
+                          </p>
+                          <p className="mt-1 break-all text-xs text-muted-foreground">
+                            Payment: {row.paymentId}
+                          </p>
+                        </TableCell>
+                        <TableCell className="align-top whitespace-normal min-w-44 max-w-xs">
+                          <Badge
+                            variant={needsReview(row) ? "secondary" : "outline"}
                           >
-                            {row.agentName || `Matched agent ${row.agentId}`}
-                          </a>
-                        ) : (
-                          <span className="font-medium">
-                            {row.identityStatus === "ambiguous"
-                              ? "Unknown payer"
-                              : row.agentName || "Unknown payer"}
-                          </span>
-                        )}
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {row.identityStatus === "matched"
-                            ? "Matched identity"
-                            : row.category === "joining_fee" &&
-                                row.identityStatus === "unmatched" &&
-                                row.agentId === null &&
-                                row.agentName
-                              ? "GoCardless payer · not linked to one Portal agent"
-                              : `${row.identityStatus === "ambiguous" ? "Ambiguous" : "Unmatched"} identity — needs review`}
-                        </p>
-                        <p className="mt-1 break-all text-xs text-muted-foreground">
-                          Payment: {row.paymentId}
-                        </p>
-                      </TableCell>
-                      <TableCell className="align-top whitespace-normal min-w-44 max-w-xs">
-                        <Badge
-                          variant={needsReview(row) ? "secondary" : "outline"}
-                        >
-                          {INCOME_CATEGORY_LABELS[row.category]}
-                        </Badge>
-                        <details className="mt-1 text-xs text-muted-foreground">
-                          <summary className="cursor-pointer">
-                            Classification evidence
-                          </summary>
-                          <p className="mt-1">{row.categoryEvidence}</p>
-                        </details>
-                        {row.reviewReason && (
-                          <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                            Needs review: {row.reviewReason}
+                            {INCOME_CATEGORY_LABELS[row.category]}
+                          </Badge>
+                          <details className="mt-1 text-xs text-muted-foreground">
+                            <summary className="cursor-pointer">
+                              Classification evidence
+                            </summary>
+                            <p className="mt-1">{row.categoryEvidence}</p>
+                          </details>
+                          {row.reviewReason && (
+                            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                              Needs review: {row.reviewReason}
+                            </p>
+                          )}
+                          {row.currentStatus && (
+                            <p className="mt-1 text-xs">
+                              Current status: {row.currentStatus}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell className="align-top whitespace-normal min-w-36 max-w-xs">
+                          {row.sources.length
+                            ? row.sources.join("; ")
+                            : "Unknown source"}
+                          <details className="mt-1 text-xs text-muted-foreground">
+                            <summary className="cursor-pointer">
+                              Source details
+                            </summary>
+                            <p className="mt-1">{row.sourceEvidence}</p>
+                          </details>
+                        </TableCell>
+                        <TableCell className="align-top tabular-nums">
+                          {row.amountMinor !== null && row.currency
+                            ? incomeMoney(row.amountMinor, row.currency)
+                            : "Unknown gross / currency"}
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {row.currency || "Unknown currency"}
                           </p>
-                        )}
-                        {row.currentStatus && (
-                          <p className="mt-1 text-xs">
-                            Current status: {row.currentStatus}
+                        </TableCell>
+                        <TableCell className="align-top whitespace-normal min-w-40">
+                          <p>{londonDate(new Date(row.paidOutAt))} (London)</p>
+                          <p className="mt-1 break-all text-xs text-muted-foreground">
+                            Payout: {row.payoutId || "Unknown payout reference"}
                           </p>
-                        )}
-                      </TableCell>
-                      <TableCell className="align-top whitespace-normal min-w-36 max-w-xs">
-                        {row.sources.length
-                          ? row.sources.join("; ")
-                          : "Unknown source"}
-                        <details className="mt-1 text-xs text-muted-foreground">
-                          <summary className="cursor-pointer">
-                            Source details
-                          </summary>
-                          <p className="mt-1">{row.sourceEvidence}</p>
-                        </details>
-                      </TableCell>
-                      <TableCell className="align-top tabular-nums">
-                        {row.amountMinor !== null && row.currency
-                          ? incomeMoney(row.amountMinor, row.currency)
-                          : "Unknown gross / currency"}
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {row.currency || "Unknown currency"}
-                        </p>
-                      </TableCell>
-                      <TableCell className="align-top whitespace-normal min-w-40">
-                        <p>{londonDate(new Date(row.paidOutAt))} (London)</p>
-                        <p className="mt-1 break-all text-xs text-muted-foreground">
-                          Payout: {row.payoutId || "Unknown payout reference"}
-                        </p>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell className="align-top tabular-nums">
+                          {vat && row.currency
+                            ? incomeMoney(vat.vatMinor, row.currency)
+                            : "Not available"}
+                        </TableCell>
+                        <TableCell className="align-top tabular-nums">
+                          {vat && row.currency
+                            ? incomeMoney(vat.excludingVatMinor, row.currency)
+                            : "Not available"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                   {!pageRows.length && (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={7}
                         className="text-center text-muted-foreground"
                       >
                         No payments match this table view. Full-report totals

@@ -3,6 +3,10 @@ const mocked = vi.hoisted(() => ({ report: vi.fn() }));
 vi.mock("./gocardless-income-service", () => ({
   getPaidOutIncomeReport: mocked.report,
 }));
+vi.mock("./business-staff-access", async importOriginal => ({
+  ...await importOriginal<typeof import("./business-staff-access")>(),
+  getBusinessStaffAuthority: vi.fn(async () => ({ managed: false, active: false, owner: null, membership: null, orbitReady: false, orbitNotice: "Synthetic" })),
+}));
 import { superAdminRouter } from "./super-admin-router";
 function caller(role: string | null) {
   return superAdminRouter.createCaller({

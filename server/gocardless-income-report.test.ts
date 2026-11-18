@@ -35,6 +35,12 @@ const mocks = vi.hoisted(() => ({
   reconcile: vi.fn(),
 }));
 vi.mock("./db", () => ({ getDb: mocks.getDb }));
+vi.mock("./business-staff-access", async importOriginal => ({
+  ...await importOriginal<typeof import("./business-staff-access")>(),
+  // Existing identity registry is independently covered by boundary tests.
+  // This report fixture never reads live accounts or a database.
+  getBusinessStaffAuthority: vi.fn(async () => ({ managed: false, active: false, owner: null, membership: null, orbitReady: false, orbitNotice: "Synthetic" })),
+}));
 vi.mock("./membership-payment-sync", () => ({
   membershipProviderGet: mocks.get,
   receiveMembershipProviderEvent: mocks.receive,

@@ -137,6 +137,47 @@ export function incomeMoney(minor: number, currency: string): string {
     maximumFractionDigits: 2,
   }).format(minor / 100);
 }
+export type IncomeVatBreakdown = {
+  grossMinor: number;
+  vatMinor: number;
+  excludingVatMinor: number;
+};
+/** Management estimate only: assumes the entire verified gross contains VAT at 20%.
+ * Round VAT per payment to the nearest minor unit, halves up; net is the remainder.
+ * BigInt avoids intermediate overflow and floating-point errors. No tax eligibility
+ * is inferred from the payment's category, payer, currency or current status.
+ */
+export function incomeVatBreakdown(
+  grossMinor: number | null,
+  currency: string | null
+): IncomeVatBreakdown | null {
+  if (grossMinor === null || !Number.isSafeInteger(grossMinor) || grossMinor < 0 ||
+      !currency || !/^[A-Z]{3}$/.test(currency)) return null;
+  const vatMinor = Number((BigInt(grossMinor) + BigInt(3)) / BigInt(6));
+  return { grossMinor, vatMinor, excludingVatMinor: grossMinor - vatMinor };
+}
+/** Sum the same rounded payment figures used in the table and CSV, independently
+ * per currency. Unknown/conflicting amounts remain unavailable, never zeroed.
+ */
+export function incomeVatSummary(rows: PaidOutIncomeRow[], currency: string) {
+  const zero = (): IncomeVatBreakdown => ({ grossMinor: 0, vatMinor: 0, excludingVatMinor: 0 });
+  const result = { joining: zero(), membership: zero(), other: zero(), unclassified: zero(), total: zero() };
+  for (const row of rows) {
+    if (row.currency !== currency) continue;
+    const amount = incomeVatBreakdown(row.amountMinor, row.currency);
+    if (!amount) continue;
+    const category = row.category === "joining_fee" ? "joining" : row.category;
+    for (const bucket of [result[category], result.total]) {
+      bucket.grossMinor += amount.grossMinor;
+      bucket.vatMinor += amount.vatMinor;
+      bucket.excludingVatMinor += amount.excludingVatMinor;
+      if (!Number.isSafeInteger(bucket.grossMinor)) {
+        throw new Error("Income VAT estimate exceeds the supported exact arithmetic range");
+      }
+    }
+  }
+  return result;
+}
 export function incomeCsv(report: PaidOutIncomeReport): string {
   const cell = (value: unknown) => {
     let text = String(value ?? "");
@@ -159,12 +200,17 @@ export function incomeCsv(report: PaidOutIncomeReport): string {
     "Classification evidence",
     "Current payment status",
     "Review reason",
+    "VAT amount (20% estimate)",
+    "Income excluding VAT (20% estimate)",
+    "VAT estimate basis",
   ];
   return (
     "\uFEFF" +
     [
       header,
-      ...report.rows.map(row => [
+      ...report.rows.map(row => {
+        const vat = incomeVatBreakdown(row.amountMinor, row.currency);
+        return [
         row.paymentId,
         row.payoutId,
         row.paidOutAt,
@@ -180,7 +226,11 @@ export function incomeCsv(report: PaidOutIncomeReport): string {
         row.categoryEvidence,
         row.currentStatus,
         row.reviewReason,
-      ]),
+        vat ? (vat.vatMinor / 100).toFixed(2) : "",
+        vat ? (vat.excludingVatMinor / 100).toFixed(2) : "",
+        vat ? "Assumes gross includes 20% VAT; VAT = gross / 6 rounded per payment; excludes no fees/refunds/chargebacks; not a tax return or net bank payout" : "VAT estimate unavailable: gross amount or currency unknown/invalid",
+      ];
+      }),
     ]
       .map(row => row.map(cell).join(","))
       .join("\r\n") +
