@@ -135,6 +135,7 @@ const AdminAgentSupport = lazy(() => import("./pages/admin/AdminAgentSupport"));
 const KnowledgeBase = lazy(() => import("./pages/library/KnowledgeBase"));
 const WebinarLibrary = lazy(() => import("./pages/library/WebinarLibrary"));
 const AdminLibrary = lazy(() => import("./pages/admin/AdminLibrary"));
+const StaffHandbook = lazy(() => import("./pages/admin/StaffHandbook"));
 const StaffWorkspace = lazy(() => import("./pages/staff/StaffWorkspace"));
 const AdminStaffAccess = lazy(() => import("./pages/admin/AdminStaffAccess"));
 import { useAuth } from "./_core/hooks/useAuth";
@@ -583,6 +584,7 @@ export function AuthRouter() {
         <Route path="/admin/academy/insights" component={AdminAcademyProgressInsights} />
         <Route path="/admin/academy/actions" component={AdminAcademyActions} />
         <Route path="/admin/library" component={AdminLibrary} />
+        <Route path="/admin/staff-handbook" component={StaffHandbook} />
         <Route path="/admin/ai-support" component={AdminAgentSupport} />
         <Route path="/admin/agent-engagement" component={AdminAgentEngagement} />
         <Route path="/knowledge-base" component={KnowledgeBase} />

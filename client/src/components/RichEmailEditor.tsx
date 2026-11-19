@@ -205,6 +205,8 @@ interface RichEmailEditorProps {
   preserveClipboardFormatting?: boolean;
   /** Hides email-only tools and never mounts the CRM image-upload mutation. */
   restrictedAcademy?: boolean;
+  /** Internal handbook screenshots use private attachments, never inline images. */
+  internalHandbook?: boolean;
   disabled?: boolean;
   ariaLabel?: string;
 }
@@ -406,7 +408,8 @@ function OrdinaryEmailImageUpload({ editor, disabled }: { editor: Editor; disabl
   );
 }
 
-export function RichEmailEditor({ value, onChange, placeholder = "Compose your email…", className, showProspectLinks = false, preserveClipboardFormatting: preserveFormatting = false, restrictedAcademy = false, disabled = false, ariaLabel = "Rich text content" }: RichEmailEditorProps) {
+export function RichEmailEditor({ value, onChange, placeholder = "Compose your email…", className, showProspectLinks = false, preserveClipboardFormatting: preserveFormatting = false, restrictedAcademy: restrictedAcademyProp = false, internalHandbook = false, disabled = false, ariaLabel = "Rich text content" }: RichEmailEditorProps) {
+  const restrictedAcademy = restrictedAcademyProp || internalHandbook;
   const preserveClipboardFormatting = preserveFormatting || restrictedAcademy;
   const [linkDialog, setLinkDialog] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
@@ -446,11 +449,11 @@ export function RichEmailEditor({ value, onChange, placeholder = "Compose your e
       ...(preserveClipboardFormatting ? [TableKit.configure({ table: { HTMLAttributes: { class: "academy-clipboard-table" } } })] : []),
       Link.configure({ openOnClick: false, HTMLAttributes: { class: "text-blue-600 underline" } }),
       // Images: responsive by default — max-width 100%, height auto
-      Image.configure({
+      ...(!internalHandbook ? [Image.configure({
         HTMLAttributes: {
           style: "max-width:100%;width:100%;height:auto;display:block;border-radius:6px;margin:8px 0;",
         },
-      }),
+      })] : []),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Placeholder.configure({ placeholder }),
     ],

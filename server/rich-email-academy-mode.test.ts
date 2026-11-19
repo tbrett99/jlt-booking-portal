@@ -201,3 +201,32 @@ describe("ordinary email builder compatibility", () => {
     if (mode === "restricted") expect(mocks.uploadHook.mock.calls.length).toBe(hookCalls);
   });
 });
+
+describe("private internal handbook authoring", () => {
+  it("never mounts public uploads or inline image nodes even without the Academy prop", async () => {
+    mocks.uploadHook.mockImplementation(() => { throw new Error("Internal content must not mount public CRM uploads"); });
+    await render({ internalHandbook: true, restrictedAcademy: false, value: '<p>Private text</p><img src="https://external.example.test/tracker.png" />', ariaLabel: "Internal guide" });
+    expect(mocks.uploadHook).not.toHaveBeenCalled();
+    expect(mocks.editor!.schema.nodes.image).toBeUndefined();
+    expect(content().querySelector("img")).toBeNull();
+    expect(content().textContent).toContain("Private text");
+    for (const title of ["Insert Image from URL", "Upload Image from Computer", "Embed Loom Video", "Insert CTA Button", "Insert Personalisation Tag"]) expect(container.querySelector(`button[title="${title}"]`)).toBeNull();
+  });
+  it("removes pasted remote images before rendering while retaining useful document formatting", async () => {
+    await render({ internalHandbook: true, restrictedAcademy: false });
+    await act(async () => mocks.editor!.commands.setTextSelection(mocks.editor!.state.doc.content.size - 1));
+    await paste('<h2>Private process</h2><p><strong>Check first</strong></p><img src="https://external.example.test/track" /><table><tbody><tr><td>Internal step</td></tr></tbody></table>');
+    expect(content().querySelector("img")).toBeNull();
+    expect(mocks.editor!.getHTML()).not.toContain("external.example.test");
+    expect(mocks.editor!.getHTML()).toContain("<strong>Check first</strong>");
+    expect(content().querySelector("td")?.textContent).toBe("Internal step");
+    expect(mocks.uploadHook).not.toHaveBeenCalled();
+  });
+  it("does not allow API content insertion to create an inline handbook image", async () => {
+    await render({ internalHandbook: true });
+    await act(async () => mocks.editor!.commands.insertContent('<p>Allowed wording</p><img src="data:image/png;base64,c2VjcmV0" />'));
+    expect(content().querySelector("img")).toBeNull();
+    expect(mocks.editor!.getHTML()).not.toContain("base64");
+    expect(content().textContent).toContain("Allowed wording");
+  });
+});

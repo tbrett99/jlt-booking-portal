@@ -3171,3 +3171,85 @@ export const businessStaffBookingNotes = mysqlTable("business_staff_booking_note
   foreignKey({ name: "business_staff_note_author_fk", columns: [table.authorUserId], foreignColumns: [users.id] }),
   foreignKey({ name: "business_staff_note_member_fk", columns: [table.membershipId], foreignColumns: [businessStaffMemberships.id] })
 ]);
+
+// ─── Internal Staff Handbook (never part of agent-facing library/AI) ────────
+export const staffHandbookArticles = mysqlTable("staff_handbook_articles", {
+  id: int("id").autoincrement().primaryKey(),
+  createToken: varchar("createToken", { length: 64 }).notNull(),
+  version: int("version").notNull().default(1),
+  draftRevisionId: int("draftRevisionId"),
+  publishedRevisionId: int("publishedRevisionId"),
+  reviewedRevisionId: int("reviewedRevisionId"),
+  reviewedById: int("reviewedById"),
+  submittedAt: timestamp("submittedAt"),
+  archivedAt: timestamp("archivedAt"),
+  createdById: int("createdById").notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+}, (t) => [uniqueIndex("sh_article_token_uq").on(t.createToken), index("sh_article_archive_idx").on(t.archivedAt), index("sh_article_draft_idx").on(t.draftRevisionId), index("sh_article_published_idx").on(t.publishedRevisionId)]);
+export const staffHandbookRevisions = mysqlTable("staff_handbook_revisions", {
+  id: int("id").autoincrement().primaryKey(),
+  articleId: int("articleId").notNull(),
+  revisionNumber: int("revisionNumber").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  summary: text("summary"),
+  category: varchar("category", { length: 120 }).notNull(),
+  content: json("content").notNull(),
+  searchText: longtext("searchText").notNull(),
+  resourceIds: json("resourceIds").notNull(),
+  contributorIds: json("contributorIds").notNull(),
+  createdById: int("createdById").notNull(),
+  changeSummary: varchar("changeSummary", { length: 500 }).notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+}, (t) => [foreignKey({name:"sh_revision_article_fk", columns:[t.articleId], foreignColumns:[staffHandbookArticles.id]}).onDelete("restrict"), uniqueIndex("sh_revision_number_uq").on(t.articleId, t.revisionNumber), index("sh_revision_category_idx").on(t.category)]);
+export const staffHandbookResources = mysqlTable("staff_handbook_resources", {
+  id: int("id").autoincrement().primaryKey(),
+  articleId: int("articleId").notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  mimeType: varchar("mimeType", { length: 180 }).notNull(),
+  byteSize: int("byteSize").notNull(),
+  sha256: varchar("sha256", { length: 64 }).notNull(),
+  fileKey: varchar("fileKey", { length: 600 }).notNull(),
+  removedAt: timestamp("removedAt"),
+  uploadedById: int("uploadedById").notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+}, (t) => [foreignKey({name:"sh_resource_article_fk", columns:[t.articleId], foreignColumns:[staffHandbookArticles.id]}).onDelete("restrict"), index("sh_resource_article_idx").on(t.articleId, t.removedAt), uniqueIndex("sh_resource_key_uq").on(t.fileKey)]);
+export const staffKnowledgeRequests = mysqlTable("staff_knowledge_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  createToken: varchar("createToken", { length: 64 }).notNull(),
+  version: int("version").notNull().default(1),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description").notNull(),
+  category: varchar("category", { length: 120 }).notNull(),
+  kind: mysqlEnum("kind", ["missing_process", "unclear", "outdated", "conflicting", "recurring_question"]).notNull(),
+  checkedGuidance: text("checkedGuidance"),
+  impact: text("impact"),
+  priority: mysqlEnum("priority", ["low", "normal", "high"]).notNull().default("normal"),
+  status: mysqlEnum("status", ["new", "triaged", "assigned", "drafting", "in_review", "resolved", "closed"]).notNull().default("new"),
+  reporterId: int("reporterId").notNull(),
+  assigneeId: int("assigneeId"),
+  articleId: int("articleId"),
+  resolvedRevisionId: int("resolvedRevisionId"),
+  duplicateOfId: int("duplicateOfId"),
+  closureReason: text("closureReason"),
+  resolvedAt: timestamp("resolvedAt"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+}, (t) => [foreignKey({name:"sh_request_article_fk", columns:[t.articleId], foreignColumns:[staffHandbookArticles.id]}).onDelete("restrict"), foreignKey({name:"sh_request_revision_fk", columns:[t.resolvedRevisionId], foreignColumns:[staffHandbookRevisions.id]}).onDelete("restrict"), uniqueIndex("sh_request_token_uq").on(t.createToken), index("sh_request_queue_idx").on(t.status, t.priority, t.updatedAt), index("sh_request_assignee_idx").on(t.assigneeId, t.status), index("sh_request_article_idx").on(t.articleId)]);
+export const staffKnowledgeComments = mysqlTable("staff_knowledge_comments", {
+  id: int("id").autoincrement().primaryKey(),
+  requestId: int("requestId").notNull(),
+  authorId: int("authorId").notNull(),
+  body: text("body").notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+}, (t) => [foreignKey({name:"sh_comment_request_fk", columns:[t.requestId], foreignColumns:[staffKnowledgeRequests.id]}).onDelete("restrict"), index("sh_comment_request_idx").on(t.requestId, t.createdAt)]);
+export const staffHandbookAudit = mysqlTable("staff_handbook_audit", {
+  id: int("id").autoincrement().primaryKey(),
+  entityType: mysqlEnum("entityType", ["article", "request", "resource"]).notNull(),
+  entityId: int("entityId").notNull(),
+  action: varchar("action", { length: 80 }).notNull(),
+  actorId: int("actorId").notNull(),
+  summary: varchar("summary", { length: 500 }).notNull(),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+}, (t) => [index("sh_audit_entity_idx").on(t.entityType, t.entityId, t.createdAt)]);

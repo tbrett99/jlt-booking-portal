@@ -9,6 +9,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { registerAcademyDocumentDownloadRoutes } from "../academy-document-download-routes";
 import { registerBookingDocumentDownloadRoutes } from "../booking-document-download-routes";
+import { registerStaffHandbookDownloadRoutes } from "../staff-handbook-download-routes";
 import { registerMembershipPaymentRoutes } from "../membership-payment-routes";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -1885,6 +1886,7 @@ async function startServer() {
   });
 
   registerBookingDocumentDownloadRoutes(app);
+  registerStaffHandbookDownloadRoutes(app);
 
   // ── Email Unsubscribe ─────────────────────────────────────────────────────
   app.get("/api/unsubscribe", async (req, res) => {
