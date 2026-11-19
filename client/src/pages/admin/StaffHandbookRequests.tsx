@@ -62,6 +62,8 @@ function ReportKnowledgeContent({
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
   const [savedId, setSavedId] = useState<number | null>(null);
+  const [validationAttempted, setValidationAttempted] = useState(false);
+  const submitting = useRef(false);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -86,16 +88,23 @@ function ReportKnowledgeContent({
         </Button>
       ) : (
         <form
+          noValidate
           onSubmit={async e => {
             e.preventDefault();
-            if (
-              pending ||
-              !title.trim() ||
-              !description.trim() ||
-              !checkedGuidance.trim() ||
-              !impact.trim()
-            )
+            if (pending || submitting.current || savedId) return;
+            setValidationAttempted(true);
+            if (!title.trim() || !description.trim()) {
+              setFailed(true);
+              setMessage(
+                !title.trim() && !description.trim()
+                  ? "Add a title and description before submitting your report."
+                  : !title.trim()
+                    ? "Add a title explaining what guidance is missing."
+                    : "Add a description explaining what staff need to know."
+              );
               return;
+            }
+            submitting.current = true;
             setBusy(true);
             setFailed(false);
             setMessage("");
@@ -118,6 +127,7 @@ function ReportKnowledgeContent({
                 setFailed(true);
                 setMessage(`${errorText(error)} Your report is retained.`);
                 setBusy(false);
+                submitting.current = false;
               }
               return;
             }
@@ -147,105 +157,106 @@ function ReportKnowledgeContent({
           }}
         >
           <fieldset disabled={pending} className="space-y-3">
-            <Field label="Request title">
+            <Field label="What guidance is missing?">
               <input
                 required
                 maxLength={255}
+                aria-invalid={validationAttempted && !title.trim()}
                 className={controlClass}
                 value={title}
                 onChange={e => setTitle(e.target.value)}
               />
             </Field>
-            <Field label="What knowledge is missing?">
+            <Field label="What do staff need to know?">
               <textarea
                 required
+                maxLength={20000}
+                aria-invalid={validationAttempted && !description.trim()}
                 rows={3}
                 className={controlClass}
                 value={description}
                 onChange={e => setDescription(e.target.value)}
               />
             </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Category">
-                <select
-                  className={controlClass}
-                  value={category}
-                  onChange={e => setCategory(e.target.value)}
-                >
-                  {categories.map(c => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Request kind">
-                <select
-                  className={controlClass}
-                  value={kind}
-                  onChange={e => setKind(e.target.value as typeof kind)}
-                >
-                  {KNOWLEDGE_REQUEST_KINDS.map(k => (
-                    <option key={k} value={k}>
-                      {KNOWLEDGE_REQUEST_KIND_LABELS[k]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-            <Field
-              label="Guidance already checked"
-              hint="List what you searched, or explain that no relevant guidance exists."
-            >
-              <textarea
-                required
-                rows={2}
+            <Field label="Category">
+              <select
                 className={controlClass}
-                value={checkedGuidance}
-                onChange={e => setChecked(e.target.value)}
-              />
-            </Field>
-            <Field label="Impact on staff or service">
-              <textarea
-                required
-                rows={2}
-                className={controlClass}
-                value={impact}
-                onChange={e => setImpact(e.target.value)}
-              />
-            </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Priority">
-                <select
-                  className={controlClass}
-                  value={priority}
-                  onChange={e => setPriority(e.target.value as typeof priority)}
-                >
-                  {priorities.map(p => (
-                    <option key={p}>{p}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Related guide ID (optional)">
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  className={controlClass}
-                  value={articleId}
-                  onChange={e => setArticleId(e.target.value)}
-                />
-              </Field>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                type="submit"
-                disabled={
-                  pending ||
-                  !title.trim() ||
-                  !description.trim() ||
-                  !checkedGuidance.trim() ||
-                  !impact.trim()
-                }
+                value={category}
+                onChange={e => setCategory(e.target.value)}
               >
+                {Array.from(new Set([...categories, category])).map(c => (
+                  <option key={c}>{c}</option>
+                ))}
+              </select>
+            </Field>
+            <details className="rounded-md border p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                Optional details
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Priority">
+                    <select
+                      className={controlClass}
+                      value={priority}
+                      onChange={e =>
+                        setPriority(e.target.value as typeof priority)
+                      }
+                    >
+                      {priorities.map(p => (
+                        <option key={p}>{p}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Request kind">
+                    <select
+                      className={controlClass}
+                      value={kind}
+                      onChange={e => setKind(e.target.value as typeof kind)}
+                    >
+                      {KNOWLEDGE_REQUEST_KINDS.map(k => (
+                        <option key={k} value={k}>
+                          {KNOWLEDGE_REQUEST_KIND_LABELS[k]}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <Field
+                  label="Guidance already checked"
+                  hint="List what you searched, or explain that no relevant guidance exists."
+                >
+                  <textarea
+                    maxLength={10000}
+                    rows={2}
+                    className={controlClass}
+                    value={checkedGuidance}
+                    onChange={e => setChecked(e.target.value)}
+                  />
+                </Field>
+                <Field label="Impact on staff or service">
+                  <textarea
+                    maxLength={10000}
+                    rows={2}
+                    className={controlClass}
+                    value={impact}
+                    onChange={e => setImpact(e.target.value)}
+                  />
+                </Field>
+                <Field label="Related guide ID (optional)">
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    className={controlClass}
+                    value={articleId}
+                    onChange={e => setArticleId(e.target.value)}
+                  />
+                </Field>
+              </div>
+            </details>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={pending}>
                 {pending ? "Reporting…" : "Submit knowledge request"}
               </Button>
               <Button
@@ -254,7 +265,14 @@ function ReportKnowledgeContent({
                 disabled={pending}
                 onClick={() => {
                   if (
-                    (!title && !description) ||
+                    (!title &&
+                      !description &&
+                      category === "General" &&
+                      kind === "missing_process" &&
+                      priority === "normal" &&
+                      !checkedGuidance &&
+                      !impact &&
+                      !articleId) ||
                     window.confirm("Discard this unsaved report?")
                   )
                     onCancel();

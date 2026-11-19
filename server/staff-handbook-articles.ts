@@ -186,7 +186,7 @@ export async function browseHandbook(
   input: {
     search?: string;
     category?: string;
-    view?: "published" | "drafts" | "archived";
+    view?: "all" | "published" | "drafts" | "archived";
     needsReview?: boolean;
     dueReview?: boolean;
     page?: number;
@@ -412,65 +412,131 @@ export async function createArticleInTransaction(
   );
   return { id, version: 1, created: true };
 }
+export type HandbookArticleSaveInput = {
+  id?: number;
+  expectedVersion?: number;
+  createToken?: string;
+  content: HandbookContent;
+  changeSummary: string;
+};
+async function saveArticleInTransaction(
+  db: HandbookDb,
+  actorId: number,
+  input: HandbookArticleSaveInput
+) {
+  const changeSummary =
+    input.changeSummary.trim() ||
+    (input.id ? "Guide updated" : "Guide created");
+  if (!input.id) {
+    const content = normaliseSubmittedContent(input.content);
+    if (!input.createToken)
+      fail("BAD_REQUEST", "A creation token is required.");
+    const result = await createArticleInTransaction(
+      db,
+      actorId,
+      input.createToken,
+      content,
+      changeSummary
+    );
+    const stored = await getArticle(db, result.id);
+    const revision = await getRevision(db, result.id, stored.draftRevisionId);
+    if (
+      !revision ||
+      stored.version !== result.version
+    )
+      fail(
+        "INTERNAL_SERVER_ERROR",
+        "The guide save could not be verified. Your changes have not been committed."
+      );
+    if (JSON.stringify(revisionContent(revision)) !== JSON.stringify(content)) {
+      if (!result.created)
+        fail("CONFLICT", `Guide #${result.id} already exists from this save attempt, but these changed edits have not been saved. Your edits are retained; keep a copy before opening the existing guide.`);
+      fail("INTERNAL_SERVER_ERROR", "The guide save could not be verified. Your changes have not been committed.");
+    }
+    return { id: result.id, version: result.version };
+  }
+  if (input.expectedVersion === undefined)
+    fail("BAD_REQUEST", "A record version is required.");
+  await assertFreshStaffHandbookAccount(db, input.content.ownerId, true);
+  const article = await lockArticle(db, input.id, input.expectedVersion);
+  if (article.archivedAt)
+    fail("BAD_REQUEST", "Restore this guide before editing it.");
+  const draft = await getRevision(db, article.id, article.draftRevisionId);
+  const content = normaliseSubmittedContent(
+    input.content,
+    draft ? revisionContent(draft) : undefined
+  );
+  const revisionId = await appendRevision(
+    db,
+    article,
+    actorId,
+    content,
+    draft ? snapshotIds(draft.resourceIds) : [],
+    changeSummary
+  );
+  const result = await bumpArticle(db, article, {
+    draftRevisionId: revisionId,
+    reviewedRevisionId: null,
+    reviewedById: null,
+    submittedAt: null,
+  });
+  await recordAudit(
+    db,
+    "article",
+    article.id,
+    actorId,
+    "saved",
+    changeSummary,
+    { revisionId }
+  );
+  const stored = await getArticle(db, article.id);
+  const revision = await getRevision(db, article.id, stored.draftRevisionId);
+  if (
+    !revision ||
+    stored.draftRevisionId !== revisionId ||
+    stored.version !== result.version ||
+    JSON.stringify(revisionContent(revision)) !== JSON.stringify(content)
+  )
+    fail(
+      "INTERNAL_SERVER_ERROR",
+      "The guide save could not be verified. Your changes have not been committed."
+    );
+  return result;
+}
 export async function saveHandbookArticle(
   actor: HandbookAccount,
-  input: {
-    id?: number;
-    expectedVersion?: number;
-    createToken?: string;
-    content: HandbookContent;
-    changeSummary: string;
-  }
+  input: HandbookArticleSaveInput
+) {
+  return withHandbookWrite(actor, (db, actorId) =>
+    saveArticleInTransaction(db, actorId, input)
+  );
+}
+/** An explicit user action: draft save, checks, publication and linked-report resolution are one atomic DB transaction. */
+export async function saveAndPublishHandbookArticle(
+  actor: HandbookAccount,
+  input: HandbookArticleSaveInput
 ) {
   return withHandbookWrite(actor, async (db, actorId) => {
-    if (!input.id) {
-      const content = normaliseSubmittedContent(input.content);
-      if (!input.createToken)
-        fail("BAD_REQUEST", "A creation token is required.");
-      const result = await createArticleInTransaction(
-        db,
-        actorId,
-        input.createToken,
-        content,
-        input.changeSummary
+    const result = await saveArticleInTransaction(db, actorId, input);
+    const article = await getArticle(db, result.id);
+    const draft = await getRevision(db, result.id, article.draftRevisionId);
+    if (article.archivedAt || !draft)
+      fail("BAD_REQUEST", "Restore this guide before publishing it.");
+    // A create-token retry must never publish different content from what the staff member submitted.
+    if (
+      JSON.stringify(revisionContent(draft)) !==
+      JSON.stringify(normaliseSubmittedContent(input.content))
+    )
+      fail(
+        "CONFLICT",
+        "This guide was already saved with different content. Open the saved guide before publishing it."
       );
-      return { id: result.id, version: result.version };
-    }
-    if (input.expectedVersion === undefined)
-      fail("BAD_REQUEST", "A record version is required.");
-    await assertFreshStaffHandbookAccount(db, input.content.ownerId, true);
-    const article = await lockArticle(db, input.id, input.expectedVersion);
-    if (article.archivedAt)
-      fail("BAD_REQUEST", "Restore this guide before editing it.");
-    const draft = await getRevision(db, article.id, article.draftRevisionId);
-    const content = normaliseSubmittedContent(
-      input.content,
-      draft ? revisionContent(draft) : undefined
-    );
-    const revisionId = await appendRevision(
-      db,
-      article,
-      actorId,
-      content,
-      draft ? snapshotIds(draft.resourceIds) : [],
-      input.changeSummary
-    );
-    const result = await bumpArticle(db, article, {
-      draftRevisionId: revisionId,
-      reviewedRevisionId: null,
-      reviewedById: null,
-      submittedAt: null,
+    if (article.publishedRevisionId === draft.id) return result;
+    return articleActionInTransaction(db, actorId, {
+      id: result.id,
+      expectedVersion: result.version,
+      action: "publish",
     });
-    await recordAudit(
-      db,
-      "article",
-      article.id,
-      actorId,
-      "saved",
-      input.changeSummary,
-      { revisionId }
-    );
-    return result;
   });
 }
 /** Bounded pages, all updates and the generic admin-only notification in the publish transaction. */
@@ -538,93 +604,113 @@ export async function handbookArticleAction(
     action: "submit_review" | "approve" | "publish" | "archive" | "restore";
   }
 ) {
-  return withHandbookWrite(actor, async (db, actorId) => {
-    if (input.action === "publish") {
-      // Read-only preflight prevents an unplanned newly-eligible reviewer lock
-      // after the first guide lock. The locked row is still rechecked below.
-      const preflight = await getArticle(db, input.id);
-      if (preflight.reviewedById)
-        await assertFreshStaffHandbookAccount(db, preflight.reviewedById, true);
-    }
-    const article = await lockArticle(db, input.id, input.expectedVersion);
-    let patch: Partial<typeof articles.$inferInsert>;
-    if (input.action === "archive") {
-      if (article.archivedAt)
-        fail("BAD_REQUEST", "This guide is already archived.");
-      patch = { archivedAt: new Date() };
-    } else if (input.action === "restore") {
-      if (!article.archivedAt)
-        fail("BAD_REQUEST", "This guide is not archived.");
-      patch = { archivedAt: null };
+  return withHandbookWrite(actor, (db, actorId) =>
+    articleActionInTransaction(db, actorId, input)
+  );
+}
+async function articleActionInTransaction(
+  db: HandbookDb,
+  actorId: number,
+  input: {
+    id: number;
+    expectedVersion: number;
+    action: "submit_review" | "approve" | "publish" | "archive" | "restore";
+  }
+) {
+  if (input.action === "publish") {
+    // Read-only preflight prevents an unplanned newly-eligible reviewer lock
+    // after the first guide lock. The locked row is still rechecked below.
+    const preflight = await getArticle(db, input.id);
+    if (preflight.reviewedById)
+      await assertFreshStaffHandbookAccount(db, preflight.reviewedById, true);
+  }
+  const article = await lockArticle(db, input.id, input.expectedVersion);
+  let patch: Partial<typeof articles.$inferInsert>;
+  if (input.action === "archive") {
+    if (article.archivedAt)
+      fail("BAD_REQUEST", "This guide is already archived.");
+    patch = { archivedAt: new Date() };
+  } else if (input.action === "restore") {
+    if (!article.archivedAt) fail("BAD_REQUEST", "This guide is not archived.");
+    patch = { archivedAt: null };
+  } else {
+    if (article.archivedAt) fail("BAD_REQUEST", "Restore this guide first.");
+    const draft = await getRevision(db, article.id, article.draftRevisionId);
+    if (!draft) fail("BAD_REQUEST", "Save a guide draft first.");
+    if (article.draftRevisionId === article.publishedRevisionId)
+      fail(
+        "BAD_REQUEST",
+        "Save changes before starting another publication cycle."
+      );
+    const content = revisionContent(draft);
+    assertPublishable(content);
+    const published = await getRevision(
+      db,
+      article.id,
+      article.publishedRevisionId
+    );
+    const sensitive = requiresCycleReview(
+      draft.content as HandbookContent & { _cycleRequiresReview?: boolean },
+      published ? revisionContent(published) : null
+    );
+    if (input.action === "submit_review") {
+      if (article.submittedAt)
+        fail("BAD_REQUEST", "This revision has already been submitted.");
+      patch = {
+        submittedAt: new Date(),
+        reviewedRevisionId: null,
+        reviewedById: null,
+      };
+    } else if (input.action === "approve") {
+      if (!article.submittedAt)
+        fail("BAD_REQUEST", "Submit this revision for review first.");
+      assertIndependentReviewer(snapshotIds(draft.contributorIds), actorId);
+      if (article.reviewedRevisionId === draft.id)
+        fail("BAD_REQUEST", "This revision has already been approved.");
+      patch = { reviewedRevisionId: draft.id, reviewedById: actorId };
     } else {
-      if (article.archivedAt) fail("BAD_REQUEST", "Restore this guide first.");
-      const draft = await getRevision(db, article.id, article.draftRevisionId);
-      if (!draft) fail("BAD_REQUEST", "Save a guide draft first.");
-      if (article.draftRevisionId === article.publishedRevisionId)
-        fail(
-          "BAD_REQUEST",
-          "Save changes before starting another publication cycle."
-        );
-      const content = revisionContent(draft);
-      assertPublishable(content);
-      const published = await getRevision(
-        db,
-        article.id,
-        article.publishedRevisionId
-      );
-      const sensitive = requiresCycleReview(
-        draft.content as HandbookContent & { _cycleRequiresReview?: boolean },
-        published ? revisionContent(published) : null
-      );
-      if (input.action === "submit_review") {
-        if (article.submittedAt)
-          fail("BAD_REQUEST", "This revision has already been submitted.");
-        patch = {
-          submittedAt: new Date(),
-          reviewedRevisionId: null,
-          reviewedById: null,
-        };
-      } else if (input.action === "approve") {
-        if (!article.submittedAt)
-          fail("BAD_REQUEST", "Submit this revision for review first.");
-        assertIndependentReviewer(snapshotIds(draft.contributorIds), actorId);
-        if (article.reviewedRevisionId === draft.id)
-          fail("BAD_REQUEST", "This revision has already been approved.");
-        patch = { reviewedRevisionId: draft.id, reviewedById: actorId };
-      } else {
-        if (sensitive) {
-          if (article.reviewedRevisionId !== draft.id || !article.reviewedById)
-            fail(
-              "FORBIDDEN",
-              "This exact revision requires independent approval before publication."
-            );
-          await assertFreshStaffHandbookAccount(db, article.reviewedById, true);
-          assertIndependentReviewer(
-            snapshotIds(draft.contributorIds),
-            article.reviewedById
+      if (sensitive) {
+        if (article.reviewedRevisionId !== draft.id || !article.reviewedById)
+          fail(
+            "FORBIDDEN",
+            "This exact revision requires independent approval before publication."
           );
-        }
-        patch = { publishedRevisionId: draft.id, submittedAt: null };
-        await resolveLinkedRequests(db, article.id, draft.id, actorId);
-        await retireUnreferencedResources(
-          db,
-          article.id,
-          snapshotIds(draft.resourceIds),
-          snapshotIds(draft.resourceIds),
-          actorId
+        await assertFreshStaffHandbookAccount(db, article.reviewedById, true);
+        assertIndependentReviewer(
+          snapshotIds(draft.contributorIds),
+          article.reviewedById
         );
       }
+      patch = { publishedRevisionId: draft.id, submittedAt: null };
+      await resolveLinkedRequests(db, article.id, draft.id, actorId);
+      await retireUnreferencedResources(
+        db,
+        article.id,
+        snapshotIds(draft.resourceIds),
+        snapshotIds(draft.resourceIds),
+        actorId
+      );
     }
-    const result = await bumpArticle(db, article, patch);
-    await recordAudit(
-      db,
-      "article",
-      article.id,
-      actorId,
-      input.action,
-      `Internal guide action: ${input.action}.`,
-      { revisionId: article.draftRevisionId }
+  }
+  const result = await bumpArticle(db, article, patch);
+  await recordAudit(
+    db,
+    "article",
+    article.id,
+    actorId,
+    input.action,
+    `Internal guide action: ${input.action}.`,
+    { revisionId: article.draftRevisionId }
+  );
+  const stored = await getArticle(db, article.id);
+  if (
+    stored.version !== result.version ||
+    (input.action === "publish" &&
+      stored.publishedRevisionId !== article.draftRevisionId)
+  )
+    fail(
+      "INTERNAL_SERVER_ERROR",
+      "The guide update could not be verified. Your changes have not been committed."
     );
-    return result;
-  });
+  return result;
 }

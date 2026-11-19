@@ -42,7 +42,14 @@ function positiveId(value: string | null) {
     ? Number(value)
     : null;
 }
-type View = "published" | "drafts" | "archived";
+type View = "all" | "published" | "drafts" | "archived";
+const guideStateLabels: Record<HandbookBrowseItem["state"], string> = {
+  draft: "Draft",
+  in_review: "In review",
+  published: "Published",
+  changes: "Unpublished changes",
+  archived: "Archived",
+};
 
 export default function StaffHandbook() {
   const { user, loading, error } = useAuth();
@@ -97,13 +104,14 @@ function HandbookWorkspace({ userId }: { userId: number }) {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [category, setCategory] = useState("");
-  const [view, setView] = useState<View>("published");
+  const [view, setView] = useState<View>("all");
   const [status, setStatus] = useState<"all" | "open" | KnowledgeRequestStatus>(
     "all"
   );
   const [assignee, setAssignee] = useState("");
   const [page, setPage] = useState(1);
-  const [focus, setFocus] = useState<"review" | "overdue" | null>(null);
+  // Overview remains an authorized metadata source for categories and staff,
+  // not a dashboard or a prerequisite for rendering the guide list.
   const overview = trpc.staffHandbook.overview.useQuery(undefined, {
     enabled: true,
     placeholderData: undefined,
@@ -114,8 +122,6 @@ function HandbookWorkspace({ userId }: { userId: number }) {
       category: category || undefined,
       view,
       page,
-      ...(focus === "review" ? { needsReview: true } : {}),
-      ...(focus === "overdue" ? { dueReview: true } : {}),
     },
     { enabled: tab === "handbook", placeholderData: undefined }
   );
@@ -155,18 +161,38 @@ function HandbookWorkspace({ userId }: { userId: number }) {
     if (selected?.request) params.set("request", String(selected.request));
     navigate(`/admin/staff-handbook?${params.toString()}`);
   }
-  function changeTab(nextTab: "handbook" | "requests") {
-    setReporting(false);
-    setNewArticle(false);
-    setEditingId(null);
+  function resetFilters() {
     setPage(1);
     setSearch("");
     setSearchInput("");
     setCategory("");
-    setFocus(null);
     setStatus("all");
     setAssignee("");
+  }
+  function changeTab(nextTab: "handbook" | "requests") {
+    setReporting(false);
+    setNewArticle(false);
+    setEditingId(null);
+    resetFilters();
+    setView("all");
     route(nextTab);
+  }
+  function startNewGuide() {
+    // A saved draft must remain visible after closing, even when creation
+    // started from Published, Archived, a search, or a later results page.
+    resetFilters();
+    setView("all");
+    setEditingId(null);
+    setNewArticle(true);
+    setReporting(false);
+    route("handbook");
+  }
+  function startReport() {
+    resetFilters();
+    setEditingId(null);
+    setReporting(true);
+    setNewArticle(false);
+    route("requests");
   }
   function openArticle(id: number, edit = false) {
     setNewArticle(false);
@@ -179,26 +205,6 @@ function HandbookWorkspace({ userId }: { userId: number }) {
     tab === "handbook"
       ? articleId !== null || newArticle
       : requestId !== null || reporting;
-  function metric(
-    kind: "new" | "unassigned" | "review" | "overdue" | "open" | "published"
-  ) {
-    setSearch("");
-    setSearchInput("");
-    setCategory("");
-    setPage(1);
-    setNewArticle(false);
-    setReporting(false);
-    setFocus(null);
-    if (["new", "unassigned", "open"].includes(kind)) {
-      setStatus(kind === "new" ? "new" : "open");
-      setAssignee(kind === "unassigned" ? "unassigned" : "");
-      route("requests");
-    } else {
-      setView(kind === "review" ? "drafts" : "published");
-      setFocus(kind === "published" ? null : (kind as "review" | "overdue"));
-      route("handbook");
-    }
-  }
   const data = tab === "handbook" ? browse.data : requests.data;
   if (blocked) return <HandbookAccessDenied />;
   return (
@@ -206,12 +212,11 @@ function HandbookWorkspace({ userId }: { userId: number }) {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <BookOpen className="h-6 w-6 text-primary" />
+            <BookOpen className="h-6 w-6 text-primary" aria-hidden="true" />
             Staff Handbook
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Internal guidance and missing-knowledge requests. Staff only — never
-            agent-facing.
+            Internal guides for JLT staff.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -220,178 +225,44 @@ function HandbookWorkspace({ userId }: { userId: number }) {
             size="sm"
             variant="outline"
             disabled={selection}
-            onClick={() => {
-              setNewArticle(true);
-              setReporting(false);
-              route("handbook");
-            }}
+            onClick={startNewGuide}
           >
-            <Plus className="mr-1 h-4 w-4" />
+            <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
             New guide
           </Button>
           <Button
             type="button"
             size="sm"
+            variant="outline"
             disabled={selection}
-            onClick={() => {
-              setReporting(true);
-              setNewArticle(false);
-              route("requests");
-            }}
+            onClick={startReport}
           >
-            <MessageSquarePlus className="mr-1 h-4 w-4" />
+            <MessageSquarePlus className="mr-1 h-4 w-4" aria-hidden="true" />
             Report missing knowledge
           </Button>
         </div>
       </header>
       {!selection && (
-        <>
-          {overview.isError || overview.isLoading || !overviewData ? (
-            <QueryState query={overview} label="overview" />
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                {(
-                  [
-                    {
-                      label: "New requests",
-                      value: overviewData.metrics.newRequests,
-                      key: "new",
-                    },
-                    {
-                      label: "Unassigned",
-                      value: overviewData.metrics.unassignedRequests,
-                      key: "unassigned",
-                    },
-                    {
-                      label: "Awaiting review",
-                      value: overviewData.metrics.awaitingReview,
-                      key: "review",
-                    },
-                    {
-                      label: "Due review",
-                      value: overviewData.metrics.overdueGuides,
-                      key: "overdue",
-                    },
-                    {
-                      label: "Open requests",
-                      value: overviewData.metrics.openRequests,
-                      key: "open",
-                    },
-                    {
-                      label: "Published guides",
-                      value: overviewData.metrics.publishedGuides,
-                      key: "published",
-                    },
-                  ] as const
-                ).map(item => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    className="rounded-xl border bg-card p-3 text-left shadow-sm hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onClick={() => metric(item.key)}
-                  >
-                    <span className="block text-2xl font-semibold">
-                      {item.value}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {item.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <details className="rounded-xl border bg-card px-4 py-3">
-                <summary className="cursor-pointer text-sm font-medium">
-                  Request workload by assignee & category
-                </summary>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <h2 className="mb-1 text-xs font-semibold">By assignee</h2>
-                    <ul className="max-h-40 overflow-y-auto space-y-1 text-xs">
-                      {overviewData.byAssignee.length ? (
-                        overviewData.byAssignee.map(item => (
-                          <li key={item.id ?? "unassigned"}>
-                            <button
-                              type="button"
-                              className="flex w-full items-center justify-between rounded p-1 text-left hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                              onClick={() => {
-                                setAssignee(
-                                  item.id ? String(item.id) : "unassigned"
-                                );
-                                setStatus("open");
-                                setSearch("");
-                                setSearchInput("");
-                                setFocus(null);
-                                setCategory("");
-                                setPage(1);
-                                route("requests");
-                              }}
-                            >
-                              <span>{item.name || "Unassigned"}</span>
-                              <span>{item.count}</span>
-                            </button>
-                          </li>
-                        ))
-                      ) : (
-                        <li>No assignee workload.</li>
-                      )}
-                    </ul>
-                  </div>
-                  <div>
-                    <h2 className="mb-1 text-xs font-semibold">By category</h2>
-                    <ul className="max-h-40 overflow-y-auto space-y-1 text-xs">
-                      {overviewData.byCategory.length ? (
-                        overviewData.byCategory.map(item => (
-                          <li key={item.category}>
-                            <button
-                              type="button"
-                              className="flex w-full items-center justify-between rounded p-1 text-left hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                              onClick={() => {
-                                setCategory(item.category);
-                                setStatus("open");
-                                setSearch("");
-                                setSearchInput("");
-                                setFocus(null);
-                                setAssignee("");
-                                setPage(1);
-                                route("requests");
-                              }}
-                            >
-                              <span>{item.category}</span>
-                              <span>{item.count}</span>
-                            </button>
-                          </li>
-                        ))
-                      ) : (
-                        <li>No category workload.</li>
-                      )}
-                    </ul>
-                  </div>
-                </div>
-              </details>
-            </>
-          )}
-          <nav aria-label="Handbook sections" className="flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={tab === "handbook" ? "default" : "outline"}
-              aria-current={tab === "handbook" ? "page" : undefined}
-              onClick={() => changeTab("handbook")}
-            >
-              Handbook
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={tab === "requests" ? "default" : "outline"}
-              aria-current={tab === "requests" ? "page" : undefined}
-              onClick={() => changeTab("requests")}
-            >
-              Knowledge requests
-            </Button>
-          </nav>
-        </>
+        <nav aria-label="Handbook sections" className="flex gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={tab === "handbook" ? "default" : "outline"}
+            aria-current={tab === "handbook" ? "page" : undefined}
+            onClick={() => changeTab("handbook")}
+          >
+            Guides
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={tab === "requests" ? "default" : "outline"}
+            aria-current={tab === "requests" ? "page" : undefined}
+            onClick={() => changeTab("requests")}
+          >
+            Missing knowledge
+          </Button>
+        </nav>
       )}
       {tab === "handbook" && (articleId !== null || newArticle) ? (
         <ArticlePanel
@@ -427,23 +298,25 @@ function HandbookWorkspace({ userId }: { userId: number }) {
           id={requestId}
           categories={categories}
           staff={staff}
-          onGuide={id => openArticle(id, false)}
+          onGuide={id => {
+            resetFilters();
+            setView("all");
+            openArticle(id, false);
+          }}
           onReload={() => setRemount(previous => previous + 1)}
           onClose={() => route("requests")}
         />
       ) : (
         <section className={panelClass}>
-          <div className="flex items-center justify-between gap-2">
+          <div>
             <h2 className="font-semibold">
-              {tab === "handbook"
-                ? "Browse staff guidance"
-                : "Knowledge request queue"}
+              {tab === "handbook" ? "Browse guides" : "Missing knowledge"}
             </h2>
-            <span className="text-xs text-muted-foreground">
+            <p className="mt-1 text-xs text-muted-foreground">
               {tab === "handbook"
-                ? "Published reading is the default"
-                : "Overview counts cover open requests; All statuses also includes resolved/closed"}
-            </span>
+                ? "All active guides, including saved drafts and unpublished changes."
+                : "Report a gap or follow up on an existing request."}
+            </p>
           </div>
           <form
             onSubmit={e => {
@@ -470,13 +343,11 @@ function HandbookWorkspace({ userId }: { userId: number }) {
               </Field>
             </div>
             <Button type="submit" size="sm">
-              <Search className="mr-1 h-4 w-4" />
+              <Search className="mr-1 h-4 w-4" aria-hidden="true" />
               Search
             </Button>
           </form>
-          <div
-            className={`grid gap-3 ${tab === "requests" ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
-          >
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Filter category">
               <select
                 className={controlClass}
@@ -492,24 +363,36 @@ function HandbookWorkspace({ userId }: { userId: number }) {
                 ))}
               </select>
             </Field>
-            {tab === "handbook" ? (
+            {tab === "handbook" && (
               <Field label="Guide view">
                 <select
                   className={controlClass}
                   value={view}
                   onChange={e => {
                     setView(e.target.value as View);
-                    setFocus(null);
                     setPage(1);
                   }}
                 >
+                  <option value="all">All active guides</option>
                   <option value="published">Published</option>
-                  <option value="drafts">Drafts & review</option>
+                  <option value="drafts">Drafts</option>
                   <option value="archived">Archived</option>
                 </select>
               </Field>
-            ) : (
-              <>
+            )}
+          </div>
+          {tab === "requests" && (
+            <details className="rounded-lg border px-3 py-2">
+              <summary className="cursor-pointer text-sm font-medium">
+                Advanced filters
+                {(status !== "all" || assignee) && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {" "}
+                    (active)
+                  </span>
+                )}
+              </summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <Field label="Filter request status">
                   <select
                     className={controlClass}
@@ -546,15 +429,11 @@ function HandbookWorkspace({ userId }: { userId: number }) {
                     ))}
                   </select>
                 </Field>
-              </>
-            )}
-          </div>
-          {focus && (
-            <p role="status" className="rounded-md bg-muted/40 p-2 text-xs">
-              {focus === "review"
-                ? "Awaiting review — only saved revisions needing review are shown."
-                : "Due review — only published guides due for review are shown."}
-            </p>
+              </div>
+            </details>
+          )}
+          {overview.isError && (
+            <QueryState query={overview} label="handbook filters" />
           )}
           {tab === "handbook" ? (
             browse.isError || browse.isLoading || !browse.data ? (
@@ -578,7 +457,7 @@ function HandbookWorkspace({ userId }: { userId: number }) {
                             {item.title}
                           </h3>
                           <Badge variant="secondary" className="shrink-0">
-                            {item.state.replace(/_/g, " ")}
+                            {guideStateLabels[item.state]}
                           </Badge>
                         </div>
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
@@ -606,14 +485,7 @@ function HandbookWorkspace({ userId }: { userId: number }) {
                         ? "No guidance matches your search."
                         : "No guides in this view yet."}
                     </p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => {
-                        setReporting(true);
-                        route("requests");
-                      }}
-                    >
+                    <Button type="button" size="sm" onClick={startReport}>
                       Report missing knowledge
                     </Button>
                   </div>

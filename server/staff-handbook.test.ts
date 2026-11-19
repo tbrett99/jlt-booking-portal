@@ -364,13 +364,12 @@ function syntheticDb(accounts = [admin(), admin(2), admin(3)]) {
         then(resolve: any, reject: any) {
           return Promise.resolve()
             .then(() => {
-              rows(table)
-                .filter(r => conditionMatches(condition, r))
-                .forEach(r => {
-                  Object.assign(r, structuredClone(patch));
-                  writes.push({ table, patch, action: "update" });
-                });
-              return [];
+              const matched = rows(table).filter(r => conditionMatches(condition, r));
+              matched.forEach(r => {
+                Object.assign(r, structuredClone(patch));
+                writes.push({ table, patch, action: "update" });
+              });
+              return [{ affectedRows: matched.length }];
             })
             .then(resolve, reject);
         },
@@ -698,10 +697,9 @@ describe("append-only publication, author accumulation and exact approval", () =
   it("creation token retry does not duplicate article, snapshot or audit; tokens are actor-bound", async () => {
     const f = syntheticDb();
     const a = await createGuide();
-    const retry = await createGuide(
-      content({ title: "Different retry payload" })
-    );
+    const retry = await createGuide();
     expect(retry).toEqual(a);
+    await expect(createGuide(content({ title: "Different retry payload" }))).rejects.toMatchObject({ code: "CONFLICT", message: expect.stringContaining("these changed edits have not been saved") });
     expect(f.rows(articles)).toHaveLength(1);
     expect(f.rows(revisions)).toHaveLength(1);
     expect(f.rows(audit)).toHaveLength(1);
@@ -1593,6 +1591,7 @@ describe("API boundary and bounded SQL separation sentinels", () => {
         "browse",
         "article",
         "saveArticle",
+        "saveAndPublishArticle",
         "articleAction",
         "uploadResource",
         "removeResource",
@@ -1645,5 +1644,82 @@ describe("API boundary and bounded SQL separation sentinels", () => {
         .filter(r => r.table === revisions && !r.fields)
         .every(r => r.limit !== undefined)
     ).toBe(true);
+  });
+});
+
+describe("simple handbook save and atomic internal publication", () => {
+  const caller = (actor = admin()) => staffHandbookRouter.createCaller({ user: actor, req: {}, res: {} } as any);
+  it("saves title and body without requiring a separate change summary, and returns verified stored content", async () => {
+    const f = syntheticDb();
+    const result = await caller().saveArticle({ createToken: "simple_save_token_01", content: content() } as any);
+    const row = f.rows(articles).find(r => r.id === result.id);
+    const revision = f.rows(revisions).find(r => r.id === row.draftRevisionId);
+    expect(row.version).toBe(result.version);
+    expect(revision.content.title).toBe("Synthetic internal guide");
+    expect(revision.changeSummary).toBe("Guide created");
+    expect(row.publishedRevisionId).toBeNull();
+    const all = await caller().browse({ view: "all" });
+    expect(all.items.map(i => i.id)).toContain(result.id);
+    expect((await caller().browse({ view: "published" })).items).toEqual([]);
+  });
+  it("saves and publishes an operational guide as one transaction and one immutable revision", async () => {
+    const f = syntheticDb();
+    const result = await caller().saveAndPublishArticle({ createToken: "simple_publish_token_01", content: content(), changeSummary: "" });
+    const row = f.rows(articles)[0];
+    expect(row.id).toBe(result.id);
+    expect(row.publishedRevisionId).toBe(row.draftRevisionId);
+    expect(row.version).toBe(result.version);
+    expect(f.rows(revisions)).toHaveLength(1);
+    expect(f.rows(audit).map(r => r.action)).toEqual(["created", "publish"]);
+    expect(f.rows(inAppNotifications)).toEqual([]);
+    expect((await caller().browse({ view: "published" })).items).toHaveLength(1);
+  });
+  it.each(["financial", "legal", "policy"] as const)("does not turn quick publication into an independent-review bypass for %s content", async sensitivity => {
+    const f = syntheticDb();
+    await expect(caller().saveAndPublishArticle({ createToken: "sensitive_quick_publish_01", content: content({ sensitivity }), changeSummary: "" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(f.rows(articles)).toEqual([]);
+    expect(f.rows(revisions)).toEqual([]);
+    expect(f.rows(audit)).toEqual([]);
+  });
+  it("rolls back a saved-guide quick-publish attempt that downgrades financial classification", async () => {
+    const f = syntheticDb(); const saved = await createGuide(content({ sensitivity: "financial" }));
+    await expect(caller().saveAndPublishArticle({ id: saved.id, expectedVersion: saved.version, content: content({ sensitivity: "operational" }), changeSummary: "" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(f.rows(articles)[0].version).toBe(saved.version);
+    expect(f.rows(articles)[0].publishedRevisionId).toBeNull();
+    expect(f.rows(revisions)).toHaveLength(1);
+    expect(f.rows(revisions)[0].content.sensitivity).toBe("financial");
+  });
+  it("retains the previous draft when quick publication lacks a body", async () => {
+    const f = syntheticDb(); const saved = await createGuide();
+    await expect(caller().saveAndPublishArticle({ id: saved.id, expectedVersion: saved.version, content: content({ contentHtml: "" }), changeSummary: "" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(f.rows(articles)[0].version).toBe(saved.version);
+    expect(f.rows(revisions)).toHaveLength(1);
+  });
+  it("reconciles an identical new-guide publication retry without duplicating guide, revisions, audit or publication", async () => {
+    const f = syntheticDb(); const input = { createToken: "idempotent_quick_publish_01", content: content(), changeSummary: "" };
+    const first = await caller().saveAndPublishArticle(input); const second = await caller().saveAndPublishArticle(input);
+    expect(second).toEqual(first); expect(f.rows(articles)).toHaveLength(1); expect(f.rows(revisions)).toHaveLength(1); expect(f.rows(audit)).toHaveLength(2);
+  });
+  it("does not publish different content on a reused creation token", async () => {
+    const f = syntheticDb(); const input = { createToken: "reused_quick_publish_token", content: content(), changeSummary: "" };
+    await caller().saveArticle(input);
+    await expect(caller().saveAndPublishArticle({ ...input, content: content({ title: "Different title" }) })).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(f.rows(articles)[0].publishedRevisionId).toBeNull(); expect(f.rows(revisions)).toHaveLength(1);
+  });
+  it("rejects a stale edit without producing another snapshot or audit", async () => {
+    const f = syntheticDb(); const saved = await createGuide(); await edit(saved.id, saved.version);
+    const count = f.rows(revisions).length;
+    await expect(caller().saveAndPublishArticle({ id: saved.id, expectedVersion: saved.version, content: content(), changeSummary: "" })).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(f.rows(revisions)).toHaveLength(count); expect(f.rows(articles)[0].publishedRevisionId).toBeNull();
+  });
+  it("rejects an unconfirmed zero-row guide update and rolls back the provisional snapshot", async () => {
+    const f = syntheticDb(); const saved = await createGuide(); const update = f.db.update.bind(f.db);
+    f.db.update = (table: any) => { const q = update(table); const then = q.then.bind(q); q.then = (resolve: any, reject: any) => then(() => resolve([{ affectedRows: 0 }]), reject); return q; };
+    await expect(edit(saved.id, saved.version)).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(f.rows(articles)[0].version).toBe(saved.version); expect(f.rows(revisions)).toHaveLength(1);
+  });
+  it.each(["agent", "instructor", "engagement"])("denies the quick-publish endpoint to %s identities before content is read or written", async role => {
+    const f = syntheticDb(); await expect(caller(admin(1, { role })).saveAndPublishArticle({ createToken: "denied_publish_token", content: content(), changeSummary: "" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(f.reads).toEqual([]); expect(f.writes).toEqual([]);
   });
 });

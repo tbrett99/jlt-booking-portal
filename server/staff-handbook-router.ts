@@ -21,6 +21,7 @@ import {
   handbookArticleAction,
   handbookOverview,
   saveHandbookArticle,
+  saveAndPublishHandbookArticle,
 } from "./staff-handbook-articles";
 import {
   addKnowledgeComment,
@@ -61,6 +62,13 @@ const search = z.string().trim().max(200).optional();
 const priority = z.enum(["low", "normal", "high"]);
 const requestStatus = z.enum(KNOWLEDGE_REQUEST_STATUSES);
 const record = z.object({ id: idSchema });
+const saveInput = z.object({
+  id: idSchema.optional(),
+  expectedVersion: versionSchema.optional(),
+  createToken: tokenSchema.optional(),
+  content: contentSchema,
+  changeSummary: z.string().trim().max(500).optional().default(""),
+});
 export const staffHandbookRouter = router({
   overview: handbookProcedure.query(({ ctx }) => handbookOverview(ctx.user)),
   browse: handbookProcedure
@@ -70,7 +78,7 @@ export const staffHandbookRouter = router({
           .object({
             search,
             category: categorySchema.optional(),
-            view: z.enum(["published", "drafts", "archived"]).optional(),
+            view: z.enum(["all", "published", "drafts", "archived"]).optional(),
             needsReview: z.boolean().optional(),
             dueReview: z.boolean().optional(),
             page: pageSchema,
@@ -83,18 +91,13 @@ export const staffHandbookRouter = router({
     .input(input(record))
     .query(({ ctx, input }) => handbookArticle(ctx.user, input.id)),
   saveArticle: handbookProcedure
-    .input(
-      input(
-        z.object({
-          id: idSchema.optional(),
-          expectedVersion: versionSchema.optional(),
-          createToken: tokenSchema.optional(),
-          content: contentSchema,
-          changeSummary: z.string().trim().min(1).max(500),
-        })
-      )
-    )
+    .input(input(saveInput))
     .mutation(({ ctx, input }) => saveHandbookArticle(ctx.user, input)),
+  saveAndPublishArticle: handbookProcedure
+    .input(input(saveInput))
+    .mutation(({ ctx, input }) =>
+      saveAndPublishHandbookArticle(ctx.user, input)
+    ),
   articleAction: handbookProcedure
     .input(
       input(

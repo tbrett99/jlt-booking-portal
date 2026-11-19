@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   mutationHooks: [] as string[],
   mutate: vi.fn(),
   invalidate: vi.fn(),
+  fetch: vi.fn(),
   refetch: vi.fn(),
   editors: [] as any[],
   pending: false,
@@ -61,6 +62,12 @@ vi.mock("@/lib/trpc", () => {
             };
           if (key === "invalidate")
             return (...args: any[]) => mocks.invalidate(path, ...args);
+          if (key === "fetch")
+            return (...args: any[]) => {
+              if (!path.startsWith("staffHandbook."))
+                throw new Error(`Forbidden utility fetch ${path}`);
+              return mocks.fetch(path, ...args);
+            };
           return node(path ? `${path}.${key}` : key);
         },
       }
@@ -246,6 +253,19 @@ function button(label: string) {
 async function click(label: string) {
   await act(async () => button(label).click());
 }
+function disclosure(label: string): HTMLDetailsElement {
+  const summary = Array.from(container.querySelectorAll("summary")).find(
+    el => el.textContent?.replace(/\s+/g, " ").trim() === label
+  );
+  expect(summary, `disclosure ${label}`).toBeTruthy();
+  return summary!.parentElement as HTMLDetailsElement;
+}
+async function expand(label: string) {
+  await act(async () => {
+    disclosure(label).open = true;
+    disclosure(label).dispatchEvent(new Event("toggle"));
+  });
+}
 function field(
   label: string
 ): HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
@@ -258,6 +278,14 @@ function field(
 async function input(label: string, value: string) {
   const el = field(label);
   await act(async () => {
+    // Enter optional metadata only after revealing its actual disclosure.
+    for (
+      let ancestor = el.parentElement;
+      ancestor;
+      ancestor = ancestor.parentElement
+    ) {
+      if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
+    }
     const prototype =
       el.tagName === "TEXTAREA"
         ? HTMLTextAreaElement.prototype
@@ -323,7 +351,53 @@ beforeEach(() => {
   mocks.editors = [];
   mocks.mutationHooks = [];
   mocks.invalidate.mockResolvedValue(undefined);
-  mocks.mutate.mockResolvedValue({ id: 7, version: 4 });
+  mocks.fetch.mockImplementation(async (path: string) => {
+    const result = mocks.results[path];
+    if (result?.isError) throw result.error ?? new Error("Detail unavailable");
+    if (!result?.data) throw new Error(`No fixture for ${path}`);
+    return result.data;
+  });
+  // Simulate the committed article returned by an exact post-save detail read.
+  // Success must verify version 4 and submitted content, never accept version 3.
+  mocks.mutate.mockImplementation(async (path: string, input: any) => {
+    if (
+      [
+        "staffHandbook.saveArticle",
+        "staffHandbook.saveAndPublishArticle",
+        "staffHandbook.articleAction",
+        "staffHandbook.uploadResource",
+        "staffHandbook.removeResource",
+      ].includes(path)
+    ) {
+      const previous = mocks.results["staffHandbook.article"].data;
+      const version = (input.expectedVersion ?? 3) + 1;
+      const fresh = article({
+        article: {
+          ...previous.article,
+          id: input.id ?? input.articleId ?? 7,
+          version,
+        },
+        draft: input.content
+          ? {
+              ...previous.draft,
+              id: 13,
+              revisionNumber: 3,
+              content: input.content,
+              changeSummary: input.changeSummary,
+            }
+          : previous.draft,
+        published: !input.id && input.content ? null : previous.published,
+      });
+      if (input.content) fresh.article.draftRevisionId = fresh.draft.id;
+      if (path === "staffHandbook.saveAndPublishArticle") {
+        fresh.published = fresh.draft;
+        fresh.article.publishedRevisionId = fresh.draft.id;
+      }
+      mocks.results["staffHandbook.article"] = { data: fresh };
+      return { id: fresh.article.id, version };
+    }
+    return { id: 7, version: 4 };
+  });
   mocks.results = {
     "staffHandbook.overview": {
       data: {
@@ -397,7 +471,7 @@ describe("internal handbook rendered UI", () => {
     await submitContaining("Search guidance");
     expect(
       mocks.queries.filter(q => q.path === "staffHandbook.browse").at(-1)?.input
-    ).toMatchObject({ search: "refund", view: "published", page: 1 });
+    ).toMatchObject({ search: "refund", view: "all", page: 1 });
     await click("Next");
     expect(
       mocks.queries.filter(q => q.path === "staffHandbook.browse").at(-1)?.input
@@ -410,17 +484,36 @@ describe("internal handbook rendered UI", () => {
     ).toBe(1);
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
-  it("clickable metrics open explicit request filters and workload counts", async () => {
+  // Visual contract: six metrics/workload drilldowns were deliberately removed.
+  // Keep queue navigation and exact server filters, without recreating a dashboard.
+  it("uses Guides and Missing knowledge navigation with collapsed advanced filters", async () => {
     await render();
-    const metric = Array.from(container.querySelectorAll("button")).find(b =>
-      b.textContent?.includes("New requests")
-    )!;
-    await act(async () => metric.click());
-    expect(field("Filter request status").value).toBe("new");
-    expect(location.history?.at(-1)).toBe("/admin/staff-handbook?tab=requests");
-    expect(container.textContent).toContain(
+    expect(button("Guides").getAttribute("aria-current")).toBe("page");
+    expect(field("Guide view").value).toBe("all");
+    expect(container.textContent).not.toContain(
       "Request workload by assignee & category"
     );
+    expect(
+      Array.from(container.querySelectorAll("button")).some(b =>
+        /New requests|Awaiting review|Due review|Published guides/.test(
+          b.textContent ?? ""
+        )
+      )
+    ).toBe(false);
+    await click("Missing knowledge");
+    expect(button("Missing knowledge").getAttribute("aria-current")).toBe(
+      "page"
+    );
+    expect(disclosure("Advanced filters").open).toBe(false);
+    expect(field("Filter request status").value).toBe("all");
+    expect(field("Filter assignee").value).toBe("");
+    expect(location.history?.at(-1)).toBe("/admin/staff-handbook?tab=requests");
+    expect(
+      container.querySelector('[aria-label="Request results"]')?.textContent
+    ).toContain("Synthetic knowledge gap");
+    await click("Guides");
+    expect(location.history?.at(-1)).toBe("/admin/staff-handbook?tab=handbook");
+    expect(field("Guide view").value).toBe("all");
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
   it("offers report on empty search and submits only a real internal request", async () => {
@@ -437,12 +530,29 @@ describe("internal handbook rendered UI", () => {
         .at(-1)!
         .click();
     });
-    expect(button("Submit knowledge request").disabled).toBe(true);
-    await input("Request title", "New missing guide");
-    await input("What knowledge is missing?", "Synthetic process description");
-    await input("Guidance already checked", "Search returned none");
-    await input("Impact on staff or service", "Staff unable to proceed");
-    await submitContaining("Request title");
+    expect(disclosure("Optional details").open).toBe(false);
+    expect(button("Submit knowledge request").disabled).toBe(false);
+    await submitContaining("What guidance is missing?");
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Add a title and description"
+    );
+    expect(
+      field("What guidance is missing?").getAttribute("aria-invalid")
+    ).toBe("true");
+    expect(
+      field("What do staff need to know?").getAttribute("aria-invalid")
+    ).toBe("true");
+    await input("What guidance is missing?", "New missing guide");
+    await submitContaining("What guidance is missing?");
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Add a description"
+    );
+    await input("What do staff need to know?", "Synthetic process description");
+    expect(field("Category").value).toBe("General");
+    expect(disclosure("Optional details").open).toBe(false);
+    await submitContaining("What guidance is missing?");
     expect(mocks.mutate).toHaveBeenCalledWith(
       "staffHandbook.createRequest",
       expect.objectContaining({
@@ -450,8 +560,8 @@ describe("internal handbook rendered UI", () => {
         description: "Synthetic process description",
         category: "General",
         kind: "missing_process",
-        checkedGuidance: "Search returned none",
-        impact: "Staff unable to proceed",
+        checkedGuidance: "",
+        impact: "",
         priority: "normal",
         articleId: null,
         createToken: expect.any(String),
@@ -459,21 +569,43 @@ describe("internal handbook rendered UI", () => {
     );
     expect(location.history?.at(-1)).toContain("request=8");
   });
+  it("submits explicitly revealed optional request details unchanged", async () => {
+    await render();
+    await click("Report missing knowledge");
+    await input("What guidance is missing?", "Optional report");
+    await input("What do staff need to know?", "Process details");
+    await expand("Optional details");
+    await input("Guidance already checked", "Search returned none");
+    await input("Impact on staff or service", "Staff unable to proceed");
+    await input("Priority", "high");
+    await input("Related guide ID (optional)", "7");
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    await submitContaining("What guidance is missing?");
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      "staffHandbook.createRequest",
+      expect.objectContaining({
+        checkedGuidance: "Search returned none",
+        impact: "Staff unable to proceed",
+        priority: "high",
+        articleId: 7,
+      })
+    );
+  });
   it("preserves a report after mutation failure and uses the same retry token", async () => {
     mocks.mutate.mockRejectedValue(new Error("Conflict synthetic"));
     await render();
     await click("Report missing knowledge");
-    await input("Request title", "Keep report");
-    await input("What knowledge is missing?", "Missing");
+    await input("What guidance is missing?", "Keep report");
+    await input("What do staff need to know?", "Missing");
     await input("Guidance already checked", "Checked");
     await input("Impact on staff or service", "Impact");
-    await submitContaining("Request title");
+    await submitContaining("What guidance is missing?");
     const first = mocks.mutate.mock.calls[0][1].createToken;
-    expect(field("Request title").value).toBe("Keep report");
+    expect(field("What guidance is missing?").value).toBe("Keep report");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Conflict synthetic"
     );
-    await submitContaining("Request title");
+    await submitContaining("What guidance is missing?");
     expect(mocks.mutate.mock.calls[1][1].createToken).toBe(first);
   });
   it("distinguishes a saved report from failed refresh and prevents duplicate submission", async () => {
@@ -481,11 +613,11 @@ describe("internal handbook rendered UI", () => {
     mocks.mutate.mockResolvedValue({ id: 8, version: 1 });
     await render();
     await click("Report missing knowledge");
-    await input("Request title", "Saved report");
-    await input("What knowledge is missing?", "Missing");
+    await input("What guidance is missing?", "Saved report");
+    await input("What do staff need to know?", "Missing");
     await input("Guidance already checked", "Checked");
     await input("Impact on staff or service", "Impact");
-    await submitContaining("Request title");
+    await submitContaining("What guidance is missing?");
     expect(container.textContent).toContain("was saved, but refresh failed");
     expect(button("Open saved request #8")).toBeTruthy();
     expect(container.querySelector("form")).toBeNull();
@@ -554,27 +686,74 @@ describe("internal handbook rendered UI", () => {
     ).toContain("Published baseline body");
     expect(container.querySelector("form")).toBeNull();
     await click("Edit draft");
-    expect(field("Guide title").value).toBe("Synthetic refunds process");
-    await input("Guide title", "Unsaved title");
+    expect(field("Title").value).toBe("Synthetic refunds process");
+    await input("Title", "Unsaved title");
     await click("Read published");
     expect(
       container.querySelector("[data-handbook-reading]")?.textContent
     ).toContain("Published baseline body");
     await click("Edit draft");
-    expect(field("Guide title").value).toBe("Unsaved title");
+    expect(field("Title").value).toBe("Unsaved title");
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
-  it("saves explicit draft with expected version; disables publish/upload while dirty", async () => {
+  it("defaults only the new browser editor to Title, Category and Content with optional metadata", async () => {
+    // The shared process default remains unchanged; ordinary article is UI-local.
+    expect(emptyHandbookContent(99).format).toBe("process");
+    await render();
+    await click("New guide");
+    expect(field("Title").value).toBe("");
+    expect(field("Category").value).toBe("General");
+    expect(
+      container.querySelector('textarea[aria-label="Content"]')
+    ).toBeTruthy();
+    expect(field("Editor format").value).toBe("article");
+    expect(disclosure("Advanced options (optional)").open).toBe(false);
+    expect(field("Summary (optional)").value).toBe("");
+    expect(field("Change note (optional)").value).toBe("");
+    expect(button("Save draft").disabled).toBe(false);
+    expect(button("Save & publish").disabled).toBe(false);
+    expect(field("Upload private attachment").disabled).toBe(true);
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    await click("Save draft");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Enter a title before saving"
+    );
+    expect(field("Title").getAttribute("aria-invalid")).toBe("true");
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    await input("Title", "Minimal saved draft");
+    expect(field("Title").getAttribute("aria-invalid")).toBe("false");
+    await submitContaining("Title");
+    expect(mocks.mutate).toHaveBeenCalledWith("staffHandbook.saveArticle", {
+      createToken: expect.any(String),
+      content: expect.objectContaining({
+        title: "Minimal saved draft",
+        format: "article",
+        summary: "",
+        contentHtml: "",
+        ownerId: 99,
+      }),
+      changeSummary: "Guide created",
+    });
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+    expect(location.history?.at(-1)).toContain("article=7");
+    expect(field("Title").value).toBe("Minimal saved draft");
+    expect(container.textContent).toContain("Not published");
+    expect(mocks.results["staffHandbook.article"].data.published).toBeNull();
+  });
+  it("saves explicit draft with expected version; keeps uploads disabled while dirty", async () => {
     await render(
       "/admin/staff-handbook?tab=handbook&article=7",
       articleElement()
     );
     await click("Edit draft");
-    await input("Guide title", "Updated synthetic title");
-    await input("Change summary", "Changed title");
-    expect(button("Publish internally").disabled).toBe(true);
+    await input("Title", "Updated synthetic title");
+    await input("Change note (optional)", "Changed title");
+    // Atomic Save & publish is intentionally allowed with operational changes.
+    // It still must not mutate until the staff member explicitly clicks it.
+    expect(button("Save & publish").disabled).toBe(false);
     expect(field("Upload private attachment").disabled).toBe(true);
-    await submitContaining("Guide title");
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    await submitContaining("Title");
     expect(mocks.mutate).toHaveBeenCalledWith(
       "staffHandbook.saveArticle",
       expect.objectContaining({
@@ -585,7 +764,57 @@ describe("internal handbook rendered UI", () => {
       })
     );
     expect(container.textContent).toContain(
-      "Draft saved. Published guidance is unchanged."
+      "Draft saved. Not published; existing published guidance is unchanged."
+    );
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      "staffHandbook.article",
+      { id: 7 },
+      { staleTime: 0 }
+    );
+    expect(mocks.results["staffHandbook.article"].data.article.version).toBe(4);
+    expect(
+      mocks.results["staffHandbook.article"].data.draft.content.title
+    ).toBe("Updated synthetic title");
+    expect(
+      mocks.results["staffHandbook.article"].data.published.content.contentHtml
+    ).toBe("<p>Published baseline body</p>");
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+  });
+  it("atomically saves and publishes changed operational content only on explicit action", async () => {
+    await render(
+      "/admin/staff-handbook?tab=handbook&article=7",
+      articleElement()
+    );
+    await click("Edit draft");
+    await input("Title", "Atomic operational guide");
+    expect(button("Save & publish").disabled).toBe(false);
+    expect(field("Upload private attachment").disabled).toBe(true);
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    await click("Save & publish");
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      "staffHandbook.saveAndPublishArticle",
+      {
+        id: 7,
+        expectedVersion: 3,
+        content: expect.objectContaining({
+          title: "Atomic operational guide",
+          sensitivity: "operational",
+        }),
+        changeSummary: "Guide updated",
+      }
+    );
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      "staffHandbook.article",
+      { id: 7 },
+      { staleTime: 0 }
+    );
+    expect(mocks.results["staffHandbook.article"].data.article.version).toBe(4);
+    expect(
+      mocks.results["staffHandbook.article"].data.published.content.title
+    ).toBe("Atomic operational guide");
+    expect(container.textContent).toContain(
+      "Guide saved and published internally. Staff only; no agent access."
     );
   });
   it("keeps unsaved draft inputs after mutation conflicts and background refetch", async () => {
@@ -595,18 +824,20 @@ describe("internal handbook rendered UI", () => {
       articleElement()
     );
     await click("Edit draft");
-    await input("Guide title", "Do not overwrite");
-    await input("Change summary", "Synthetic change");
-    await submitContaining("Guide title");
-    expect(field("Guide title").value).toBe("Do not overwrite");
+    await input("Title", "Do not overwrite");
+    await input("Change note (optional)", "Synthetic change");
+    await submitContaining("Title");
+    expect(field("Title").value).toBe("Do not overwrite");
     expect(container.textContent).toContain("unsaved edits are retained");
     mocks.results["staffHandbook.article"].data = article({
       article: { version: 4 },
       draft: { content: content({ title: "Other staff title" }) },
     });
     await rerender(articleElement());
-    expect(field("Guide title").value).toBe("Do not overwrite");
-    expect(button("Publish internally").disabled).toBe(true);
+    expect(field("Title").value).toBe("Do not overwrite");
+    expect(button("Save & publish").disabled).toBe(true);
+    expect(button("Save draft").disabled).toBe(true);
+    expect(field("Upload private attachment").disabled).toBe(true);
   });
   it("requires independent approval of the exact sensitive revision and rejects contributors", async () => {
     mocks.results["staffHandbook.article"].data = article({
@@ -628,6 +859,29 @@ describe("internal handbook rendered UI", () => {
       "exact saved revision has not been approved"
     );
   });
+  it.each(["financial", "legal", "policy"])(
+    "never offers atomic publication for changed %s guidance",
+    async sensitivity => {
+      mocks.results["staffHandbook.article"].data = article({
+        draft: { content: content({ sensitivity }) },
+      });
+      await render(
+        "/admin/staff-handbook?tab=handbook&article=7",
+        articleElement()
+      );
+      await click("Edit draft");
+      await input("Title", "Changed sensitive guide");
+      expect(
+        Array.from(container.querySelectorAll("button")).some(
+          b => b.textContent?.trim() === "Save & publish"
+        )
+      ).toBe(false);
+      expect(button("Save draft").disabled).toBe(false);
+      expect(field("Upload private attachment").disabled).toBe(true);
+      expect(disclosure("Required independent review").open).toBe(true);
+      expect(mocks.mutate).not.toHaveBeenCalled();
+    }
+  );
   it("sensitive downgrade and outdated review cannot bypass review", async () => {
     mocks.results["staffHandbook.article"].data = article({
       article: { reviewedRevisionId: 11, reviewedById: 100 },
@@ -682,6 +936,10 @@ describe("internal handbook rendered UI", () => {
   });
   it("does not publish after cancelled confirmation and exposes no agent calls", async () => {
     vi.mocked(window.confirm).mockReturnValue(false);
+    mocks.results["staffHandbook.article"].data = article({
+      article: { reviewedRevisionId: 12, reviewedById: 100 },
+      draft: { content: content({ sensitivity: "financial" }) },
+    });
     await render(
       "/admin/staff-handbook?tab=handbook&article=7",
       articleElement()
@@ -705,8 +963,10 @@ describe("internal handbook rendered UI", () => {
     ).toBeNull();
     expect(container.textContent).toContain("Synthetic audit");
     expect(
-      Array.from(container.querySelectorAll("button")).some(
-        b => b.textContent === "Publish internally"
+      Array.from(container.querySelectorAll("button")).some(b =>
+        /^(Publish internally|Save & publish)$/.test(
+          b.textContent?.trim() ?? ""
+        )
       )
     ).toBe(false);
     expect(mocks.mutate).not.toHaveBeenCalled();
@@ -832,9 +1092,9 @@ describe("internal handbook rendered UI", () => {
       "/admin/staff-handbook?tab=handbook&article=7",
       articleElement()
     );
-    expect(button("Publish internally").disabled).toBe(true);
+    expect(button("Save & publish").disabled).toBe(true);
     expect(field("Upload private attachment").disabled).toBe(true);
-    await click("Publish internally");
+    await click("Save & publish");
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
   it.each([
@@ -923,11 +1183,13 @@ describe("internal handbook rendered UI", () => {
       articleElement()
     );
     await click("Edit draft");
-    await input("Guide title", "Keep draft after refetch error");
+    await input("Title", "Keep draft after refetch error");
     mocks.results["staffHandbook.article"] = { isError: true };
     await rerender(articleElement());
-    expect(field("Guide title").value).toBe("Keep draft after refetch error");
-    expect(button("Publish internally").disabled).toBe(true);
+    expect(field("Title").value).toBe("Keep draft after refetch error");
+    expect(button("Save & publish").disabled).toBe(true);
+    expect(button("Save draft").disabled).toBe(true);
+    expect(field("Upload private attachment").disabled).toBe(true);
     await render(
       "/admin/staff-handbook?tab=requests&request=8",
       requestElement()
@@ -940,21 +1202,92 @@ describe("internal handbook rendered UI", () => {
     );
     expect(button("Save request changes").disabled).toBe(true);
   });
-  it("saved new guide plus failed refresh is explicit and cannot create a duplicate", async () => {
-    mocks.invalidate.mockRejectedValue(new Error("Synthetic refresh failure"));
+  it("saved new guide plus failed detail fetch is explicit and retries saved ID without a duplicate", async () => {
+    mocks.fetch.mockRejectedValueOnce(new Error("Synthetic detail failure"));
     await render();
     await click("New guide");
-    await input("Guide title", "New saved guide");
-    await input("Change summary", "Initial draft");
-    await submitContaining("Guide title");
+    await input("Title", "New saved guide");
+    await submitContaining("Title");
     expect(container.textContent).toContain(
       "Refresh failed; the action was saved"
     );
     expect(button("Open saved guide #7")).toBeTruthy();
-    expect(field("Guide title").closest("fieldset")?.disabled).toBe(true);
-    await submitContaining("Guide title");
+    expect(field("Title").closest("fieldset")?.disabled).toBe(true);
+    await submitContaining("Title");
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      "staffHandbook.article",
+      { id: 7 },
+      { staleTime: 0 }
+    );
+    expect(mocks.invalidate).not.toHaveBeenCalled();
+    await click("Open saved guide #7");
+    expect(location.history?.at(-1)).toBe(
+      "/admin/staff-handbook?tab=handbook&article=7"
+    );
+    expect(field("Title").value).toBe("New saved guide");
+    expect(field("Title").closest("fieldset")?.disabled).toBe(false);
+    expect(container.textContent).toContain("Version 4");
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
   });
+  it("opens the verified saved guide even when unrelated lists fail to refresh", async () => {
+    mocks.invalidate.mockRejectedValue(
+      new Error("Synthetic list refresh failure")
+    );
+    await render();
+    await click("New guide");
+    await input("Title", "Verified saved guide");
+    await submitContaining("Title");
+    expect(location.history?.at(-1)).toBe(
+      "/admin/staff-handbook?tab=handbook&article=7"
+    );
+    expect(field("Title").value).toBe("Verified saved guide");
+    expect(field("Title").closest("fieldset")?.disabled).toBe(false);
+    expect(container.textContent).toContain("Version 4");
+    expect(container.textContent).toContain(
+      "Guide verified; some lists could not refresh"
+    );
+    expect(container.textContent).not.toContain(
+      "Refresh failed; the action was saved"
+    );
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      "staffHandbook.article",
+      { id: 7 },
+      { staleTime: 0 }
+    );
+    expect(mocks.invalidate.mock.calls.map(call => call[0])).not.toContain(
+      "staffHandbook.article"
+    );
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+  });
+  it.each(["wrong ID", "stale version"])(
+    "does not open a saved guide when fresh detail has %s",
+    async mismatch => {
+      mocks.fetch.mockResolvedValueOnce(
+        article({
+          article:
+            mismatch === "wrong ID" ? { id: 9, version: 4 } : { version: 3 },
+        })
+      );
+      await render();
+      await click("New guide");
+      await input("Title", "Exact receipt required");
+      await submitContaining("Title");
+      expect(location.history?.at(-1)).toBe(
+        "/admin/staff-handbook?tab=handbook"
+      );
+      expect(button("Open saved guide #7")).toBeTruthy();
+      expect(field("Title").closest("fieldset")?.disabled).toBe(true);
+      expect(container.textContent).toContain(
+        "Refresh failed; the action was saved"
+      );
+      expect(mocks.invalidate).not.toHaveBeenCalled();
+      await click("Open saved guide #7");
+      expect(location.history?.at(-1)).toContain("article=7");
+      expect(field("Title").value).toBe("Exact receipt required");
+      expect(mocks.mutate).toHaveBeenCalledTimes(1);
+    }
+  );
   it("requires body/steps before review or publication", async () => {
     mocks.results["staffHandbook.article"].data = article({
       draft: { content: content({ contentHtml: "<p></p>" }) },
@@ -963,11 +1296,13 @@ describe("internal handbook rendered UI", () => {
       "/admin/staff-handbook?tab=handbook&article=7",
       articleElement()
     );
-    expect(button("Publish internally").disabled).toBe(true);
-    expect(button("Submit for review").disabled).toBe(true);
-    expect(container.textContent).toContain(
+    expect(button("Request review").disabled).toBe(true);
+    expect(container.textContent?.replace(/\s+/g, " ")).toContain(
       "save an article body or process steps first"
     );
+    await click("Save & publish");
+    expect(container.textContent).toContain("Add content before publishing");
+    expect(mocks.mutate).not.toHaveBeenCalled();
   });
   it("archive and restore are confirmed explicit versioned actions, never publication", async () => {
     await render(
@@ -984,7 +1319,7 @@ describe("internal handbook rendered UI", () => {
       article: { version: 4, archivedAt: new Date() },
     });
     await rerender(articleElement());
-    expect(button("Publish internally").disabled).toBe(true);
+    expect(button("Save & publish").disabled).toBe(true);
     expect(button("Edit draft").disabled).toBe(true);
     await click("Restore guide");
     expect(mocks.mutate).toHaveBeenCalledWith("staffHandbook.articleAction", {
@@ -1086,7 +1421,7 @@ describe("internal handbook rendered UI", () => {
         );
       await render("/admin/staff-handbook?tab=handbook&article=7", element());
       await click("Edit draft");
-      await input("Guide title", "Private unsaved title");
+      await input("Title", "Private unsaved title");
       await click("Revision 1 · 1 Nov 2026 · Published baseline");
       cachePrivateEntry();
       mocks.results["staffHandbook.article"] = {
@@ -1114,11 +1449,11 @@ describe("internal handbook rendered UI", () => {
         articleElement()
       );
       await click("Edit draft");
-      await input("Guide title", "Private unsaved title");
-      await input("Change summary", "Private unsaved reason");
+      await input("Title", "Private unsaved title");
+      await input("Change note (optional)", "Private unsaved reason");
       cachePrivateEntry();
       mocks.mutate.mockRejectedValue(authorityError(code));
-      await submitContaining("Guide title");
+      await submitContaining("Title");
       expectNoPrivateContent();
       expectCacheSafe();
       expect(container.textContent).not.toContain("retained");
@@ -1126,6 +1461,7 @@ describe("internal handbook rendered UI", () => {
   );
   it.each([
     "staffHandbook.saveArticle",
+    "staffHandbook.saveAndPublishArticle",
     "staffHandbook.articleAction",
     "staffHandbook.uploadResource",
     "staffHandbook.removeResource",
@@ -1173,7 +1509,7 @@ describe("internal handbook rendered UI", () => {
   it("an overview denial unmounts the selected article even with cached eligible auth", async () => {
     await render("/admin/staff-handbook?tab=handbook&article=7");
     await click("Edit draft");
-    await input("Guide title", "Private unsaved title");
+    await input("Title", "Private unsaved title");
     cachePrivateEntry();
     mocks.results["staffHandbook.overview"].error =
       authorityError("UNAUTHORIZED");
@@ -1237,13 +1573,13 @@ describe("internal handbook rendered UI", () => {
     async code => {
       await render();
       await click("Report missing knowledge");
-      await input("Request title", "Private unsaved report");
-      await input("What knowledge is missing?", "Private unsaved description");
+      await input("What guidance is missing?", "Private unsaved report");
+      await input("What do staff need to know?", "Private unsaved description");
       await input("Guidance already checked", "Checked");
       await input("Impact on staff or service", "Impact");
       cachePrivateEntry();
       mocks.mutate.mockRejectedValue(authorityError(code));
-      await submitContaining("Request title");
+      await submitContaining("What guidance is missing?");
       expectNoPrivateContent();
       expectCacheSafe();
     }
@@ -1258,14 +1594,14 @@ describe("internal handbook rendered UI", () => {
       );
       if (kind === "article") {
         await click("Edit draft");
-        await input("Change summary", "Private unsaved change");
+        await input("Change note (optional)", "Private unsaved change");
       } else if (kind === "request")
         await input("Edit request title", "Private unsaved request");
       else {
         await click("Back to guides");
         await click("Report missing knowledge");
-        await input("Request title", "Private unsaved report");
-        await input("What knowledge is missing?", "Missing");
+        await input("What guidance is missing?", "Private unsaved report");
+        await input("What do staff need to know?", "Missing");
         await input("Guidance already checked", "Checked");
         await input("Impact on staff or service", "Impact");
       }
@@ -1277,10 +1613,10 @@ describe("internal handbook rendered UI", () => {
       );
       await submitContaining(
         kind === "article"
-          ? "Guide title"
+          ? "Title"
           : kind === "request"
             ? "Request status"
-            : "Request title"
+            : "What guidance is missing?"
       );
       expectNoPrivateContent();
       expectCacheSafe();
@@ -1289,10 +1625,53 @@ describe("internal handbook rendered UI", () => {
       );
     }
   );
+  it.each(["FORBIDDEN", "UNAUTHORIZED"] as const)(
+    "clears atomic-save editor and cache on %s mutation rejection",
+    async code => {
+      await render(
+        "/admin/staff-handbook?tab=handbook&article=7",
+        articleElement()
+      );
+      await click("Edit draft");
+      await input("Title", "Private unsaved atomic title");
+      cachePrivateEntry();
+      mocks.mutate.mockRejectedValue(authorityError(code));
+      await click("Save & publish");
+      expect(mocks.mutate).toHaveBeenCalledWith(
+        "staffHandbook.saveAndPublishArticle",
+        expect.any(Object)
+      );
+      expectNoPrivateContent();
+      expectCacheSafe();
+      expect(container.textContent).not.toContain("retained");
+    }
+  );
+  it.each(["FORBIDDEN", "UNAUTHORIZED"] as const)(
+    "an authenticated post-save detail fetch %s denial hides saved feedback and retry links",
+    async code => {
+      await render();
+      await click("New guide");
+      await input("Title", "Private unsaved new guide");
+      cachePrivateEntry();
+      mocks.fetch.mockRejectedValueOnce(authorityError(code));
+      await submitContaining("Title");
+      expect(mocks.mutate).toHaveBeenCalledTimes(1);
+      expect(mocks.fetch).toHaveBeenCalledWith(
+        "staffHandbook.article",
+        { id: 7 },
+        { staleTime: 0 }
+      );
+      expectNoPrivateContent();
+      expectCacheSafe();
+      expect(container.textContent).not.toMatch(
+        /Draft saved|Open saved|action was saved/
+      );
+    }
+  );
   it("changed administrator cannot see the previous identity's loaded or unsaved detail", async () => {
     await render("/admin/staff-handbook?tab=handbook&article=7");
     await click("Edit draft");
-    await input("Guide title", "Private unsaved old identity");
+    await input("Title", "Private unsaved old identity");
     cachePrivateEntry();
     mocks.user = { ...mocks.user, id: 100 };
     mocks.results["staffHandbook.article"] = { isLoading: true };
@@ -1312,7 +1691,7 @@ describe("internal handbook rendered UI", () => {
     };
     await rerender();
     await click("Edit draft");
-    expect(field("Guide title").value).toBe("New identity guide");
+    expect(field("Title").value).toBe("New identity guide");
   });
   it("cached auth.me authorization error denies access even while its user remains eligible", async () => {
     await render("/admin/staff-handbook?tab=handbook&article=7");
@@ -1330,14 +1709,12 @@ describe("internal handbook rendered UI", () => {
   it("cache-level authority denials from sibling queries fail closed without any render setter", async () => {
     await render();
     cachePrivateEntry();
-    const cached = cache
-      .getQueryCache()
-      .find({
-        queryKey: [
-          ["staffHandbook", "article"],
-          { input: { id: 7 }, type: "query" },
-        ],
-      })!;
+    const cached = cache.getQueryCache().find({
+      queryKey: [
+        ["staffHandbook", "article"],
+        { input: { id: 7 }, type: "query" },
+      ],
+    })!;
     await act(async () =>
       cached.setState({ error: authorityError("FORBIDDEN"), status: "error" })
     );
@@ -1396,7 +1773,7 @@ describe("internal handbook rendered UI", () => {
   it("report mutation hook authority errors clear unsaved fields without preserving a report", async () => {
     await render();
     await click("Report missing knowledge");
-    await input("Request title", "Private unsaved report");
+    await input("What guidance is missing?", "Private unsaved report");
     cachePrivateEntry();
     mocks.mutationErrors["staffHandbook.createRequest"] =
       authorityError("FORBIDDEN");
@@ -1407,23 +1784,19 @@ describe("internal handbook rendered UI", () => {
   it("handbook mutation-cache denials unmount content, clear only handbook entries, and revalidate once", async () => {
     await render();
     cachePrivateEntry();
-    const unrelated = cache
-      .getMutationCache()
-      .build(cache, {
-        mutationKey: [["unrelated"], { label: "staffHandbook" }],
-      });
+    const unrelated = cache.getMutationCache().build(cache, {
+      mutationKey: [["unrelated"], { label: "staffHandbook" }],
+    });
     const mutation = cache
       .getMutationCache()
       .build(cache, { mutationKey: [["staffHandbook", "saveArticle"]] });
     await act(async () => {
       mutation.state.error = authorityError("UNAUTHORIZED");
-      cache
-        .getMutationCache()
-        .notify({
-          type: "updated",
-          mutation,
-          action: { type: "error", error: mutation.state.error },
-        });
+      cache.getMutationCache().notify({
+        type: "updated",
+        mutation,
+        action: { type: "error", error: mutation.state.error },
+      });
     });
     expectNoPrivateContent();
     expectCacheSafe();
@@ -1443,21 +1816,17 @@ describe("internal handbook rendered UI", () => {
     const query = cache
       .getQueryCache()
       .build(cache, { queryKey: [["unrelated"]] });
-    const mutation = cache
-      .getMutationCache()
-      .build(cache, {
-        mutationKey: [["unrelated"], { label: "staffHandbook" }],
-      });
+    const mutation = cache.getMutationCache().build(cache, {
+      mutationKey: [["unrelated"], { label: "staffHandbook" }],
+    });
     await act(async () => {
       query.setState({ error: authorityError("FORBIDDEN"), status: "error" });
       mutation.state.error = authorityError("UNAUTHORIZED");
-      cache
-        .getMutationCache()
-        .notify({
-          type: "updated",
-          mutation,
-          action: { type: "error", error: mutation.state.error },
-        });
+      cache.getMutationCache().notify({
+        type: "updated",
+        mutation,
+        action: { type: "error", error: mutation.state.error },
+      });
     });
     expect(container.querySelector("[data-staff-handbook]")).toBeTruthy();
     expect(container.textContent).toContain("Synthetic refunds process");
@@ -1536,59 +1905,79 @@ describe("internal handbook rendered UI", () => {
       )
     ).toEqual(valid);
   });
-  it("overview review/due/open/assignee/category drilldowns pass exact server queue filters", async () => {
+  it("simple filters pass exact server inputs and tab changes clear stale queue filters", async () => {
+    mocks.results["staffHandbook.requests"].data.total = 31;
     await render();
-    async function metricClick(label: string) {
-      await act(async () =>
-        Array.from(container.querySelectorAll("button"))
-          .find(b => b.textContent?.includes(label))!
-          .click()
-      );
-    }
     const latest = (path: string) =>
       mocks.queries.filter(q => q.path === `staffHandbook.${path}`).at(-1)!
         .input;
-    await metricClick("Awaiting review");
-    expect(latest("browse")).toMatchObject({
-      view: "drafts",
-      needsReview: true,
+    for (const view of ["drafts", "published", "archived", "all"]) {
+      await input("Guide view", view);
+      expect(latest("browse")).toEqual({
+        search: undefined,
+        category: undefined,
+        view,
+        page: 1,
+      });
+    }
+    await input("Filter category", "General");
+    expect(latest("browse").category).toBe("General");
+    await click("Missing knowledge");
+    expect(latest("requests")).toEqual({
+      search: undefined,
+      category: undefined,
+      status: "all",
       page: 1,
     });
-    expect(latest("browse").dueReview).toBeUndefined();
-    await metricClick("Due review");
-    expect(latest("browse")).toMatchObject({
-      view: "published",
-      dueReview: true,
-      page: 1,
-    });
-    expect(latest("browse").needsReview).toBeUndefined();
-    await metricClick("Open requests");
+    expect(disclosure("Advanced filters").open).toBe(false);
+    await expand("Advanced filters");
+    await input("Filter request status", "open");
     expect(latest("requests")).toMatchObject({ status: "open", page: 1 });
     expect(field("Filter request status").value).toBe("open");
-    await metricClick("Unassigned");
+    await input("Filter assignee", "unassigned");
     expect(latest("requests")).toMatchObject({
       status: "open",
       assigneeId: null,
     });
     await input("Search requests", "stale search");
+    expect(latest("requests").search).toBeUndefined();
     await submitContaining("Search requests");
-    await click("General1");
+    expect(latest("requests").search).toBe("stale search");
+    await click("Next");
+    expect(latest("requests").page).toBe(2);
+    await input("Filter category", "General");
     expect(latest("requests")).toMatchObject({
       status: "open",
       category: "General",
-      page: 1,
-    });
-    expect(latest("requests").search).toBeUndefined();
-    await click("Unassigned1");
-    expect(latest("requests")).toMatchObject({
-      status: "open",
+      search: "stale search",
       assigneeId: null,
       page: 1,
     });
-    expect(latest("requests").category).toBeUndefined();
-    await click("Handbook");
-    expect(latest("browse").needsReview).toBeUndefined();
-    expect(latest("browse").dueReview).toBeUndefined();
+    await input("Filter assignee", "99");
+    expect(latest("requests")).toMatchObject({
+      status: "open",
+      assigneeId: 99,
+      category: "General",
+      page: 1,
+    });
+    await input("Filter request status", "new");
+    expect(latest("requests").status).toBe("new");
+    await input("Filter assignee", "");
+    expect(latest("requests").assigneeId).toBeUndefined();
+    await click("Guides");
+    expect(latest("browse")).toEqual({
+      search: undefined,
+      category: undefined,
+      view: "all",
+      page: 1,
+    });
+    await click("Missing knowledge");
+    expect(latest("requests")).toEqual({
+      search: undefined,
+      category: undefined,
+      status: "all",
+      page: 1,
+    });
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
 });

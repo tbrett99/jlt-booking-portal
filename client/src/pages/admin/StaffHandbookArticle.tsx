@@ -48,6 +48,9 @@ function cloneContent(content: HandbookContent): HandbookContent {
     sections: { ...content.sections },
   };
 }
+// Only fixed outcome text is carried across the parent's new-guide remount;
+// private content is never retained outside the access-bound workspace.
+const savedFeedback = new Map<string, { version: number; message: string }>();
 function AttachmentEditor({
   resources,
   disabled,
@@ -273,8 +276,10 @@ function ArticleWorkspace({
   const [content, setContent] = useState<HandbookContent>(() =>
     cloneContent(
       detail?.draft?.content ??
-        detail?.published?.content ??
-        emptyHandbookContent(userId)
+        detail?.published?.content ?? {
+          ...emptyHandbookContent(userId),
+          format: "article",
+        }
     )
   );
   const [baseline, setBaseline] = useState(() => JSON.stringify(content));
@@ -287,8 +292,16 @@ function ArticleWorkspace({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
+  const [titleError, setTitleError] = useState("");
+  const [verificationFailed, setVerificationFailed] = useState(false);
   const [createToken] = useState(token);
   const [savedNewId, setSavedNewId] = useState<number | null>(null);
+  const inFlight = useRef(false);
+  const savedReceipt = useRef<{
+    id: number;
+    version: number;
+    message: string;
+  } | null>(null);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -296,12 +309,24 @@ function ArticleWorkspace({
       alive.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (typeof id !== "number" || !detail) return;
+    const key = `${userId}:${id}`;
+    const receipt = savedFeedback.get(key);
+    if (receipt) {
+      savedFeedback.delete(key);
+      if (receipt.version === detail.article.version)
+        setMessage(receipt.message);
+    }
+  }, [id, userId, detail]);
   const save = trpc.staffHandbook.saveArticle.useMutation();
+  const saveAndPublish = trpc.staffHandbook.saveAndPublishArticle.useMutation();
   const action = trpc.staffHandbook.articleAction.useMutation();
   const upload = trpc.staffHandbook.uploadResource.useMutation();
   const remove = trpc.staffHandbook.removeResource.useMutation();
   const { blocked, deny } = useHandbookAccessGuard(
     save.error,
+    saveAndPublish.error,
     action.error,
     upload.error,
     remove.error
@@ -309,19 +334,28 @@ function ArticleWorkspace({
   const pending =
     busy ||
     save.isPending ||
+    saveAndPublish.isPending ||
     action.isPending ||
     upload.isPending ||
     remove.isPending;
-  const dirty = JSON.stringify(content) !== baseline;
+  const dirty = JSON.stringify(content) !== baseline || !!changeSummary.trim();
   const archived = !!detail?.article.archivedAt;
   const current =
-    !queryFailed && !!detail && detail.article.version === version;
+    !queryFailed &&
+    !verificationFailed &&
+    !!detail &&
+    detail.article.version === version;
   const draft = detail?.draft;
   const contributor =
     !!draft &&
     (draft.contributorIds.includes(userId) || draft.createdById === userId);
-  const needsReview =
-    !!draft && detail?.article.requiresIndependentReview === true;
+  const needsIndependentReview =
+    content.sensitivity !== "operational" ||
+    detail?.article.requiresIndependentReview === true ||
+    (!!draft && draft.content.sensitivity !== "operational") ||
+    (!!detail?.published &&
+      detail.published.content.sensitivity !== "operational");
+  const needsReview = !!draft && needsIndependentReview;
   const hasBody =
     !!draft &&
     !!(draft.content.format === "article"
@@ -353,11 +387,25 @@ function ArticleWorkspace({
     !!draft &&
     draft.id !== detail?.published?.id &&
     (!needsReview || exactReview);
-  async function refresh() {
-    await Promise.all([
-      utils.staffHandbook.article.invalidate(undefined, undefined, {
-        throwOnError: true,
-      }),
+  async function refresh(articleId: number, expectedVersion?: number) {
+    // Fetch only the requested guide, without refetching unrelated details.
+    // staleTime: 0 forces an authenticated server read, rather than accepting cache.
+    const refreshed = await utils.staffHandbook.article.fetch(
+      { id: articleId },
+      { staleTime: 0 }
+    );
+    if (
+      refreshed.article.id !== articleId ||
+      (expectedVersion !== undefined &&
+        refreshed.article.version !== expectedVersion)
+    )
+      throw new Error(
+        "The saved guide's exact version could not be verified. Another staff member may have changed it."
+      );
+    return refreshed;
+  }
+  async function refreshLists() {
+    const results = await Promise.allSettled([
       utils.staffHandbook.browse.invalidate(undefined, undefined, {
         throwOnError: true,
       }),
@@ -371,13 +419,57 @@ function ArticleWorkspace({
         throwOnError: true,
       }),
     ]);
+    for (const result of results) {
+      if (result.status === "rejected" && deny(result.reason))
+        throw result.reason;
+    }
+    return results.every(result => result.status === "fulfilled");
+  }
+  function openVerifiedSave(receipt: {
+    id: number;
+    version: number;
+    message: string;
+  }) {
+    savedFeedback.set(`${userId}:${receipt.id}`, {
+      version: receipt.version,
+      message: receipt.message,
+    });
+    onSaved(receipt.id);
+  }
+  async function retrySavedGuide() {
+    const receipt = savedReceipt.current;
+    if (!receipt || pending || inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    try {
+      await refresh(receipt.id, receipt.version);
+      if (alive.current) openVerifiedSave(receipt);
+    } catch (error) {
+      if (deny(error)) return;
+      if (alive.current) {
+        setFailed(true);
+        setMessage(
+          `${receipt.message} Refresh failed. ${errorText(error)} Retry Open saved guide; do not create another guide.`
+        );
+      }
+    } finally {
+      inFlight.current = false;
+      if (alive.current) setBusy(false);
+    }
   }
   async function mutate(
     work: () => Promise<{ id: number; version: number }>,
     success: string,
     savedContent?: HandbookContent
   ) {
-    if (pending || savedNewId) return;
+    if (
+      pending ||
+      inFlight.current ||
+      savedNewId ||
+      (id === "new" && savedReceipt.current)
+    )
+      return;
+    inFlight.current = true;
     setBusy(true);
     setMessage("");
     setFailed(false);
@@ -385,6 +477,7 @@ function ArticleWorkspace({
     try {
       result = await work();
     } catch (error) {
+      inFlight.current = false;
       if (deny(error)) return;
       if (alive.current) {
         setMessage(
@@ -395,31 +488,96 @@ function ArticleWorkspace({
       }
       return;
     }
-    if (!alive.current) return;
+    if (!alive.current) {
+      inFlight.current = false;
+      return;
+    }
+    setVerificationFailed(true);
     setVersion(result.version);
     if (savedContent) {
       setBaseline(JSON.stringify(savedContent));
       setChangeSummary("");
     }
     setMessage(success);
-    if (id === "new") setSavedNewId(result.id);
-    let refreshed = false;
+    const receipt = { ...result, message: success };
+    if (id === "new") {
+      savedReceipt.current = receipt;
+      setSavedNewId(result.id);
+    }
+    let verified = false;
     try {
-      await refresh();
-      refreshed = true;
+      await refresh(result.id, result.version);
+      if (alive.current) setVerificationFailed(false);
+      verified = true;
+      const listsFresh = await refreshLists();
+      if (alive.current && !listsFresh) {
+        receipt.message = `${success} Guide verified; some lists could not refresh. Refresh the guide list when available.`;
+        setMessage(receipt.message);
+      }
     } catch (error) {
       if (deny(error)) return;
       if (alive.current) {
         setMessage(
-          `${success} Refresh failed; the action was saved. Reload to see the latest server state; do not repeat the action.`
+          `${success} Refresh failed; the action was saved as guide #${result.id}. ${id === "new" ? "Use Open saved guide to retry." : "Reload the latest guide before further actions."} Do not repeat the action.`
         );
         setFailed(true);
       }
+    } finally {
+      inFlight.current = false;
+      if (alive.current) setBusy(false);
     }
-    if (alive.current) {
-      setBusy(false);
-      if (id === "new" && refreshed) onSaved(result.id);
+    if (alive.current && id === "new" && verified) openVerifiedSave(receipt);
+  }
+  async function submitGuide(workflow: "draft" | "publish") {
+    if (
+      pending ||
+      inFlight.current ||
+      savedNewId ||
+      archived ||
+      (id !== "new" && !current)
+    )
+      return;
+    if (!content.title.trim()) {
+      setTitleError("Enter a title before saving your guide.");
+      return;
     }
+    setTitleError("");
+    if (workflow === "publish") {
+      if (needsIndependentReview) return;
+      const body =
+        content.format === "article"
+          ? content.contentHtml
+          : content.sections.steps;
+      if (
+        !safeHandbookHtml(body)
+          .replace(/<[^>]*>/g, "")
+          .trim()
+      ) {
+        setFailed(true);
+        setMessage(
+          "Add content before publishing. You can still save an empty draft."
+        );
+        return;
+      }
+    }
+    const saved = cloneContent(content);
+    const input = {
+      ...(id === "new" ? { createToken } : { id, expectedVersion: version }),
+      content: saved,
+      changeSummary:
+        changeSummary.trim() ||
+        (id === "new" ? "Guide created" : "Guide updated"),
+    };
+    await mutate(
+      () =>
+        workflow === "publish"
+          ? saveAndPublish.mutateAsync(input)
+          : save.mutateAsync(input),
+      workflow === "publish"
+        ? "Guide saved and published internally. Staff only; no agent access."
+        : "Draft saved. Not published; existing published guidance is unchanged.",
+      saved
+    );
   }
   function update<K extends keyof HandbookContent>(
     key: K,
@@ -430,6 +588,7 @@ function ArticleWorkspace({
   function close() {
     if (
       !pending &&
+      !inFlight.current &&
       (!dirty || window.confirm("Discard your unsaved guide edits?"))
     )
       onClose();
@@ -536,18 +695,27 @@ function ArticleWorkspace({
         <Button
           type="button"
           disabled={pending}
-          onClick={() => onSaved(savedNewId)}
+          onClick={() => void retrySavedGuide()}
         >
           Open saved guide #{savedNewId}
         </Button>
       )}
-      {detail && detail.article.version !== version && (
+      {detail && (detail.article.version !== version || verificationFailed) && (
         <Feedback
           error
           message="This guide changed, or refresh is still pending. Your editor has not been overwritten. Reload the latest guide before further actions."
         />
       )}
       <div className="flex flex-wrap gap-2">
+        {!editing && !historic && !needsIndependentReview && (
+          <Button
+            type="button"
+            disabled={pending || archived || !current}
+            onClick={() => void submitGuide("publish")}
+          >
+            Save &amp; publish
+          </Button>
+        )}
         {detail?.published && (
           <Button
             type="button"
@@ -578,18 +746,20 @@ function ArticleWorkspace({
             Preview saved draft
           </Button>
         )}
-        <Button
-          type="button"
-          size="sm"
-          variant={editing ? "default" : "outline"}
-          disabled={pending || archived || !!savedNewId}
-          onClick={() => {
-            setEditing(true);
-            setHistoryId(null);
-          }}
-        >
-          Edit draft
-        </Button>
+        {typeof id === "number" && (
+          <Button
+            type="button"
+            size="sm"
+            variant={editing ? "default" : "outline"}
+            disabled={pending || archived || !!savedNewId}
+            onClick={() => {
+              setEditing(true);
+              setHistoryId(null);
+            }}
+          >
+            Edit draft
+          </Button>
+        )}
         {typeof id === "number" && (
           <Button
             type="button"
@@ -604,15 +774,23 @@ function ArticleWorkspace({
                 )
               )
                 return;
+              if (inFlight.current) return;
+              inFlight.current = true;
+              setBusy(true);
               try {
-                await refresh();
+                await refresh(id);
                 if (alive.current) onSaved(id);
               } catch (error) {
                 if (deny(error)) return;
-                setFailed(true);
-                setMessage(
-                  `Reload failed. ${errorText(error)} Your edits are retained.`
-                );
+                if (alive.current) {
+                  setFailed(true);
+                  setMessage(
+                    `Reload failed. ${errorText(error)} Your edits are retained.`
+                  );
+                }
+              } finally {
+                inFlight.current = false;
+                if (alive.current) setBusy(false);
               }
             }}
           >
@@ -649,29 +827,11 @@ function ArticleWorkspace({
       )}
       {editing && !historic && (
         <form
+          noValidate
           onSubmit={e => {
             e.preventDefault();
-            if (
-              pending ||
-              archived ||
-              !content.title.trim() ||
-              !changeSummary.trim() ||
-              (id !== "new" && !current)
-            )
-              return;
-            const saved = cloneContent(content);
-            void mutate(
-              () =>
-                save.mutateAsync({
-                  ...(id === "new"
-                    ? { createToken }
-                    : { id, expectedVersion: version }),
-                  content: saved,
-                  changeSummary: changeSummary.trim(),
-                }),
-              "Draft saved. Published guidance is unchanged.",
-              saved
-            );
+            // Enter always saves a draft; publication requires its own button.
+            void submitGuide("draft");
           }}
         >
           <fieldset
@@ -683,44 +843,120 @@ function ArticleWorkspace({
                 ? "Create guide draft"
                 : "Edit draft — explicit save required"}
             </legend>
-            <Field label="Guide title">
+            <Field label="Title">
               <input
-                required
                 maxLength={255}
                 className={controlClass}
                 value={content.title}
-                onChange={e => update("title", e.target.value)}
+                aria-invalid={!!titleError}
+                aria-describedby={
+                  titleError ? "handbook-title-error" : undefined
+                }
+                onChange={e => {
+                  update("title", e.target.value);
+                  if (e.target.value.trim()) setTitleError("");
+                }}
               />
             </Field>
-            <Field label="Summary">
-              <textarea
-                rows={2}
+            {titleError && (
+              <p
+                id="handbook-title-error"
+                role="alert"
+                className="text-sm text-destructive"
+              >
+                {titleError}
+              </p>
+            )}
+            <Field label="Category">
+              <select
                 className={controlClass}
-                value={content.summary}
-                onChange={e => update("summary", e.target.value)}
-              />
+                value={content.category}
+                onChange={e => update("category", e.target.value)}
+              >
+                {Array.from(new Set([...categories, content.category])).map(
+                  category => (
+                    <option key={category}>{category}</option>
+                  )
+                )}
+              </select>
             </Field>
-            <details className="rounded-md border p-3" open={id === "new"}>
+            <p className="text-xs text-muted-foreground">
+              Private staff guidance only. No customer/payment data,
+              credentials, remote embeds or inline images. Use private
+              attachments for screenshots.
+            </p>
+            {content.format === "article" ? (
+              <div className="space-y-1.5">
+                <div className="text-sm font-medium">Content</div>
+                <PrivateEditor
+                  label="Content"
+                  value={content.contentHtml}
+                  disabled={pending || archived || !!savedNewId}
+                  resources={resources}
+                  onChange={html => update("contentHtml", html)}
+                  onBlocked={() => {
+                    setFailed(true);
+                    setMessage(
+                      "Inline images and embeds are blocked. Upload a private screenshot attachment after saving the draft."
+                    );
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium">
+                  Content — six-section process
+                </h3>
+                {Object.entries(sectionLabels).map(([key, label]) => (
+                  <details
+                    key={key}
+                    className="rounded-md border p-3"
+                    open={key === "whenToUse"}
+                  >
+                    <summary className="cursor-pointer text-sm font-medium">
+                      {label}
+                    </summary>
+                    <div className="mt-3">
+                      <PrivateEditor
+                        label={label}
+                        value={
+                          content.sections[key as keyof typeof sectionLabels]
+                        }
+                        disabled={pending || archived || !!savedNewId}
+                        resources={resources}
+                        onChange={html =>
+                          setContent(previous => ({
+                            ...previous,
+                            sections: { ...previous.sections, [key]: html },
+                          }))
+                        }
+                        onBlocked={() => {
+                          setFailed(true);
+                          setMessage(
+                            "Inline images and embeds are blocked. Upload a private screenshot attachment after saving the draft."
+                          );
+                        }}
+                      />
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+            <details className="rounded-md border p-3">
               <summary className="cursor-pointer text-sm font-medium">
-                Guide metadata
+                Advanced options (optional)
               </summary>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <Field label="Category">
-                  <select
+                <Field label="Summary (optional)">
+                  <textarea
+                    rows={2}
                     className={controlClass}
-                    value={content.category}
-                    onChange={e => update("category", e.target.value)}
-                  >
-                    {Array.from(new Set([...categories, content.category])).map(
-                      category => (
-                        <option key={category}>{category}</option>
-                      )
-                    )}
-                  </select>
+                    value={content.summary}
+                    onChange={e => update("summary", e.target.value)}
+                  />
                 </Field>
                 <Field label="Owner">
                   <select
-                    required
                     className={controlClass}
                     value={content.ownerId}
                     onChange={e => update("ownerId", Number(e.target.value))}
@@ -807,96 +1043,60 @@ function ArticleWorkspace({
                   />{" "}
                   Pin in handbook
                 </label>
+                <Field label="Editor format">
+                  <select
+                    className={controlClass}
+                    value={content.format}
+                    onChange={e =>
+                      update(
+                        "format",
+                        e.target.value as HandbookContent["format"]
+                      )
+                    }
+                  >
+                    <option value="article">Ordinary rich text article</option>
+                    <option value="process">
+                      Reusable six-section process
+                    </option>
+                  </select>
+                </Field>
+                <Field
+                  label="Change note (optional)"
+                  hint="Leave blank to record Guide created or Guide updated automatically."
+                >
+                  <input
+                    maxLength={500}
+                    className={controlClass}
+                    value={changeSummary}
+                    onChange={e => setChangeSummary(e.target.value)}
+                  />
+                </Field>
               </div>
             </details>
-            <Field label="Editor format">
-              <select
-                className={controlClass}
-                value={content.format}
-                onChange={e =>
-                  update("format", e.target.value as HandbookContent["format"])
-                }
-              >
-                <option value="process">Reusable six-section process</option>
-                <option value="article">Ordinary rich text article</option>
-              </select>
-            </Field>
-            <p className="text-xs text-muted-foreground">
-              Private internal guidance only. No customer/payment data or
-              credentials. No AI formatting, remote embeds or inline images. Use
-              private attachments for screenshots.
-            </p>
-            {content.format === "article" ? (
-              <PrivateEditor
-                label="Article body"
-                value={content.contentHtml}
-                disabled={pending || archived || !!savedNewId}
-                resources={resources}
-                onChange={html => update("contentHtml", html)}
-                onBlocked={() => {
-                  setFailed(true);
-                  setMessage(
-                    "Inline images and embeds are blocked. Upload a private screenshot attachment after saving the draft."
-                  );
-                }}
-              />
-            ) : (
-              Object.entries(sectionLabels).map(([key, label]) => (
-                <details
-                  key={key}
-                  className="rounded-md border p-3"
-                  open={key === "whenToUse"}
-                >
-                  <summary className="cursor-pointer text-sm font-medium">
-                    {label}
-                  </summary>
-                  <div className="mt-3">
-                    <PrivateEditor
-                      label={label}
-                      value={
-                        content.sections[key as keyof typeof sectionLabels]
-                      }
-                      disabled={pending || archived || !!savedNewId}
-                      resources={resources}
-                      onChange={html =>
-                        setContent(previous => ({
-                          ...previous,
-                          sections: { ...previous.sections, [key]: html },
-                        }))
-                      }
-                      onBlocked={() => {
-                        setFailed(true);
-                        setMessage(
-                          "Inline images and embeds are blocked. Upload a private screenshot attachment after saving the draft."
-                        );
-                      }}
-                    />
-                  </div>
-                </details>
-              ))
+            {needsIndependentReview && (
+              <p className="text-sm text-amber-700">
+                Independent review required. Save your draft, then request a
+                second staff reviewer. Changed sensitive guidance cannot be
+                published directly.
+              </p>
             )}
-            <Field label="Change summary">
-              <input
-                required
-                maxLength={500}
-                className={controlClass}
-                value={changeSummary}
-                onChange={e => setChangeSummary(e.target.value)}
-              />
-            </Field>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Button
                 type="submit"
-                disabled={
-                  pending ||
-                  archived ||
-                  !content.title.trim() ||
-                  !changeSummary.trim() ||
-                  (id !== "new" && !current)
-                }
+                variant="outline"
+                disabled={pending || archived || (id !== "new" && !current)}
               >
-                Save draft
+                {pending ? "Saving…" : "Save draft"}
               </Button>
+              {!needsIndependentReview && (
+                <Button
+                  type="button"
+                  disabled={pending || archived || (id !== "new" && !current)}
+                  onClick={() => void submitGuide("publish")}
+                >
+                  Save &amp; publish
+                </Button>
+              )}
               <span className="text-xs text-muted-foreground">
                 {dirty ? "Unsaved changes" : "No unsaved content changes"}
               </span>
@@ -929,103 +1129,113 @@ function ArticleWorkspace({
                 );
             }}
           />
-          <section className="space-y-3 rounded-md border bg-muted/20 p-3">
-            <h3 className="text-sm font-semibold">
-              Review & internal publication
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              {needsReview
-                ? "Financial, legal and policy guidance, including changes to a previously sensitive publication, requires a second, non-contributing reviewer for the exact saved draft revision. Any edit or attachment change needs a new review."
-                : "Operational guidance can be published explicitly after saving. Review remains available."}
-            </p>
-            {!hasBody && (
-              <p className="text-xs text-amber-700">
-                Publication and review blocked: save an article body or process
-                steps first.
+          {detail && (
+            <details
+              className="space-y-3 rounded-md border bg-muted/20 p-3"
+              open={needsReview}
+            >
+              <summary className="cursor-pointer text-sm font-medium">
+                {needsReview
+                  ? "Required independent review"
+                  : "More options (review & archive)"}
+              </summary>
+              <h3 className="text-sm font-semibold">
+                Review & internal publication
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {needsReview
+                  ? "Financial, legal and policy guidance, including changes to a previously sensitive publication, requires a second, non-contributing reviewer for the exact saved draft revision. Any edit or attachment change needs a new review."
+                  : "Operational guidance can use Save & publish. A second staff review is optional."}
               </p>
-            )}
-            {contributor && (
-              <p className="text-xs text-amber-700">
-                You contributed to this revision and cannot approve it. Ask
-                another eligible staff reviewer.
-              </p>
-            )}
-            {needsReview && !exactReview && (
-              <p className="text-xs text-amber-700">
-                Publication blocked: the exact saved revision has not been
-                approved by a non-contributing second reviewer.
-              </p>
-            )}
-            {dirty && (
-              <p className="text-xs text-amber-700">
-                Save your changes before submitting, approving, publishing or
-                changing attachments.
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={
-                  !canAct ||
-                  archived ||
-                  !draft ||
-                  !hasBody ||
-                  draft.id === detail?.published?.id ||
-                  !!detail?.article.submittedAt
-                }
-                onClick={() => void doAction("submit_review")}
-              >
-                Submit for review
-              </Button>
-              {!contributor && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={!canApprove}
-                  onClick={() => void doAction("approve")}
-                >
-                  Approve exact revision
-                  {draft ? ` ${draft.revisionNumber}` : ""}
-                </Button>
+              {!hasBody && (
+                <p className="text-xs text-amber-700">
+                  Publication and review blocked: save an article body or
+                  process steps first.
+                </p>
               )}
-              <Button
-                type="button"
-                size="sm"
-                disabled={!canPublish}
-                onClick={() => void doAction("publish")}
-              >
-                Publish internally
-              </Button>
-              {archived ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={!canAct}
-                  onClick={() => void doAction("restore")}
-                >
-                  Restore guide
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={!canAct}
-                  onClick={() => void doAction("archive")}
-                >
-                  Archive guide
-                </Button>
+              {contributor && (
+                <p className="text-xs text-amber-700">
+                  You contributed to this revision and cannot approve it. Ask
+                  another eligible staff reviewer.
+                </p>
               )}
-            </div>
-          </section>
+              {needsReview && !exactReview && (
+                <p className="text-xs text-amber-700">
+                  Publication blocked: the exact saved revision has not been
+                  approved by a non-contributing second reviewer.
+                </p>
+              )}
+              {dirty && (
+                <p className="text-xs text-amber-700">
+                  Save your changes before submitting, approving, publishing or
+                  changing attachments.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    !canAct ||
+                    archived ||
+                    !draft ||
+                    !hasBody ||
+                    draft.id === detail?.published?.id ||
+                    !!detail?.article.submittedAt
+                  }
+                  onClick={() => void doAction("submit_review")}
+                >
+                  {detail.article.submittedAt
+                    ? "Review requested"
+                    : "Request review"}
+                </Button>
+                {!contributor && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!canApprove}
+                    onClick={() => void doAction("approve")}
+                  >
+                    Approve exact revision
+                    {draft ? ` ${draft.revisionNumber}` : ""}
+                  </Button>
+                )}
+                {needsReview && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!canPublish}
+                    onClick={() => void doAction("publish")}
+                  >
+                    Publish internally
+                  </Button>
+                )}
+              </div>
+            </details>
+          )}
         </>
       )}
       {detail && (
         <>
+          {!historic && (
+            <details className="rounded-md border p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                More options (archive & restore)
+              </summary>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mt-3"
+                disabled={!canAct}
+                onClick={() => void doAction(archived ? "restore" : "archive")}
+              >
+                {archived ? "Restore guide" : "Archive guide"}
+              </Button>
+            </details>
+          )}
           <details className="rounded-md border p-3">
             <summary className="cursor-pointer text-sm font-medium">
               Revision history (read-only)

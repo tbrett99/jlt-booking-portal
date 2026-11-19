@@ -58,7 +58,16 @@ export async function withHandbookWrite<T>(
   actor: HandbookAccount,
   work: (tx: HandbookDb, actorId: number) => Promise<T>
 ): Promise<T> {
-  return withHandbookRead(actor, async (db, actorId) => {
+  assertStaffHandbookAccount(actor);
+  try {
+    const db = await getDb();
+    if (!db)
+      fail(
+        "INTERNAL_SERVER_ERROR",
+        "The internal handbook is temporarily unavailable."
+      );
+    await assertFreshStaffHandbookAccount(db, actor.id);
+    const actorId = actor.id;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         return await db.transaction(async (tx: HandbookDb) => {
@@ -67,18 +76,39 @@ export async function withHandbookWrite<T>(
           // report, owner or reviewer row. This deliberately serializes handbook
           // writes and prevents actor/owner and guide/report lock inversions.
           // It does not serialize ordinary agent, booking or financial workflows.
-          const team = await tx.select({ id: users.id }).from(users)
-            .where(staffEligibility).orderBy(asc(users.id)).limit(STAFF_LIMIT + 1);
-          if (team.length > STAFF_LIMIT) fail("INTERNAL_SERVER_ERROR", "The internal handbook team exceeds its supported limit.");
-          const ids: number[] = team.map((member: { id: number }) => member.id).sort((a: number, b: number) => a - b);
-          if (!ids.includes(actorId)) fail("FORBIDDEN", "Active JLT administrator access is required.");
+          const team = await tx
+            .select({ id: users.id })
+            .from(users)
+            .where(staffEligibility)
+            .orderBy(asc(users.id))
+            .limit(STAFF_LIMIT + 1);
+          if (team.length > STAFF_LIMIT)
+            fail(
+              "INTERNAL_SERVER_ERROR",
+              "The internal handbook team exceeds its supported limit."
+            );
+          const ids: number[] = team
+            .map((member: { id: number }) => member.id)
+            .sort((a: number, b: number) => a - b);
+          if (!ids.includes(actorId))
+            fail("FORBIDDEN", "Active JLT administrator access is required.");
           // Primary-key point ranges avoid a filtered FOR UPDATE table scan and
           // prevent secondary-index/filesort order from changing lock order.
-          await tx.select({ id: users.id }).from(users, { forceIndex: "PRIMARY" })
-            .where(inArray(users.id, ids)).orderBy(asc(users.id)).limit(STAFF_LIMIT).for("update");
+          await tx
+            .select({ id: users.id })
+            .from(users, { forceIndex: "PRIMARY" })
+            .where(inArray(users.id, ids))
+            .orderBy(asc(users.id))
+            .limit(STAFF_LIMIT)
+            .for("update");
           setHandbookAccountLockPlan(tx, ids);
           await assertFreshStaffHandbookAccount(tx, actorId, true);
-          return work(tx, actorId);
+          const result = await work(tx, actorId);
+          // Authorization and verified write readback complete BEFORE commit.
+          // The locked actor row prevents revocation crossing this commit point.
+          // Never turn an already-committed save into failure with a later read.
+          await assertFreshStaffHandbookAccount(tx, actorId, true);
+          return result;
         });
       } catch (error) {
         if (attempt === 2 || !isRetryableHandbookLockError(error)) throw error;
@@ -88,16 +118,38 @@ export async function withHandbookWrite<T>(
         await new Promise(resolve => setTimeout(resolve, 25 * (attempt + 1)));
       }
     }
-    return fail("INTERNAL_SERVER_ERROR", "The internal handbook operation could not be completed.");
-  });
+    return fail(
+      "INTERNAL_SERVER_ERROR",
+      "The internal handbook operation could not be completed."
+    );
+  } catch (error) {
+    throw safeHandbookError(error);
+  }
 }
 export function isRetryableHandbookLockError(error: unknown): boolean {
   let candidate = error;
   const seen = new Set<unknown>();
-  for (let depth = 0; depth < 8 && candidate && typeof candidate === "object" && !seen.has(candidate); depth++) {
+  for (
+    let depth = 0;
+    depth < 8 &&
+    candidate &&
+    typeof candidate === "object" &&
+    !seen.has(candidate);
+    depth++
+  ) {
     seen.add(candidate);
-    const value = candidate as { code?: unknown; errno?: unknown; cause?: unknown };
-    if (value.code === "ER_LOCK_DEADLOCK" || value.code === "ER_LOCK_WAIT_TIMEOUT" || value.errno === 1213 || value.errno === 1205) return true;
+    const value = candidate as {
+      code?: unknown;
+      errno?: unknown;
+      cause?: unknown;
+    };
+    if (
+      value.code === "ER_LOCK_DEADLOCK" ||
+      value.code === "ER_LOCK_WAIT_TIMEOUT" ||
+      value.errno === 1213 ||
+      value.errno === 1205
+    )
+      return true;
     candidate = value.cause;
   }
   return false;
@@ -218,16 +270,14 @@ export async function recordAudit(
   summary: string,
   metadata: Record<string, unknown> = {}
 ) {
-  await db
-    .insert(audit)
-    .values({
-      entityType,
-      entityId,
-      actorId,
-      action,
-      summary: plainHandbookText(summary).slice(0, 500),
-      metadata,
-    });
+  await db.insert(audit).values({
+    entityType,
+    entityId,
+    actorId,
+    action,
+    summary: plainHandbookText(summary).slice(0, 500),
+    metadata,
+  });
 }
 export async function auditHistory(
   db: HandbookDb,
@@ -259,10 +309,15 @@ export async function bumpArticle(
   row: ArticleRow,
   patch: Partial<typeof articles.$inferInsert>
 ) {
-  await db
+  const result = await db
     .update(articles)
     .set({ ...patch, version: row.version + 1, updatedAt: new Date() })
     .where(and(eq(articles.id, row.id), eq(articles.version, row.version)));
+  if (result?.[0]?.affectedRows !== 1)
+    fail(
+      "CONFLICT",
+      "The guide update was not confirmed. Refresh the guide before retrying."
+    );
   return { id: row.id, version: row.version + 1 };
 }
 export async function bumpRequest(
@@ -286,18 +341,24 @@ export async function appendRevision(
   changeSummary: string
 ) {
   const previous = await getRevision(db, article.id, article.draftRevisionId);
-  const continuingCycle = previous && article.draftRevisionId !== article.publishedRevisionId;
-  const published = article.publishedRevisionId === article.draftRevisionId
-    ? previous
-    : await getRevision(db, article.id, article.publishedRevisionId);
-  const previousContent = previous?.content as (HandbookContent & { _cycleRequiresReview?: boolean }) | undefined;
+  const continuingCycle =
+    previous && article.draftRevisionId !== article.publishedRevisionId;
+  const published =
+    article.publishedRevisionId === article.draftRevisionId
+      ? previous
+      : await getRevision(db, article.id, article.publishedRevisionId);
+  const previousContent = previous?.content as
+    | (HandbookContent & { _cycleRequiresReview?: boolean })
+    | undefined;
   const publishedContent = published?.content as HandbookContent | undefined;
   // Ignore the prior cycle's flag after publication, but protect a downgrade of
   // a non-operational published guide. Client flags never enter this decision.
-  const cycleRequiresReview = content.sensitivity !== "operational" ||
+  const cycleRequiresReview =
+    content.sensitivity !== "operational" ||
     (!!publishedContent && publishedContent.sensitivity !== "operational") ||
-    (!!continuingCycle && (previousContent?._cycleRequiresReview === true ||
-      previousContent?.sensitivity !== "operational"));
+    (!!continuingCycle &&
+      (previousContent?._cycleRequiresReview === true ||
+        previousContent?.sensitivity !== "operational"));
   const cycleContributors =
     previous && article.draftRevisionId !== article.publishedRevisionId
       ? snapshotIds(previous.contributorIds)
