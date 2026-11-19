@@ -981,6 +981,7 @@ export async function getAllAmendments() {
         clientName: bookings.clientName,
         ptsRef: bookings.ptsRef,
         topdogRef: bookings.topdogRef,
+        crmRef: bookings.crmRef,
         departureDate: bookings.departureDate,
       }).from(bookings).where(inArray(bookings.id, bookingIds))
     : [];
@@ -999,6 +1000,8 @@ export async function getAllAmendments() {
     clientName: bookingMap.get(a.bookingId)?.clientName ?? null,
     ptsRef: bookingMap.get(a.bookingId)?.ptsRef ?? null,
     topdogRef: bookingMap.get(a.bookingId)?.topdogRef ?? null,
+    crmRef: bookingMap.get(a.bookingId)?.crmRef ?? null,
+    bookingAgentId: bookingMap.get(a.bookingId)?.agentId ?? null,
     agentName: bookingAgentMap.get(bookingMap.get(a.bookingId)?.agentId ?? 0) ?? null,
     departureDate: bookingMap.get(a.bookingId)?.departureDate ?? null,
     assignedToName: a.assignedToId ? (assigneeMap.get(a.assignedToId) ?? null) : null,

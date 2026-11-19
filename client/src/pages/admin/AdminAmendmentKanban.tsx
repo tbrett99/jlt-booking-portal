@@ -9,12 +9,17 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { User, Calendar, ArrowRight, FileText, Clock, XCircle, Loader2, EyeOff, Eye } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { differenceInDays, format } from "date-fns";
 import AmendmentMessageThread from "@/components/AmendmentMessageThread";
+import AmendmentListFilterControls, { useAmendmentFilterClock } from "@/components/AmendmentListFilters";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { DEFAULT_AMENDMENT_FILTERS, amendmentDate, amendmentDepartureDays, amendmentDepartureLabel, amendmentStage, filterAndSortAmendments, type AmendmentListFilters } from "@shared/amendment-list";
 
 function AgeBadge({ createdAt }: { createdAt: string | Date }) {
-  const days = differenceInDays(new Date(), new Date(createdAt));
+  const createdDate = amendmentDate(createdAt);
+  if (!createdDate) return null;
+  const days = differenceInDays(new Date(), createdDate);
   const color = days >= 7 ? { bg: '#fee2e2', text: '#991b1b' } : days >= 3 ? { bg: '#fef3c7', text: '#92400e' } : { bg: '#f0fdf4', text: '#166534' };
   return (
     <span className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full font-medium" style={{ background: color.bg, color: color.text }}>
@@ -35,18 +40,32 @@ const STAGE_COLORS: Record<Stage, string> = {
 const ACTIVE_STAGES = ["To Do", "In Progress"] as const;
 
 export default function AdminAmendmentKanban() {
-  const { data: amendments, refetch } = trpc.amendments.all.useQuery(undefined, { staleTime: 60000 });
+  const { data: amendments, refetch, isLoading, isError, isFetching } = trpc.amendments.all.useQuery(undefined, {
+    staleTime: 60000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
   const { data: adminUsers = [] } = trpc.users.listAdmins.useQuery();
+  const { user } = useAuth();
+  const now = useAmendmentFilterClock();
+  const [filters, setFilters] = useState<AmendmentListFilters>({ ...DEFAULT_AMENDMENT_FILTERS });
   const [showActioned, setShowActioned] = useState(false);
+  // Keep the complete authorized pipeline source, including reimbursement docs.
+  // A failed refresh must not leave cached records or actions on screen.
+  const rows = useMemo(() => isError ? [] : (amendments ?? []), [amendments, isError]);
+  const filteredAmendments = useMemo(
+    () => filterAndSortAmendments(rows, filters, now, user?.id),
+    [rows, filters, now, user?.id]
+  );
   const updatePipeline = trpc.amendments.updatePipeline.useMutation({
     onSuccess: () => { refetch(); toast.success("Amendment updated"); },
     onError: (e) => toast.error(e.message),
   });
 
   const byStage = (stage: Stage) =>
-    (amendments ?? []).filter((a) => (a.pipelineStage ?? "To Do") === stage && a.status !== "rejected");
+    filteredAmendments.filter((a) => amendmentStage(a) === stage);
 
-  const rejectedAmendments = (amendments ?? []).filter((a) => a.status === "rejected");
+  const rejectedAmendments = filteredAmendments.filter((a) => a.status === "rejected");
   const actionedCount = byStage("Actioned").length;
 
   const moveStage = (amendmentId: number, stage: Stage) => {
@@ -57,7 +76,13 @@ export default function AdminAmendmentKanban() {
     updatePipeline.mutate({ amendmentId, assignedToId: userId });
   };
 
-  const visibleStages = showActioned ? STAGES : ACTIVE_STAGES;
+  // An explicit stage filter wins over the optional Actioned column toggle.
+  const visibleStages: readonly Stage[] = filters.stage === "rejected" ? []
+    : filters.stage === "Actioned" ? ["Actioned"]
+    : filters.stage === "To Do" || filters.stage === "In Progress" ? [filters.stage]
+    : filters.stage === "pending" ? ACTIVE_STAGES
+    : showActioned ? STAGES : ACTIVE_STAGES;
+  const shownCount = visibleStages.reduce((count, stage) => count + byStage(stage).length, 0) + rejectedAmendments.length;
 
   return (
     <div className="p-6 space-y-6">
@@ -66,6 +91,7 @@ export default function AdminAmendmentKanban() {
           <h1 className="text-2xl font-bold text-foreground">Amendment Pipeline</h1>
           <p className="text-muted-foreground text-sm mt-1">Manage and track all amendment requests across stages</p>
         </div>
+        {!isError && !isLoading && filters.stage === "all" && (
         <Button
           variant="outline"
           size="sm"
@@ -75,11 +101,36 @@ export default function AdminAmendmentKanban() {
           {showActioned ? <EyeOff size={14} /> : <Eye size={14} />}
           {showActioned ? "Hide Actioned" : `Show Actioned (${actionedCount})`}
         </Button>
+        )}
       </div>
 
-      <div className={`grid grid-cols-1 gap-6 ${showActioned ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+      <AmendmentListFilterControls
+        filters={filters}
+        onChange={setFilters}
+        rows={rows}
+        currentUserId={user?.id}
+        matchedCount={shownCount}
+        totalCount={rows.length}
+      />
+
+      <p className="text-xs text-muted-foreground">Sorting applies within each stage.</p>
+
+      {isError ? (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 space-y-3">
+          <p className="text-sm text-red-800">Unable to load amendments. Previously loaded records are hidden until a successful refresh.</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+            {isFetching ? "Retrying..." : "Try again"}
+          </Button>
+        </div>
+      ) : isLoading ? (
+        <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground py-8">
+          <Loader2 size={16} className="animate-spin" /> Loading amendments...
+        </div>
+      ) : (
+      <>
+      <div className={`grid grid-cols-1 gap-6 ${visibleStages.length === 3 ? 'md:grid-cols-3' : visibleStages.length === 2 ? 'md:grid-cols-2' : ''}`}>
         {visibleStages.map((stage) => (
-          <div key={stage} className="space-y-3">
+          <div key={stage} data-amendment-stage={stage} className="space-y-3">
             <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${STAGE_COLORS[stage]}`}>
               <span className="font-semibold text-sm">{stage}</span>
               <Badge variant="outline" className="text-xs">{byStage(stage).length}</Badge>
@@ -121,6 +172,11 @@ export default function AdminAmendmentKanban() {
           </div>
         </div>
       )}
+      {filteredAmendments.length === 0 && (
+        <p role="status" className="text-center text-sm text-muted-foreground py-4">No amendments match these filters.</p>
+      )}
+      </>
+      )}
     </div>
   );
 }
@@ -136,9 +192,12 @@ const LINE_ITEM_LABELS: Record<string, { label: string; prefix: string; color: s
  * Deliberately labelled booking context so the pipeline can be triaged without
  * opening each booking simply to identify the agent, travel date or request age.
  */
-export function AmendmentBookingContext({ amendment }: { amendment: any }) {
-  const submittedAt = amendment.createdAt ? new Date(amendment.createdAt) : null;
-  const departureDate = amendment.departureDate ? new Date(amendment.departureDate) : null;
+export function AmendmentBookingContext({ amendment, now = new Date() }: { amendment: any; now?: Date }) {
+  const submittedAt = amendmentDate(amendment.createdAt);
+  const departureDate = amendmentDate(amendment.departureDate);
+  // The page owns the only calendar timer; card contexts just recompute on render.
+  const departureDays = amendmentDepartureDays(amendment.departureDate, now);
+  const urgent = departureDays != null && departureDays >= 0 && departureDays < 7;
 
   return (
     <div className="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-3">
@@ -155,6 +214,9 @@ export function AmendmentBookingContext({ amendment }: { amendment: any }) {
           <Calendar className="h-3 w-3 shrink-0 text-[#02BFAE]" />
           {departureDate ? format(departureDate, "dd MMM yyyy") : "Not recorded"}
         </span>
+        <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium ${urgent ? 'bg-amber-100 text-amber-800' : 'bg-muted text-muted-foreground'}`}>
+          {amendmentDepartureLabel(amendment, now)}
+        </span>
       </div>
       <div>
         <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">Submitted</span>
@@ -169,7 +231,7 @@ export function AmendmentBookingContext({ amendment }: { amendment: any }) {
 
 function RejectedAmendmentCard({ amendment }: { amendment: any }) {
   return (
-    <Card className="shadow-sm border-l-4 border-l-red-400 opacity-80">
+    <Card data-amendment-id={amendment.id} className="shadow-sm border-l-4 border-l-red-400 opacity-80">
       <CardHeader className="pb-2 pt-3 px-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
@@ -302,7 +364,7 @@ function AmendmentCard({
 
   return (
     <>
-      <Card className={`shadow-sm hover:shadow-md transition-shadow border-l-4 ${isReimb ? 'border-l-red-500' : 'border-l-[#70FFE8]'}`}>
+      <Card data-amendment-id={amendment.id} className={`shadow-sm hover:shadow-md transition-shadow border-l-4 ${isReimb ? 'border-l-red-500' : 'border-l-[#70FFE8]'}`}>
         {isReimb && (
           <div className="flex items-center gap-2 px-4 pt-3 pb-1">
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-bold" style={{ background: '#fee2e2', color: '#991b1b' }}>

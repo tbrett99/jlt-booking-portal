@@ -29,6 +29,7 @@ export const systemRouter = router({
       businessStaffStandardBookings: 1,
       financialsGoCardlessOnlyVat: 1,
       staffHandbookInternal: 1,
+      amendmentDepartureFilters: 1,
     })),
 
   notifyOwner: adminProcedure

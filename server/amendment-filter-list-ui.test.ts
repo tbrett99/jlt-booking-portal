@@ -1,0 +1,58 @@
+// @vitest-environment happy-dom
+import React, { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+const state = vi.hoisted(() => ({ rows: [] as any[], error: false, loading: false, writes: [] as any[], options: {} as any, refetches: 0, userId: 47 as number | undefined }));
+vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: state.userId == null ? null : { id: state.userId, role: "admin" } }) }));
+vi.mock("wouter", () => ({ Link: ({ href, children, ...props }: any) => React.createElement("a", { href, ...props }, children) }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/lib/trpc", () => ({ trpc: {
+  useUtils: () => ({ amendments: { all: { invalidate: vi.fn() } } }),
+  amendments: {
+    all: { useQuery: (_input: any, options: any) => { state.options = options; return { data: state.rows, isLoading: state.loading, isError: state.error, refetch: async () => { state.refetches++; } }; } },
+    action: { useMutation: () => ({ isPending: false, mutate: (input: any) => state.writes.push({ path: "action", input }) }) },
+    updatePipeline: { useMutation: () => ({ isPending: false, mutate: (input: any) => state.writes.push({ path: "updatePipeline", input }) }) },
+  },
+} }));
+import AdminAmendments from "../client/src/pages/admin/AdminAmendments";
+let host: HTMLDivElement, root: Root;
+const date = (offset: number, hour = 12) => new Date(2026, 10, 19 + offset, hour);
+const row = (id: number, offset: number | null, extra: any = {}) => ({ id, bookingId: 1000 + id, agentId: 10, bookingAgentId: 10, agentName: "Synthetic Agent", clientName: `Synthetic Client ${id}`, createdAt: date(-id), departureDate: offset == null ? null : date(offset), pipelineStage: "To Do", status: "pending", assignedToId: null, assignedToName: null, details: "Supplier amendment", ptsRef: `PTS-${id}`, topdogRef: null, crmRef: `ORBIT-${id}`, isReimbursementDoc: false, ...extra });
+beforeEach(() => {
+  (globalThis as any).React = React; (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+  Object.assign((window as any).happyDOM.settings, { disableCSSFileLoading: true, disableJavaScriptFileLoading: true, disableComputedStyleRendering: true });
+  vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(date(0));
+  state.rows = [row(1, 30), row(2, 1, { assignedToId: 47, assignedToName: "Synthetic Staff" }), row(3, 0), row(4, 6, { bookingAgentId: 20, agentName: "Second Agent", pipelineStage: "In Progress" }), row(5, 2, { pipelineStage: "Actioned" }), row(6, 1, { status: "rejected", rejectionReason: "Needs corrected information" }), row(7, 0, { isReimbursementDoc: true }), row(8, 7), row(9, -1), row(10, null)];
+  state.error = false; state.loading = false; state.writes = []; state.refetches = 0; state.userId = 47;
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  vi.stubGlobal("fetch", vi.fn(() => { throw new Error("External network forbidden"); }));
+});
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); expect(fetch).not.toHaveBeenCalled(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+const render = () => act(async () => root.render(React.createElement(AdminAmendments)));
+const ids = () => Array.from(host.querySelectorAll("[data-amendment-id]")).map(node => Number(node.getAttribute("data-amendment-id")));
+const control = (label: string) => { const node = Array.from(host.querySelectorAll("label")).find(node => node.textContent === label)!; return document.getElementById(node.htmlFor)! as HTMLSelectElement; };
+const choose = (label: string, value: string) => act(async () => { const node = control(label); node.value = value; node.dispatchEvent(new Event("change", { bubbles: true })); });
+const search = (value: string) => act(async () => { const node = control("Search amendments") as unknown as HTMLInputElement; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(node, value); node.dispatchEvent(new Event("input", { bubbles: true })); node.dispatchEvent(new Event("change", { bubbles: true })); });
+const button = (text: string) => Array.from(host.querySelectorAll("button")).find(node => node.textContent?.trim() === text)!;
+describe("actual amendment list filtering and urgency sorting", () => {
+  it("defaults to closest upcoming departures, then departed and missing dates, without reimbursement rows", async () => { await render(); expect(ids()).toEqual([3, 2, 4, 8, 1, 9, 10, 5, 6]); expect(control("Sort by").value).toBe("departure_soonest"); expect(host.textContent).toContain("Upcoming departures first"); expect(host.textContent).toContain("9 of 9 amendments shown"); expect(state.writes).toEqual([]); });
+  it("shows useful booking agent, departure, submitted time, refs and concise urgency", async () => { await render(); expect(host.textContent).toContain("Agent: Synthetic Agent"); expect(host.textContent).toContain("Departure:"); expect(host.textContent).toContain("Submitted:"); expect(host.textContent).toContain("Departs today"); expect(host.textContent).toContain("Departs tomorrow"); expect(host.textContent).toContain("Already departed"); expect(host.textContent).toContain("No departure date"); expect(host.textContent).toContain("ORBIT-2"); });
+  it("filters pending stages without including rejected or completed work", async () => { await render(); await choose("Stage", "pending"); expect(ids()).toEqual([3, 2, 4, 8, 1, 9, 10]); expect(host.textContent).not.toContain("Reason: Needs corrected information"); });
+  it("filters one stage and the booking owner rather than the request's historical agent ID", async () => { await render(); await choose("Agent", "20"); await choose("Stage", "In Progress"); expect(ids()).toEqual([4]); expect(host.textContent).toContain("1 of 9 amendments shown"); });
+  it("can find assigned-to-me work and combine it with a departure window", async () => { await render(); await choose("Assigned to", "me"); await choose("Departure window", "next_7"); expect(ids()).toEqual([2]); });
+  it("finds unassigned requests and exact staff assignments", async () => { await render(); await choose("Assigned to", "47"); expect(ids()).toEqual([2]); await choose("Assigned to", "unassigned"); expect(ids()).not.toContain(2); });
+  it("filters the next seven calendar dates including today and excluding the eighth date", async () => { await render(); await choose("Departure window", "next_7"); expect(ids()).toEqual([3, 2, 4, 5, 6]); expect(ids()).not.toContain(8); expect(control("Departure window").selectedOptions[0].textContent).toContain("including today"); });
+  it.each([['today', [3]], ['departed', [9]], ['missing', [10]]] as const)("filters %s dates explicitly", async (value, expected) => { await render(); await choose("Departure window", value); expect(ids()).toEqual(expected); });
+  it("sorts by oldest or newest submission without changing records", async () => { const original = structuredClone(state.rows); await render(); await choose("Stage", "pending"); await choose("Sort by", "submitted_oldest"); expect(ids()).toEqual([10, 9, 8, 4, 3, 2, 1]); await choose("Sort by", "submitted_newest"); expect(ids()).toEqual([1, 2, 3, 4, 8, 9, 10]); expect(state.rows).toEqual(original); expect(state.writes).toEqual([]); });
+  it("sorts latest departure first while keeping missing dates last", async () => { await render(); await choose("Stage", "pending"); await choose("Sort by", "departure_latest"); expect(ids()).toEqual([1, 8, 4, 2, 3, 9, 10]); });
+  it("searches case-insensitive Orbit references and combines words across details and agents", async () => { await render(); await search("orbit-2"); expect(ids()).toEqual([2]); await search("second supplier"); expect(ids()).toEqual([4]); expect(state.writes).toEqual([]); });
+  it("retains filters across refetches and reports no matches rather than claiming no requests exist", async () => { await render(); await choose("Agent", "20"); state.rows = state.rows.filter(row => row.id !== 4); await render(); expect(control("Agent").value).toBe("20"); expect(host.textContent).toContain("No amendments match these filters"); expect(host.textContent).toContain("0 of 8 amendments shown"); });
+  it("clears filters and restores departure-first ordering with no writes", async () => { await render(); expect(button("Clear filters").disabled).toBe(true); await search("absent"); await choose("Sort by", "submitted_newest"); await act(async () => button("Clear filters").click()); expect(control("Search amendments").value).toBe(""); expect(control("Sort by").value).toBe("departure_soonest"); expect(ids()).toEqual([3, 2, 4, 8, 1, 9, 10, 5, 6]); expect(state.writes).toEqual([]); });
+  it("never offers Mark Actioned on rejected requests but preserves normal pending submission IDs", async () => { await render(); await choose("Stage", "rejected"); expect(ids()).toEqual([6]); expect(button("Mark Actioned")).toBeUndefined(); await choose("Stage", "To Do"); await act(async () => button("Mark Actioned").click()); expect(state.writes).toEqual([{ path: "action", input: { amendmentId: 3, bookingId: 1003 } }, { path: "updatePipeline", input: { amendmentId: 3, bookingId: 1003, pipelineStage: "Actioned" } }]); });
+  it("withholds cached records during errors and offers a retry", async () => { await render(); state.error = true; await render(); expect(ids()).toEqual([]); expect(host.textContent).toContain("Could not load amendments"); expect(host.textContent).not.toContain("Synthetic Client"); await act(async () => button("Retry amendments").click()); expect(state.refetches).toBe(1); expect(state.options.refetchOnMount).toBe("always"); expect(state.options.refetchOnWindowFocus).toBe(true); });
+  it("shows loading and genuine empty-state feedback without stale cards", async () => { state.loading = true; await render(); expect(ids()).toEqual([]); expect(host.textContent).toContain("Loading amendments"); state.loading = false; state.rows = []; await render(); expect(host.textContent).toContain("No amendments yet"); });
+  it("handles corrupt timestamps without crashing and renders text rather than executing markup", async () => { state.rows = [row(100, null, { departureDate: "not-a-date", createdAt: "not-a-date", clientName: '<script>alert("never")</script>', details: '<img src="https://network.invalid/pixel">' })]; await render(); expect(host.textContent).toContain("Not recorded"); expect(host.textContent).toContain('<script>alert("never")</script>'); expect(host.querySelector("script, img")).toBeNull(); });
+  it("refreshes calendar urgency on focus after midnight without any record mutation", async () => { state.rows = [row(2, 1)]; await render(); await choose("Departure window", "today"); expect(ids()).toEqual([]); vi.setSystemTime(date(1)); await act(async () => window.dispatchEvent(new Event("focus"))); expect(ids()).toEqual([2]); expect(host.textContent).toContain("Departs today"); expect(state.writes).toEqual([]); });
+  it("keeps legacy actioned requests with no pipeline stage out of the pending list", async () => { state.rows = [row(50, 0, { status: "actioned", pipelineStage: null })]; await render(); expect(host.textContent).toContain("0 pending, 1 actioned"); expect(button("Mark Actioned")).toBeUndefined(); await choose("Stage", "Actioned"); expect(ids()).toEqual([50]); });
+  it("does not offer Assigned to me when no current authenticated identity is available", async () => { state.userId = undefined; await render(); expect(Array.from(control("Assigned to").options).some(option => option.value === "me")).toBe(false); });
+});
