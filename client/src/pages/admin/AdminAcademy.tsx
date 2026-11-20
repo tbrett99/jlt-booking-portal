@@ -49,6 +49,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 const emptyCourse = {
   title: "",
@@ -64,6 +65,7 @@ type DraftQuestion = {
   answerOptions: string[];
   correctAnswerIndex: number;
   maxWords: number;
+  allowPaste: boolean;
   explanation: string;
 };
 const emptyLesson = {
@@ -96,6 +98,7 @@ function academyQuestionDraftSignature(questions: DraftQuestion[]) {
     answerOptions: question.answerOptions,
     correctAnswerIndex: question.correctAnswerIndex,
     maxWords: question.maxWords,
+    allowPaste: question.questionType === "free_text" && question.allowPaste === true,
     explanation: question.explanation ?? "",
   })));
 }
@@ -338,7 +341,10 @@ export default function AdminAcademy() {
       if (shouldReplaceQuestions)
         await replaceQuestions.mutateAsync({
           lessonId,
-          questions: lessonDraft.questions,
+          questions: lessonDraft.questions.map(question => ({
+            ...question,
+            allowPaste: question.questionType === "free_text" && question.allowPaste === true,
+          })),
         });
       toast.success("Lesson saved");
       setEditingLessonId(null);
@@ -554,6 +560,7 @@ export default function AdminAcademy() {
       answerOptions: Array.isArray(q.answerOptions) ? q.answerOptions : [],
       correctAnswerIndex: q.correctAnswerIndex ?? 0,
       maxWords: q.maxWords ?? 250,
+      allowPaste: q.allowPaste === true,
       explanation: q.explanation ?? "",
     }));
     setLessonDraft({
@@ -1847,7 +1854,7 @@ function LessonEditor({
                   Up to {MAX_ACADEMY_ASSESSMENT_QUESTIONS} questions per knowledge check or final exam. CSV import is recommended for longer exams.
                 </p>
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  Saving lesson wording, resources or layout does not update these questions. If learners already have activity, you can revise question wording and private marking guides; answer options, the correct answer, question type, question order and word limits stay protected.
+                  Saving lesson wording, resources or layout does not update these questions. If learners already have activity, you can revise question wording and private marking guides, and change whether agents can paste written answers; answer options, the correct answer, question type, question order and word limits stay protected.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1896,6 +1903,7 @@ function LessonEditor({
                           answerOptions: ["", ""],
                           correctAnswerIndex: 0,
                           maxWords: 250,
+                          allowPaste: false,
                           explanation: "",
                         },
                       ],
@@ -1988,8 +1996,10 @@ function LessonEditor({
                   {question.questionType === "free_text" ? (
                     <div className="mt-3 grid gap-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3 md:grid-cols-[180px_minmax(0,1fr)]">
                       <div>
-                        <Label>Maximum words</Label>
+                        <Label htmlFor={`academy-question-${index}-max-words`}>Maximum words</Label>
                         <Input
+                          id={`academy-question-${index}-max-words`}
+                          aria-label={`Question ${index + 1} maximum words`}
                           className="mt-1.5"
                           type="number"
                           min="10"
@@ -2007,9 +2017,24 @@ function LessonEditor({
                             })
                           }
                         />
+                        <div className="mt-3 flex items-center gap-2">
+                          <Switch
+                            id={`academy-question-${index}-allow-paste`}
+                            aria-label={`Allow pasting for question ${index + 1}`}
+                            aria-describedby={`academy-question-${index}-paste-hint`}
+                            checked={question.allowPaste === true}
+                            disabled={isSaving || importingQuizCsv}
+                            onCheckedChange={allowPaste => updateQuestion(index, { allowPaste })}
+                          />
+                          <Label htmlFor={`academy-question-${index}-allow-paste`}>Allow pasting</Label>
+                        </div>
+                        <p id={`academy-question-${index}-paste-hint`} className="mt-1 text-xs text-muted-foreground">
+                          {question.allowPaste === true
+                            ? "Agents can paste links or text into this answer."
+                            : "Agents must type this answer themselves."}
+                        </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Agents type directly; paste and drag/drop are
-                          disabled.
+                          Drag/drop remains disabled.
                         </p>
                       </div>
                       <div>

@@ -43,12 +43,14 @@ describe("JLT Academy written assessment safeguards", () => {
     expect(router).toContain('feedbackAcknowledgedAt: now');
   });
 
-  it("provides a staff marking queue and prevents clipboard pastes into written responses", () => {
+  it("provides a staff marking queue and blocks pasting unless the written question explicitly allows it", () => {
     expect(manager).toContain('Written assessment reviews');
     expect(manager).toContain('Written response');
     expect(manager).toContain('Save grade and send feedback');
     expect(learner).toContain('Pasting is disabled for written Academy answers.');
-    expect(learner).toContain('onPaste={(event) => { event.preventDefault();');
+    expect(learner).toContain('onPaste={(event) => { if (question.allowPaste !== true) { event.preventDefault();');
+    expect(learner).toContain('Pasting allowed');
+    expect(schema).toContain('allowPaste: boolean("allowPaste").default(false).notNull()');
     expect(learner).toContain('onDrop={(event) => { event.preventDefault();');
     expect(learner).toContain('I have read and acknowledge this feedback');
     expect(learner).toContain('Passed — no resubmission');

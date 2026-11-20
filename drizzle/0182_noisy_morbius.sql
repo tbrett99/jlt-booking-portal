@@ -1,0 +1,1 @@
+ALTER TABLE `academy_questions` ADD `allowPaste` boolean DEFAULT false NOT NULL;

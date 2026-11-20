@@ -129,6 +129,10 @@ function preserveOptionalTranscript(value: string | null | undefined) {
   return value?.trim() ? value : null;
 }
 
+function effectiveQuestionAllowPaste(question: { questionType: string; allowPaste?: boolean | null }) {
+  return question.questionType === "free_text" && question.allowPaste === true;
+}
+
 const ACADEMY_PORTAL_URL = "https://portal.thejltgroup.co.uk";
 
 function escapeAcademyEmailHtml(value: string | null | undefined) {
@@ -1491,7 +1495,7 @@ export const academyRouter = router({
                   resets: questionResets.filter((reset) => reset.lessonId === lesson.id),
                   passMark: lesson.assessmentPassMark,
                 }).find((state) => state.questionId === question.id)!;
-                return { id: question.id, prompt: question.prompt, questionType: question.questionType, answerOptions: asOptions(question.answerOptions), maxWords: question.maxWords, sortOrder: question.sortOrder, resit };
+                return { id: question.id, prompt: question.prompt, questionType: question.questionType, answerOptions: asOptions(question.answerOptions), maxWords: question.maxWords, allowPaste: effectiveQuestionAllowPaste(question), sortOrder: question.sortOrder, resit };
               }),
               progress: locked ? null : progressByLesson.get(lesson.id) ?? null,
               attempts: locked ? [] : (attemptsByLesson.get(lesson.id) ?? []).map((attempt) => ({
@@ -1547,6 +1551,7 @@ export const academyRouter = router({
               questionType: question.questionType,
               answerOptions: asOptions(question.answerOptions),
               maxWords: question.maxWords,
+              allowPaste: effectiveQuestionAllowPaste(question),
               sortOrder: question.sortOrder,
               resit: { questionId: question.id, attemptCount: 0, passed: false, awaitingMarking: false, feedbackPending: false, supportRequired: false, lastScore: null },
             })),
@@ -3059,6 +3064,8 @@ export const academyRouter = router({
         answerOptions: z.array(z.string().trim().max(500)).max(8).default([]),
         correctAnswerIndex: z.number().int().min(0).max(7).default(0),
         maxWords: z.number().int().min(10).max(2_000).default(250),
+        // Omitted by legacy editors: preserve a named question's stored setting.
+        allowPaste: z.boolean().optional(),
         explanation: z.string().trim().max(10_000).nullable().optional(),
       })).max(MAX_ACADEMY_ASSESSMENT_QUESTIONS),
     })).mutation(async ({ ctx, input }) => {
@@ -3077,30 +3084,45 @@ export const academyRouter = router({
       if (new Set(submittedIds).size !== submittedIds.length || submittedIds.some((id) => !existingQuestions.some((question) => question.id === id))) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Question IDs must belong to this lesson and cannot be repeated" });
       }
+      const existingById = new Map(existingQuestions.map((question) => [question.id, question]));
+      const savedAllowPaste = input.questions.map((question) => effectiveQuestionAllowPaste({
+        questionType: question.questionType,
+        allowPaste: question.allowPaste ?? (question.id ? existingById.get(question.id)?.allowPaste : false),
+      }));
+      // Audit policy changes by identity/order and booleans only, never question
+      // text, private marking guides or historical learner answers.
+      const pastePolicyChanges = input.questions.flatMap((question, sortOrder) => {
+        const existing = question.id ? existingById.get(question.id) : undefined;
+        const previousAllowPaste = existing ? effectiveQuestionAllowPaste(existing) : false;
+        return previousAllowPaste === savedAllowPaste[sortOrder] ? [] : [{
+          questionId: question.id ?? null, sortOrder, previousAllowPaste, allowPaste: savedAllowPaste[sortOrder],
+        }];
+      });
       const hasLearnerEvidence = await hasAcademyLearnerEvidence([lesson.id]);
       if (hasLearnerEvidence) {
         if (isAssessmentQuestionNarrativeRevision(existingQuestions, input.questions)) {
-          await recordStaffOperation(ctx.user, "academy.question_text_update", { courseId: scope.courseId, lessonId: input.lessonId, questionIds: submittedIds, phase: "authorized_write" });
+          await recordStaffOperation(ctx.user, pastePolicyChanges.length ? "academy.question_paste_update" : "academy.question_text_update", { courseId: scope.courseId, lessonId: input.lessonId, questionIds: submittedIds, ...(pastePolicyChanges.length ? { pastePolicyChanges } : {}), phase: "authorized_write" });
           await Promise.all(existingQuestions.map((question, index) => db.update(academyQuestions).set({
             prompt: input.questions[index].prompt,
             explanation: normaliseOptionalText(input.questions[index].explanation),
+            allowPaste: savedAllowPaste[index],
           }).where(eq(academyQuestions.id, question.id))));
           const [module] = await db.select().from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
           await addAudit({
             courseId: module?.courseId ?? null,
             actorId: ctx.user.id,
-            action: "assessment_question_text_updated",
-            summary: `Updated assessment question text: ${lesson.title}`,
-            metadata: { lessonId: lesson.id, questionCount: existingQuestions.length, learnerEvidencePresent: true },
+            ...(pastePolicyChanges.length ? { action: "assessment_question_paste_policy_updated" } : { action: "assessment_question_text_updated" }),
+            summary: pastePolicyChanges.length ? `Updated assessment paste permissions: ${lesson.title}` : `Updated assessment question text: ${lesson.title}`,
+            metadata: { lessonId: lesson.id, questionCount: existingQuestions.length, learnerEvidencePresent: true, ...(pastePolicyChanges.length ? { pastePolicyChanges } : {}) },
           });
           return { success: true, narrativeRevision: true };
         }
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: "This knowledge check has learner evidence. You can revise question wording and private marking guides, but answer options, the correct answer, question type, word limit and question order are protected so completed results remain meaningful.",
+          message: "This knowledge check has learner evidence. You can revise question wording and private marking guides, as well as written-response paste permissions, but answer options, the correct answer, question type, word limit and question order are protected so completed results remain meaningful.",
         });
       }
-      await recordStaffOperation(ctx.user, "academy.questions_replace", { courseId: scope.courseId, lessonId: input.lessonId, questionCount: input.questions.length, phase: "authorized_write" });
+      await recordStaffOperation(ctx.user, "academy.questions_replace", { courseId: scope.courseId, lessonId: input.lessonId, questionCount: input.questions.length, ...(pastePolicyChanges.length ? { pastePolicyChanges } : {}), phase: "authorized_write" });
       await db.delete(academyQuestions).where(eq(academyQuestions.lessonId, input.lessonId));
       if (input.questions.length) await db.insert(academyQuestions).values(input.questions.map((question, sortOrder) => ({
         lessonId: input.lessonId,
@@ -3109,11 +3131,12 @@ export const academyRouter = router({
         answerOptions: question.questionType === "multiple_choice" ? question.answerOptions : [],
         correctAnswerIndex: question.questionType === "multiple_choice" ? question.correctAnswerIndex : 0,
         maxWords: question.maxWords,
+        allowPaste: savedAllowPaste[sortOrder],
         explanation: normaliseOptionalText(question.explanation),
         sortOrder,
       })) as any);
       const [module] = await db.select().from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
-      await addAudit({ courseId: module?.courseId ?? null, actorId: ctx.user.id, action: "assessment_updated", summary: `Updated knowledge check: ${lesson.title}`, metadata: { questionCount: input.questions.length } });
+      await addAudit({ courseId: module?.courseId ?? null, actorId: ctx.user.id, action: "assessment_updated", summary: `Updated knowledge check: ${lesson.title}`, metadata: { questionCount: input.questions.length, ...(pastePolicyChanges.length ? { pastePolicyChanges } : {}) } });
       return { success: true };
     }),
 

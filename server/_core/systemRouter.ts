@@ -32,6 +32,7 @@ export const systemRouter = router({
       amendmentDepartureFilters: 1,
       staffHandbookSimpleSave: 1,
       staffHandbookFirstUse: 1,
+      academyQuestionPasteToggle: 1,
     })),
 
   notifyOwner: adminProcedure

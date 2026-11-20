@@ -5,6 +5,7 @@ import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { RichEmailEditor, lessonHtmlToPlainText, plainTextToLessonHtml } from "@/components/RichEmailEditor";
 import { AcademyQuestionRichTextEditor } from "@/components/AcademyQuestionRichTextEditor";
 import {
@@ -862,6 +863,7 @@ function QuestionForm({
         : [],
       correctAnswerIndex: question.correctAnswerIndex,
       maxWords: question.maxWords,
+      allowPaste: question.allowPaste === true,
       explanation: question.explanation,
     }))
   );
@@ -883,14 +885,20 @@ function QuestionForm({
       className="space-y-4 border-t pt-5"
       onSubmit={event => {
         event.preventDefault();
-        if (allowed) save.mutate({ lessonId, questions: draft });
+        if (allowed && !save.isPending) save.mutate({
+          lessonId,
+          questions: draft.map(question => ({
+            ...question,
+            allowPaste: question.questionType === "free_text" && question.allowPaste === true,
+          })),
+        });
       }}
     >
       <h3 className="text-lg font-semibold">Assessment questions</h3>
       <p className="text-xs leading-5 text-muted-foreground">
         Save questions separately after saving lesson details. After learner
-        activity, only wording and private marking guides can change; the server
-        protects the assessment structure.
+        activity, wording, private marking guides and whether agents can paste
+        written answers can change; the server protects the assessment structure.
       </p>
       <fieldset disabled={!allowed || save.isPending} className="space-y-4">
         {draft.map((question, index) => (
@@ -975,18 +983,39 @@ function QuestionForm({
                 </StaffField>
               </>
             ) : (
-              <StaffField label={`Question ${index + 1} maximum words`}>
-                <input
-                  className={staffControl}
-                  type="number"
-                  min={10}
-                  max={2000}
-                  value={question.maxWords}
-                  onChange={event =>
-                    change(index, { maxWords: Number(event.target.value) })
-                  }
-                />
-              </StaffField>
+              <>
+                <StaffField label={`Question ${index + 1} maximum words`}>
+                  <input
+                    className={staffControl}
+                    type="number"
+                    min={10}
+                    max={2000}
+                    value={question.maxWords}
+                    onChange={event =>
+                      change(index, { maxWords: Number(event.target.value) })
+                    }
+                  />
+                </StaffField>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id={`instructor-question-${index}-allow-paste`}
+                      aria-label={`Allow pasting for question ${index + 1}`}
+                      aria-describedby={`instructor-question-${index}-paste-hint`}
+                      checked={question.allowPaste === true}
+                      disabled={!allowed || save.isPending}
+                      onCheckedChange={allowPaste => change(index, { allowPaste })}
+                    />
+                    <label className="text-sm font-medium" htmlFor={`instructor-question-${index}-allow-paste`}>Allow pasting</label>
+                  </div>
+                  <p id={`instructor-question-${index}-paste-hint`} className="mt-1 text-xs text-muted-foreground">
+                    {question.allowPaste === true
+                      ? "Agents can paste links or text into this answer."
+                      : "Agents must type this answer themselves."}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">Drag/drop remains disabled.</p>
+                </div>
+              </>
             )}
             <StaffField
               label={`Question ${index + 1} explanation / private marking guide`}
@@ -1016,6 +1045,7 @@ function QuestionForm({
                   answerOptions: ["", ""],
                   correctAnswerIndex: 0,
                   maxWords: 250,
+                  allowPaste: false,
                   explanation: "",
                 },
               ])

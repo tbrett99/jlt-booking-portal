@@ -1680,6 +1680,7 @@ export const academyQuestions = mysqlTable("academy_questions", {
   answerOptions: json("answerOptions").notNull(), // string[]; correct answer never leaves agent APIs
   correctAnswerIndex: int("correctAnswerIndex").notNull(),
   maxWords: int("maxWords").default(250).notNull(),
+  allowPaste: boolean("allowPaste").default(false).notNull(),
   explanation: text("explanation"),
   sortOrder: int("sortOrder").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
